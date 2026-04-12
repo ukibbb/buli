@@ -61,6 +61,9 @@ test("loginWithBrowser completes the OAuth flow and stores auth", async () => {
           throw new Error("missing redirect_uri or state");
         }
 
+        expect(redirectUri).toContain("http://localhost:");
+        expect(redirectUri).toContain("/auth/callback");
+
         const response = await fetch(`${redirectUri}?code=auth-code&state=${state}`);
         await response.text();
       },

@@ -9,6 +9,40 @@ export type OpenAiTurnInput = {
   model: string;
 };
 
+const DEFAULT_INSTRUCTIONS = "You are buli, a local terminal coding assistant. Answer directly and concisely.";
+
+function createResponsesInput(prompt: string) {
+  return [
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: prompt,
+        },
+      ],
+    },
+  ];
+}
+
+async function createHttpError(response: Response): Promise<Error> {
+  const body = (await response.text()).trim();
+  const requestId =
+    response.headers.get("x-request-id") ??
+    response.headers.get("request-id") ??
+    response.headers.get("openai-request-id");
+
+  const parts = [`OpenAI stream request failed: ${response.status}`];
+  if (body) {
+    parts.push(body);
+  }
+  if (requestId) {
+    parts.push(`request_id=${requestId}`);
+  }
+
+  return new Error(parts.join(" | "));
+}
+
 export class OpenAiProvider {
   readonly endpoint: string;
   readonly store: OpenAiAuthStore;
@@ -51,13 +85,18 @@ export class OpenAiProvider {
       headers,
       body: JSON.stringify({
         model: input.model,
-        input: input.prompt,
+        instructions: DEFAULT_INSTRUCTIONS,
+        store: false,
+        // The Codex backend expects Responses-style message items, not a bare
+        // prompt string. Keeping this conversion here isolates provider quirks
+        // away from the engine and TUI layers.
+        input: createResponsesInput(input.prompt),
         stream: true,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI stream request failed: ${response.status}`);
+      throw await createHttpError(response);
     }
 
     yield* parseOpenAiStream(response);

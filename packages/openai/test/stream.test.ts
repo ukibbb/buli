@@ -102,7 +102,19 @@ test("OpenAiProvider sends auth headers and streams provider events", async () =
     expect(requests[0]?.headers.get("chatgpt-account-id")).toBe("acct_123");
     expect(JSON.parse(requests[0]?.body ?? "{}")).toEqual({
       model: "gpt-5.4",
-      input: "Say hello",
+      instructions: "You are buli, a local terminal coding assistant. Answer directly and concisely.",
+      store: false,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "Say hello",
+            },
+          ],
+        },
+      ],
       stream: true,
     });
     expect(events).toEqual([
@@ -118,6 +130,61 @@ test("OpenAiProvider sends auth headers and streams provider events", async () =
         },
       },
     ]);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+});
+
+test("OpenAiProvider includes backend error details when the request fails", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+  });
+
+  const server = createServer((_request, response) => {
+    response.writeHead(400, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "x-request-id": "req_123",
+    });
+    response.end("input must be a message array");
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("stream test server address unavailable");
+  }
+
+  try {
+    const provider = new OpenAiProvider({
+      endpoint: `http://127.0.0.1:${address.port}`,
+      store,
+    });
+
+    await expect(
+      (async () => {
+        for await (const _event of provider.streamTurn({
+          prompt: "Say hello",
+          model: "gpt-5.4",
+        })) {
+          // This turn should fail before any events are emitted.
+        }
+      })(),
+    ).rejects.toThrow("OpenAI stream request failed: 400 | input must be a message array | request_id=req_123");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {

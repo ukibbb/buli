@@ -26,7 +26,7 @@ test("createOAuthState creates a non-empty state", () => {
 test("buildAuthorizeUrl includes the expected oauth query", () => {
   const url = new URL(
     buildAuthorizeUrl({
-      redirectUri: "http://127.0.0.1:1455/auth/callback",
+      redirectUri: "http://localhost:1455/auth/callback",
       challenge: "challenge",
       state: "state",
       issuer: "https://auth.example.com",
@@ -36,7 +36,7 @@ test("buildAuthorizeUrl includes the expected oauth query", () => {
 
   expect(url.origin).toBe("https://auth.example.com");
   expect(url.searchParams.get("client_id")).toBe("client-id");
-  expect(url.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:1455/auth/callback");
+  expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:1455/auth/callback");
   expect(url.searchParams.get("state")).toBe("state");
 });
 

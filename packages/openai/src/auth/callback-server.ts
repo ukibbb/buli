@@ -47,7 +47,9 @@ export class OpenAiCallbackServer {
   pending: PendingCallback | undefined;
 
   constructor(input: { host?: string; port?: number } = {}) {
-    this.host = input.host ?? "127.0.0.1";
+    // OpenAI's browser login flow is more reliable with the localhost callback
+    // shape used by Codex and OpenCode than with an equivalent 127.0.0.1 URL.
+    this.host = input.host ?? "localhost";
     this.port = input.port ?? OPENAI_OAUTH_PORT;
   }
 

@@ -49,7 +49,7 @@ test("exchangeAuthorizationCode posts the expected OAuth form", async () => {
     (body) => {
       expect(body.get("grant_type")).toBe("authorization_code");
       expect(body.get("code")).toBe("auth-code");
-      expect(body.get("redirect_uri")).toBe("http://127.0.0.1:1455/auth/callback");
+      expect(body.get("redirect_uri")).toBe("http://localhost:1455/auth/callback");
       expect(body.get("code_verifier")).toBe("verifier");
 
       return {
@@ -61,7 +61,7 @@ test("exchangeAuthorizationCode posts the expected OAuth form", async () => {
     async (issuer) => {
       const tokens = await exchangeAuthorizationCode({
         code: "auth-code",
-        redirectUri: "http://127.0.0.1:1455/auth/callback",
+        redirectUri: "http://localhost:1455/auth/callback",
         verifier: "verifier",
         issuer,
       });
