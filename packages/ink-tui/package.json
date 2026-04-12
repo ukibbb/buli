@@ -1,0 +1,24 @@
+{
+  "name": "@buli/ink-tui",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@buli/contracts": "workspace:*",
+    "@buli/engine": "workspace:*",
+    "ink": "^6.8.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

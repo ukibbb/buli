@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+coverage/
+dist/
+*.tsbuildinfo
+.env
+
+docs/
+examples/
+skills/
+tui/

@@ -1,0 +1,27 @@
+{
+  "name": "buli",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun run --workspaces --if-present test",
+    "typecheck": "bun run --workspaces --if-present typecheck",
+    "build:cli": "bun --filter @buli/cli build",
+    "dev:cli": "bun --filter @buli/cli dev",
+    "link:cli": "node scripts/link-cli.mjs",
+    "login": "bun --filter @buli/cli login",
+    "chat": "bun --filter @buli/cli chat"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.3",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

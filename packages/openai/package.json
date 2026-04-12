@@ -1,0 +1,20 @@
+{
+  "name": "@buli/openai",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@buli/contracts": "workspace:*",
+    "open": "^10.1.2",
+    "zod": "^3.24.2"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
