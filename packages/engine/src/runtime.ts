@@ -7,7 +7,11 @@ import {
 import type { TurnInput, TurnProvider } from "./provider.ts";
 import { finishAssistantTurn } from "./turn.ts";
 
-export class AgentRuntime {
+export interface TurnRunner {
+  runTurn(input: TurnInput): AsyncIterable<TurnEvent>;
+}
+
+export class AgentRuntime implements TurnRunner {
   readonly provider: TurnProvider;
 
   constructor(provider: TurnProvider) {

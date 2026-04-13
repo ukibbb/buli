@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { normalizeOpenAiUsage } from "../src/index.ts";
+import { normalizeOpenAiUsage } from "../src/provider/usage.ts";
 
 test("normalizeOpenAiUsage separates cached and reasoning tokens", () => {
   const usage = normalizeOpenAiUsage({

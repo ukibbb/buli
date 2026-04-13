@@ -1,6 +1,6 @@
 import { render, type Instance } from "ink";
 import React from "react";
-import { type AgentRuntime } from "@buli/engine";
+import { type TurnRunner } from "@buli/engine";
 import { App, type AppProps } from "./App.tsx";
 
 export { App } from "./App.tsx";
@@ -20,7 +20,7 @@ export type { AppState, AuthState, RuntimeState, TranscriptEntry } from "./state
 export function renderInkApp(input: {
   auth: AppProps["auth"];
   model: string;
-  runtime: AgentRuntime;
+  runtime: TurnRunner;
 }): Instance {
   return render(React.createElement(App, { auth: input.auth, model: input.model, runtime: input.runtime }));
 }

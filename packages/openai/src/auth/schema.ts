@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const AuthInfoSchema = z
+export const OpenAiAuthInfoSchema = z
   .object({
     provider: z.literal("openai"),
     method: z.literal("oauth"),
@@ -11,11 +11,11 @@ export const AuthInfoSchema = z
   })
   .strict();
 
-export const AuthStoreSchema = z
+export const OpenAiAuthStoreSchema = z
   .object({
-    openai: AuthInfoSchema.optional(),
+    openai: OpenAiAuthInfoSchema.optional(),
   })
   .strict();
 
-export type AuthInfo = z.infer<typeof AuthInfoSchema>;
-export type AuthStore = z.infer<typeof AuthStoreSchema>;
+export type OpenAiAuthInfo = z.infer<typeof OpenAiAuthInfoSchema>;
+export type OpenAiAuthStoreData = z.infer<typeof OpenAiAuthStoreSchema>;

@@ -21,6 +21,29 @@ const ResponseFinishedChunkSchema = z.object({
   }),
 });
 
+function nextFrameBoundary(buffer: string): { index: number; length: number } | undefined {
+  const boundaries = [
+    { index: buffer.indexOf("\n\n"), length: 2 },
+    { index: buffer.indexOf("\r\n\r\n"), length: 4 },
+  ].filter((boundary) => boundary.index >= 0);
+
+  if (boundaries.length === 0) {
+    return undefined;
+  }
+
+  boundaries.sort((left, right) => left.index - right.index);
+  return boundaries[0];
+}
+
+function extractData(frame: string): string {
+  return frame
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n")
+    .trim();
+}
+
 async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
@@ -34,20 +57,15 @@ async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<st
     buffer += chunk.value;
 
     while (true) {
-      const index = buffer.indexOf("\n\n");
-      if (index === -1) {
+      const boundary = nextFrameBoundary(buffer);
+      if (!boundary) {
         break;
       }
 
-      const frame = buffer.slice(0, index);
-      buffer = buffer.slice(index + 2);
+      const frame = buffer.slice(0, boundary.index);
+      buffer = buffer.slice(boundary.index + boundary.length);
 
-      const data = frame
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n")
-        .trim();
+      const data = extractData(frame);
 
       if (data) {
         yield data;
@@ -55,12 +73,7 @@ async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<st
     }
   }
 
-  const data = buffer
-    .split("\n")
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice(5).trimStart())
-    .join("\n")
-    .trim();
+  const data = extractData(buffer);
 
   if (data) {
     yield data;

@@ -1,5 +1,5 @@
 import { type TurnEvent } from "@buli/contracts";
-import { type AgentRuntime } from "@buli/engine";
+import { type TurnRunner } from "@buli/engine";
 import { Box, useInput } from "ink";
 import React, { startTransition, useEffectEvent, useRef, useState } from "react";
 import { ComposerPane } from "./components/ComposerPane.tsx";
@@ -10,7 +10,7 @@ import { appendComposer, applyTurnEvent, backspaceComposer, createInitialState, 
 export type AppProps = {
   auth: AuthState;
   model: string;
-  runtime: AgentRuntime;
+  runtime: TurnRunner;
 };
 
 export function App(props: AppProps) {

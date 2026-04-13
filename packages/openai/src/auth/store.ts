@@ -1,7 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { AuthInfoSchema, AuthStoreSchema, type AuthInfo, type AuthStore } from "@buli/contracts";
+import {
+  OpenAiAuthInfoSchema,
+  OpenAiAuthStoreSchema,
+  type OpenAiAuthInfo,
+  type OpenAiAuthStoreData,
+} from "./schema.ts";
 
 export function defaultAuthFilePath(): string {
   return join(homedir(), ".buli", "auth.json");
@@ -14,28 +19,28 @@ export class OpenAiAuthStore {
     this.filePath = input.filePath ?? defaultAuthFilePath();
   }
 
-  async load(): Promise<AuthStore> {
+  async load(): Promise<OpenAiAuthStoreData> {
     try {
       const text = await readFile(this.filePath, "utf8");
-      return AuthStoreSchema.parse(JSON.parse(text));
+      return OpenAiAuthStoreSchema.parse(JSON.parse(text));
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        return AuthStoreSchema.parse({});
+        return OpenAiAuthStoreSchema.parse({});
       }
 
       throw error;
     }
   }
 
-  async loadOpenAi(): Promise<AuthInfo | undefined> {
+  async loadOpenAi(): Promise<OpenAiAuthInfo | undefined> {
     const store = await this.load();
     return store.openai;
   }
 
-  async saveOpenAi(auth: AuthInfo): Promise<void> {
-    const next = AuthStoreSchema.parse({
+  async saveOpenAi(auth: OpenAiAuthInfo): Promise<void> {
+    const next = OpenAiAuthStoreSchema.parse({
       ...(await this.load()),
-      openai: AuthInfoSchema.parse(auth),
+      openai: OpenAiAuthInfoSchema.parse(auth),
     });
 
     await mkdir(dirname(this.filePath), { recursive: true });

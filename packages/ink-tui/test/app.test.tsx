@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import { renderToString } from "ink";
 import React from "react";
-import { AgentRuntime } from "@buli/engine";
+import type { TurnRunner } from "@buli/engine";
 import { App, ComposerPane, StatusBar, TranscriptPane } from "../src/index.ts";
 
-const runtime = new AgentRuntime({
-  async *streamTurn() {
+const runtime: TurnRunner = {
+  async *runTurn() {
     return;
   },
-});
+};
 
 test("App renders the empty transcript and idle status", () => {
   const output = renderToString(<App auth="ready" model="gpt-5.4" runtime={runtime} />);

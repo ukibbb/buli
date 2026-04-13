@@ -10,14 +10,13 @@
   },
   "main": "./dist/cli.js",
   "exports": {
-    ".": "./src/main.ts"
+    ".": "./dist/cli.js"
   },
   "files": [
     "bin",
     "dist"
   ],
   "dependencies": {
-    "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
     "@buli/ink-tui": "workspace:*",
     "@buli/openai": "workspace:*"

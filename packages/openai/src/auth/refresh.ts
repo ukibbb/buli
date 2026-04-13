@@ -1,7 +1,7 @@
-import { AuthInfoSchema, type AuthInfo } from "@buli/contracts";
 import { z } from "zod";
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./constants.ts";
 import { extractAccountId } from "./pkce.ts";
+import { OpenAiAuthInfoSchema, type OpenAiAuthInfo } from "./schema.ts";
 import { OpenAiAuthStore } from "./store.ts";
 
 const TokenResponseSchema = z.object({
@@ -71,8 +71,8 @@ export function toAuthInfo(input: {
   tokens: TokenResponse;
   now?: number | undefined;
   accountId?: string | undefined;
-}): AuthInfo {
-  return AuthInfoSchema.parse({
+}): OpenAiAuthInfo {
+  return OpenAiAuthInfoSchema.parse({
     provider: "openai",
     method: "oauth",
     accessToken: input.tokens.access_token,
@@ -88,7 +88,7 @@ export async function refreshStoredAuth(input: {
   clientId?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
   now?: number | undefined;
-}): Promise<AuthInfo | undefined> {
+}): Promise<OpenAiAuthInfo | undefined> {
   const auth = await input.store.loadOpenAi();
   if (!auth) {
     return undefined;

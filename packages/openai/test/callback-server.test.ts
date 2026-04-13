@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { OpenAiCallbackServer } from "../src/index.ts";
+import { OpenAiCallbackServer } from "../src/auth/callback-server.ts";
 
 test("OpenAiCallbackServer resolves a valid callback", async () => {
   const server = new OpenAiCallbackServer({ port: 0 });

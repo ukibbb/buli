@@ -41,6 +41,24 @@ test("runChat returns a clean message when auth is missing", async () => {
   await expect(runChat({ store })).resolves.toBe("OpenAI auth not found. Run `buli login`.");
 });
 
+test("runChat returns a clean message when stdin is not a TTY", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  await expect(runChat({ store, stdin: { isTTY: false } })).resolves.toBe(
+    "Interactive chat requires a TTY. Run `buli chat` in a terminal.",
+  );
+});
+
 test("main prints usage for an unknown command", async () => {
   const outputs: string[] = [];
   const originalLog = console.log;

@@ -2,7 +2,24 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OpenAiAuthStore } from "../src/index.ts";
+import { OpenAiAuthStoreSchema } from "../src/auth/schema.ts";
+import { OpenAiAuthStore } from "../src/auth/store.ts";
+
+test("OpenAiAuthStoreSchema parses an OpenAI OAuth store", () => {
+  const store = OpenAiAuthStoreSchema.parse({
+    openai: {
+      provider: "openai",
+      method: "oauth",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: 1_764_000_000,
+      accountId: "acct_123",
+    },
+  });
+
+  expect(store.openai?.provider).toBe("openai");
+  expect(store.openai?.accountId).toBe("acct_123");
+});
 
 test("OpenAiAuthStore returns an empty store when the file is missing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-store-"));

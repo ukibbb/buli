@@ -48,20 +48,28 @@ Register the global `buli` command once:
 bun run link:cli
 ```
 
+That installs a global source-runner command in Bun's global bin directory. Once
+that directory is on your `PATH`, you can run `buli` from any directory on this
+machine.
+
 If `buli` is not found afterward, make sure Bun's global bin directory is on your `PATH`:
 
 ```bash
 export PATH="$(bun pm bin -g):$PATH"
 ```
 
-Then use the command normally:
+Then use the command normally from any directory:
 
 ```bash
 buli login
 buli chat
 ```
 
-We use the source runner as the primary development workflow because every `buli` invocation runs the latest code from the repo without waiting for a rebuild.
+We use the source runner as the primary development workflow because every `buli`
+invocation runs the latest code from the repo without waiting for a rebuild,
+even when launched outside the repo. The global wrapper also pins `tsx` to this
+repo's `tsconfig.json`, so JSX and other TypeScript settings stay consistent no
+matter where you run `buli` from.
 
 ## What `buli login` Does
 
@@ -128,6 +136,16 @@ bun run dev:cli
 export PATH="$(bun pm bin -g):$PATH"
 ```
 
+`buli` says dependencies are not installed
+
+- run `bun install` in this repository
+- then rerun `buli`
+
+`buli chat` requires a TTY
+
+- run `buli chat` in an interactive terminal
+- avoid running it through non-interactive shells, pipes, or test harnesses
+
 `OpenAI auth not found. Run \`buli login\`.`
 
 - run `buli login`
@@ -183,4 +201,4 @@ bun run link:cli
 - `bun` is used for package management and workspaces.
 - The CLI/TUI runtime target is `Node 24`.
 - Exact token counts are provider-derived and reasoning tokens are shown after a completed assistant turn.
-- The source-runner is the preferred development workflow because it avoids unnecessary rebuild steps while the product is still changing quickly.
+- The source-runner is the preferred development workflow because it avoids unnecessary rebuild steps while the product is still changing quickly, even when you launch `buli` from another directory.

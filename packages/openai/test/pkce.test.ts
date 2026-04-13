@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildAuthorizeUrl, createOAuthState, createPkcePair, extractAccountId, parseJwtClaims } from "../src/index.ts";
+import { buildAuthorizeUrl, createOAuthState, createPkcePair, extractAccountId, parseJwtClaims } from "../src/auth/pkce.ts";
 
 function createJwt(payload: object): string {
   return [

@@ -3,7 +3,8 @@ import { createServer } from "node:http";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { exchangeAuthorizationCode, OpenAiAuthStore, refreshAccessToken, refreshStoredAuth, toAuthInfo } from "../src/index.ts";
+import { exchangeAuthorizationCode, refreshAccessToken, refreshStoredAuth, toAuthInfo } from "../src/auth/refresh.ts";
+import { OpenAiAuthStore } from "../src/auth/store.ts";
 
 async function withTokenServer(
   handler: (body: URLSearchParams) => Record<string, unknown>,

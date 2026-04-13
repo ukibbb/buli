@@ -36,10 +36,6 @@ type PendingCallback = {
   timeout: Timer;
 };
 
-function hasCode(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
 export class OpenAiCallbackServer {
   readonly host: string;
   readonly port: number;
@@ -47,9 +43,7 @@ export class OpenAiCallbackServer {
   pending: PendingCallback | undefined;
 
   constructor(input: { host?: string; port?: number } = {}) {
-    // OpenAI's browser login flow is more reliable with the localhost callback
-    // shape used by Codex and OpenCode than with an equivalent 127.0.0.1 URL.
-    this.host = input.host ?? "localhost";
+    this.host = input.host ?? "127.0.0.1";
     this.port = input.port ?? OPENAI_OAUTH_PORT;
   }
 
@@ -105,13 +99,15 @@ export class OpenAiCallbackServer {
     });
   }
 
-  async stop(): Promise<void> {
+  async stop(input: { rejectPending?: boolean } = {}): Promise<void> {
     const server = this.server;
     this.server = undefined;
 
     if (this.pending) {
       clearTimeout(this.pending.timeout);
-      this.pending.reject(new Error("OAuth callback server stopped"));
+      if (input.rejectPending ?? true) {
+        this.pending.reject(new Error("OAuth callback server stopped"));
+      }
       this.pending = undefined;
     }
 
@@ -210,8 +206,4 @@ export class OpenAiCallbackServer {
     this.pending = undefined;
     pending.reject(error);
   }
-}
-
-export function isMissingFile(error: unknown): boolean {
-  return hasCode(error) && error.code === "ENOENT";
 }

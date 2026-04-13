@@ -3,7 +3,9 @@ import { createServer } from "node:http";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OpenAiAuthStore, OpenAiProvider, parseOpenAiStream } from "../src/index.ts";
+import { OpenAiAuthStore } from "../src/auth/store.ts";
+import { OpenAiProvider } from "../src/provider/client.ts";
+import { parseOpenAiStream } from "../src/provider/stream.ts";
 
 test("parseOpenAiStream yields text deltas and final usage", async () => {
   const response = new Response(
@@ -36,6 +38,39 @@ test("parseOpenAiStream yields text deltas and final usage", async () => {
         output: 50,
         reasoning: 10,
         cache: { read: 20, write: 0 },
+      },
+    },
+  ]);
+});
+
+test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Hello"}\r\n\r\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\r\n\r\n',
+    ].join(""),
+    {
+      headers: {
+        "Content-Type": "text/event-stream",
+      },
+    },
+  );
+
+  const events = [];
+  for await (const event of parseOpenAiStream(response)) {
+    events.push(event);
+  }
+
+  expect(events).toEqual([
+    { type: "text-delta", text: "Hello" },
+    {
+      type: "finish",
+      usage: {
+        total: 15,
+        input: 10,
+        output: 5,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
       },
     },
   ]);

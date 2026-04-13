@@ -1,5 +1,3 @@
-export { AuthInfoSchema, AuthStoreSchema } from "./auth.ts";
-export type { AuthInfo, AuthStore } from "./auth.ts";
 export {
   AssistantStreamFailedEventSchema,
   AssistantStreamFinishedEventSchema,
@@ -28,5 +26,3 @@ export type {
   ProviderTextDeltaEvent,
   TokenUsage,
 } from "./provider.ts";
-export { ToolCallSchema, ToolResultSchema } from "./tool.ts";
-export type { ToolCall, ToolResult } from "./tool.ts";

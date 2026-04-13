@@ -1,12 +1,13 @@
 import { AgentRuntime } from "@buli/engine";
 import { renderInkApp } from "@buli/ink-tui";
-import { OpenAiAuthStore, OpenAiProvider, refreshStoredAuth } from "@buli/openai";
+import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 
 const DEFAULT_MODEL = "gpt-5.4";
 
 export async function runChat(input: {
   model?: string;
   store?: OpenAiAuthStore;
+  stdin?: Pick<NodeJS.ReadStream, "isTTY">;
 } = {}): Promise<string> {
   const store = input.store ?? new OpenAiAuthStore();
   const auth = await store.loadOpenAi();
@@ -14,7 +15,10 @@ export async function runChat(input: {
     return "OpenAI auth not found. Run `buli login`.";
   }
 
-  await refreshStoredAuth({ store });
+  const stdin = input.stdin ?? process.stdin;
+  if (!stdin.isTTY) {
+    return "Interactive chat requires a TTY. Run `buli chat` in a terminal.";
+  }
 
   const provider = new OpenAiProvider({ store });
   const runtime = new AgentRuntime(provider);

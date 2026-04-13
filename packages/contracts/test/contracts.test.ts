@@ -1,26 +1,9 @@
 import { expect, test } from "bun:test";
 import {
-  AuthStoreSchema,
   ProviderFinishEventSchema,
   TokenUsageSchema,
   TurnEventSchema,
 } from "../src/index.ts";
-
-test("AuthStoreSchema parses an OpenAI OAuth store", () => {
-  const store = AuthStoreSchema.parse({
-    openai: {
-      provider: "openai",
-      method: "oauth",
-      accessToken: "access-token",
-      refreshToken: "refresh-token",
-      expiresAt: 1_764_000_000,
-      accountId: "acct_123",
-    },
-  });
-
-  expect(store.openai?.provider).toBe("openai");
-  expect(store.openai?.accountId).toBe("acct_123");
-});
 
 test("TokenUsageSchema parses reasoning token usage", () => {
   const usage = TokenUsageSchema.parse({

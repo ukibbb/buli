@@ -3,7 +3,9 @@ import { createServer } from "node:http";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loginWithBrowser, OpenAiAuthStore, OpenAiCallbackServer } from "../src/index.ts";
+import { loginWithBrowser } from "../src/auth/browser.ts";
+import { OpenAiCallbackServer } from "../src/auth/callback-server.ts";
+import { OpenAiAuthStore } from "../src/auth/store.ts";
 
 function createJwt(payload: object): string {
   return [
@@ -61,7 +63,7 @@ test("loginWithBrowser completes the OAuth flow and stores auth", async () => {
           throw new Error("missing redirect_uri or state");
         }
 
-        expect(redirectUri).toContain("http://localhost:");
+        expect(redirectUri).toContain("http://127.0.0.1:");
         expect(redirectUri).toContain("/auth/callback");
 
         const response = await fetch(`${redirectUri}?code=auth-code&state=${state}`);
@@ -88,4 +90,20 @@ test("loginWithBrowser completes the OAuth flow and stores auth", async () => {
       });
     });
   }
+});
+
+test("loginWithBrowser preserves browser launch failures", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-browser-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const callbackServer = new OpenAiCallbackServer({ port: 0 });
+
+  await expect(
+    loginWithBrowser({
+      store,
+      server: callbackServer,
+      openUrl: async () => {
+        throw new Error("browser launch failed");
+      },
+    }),
+  ).rejects.toThrow("browser launch failed");
 });

@@ -1,6 +1,6 @@
 import open from "open";
-import type { AuthInfo } from "@buli/contracts";
 import { OpenAiCallbackServer } from "./callback-server.ts";
+import type { OpenAiAuthInfo } from "./schema.ts";
 import { buildAuthorizeUrl, createOAuthState, createPkcePair } from "./pkce.ts";
 import { exchangeAuthorizationCode, toAuthInfo } from "./refresh.ts";
 import { OpenAiAuthStore } from "./store.ts";
@@ -17,23 +17,27 @@ export async function loginWithBrowser(input: {
   openUrl?: BrowserLauncher;
   fetchImpl?: typeof fetch | undefined;
   issuer?: string | undefined;
-} = {}): Promise<AuthInfo> {
+} = {}): Promise<OpenAiAuthInfo> {
   const store = input.store ?? new OpenAiAuthStore();
   const server = input.server ?? new OpenAiCallbackServer();
   const pkce = await createPkcePair();
   const state = createOAuthState();
+
   const { redirectUri } = await server.start();
+
   const url = buildAuthorizeUrl({
     redirectUri,
     challenge: pkce.challenge,
     state,
     issuer: input.issuer,
   });
+
   const pending = server.waitForCode(state);
 
   try {
     await (input.openUrl ?? openBrowser)(url);
     const callback = await pending;
+
     const tokens = await exchangeAuthorizationCode({
       code: callback.code,
       redirectUri,
@@ -45,6 +49,6 @@ export async function loginWithBrowser(input: {
     await store.saveOpenAi(auth);
     return auth;
   } finally {
-    await server.stop();
+    await server.stop({ rejectPending: false });
   }
 }
