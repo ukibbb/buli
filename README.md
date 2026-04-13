@@ -62,7 +62,7 @@ Then use the command normally from any directory:
 
 ```bash
 buli login
-buli chat
+buli
 ```
 
 We use the source runner as the primary development workflow because every `buli`
@@ -79,7 +79,7 @@ matter where you run `buli` from.
 - opens your browser for OpenAI/ChatGPT authentication
 - stores credentials locally in `~/.buli/auth.json`
 
-After that, `buli chat` can use the stored auth without asking you to log in again every run.
+After that, `buli` can use the stored auth without asking you to log in again every run.
 
 ## Repo-Only Quick Start
 
@@ -88,7 +88,7 @@ If you do not want to register a global command yet, you can run the current sca
 ```bash
 bun install
 bun run login
-bun run chat
+bun run start:cli
 ```
 
 ## What You Can Do Today
@@ -101,7 +101,7 @@ After logging in, you can:
 - watch GPT stream the response into the transcript
 - see final input/output/reasoning token usage in the status bar
 
-If auth is missing, `buli chat` exits cleanly and tells you to run `buli login` first.
+If auth is missing, `buli` exits cleanly and tells you to run `buli login` first.
 
 ## Buildable CLI Workflow
 
@@ -116,7 +116,7 @@ bun run build:cli
 Run the built wrapper directly:
 
 ```bash
-node apps/cli/bin/buli.js chat
+node apps/cli/bin/buli.js
 ```
 
 If you want to continuously rebuild that packaged path while testing it, run:
@@ -141,9 +141,9 @@ export PATH="$(bun pm bin -g):$PATH"
 - run `bun install` in this repository
 - then rerun `buli`
 
-`buli chat` requires a TTY
+`buli` requires a TTY
 
-- run `buli chat` in an interactive terminal
+- run `buli` in an interactive terminal
 - avoid running it through non-interactive shells, pipes, or test harnesses
 
 `OpenAI auth not found. Run \`buli login\`.`

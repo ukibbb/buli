@@ -27,7 +27,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "login": "node --import tsx src/cli.ts login",
-    "chat": "node --import tsx src/cli.ts chat",
+    "start": "node --import tsx src/cli.ts",
     "prepublishOnly": "bun run build"
   }
 }

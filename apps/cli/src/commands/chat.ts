@@ -17,7 +17,7 @@ export async function runChat(input: {
 
   const stdin = input.stdin ?? process.stdin;
   if (!stdin.isTTY) {
-    return "Interactive chat requires a TTY. Run `buli chat` in a terminal.";
+    return "Interactive chat requires a TTY. Run `buli` in a terminal.";
   }
 
   const provider = new OpenAiProvider({ store });

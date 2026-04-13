@@ -10,7 +10,7 @@ import { runCli } from "../src/main.ts";
 test("runCli delegates the login command", async () => {
   const output = await runCli(["login"], {
     login: async () => "delegated login",
-    chat: async () => "delegated chat",
+    start: async () => "delegated start",
   });
 
   expect(output).toBe("delegated login");
@@ -19,19 +19,28 @@ test("runCli delegates the login command", async () => {
 test("runCli returns usage for unknown commands", async () => {
   const output = await runCli(["unknown"], {
     login: async () => "delegated login",
-    chat: async () => "delegated chat",
+    start: async () => "delegated start",
   });
 
-  expect(output).toBe("Usage: buli <login|chat>");
+  expect(output).toBe("Usage: buli [login]");
 });
 
-test("runCli delegates the chat command", async () => {
-  const output = await runCli(["chat"], {
+test("runCli delegates the default command when no args are provided", async () => {
+  const output = await runCli([], {
     login: async () => "delegated login",
-    chat: async () => "delegated chat",
+    start: async () => "delegated start",
   });
 
-  expect(output).toBe("delegated chat");
+  expect(output).toBe("delegated start");
+});
+
+test("runCli returns usage for the removed chat alias", async () => {
+  const output = await runCli(["chat"], {
+    login: async () => "delegated login",
+    start: async () => "delegated start",
+  });
+
+  expect(output).toBe("Usage: buli [login]");
 });
 
 test("runChat returns a clean message when auth is missing", async () => {
@@ -55,7 +64,7 @@ test("runChat returns a clean message when stdin is not a TTY", async () => {
   });
 
   await expect(runChat({ store, stdin: { isTTY: false } })).resolves.toBe(
-    "Interactive chat requires a TTY. Run `buli chat` in a terminal.",
+    "Interactive chat requires a TTY. Run `buli` in a terminal.",
   );
 });
 
@@ -73,5 +82,5 @@ test("main prints usage for an unknown command", async () => {
     console.log = originalLog;
   }
 
-  expect(outputs).toEqual(["Usage: buli <login|chat>"]);
+  expect(outputs).toEqual(["Usage: buli [login]"]);
 });

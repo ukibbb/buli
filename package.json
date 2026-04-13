@@ -16,7 +16,7 @@
     "dev:cli": "bun --filter @buli/cli dev",
     "link:cli": "node scripts/link-cli.mjs",
     "login": "bun --filter @buli/cli login",
-    "chat": "bun --filter @buli/cli chat"
+    "start:cli": "bun --filter @buli/cli start"
   },
   "devDependencies": {
     "@types/bun": "^1.3.3",
