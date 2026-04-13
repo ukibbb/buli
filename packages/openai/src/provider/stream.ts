@@ -102,7 +102,7 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
     const delta = TextDeltaChunkSchema.safeParse(value);
     if (delta.success) {
       yield ProviderStreamEventSchema.parse({
-        type: "text-delta",
+        type: "text_chunk",
         text: delta.data.delta,
       });
       continue;
@@ -112,7 +112,7 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
     if (finish.success) {
       finished = true;
       yield ProviderStreamEventSchema.parse({
-        type: "finish",
+        type: "completed",
         usage: normalizeOpenAiUsage(finish.data.response.usage),
       });
     }

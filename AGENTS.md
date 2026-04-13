@@ -35,3 +35,237 @@
 17. When making code testable, prefer small typed seams over monkeypatching or broad mock layers. For transaction-sensitive, ownership-sensitive, and persistence-heavy behavior, prove the behavior with real integration tests before adding more fake-heavy unit coverage.
 
 18. Prefer explicit, domain-revealing code over implicit or overloaded structures. When different concepts have different behavior or invariants, model them explicitly in names, types, and contracts instead of hiding them behind generic fields or ambiguous APIs. Keep generic structures only when the domain is truly uniform.
+
+**Readable Code Principles**
+
+1. Code should explain itself in the order it is read.
+2. Names should reveal intent, scope, and timing.
+3. Structure should mirror the real flow of the domain.
+4. State changes should be explicit and traceable.
+5. Different meanings should have different names and shapes.
+6. Public surfaces should be understandable without chasing definitions.
+7. Comments should explain reasons, constraints, and transitions.
+8. A reader should be able to answer: what is happening, why it is happening, what changes, when it changes, and what can happen next.
+
+19. Write code so a new reader can understand it on the first pass without hidden context. Optimize names for clarity, not brevity. Prefer longer names when they let the reader understand the code without chasing definitions across files.
+
+20. Prefer the language of the problem domain over the language of tools, layers, or implementation detail. Avoid vague names unless they are clearly qualified by their role in the domain.
+
+21. Names that are visible outside a small local scope should read like precise statements. A reader should understand what happens, to what, and within what boundary from the name alone.
+
+22. When something changes over time, represent its stages explicitly. The names and structures in the code should reveal what can happen first, next, and last, so the lifecycle is clear before the implementation is read in detail.
+
+23. Do not hide multiple behaviors behind one generic helper. If behavior changes based on mode, phase, or context, split it into separate explicit operations with separate names.
+
+24. Comments should explain why something exists, what constraint it satisfies, or how information changes over time. Do not use comments to repeat code that should have been made clearer through naming and structure.
+
+25. Name variables, fields, and properties so their scope, purpose, and lifecycle are obvious. A reader should be able to tell what part of the system they belong to, what they mean now, and how they are expected to change.
+
+26. Public interfaces, important helpers, and significant local variables should be understandable from the call site. If a reader must inspect multiple definitions just to understand a simple use, the design or naming is too vague.
+
+## Practical Naming Examples
+
+Use these examples as the default naming style for code in this repository. The goal is that a new reader can understand what a thing is, what part of the domain it belongs to, what state it is in, and what an operation does without chasing definitions.
+
+### Prefer domain names over technical names
+
+Prefer:
+- `invoiceDraft`
+- `publishedArticle`
+- `customerMembership`
+- `paymentRetrySchedule`
+- `warehouseStockReservation`
+
+Avoid:
+- `data`
+- `payload`
+- `manager`
+- `processor`
+- `handler`
+- `service`
+
+### Make lifecycle state explicit
+
+Prefer:
+- `pendingOrder`
+- `confirmedOrder`
+- `failedPaymentAttempt`
+- `activeSubscription`
+- `expiredSubscription`
+
+Avoid names that hide the stage when the stage affects behavior:
+- `order`
+- `payment`
+- `subscription`
+
+### Name operations by business outcome
+
+Prefer:
+- `confirmOrderPayment`
+- `markInvoiceAsOverdue`
+- `renewActiveSubscription`
+- `scheduleCatalogReindex`
+- `retryFailedWebhookDelivery`
+
+Avoid:
+- `handleOrder`
+- `processPayment`
+- `updateSubscription`
+- `runJob`
+- `execute`
+
+### Name boundaries by their real responsibility
+
+Prefer:
+- `CustomerAccountRepository`
+- `StripePaymentGateway`
+- `OrderCancellationPolicy`
+- `InvoiceReminderScheduler`
+- `CustomerDirectoryEntryMapper`
+
+Avoid broad role names unless they are genuinely precise in context:
+- `UserService`
+- `PaymentManager`
+- `OrderHelper`
+- `CommonUtils`
+
+### Collections should say what they contain
+
+Prefer:
+- `unpaidInvoices`
+- `eligibleDiscountCodes`
+- `failedWebhookDeliveries`
+- `warehouseRestockRequests`
+
+Avoid:
+- `items`
+- `list`
+- `results`
+- `data`
+
+### Boolean names should read like facts
+
+Prefer:
+- `isPaymentConfirmed`
+- `hasAcceptedTerms`
+- `canBeCancelled`
+- `shouldRetryDelivery`
+
+Avoid:
+- `processed`
+- `valid`
+- `active`
+- `flag`
+
+### Time values should name the event they refer to
+
+Prefer:
+- `paymentCapturedAt`
+- `subscriptionRenewsOn`
+- `passwordResetTokenExpiresAt`
+- `orderSubmittedAt`
+
+Avoid:
+- `date`
+- `time`
+- `timestamp`
+
+### IDs should say what they identify
+
+Prefer:
+- `invoiceId`
+- `customerAccountId`
+- `stripeCheckoutSessionId`
+- `warehouseLocationId`
+
+Avoid:
+- `id`
+- `externalId`
+
+### Error names should describe the violated rule or failed action
+
+Prefer:
+- `InvoiceAlreadyPaidError`
+- `SubscriptionRenewalWindowClosedError`
+- `WarehouseStockReservationConflictError`
+
+Avoid:
+- `ValidationError`
+- `BusinessError`
+- `OperationFailedError`
+
+### Test names should read like business rules
+
+Prefer:
+- `marks_invoice_as_overdue_when_due_date_passes`
+- `rejects_order_cancellation_after_fulfillment_starts`
+- `retries_webhook_delivery_when_provider_times_out`
+
+Avoid:
+- `should_work`
+- `handles_payment`
+- `updates_correctly`
+
+### Prefer explicit names at the call site
+
+Avoid vague signatures like:
+
+```text
+process(order, data)
+```
+
+Prefer names that explain the action and the inputs:
+
+```text
+confirmOrderPayment(pendingOrder, paymentConfirmation)
+```
+
+### Simple naming templates
+
+For important nouns, prefer:
+
+```text
+[domain] + [thing] + [state or role]
+```
+
+Examples:
+- `invoiceReminderSchedule`
+- `customerOnboardingSession`
+- `failedPaymentAttempt`
+- `warehouseStockReservation`
+- `subscriptionRenewalPolicy`
+
+For important operations, prefer:
+
+```text
+[verb] + [domain object] + [business outcome]
+```
+
+Examples:
+- `cancelUnpaidOrder`
+- `renewActiveSubscription`
+- `publishApprovedArticle`
+- `captureAuthorizedPayment`
+
+### Quick smell check
+
+If a name contains one of these words, it is probably too vague unless the surrounding context makes it precise:
+
+- `data`
+- `info`
+- `value`
+- `item`
+- `manager`
+- `helper`
+- `processor`
+- `handler`
+- `service`
+- `util`
+- `common`
+
+When a name feels vague, rewrite it by answering four questions:
+
+1. What exact thing is this?
+2. What part of the domain does it belong to?
+3. What state or lifecycle stage is it in?
+4. What business action or boundary does it represent?

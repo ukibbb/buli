@@ -1,13 +1,18 @@
 import { expect, test } from "bun:test";
-import type { TurnProvider } from "../src/index.ts";
-import { AgentRuntime } from "../src/index.ts";
+import type { AssistantResponseProvider, AssistantResponseRequest } from "../src/index.ts";
+import { AssistantResponseRuntime } from "../src/index.ts";
 
-class FakeProvider implements TurnProvider {
-  async *streamTurn(): AsyncGenerator<{ type: "text-delta"; text: string } | { type: "finish"; usage: { total: number; input: number; output: number; reasoning: number; cache: { read: number; write: number } } }> {
-    yield { type: "text-delta", text: "Hello" };
-    yield { type: "text-delta", text: " world" };
+class FakeProvider implements AssistantResponseProvider {
+  lastRequest: AssistantResponseRequest | undefined;
+
+  async *streamAssistantResponse(
+    input: AssistantResponseRequest,
+  ): AsyncGenerator<{ type: "text_chunk"; text: string } | { type: "completed"; usage: { total: number; input: number; output: number; reasoning: number; cache: { read: number; write: number } } }> {
+    this.lastRequest = input;
+    yield { type: "text_chunk", text: "Hello" };
+    yield { type: "text_chunk", text: " world" };
     yield {
-      type: "finish",
+      type: "completed",
       usage: {
         total: 180,
         input: 100,
@@ -19,29 +24,37 @@ class FakeProvider implements TurnProvider {
   }
 }
 
-class BrokenProvider implements TurnProvider {
-  async *streamTurn(): AsyncGenerator<never> {
+class BrokenProvider implements AssistantResponseProvider {
+  async *streamAssistantResponse(): AsyncGenerator<{ type: "text_chunk"; text: string } | { type: "completed"; usage: { total: number; input: number; output: number; reasoning: number; cache: { read: number; write: number } } }> {
     throw new Error("provider failed");
   }
 }
 
-test("AgentRuntime emits started delta and finished events", async () => {
-  const runtime = new AgentRuntime(new FakeProvider());
+test("AssistantResponseRuntime emits started chunk and completed events", async () => {
+  const provider = new FakeProvider();
+  const runtime = new AssistantResponseRuntime(provider);
   const events = [];
 
-  for await (const event of runtime.runTurn({
-    prompt: "Say hello",
-    model: "gpt-5.4",
+  for await (const event of runtime.streamAssistantResponse({
+    promptText: "Say hello",
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "high",
   })) {
     events.push(event);
   }
 
+  expect(provider.lastRequest).toEqual({
+    promptText: "Say hello",
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "high",
+  });
+
   expect(events).toEqual([
-    { type: "assistant_stream_started", model: "gpt-5.4" },
-    { type: "assistant_text_delta", text: "Hello" },
-    { type: "assistant_text_delta", text: " world" },
+    { type: "assistant_response_started", model: "gpt-5.4" },
+    { type: "assistant_response_text_chunk", text: "Hello" },
+    { type: "assistant_response_text_chunk", text: " world" },
     {
-      type: "assistant_stream_finished",
+      type: "assistant_response_completed",
       message: {
         id: expect.any(String),
         role: "assistant",
@@ -58,19 +71,19 @@ test("AgentRuntime emits started delta and finished events", async () => {
   ]);
 });
 
-test("AgentRuntime emits a failure event when the provider throws", async () => {
-  const runtime = new AgentRuntime(new BrokenProvider());
+test("AssistantResponseRuntime emits a failure event when the provider throws", async () => {
+  const runtime = new AssistantResponseRuntime(new BrokenProvider());
   const events = [];
 
-  for await (const event of runtime.runTurn({
-    prompt: "Say hello",
-    model: "gpt-5.4",
+  for await (const event of runtime.streamAssistantResponse({
+    promptText: "Say hello",
+    selectedModelId: "gpt-5.4",
   })) {
     events.push(event);
   }
 
   expect(events).toEqual([
-    { type: "assistant_stream_started", model: "gpt-5.4" },
-    { type: "assistant_stream_failed", error: "provider failed" },
+    { type: "assistant_response_started", model: "gpt-5.4" },
+    { type: "assistant_response_failed", error: "provider failed" },
   ]);
 });

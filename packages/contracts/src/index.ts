@@ -1,28 +1,32 @@
 export {
-  AssistantStreamFailedEventSchema,
-  AssistantStreamFinishedEventSchema,
-  AssistantStreamStartedEventSchema,
-  AssistantTextDeltaEventSchema,
-  TurnEventSchema,
+  AssistantResponseCompletedEventSchema,
+  AssistantResponseEventSchema,
+  AssistantResponseFailedEventSchema,
+  AssistantResponseStartedEventSchema,
+  AssistantResponseTextChunkEventSchema,
 } from "./events.ts";
 export type {
-  AssistantStreamFailedEvent,
-  AssistantStreamFinishedEvent,
-  AssistantStreamStartedEvent,
-  AssistantTextDeltaEvent,
-  TurnEvent,
+  AssistantResponseCompletedEvent,
+  AssistantResponseEvent,
+  AssistantResponseFailedEvent,
+  AssistantResponseStartedEvent,
+  AssistantResponseTextChunkEvent,
 } from "./events.ts";
 export { MessageRoleSchema, TranscriptMessageSchema } from "./messages.ts";
 export type { MessageRole, TranscriptMessage } from "./messages.ts";
 export {
-  ProviderFinishEventSchema,
+  AvailableAssistantModelSchema,
+  ProviderCompletedEventSchema,
   ProviderStreamEventSchema,
-  ProviderTextDeltaEventSchema,
+  ProviderTextChunkEventSchema,
+  ReasoningEffortSchema,
   TokenUsageSchema,
 } from "./provider.ts";
 export type {
-  ProviderFinishEvent,
+  AvailableAssistantModel,
+  ProviderCompletedEvent,
   ProviderStreamEvent,
-  ProviderTextDeltaEvent,
+  ProviderTextChunkEvent,
+  ReasoningEffort,
   TokenUsage,
 } from "./provider.ts";

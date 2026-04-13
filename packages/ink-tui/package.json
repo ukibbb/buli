@@ -11,7 +11,7 @@
   "dependencies": {
     "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
-    "ink": "^6.8.0",
+    "ink": "^7.0.0",
     "react": "^19.2.0"
   },
   "devDependencies": {

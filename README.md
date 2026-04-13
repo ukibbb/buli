@@ -2,7 +2,7 @@
 
 `buli` is a local-first, terminal-only coding agent built for one user: you.
 
-This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen Ink TUI, streamed GPT responses, and final input/output/reasoning token display in the status bar. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
+This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen terminal chat screen, streamed assistant responses, available model discovery, model and reasoning selection, and final input/output/reasoning token display in the status bar. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
 
 ## Current Status
 
@@ -10,12 +10,15 @@ V1 currently includes:
 
 - Bun workspace monorepo
 - OpenAI/ChatGPT browser OAuth
-- UI-agnostic engine runtime
-- OpenAI streaming adapter
-- Ink TUI with:
-  - `TranscriptPane`
-  - `ComposerPane`
-  - `StatusBar`
+- UI-agnostic assistant response engine
+- OpenAI assistant response adapter
+- Ink terminal chat UI with:
+  - `ConversationTranscriptPane`
+  - `PromptDraftPane`
+  - `ModelAndReasoningSelectionPane`
+  - `ChatSessionStatusBar`
+- provider-backed available model discovery
+- model selection and reasoning-effort selection
 - final `input`, `output`, and `reasoning` token display
 
 V1 intentionally does not include yet:
@@ -62,7 +65,9 @@ Then use the command normally from any directory:
 
 ```bash
 buli login
+buli models
 buli
+buli --model gpt-5.4 --reasoning high
 ```
 
 We use the source runner as the primary development workflow because every `buli`
@@ -89,19 +94,65 @@ If you do not want to register a global command yet, you can run the current sca
 bun install
 bun run login
 bun run start:cli
+bun run start:cli -- --model gpt-5.4 --reasoning high
 ```
 
 ## What You Can Do Today
 
 After logging in, you can:
 
-- open the fullscreen terminal UI
-- type a prompt
-- see your prompt in the transcript
-- watch GPT stream the response into the transcript
+- open the fullscreen terminal chat UI
+- type a prompt draft
+- submit the prompt draft and see your message appear in the conversation transcript immediately
+- watch the assistant response stream into the conversation transcript
+- press `Ctrl+L` to open model selection inside the TUI
+- choose a model and, when supported, choose a reasoning effort
+- list available models with `buli models`
+- scroll the fullscreen conversation transcript with `Up`, `Down`, `PageUp`, `PageDown`, `Home`, and `End`
+- start the app with a preselected model using `--model`
+- start the app with a preselected reasoning effort using `--reasoning`
 - see final input/output/reasoning token usage in the status bar
 
 If auth is missing, `buli` exits cleanly and tells you to run `buli login` first.
+
+## Model Selection
+
+You can inspect and change models in three ways:
+
+- `buli models` lists the available models from the authenticated OpenAI backend
+- `buli --model <id>` starts the terminal UI with a selected model already chosen
+- `buli --reasoning <none|minimal|low|medium|high|xhigh>` starts the terminal UI with a selected reasoning effort already chosen
+
+Inside the fullscreen terminal UI:
+
+- press `Ctrl+L` to open model selection
+- use the arrow keys to move the highlight
+- press `Enter` to confirm the highlighted choice
+- press `Esc` to close the selection flow
+
+If the selected model supports reasoning choices, the UI opens a second step so you can choose the reasoning effort for that model.
+
+## Fullscreen Mode
+
+Plain `buli` starts the terminal UI in Ink's alternate screen buffer.
+
+That means:
+
+- Buli takes over the visible terminal screen while it is running
+- your previous shell content is restored when Buli exits
+- scrollback is not available while the fullscreen session is active
+- transcript navigation happens inside the app instead of using terminal scrollback
+
+This is the default interactive experience.
+
+Inside the fullscreen session:
+
+- `Up` and `Down` scroll one row at a time
+- `PageUp` and `PageDown` scroll one viewport page at a time
+- `Home` jumps to the oldest visible transcript rows
+- `End` jumps back to the newest transcript rows
+
+When you are already at the bottom of the transcript, new streamed assistant text stays in view automatically. If you scroll upward to read older rows, new streamed text does not pull the viewport back down until you return to the bottom.
 
 ## Buildable CLI Workflow
 
@@ -156,13 +207,13 @@ export PATH="$(bun pm bin -g):$PATH"
 - `apps/cli`
   - composition root and CLI entrypoints
 - `packages/contracts`
-  - shared serializable types and schemas
+  - shared schemas for transcript messages, assistant response events, model metadata, and token usage
 - `packages/engine`
-  - UI-agnostic runtime orchestration
+  - UI-agnostic assistant response orchestration
 - `packages/openai`
-  - OAuth, token refresh, OpenAI transport, usage parsing
+  - OAuth, token refresh, OpenAI transport, available model discovery, usage parsing
 - `packages/ink-tui`
-  - Ink rendering and TUI state
+  - terminal chat screen rendering, alternate-screen integration, and chat screen state transitions
 
 ## Development Commands
 
@@ -200,5 +251,5 @@ bun run link:cli
 
 - `bun` is used for package management and workspaces.
 - The CLI/TUI runtime target is `Node 24`.
-- Exact token counts are provider-derived and reasoning tokens are shown after a completed assistant turn.
+- Exact token counts are provider-derived and reasoning tokens are shown after a completed assistant response.
 - The source-runner is the preferred development workflow because it avoids unnecessary rebuild steps while the product is still changing quickly, even when you launch `buli` from another directory.

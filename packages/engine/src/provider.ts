@@ -1,10 +1,11 @@
-import type { ProviderStreamEvent } from "@buli/contracts";
+import type { ProviderStreamEvent, ReasoningEffort } from "@buli/contracts";
 
-export type TurnInput = {
-  prompt: string;
-  model: string;
+export type AssistantResponseRequest = {
+  promptText: string;
+  selectedModelId: string;
+  selectedReasoningEffort?: ReasoningEffort;
 };
 
-export interface TurnProvider {
-  streamTurn(input: TurnInput): AsyncIterable<ProviderStreamEvent>;
+export interface AssistantResponseProvider {
+  streamAssistantResponse(input: AssistantResponseRequest): AsyncIterable<ProviderStreamEvent>;
 }

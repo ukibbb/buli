@@ -1,11 +1,13 @@
-import { AgentRuntime } from "@buli/engine";
-import { renderInkApp } from "@buli/ink-tui";
+import type { ReasoningEffort } from "@buli/contracts";
+import { AssistantResponseRuntime } from "@buli/engine";
+import { renderChatScreenInTerminal } from "@buli/ink-tui";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 
-const DEFAULT_MODEL = "gpt-5.4";
+const DEFAULT_MODEL_ID = "gpt-5.4";
 
-export async function runChat(input: {
-  model?: string;
+export async function runInteractiveChat(input: {
+  selectedModelId?: string;
+  selectedReasoningEffort?: ReasoningEffort;
   store?: OpenAiAuthStore;
   stdin?: Pick<NodeJS.ReadStream, "isTTY">;
 } = {}): Promise<string> {
@@ -21,13 +23,15 @@ export async function runChat(input: {
   }
 
   const provider = new OpenAiProvider({ store });
-  const runtime = new AgentRuntime(provider);
-  const app = renderInkApp({
-    auth: "ready",
-    model: input.model ?? DEFAULT_MODEL,
-    runtime,
+  const assistantResponseRunner = new AssistantResponseRuntime(provider);
+  const chatScreen = renderChatScreenInTerminal({
+    assistantResponseRunner,
+    authenticationState: "ready",
+    loadAvailableAssistantModels: () => provider.listAvailableAssistantModels(),
+    selectedModelId: input.selectedModelId ?? DEFAULT_MODEL_ID,
+    ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
   });
 
-  await app.waitUntilExit();
+  await chatScreen.waitUntilExit();
   return "";
 }

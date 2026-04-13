@@ -1,28 +1,28 @@
 import { randomUUID } from "node:crypto";
 import {
-  AssistantStreamFinishedEventSchema,
+  AssistantResponseCompletedEventSchema,
   TranscriptMessageSchema,
-  type AssistantStreamFinishedEvent,
+  type AssistantResponseCompletedEvent,
   type TokenUsage,
   type TranscriptMessage,
 } from "@buli/contracts";
 
-export function createAssistantMessage(text: string, id: string = randomUUID()): TranscriptMessage {
+export function createAssistantTranscriptMessage(assistantText: string, id: string = randomUUID()): TranscriptMessage {
   return TranscriptMessageSchema.parse({
     id,
     role: "assistant",
-    text,
+    text: assistantText,
   });
 }
 
-export function finishAssistantTurn(input: {
-  text: string;
+export function createCompletedAssistantResponseEvent(input: {
+  assistantText: string;
   usage: TokenUsage;
   id?: string;
-}): AssistantStreamFinishedEvent {
-  return AssistantStreamFinishedEventSchema.parse({
-    type: "assistant_stream_finished",
-    message: createAssistantMessage(input.text, input.id),
+}): AssistantResponseCompletedEvent {
+  return AssistantResponseCompletedEventSchema.parse({
+    type: "assistant_response_completed",
+    message: createAssistantTranscriptMessage(input.assistantText, input.id),
     usage: input.usage,
   });
 }

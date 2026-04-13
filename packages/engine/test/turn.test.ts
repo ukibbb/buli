@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { createAssistantMessage, finishAssistantTurn } from "../src/index.ts";
+import { createAssistantTranscriptMessage, createCompletedAssistantResponseEvent } from "../src/index.ts";
 
-test("createAssistantMessage always creates an assistant transcript message", () => {
-  const message = createAssistantMessage("Hello from the engine", "msg_1");
+test("createAssistantTranscriptMessage always creates an assistant transcript message", () => {
+  const message = createAssistantTranscriptMessage("Hello from the engine", "msg_1");
 
   expect(message).toEqual({
     id: "msg_1",
@@ -11,9 +11,9 @@ test("createAssistantMessage always creates an assistant transcript message", ()
   });
 });
 
-test("finishAssistantTurn wraps the assistant message and usage", () => {
-  const event = finishAssistantTurn({
-    text: "Done",
+test("createCompletedAssistantResponseEvent wraps the assistant message and usage", () => {
+  const event = createCompletedAssistantResponseEvent({
+    assistantText: "Done",
     id: "msg_2",
     usage: {
       total: 80,
@@ -25,7 +25,7 @@ test("finishAssistantTurn wraps the assistant message and usage", () => {
   });
 
   expect(event).toEqual({
-    type: "assistant_stream_finished",
+    type: "assistant_response_completed",
     message: {
       id: "msg_2",
       role: "assistant",

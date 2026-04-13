@@ -12,30 +12,32 @@ Assumption: when earlier notes said "rad code", that meant React code.
 
 ## Important Caveat
 
-- The local reference checkout and the runtime dependency are not the same thing today.
+- The local reference checkout and the runtime dependency are aligned today.
 - `tui/ink/package.json:3` says the local checkout is `7.0.0`.
-- `packages/ink-tui/package.json:14` says Buli currently depends on npm `ink` `^6.8.0`.
-- That means `tui/ink/` is excellent for understanding the architecture, but some details may differ from the version actually running in `packages/ink-tui`.
+- `packages/ink-tui/package.json:14` says Buli currently depends on npm `ink` `^7.0.0`.
+- That means `tui/ink/` is now a good reference for both architecture and the runtime features Buli can actually use, including `alternateScreen`, `useWindowSize`, and `useBoxMetrics`.
 
-This matters because long-term study and runtime behavior should eventually converge on one tracked source of truth.
+This is healthier than the earlier mismatch, but there is still a source-of-truth question long term because `tui/ink/` is an ignored checkout, not the tracked dependency source.
 
 ## Buli Today
 
 The current render path is:
 
-1. `apps/cli/src/commands/chat.ts:25-33` creates an `AgentRuntime` and calls `renderInkApp(...)`.
-2. `packages/ink-tui/src/index.ts:20-25` calls Ink's `render(...)` with Buli's `App`.
-3. `packages/ink-tui/src/App.tsx:16-67` renders a simple vertical layout made of:
-4. `packages/ink-tui/src/components/TranscriptPane.tsx:8-32`
-5. `packages/ink-tui/src/components/ComposerPane.tsx:8-11`
-6. `packages/ink-tui/src/components/StatusBar.tsx:24-35`
+1. `apps/cli/src/commands/chat.ts:25-33` creates an `AssistantResponseRuntime` and calls `renderChatScreenInTerminal(...)`.
+2. `packages/ink-tui/src/index.ts:38-58` calls Ink's `render(...)` with Buli's `ChatScreen`.
+3. `packages/ink-tui/src/ChatScreen.tsx` renders a fullscreen shell made of:
+4. `packages/ink-tui/src/components/ConversationTranscriptPane.tsx:8-32`
+5. `packages/ink-tui/src/components/PromptDraftPane.tsx`
+6. `packages/ink-tui/src/components/ChatSessionStatusBar.tsx`
 
-The current shell is intentionally minimal:
+The current shell is still early, but it now has a real fullscreen frame:
 
-- Transcript is plain lines with role prefixes.
-- Composer is `> value_`.
-- Status bar is one dim text line.
-- There is no full-screen viewport logic yet.
+- top application bar
+- main conversation body panel
+- prompt input dock
+- compact footer status strip
+- bordered message blocks for user, assistant, and error entries
+- fullscreen alternate-screen mode by default
 - There is no in-app scroll model yet.
 - There is no owned design system yet.
 
@@ -595,11 +597,22 @@ What alternate screen means:
 - scrollback is not available while the app is running in alternate screen
 - teardown-time output is intentionally treated as disposable
 
-For Buli, this is the right default if the product is meant to feel like a real terminal app rather than a one-shot inline CLI.
+For Buli, this is the right option when the product should feel like a real terminal app rather than a one-shot inline CLI.
 
 Important product consequence:
 
 - if scrollback is not available, the app needs its own viewport and history behavior
+
+Buli now owns a first transcript viewport layer directly inside `packages/ink-tui`.
+
+That means:
+
+- `Up` and `Down` scroll one row at a time
+- `PageUp` and `PageDown` scroll by one visible viewport page
+- `Home` jumps to the oldest visible rows
+- `End` jumps back to the newest visible rows
+- when the viewport is already following the newest rows, streamed assistant text stays pinned to the bottom
+- when the user scrolls upward, new streamed text does not yank the viewport back to the bottom
 
 ## Screen Reader Support
 
@@ -728,7 +741,7 @@ Because layout happens before terminal painting, a transform that changes size b
 
 This is expected terminal behavior, not an Ink bug.
 
-If Buli uses alternate-screen by default, it must own transcript navigation itself.
+If Buli uses alternate-screen mode for a session, it must own transcript navigation itself.
 
 ### 7. Basic Accessibility Only
 
@@ -806,16 +819,16 @@ Today Buli is using only a small fraction of what Ink can do.
 
 `packages/ink-tui` currently has:
 
-- a single column shell in `packages/ink-tui/src/App.tsx:58-67`
-- plain transcript lines in `packages/ink-tui/src/components/TranscriptPane.tsx:13-31`
-- a simple prompt line in `packages/ink-tui/src/components/ComposerPane.tsx:8-11`
-- a dim status line in `packages/ink-tui/src/components/StatusBar.tsx:24-35`
+- a fullscreen shell in `packages/ink-tui/src/ChatScreen.tsx`
+- bordered message blocks in `packages/ink-tui/src/components/ConversationTranscriptPane.tsx`
+- a dedicated prompt input dock in `packages/ink-tui/src/components/PromptDraftPane.tsx`
+- a compact footer status strip in `packages/ink-tui/src/components/ChatSessionStatusBar.tsx`
 
 That means the biggest current constraints are in the Buli app layer, not in Ink itself.
 
 ### What Buli Needs Next
 
-If Buli should be a full-screen alternate-screen app by default, the next product-level capabilities are:
+If Buli should feel like a fuller alternate-screen terminal application, the next product-level capabilities are:
 
 1. a real full-screen shell
 2. a transcript viewport with in-app scrolling
@@ -862,11 +875,11 @@ Read:
 
 1. `apps/cli/src/commands/chat.ts`
 2. `packages/ink-tui/src/index.ts`
-3. `packages/ink-tui/src/App.tsx`
-4. `packages/ink-tui/src/components/TranscriptPane.tsx`
-5. `packages/ink-tui/src/components/ComposerPane.tsx`
-6. `packages/ink-tui/src/components/StatusBar.tsx`
-7. `packages/ink-tui/src/state.ts`
+3. `packages/ink-tui/src/ChatScreen.tsx`
+4. `packages/ink-tui/src/components/ConversationTranscriptPane.tsx`
+5. `packages/ink-tui/src/components/PromptDraftPane.tsx`
+6. `packages/ink-tui/src/components/ChatSessionStatusBar.tsx`
+7. `packages/ink-tui/src/chatScreenState.ts`
 
 ### Pass 2: Read the Public Ink Model
 
@@ -1074,7 +1087,7 @@ These are renderer-level concerns and justify patching or forking Ink:
 
 ## Recommended Fork Strategy for Buli
 
-Because Buli wants to be a full-screen alternate-screen app by default, and because the team is willing to own the stack, the clean long-term strategy is:
+Because Buli now supports an optional alternate-screen fullscreen mode and the team is willing to own the stack, the clean long-term strategy is:
 
 1. keep `packages/ink-tui` as the Buli UI layer
 2. stop relying on an ignored checkout as the canonical place for runtime learning
@@ -1110,7 +1123,7 @@ Given the stated product direction, this is the recommendation.
 
 ### Product Direction
 
-- Buli should be a full-screen alternate-screen app by default.
+- Buli should use fullscreen alternate-screen mode by default.
 - Buli should treat Ink as the renderer, not the whole framework.
 - Buli should own the UI layer in `packages/ink-tui`.
 
@@ -1119,7 +1132,7 @@ Given the stated product direction, this is the recommendation.
 Short term:
 
 1. keep building on Ink
-2. make alternate-screen full-screen behavior the default
+2. keep alternate-screen fullscreen behavior as the default interactive mode
 3. build Buli's real shell, viewport, composer, and theme layer
 
 Medium term:
@@ -1136,8 +1149,8 @@ Long term:
 
 If implementation starts from here, the most sensible order is:
 
-1. make alternate-screen mode the default render behavior for Buli
-2. refactor `packages/ink-tui/src/App.tsx` into a true full-screen shell
+1. keep alternate-screen mode as the default render behavior for Buli
+2. refactor `packages/ink-tui/src/ChatScreen.tsx` into a true full-screen shell
 3. add a transcript viewport with explicit scrolling behavior
 4. replace the current prompt line with a real input component
 5. introduce owned visual primitives and theme tokens

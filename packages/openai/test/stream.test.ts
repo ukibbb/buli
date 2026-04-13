@@ -28,10 +28,10 @@ test("parseOpenAiStream yields text deltas and final usage", async () => {
   }
 
   expect(events).toEqual([
-    { type: "text-delta", text: "Hello" },
-    { type: "text-delta", text: " world" },
+    { type: "text_chunk", text: "Hello" },
+    { type: "text_chunk", text: " world" },
     {
-      type: "finish",
+      type: "completed",
       usage: {
         total: 180,
         input: 100,
@@ -62,9 +62,9 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
   }
 
   expect(events).toEqual([
-    { type: "text-delta", text: "Hello" },
+    { type: "text_chunk", text: "Hello" },
     {
-      type: "finish",
+      type: "completed",
       usage: {
         total: 15,
         input: 10,
@@ -76,7 +76,7 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
   ]);
 });
 
-test("OpenAiProvider sends auth headers and streams provider events", async () => {
+test("OpenAiProvider sends auth headers and streams assistant response provider events", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
@@ -125,9 +125,9 @@ test("OpenAiProvider sends auth headers and streams provider events", async () =
     });
 
     const events = [];
-    for await (const event of provider.streamTurn({
-      prompt: "Say hello",
-      model: "gpt-5.4",
+    for await (const event of provider.streamAssistantResponse({
+      promptText: "Say hello",
+      selectedModelId: "gpt-5.4",
     })) {
       events.push(event);
     }
@@ -153,9 +153,9 @@ test("OpenAiProvider sends auth headers and streams provider events", async () =
       stream: true,
     });
     expect(events).toEqual([
-      { type: "text-delta", text: "Hello from server" },
+      { type: "text_chunk", text: "Hello from server" },
       {
-        type: "finish",
+        type: "completed",
         usage: {
           total: 135,
           input: 80,
@@ -165,6 +165,89 @@ test("OpenAiProvider sends auth headers and streams provider events", async () =
         },
       },
     ]);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+});
+
+test("OpenAiProvider includes reasoning effort when one is selected", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+  });
+
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      requests.push(body);
+
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      });
+      response.write('data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\n\n');
+      response.end();
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("stream test server address unavailable");
+  }
+
+  try {
+    const provider = new OpenAiProvider({
+      endpoint: `http://127.0.0.1:${address.port}`,
+      store,
+    });
+
+    for await (const _event of provider.streamAssistantResponse({
+      promptText: "Think harder",
+      selectedModelId: "gpt-5.4",
+      selectedReasoningEffort: "high",
+    })) {
+      // Consume the stream to capture the request body.
+    }
+
+    expect(JSON.parse(requests[0] ?? "{}")).toEqual({
+      model: "gpt-5.4",
+      instructions: "You are buli, a local terminal coding assistant. Answer directly and concisely.",
+      store: false,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "Think harder",
+            },
+          ],
+        },
+      ],
+      reasoning: {
+        effort: "high",
+      },
+      stream: true,
+    });
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
@@ -212,9 +295,9 @@ test("OpenAiProvider includes backend error details when the request fails", asy
 
     await expect(
       (async () => {
-        for await (const _event of provider.streamTurn({
-          prompt: "Say hello",
-          model: "gpt-5.4",
+        for await (const _event of provider.streamAssistantResponse({
+          promptText: "Say hello",
+          selectedModelId: "gpt-5.4",
         })) {
           // This turn should fail before any events are emitted.
         }

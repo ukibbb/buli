@@ -1,14 +1,36 @@
 import { expect, test } from "bun:test";
-import { appendComposer, applyTurnEvent, backspaceComposer, createInitialState, submitPrompt } from "../src/index.ts";
+import {
+  appendTypedTextToPromptDraft,
+  applyAssistantResponseEventToChatScreenState,
+  confirmHighlightedModelSelection,
+  confirmHighlightedReasoningEffortChoice,
+  createInitialChatScreenState,
+  hideModelAndReasoningSelection,
+  moveHighlightedModelSelectionDown,
+  moveHighlightedReasoningEffortChoiceDown,
+  removeLastCharacterFromPromptDraft,
+  showAvailableAssistantModelsForSelection,
+  showModelSelectionLoadingError,
+  showModelSelectionLoadingState,
+  submitPromptDraft,
+} from "../src/index.ts";
 
-test("submitPrompt moves the app into streaming and appends the user message", () => {
-  const initial = appendComposer(createInitialState({ auth: "ready", model: "gpt-5.4" }), "Hello");
-  const submitted = submitPrompt(initial);
+test("submitPromptDraft starts streaming and appends the user message", () => {
+  const initial = appendTypedTextToPromptDraft(
+    createInitialChatScreenState({
+      authenticationState: "ready",
+      selectedModelId: "gpt-5.4",
+      selectedReasoningEffort: "high",
+    }),
+    "Hello",
+  );
+  const submitted = submitPromptDraft(initial);
 
-  expect(submitted.prompt).toBe("Hello");
-  expect(submitted.state.runtime).toBe("streaming");
-  expect(submitted.state.composer).toBe("");
-  expect(submitted.state.transcript).toEqual([
+  expect(submitted.submittedPromptText).toBe("Hello");
+  expect(submitted.nextChatScreenState.assistantResponseStatus).toBe("streaming_assistant_response");
+  expect(submitted.nextChatScreenState.promptDraft).toBe("");
+  expect(submitted.nextChatScreenState.selectedReasoningEffort).toBe("high");
+  expect(submitted.nextChatScreenState.conversationTranscript).toEqual([
     {
       kind: "message",
       message: {
@@ -20,20 +42,26 @@ test("submitPrompt moves the app into streaming and appends the user message", (
   ]);
 });
 
-test("backspaceComposer removes one character", () => {
-  const state = appendComposer(createInitialState({ auth: "ready", model: "gpt-5.4" }), "Hello");
+test("removeLastCharacterFromPromptDraft removes one character", () => {
+  const state = appendTypedTextToPromptDraft(
+    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    "Hello",
+  );
 
-  expect(backspaceComposer(state).composer).toBe("Hell");
+  expect(removeLastCharacterFromPromptDraft(state).promptDraft).toBe("Hell");
 });
 
-test("applyTurnEvent appends assistant deltas and stores final token usage", () => {
-  let state = appendComposer(createInitialState({ auth: "ready", model: "gpt-5.4" }), "Hello");
-  state = submitPrompt(state).state;
-  state = applyTurnEvent(state, { type: "assistant_stream_started", model: "gpt-5.4" });
-  state = applyTurnEvent(state, { type: "assistant_text_delta", text: "Hi" });
-  state = applyTurnEvent(state, { type: "assistant_text_delta", text: " there" });
-  state = applyTurnEvent(state, {
-    type: "assistant_stream_finished",
+test("applyAssistantResponseEventToChatScreenState appends text chunks and stores final token usage", () => {
+  let state = appendTypedTextToPromptDraft(
+    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    "Hello",
+  );
+  state = submitPromptDraft(state).nextChatScreenState;
+  state = applyAssistantResponseEventToChatScreenState(state, { type: "assistant_response_started", model: "gpt-5.4" });
+  state = applyAssistantResponseEventToChatScreenState(state, { type: "assistant_response_text_chunk", text: "Hi" });
+  state = applyAssistantResponseEventToChatScreenState(state, { type: "assistant_response_text_chunk", text: " there" });
+  state = applyAssistantResponseEventToChatScreenState(state, {
+    type: "assistant_response_completed",
     message: {
       id: "assistant-1",
       role: "assistant",
@@ -48,9 +76,9 @@ test("applyTurnEvent appends assistant deltas and stores final token usage", () 
     },
   });
 
-  expect(state.runtime).toBe("idle");
-  expect(state.usage?.reasoning).toBe(10);
-  expect(state.transcript.at(-1)).toEqual({
+  expect(state.assistantResponseStatus).toBe("waiting_for_user_input");
+  expect(state.latestTokenUsage?.reasoning).toBe(10);
+  expect(state.conversationTranscript.at(-1)).toEqual({
     kind: "message",
     message: {
       id: "assistant-1",
@@ -60,25 +88,204 @@ test("applyTurnEvent appends assistant deltas and stores final token usage", () 
   });
 });
 
-test("submitPrompt does nothing while a turn is already streaming", () => {
-  let state = appendComposer(createInitialState({ auth: "ready", model: "gpt-5.4" }), "Hello");
-  state = submitPrompt(state).state;
+test("showModelSelectionLoadingState marks the model selection as loading", () => {
+  const state = showModelSelectionLoadingState(
+    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+  );
 
-  const result = submitPrompt(state);
-
-  expect(result.prompt).toBeUndefined();
-  expect(result.state).toEqual(state);
+  expect(state.modelAndReasoningSelectionState).toEqual({ step: "loading_available_models" });
 });
 
-test("applyTurnEvent adds an error entry when the turn fails", () => {
-  let state = createInitialState({ auth: "ready", model: "gpt-5.4" });
-  state = applyTurnEvent(state, {
-    type: "assistant_stream_failed",
+test("showAvailableAssistantModelsForSelection highlights the current model", () => {
+  const state = showAvailableAssistantModelsForSelection(
+    showModelSelectionLoadingState(
+      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-4.1-mini" }),
+    ),
+    [
+    {
+      id: "gpt-5.4",
+      displayName: "GPT-5.4",
+      supportedReasoningEfforts: ["low", "high"],
+    },
+    {
+      id: "gpt-4.1-mini",
+      displayName: "gpt-4.1-mini",
+      supportedReasoningEfforts: [],
+    },
+    ],
+  );
+
+  expect(state.modelAndReasoningSelectionState).toEqual({
+    step: "showing_available_models",
+    availableModels: [
+      {
+        id: "gpt-5.4",
+        displayName: "GPT-5.4",
+        supportedReasoningEfforts: ["low", "high"],
+      },
+      {
+        id: "gpt-4.1-mini",
+        displayName: "gpt-4.1-mini",
+        supportedReasoningEfforts: [],
+      },
+    ],
+    highlightedModelIndex: 1,
+  });
+});
+
+test("moveHighlightedModelSelectionDown keeps the highlight inside the model list", () => {
+  const state = showAvailableAssistantModelsForSelection(
+    showModelSelectionLoadingState(
+      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    ),
+    [
+    {
+      id: "gpt-5.4",
+      displayName: "GPT-5.4",
+      supportedReasoningEfforts: [],
+    },
+    {
+      id: "gpt-4.1-mini",
+      displayName: "gpt-4.1-mini",
+      supportedReasoningEfforts: [],
+    },
+    ],
+  );
+
+  expect(moveHighlightedModelSelectionDown(moveHighlightedModelSelectionDown(state)).modelAndReasoningSelectionState).toEqual({
+    step: "showing_available_models",
+    availableModels: [
+      {
+        id: "gpt-5.4",
+        displayName: "GPT-5.4",
+        supportedReasoningEfforts: [],
+      },
+      {
+        id: "gpt-4.1-mini",
+        displayName: "gpt-4.1-mini",
+        supportedReasoningEfforts: [],
+      },
+    ],
+    highlightedModelIndex: 1,
+  });
+});
+
+test("confirmHighlightedModelSelection opens reasoning effort choices for models that support them", () => {
+  const state = showAvailableAssistantModelsForSelection(
+    showModelSelectionLoadingState(
+      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    ),
+    [
+    {
+      id: "gpt-5.4",
+      displayName: "GPT-5.4",
+      defaultReasoningEffort: "medium",
+      supportedReasoningEfforts: ["low", "medium", "high"],
+    },
+    ],
+  );
+
+  expect(confirmHighlightedModelSelection(state).modelAndReasoningSelectionState).toEqual({
+    step: "showing_reasoning_effort_choices",
+    selectedModel: {
+      id: "gpt-5.4",
+      displayName: "GPT-5.4",
+      defaultReasoningEffort: "medium",
+      supportedReasoningEfforts: ["low", "medium", "high"],
+    },
+    availableReasoningEffortChoices: [
+      { displayLabel: "Use model default (medium)", reasoningEffort: undefined },
+      { displayLabel: "low", reasoningEffort: "low" },
+      { displayLabel: "medium", reasoningEffort: "medium" },
+      { displayLabel: "high", reasoningEffort: "high" },
+    ],
+    highlightedReasoningEffortChoiceIndex: 0,
+  });
+});
+
+test("confirmHighlightedReasoningEffortChoice stores the chosen reasoning effort and hides the selection", () => {
+  let state = showAvailableAssistantModelsForSelection(
+    showModelSelectionLoadingState(
+      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    ),
+    [
+    {
+      id: "gpt-5.4",
+      displayName: "GPT-5.4",
+      supportedReasoningEfforts: ["low", "high"],
+    },
+    ],
+  );
+  state = confirmHighlightedModelSelection(state);
+  state = moveHighlightedReasoningEffortChoiceDown(moveHighlightedReasoningEffortChoiceDown(state));
+  state = confirmHighlightedReasoningEffortChoice(state);
+
+  expect(state.selectedModelId).toBe("gpt-5.4");
+  expect(state.selectedReasoningEffort).toBe("high");
+  expect(state.modelAndReasoningSelectionState).toEqual({ step: "hidden" });
+});
+
+test("confirmHighlightedModelSelection switches model immediately when it has no reasoning choices", () => {
+  let state = createInitialChatScreenState({
+    authenticationState: "ready",
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "high",
+  });
+  state = showAvailableAssistantModelsForSelection(showModelSelectionLoadingState(state), [
+    {
+      id: "gpt-5.4",
+      displayName: "GPT-5.4",
+      supportedReasoningEfforts: ["low", "high"],
+    },
+    {
+      id: "gpt-4.1-mini",
+      displayName: "gpt-4.1-mini",
+      supportedReasoningEfforts: [],
+    },
+  ]);
+  state = moveHighlightedModelSelectionDown(state);
+  state = confirmHighlightedModelSelection(state);
+
+  expect(state.selectedModelId).toBe("gpt-4.1-mini");
+  expect(state.selectedReasoningEffort).toBeUndefined();
+  expect(state.modelAndReasoningSelectionState).toEqual({ step: "hidden" });
+});
+
+test("showModelSelectionLoadingError and hideModelAndReasoningSelection manage loading failures", () => {
+  const state = hideModelAndReasoningSelection(
+    showModelSelectionLoadingError(
+      showModelSelectionLoadingState(
+        createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+      ),
+      "network failed",
+    ),
+  );
+
+  expect(state.modelAndReasoningSelectionState).toEqual({ step: "hidden" });
+});
+
+test("submitPromptDraft does nothing while an assistant response is already streaming", () => {
+  let state = appendTypedTextToPromptDraft(
+    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    "Hello",
+  );
+  state = submitPromptDraft(state).nextChatScreenState;
+
+  const result = submitPromptDraft(state);
+
+  expect(result.submittedPromptText).toBeUndefined();
+  expect(result.nextChatScreenState).toEqual(state);
+});
+
+test("applyAssistantResponseEventToChatScreenState adds an error entry when the response fails", () => {
+  let state = createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" });
+  state = applyAssistantResponseEventToChatScreenState(state, {
+    type: "assistant_response_failed",
     error: "provider failed",
   });
 
-  expect(state.runtime).toBe("error");
-  expect(state.transcript).toEqual([
+  expect(state.assistantResponseStatus).toBe("assistant_response_failed");
+  expect(state.conversationTranscript).toEqual([
     {
       kind: "error",
       text: "provider failed",

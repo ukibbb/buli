@@ -1,58 +1,59 @@
 import {
-  AssistantStreamFailedEventSchema,
-  AssistantStreamStartedEventSchema,
-  AssistantTextDeltaEventSchema,
-  type TurnEvent,
+  AssistantResponseFailedEventSchema,
+  AssistantResponseStartedEventSchema,
+  AssistantResponseTextChunkEventSchema,
+  type AssistantResponseEvent,
 } from "@buli/contracts";
-import type { TurnInput, TurnProvider } from "./provider.ts";
-import { finishAssistantTurn } from "./turn.ts";
+import type { AssistantResponseRequest, AssistantResponseProvider } from "./provider.ts";
+import { createCompletedAssistantResponseEvent } from "./turn.ts";
 
-export interface TurnRunner {
-  runTurn(input: TurnInput): AsyncIterable<TurnEvent>;
+export interface AssistantResponseRunner {
+  streamAssistantResponse(input: AssistantResponseRequest): AsyncIterable<AssistantResponseEvent>;
 }
 
-export class AgentRuntime implements TurnRunner {
-  readonly provider: TurnProvider;
+export class AssistantResponseRuntime implements AssistantResponseRunner {
+  readonly provider: AssistantResponseProvider;
 
-  constructor(provider: TurnProvider) {
+  constructor(provider: AssistantResponseProvider) {
     this.provider = provider;
   }
 
-  async *runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
-    // The runtime only speaks in neutral turn events. That keeps the engine
-    // usable without Ink and makes the provider boundary easy to test directly.
-    yield AssistantStreamStartedEventSchema.parse({
-      type: "assistant_stream_started",
-      model: input.model,
+  async *streamAssistantResponse(input: AssistantResponseRequest): AsyncGenerator<AssistantResponseEvent> {
+    // The runtime converts provider-specific stream updates into neutral
+    // assistant-response events. That keeps the engine usable without Ink
+    // and keeps the provider boundary simple to test.
+    yield AssistantResponseStartedEventSchema.parse({
+      type: "assistant_response_started",
+      model: input.selectedModelId,
     });
 
-    let text = "";
+    let streamedAssistantText = "";
 
     try {
-      for await (const event of this.provider.streamTurn(input)) {
-        if (event.type === "text-delta") {
-          text += event.text;
-          yield AssistantTextDeltaEventSchema.parse({
-            type: "assistant_text_delta",
+      for await (const event of this.provider.streamAssistantResponse(input)) {
+        if (event.type === "text_chunk") {
+          streamedAssistantText += event.text;
+          yield AssistantResponseTextChunkEventSchema.parse({
+            type: "assistant_response_text_chunk",
             text: event.text,
           });
           continue;
         }
 
-        yield finishAssistantTurn({
-          text,
+        yield createCompletedAssistantResponseEvent({
+          assistantText: streamedAssistantText,
           usage: event.usage,
         });
         return;
       }
 
-      yield AssistantStreamFailedEventSchema.parse({
-        type: "assistant_stream_failed",
+      yield AssistantResponseFailedEventSchema.parse({
+        type: "assistant_response_failed",
         error: "Provider stream ended before completion",
       });
     } catch (error) {
-      yield AssistantStreamFailedEventSchema.parse({
-        type: "assistant_stream_failed",
+      yield AssistantResponseFailedEventSchema.parse({
+        type: "assistant_response_failed",
         error: error instanceof Error ? error.message : String(error),
       });
     }

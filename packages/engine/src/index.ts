@@ -1,4 +1,4 @@
-export { AgentRuntime } from "./runtime.ts";
-export { createAssistantMessage, finishAssistantTurn } from "./turn.ts";
-export type { TurnInput, TurnProvider } from "./provider.ts";
-export type { TurnRunner } from "./runtime.ts";
+export { AssistantResponseRuntime } from "./runtime.ts";
+export { createAssistantTranscriptMessage, createCompletedAssistantResponseEvent } from "./turn.ts";
+export type { AssistantResponseRequest, AssistantResponseProvider } from "./provider.ts";
+export type { AssistantResponseRunner } from "./runtime.ts";
