@@ -1,4 +1,7 @@
 export {
+  AssistantReasoningSummaryCompletedEventSchema,
+  AssistantReasoningSummaryStartedEventSchema,
+  AssistantReasoningSummaryTextChunkEventSchema,
   AssistantResponseCompletedEventSchema,
   AssistantResponseEventSchema,
   AssistantResponseFailedEventSchema,
@@ -6,6 +9,9 @@ export {
   AssistantResponseTextChunkEventSchema,
 } from "./events.ts";
 export type {
+  AssistantReasoningSummaryCompletedEvent,
+  AssistantReasoningSummaryStartedEvent,
+  AssistantReasoningSummaryTextChunkEvent,
   AssistantResponseCompletedEvent,
   AssistantResponseEvent,
   AssistantResponseFailedEvent,

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import {
+  AssistantReasoningSummaryCompletedEventSchema,
+  AssistantReasoningSummaryStartedEventSchema,
+  AssistantReasoningSummaryTextChunkEventSchema,
   AssistantResponseEventSchema,
   AvailableAssistantModelSchema,
   ProviderCompletedEventSchema,
@@ -101,4 +104,54 @@ test("AssistantResponseEventSchema parses a completed assistant response", () =>
 
   expect(event.message.role).toBe("assistant");
   expect(event.usage.reasoning).toBe(10);
+});
+
+test("AssistantReasoningSummaryStartedEventSchema parses a started event", () => {
+  const event = AssistantReasoningSummaryStartedEventSchema.parse({
+    type: "assistant_reasoning_summary_started",
+  });
+  expect(event.type).toBe("assistant_reasoning_summary_started");
+});
+
+test("AssistantReasoningSummaryTextChunkEventSchema parses a text chunk event", () => {
+  const event = AssistantReasoningSummaryTextChunkEventSchema.parse({
+    type: "assistant_reasoning_summary_text_chunk",
+    text: "thinking about neo4j…",
+  });
+  expect(event.text).toBe("thinking about neo4j…");
+});
+
+test("AssistantReasoningSummaryCompletedEventSchema parses a completed event", () => {
+  const event = AssistantReasoningSummaryCompletedEventSchema.parse({
+    type: "assistant_reasoning_summary_completed",
+    reasoningDurationMs: 3200,
+  });
+  expect(event.reasoningDurationMs).toBe(3200);
+});
+
+test("AssistantReasoningSummaryCompletedEventSchema rejects a negative duration", () => {
+  expect(() =>
+    AssistantReasoningSummaryCompletedEventSchema.parse({
+      type: "assistant_reasoning_summary_completed",
+      reasoningDurationMs: -1,
+    }),
+  ).toThrow();
+});
+
+test("AssistantResponseEventSchema accepts the three new reasoning summary arms", () => {
+  expect(
+    AssistantResponseEventSchema.parse({ type: "assistant_reasoning_summary_started" }).type,
+  ).toBe("assistant_reasoning_summary_started");
+  expect(
+    AssistantResponseEventSchema.parse({
+      type: "assistant_reasoning_summary_text_chunk",
+      text: "x",
+    }).type,
+  ).toBe("assistant_reasoning_summary_text_chunk");
+  expect(
+    AssistantResponseEventSchema.parse({
+      type: "assistant_reasoning_summary_completed",
+      reasoningDurationMs: 0,
+    }).type,
+  ).toBe("assistant_reasoning_summary_completed");
 });
