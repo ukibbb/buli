@@ -64,6 +64,39 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
       );
     }
 
+    // Reasoning summary entries are rendered inline but are not yet wired to
+    // dedicated components — that happens in a later task. For now, render
+    // a minimal placeholder so the transcript stays coherent during the stream.
+    if (conversationTranscriptEntry.kind === "streaming_reasoning_summary") {
+      return (
+        <Box
+          flexDirection="column"
+          key={`streaming-reasoning-${conversationTranscriptEntry.reasoningSummaryId}`}
+          marginTop={index === 0 ? 0 : 1}
+          paddingX={1}
+        >
+          <Text color={chatScreenTheme.mutedTextColor}>
+            Thinking... {conversationTranscriptEntry.reasoningSummaryText}
+          </Text>
+        </Box>
+      );
+    }
+
+    if (conversationTranscriptEntry.kind === "completed_reasoning_summary") {
+      return (
+        <Box
+          flexDirection="column"
+          key={`completed-reasoning-${conversationTranscriptEntry.reasoningSummaryId}`}
+          marginTop={index === 0 ? 0 : 1}
+          paddingX={1}
+        >
+          <Text color={chatScreenTheme.mutedTextColor}>
+            Thought for {conversationTranscriptEntry.reasoningDurationMs}ms
+          </Text>
+        </Box>
+      );
+    }
+
     const speakerLabel = conversationTranscriptEntry.message.role === "user" ? "You" : "Assistant";
     const messageAccentColor =
       conversationTranscriptEntry.message.role === "user"

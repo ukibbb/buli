@@ -40,6 +40,13 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
           continue;
         }
 
+        // Reasoning summary provider events are not yet translated to
+        // assistant-level events in this runtime — that wiring lands in Task 6.
+        // Skip them for now so the completed event is still emitted correctly.
+        if (event.type !== "completed") {
+          continue;
+        }
+
         yield createCompletedAssistantResponseEvent({
           assistantText: streamedAssistantText,
           usage: event.usage,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   type AssistantResponseEvent,
   type AvailableAssistantModel,
@@ -59,6 +60,19 @@ export type ConversationTranscriptEntry =
   | {
       kind: "error";
       text: string;
+    }
+  | {
+      kind: "streaming_reasoning_summary";
+      reasoningSummaryId: string;
+      reasoningSummaryText: string;
+      reasoningStartedAtMs: number;
+    }
+  | {
+      kind: "completed_reasoning_summary";
+      reasoningSummaryId: string;
+      reasoningSummaryText: string;
+      reasoningDurationMs: number;
+      reasoningTokenCount: number | undefined;
     };
 
 export type ChatScreenState = {
@@ -70,6 +84,7 @@ export type ChatScreenState = {
   latestTokenUsage: TokenUsage | undefined;
   conversationTranscript: ConversationTranscriptEntry[];
   streamingAssistantMessageId: string | undefined;
+  currentStreamingReasoningSummaryId: string | undefined;
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
 };
 
@@ -89,6 +104,7 @@ export function createInitialChatScreenState(input: {
     latestTokenUsage: undefined,
     conversationTranscript: [],
     streamingAssistantMessageId: undefined,
+    currentStreamingReasoningSummaryId: undefined,
     modelAndReasoningSelectionState: { step: "hidden" },
   };
 }
@@ -382,24 +398,22 @@ export function confirmHighlightedReasoningEffortChoice(chatScreenState: ChatScr
   };
 }
 
+// The reducer folds every AssistantResponseEvent kind into chat screen state.
+// Reasoning-summary events follow a three-stage lifecycle:
+//   assistant_reasoning_summary_started
+//     appends a streaming_reasoning_summary entry; reasoning begins
+//   assistant_reasoning_summary_text_chunk
+//     grows the streaming entry while the reasoning text arrives
+//   assistant_reasoning_summary_completed
+//     replaces the streaming entry with a completed_reasoning_summary entry;
+//     the token count is unknown at this point and is back-filled later
+// assistant_response_completed walks the transcript backward to the most
+// recent user message and patches reasoningTokenCount on every
+// completed_reasoning_summary in that range with usage.reasoning.
 export function applyAssistantResponseEventToChatScreenState(
   chatScreenState: ChatScreenState,
   assistantResponseEvent: AssistantResponseEvent,
 ): ChatScreenState {
-  // This function applies streamed assistant response events to the chat screen.
-  //
-  // assistant_response_started
-  //   marks the screen as actively streaming a response
-  //
-  // assistant_response_text_chunk
-  //   grows the temporary assistant message as text arrives
-  //
-  // assistant_response_completed
-  //   replaces the temporary assistant message with the final saved message
-  //   and stores the final token usage
-  //
-  // assistant_response_failed
-  //   stops streaming and adds an error entry to the transcript
   if (assistantResponseEvent.type === "assistant_response_started") {
     return {
       ...chatScreenState,
@@ -453,23 +467,23 @@ export function applyAssistantResponseEventToChatScreenState(
     const lastTranscriptEntry = chatScreenState.conversationTranscript.at(-1);
     // When the response is finished, replace the temporary streaming row
     // with the final assistant message so the transcript ends with one stable entry.
-    const nextConversationTranscript =
+    const nextConversationTranscriptWithAssistantMessage =
       lastTranscriptEntry?.kind === "message" &&
       lastTranscriptEntry.message.id === chatScreenState.streamingAssistantMessageId
         ? [
             ...chatScreenState.conversationTranscript.slice(0, -1),
-            {
-              kind: "message" as const,
-              message: assistantResponseEvent.message,
-            },
+            { kind: "message" as const, message: assistantResponseEvent.message },
           ]
         : [
             ...chatScreenState.conversationTranscript,
-            {
-              kind: "message" as const,
-              message: assistantResponseEvent.message,
-            },
+            { kind: "message" as const, message: assistantResponseEvent.message },
           ];
+
+    const reasoningTokenCount = assistantResponseEvent.usage.reasoning;
+    const nextConversationTranscript = backfillReasoningTokenCountInCurrentTurn(
+      nextConversationTranscriptWithAssistantMessage,
+      reasoningTokenCount,
+    );
 
     return {
       ...chatScreenState,
@@ -477,21 +491,132 @@ export function applyAssistantResponseEventToChatScreenState(
       latestTokenUsage: assistantResponseEvent.usage,
       conversationTranscript: nextConversationTranscript,
       streamingAssistantMessageId: undefined,
+      currentStreamingReasoningSummaryId: undefined,
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_reasoning_summary_started") {
+    const reasoningSummaryId = randomUUID();
+    return {
+      ...chatScreenState,
+      currentStreamingReasoningSummaryId: reasoningSummaryId,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "streaming_reasoning_summary",
+          reasoningSummaryId,
+          reasoningSummaryText: "",
+          reasoningStartedAtMs: Date.now(),
+        },
+      ],
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_reasoning_summary_text_chunk") {
+    const reasoningSummaryId = chatScreenState.currentStreamingReasoningSummaryId;
+    if (!reasoningSummaryId) {
+      return chatScreenState;
+    }
+    const entryIndex = chatScreenState.conversationTranscript.findIndex(
+      (conversationTranscriptEntry) =>
+        conversationTranscriptEntry.kind === "streaming_reasoning_summary" &&
+        conversationTranscriptEntry.reasoningSummaryId === reasoningSummaryId,
+    );
+    if (entryIndex === -1) {
+      return chatScreenState;
+    }
+    const existingStreamingEntry = chatScreenState.conversationTranscript[entryIndex];
+    if (!existingStreamingEntry || existingStreamingEntry.kind !== "streaming_reasoning_summary") {
+      return chatScreenState;
+    }
+    const grownStreamingEntry: ConversationTranscriptEntry = {
+      ...existingStreamingEntry,
+      reasoningSummaryText: existingStreamingEntry.reasoningSummaryText + assistantResponseEvent.text,
+    };
+    const nextConversationTranscript = [...chatScreenState.conversationTranscript];
+    nextConversationTranscript[entryIndex] = grownStreamingEntry;
+    return { ...chatScreenState, conversationTranscript: nextConversationTranscript };
+  }
+
+  if (assistantResponseEvent.type === "assistant_reasoning_summary_completed") {
+    const reasoningSummaryId = chatScreenState.currentStreamingReasoningSummaryId;
+    if (!reasoningSummaryId) {
+      return chatScreenState;
+    }
+    const entryIndex = chatScreenState.conversationTranscript.findIndex(
+      (conversationTranscriptEntry) =>
+        conversationTranscriptEntry.kind === "streaming_reasoning_summary" &&
+        conversationTranscriptEntry.reasoningSummaryId === reasoningSummaryId,
+    );
+    if (entryIndex === -1) {
+      return { ...chatScreenState, currentStreamingReasoningSummaryId: undefined };
+    }
+    const existingStreamingEntry = chatScreenState.conversationTranscript[entryIndex];
+    if (!existingStreamingEntry || existingStreamingEntry.kind !== "streaming_reasoning_summary") {
+      return chatScreenState;
+    }
+    const completedReasoningSummaryEntry: ConversationTranscriptEntry = {
+      kind: "completed_reasoning_summary",
+      reasoningSummaryId: existingStreamingEntry.reasoningSummaryId,
+      reasoningSummaryText: existingStreamingEntry.reasoningSummaryText,
+      reasoningDurationMs: assistantResponseEvent.reasoningDurationMs,
+      reasoningTokenCount: undefined,
+    };
+    const nextConversationTranscript = [...chatScreenState.conversationTranscript];
+    nextConversationTranscript[entryIndex] = completedReasoningSummaryEntry;
+    return {
+      ...chatScreenState,
+      conversationTranscript: nextConversationTranscript,
+      currentStreamingReasoningSummaryId: undefined,
     };
   }
 
   // A failed response does not remove the user's submitted message.
   // It adds an error entry after it so the screen still shows what happened.
-  return {
-    ...chatScreenState,
-    assistantResponseStatus: "assistant_response_failed",
-    streamingAssistantMessageId: undefined,
-    conversationTranscript: [
-      ...chatScreenState.conversationTranscript,
-      {
-        kind: "error",
-        text: assistantResponseEvent.error,
-      },
-    ],
-  };
+  if (assistantResponseEvent.type === "assistant_response_failed") {
+    return {
+      ...chatScreenState,
+      assistantResponseStatus: "assistant_response_failed",
+      streamingAssistantMessageId: undefined,
+      currentStreamingReasoningSummaryId: undefined,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        { kind: "error", text: assistantResponseEvent.error },
+      ],
+    };
+  }
+
+  // Exhaustiveness: if a new arm is added to AssistantResponseEvent without
+  // a matching branch above, TypeScript flags this line as a type error.
+  const unreachableAssistantResponseEvent: never = assistantResponseEvent;
+  return unreachableAssistantResponseEvent;
+}
+
+function backfillReasoningTokenCountInCurrentTurn(
+  conversationTranscript: ConversationTranscriptEntry[],
+  reasoningTokenCount: number,
+): ConversationTranscriptEntry[] {
+  // Walks the transcript backward to the most recent user message. Every
+  // completed_reasoning_summary entry between now and that user message
+  // belongs to the turn that just finished, so we patch its token count.
+  const nextConversationTranscript = [...conversationTranscript];
+  for (let index = nextConversationTranscript.length - 1; index >= 0; index -= 1) {
+    const conversationTranscriptEntry = nextConversationTranscript[index];
+    if (!conversationTranscriptEntry) {
+      continue;
+    }
+    if (
+      conversationTranscriptEntry.kind === "message" &&
+      conversationTranscriptEntry.message.role === "user"
+    ) {
+      break;
+    }
+    if (conversationTranscriptEntry.kind === "completed_reasoning_summary") {
+      nextConversationTranscript[index] = {
+        ...conversationTranscriptEntry,
+        reasoningTokenCount,
+      };
+    }
+  }
+  return nextConversationTranscript;
 }

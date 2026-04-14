@@ -292,3 +292,80 @@ test("applyAssistantResponseEventToChatScreenState adds an error entry when the 
     },
   ]);
 });
+
+// Helper — builds a state that already has a user prompt in flight and the
+// assistant turn marked as streaming, mimicking what happens right after
+// submitPromptDraft + assistant_response_started.
+function createStreamingTurnState() {
+  const initial = appendTypedTextToPromptDraft(
+    createInitialChatScreenState({
+      authenticationState: "ready",
+      selectedModelId: "gpt-5.4",
+    }),
+    "why is the sky blue",
+  );
+  const submitted = submitPromptDraft(initial);
+  return applyAssistantResponseEventToChatScreenState(submitted.nextChatScreenState, {
+    type: "assistant_response_started",
+    model: "gpt-5.4",
+  });
+}
+
+test("applyAssistantResponseEventToChatScreenState appends a streaming reasoning summary when reasoning starts", () => {
+  const next = applyAssistantResponseEventToChatScreenState(createStreamingTurnState(), {
+    type: "assistant_reasoning_summary_started",
+  });
+  const lastEntry = next.conversationTranscript.at(-1);
+  expect(lastEntry?.kind).toBe("streaming_reasoning_summary");
+  expect(next.currentStreamingReasoningSummaryId).toBeDefined();
+});
+
+test("applyAssistantResponseEventToChatScreenState grows the streaming reasoning summary as text chunks arrive", () => {
+  const started = applyAssistantResponseEventToChatScreenState(createStreamingTurnState(), {
+    type: "assistant_reasoning_summary_started",
+  });
+  const afterFirstChunk = applyAssistantResponseEventToChatScreenState(started, {
+    type: "assistant_reasoning_summary_text_chunk",
+    text: "Thinking",
+  });
+  const afterSecondChunk = applyAssistantResponseEventToChatScreenState(afterFirstChunk, {
+    type: "assistant_reasoning_summary_text_chunk",
+    text: " more.",
+  });
+  const lastEntry = afterSecondChunk.conversationTranscript.at(-1);
+  if (lastEntry?.kind !== "streaming_reasoning_summary") {
+    throw new Error("expected streaming_reasoning_summary");
+  }
+  expect(lastEntry.reasoningSummaryText).toBe("Thinking more.");
+});
+
+test("applyAssistantResponseEventToChatScreenState replaces streaming reasoning summary with completed reasoning summary on reasoning end", () => {
+  const started = applyAssistantResponseEventToChatScreenState(createStreamingTurnState(), {
+    type: "assistant_reasoning_summary_started",
+  });
+  const afterChunk = applyAssistantResponseEventToChatScreenState(started, {
+    type: "assistant_reasoning_summary_text_chunk",
+    text: "done thinking",
+  });
+  const afterCompletion = applyAssistantResponseEventToChatScreenState(afterChunk, {
+    type: "assistant_reasoning_summary_completed",
+    reasoningDurationMs: 2500,
+  });
+  const lastEntry = afterCompletion.conversationTranscript.at(-1);
+  if (lastEntry?.kind !== "completed_reasoning_summary") {
+    throw new Error("expected completed_reasoning_summary");
+  }
+  expect(lastEntry.reasoningDurationMs).toBe(2500);
+  expect(lastEntry.reasoningSummaryText).toBe("done thinking");
+  expect(lastEntry.reasoningTokenCount).toBeUndefined();
+  expect(afterCompletion.currentStreamingReasoningSummaryId).toBeUndefined();
+});
+
+test("applyAssistantResponseEventToChatScreenState ignores reasoning text chunks without a matching streaming id", () => {
+  const streaming = createStreamingTurnState();
+  const next = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_reasoning_summary_text_chunk",
+    text: "orphan",
+  });
+  expect(next).toBe(streaming);
+});
