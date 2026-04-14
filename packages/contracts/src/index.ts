@@ -23,6 +23,9 @@ export type { MessageRole, TranscriptMessage } from "./messages.ts";
 export {
   AvailableAssistantModelSchema,
   ProviderCompletedEventSchema,
+  ProviderReasoningSummaryCompletedEventSchema,
+  ProviderReasoningSummaryStartedEventSchema,
+  ProviderReasoningSummaryTextChunkEventSchema,
   ProviderStreamEventSchema,
   ProviderTextChunkEventSchema,
   ReasoningEffortSchema,
@@ -31,6 +34,9 @@ export {
 export type {
   AvailableAssistantModel,
   ProviderCompletedEvent,
+  ProviderReasoningSummaryCompletedEvent,
+  ProviderReasoningSummaryStartedEvent,
+  ProviderReasoningSummaryTextChunkEvent,
   ProviderStreamEvent,
   ProviderTextChunkEvent,
   ReasoningEffort,

@@ -163,3 +163,52 @@ test("AssistantResponseEventSchema accepts the three new reasoning summary arms"
     }).type,
   ).toBe("assistant_reasoning_summary_completed");
 });
+
+import {
+  ProviderReasoningSummaryStartedEventSchema,
+  ProviderReasoningSummaryTextChunkEventSchema,
+  ProviderReasoningSummaryCompletedEventSchema,
+  ProviderStreamEventSchema,
+} from "../src/index.ts";
+
+test("ProviderReasoningSummaryStartedEventSchema parses a started event", () => {
+  expect(
+    ProviderReasoningSummaryStartedEventSchema.parse({ type: "reasoning_summary_started" }).type,
+  ).toBe("reasoning_summary_started");
+});
+
+test("ProviderReasoningSummaryTextChunkEventSchema parses a text chunk event", () => {
+  expect(
+    ProviderReasoningSummaryTextChunkEventSchema.parse({
+      type: "reasoning_summary_text_chunk",
+      text: "abc",
+    }).text,
+  ).toBe("abc");
+});
+
+test("ProviderReasoningSummaryCompletedEventSchema parses a completed event", () => {
+  expect(
+    ProviderReasoningSummaryCompletedEventSchema.parse({
+      type: "reasoning_summary_completed",
+      reasoningDurationMs: 1200,
+    }).reasoningDurationMs,
+  ).toBe(1200);
+});
+
+test("ProviderStreamEventSchema accepts the three new reasoning arms", () => {
+  expect(
+    ProviderStreamEventSchema.parse({ type: "reasoning_summary_started" }).type,
+  ).toBe("reasoning_summary_started");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "reasoning_summary_text_chunk",
+      text: "x",
+    }).type,
+  ).toBe("reasoning_summary_text_chunk");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "reasoning_summary_completed",
+      reasoningDurationMs: 0,
+    }).type,
+  ).toBe("reasoning_summary_completed");
+});
