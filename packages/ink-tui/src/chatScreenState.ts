@@ -553,7 +553,7 @@ export function applyAssistantResponseEventToChatScreenState(
     }
     const existingStreamingEntry = chatScreenState.conversationTranscript[entryIndex];
     if (!existingStreamingEntry || existingStreamingEntry.kind !== "streaming_reasoning_summary") {
-      return chatScreenState;
+      return { ...chatScreenState, currentStreamingReasoningSummaryId: undefined };
     }
     const completedReasoningSummaryEntry: ConversationTranscriptEntry = {
       kind: "completed_reasoning_summary",

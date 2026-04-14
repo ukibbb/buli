@@ -65,7 +65,7 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
     }
 
     // Reasoning summary entries are rendered inline but are not yet wired to
-    // dedicated components — that happens in a later task. For now, render
+    // dedicated components — that happens in Task 16. For now, render
     // a minimal placeholder so the transcript stays coherent during the stream.
     if (conversationTranscriptEntry.kind === "streaming_reasoning_summary") {
       return (
