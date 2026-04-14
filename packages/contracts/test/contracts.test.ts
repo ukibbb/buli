@@ -6,6 +6,10 @@ import {
   AssistantResponseEventSchema,
   AvailableAssistantModelSchema,
   ProviderCompletedEventSchema,
+  ProviderReasoningSummaryCompletedEventSchema,
+  ProviderReasoningSummaryStartedEventSchema,
+  ProviderReasoningSummaryTextChunkEventSchema,
+  ProviderStreamEventSchema,
   ReasoningEffortSchema,
   TokenUsageSchema,
 } from "../src/index.ts";
@@ -164,13 +168,6 @@ test("AssistantResponseEventSchema accepts the three new reasoning summary arms"
   ).toBe("assistant_reasoning_summary_completed");
 });
 
-import {
-  ProviderReasoningSummaryStartedEventSchema,
-  ProviderReasoningSummaryTextChunkEventSchema,
-  ProviderReasoningSummaryCompletedEventSchema,
-  ProviderStreamEventSchema,
-} from "../src/index.ts";
-
 test("ProviderReasoningSummaryStartedEventSchema parses a started event", () => {
   expect(
     ProviderReasoningSummaryStartedEventSchema.parse({ type: "reasoning_summary_started" }).type,
@@ -186,6 +183,14 @@ test("ProviderReasoningSummaryTextChunkEventSchema parses a text chunk event", (
   ).toBe("abc");
 });
 
+test("ProviderReasoningSummaryTextChunkEventSchema rejects a chunk with missing text", () => {
+  expect(() =>
+    ProviderReasoningSummaryTextChunkEventSchema.parse({
+      type: "reasoning_summary_text_chunk",
+    }),
+  ).toThrow();
+});
+
 test("ProviderReasoningSummaryCompletedEventSchema parses a completed event", () => {
   expect(
     ProviderReasoningSummaryCompletedEventSchema.parse({
@@ -193,6 +198,15 @@ test("ProviderReasoningSummaryCompletedEventSchema parses a completed event", ()
       reasoningDurationMs: 1200,
     }).reasoningDurationMs,
   ).toBe(1200);
+});
+
+test("ProviderReasoningSummaryCompletedEventSchema rejects a negative duration", () => {
+  expect(() =>
+    ProviderReasoningSummaryCompletedEventSchema.parse({
+      type: "reasoning_summary_completed",
+      reasoningDurationMs: -1,
+    }),
+  ).toThrow();
 });
 
 test("ProviderStreamEventSchema accepts the three new reasoning arms", () => {
