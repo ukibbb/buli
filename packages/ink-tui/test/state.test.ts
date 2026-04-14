@@ -369,3 +369,41 @@ test("applyAssistantResponseEventToChatScreenState ignores reasoning text chunks
   });
   expect(next).toBe(streaming);
 });
+
+test("applyAssistantResponseEventToChatScreenState back-fills reasoning token count when assistant response completes", () => {
+  const streaming = createStreamingTurnState();
+  const afterReasoningStart = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_reasoning_summary_started",
+  });
+  const afterReasoningChunk = applyAssistantResponseEventToChatScreenState(afterReasoningStart, {
+    type: "assistant_reasoning_summary_text_chunk",
+    text: "hmm",
+  });
+  const afterReasoningCompleted = applyAssistantResponseEventToChatScreenState(afterReasoningChunk, {
+    type: "assistant_reasoning_summary_completed",
+    reasoningDurationMs: 1000,
+  });
+  const afterResponseCompleted = applyAssistantResponseEventToChatScreenState(afterReasoningCompleted, {
+    type: "assistant_response_completed",
+    message: {
+      id: "msg_final",
+      role: "assistant",
+      text: "because Rayleigh scattering",
+    },
+    usage: {
+      total: 100,
+      input: 40,
+      output: 20,
+      reasoning: 37,
+      cache: { read: 0, write: 0 },
+    },
+  });
+
+  const backfilledEntry = afterResponseCompleted.conversationTranscript.find(
+    (entry) => entry.kind === "completed_reasoning_summary",
+  );
+  if (backfilledEntry?.kind !== "completed_reasoning_summary") {
+    throw new Error("expected a completed_reasoning_summary");
+  }
+  expect(backfilledEntry.reasoningTokenCount).toBe(37);
+});
