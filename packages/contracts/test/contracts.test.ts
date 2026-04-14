@@ -121,6 +121,14 @@ test("AssistantReasoningSummaryTextChunkEventSchema parses a text chunk event", 
   expect(event.text).toBe("thinking about neo4j…");
 });
 
+test("AssistantReasoningSummaryTextChunkEventSchema rejects a chunk with missing text", () => {
+  expect(() =>
+    AssistantReasoningSummaryTextChunkEventSchema.parse({
+      type: "assistant_reasoning_summary_text_chunk",
+    }),
+  ).toThrow();
+});
+
 test("AssistantReasoningSummaryCompletedEventSchema parses a completed event", () => {
   const event = AssistantReasoningSummaryCompletedEventSchema.parse({
     type: "assistant_reasoning_summary_completed",
