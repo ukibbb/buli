@@ -8,6 +8,17 @@ const TextDeltaChunkSchema = z.object({
   delta: z.string(),
 });
 
+const ReasoningDeltaChunkSchema = z.object({
+  type: z.literal("response.reasoning_summary_text.delta"),
+  item_id: z.string(),
+  delta: z.string(),
+});
+
+const ReasoningDoneChunkSchema = z.object({
+  type: z.literal("response.reasoning_summary_text.done"),
+  item_id: z.string(),
+});
+
 const ErrorChunkSchema = z.object({
   type: z.literal("error"),
   message: z.string(),
@@ -80,12 +91,34 @@ async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<st
   }
 }
 
+// Reasoning summary timing is captured provider-side because the provider is
+// closest to the SSE clock. reasoning_summary_started is emitted once per
+// turn on the first reasoning delta. reasoning_summary_completed is emitted
+// exactly once, on the first non-reasoning event that arrives after reasoning
+// has started (output_text.delta or response.completed). Between consecutive
+// reasoning summary parts we inject a paragraph separator so the UI can
+// render them as one entry.
 export async function* parseOpenAiStream(response: Response): AsyncGenerator<ProviderStreamEvent> {
   if (!response.body) {
     throw new Error("OpenAI stream response body is missing");
   }
 
   let finished = false;
+  let reasoningStartedAtMs: number | undefined;
+  let hasEmittedReasoningStarted = false;
+  let hasSeenReasoningPartSeparator = false;
+
+  async function* emitPendingReasoningCompletedEvent(): AsyncGenerator<ProviderStreamEvent> {
+    if (hasEmittedReasoningStarted && reasoningStartedAtMs !== undefined) {
+      yield ProviderStreamEventSchema.parse({
+        type: "reasoning_summary_completed",
+        reasoningDurationMs: Math.max(0, Math.round(performance.now() - reasoningStartedAtMs)),
+      });
+      reasoningStartedAtMs = undefined;
+      hasEmittedReasoningStarted = false;
+      hasSeenReasoningPartSeparator = false;
+    }
+  }
 
   for await (const data of readSseData(response.body)) {
     if (data === "[DONE]") {
@@ -99,17 +132,46 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       throw new Error(error.data.message);
     }
 
-    const delta = TextDeltaChunkSchema.safeParse(value);
-    if (delta.success) {
+    const reasoningDelta = ReasoningDeltaChunkSchema.safeParse(value);
+    if (reasoningDelta.success) {
+      if (!hasEmittedReasoningStarted) {
+        reasoningStartedAtMs = performance.now();
+        hasEmittedReasoningStarted = true;
+        yield ProviderStreamEventSchema.parse({ type: "reasoning_summary_started" });
+      }
+      if (hasSeenReasoningPartSeparator) {
+        yield ProviderStreamEventSchema.parse({
+          type: "reasoning_summary_text_chunk",
+          text: "\n\n",
+        });
+        hasSeenReasoningPartSeparator = false;
+      }
+      yield ProviderStreamEventSchema.parse({
+        type: "reasoning_summary_text_chunk",
+        text: reasoningDelta.data.delta,
+      });
+      continue;
+    }
+
+    const reasoningDone = ReasoningDoneChunkSchema.safeParse(value);
+    if (reasoningDone.success) {
+      hasSeenReasoningPartSeparator = true;
+      continue;
+    }
+
+    const textDelta = TextDeltaChunkSchema.safeParse(value);
+    if (textDelta.success) {
+      yield* emitPendingReasoningCompletedEvent();
       yield ProviderStreamEventSchema.parse({
         type: "text_chunk",
-        text: delta.data.delta,
+        text: textDelta.data.delta,
       });
       continue;
     }
 
     const finish = ResponseFinishedChunkSchema.safeParse(value);
     if (finish.success) {
+      yield* emitPendingReasoningCompletedEvent();
       finished = true;
       yield ProviderStreamEventSchema.parse({
         type: "completed",

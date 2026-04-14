@@ -1,0 +1,16 @@
+data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"Thinking about "}
+
+data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"the problem."}
+
+data: {"type":"response.reasoning_summary_text.done","item_id":"rs_1"}
+
+data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_2","delta":"Second part."}
+
+data: {"type":"response.reasoning_summary_text.done","item_id":"rs_2"}
+
+data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Final answer."}
+
+data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5,"output_tokens_details":{"reasoning_tokens":2},"total_tokens":17}}}
+
+data: [DONE]
+

@@ -1,11 +1,19 @@
 import { expect, test } from "bun:test";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { OpenAiAuthStore } from "../src/auth/store.ts";
 import { OpenAiProvider } from "../src/provider/client.ts";
 import { parseOpenAiStream } from "../src/provider/stream.ts";
+
+function buildResponseWithSseFixture(fixtureFileName: string): Response {
+  const fixtureBytes = readFileSync(resolve(import.meta.dir, "fixtures", fixtureFileName));
+  return new Response(new Blob([fixtureBytes]).stream(), {
+    headers: { "content-type": "text/event-stream" },
+  });
+}
 
 test("parseOpenAiStream yields text deltas and final usage", async () => {
   const response = new Response(
@@ -260,6 +268,52 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
       });
     });
   }
+});
+
+test("parseOpenAiStream emits reasoning_summary_started before any reasoning_summary_text_chunk", async () => {
+  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
+  const emitted: string[] = [];
+  for await (const event of parseOpenAiStream(response)) {
+    emitted.push(event.type);
+  }
+  const startedIndex = emitted.indexOf("reasoning_summary_started");
+  const firstChunkIndex = emitted.indexOf("reasoning_summary_text_chunk");
+  expect(startedIndex).toBeGreaterThanOrEqual(0);
+  expect(firstChunkIndex).toBeGreaterThan(startedIndex);
+});
+
+test("parseOpenAiStream emits reasoning_summary_text_chunks in order across multiple parts with a paragraph separator between them", async () => {
+  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
+  const reasoningChunks: string[] = [];
+  for await (const event of parseOpenAiStream(response)) {
+    if (event.type === "reasoning_summary_text_chunk") {
+      reasoningChunks.push(event.text);
+    }
+  }
+  expect(reasoningChunks.join("")).toBe("Thinking about the problem.\n\nSecond part.");
+});
+
+test("parseOpenAiStream emits reasoning_summary_completed before the first text_chunk", async () => {
+  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
+  const emitted: string[] = [];
+  for await (const event of parseOpenAiStream(response)) {
+    emitted.push(event.type);
+  }
+  const completedIndex = emitted.indexOf("reasoning_summary_completed");
+  const firstTextChunkIndex = emitted.indexOf("text_chunk");
+  expect(completedIndex).toBeGreaterThanOrEqual(0);
+  expect(firstTextChunkIndex).toBeGreaterThan(completedIndex);
+});
+
+test("parseOpenAiStream emits a non-negative reasoning duration", async () => {
+  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
+  for await (const event of parseOpenAiStream(response)) {
+    if (event.type === "reasoning_summary_completed") {
+      expect(event.reasoningDurationMs).toBeGreaterThanOrEqual(0);
+      return;
+    }
+  }
+  throw new Error("expected a reasoning_summary_completed event");
 });
 
 test("OpenAiProvider includes backend error details when the request fails", async () => {
