@@ -105,10 +105,7 @@ test("InputPanel renders a cursor indicator when prompt input is enabled", () =>
       contextWindowTokenCapacity={undefined}
     />,
   );
-  const hasCursor = output.includes("█") || output.includes(" ");
-  expect(hasCursor).toBe(true);
-  // The enabled prompt line contains "hello" — the cursor follows it.
-  expect(output).toContain("hello");
+  expect(output).toContain("hello█");
 });
 
 test("InputPanel does not render a block cursor when prompt input is disabled", () => {
@@ -157,4 +154,27 @@ test("InputPanel shows the snake animation only while assistant response is stre
   );
   expect(streamingOutput).toMatch(/▰|●/);
   expect(idleOutput).not.toMatch(/▰/);
+});
+
+test("InputPanel centers the prompt row between header and footer", () => {
+  const output = renderWithoutAnsi(
+    <InputPanel
+      promptDraft=""
+      isPromptInputDisabled={false}
+      promptInputHintText="[ ? ] help · shortcuts"
+      modeLabel="implementation"
+      modelIdentifier="gpt-5.4"
+      reasoningEffortLabel="default"
+      assistantResponseStatus="waiting_for_user_input"
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
+    />,
+  );
+
+  const renderedLines = output.split("\n");
+  const promptLineIndex = renderedLines.findIndex((renderedLine) => renderedLine.includes("│  > "));
+
+  expect(promptLineIndex).toBeGreaterThan(0);
+  expect(renderedLines[promptLineIndex - 1]).toMatch(/^│\s+│$/);
+  expect(renderedLines[promptLineIndex + 1]).toMatch(/^│\s+│$/);
 });

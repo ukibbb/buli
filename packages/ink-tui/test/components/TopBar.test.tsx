@@ -8,27 +8,14 @@ function renderWithoutAnsi(node: React.ReactElement) {
   return stripVTControlCharacters(renderToString(node));
 }
 
-test("TopBar renders the working directory path in the left slot", () => {
-  const output = renderWithoutAnsi(
-    <TopBar
-      workingDirectoryPath="~/workspace/novibe/apps/api"
-      modeLabel="implementation"
-      modelIdentifier="opus-4.6"
-      reasoningEffortLabel="high"
-    />,
-  );
+test("TopBar renders the working directory path as the sole status indicator", () => {
+  const output = renderWithoutAnsi(<TopBar workingDirectoryPath="~/workspace/novibe/apps/api" />);
   expect(output).toContain("~/workspace/novibe/apps/api");
 });
 
-test("TopBar renders mode and model chips in the right slot", () => {
-  const output = renderWithoutAnsi(
-    <TopBar
-      workingDirectoryPath="/tmp"
-      modeLabel="implementation"
-      modelIdentifier="opus-4.6"
-      reasoningEffortLabel="high"
-    />,
-  );
-  expect(output).toContain("implementation");
-  expect(output).toContain("opus-4.6 · high");
+test("TopBar no longer renders the mode chip, model chip, or close glyph", () => {
+  const output = renderWithoutAnsi(<TopBar workingDirectoryPath="/tmp" />);
+  expect(output).not.toContain("implementation");
+  expect(output).not.toContain("opus-4.6");
+  expect(output).not.toContain("×");
 });

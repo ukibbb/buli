@@ -28,6 +28,7 @@ export {
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatScreenState,
+  hideShortcutsHelpModal,
   hideModelAndReasoningSelection,
   moveHighlightedModelSelectionDown,
   moveHighlightedModelSelectionUp,
@@ -37,11 +38,11 @@ export {
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
+  showShortcutsHelpModal,
   submitPromptDraft,
 } from "./chatScreenState.ts";
 export type {
   AssistantResponseStatus,
-  AuthenticationState,
   ChatScreenState,
   ConversationTranscriptEntry,
   ModelAndReasoningSelectionState,
@@ -50,7 +51,6 @@ export type {
 export type { ConversationTranscriptViewportMeasurements, ConversationTranscriptViewportState } from "./conversationTranscriptViewportState.ts";
 
 export function renderChatScreenInTerminal(input: {
-  authenticationState: ChatScreenProps["authenticationState"];
   selectedModelId: string;
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
@@ -59,7 +59,6 @@ export function renderChatScreenInTerminal(input: {
   return render(
     React.createElement(ChatScreen, {
       assistantResponseRunner: input.assistantResponseRunner,
-      authenticationState: input.authenticationState,
       loadAvailableAssistantModels: input.loadAvailableAssistantModels,
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),

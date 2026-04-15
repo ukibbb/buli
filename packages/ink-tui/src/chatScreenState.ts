@@ -23,7 +23,6 @@ import {
 
 const STREAMING_ASSISTANT_MESSAGE_ID = "assistant-streaming";
 
-export type AuthenticationState = "ready" | "missing";
 export type AssistantResponseStatus = "waiting_for_user_input" | "streaming_assistant_response" | "assistant_response_failed";
 
 export type ReasoningEffortChoice = {
@@ -124,7 +123,6 @@ export type ConversationTranscriptEntry =
     };
 
 export type ChatScreenState = {
-  authenticationState: AuthenticationState;
   selectedModelId: string;
   selectedReasoningEffort: ReasoningEffort | undefined;
   assistantResponseStatus: AssistantResponseStatus;
@@ -134,17 +132,16 @@ export type ChatScreenState = {
   streamingAssistantMessageId: string | undefined;
   currentStreamingReasoningSummaryId: string | undefined;
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
+  isShortcutsHelpModalVisible: boolean;
 };
 
 // This is all the information needed to draw one terminal frame.
 // If any field here changes, React runs again and Ink redraws the changed output.
 export function createInitialChatScreenState(input: {
-  authenticationState: AuthenticationState;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
 }): ChatScreenState {
   return {
-    authenticationState: input.authenticationState,
     selectedModelId: input.selectedModelId,
     selectedReasoningEffort: input.selectedReasoningEffort,
     assistantResponseStatus: "waiting_for_user_input",
@@ -154,6 +151,21 @@ export function createInitialChatScreenState(input: {
     streamingAssistantMessageId: undefined,
     currentStreamingReasoningSummaryId: undefined,
     modelAndReasoningSelectionState: { step: "hidden" },
+    isShortcutsHelpModalVisible: false,
+  };
+}
+
+export function showShortcutsHelpModal(chatScreenState: ChatScreenState): ChatScreenState {
+  return {
+    ...chatScreenState,
+    isShortcutsHelpModalVisible: true,
+  };
+}
+
+export function hideShortcutsHelpModal(chatScreenState: ChatScreenState): ChatScreenState {
+  return {
+    ...chatScreenState,
+    isShortcutsHelpModalVisible: false,
   };
 }
 

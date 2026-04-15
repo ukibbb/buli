@@ -1,3 +1,4 @@
+import os from "node:os";
 import { expect, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { renderToString } from "ink";
@@ -28,16 +29,21 @@ function renderWithoutAnsi(node: React.ReactElement) {
   return stripVTControlCharacters(renderToString(node));
 }
 
-test("ChatScreen renders the HERO 1 top bar with mode chip and selected model", () => {
+test("ChatScreen renders the working directory in the top bar and the selected model in the input panel", () => {
+  const homeDirectoryPath = os.homedir();
+  const rawWorkingDirectoryPath = process.cwd();
+  const workingDirectoryPath = rawWorkingDirectoryPath.startsWith(homeDirectoryPath)
+    ? `~${rawWorkingDirectoryPath.slice(homeDirectoryPath.length)}`
+    : rawWorkingDirectoryPath;
   const output = renderWithoutAnsi(
     <ChatScreen
       assistantResponseRunner={assistantResponseRunner}
-      authenticationState="ready"
       loadAvailableAssistantModels={loadAvailableAssistantModels}
       selectedModelId="gpt-5.4"
     />,
   );
 
+  expect(output).toContain(workingDirectoryPath);
   expect(output).toContain("implementation");
   expect(output).toContain("gpt-5.4");
 });

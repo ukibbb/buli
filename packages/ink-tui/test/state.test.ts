@@ -5,6 +5,7 @@ import {
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatScreenState,
+  hideShortcutsHelpModal,
   hideModelAndReasoningSelection,
   moveHighlightedModelSelectionDown,
   moveHighlightedReasoningEffortChoiceDown,
@@ -12,13 +13,13 @@ import {
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
+  showShortcutsHelpModal,
   submitPromptDraft,
 } from "../src/index.ts";
 
 test("submitPromptDraft starts streaming and appends the user message", () => {
   const initial = appendTypedTextToPromptDraft(
     createInitialChatScreenState({
-      authenticationState: "ready",
       selectedModelId: "gpt-5.4",
       selectedReasoningEffort: "high",
     }),
@@ -44,7 +45,7 @@ test("submitPromptDraft starts streaming and appends the user message", () => {
 
 test("removeLastCharacterFromPromptDraft removes one character", () => {
   const state = appendTypedTextToPromptDraft(
-    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "Hello",
   );
 
@@ -53,7 +54,7 @@ test("removeLastCharacterFromPromptDraft removes one character", () => {
 
 test("applyAssistantResponseEventToChatScreenState appends text chunks and stores final token usage", () => {
   let state = appendTypedTextToPromptDraft(
-    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "Hello",
   );
   state = submitPromptDraft(state).nextChatScreenState;
@@ -89,17 +90,29 @@ test("applyAssistantResponseEventToChatScreenState appends text chunks and store
 });
 
 test("showModelSelectionLoadingState marks the model selection as loading", () => {
-  const state = showModelSelectionLoadingState(
-    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
-  );
+  const state = showModelSelectionLoadingState(createInitialChatScreenState({ selectedModelId: "gpt-5.4" }));
 
   expect(state.modelAndReasoningSelectionState).toEqual({ step: "loading_available_models" });
+});
+
+test("createInitialChatScreenState starts with the shortcuts modal hidden", () => {
+  const state = createInitialChatScreenState({ selectedModelId: "gpt-5.4" });
+
+  expect(state.isShortcutsHelpModalVisible).toBe(false);
+});
+
+test("showShortcutsHelpModal and hideShortcutsHelpModal toggle shortcuts visibility", () => {
+  const hiddenState = createInitialChatScreenState({ selectedModelId: "gpt-5.4" });
+  const visibleState = showShortcutsHelpModal(hiddenState);
+
+  expect(visibleState.isShortcutsHelpModalVisible).toBe(true);
+  expect(hideShortcutsHelpModal(visibleState).isShortcutsHelpModalVisible).toBe(false);
 });
 
 test("showAvailableAssistantModelsForSelection highlights the current model", () => {
   const state = showAvailableAssistantModelsForSelection(
     showModelSelectionLoadingState(
-      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-4.1-mini" }),
+      createInitialChatScreenState({ selectedModelId: "gpt-4.1-mini" }),
     ),
     [
     {
@@ -136,7 +149,7 @@ test("showAvailableAssistantModelsForSelection highlights the current model", ()
 test("moveHighlightedModelSelectionDown keeps the highlight inside the model list", () => {
   const state = showAvailableAssistantModelsForSelection(
     showModelSelectionLoadingState(
-      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+      createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     ),
     [
     {
@@ -173,7 +186,7 @@ test("moveHighlightedModelSelectionDown keeps the highlight inside the model lis
 test("confirmHighlightedModelSelection opens reasoning effort choices for models that support them", () => {
   const state = showAvailableAssistantModelsForSelection(
     showModelSelectionLoadingState(
-      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+      createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     ),
     [
     {
@@ -206,7 +219,7 @@ test("confirmHighlightedModelSelection opens reasoning effort choices for models
 test("confirmHighlightedReasoningEffortChoice stores the chosen reasoning effort and hides the selection", () => {
   let state = showAvailableAssistantModelsForSelection(
     showModelSelectionLoadingState(
-      createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+      createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     ),
     [
     {
@@ -226,11 +239,7 @@ test("confirmHighlightedReasoningEffortChoice stores the chosen reasoning effort
 });
 
 test("confirmHighlightedModelSelection switches model immediately when it has no reasoning choices", () => {
-  let state = createInitialChatScreenState({
-    authenticationState: "ready",
-    selectedModelId: "gpt-5.4",
-    selectedReasoningEffort: "high",
-  });
+  let state = createInitialChatScreenState({ selectedModelId: "gpt-5.4", selectedReasoningEffort: "high" });
   state = showAvailableAssistantModelsForSelection(showModelSelectionLoadingState(state), [
     {
       id: "gpt-5.4",
@@ -254,8 +263,8 @@ test("confirmHighlightedModelSelection switches model immediately when it has no
 test("showModelSelectionLoadingError and hideModelAndReasoningSelection manage loading failures", () => {
   const state = hideModelAndReasoningSelection(
     showModelSelectionLoadingError(
-      showModelSelectionLoadingState(
-        createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+        showModelSelectionLoadingState(
+        createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
       ),
       "network failed",
     ),
@@ -266,7 +275,7 @@ test("showModelSelectionLoadingError and hideModelAndReasoningSelection manage l
 
 test("submitPromptDraft does nothing while an assistant response is already streaming", () => {
   let state = appendTypedTextToPromptDraft(
-    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "Hello",
   );
   state = submitPromptDraft(state).nextChatScreenState;
@@ -278,7 +287,7 @@ test("submitPromptDraft does nothing while an assistant response is already stre
 });
 
 test("applyAssistantResponseEventToChatScreenState adds an error entry when the response fails", () => {
-  let state = createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" });
+  let state = createInitialChatScreenState({ selectedModelId: "gpt-5.4" });
   state = applyAssistantResponseEventToChatScreenState(state, {
     type: "assistant_response_failed",
     error: "provider failed",
@@ -299,7 +308,6 @@ test("applyAssistantResponseEventToChatScreenState adds an error entry when the 
 function createStreamingTurnState() {
   const initial = appendTypedTextToPromptDraft(
     createInitialChatScreenState({
-      authenticationState: "ready",
       selectedModelId: "gpt-5.4",
     }),
     "why is the sky blue",

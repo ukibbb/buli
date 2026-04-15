@@ -2,7 +2,7 @@ import os from "node:os";
 import { type AssistantResponseEvent, type AvailableAssistantModel, type ReasoningEffort } from "@buli/contracts";
 import { type AssistantResponseRunner } from "@buli/engine";
 import { Box, Text, useInput, useWindowSize } from "ink";
-import React, { startTransition, useEffectEvent, useRef, useState } from "react";
+import { startTransition, useEffectEvent, useRef, useState } from "react";
 import { chatScreenTheme } from "./chatScreenTheme.ts";
 import {
   createInitialConversationTranscriptViewportState,
@@ -19,6 +19,7 @@ import {
 import { ConversationTranscriptPane } from "./components/ConversationTranscriptPane.tsx";
 import { InputPanel } from "./components/InputPanel.tsx";
 import { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
+import { ShortcutsModal } from "./components/ShortcutsModal.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import {
   appendTypedTextToPromptDraft,
@@ -31,18 +32,18 @@ import {
   moveHighlightedModelSelectionUp,
   moveHighlightedReasoningEffortChoiceDown,
   moveHighlightedReasoningEffortChoiceUp,
+  hideShortcutsHelpModal,
   removeLastCharacterFromPromptDraft,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
+  showShortcutsHelpModal,
   submitPromptDraft,
-  type AuthenticationState,
   type ChatScreenState,
 } from "./chatScreenState.ts";
 import { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
 
 export type ChatScreenProps = {
-  authenticationState: AuthenticationState;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
@@ -58,7 +59,6 @@ export function ChatScreen(props: ChatScreenProps) {
   // and Ink turns the new result into updated terminal output.
   const [chatScreenState, setChatScreenState] = useState(() =>
     createInitialChatScreenState({
-      authenticationState: props.authenticationState,
       selectedModelId: props.selectedModelId,
       ...(props.selectedReasoningEffort ? { selectedReasoningEffort: props.selectedReasoningEffort } : {}),
     }),
@@ -220,7 +220,7 @@ export function ChatScreen(props: ChatScreenProps) {
   // submit a prompt,
   // or open the model selection flow.
   useInput((typedText, pressedKey) => {
-    const { modelAndReasoningSelectionState } = latestChatScreenStateRef.current;
+    const { modelAndReasoningSelectionState, promptDraft } = latestChatScreenStateRef.current;
 
     if (modelAndReasoningSelectionState.step !== "hidden") {
       if (pressedKey.escape) {
@@ -277,6 +277,14 @@ export function ChatScreen(props: ChatScreenProps) {
       }
 
       void loadAvailableModelsForSelection();
+      return;
+    }
+
+    // "?" on an empty prompt opens the shortcuts help modal. Typing "?" inside
+    // a non-empty prompt falls through to the append-text branch so users can
+    // still write questions without the key being stolen from them.
+    if (typedText === "?" && promptDraft.length === 0) {
+      setChatScreenState((currentChatScreenState) => showShortcutsHelpModal(currentChatScreenState));
       return;
     }
 
@@ -361,7 +369,7 @@ export function ChatScreen(props: ChatScreenProps) {
     if (typedText) {
       setChatScreenState((currentChatScreenState) => appendTypedTextToPromptDraft(currentChatScreenState, typedText));
     }
-  });
+  }, { isActive: !chatScreenState.isShortcutsHelpModalVisible });
 
   // This decides what the middle area of the terminal should show right now.
   // The user either sees:
@@ -401,12 +409,13 @@ export function ChatScreen(props: ChatScreenProps) {
       />
     ) : null;
 
-  const promptInputHintText =
-    chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
+  const promptInputHintText = chatScreenState.isShortcutsHelpModalVisible
+    ? "[ esc ] close shortcuts"
+    : chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
       ? "Selection is open. Press Esc to close it."
       : chatScreenState.assistantResponseStatus === "streaming_assistant_response"
         ? "Assistant response is streaming. PgUp/PgDn/Home/End scroll."
-        : "Enter send | Ctrl+L models | PgUp/PgDn/Home/End scroll";
+        : "[ ? ] help on empty draft";
 
   const homeDirectoryPath = os.homedir();
   const rawWorkingDirectoryPath = process.cwd();
@@ -435,22 +444,26 @@ export function ChatScreen(props: ChatScreenProps) {
   // and writes only the changed characters back to the terminal.
   return (
     <Box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows}>
-      <TopBar
-        workingDirectoryPath={workingDirectoryPath}
-        modeLabel={modeLabel}
-        modelIdentifier={chatScreenState.selectedModelId}
-        reasoningEffortLabel={reasoningEffortLabel}
-      />
-      <Box flexGrow={1} overflow="hidden">
-        {modelAndReasoningSelectionPane ?? (
-          <ConversationTranscriptPane
-            conversationTranscriptEntries={chatScreenState.conversationTranscript}
-            hiddenTranscriptRowsAboveViewport={conversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport}
-            onConversationTranscriptViewportMeasured={applyMeasuredConversationTranscriptViewport}
-          />
+      <TopBar workingDirectoryPath={workingDirectoryPath} />
+      <Box flexGrow={1} overflow="hidden" paddingX={2} paddingTop={1}>
+        {chatScreenState.isShortcutsHelpModalVisible ? (
+          <Box alignItems="center" flexGrow={1} justifyContent="center">
+            <ShortcutsModal
+              onCloseRequested={() =>
+                setChatScreenState((currentChatScreenState) => hideShortcutsHelpModal(currentChatScreenState))
+              }
+            />
+          </Box>
+        ) : (
+          modelAndReasoningSelectionPane ?? (
+            <ConversationTranscriptPane
+              conversationTranscriptEntries={chatScreenState.conversationTranscript}
+              hiddenTranscriptRowsAboveViewport={conversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport}
+              onConversationTranscriptViewportMeasured={applyMeasuredConversationTranscriptViewport}
+            />
+          )
         )}
       </Box>
-      <Box backgroundColor={chatScreenTheme.accentGreen} height={1} />
       <InputPanel
         promptDraft={chatScreenState.promptDraft}
         isPromptInputDisabled={

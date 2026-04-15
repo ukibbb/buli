@@ -9,7 +9,7 @@ import {
 
 test("applyAssistantResponseEventToChatScreenState renders a full turn through streaming reasoning into a collapsed chip", () => {
   let chatScreenState = appendTypedTextToPromptDraft(
-    createInitialChatScreenState({ authenticationState: "ready", selectedModelId: "gpt-5.4" }),
+    createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "why",
   );
   chatScreenState = submitPromptDraft(chatScreenState).nextChatScreenState;

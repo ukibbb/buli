@@ -26,7 +26,6 @@ export async function runInteractiveChat(input: {
   const assistantResponseRunner = new AssistantResponseRuntime(provider);
   const chatScreen = renderChatScreenInTerminal({
     assistantResponseRunner,
-    authenticationState: "ready",
     loadAvailableAssistantModels: () => provider.listAvailableAssistantModels(),
     selectedModelId: input.selectedModelId ?? DEFAULT_MODEL_ID,
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),

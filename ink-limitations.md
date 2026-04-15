@@ -15,9 +15,9 @@ Every claim cites the decisive file/line.
 The terminal shown in the user's screenshot only paints a small slice of what the
 design specifies:
 
-- TopBar (status dot + cwd + mode chip + model chip + close)
+- TopBar (status dot + cwd)
 - One plain assistant message block
-- One input panel with prompt caret + snake indicator
+- One input panel with mode/model chips, prompt caret, and snake indicator
 
 The HERO 1 frame (`j20vJ`) and the AGENT RESPONSE library (`idXGN`) describe ~30
 additional components — tool-call cards, reasoning-collapsed chips with stripe

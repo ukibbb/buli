@@ -1,5 +1,4 @@
 import { Box, Text, useAnimation } from "ink";
-import React from "react";
 import type { AssistantResponseStatus } from "../chatScreenState.ts";
 import { chatScreenTheme } from "../chatScreenTheme.ts";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";

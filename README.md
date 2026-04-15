@@ -13,13 +13,14 @@ V1 currently includes:
 - UI-agnostic assistant response engine
 - OpenAI assistant response adapter
 - Ink terminal chat UI with:
-  - `TopBar` (working directory, mode chip, model chip)
+  - `TopBar` (working directory)
   - `ConversationTranscriptPane` (dispatches on every transcript entry kind)
   - `UserPromptBlock`
   - `ReasoningStreamBlock` (streaming reasoning summary, amber accent)
   - `ReasoningCollapsedChip` (post-reasoning chip with duration and token count)
   - `ModelAndReasoningSelectionPane`
   - `InputPanel` (prompt draft, mode/model header strip, context-window footer)
+  - `ShortcutsModal` (current keyboard shortcuts help)
 - provider-backed available model discovery
 - model selection and reasoning-effort selection
 - streaming reasoning-summary display (live thinking block while the model reasons, collapsed chip after reasoning ends showing elapsed seconds and, once the response completes, reasoning token count)
@@ -111,6 +112,7 @@ After logging in, you can:
 - watch the assistant response stream into the conversation transcript
 - see the model's reasoning summary stream into the transcript as a live thinking block, then collapse into a compact chip once reasoning ends
 - read the collapsed chip's elapsed reasoning time and, after the response completes, its reasoning token count
+- press `?` on an empty prompt to open shortcuts help
 - press `Ctrl+L` to open model selection inside the TUI
 - choose a model and, when supported, choose a reasoning effort
 - list available models with `buli models`
