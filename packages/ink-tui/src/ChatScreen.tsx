@@ -1,3 +1,4 @@
+import os from "node:os";
 import { type AssistantResponseEvent, type AvailableAssistantModel, type ReasoningEffort } from "@buli/contracts";
 import { type AssistantResponseRunner } from "@buli/engine";
 import { Box, Text, useInput, useWindowSize } from "ink";
@@ -15,10 +16,10 @@ import {
   type ConversationTranscriptViewportMeasurements,
   type ConversationTranscriptViewportState,
 } from "./conversationTranscriptViewportState.ts";
-import { ChatSessionStatusBar } from "./components/ChatSessionStatusBar.tsx";
 import { ConversationTranscriptPane } from "./components/ConversationTranscriptPane.tsx";
+import { InputPanel } from "./components/InputPanel.tsx";
 import { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
-import { PromptDraftPane } from "./components/PromptDraftPane.tsx";
+import { TopBar } from "./components/TopBar.tsx";
 import {
   appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
@@ -364,72 +365,53 @@ export function ChatScreen(props: ChatScreenProps) {
         ? "Assistant response is streaming. PgUp/PgDn/Home/End scroll."
         : "Enter send | Ctrl+L models | PgUp/PgDn/Home/End scroll";
 
-  const conversationTranscriptViewportStatusText = conversationTranscriptViewportState.isFollowingNewestTranscriptRows
-    ? "conversation latest"
-    : "conversation scrolling";
+  const homeDirectoryPath = os.homedir();
+  const rawWorkingDirectoryPath = process.cwd();
+  // Collapse the home prefix to ~ so the path fits comfortably in the top bar.
+  const workingDirectoryPath = rawWorkingDirectoryPath.startsWith(homeDirectoryPath)
+    ? `~${rawWorkingDirectoryPath.slice(homeDirectoryPath.length)}`
+    : rawWorkingDirectoryPath;
 
-  const topApplicationBar = (
-    <Box
-      alignItems="center"
-      backgroundColor={chatScreenTheme.surfaceTwo}
-      borderColor={chatScreenTheme.border}
-      borderStyle="round"
-      flexDirection="row"
-      justifyContent="space-between"
-      paddingX={1}
-    >
-      <Text bold color={chatScreenTheme.accentCyan}>
-        buli
-      </Text>
-      <Text color={chatScreenTheme.textMuted}>{`${chatScreenState.selectedModelId} | ${chatScreenState.selectedReasoningEffort ?? "default"} | ${chatScreenState.authenticationState}`}</Text>
-    </Box>
-  );
+  const modeLabel = "implementation";
+  const reasoningEffortLabel = chatScreenState.selectedReasoningEffort ?? "default";
+  // Token usage percentage is wired once the context-window helper is plumbed
+  // through to the live token counts; left undefined until that happens.
+  const tokenUsagePercentageOfContextWindow = undefined;
 
   // The return value below is just a React tree.
   // Ink reads that tree, turns it into terminal text, compares it with the last frame,
   // and writes only the changed characters back to the terminal.
   return (
-    <Box
-      backgroundColor={chatScreenTheme.bg}
-      flexDirection="column"
-      height={rows}
-    >
-      {topApplicationBar}
-      <Box
-        backgroundColor={chatScreenTheme.surfaceOne}
-        borderColor={chatScreenTheme.border}
-        borderStyle="round"
-        flexDirection="column"
-        flexGrow={1}
-        overflow="hidden"
-        padding={1}
-      >
-        <Text color={chatScreenTheme.textMuted}>
-          {chatScreenState.modelAndReasoningSelectionState.step === "hidden" ? "Conversation" : "Model and reasoning selection"}
-        </Text>
-        <Box flexDirection="column" flexGrow={1} marginTop={1} overflow="hidden">
-          {modelAndReasoningSelectionPane ?? (
-            <ConversationTranscriptPane
-              conversationTranscriptEntries={chatScreenState.conversationTranscript}
-              hiddenTranscriptRowsAboveViewport={conversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport}
-              onConversationTranscriptViewportMeasured={applyMeasuredConversationTranscriptViewport}
-            />
-          )}
-        </Box>
+    <Box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows}>
+      <TopBar
+        workingDirectoryPath={workingDirectoryPath}
+        modeLabel={modeLabel}
+        modelIdentifier={chatScreenState.selectedModelId}
+        reasoningEffortLabel={reasoningEffortLabel}
+      />
+      <Box backgroundColor={chatScreenTheme.border} height={1} />
+      <Box flexGrow={1} overflow="hidden">
+        {modelAndReasoningSelectionPane ?? (
+          <ConversationTranscriptPane
+            conversationTranscriptEntries={chatScreenState.conversationTranscript}
+            hiddenTranscriptRowsAboveViewport={conversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport}
+            onConversationTranscriptViewportMeasured={applyMeasuredConversationTranscriptViewport}
+          />
+        )}
       </Box>
-      <PromptDraftPane
+      <Box backgroundColor={chatScreenTheme.accentGreen} height={1} />
+      <InputPanel
+        promptDraft={chatScreenState.promptDraft}
         isPromptInputDisabled={
           chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
           chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
         }
-        promptDraft={chatScreenState.promptDraft}
         promptInputHintText={promptInputHintText}
-      />
-      <ChatSessionStatusBar
+        modeLabel={modeLabel}
+        modelIdentifier={chatScreenState.selectedModelId}
+        reasoningEffortLabel={reasoningEffortLabel}
         assistantResponseStatus={chatScreenState.assistantResponseStatus}
-        authenticationState={chatScreenState.authenticationState}
-        conversationTranscriptViewportStatusText={conversationTranscriptViewportStatusText}
-        latestTokenUsage={chatScreenState.latestTokenUsage}
+        tokenUsagePercentageOfContextWindow={tokenUsagePercentageOfContextWindow}
       />
     </Box>
   );

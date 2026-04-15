@@ -5,10 +5,13 @@ import React from "react";
 import type { AssistantResponseRunner } from "@buli/engine";
 import {
   ChatScreen,
-  ChatSessionStatusBar,
   ConversationTranscriptPane,
+  InputPanel,
   ModelAndReasoningSelectionPane,
-  PromptDraftPane,
+  ReasoningCollapsedChip,
+  ReasoningStreamBlock,
+  TopBar,
+  UserPromptBlock,
 } from "../src/index.ts";
 
 const assistantResponseRunner: AssistantResponseRunner = {
@@ -25,7 +28,7 @@ function renderWithoutAnsi(node: React.ReactElement) {
   return stripVTControlCharacters(renderToString(node));
 }
 
-test("ChatScreen renders the empty transcript and waiting status", () => {
+test("ChatScreen renders the HERO 1 top bar with mode chip and selected model", () => {
   const output = renderWithoutAnsi(
     <ChatScreen
       assistantResponseRunner={assistantResponseRunner}
@@ -35,13 +38,8 @@ test("ChatScreen renders the empty transcript and waiting status", () => {
     />,
   );
 
-  expect(output).toContain("buli");
-  expect(output).toContain("Conversation");
-  expect(output).toContain("No messages yet.");
-  expect(output).toContain("Prompt");
-  expect(output).toContain("Enter send | Ctrl+L models | PgUp/PgDn/Home/End scroll");
-  expect(output).toContain("status idle | auth ready");
-  expect(output).toContain("conversation latest");
+  expect(output).toContain("implementation");
+  expect(output).toContain("gpt-5.4");
 });
 
 test("ConversationTranscriptPane renders user and assistant lines", () => {
@@ -62,20 +60,12 @@ test("ConversationTranscriptPane renders user and assistant lines", () => {
     />,
   );
 
-  expect(output).toContain("You");
   expect(output).toContain("Hello");
-  expect(output).toContain("Assistant");
+  expect(output).toContain("// agent · response");
   expect(output).toContain("Hi");
 });
 
-test("PromptDraftPane and ChatSessionStatusBar render the basic shell", () => {
-  const promptDraftPane = renderWithoutAnsi(
-    <PromptDraftPane
-      isPromptInputDisabled={false}
-      promptDraft="hello"
-      promptInputHintText="Enter send | Ctrl+L models | PgUp/PgDn/Home/End scroll"
-    />,
-  );
+test("ModelAndReasoningSelectionPane renders choices", () => {
   const selection = renderWithoutAnsi(
     <ModelAndReasoningSelectionPane
       visibleChoices={["Use model default (medium)", "high"]}
@@ -83,21 +73,7 @@ test("PromptDraftPane and ChatSessionStatusBar render the basic shell", () => {
       headingText="Choose reasoning"
     />,
   );
-  const status = renderWithoutAnsi(
-    <ChatSessionStatusBar
-      assistantResponseStatus="waiting_for_user_input"
-      authenticationState="ready"
-      conversationTranscriptViewportStatusText="conversation scrolling"
-      latestTokenUsage={{ total: 90, input: 50, output: 30, reasoning: 10, cache: { read: 0, write: 0 } }}
-    />,
-  );
 
-  expect(promptDraftPane).toContain("Prompt");
-  expect(promptDraftPane).toContain("> hello_");
-  expect(promptDraftPane).toContain("Enter send | Ctrl+L models | PgUp/PgDn/Home/End scroll");
   expect(selection).toContain("Choose reasoning");
   expect(selection).toContain("> high");
-  expect(status).toContain("status idle | auth ready");
-  expect(status).toContain("conversation scrolling");
-  expect(status).toContain("in 50 out 30 reason 10");
 });

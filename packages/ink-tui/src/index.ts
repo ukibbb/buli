@@ -5,10 +5,13 @@ import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 
 export { ChatScreen } from "./ChatScreen.tsx";
 export type { ChatScreenProps } from "./ChatScreen.tsx";
-export { ChatSessionStatusBar } from "./components/ChatSessionStatusBar.tsx";
 export { ConversationTranscriptPane } from "./components/ConversationTranscriptPane.tsx";
+export { InputPanel } from "./components/InputPanel.tsx";
 export { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
-export { PromptDraftPane } from "./components/PromptDraftPane.tsx";
+export { ReasoningCollapsedChip } from "./components/ReasoningCollapsedChip.tsx";
+export { ReasoningStreamBlock } from "./components/ReasoningStreamBlock.tsx";
+export { TopBar } from "./components/TopBar.tsx";
+export { UserPromptBlock } from "./components/UserPromptBlock.tsx";
 export {
   createInitialConversationTranscriptViewportState,
   jumpConversationTranscriptViewportToNewestRows,
