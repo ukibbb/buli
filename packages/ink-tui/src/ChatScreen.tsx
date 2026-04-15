@@ -389,7 +389,6 @@ export function ChatScreen(props: ChatScreenProps) {
         modelIdentifier={chatScreenState.selectedModelId}
         reasoningEffortLabel={reasoningEffortLabel}
       />
-      <Box backgroundColor={chatScreenTheme.border} height={1} />
       <Box flexGrow={1} overflow="hidden">
         {modelAndReasoningSelectionPane ?? (
           <ConversationTranscriptPane

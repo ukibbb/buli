@@ -19,7 +19,6 @@ export function TopBar(props: TopBarProps) {
     <Box
       backgroundColor={chatScreenTheme.surfaceOne}
       paddingX={2}
-      paddingY={1}
       justifyContent="space-between"
       gap={1}
     >
