@@ -2,7 +2,7 @@
 
 `buli` is a local-first, terminal-only coding agent built for one user: you.
 
-This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen terminal chat screen, streamed assistant responses, available model discovery, model and reasoning selection, and final input/output/reasoning token display in the status bar. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
+This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen HERO 1 terminal chat screen, streamed assistant responses with a live reasoning-summary block that collapses into a compact chip once thinking ends, available model discovery, and model and reasoning-effort selection. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
 
 ## Current Status
 
@@ -22,8 +22,7 @@ V1 currently includes:
   - `InputPanel` (prompt draft, mode/model header strip, context-window footer)
 - provider-backed available model discovery
 - model selection and reasoning-effort selection
-- final `input`, `output`, and `reasoning` token display
-- streaming reasoning-summary display (live thinking block while the model reasons, collapsed chip after reasoning ends with duration and token count)
+- streaming reasoning-summary display (live thinking block while the model reasons, collapsed chip after reasoning ends showing elapsed seconds and, once the response completes, reasoning token count)
 - HERO 1 visual design (see `ink-limitations.md` for terminal cell-grid translations)
 
 V1 intentionally does not include yet:
@@ -118,7 +117,7 @@ After logging in, you can:
 - scroll the fullscreen conversation transcript with `Up`, `Down`, `PageUp`, `PageDown`, `Home`, and `End`
 - start the app with a preselected model using `--model`
 - start the app with a preselected reasoning effort using `--reasoning`
-- see final input/output/reasoning token usage in the status bar
+- see reasoning token usage on the collapsed reasoning chip after the assistant response completes
 
 If auth is missing, `buli` exits cleanly and tells you to run `buli login` first.
 
