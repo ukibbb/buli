@@ -13,13 +13,18 @@ V1 currently includes:
 - UI-agnostic assistant response engine
 - OpenAI assistant response adapter
 - Ink terminal chat UI with:
-  - `ConversationTranscriptPane`
-  - `PromptDraftPane`
+  - `TopBar` (working directory, mode chip, model chip)
+  - `ConversationTranscriptPane` (dispatches on every transcript entry kind)
+  - `UserPromptBlock`
+  - `ReasoningStreamBlock` (streaming reasoning summary, amber accent)
+  - `ReasoningCollapsedChip` (post-reasoning chip with duration and token count)
   - `ModelAndReasoningSelectionPane`
-  - `ChatSessionStatusBar`
+  - `InputPanel` (prompt draft, mode/model header strip, context-window footer)
 - provider-backed available model discovery
 - model selection and reasoning-effort selection
 - final `input`, `output`, and `reasoning` token display
+- streaming reasoning-summary display (live thinking block while the model reasons, collapsed chip after reasoning ends with duration and token count)
+- HERO 1 visual design (see `ink-limitations.md` for terminal cell-grid translations)
 
 V1 intentionally does not include yet:
 
@@ -105,6 +110,8 @@ After logging in, you can:
 - type a prompt draft
 - submit the prompt draft and see your message appear in the conversation transcript immediately
 - watch the assistant response stream into the conversation transcript
+- see the model's reasoning summary stream into the transcript as a live thinking block, then collapse into a compact chip once reasoning ends
+- read the collapsed chip's elapsed reasoning time and, after the response completes, its reasoning token count
 - press `Ctrl+L` to open model selection inside the TUI
 - choose a model and, when supported, choose a reasoning effort
 - list available models with `buli models`
@@ -213,7 +220,17 @@ export PATH="$(bun pm bin -g):$PATH"
 - `packages/openai`
   - OAuth, token refresh, OpenAI transport, available model discovery, usage parsing
 - `packages/ink-tui`
-  - terminal chat screen rendering, alternate-screen integration, and chat screen state transitions
+  - terminal chat screen rendering, reasoning-summary and prompt components, alternate-screen integration, and chat screen state transitions
+
+## Design Source of Truth
+
+The HERO 1 single-pane layout lives in the Pencil design file at
+`novibe.space/designs/my-design.pen` (frame `j20vJ`). Pen-file pixel values,
+sub-row accent heights, corner radius on filled surfaces, and font-size
+hierarchy do not translate 1:1 to a terminal cell grid. The documented
+translations — palette table, pixel-to-cell mapping, Lucide-to-Unicode glyph
+substitutions — live in `ink-limitations.md`. Any visual change to the TUI
+should reference that file.
 
 ## Development Commands
 
