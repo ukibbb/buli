@@ -3,6 +3,9 @@ import React, { useEffect, useRef } from "react";
 import type { ConversationTranscriptEntry } from "../chatScreenState.ts";
 import { chatScreenTheme } from "../chatScreenTheme.ts";
 import type { ConversationTranscriptViewportMeasurements } from "../conversationTranscriptViewportState.ts";
+import { ReasoningCollapsedChip } from "./ReasoningCollapsedChip.tsx";
+import { ReasoningStreamBlock } from "./ReasoningStreamBlock.tsx";
+import { UserPromptBlock } from "./UserPromptBlock.tsx";
 
 export type ConversationTranscriptPaneProps = {
   conversationTranscriptEntries: ConversationTranscriptEntry[];
@@ -46,6 +49,8 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
   }
 
   const conversationTranscriptMessageBlocks = props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => {
+    const topMargin = index === 0 ? 0 : 1;
+
     if (conversationTranscriptEntry.kind === "error") {
       return (
         <Box
@@ -53,7 +58,7 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
           borderStyle="round"
           flexDirection="column"
           key={`error-${index}`}
-          marginTop={index === 0 ? 0 : 1}
+          marginTop={topMargin}
           paddingX={1}
         >
           <Text bold color={chatScreenTheme.accentRed}>
@@ -64,56 +69,48 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
       );
     }
 
-    // Reasoning summary entries are rendered inline but are not yet wired to
-    // dedicated components — that happens in Task 16. For now, render
-    // a minimal placeholder so the transcript stays coherent during the stream.
     if (conversationTranscriptEntry.kind === "streaming_reasoning_summary") {
       return (
-        <Box
-          flexDirection="column"
-          key={`streaming-reasoning-${conversationTranscriptEntry.reasoningSummaryId}`}
-          marginTop={index === 0 ? 0 : 1}
-          paddingX={1}
-        >
-          <Text color={chatScreenTheme.textMuted}>
-            Thinking... {conversationTranscriptEntry.reasoningSummaryText}
-          </Text>
+        <Box key={conversationTranscriptEntry.reasoningSummaryId} marginTop={topMargin}>
+          <ReasoningStreamBlock
+            reasoningSummaryText={conversationTranscriptEntry.reasoningSummaryText}
+            reasoningStartedAtMs={conversationTranscriptEntry.reasoningStartedAtMs}
+          />
         </Box>
       );
     }
 
     if (conversationTranscriptEntry.kind === "completed_reasoning_summary") {
       return (
-        <Box
-          flexDirection="column"
-          key={`completed-reasoning-${conversationTranscriptEntry.reasoningSummaryId}`}
-          marginTop={index === 0 ? 0 : 1}
-          paddingX={1}
-        >
-          <Text color={chatScreenTheme.textMuted}>
-            Thought for {conversationTranscriptEntry.reasoningDurationMs}ms
-          </Text>
+        <Box key={conversationTranscriptEntry.reasoningSummaryId} marginTop={topMargin}>
+          <ReasoningCollapsedChip
+            reasoningDurationMs={conversationTranscriptEntry.reasoningDurationMs}
+            reasoningTokenCount={conversationTranscriptEntry.reasoningTokenCount}
+          />
         </Box>
       );
     }
 
-    const speakerLabel = conversationTranscriptEntry.message.role === "user" ? "You" : "Assistant";
-    const messageAccentColor =
-      conversationTranscriptEntry.message.role === "user"
-        ? chatScreenTheme.accentCyan
-        : chatScreenTheme.accentGreen;
+    // From here on, conversationTranscriptEntry.kind === "message"
+    if (conversationTranscriptEntry.message.role === "user") {
+      return (
+        <Box key={conversationTranscriptEntry.message.id} marginTop={topMargin}>
+          <UserPromptBlock promptText={conversationTranscriptEntry.message.text} />
+        </Box>
+      );
+    }
 
     return (
       <Box
-        borderColor={messageAccentColor}
+        borderColor={chatScreenTheme.accentGreen}
         borderStyle="round"
         flexDirection="column"
         key={conversationTranscriptEntry.message.id}
-        marginTop={index === 0 ? 0 : 1}
+        marginTop={topMargin}
         paddingX={1}
       >
-        <Text bold color={messageAccentColor}>
-          {speakerLabel}
+        <Text bold color={chatScreenTheme.accentGreen}>
+          // agent · response
         </Text>
         <Text color={chatScreenTheme.textPrimary}>{conversationTranscriptEntry.message.text}</Text>
       </Box>
