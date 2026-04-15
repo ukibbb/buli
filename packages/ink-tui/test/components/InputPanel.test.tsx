@@ -85,3 +85,38 @@ test("InputPanel renders a dim placeholder when context window capacity is unkno
   );
   expect(output).toContain("--");
 });
+
+test("InputPanel renders a cursor indicator when prompt input is enabled", () => {
+  const output = renderWithoutAnsi(
+    <InputPanel
+      promptDraft="hello"
+      isPromptInputDisabled={false}
+      promptInputHintText=""
+      modeLabel="implementation"
+      modelIdentifier="opus-4.6"
+      reasoningEffortLabel="high"
+      assistantResponseStatus="waiting_for_user_input"
+      tokenUsagePercentageOfContextWindow={undefined}
+    />,
+  );
+  const hasCursor = output.includes("█") || output.includes(" ");
+  expect(hasCursor).toBe(true);
+  // The enabled prompt line contains "hello" — the cursor follows it.
+  expect(output).toContain("hello");
+});
+
+test("InputPanel does not render a block cursor when prompt input is disabled", () => {
+  const output = renderWithoutAnsi(
+    <InputPanel
+      promptDraft="hello"
+      isPromptInputDisabled
+      promptInputHintText=""
+      modeLabel="implementation"
+      modelIdentifier="opus-4.6"
+      reasoningEffortLabel="high"
+      assistantResponseStatus="streaming_assistant_response"
+      tokenUsagePercentageOfContextWindow={undefined}
+    />,
+  );
+  expect(output).not.toMatch(/hello█/);
+});

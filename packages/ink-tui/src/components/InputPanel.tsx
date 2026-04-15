@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, useAnimation } from "ink";
 import React from "react";
 import type { AssistantResponseStatus } from "../chatScreenState.ts";
 import { chatScreenTheme } from "../chatScreenTheme.ts";
@@ -20,7 +20,10 @@ export type InputPanelProps = {
 };
 
 export function InputPanel(props: InputPanelProps) {
-  const cursorSuffix = props.isPromptInputDisabled ? "" : "_";
+  const { frame } = useAnimation({ interval: 500 });
+  // Blink the cursor on/off by toggling between even and odd frames.
+  const isCursorVisible = frame % 2 === 0;
+  const cursorCharacter = !props.isPromptInputDisabled && isCursorVisible ? "█" : " ";
   const isStreamingResponse = props.assistantResponseStatus === "streaming_assistant_response";
 
   return (
@@ -43,7 +46,7 @@ export function InputPanel(props: InputPanelProps) {
           &gt;
         </Text>
         <Text color={chatScreenTheme.textPrimary}>
-          {`${props.promptDraft}${cursorSuffix}`}
+          {`${props.promptDraft}${cursorCharacter}`}
         </Text>
       </Box>
       <Box
