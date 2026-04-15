@@ -1,6 +1,6 @@
 # buli
 
-`buli` is a local-first, terminal-only coding agent built for one user: you.
+`buli` is a local-first, terminal-only agentic software engineering agent built for one user: ukibbb.
 
 This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen HERO 1 terminal chat screen, streamed assistant responses with a live reasoning-summary block that collapses into a compact chip once thinking ends, available model discovery, and model and reasoning-effort selection. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
 
@@ -34,6 +34,21 @@ V1 intentionally does not include yet:
 - session branching
 - extension loading
 - process RPC
+
+## Planned Next Slice
+
+The next slice is designed in
+`plans/2026-04-16-dual-tui-opentui-design.md`:
+
+- typed `AssistantContentPart` discriminated union in `@buli/contracts` (paragraph, heading, bulleted/numbered/checklist, fenced code block, callout, file reference, plus inline spans)
+- `@buli/engine` gains a pure `AssistantTurnPartAccumulator`, a line-oriented `classifyAssistantTextLine`, and `foldAssistantResponseEventIntoTranscript`. The flat `streamedAssistantText` field goes away.
+- `@buli/ink-tui` is reworked from scratch against the typed-part model. Flat-text rendering is replaced with a per-part component tree that matches the `.pen` component library.
+- `@buli/opentui-tui` is added as a second renderer with the same component inventory, built on `@opentui/react`.
+- `@buli/assistant-design-tokens` holds shared color/border/spacing values ported from the `.pen`.
+- `@buli/assistant-transcript-fixtures` holds canonical typed-part scenarios consumed by engine and both TUI tests.
+- `buli --ui ink|opentui` selects the renderer per invocation (default `ink`).
+
+Tool calls, `DiffBlock`, `ShellBlock`, `PlanProposal`, and `ToolApproval` remain deferred to later slices.
 
 ## Requirements
 
@@ -212,6 +227,8 @@ export PATH="$(bun pm bin -g):$PATH"
 
 ## Project Structure
 
+Current packages:
+
 - `apps/cli`
   - composition root and CLI entrypoints
 - `packages/contracts`
@@ -223,15 +240,29 @@ export PATH="$(bun pm bin -g):$PATH"
 - `packages/ink-tui`
   - terminal chat screen rendering, reasoning-summary and prompt components, alternate-screen integration, and chat screen state transitions
 
+Planned packages for the next slice
+(see `plans/2026-04-16-dual-tui-opentui-design.md`):
+
+- `packages/opentui-tui`
+  - second terminal chat renderer using `@opentui/react`, same component inventory as ink-tui
+- `packages/assistant-design-tokens`
+  - color, border, and spacing tokens ported from the `.pen` design file; shared by both TUIs
+- `packages/assistant-transcript-fixtures`
+  - canonical typed-part scenarios consumed by engine and both TUI tests
+
 ## Design Source of Truth
 
 The HERO 1 single-pane layout lives in the Pencil design file at
-`novibe.space/designs/my-design.pen` (frame `j20vJ`). Pen-file pixel values,
-sub-row accent heights, corner radius on filled surfaces, and font-size
-hierarchy do not translate 1:1 to a terminal cell grid. The documented
-translations — palette table, pixel-to-cell mapping, Lucide-to-Unicode glyph
-substitutions — live in `ink-limitations.md`. Any visual change to the TUI
-should reference that file.
+`novibe.space/designs/my-design.pen` (frame `j20vJ`). The per-component
+library backing it is in the same file at frame `idXGN` (43 reusable
+components covering reasoning, prose, lists, code, tool calls, and behavior
+blocks). Pen-file pixel values, sub-row accent heights, corner radius on
+filled surfaces, and font-size hierarchy do not translate 1:1 to a terminal
+cell grid. The documented translations — palette table, pixel-to-cell
+mapping, Lucide-to-Unicode glyph substitutions — live in `ink-limitations.md`.
+The dual-TUI spec at
+`plans/2026-04-16-dual-tui-opentui-design.md` pins the
+visual-fidelity mapping applied in both renderers.
 
 ## Development Commands
 
