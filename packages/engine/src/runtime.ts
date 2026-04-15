@@ -1,4 +1,7 @@
 import {
+  AssistantReasoningSummaryCompletedEventSchema,
+  AssistantReasoningSummaryStartedEventSchema,
+  AssistantReasoningSummaryTextChunkEventSchema,
   AssistantResponseFailedEventSchema,
   AssistantResponseStartedEventSchema,
   AssistantResponseTextChunkEventSchema,
@@ -31,19 +34,35 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
 
     try {
       for await (const event of this.provider.streamAssistantResponse(input)) {
+        if (event.type === "reasoning_summary_started") {
+          yield AssistantReasoningSummaryStartedEventSchema.parse({
+            type: "assistant_reasoning_summary_started",
+          });
+          continue;
+        }
+
+        if (event.type === "reasoning_summary_text_chunk") {
+          yield AssistantReasoningSummaryTextChunkEventSchema.parse({
+            type: "assistant_reasoning_summary_text_chunk",
+            text: event.text,
+          });
+          continue;
+        }
+
+        if (event.type === "reasoning_summary_completed") {
+          yield AssistantReasoningSummaryCompletedEventSchema.parse({
+            type: "assistant_reasoning_summary_completed",
+            reasoningDurationMs: event.reasoningDurationMs,
+          });
+          continue;
+        }
+
         if (event.type === "text_chunk") {
           streamedAssistantText += event.text;
           yield AssistantResponseTextChunkEventSchema.parse({
             type: "assistant_response_text_chunk",
             text: event.text,
           });
-          continue;
-        }
-
-        // Reasoning summary provider events are not yet translated to
-        // assistant-level events in this runtime — that wiring lands in Task 6.
-        // Skip them for now so the completed event is still emitted correctly.
-        if (event.type !== "completed") {
           continue;
         }
 

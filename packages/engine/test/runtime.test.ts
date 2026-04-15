@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { ProviderStreamEvent } from "@buli/contracts";
 import type { AssistantResponseProvider, AssistantResponseRequest } from "../src/index.ts";
 import { AssistantResponseRuntime } from "../src/index.ts";
 
@@ -85,5 +86,49 @@ test("AssistantResponseRuntime emits a failure event when the provider throws", 
   expect(events).toEqual([
     { type: "assistant_response_started", model: "gpt-5.4" },
     { type: "assistant_response_failed", error: "provider failed" },
+  ]);
+});
+
+test("AssistantResponseRuntime re-emits reasoning-summary events from the provider in order", async () => {
+  const providerEvents: ProviderStreamEvent[] = [
+    { type: "reasoning_summary_started" },
+    { type: "reasoning_summary_text_chunk", text: "hmm" },
+    { type: "reasoning_summary_completed", reasoningDurationMs: 900 },
+    { type: "text_chunk", text: "answer" },
+    {
+      type: "completed",
+      usage: {
+        total: 10,
+        input: 5,
+        output: 3,
+        reasoning: 2,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ];
+  const fakeProvider = {
+    async *streamAssistantResponse() {
+      for (const providerEvent of providerEvents) {
+        yield providerEvent;
+      }
+    },
+  };
+  const runtime = new AssistantResponseRuntime(fakeProvider);
+
+  const emittedTypes: string[] = [];
+  for await (const assistantResponseEvent of runtime.streamAssistantResponse({
+    promptText: "explain",
+    selectedModelId: "gpt-5.4",
+  })) {
+    emittedTypes.push(assistantResponseEvent.type);
+  }
+
+  expect(emittedTypes).toEqual([
+    "assistant_response_started",
+    "assistant_reasoning_summary_started",
+    "assistant_reasoning_summary_text_chunk",
+    "assistant_reasoning_summary_completed",
+    "assistant_response_text_chunk",
+    "assistant_response_completed",
   ]);
 });
