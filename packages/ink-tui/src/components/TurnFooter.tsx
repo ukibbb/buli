@@ -5,16 +5,19 @@ import { chatScreenTheme } from "../chatScreenTheme.ts";
 import { glyphs } from "./glyphs.ts";
 
 // TurnFooter renders a one-row chip beneath an assistant turn so the user
-// sees the cost / timing / model at a glance. Mirrors the pen-file
-// component/TurnFooter: muted divider glyphs with accent numbers.
+// sees the model and timing immediately, then token usage once the terminal
+// response event arrives. Mirrors the pen-file component/TurnFooter: muted
+// divider glyphs with accent numbers.
 export type TurnFooterProps = {
   modelDisplayName: string;
   turnDurationMs: number;
-  usage: TokenUsage;
+  usage: TokenUsage | undefined;
 };
 
 export function TurnFooter(props: TurnFooterProps): ReactNode {
-  const totalTokenCount = props.usage.total ?? props.usage.input + props.usage.output + props.usage.reasoning;
+  const totalTokenCount = props.usage
+    ? props.usage.total ?? props.usage.input + props.usage.output + props.usage.reasoning
+    : undefined;
   return (
     <Box width="100%">
       <Text color={chatScreenTheme.textDim}>{glyphs.chevronRight}</Text>
@@ -25,15 +28,19 @@ export function TurnFooter(props: TurnFooterProps): ReactNode {
         <Text color={chatScreenTheme.textDim}>·</Text>
       </Box>
       <Box marginLeft={1}>
-        <Text color={chatScreenTheme.accentPrimaryMuted}>{`${totalTokenCount} tok`}</Text>
-      </Box>
-      <Box marginLeft={1}>
-        <Text color={chatScreenTheme.textDim}>·</Text>
-      </Box>
-      <Box marginLeft={1}>
         <Text color={chatScreenTheme.accentPrimaryMuted}>{formatTurnDurationMs(props.turnDurationMs)}</Text>
       </Box>
-      {props.usage.reasoning > 0 ? (
+      {totalTokenCount !== undefined ? (
+        <>
+          <Box marginLeft={1}>
+            <Text color={chatScreenTheme.textDim}>·</Text>
+          </Box>
+          <Box marginLeft={1}>
+            <Text color={chatScreenTheme.accentPrimaryMuted}>{`${totalTokenCount} tok`}</Text>
+          </Box>
+        </>
+      ) : null}
+      {props.usage && props.usage.reasoning > 0 ? (
         <>
           <Box marginLeft={1}>
             <Text color={chatScreenTheme.textDim}>·</Text>
@@ -43,7 +50,7 @@ export function TurnFooter(props: TurnFooterProps): ReactNode {
           </Box>
         </>
       ) : null}
-      {props.usage.cache.read > 0 ? (
+      {props.usage && props.usage.cache.read > 0 ? (
         <>
           <Box marginLeft={1}>
             <Text color={chatScreenTheme.textDim}>·</Text>

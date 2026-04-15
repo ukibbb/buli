@@ -7,6 +7,7 @@ export {
   AssistantResponseCompletedEventSchema,
   AssistantResponseEventSchema,
   AssistantResponseFailedEventSchema,
+  AssistantResponseIncompleteEventSchema,
   AssistantResponseStartedEventSchema,
   AssistantResponseTextChunkEventSchema,
   AssistantToolApprovalRequestedEventSchema,
@@ -24,6 +25,7 @@ export type {
   AssistantResponseCompletedEvent,
   AssistantResponseEvent,
   AssistantResponseFailedEvent,
+  AssistantResponseIncompleteEvent,
   AssistantResponseStartedEvent,
   AssistantResponseTextChunkEvent,
   AssistantToolApprovalRequestedEvent,
@@ -39,6 +41,7 @@ export type { PlanStep, PlanStepStatus } from "./planProposal.ts";
 export {
   AvailableAssistantModelSchema,
   ProviderCompletedEventSchema,
+  ProviderIncompleteEventSchema,
   ProviderPlanProposedEventSchema,
   ProviderRateLimitPendingEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
@@ -57,6 +60,7 @@ export {
 export type {
   AvailableAssistantModel,
   ProviderCompletedEvent,
+  ProviderIncompleteEvent,
   ProviderPlanProposedEvent,
   ProviderRateLimitPendingEvent,
   ProviderReasoningSummaryCompletedEvent,

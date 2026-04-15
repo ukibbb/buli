@@ -84,6 +84,40 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
   ]);
 });
 
+test("parseOpenAiStream emits an incomplete terminal event when the response stops early", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Partial"}\n\n',
+      'data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":20,"output_tokens":4,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":24}}}\n\n',
+    ].join(""),
+    {
+      headers: {
+        "Content-Type": "text/event-stream",
+      },
+    },
+  );
+
+  const events = [];
+  for await (const event of parseOpenAiStream(response)) {
+    events.push(event);
+  }
+
+  expect(events).toEqual([
+    { type: "text_chunk", text: "Partial" },
+    {
+      type: "incomplete",
+      incompleteReason: "max_output_tokens",
+      usage: {
+        total: 24,
+        input: 20,
+        output: 3,
+        reasoning: 1,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
 test("OpenAiProvider sends auth headers and streams assistant response provider events", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });

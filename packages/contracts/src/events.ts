@@ -1,5 +1,5 @@
 // Assistant-turn streaming events. A single turn produces:
-//   started → (reasoning summary stream)? → (text chunks | tool calls)* → turn_completed? → completed | failed
+//   started → (reasoning summary stream)? → (text chunks | tool calls)* → turn_completed? → completed | incomplete | failed
 // Reasoning-summary events have their own lifecycle (started → chunks → completed)
 // because the underlying Responses API emits summary text separately from the
 // model's final answer. Keeping them as independent arms lets the UI render a
@@ -37,6 +37,14 @@ export const AssistantResponseCompletedEventSchema = z
   .object({
     type: z.literal("assistant_response_completed"),
     message: TranscriptMessageSchema,
+    usage: TokenUsageSchema,
+  })
+  .strict();
+
+export const AssistantResponseIncompleteEventSchema = z
+  .object({
+    type: z.literal("assistant_response_incomplete"),
+    incompleteReason: z.string().min(1),
     usage: TokenUsageSchema,
   })
   .strict();
@@ -108,15 +116,14 @@ export const AssistantToolCallFailedEventSchema = z
   })
   .strict();
 
-// Emitted after assistant_response_completed when the UI should pin a turn
-// footer (model · tokens · duration). Separate from assistant_response_completed
-// because the footer is a visual element tied to the full turn, not to a single
-// response message.
+// Emitted when the UI should pin turn metadata (model · duration) for the
+// current turn. Token usage arrives later on assistant_response_completed or
+// assistant_response_incomplete so this event stays truthful instead of
+// fabricating accounting data.
 export const AssistantTurnCompletedEventSchema = z
   .object({
     type: z.literal("assistant_turn_completed"),
     turnDurationMs: z.number().int().nonnegative(),
-    usage: TokenUsageSchema,
     modelDisplayName: z.string().min(1),
   })
   .strict();
@@ -160,6 +167,7 @@ export const AssistantResponseEventSchema = z.discriminatedUnion("type", [
   AssistantResponseStartedEventSchema,
   AssistantResponseTextChunkEventSchema,
   AssistantResponseCompletedEventSchema,
+  AssistantResponseIncompleteEventSchema,
   AssistantResponseFailedEventSchema,
   AssistantReasoningSummaryStartedEventSchema,
   AssistantReasoningSummaryTextChunkEventSchema,
@@ -176,6 +184,7 @@ export const AssistantResponseEventSchema = z.discriminatedUnion("type", [
 export type AssistantResponseStartedEvent = z.infer<typeof AssistantResponseStartedEventSchema>;
 export type AssistantResponseTextChunkEvent = z.infer<typeof AssistantResponseTextChunkEventSchema>;
 export type AssistantResponseCompletedEvent = z.infer<typeof AssistantResponseCompletedEventSchema>;
+export type AssistantResponseIncompleteEvent = z.infer<typeof AssistantResponseIncompleteEventSchema>;
 export type AssistantResponseFailedEvent = z.infer<typeof AssistantResponseFailedEventSchema>;
 export type AssistantReasoningSummaryStartedEvent = z.infer<typeof AssistantReasoningSummaryStartedEventSchema>;
 export type AssistantReasoningSummaryTextChunkEvent = z.infer<typeof AssistantReasoningSummaryTextChunkEventSchema>;

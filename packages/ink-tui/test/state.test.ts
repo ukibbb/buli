@@ -89,6 +89,43 @@ test("applyAssistantResponseEventToChatScreenState appends text chunks and store
   });
 });
 
+test("applyAssistantResponseEventToChatScreenState backfills the current turn footer when the response completes", () => {
+  const streaming = createStreamingTurnState();
+  const afterTurnFooter = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_turn_completed",
+    turnDurationMs: 1800,
+    modelDisplayName: "GPT-5.4",
+  });
+  const afterCompletion = applyAssistantResponseEventToChatScreenState(afterTurnFooter, {
+    type: "assistant_response_completed",
+    message: {
+      id: "assistant-1",
+      role: "assistant",
+      text: "done",
+    },
+    usage: {
+      total: 90,
+      input: 50,
+      output: 30,
+      reasoning: 10,
+      cache: { read: 0, write: 0 },
+    },
+  });
+
+  const turnFooterEntry = afterCompletion.conversationTranscript.find((entry) => entry.kind === "turn_footer");
+  if (turnFooterEntry?.kind !== "turn_footer") {
+    throw new Error("expected a turn_footer entry");
+  }
+
+  expect(turnFooterEntry.usage).toEqual({
+    total: 90,
+    input: 50,
+    output: 30,
+    reasoning: 10,
+    cache: { read: 0, write: 0 },
+  });
+});
+
 test("showModelSelectionLoadingState marks the model selection as loading", () => {
   const state = showModelSelectionLoadingState(createInitialChatScreenState({ selectedModelId: "gpt-5.4" }));
 
@@ -467,7 +504,7 @@ test("applyAssistantResponseEventToChatScreenState appends an orphan tool comple
   expect(lastEntry.toolCallId).toBe("tc_grep_orphan");
 });
 
-test("applyAssistantResponseEventToChatScreenState pins plan_proposal, rate_limit_notice, tool_approval_request, and turn_footer entries", () => {
+test("applyAssistantResponseEventToChatScreenState pins plan_proposal, rate_limit_notice, tool_approval_request, and a metadata-only turn_footer entry", () => {
   const streaming = createStreamingTurnState();
   const afterPlan = applyAssistantResponseEventToChatScreenState(streaming, {
     type: "assistant_plan_proposed",
@@ -494,7 +531,6 @@ test("applyAssistantResponseEventToChatScreenState pins plan_proposal, rate_limi
     type: "assistant_turn_completed",
     turnDurationMs: 1800,
     modelDisplayName: "GPT-5.4",
-    usage: { input: 10, output: 5, reasoning: 3, cache: { read: 0, write: 0 } },
   });
 
   const pinnedKinds = afterTurnFooter.conversationTranscript.map((conversationTranscriptEntry) => conversationTranscriptEntry.kind);
@@ -504,6 +540,75 @@ test("applyAssistantResponseEventToChatScreenState pins plan_proposal, rate_limi
     "tool_approval_request",
     "turn_footer",
   ]);
+
+  const turnFooterEntry = afterTurnFooter.conversationTranscript.at(-1);
+  if (turnFooterEntry?.kind !== "turn_footer") {
+    throw new Error("expected a turn_footer entry");
+  }
+  expect(turnFooterEntry.usage).toBeUndefined();
+});
+
+test("applyAssistantResponseEventToChatScreenState appends an incomplete notice and backfills footer usage when the response is incomplete", () => {
+  let state = createStreamingTurnState();
+  state = applyAssistantResponseEventToChatScreenState(state, {
+    type: "assistant_turn_completed",
+    turnDurationMs: 900,
+    modelDisplayName: "GPT-5.4",
+  });
+  state = applyAssistantResponseEventToChatScreenState(state, {
+    type: "assistant_response_text_chunk",
+    text: "Partial answer",
+  });
+  state = applyAssistantResponseEventToChatScreenState(state, {
+    type: "assistant_response_incomplete",
+    incompleteReason: "max_output_tokens",
+    usage: {
+      total: 24,
+      input: 20,
+      output: 3,
+      reasoning: 1,
+      cache: { read: 0, write: 0 },
+    },
+  });
+
+  expect(state.assistantResponseStatus).toBe("waiting_for_user_input");
+  expect(state.latestTokenUsage).toEqual({
+    total: 24,
+    input: 20,
+    output: 3,
+    reasoning: 1,
+    cache: { read: 0, write: 0 },
+  });
+
+  const lastEntry = state.conversationTranscript.at(-1);
+  expect(lastEntry).toEqual({
+    kind: "incomplete_response_notice",
+    incompleteReason: "max_output_tokens",
+  });
+
+  const turnFooterEntry = state.conversationTranscript.find((entry) => entry.kind === "turn_footer");
+  if (turnFooterEntry?.kind !== "turn_footer") {
+    throw new Error("expected a turn_footer entry");
+  }
+  expect(turnFooterEntry.usage).toEqual({
+    total: 24,
+    input: 20,
+    output: 3,
+    reasoning: 1,
+    cache: { read: 0, write: 0 },
+  });
+
+  const partialAssistantMessage = state.conversationTranscript.find(
+    (entry) => entry.kind === "message" && entry.message.role === "assistant",
+  );
+  expect(partialAssistantMessage).toEqual({
+    kind: "message",
+    message: {
+      id: "assistant-streaming",
+      role: "assistant",
+      text: "Partial answer",
+    },
+  });
 });
 
 test("applyAssistantResponseEventToChatScreenState back-fills reasoning token count when assistant response completes", () => {

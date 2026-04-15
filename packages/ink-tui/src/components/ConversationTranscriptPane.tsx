@@ -5,6 +5,7 @@ import type { ConversationTranscriptViewportMeasurements } from "../conversation
 import { parseAssistantResponseMarkdown } from "../richText/parseAssistantResponseMarkdown.ts";
 import { RenderAssistantResponseTree } from "../richText/renderAssistantResponseTree.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
+import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoticeBlock.tsx";
 import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
 import { RateLimitNoticeBlock } from "./behavior/RateLimitNoticeBlock.tsx";
 import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.tsx";
@@ -92,6 +93,10 @@ const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntr
 
   if (conversationTranscriptEntry.kind === "error") {
     return <ErrorBannerBlock errorText={conversationTranscriptEntry.text} />;
+  }
+
+  if (conversationTranscriptEntry.kind === "incomplete_response_notice") {
+    return <IncompleteResponseNoticeBlock incompleteReason={conversationTranscriptEntry.incompleteReason} />;
   }
 
   if (conversationTranscriptEntry.kind === "streaming_reasoning_summary") {

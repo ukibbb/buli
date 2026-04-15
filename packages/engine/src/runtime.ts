@@ -5,6 +5,7 @@ import {
   AssistantReasoningSummaryStartedEventSchema,
   AssistantReasoningSummaryTextChunkEventSchema,
   AssistantResponseFailedEventSchema,
+  AssistantResponseIncompleteEventSchema,
   AssistantResponseStartedEventSchema,
   AssistantResponseTextChunkEventSchema,
   AssistantToolApprovalRequestedEventSchema,
@@ -38,7 +39,6 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
     });
 
     let streamedAssistantText = "";
-    let providerCompletedEventWasSeen = false;
 
     try {
       for await (const providerStreamEvent of this.provider.streamAssistantResponse(input)) {
@@ -136,21 +136,27 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
 
         if (providerStreamEvent.type === "turn_completed") {
           // A turn_completed frame is cosmetic: the UI uses it to pin a
-          // TurnFooter. The final assistant_response_completed event still
-          // carries authoritative usage, so we forward the display fields here
-          // and leave assistant_response_completed to come from the provider's
-          // own `completed` frame.
+          // TurnFooter. Authoritative token usage arrives later on the terminal
+          // completed or incomplete response event, so this event only carries
+          // the display metadata the footer can show immediately.
           yield AssistantTurnCompletedEventSchema.parse({
             type: "assistant_turn_completed",
             turnDurationMs: providerStreamEvent.turnDurationMs,
             modelDisplayName: providerStreamEvent.modelDisplayName,
-            usage: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           });
           continue;
         }
 
+        if (providerStreamEvent.type === "incomplete") {
+          yield AssistantResponseIncompleteEventSchema.parse({
+            type: "assistant_response_incomplete",
+            incompleteReason: providerStreamEvent.incompleteReason,
+            usage: providerStreamEvent.usage,
+          });
+          return;
+        }
+
         // Remaining arm: providerStreamEvent.type === "completed".
-        providerCompletedEventWasSeen = true;
         yield createCompletedAssistantResponseEvent({
           assistantText: streamedAssistantText,
           usage: providerStreamEvent.usage,
@@ -158,12 +164,10 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
         return;
       }
 
-      if (!providerCompletedEventWasSeen) {
-        yield AssistantResponseFailedEventSchema.parse({
-          type: "assistant_response_failed",
-          error: "Provider stream ended before completion",
-        });
-      }
+      yield AssistantResponseFailedEventSchema.parse({
+        type: "assistant_response_failed",
+        error: "Provider stream ended before completion",
+      });
     } catch (error) {
       yield AssistantResponseFailedEventSchema.parse({
         type: "assistant_response_failed",

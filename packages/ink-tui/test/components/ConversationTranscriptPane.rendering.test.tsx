@@ -68,6 +68,10 @@ test("ConversationTranscriptPane renders every new transcript entry kind", () =>
       riskExplanation: "Destructive command",
     },
     {
+      kind: "incomplete_response_notice",
+      incompleteReason: "max_output_tokens",
+    },
+    {
       kind: "turn_footer",
       turnFooterId: "tf_1",
       turnDurationMs: 4200,
@@ -105,9 +109,34 @@ test("ConversationTranscriptPane renders every new transcript entry kind", () =>
   expect(output).toContain("Approval required");
   expect(output).toContain("Destructive command");
   expect(output).toContain("rm -rf build");
+  // Incomplete response notice
+  expect(output).toContain("Response incomplete");
+  expect(output).toContain("max_output_tokens");
   // Turn footer
   expect(output).toContain("GPT-5.4 (demo)");
   expect(output).toContain("180 tok");
+});
+
+test("ConversationTranscriptPane renders a turn footer before usage arrives", () => {
+  const output = renderWithoutAnsi(
+    <ConversationTranscriptPane
+      conversationTranscriptEntries={[
+        {
+          kind: "turn_footer",
+          turnFooterId: "tf_pending",
+          turnDurationMs: 1200,
+          modelDisplayName: "GPT-5.4",
+          usage: undefined,
+        },
+      ]}
+      hiddenTranscriptRowsAboveViewport={0}
+      onConversationTranscriptViewportMeasured={() => {}}
+    />,
+  );
+
+  expect(output).toContain("GPT-5.4");
+  expect(output).toContain("1.2s");
+  expect(output).not.toContain("tok");
 });
 
 test("ConversationTranscriptPane parses assistant markdown into rich blocks", () => {

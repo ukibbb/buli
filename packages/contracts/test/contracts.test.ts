@@ -5,6 +5,7 @@ import {
   AssistantReasoningSummaryCompletedEventSchema,
   AssistantReasoningSummaryStartedEventSchema,
   AssistantReasoningSummaryTextChunkEventSchema,
+  AssistantResponseIncompleteEventSchema,
   AssistantResponseEventSchema,
   AssistantToolApprovalRequestedEventSchema,
   AssistantToolCallCompletedEventSchema,
@@ -14,6 +15,7 @@ import {
   AvailableAssistantModelSchema,
   PlanStepSchema,
   ProviderCompletedEventSchema,
+  ProviderIncompleteEventSchema,
   ProviderPlanProposedEventSchema,
   ProviderRateLimitPendingEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
@@ -358,10 +360,18 @@ test("AssistantTurnCompletedEventSchema parses a turn summary", () => {
     type: "assistant_turn_completed",
     turnDurationMs: 2500,
     modelDisplayName: "GPT-5.4",
-    usage: { input: 10, output: 5, reasoning: 3, cache: { read: 0, write: 0 } },
   });
   expect(event.turnDurationMs).toBe(2500);
   expect(event.modelDisplayName).toBe("GPT-5.4");
+});
+
+test("AssistantResponseIncompleteEventSchema parses an incomplete response with usage", () => {
+  const event = AssistantResponseIncompleteEventSchema.parse({
+    type: "assistant_response_incomplete",
+    incompleteReason: "max_output_tokens",
+    usage: { input: 10, output: 5, reasoning: 3, cache: { read: 0, write: 0 } },
+  });
+  expect(event.incompleteReason).toBe("max_output_tokens");
 });
 
 test("AssistantRateLimitPendingEventSchema parses a rate-limit notice", () => {
@@ -400,6 +410,13 @@ test("AssistantPlanProposedEventSchema parses a plan with at least one step", ()
 test("AssistantResponseEventSchema accepts every new tool-call arm", () => {
   expect(
     AssistantResponseEventSchema.parse({
+      type: "assistant_response_incomplete",
+      incompleteReason: "max_output_tokens",
+      usage: { input: 1, output: 0, reasoning: 2, cache: { read: 0, write: 0 } },
+    }).type,
+  ).toBe("assistant_response_incomplete");
+  expect(
+    AssistantResponseEventSchema.parse({
       type: "assistant_tool_call_started",
       toolCallId: "tc",
       toolCallDetail: { toolName: "read", readFilePath: "a" },
@@ -425,6 +442,13 @@ test("AssistantResponseEventSchema accepts every new tool-call arm", () => {
 });
 
 test("ProviderStreamEventSchema accepts every new provider-level arm", () => {
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "incomplete",
+      incompleteReason: "max_output_tokens",
+      usage: { input: 1, output: 0, reasoning: 2, cache: { read: 0, write: 0 } },
+    }).type,
+  ).toBe("incomplete");
   expect(
     ProviderStreamEventSchema.parse({
       type: "tool_call_started",
@@ -507,6 +531,13 @@ test("Provider tool-call schemas validate independently of the discriminated uni
       durationMs: 1,
     }).errorText,
   ).toBe("missing");
+  expect(
+    ProviderIncompleteEventSchema.parse({
+      type: "incomplete",
+      incompleteReason: "max_output_tokens",
+      usage: { input: 1, output: 0, reasoning: 2, cache: { read: 0, write: 0 } },
+    }).incompleteReason,
+  ).toBe("max_output_tokens");
   expect(
     ProviderTurnCompletedEventSchema.parse({
       type: "turn_completed",

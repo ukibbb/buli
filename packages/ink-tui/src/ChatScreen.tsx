@@ -42,6 +42,7 @@ import {
   type ChatScreenState,
 } from "./chatScreenState.ts";
 import { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
+import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 
 export type ChatScreenProps = {
   selectedModelId: string;
@@ -182,9 +183,11 @@ export function ChatScreen(props: ChatScreenProps) {
         : {}),
     };
 
-    for await (const assistantResponseEvent of props.assistantResponseRunner.streamAssistantResponse(assistantResponseRequest)) {
-      applyIncomingAssistantResponseEventToChatScreen(assistantResponseEvent);
-    }
+    await relayAssistantResponseRunnerEvents({
+      assistantResponseRunner: props.assistantResponseRunner,
+      assistantResponseRequest,
+      onAssistantResponseEvent: applyIncomingAssistantResponseEventToChatScreen,
+    });
   });
 
   // The model selection flow also changes over time.

@@ -63,6 +63,10 @@ export type ConversationTranscriptEntry =
       text: string;
     }
   | {
+      kind: "incomplete_response_notice";
+      incompleteReason: string;
+    }
+  | {
       kind: "streaming_reasoning_summary";
       reasoningSummaryId: string;
       reasoningSummaryText: string;
@@ -118,7 +122,7 @@ export type ConversationTranscriptEntry =
       kind: "turn_footer";
       turnFooterId: string;
       turnDurationMs: number;
-      usage: TokenUsage;
+      usage: TokenUsage | undefined;
       modelDisplayName: string;
     };
 
@@ -539,20 +543,25 @@ export function applyAssistantResponseEventToChatScreenState(
             { kind: "message" as const, message: assistantResponseEvent.message },
           ];
 
-    const reasoningTokenCount = assistantResponseEvent.usage.reasoning;
-    const nextConversationTranscript = backfillReasoningTokenCountInCurrentTurn(
+    return finalizeCurrentTurnAfterTerminalResponse(
+      chatScreenState,
+      assistantResponseEvent.usage,
       nextConversationTranscriptWithAssistantMessage,
-      reasoningTokenCount,
     );
+  }
 
-    return {
-      ...chatScreenState,
-      assistantResponseStatus: "waiting_for_user_input",
-      latestTokenUsage: assistantResponseEvent.usage,
-      conversationTranscript: nextConversationTranscript,
-      streamingAssistantMessageId: undefined,
-      currentStreamingReasoningSummaryId: undefined,
-    };
+  if (assistantResponseEvent.type === "assistant_response_incomplete") {
+    return finalizeCurrentTurnAfterTerminalResponse(
+      chatScreenState,
+      assistantResponseEvent.usage,
+      [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "incomplete_response_notice",
+          incompleteReason: assistantResponseEvent.incompleteReason,
+        },
+      ],
+    );
   }
 
   if (assistantResponseEvent.type === "assistant_reasoning_summary_started") {
@@ -759,7 +768,7 @@ export function applyAssistantResponseEventToChatScreenState(
           kind: "turn_footer",
           turnFooterId: randomUUID(),
           turnDurationMs: assistantResponseEvent.turnDurationMs,
-          usage: assistantResponseEvent.usage,
+          usage: undefined,
           modelDisplayName: assistantResponseEvent.modelDisplayName,
         },
       ],
@@ -787,6 +796,56 @@ function replaceStreamingToolCallOrAppend(
   }
   const nextConversationTranscript = [...conversationTranscript];
   nextConversationTranscript[streamingEntryIndex] = replacementEntry;
+  return nextConversationTranscript;
+}
+
+function finalizeCurrentTurnAfterTerminalResponse(
+  chatScreenState: ChatScreenState,
+  usage: TokenUsage,
+  conversationTranscript: ConversationTranscriptEntry[],
+): ChatScreenState {
+  const conversationTranscriptWithReasoningTokenCount = backfillReasoningTokenCountInCurrentTurn(
+    conversationTranscript,
+    usage.reasoning,
+  );
+  const conversationTranscriptWithTurnFooterUsage = backfillUsageIntoCurrentTurnFooter(
+    conversationTranscriptWithReasoningTokenCount,
+    usage,
+  );
+
+  return {
+    ...chatScreenState,
+    assistantResponseStatus: "waiting_for_user_input",
+    latestTokenUsage: usage,
+    conversationTranscript: conversationTranscriptWithTurnFooterUsage,
+    streamingAssistantMessageId: undefined,
+    currentStreamingReasoningSummaryId: undefined,
+  };
+}
+
+function backfillUsageIntoCurrentTurnFooter(
+  conversationTranscript: ConversationTranscriptEntry[],
+  usage: TokenUsage,
+): ConversationTranscriptEntry[] {
+  const nextConversationTranscript = [...conversationTranscript];
+
+  for (let index = nextConversationTranscript.length - 1; index >= 0; index -= 1) {
+    const conversationTranscriptEntry = nextConversationTranscript[index];
+    if (!conversationTranscriptEntry) {
+      continue;
+    }
+    if (conversationTranscriptEntry.kind === "message" && conversationTranscriptEntry.message.role === "user") {
+      break;
+    }
+    if (conversationTranscriptEntry.kind === "turn_footer") {
+      nextConversationTranscript[index] = {
+        ...conversationTranscriptEntry,
+        usage,
+      };
+      break;
+    }
+  }
+
   return nextConversationTranscript;
 }
 

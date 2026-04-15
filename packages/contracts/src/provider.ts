@@ -42,6 +42,14 @@ export const ProviderCompletedEventSchema = z
   })
   .strict();
 
+export const ProviderIncompleteEventSchema = z
+  .object({
+    type: z.literal("incomplete"),
+    incompleteReason: z.string().min(1),
+    usage: TokenUsageSchema,
+  })
+  .strict();
+
 // Provider-level reasoning summary events. Mirror the assistant-level
 // reasoning arms but live here so the provider boundary can emit them without
 // knowing about assistant-turn semantics. Duration is measured provider-side
@@ -132,6 +140,7 @@ export const ProviderPlanProposedEventSchema = z
 export const ProviderStreamEventSchema = z.discriminatedUnion("type", [
   ProviderTextChunkEventSchema,
   ProviderCompletedEventSchema,
+  ProviderIncompleteEventSchema,
   ProviderReasoningSummaryStartedEventSchema,
   ProviderReasoningSummaryTextChunkEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
@@ -149,6 +158,7 @@ export type AvailableAssistantModel = z.infer<typeof AvailableAssistantModelSche
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type ProviderTextChunkEvent = z.infer<typeof ProviderTextChunkEventSchema>;
 export type ProviderCompletedEvent = z.infer<typeof ProviderCompletedEventSchema>;
+export type ProviderIncompleteEvent = z.infer<typeof ProviderIncompleteEventSchema>;
 export type ProviderReasoningSummaryStartedEvent = z.infer<typeof ProviderReasoningSummaryStartedEventSchema>;
 export type ProviderReasoningSummaryTextChunkEvent = z.infer<typeof ProviderReasoningSummaryTextChunkEventSchema>;
 export type ProviderReasoningSummaryCompletedEvent = z.infer<typeof ProviderReasoningSummaryCompletedEventSchema>;

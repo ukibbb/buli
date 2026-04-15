@@ -24,8 +24,15 @@ const ErrorChunkSchema = z.object({
   message: z.string(),
 });
 
-const ResponseFinishedChunkSchema = z.object({
-  type: z.enum(["response.completed", "response.incomplete"]),
+const ResponseCompletedChunkSchema = z.object({
+  type: z.literal("response.completed"),
+  response: z.object({
+    usage: OpenAiUsageSchema,
+  }),
+});
+
+const ResponseIncompleteChunkSchema = z.object({
+  type: z.literal("response.incomplete"),
   response: z.object({
     incomplete_details: z.object({ reason: z.string() }).nullish(),
     usage: OpenAiUsageSchema,
@@ -169,13 +176,25 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       continue;
     }
 
-    const finish = ResponseFinishedChunkSchema.safeParse(value);
-    if (finish.success) {
+    const completedResponse = ResponseCompletedChunkSchema.safeParse(value);
+    if (completedResponse.success) {
       yield* emitPendingReasoningCompletedEvent();
       finished = true;
       yield ProviderStreamEventSchema.parse({
         type: "completed",
-        usage: normalizeOpenAiUsage(finish.data.response.usage),
+        usage: normalizeOpenAiUsage(completedResponse.data.response.usage),
+      });
+      continue;
+    }
+
+    const incompleteResponse = ResponseIncompleteChunkSchema.safeParse(value);
+    if (incompleteResponse.success) {
+      yield* emitPendingReasoningCompletedEvent();
+      finished = true;
+      yield ProviderStreamEventSchema.parse({
+        type: "incomplete",
+        incompleteReason: incompleteResponse.data.response.incomplete_details?.reason ?? "unknown",
+        usage: normalizeOpenAiUsage(incompleteResponse.data.response.usage),
       });
     }
   }

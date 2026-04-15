@@ -16,6 +16,15 @@ const SUCCESS_HTML = `<!doctype html>
   </body>
 </html>`;
 
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function errorHtml(error: string): string {
   return `<!doctype html>
 <html>
@@ -24,7 +33,7 @@ function errorHtml(error: string): string {
   </head>
   <body>
     <h1>Authorization Failed</h1>
-    <p>${error}</p>
+    <p>${escapeHtml(error)}</p>
   </body>
 </html>`;
 }

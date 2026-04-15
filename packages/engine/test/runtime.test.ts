@@ -6,9 +6,7 @@ import { AssistantResponseRuntime } from "../src/index.ts";
 class FakeProvider implements AssistantResponseProvider {
   lastRequest: AssistantResponseRequest | undefined;
 
-  async *streamAssistantResponse(
-    input: AssistantResponseRequest,
-  ): AsyncGenerator<{ type: "text_chunk"; text: string } | { type: "completed"; usage: { total: number; input: number; output: number; reasoning: number; cache: { read: number; write: number } } }> {
+  async *streamAssistantResponse(input: AssistantResponseRequest): AsyncGenerator<ProviderStreamEvent> {
     this.lastRequest = input;
     yield { type: "text_chunk", text: "Hello" };
     yield { type: "text_chunk", text: " world" };
@@ -26,7 +24,7 @@ class FakeProvider implements AssistantResponseProvider {
 }
 
 class BrokenProvider implements AssistantResponseProvider {
-  async *streamAssistantResponse(): AsyncGenerator<{ type: "text_chunk"; text: string } | { type: "completed"; usage: { total: number; input: number; output: number; reasoning: number; cache: { read: number; write: number } } }> {
+  async *streamAssistantResponse(): AsyncGenerator<ProviderStreamEvent> {
     throw new Error("provider failed");
   }
 }
@@ -147,15 +145,15 @@ test("AssistantResponseRuntime translates every tool-call, turn, rate-limit, app
   };
   const runtime = new AssistantResponseRuntime(fakeProvider);
 
-  const emittedEventTypes: string[] = [];
+  const emittedEvents = [];
   for await (const assistantResponseEvent of runtime.streamAssistantResponse({
     promptText: "do it",
     selectedModelId: "gpt-5.4",
   })) {
-    emittedEventTypes.push(assistantResponseEvent.type);
+    emittedEvents.push(assistantResponseEvent);
   }
 
-  expect(emittedEventTypes).toEqual([
+  expect(emittedEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_response_started",
     "assistant_tool_call_started",
     "assistant_tool_call_completed",
@@ -166,6 +164,49 @@ test("AssistantResponseRuntime translates every tool-call, turn, rate-limit, app
     "assistant_turn_completed",
     "assistant_response_text_chunk",
     "assistant_response_completed",
+  ]);
+
+  expect(emittedEvents[7]).toEqual({
+    type: "assistant_turn_completed",
+    turnDurationMs: 420,
+    modelDisplayName: "GPT-5.4",
+  });
+});
+
+test("AssistantResponseRuntime translates an incomplete provider terminal event", async () => {
+  const providerEvents: ProviderStreamEvent[] = [
+    { type: "text_chunk", text: "Partial answer" },
+    {
+      type: "incomplete",
+      incompleteReason: "max_output_tokens",
+      usage: { total: 24, input: 20, output: 3, reasoning: 1, cache: { read: 0, write: 0 } },
+    },
+  ];
+  const fakeProvider = {
+    async *streamAssistantResponse() {
+      for (const providerEvent of providerEvents) {
+        yield providerEvent;
+      }
+    },
+  };
+  const runtime = new AssistantResponseRuntime(fakeProvider);
+
+  const emittedEvents = [];
+  for await (const assistantResponseEvent of runtime.streamAssistantResponse({
+    promptText: "continue",
+    selectedModelId: "gpt-5.4",
+  })) {
+    emittedEvents.push(assistantResponseEvent);
+  }
+
+  expect(emittedEvents).toEqual([
+    { type: "assistant_response_started", model: "gpt-5.4" },
+    { type: "assistant_response_text_chunk", text: "Partial answer" },
+    {
+      type: "assistant_response_incomplete",
+      incompleteReason: "max_output_tokens",
+      usage: { total: 24, input: 20, output: 3, reasoning: 1, cache: { read: 0, write: 0 } },
+    },
   ]);
 });
 
