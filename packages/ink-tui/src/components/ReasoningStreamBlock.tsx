@@ -14,8 +14,11 @@ export type ReasoningStreamBlockProps = {
 };
 
 export function ReasoningStreamBlock(props: ReasoningStreamBlockProps) {
-  // Force a re-render every 100 ms so the elapsed timer increments live.
-  useAnimation({ interval: 100 });
+  // Force a re-render every 250 ms so the elapsed timer increments live.
+  // 250 ms gives the user one update per quarter-second — visually smooth
+  // without driving four full repaint passes per second through the
+  // backgroundColor stripes inside the surrounding cards.
+  useAnimation({ interval: 250 });
   const elapsedSeconds = ((Date.now() - props.reasoningStartedAtMs) / 1000).toFixed(1);
 
   return (

@@ -1,12 +1,23 @@
-import { Box, Text, type DOMElement, useBoxMetrics } from "ink";
-import React, { useEffect, useRef } from "react";
+import { Box, type DOMElement, useBoxMetrics } from "ink";
+import { memo, useEffect, useRef, type ReactNode } from "react";
 import type { ConversationTranscriptEntry } from "../chatScreenState.ts";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
 import type { ConversationTranscriptViewportMeasurements } from "../conversationTranscriptViewportState.ts";
+import { parseAssistantResponseMarkdown } from "../richText/parseAssistantResponseMarkdown.ts";
+import { RenderAssistantResponseTree } from "../richText/renderAssistantResponseTree.tsx";
+import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
+import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
+import { RateLimitNoticeBlock } from "./behavior/RateLimitNoticeBlock.tsx";
+import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.tsx";
 import { ReasoningCollapsedChip } from "./ReasoningCollapsedChip.tsx";
 import { ReasoningStreamBlock } from "./ReasoningStreamBlock.tsx";
+import { ToolCallEntryView } from "./toolCalls/ToolCallEntryView.tsx";
+import { TurnFooter } from "./TurnFooter.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 
+// ConversationTranscriptPane is the dispatch switch for every transcript
+// entry kind. Each arm returns the component that matches the design for
+// that entry so the pane stays a pure mapper — all rendering logic lives
+// in the leaf components.
 export type ConversationTranscriptPaneProps = {
   conversationTranscriptEntries: ConversationTranscriptEntry[];
   hiddenTranscriptRowsAboveViewport: number;
@@ -44,70 +55,6 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
     return <Box flexGrow={1} ref={conversationTranscriptViewportFrameRef} />;
   }
 
-  const conversationTranscriptMessageBlocks = props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => {
-    const topMargin = index === 0 ? 0 : 1;
-
-    if (conversationTranscriptEntry.kind === "error") {
-      return (
-        <Box
-          borderColor={chatScreenTheme.accentRed}
-          borderStyle="round"
-          flexDirection="column"
-          key={`error-${index}`}
-          marginTop={topMargin}
-          paddingX={1}
-        >
-          <Text bold color={chatScreenTheme.accentRed}>
-            Error
-          </Text>
-          <Text color={chatScreenTheme.textPrimary}>{conversationTranscriptEntry.text}</Text>
-        </Box>
-      );
-    }
-
-    if (conversationTranscriptEntry.kind === "streaming_reasoning_summary") {
-      return (
-        <Box key={conversationTranscriptEntry.reasoningSummaryId} marginTop={topMargin}>
-          <ReasoningStreamBlock
-            reasoningSummaryText={conversationTranscriptEntry.reasoningSummaryText}
-            reasoningStartedAtMs={conversationTranscriptEntry.reasoningStartedAtMs}
-          />
-        </Box>
-      );
-    }
-
-    if (conversationTranscriptEntry.kind === "completed_reasoning_summary") {
-      return (
-        <Box key={conversationTranscriptEntry.reasoningSummaryId} marginTop={topMargin}>
-          <ReasoningCollapsedChip
-            reasoningDurationMs={conversationTranscriptEntry.reasoningDurationMs}
-            reasoningTokenCount={conversationTranscriptEntry.reasoningTokenCount}
-          />
-        </Box>
-      );
-    }
-
-    // From here on, conversationTranscriptEntry.kind === "message"
-    if (conversationTranscriptEntry.message.role === "user") {
-      return (
-        <Box key={conversationTranscriptEntry.message.id} marginTop={topMargin}>
-          <UserPromptBlock promptText={conversationTranscriptEntry.message.text} />
-        </Box>
-      );
-    }
-
-    return (
-      <Box
-        flexDirection="column"
-        key={conversationTranscriptEntry.message.id}
-        marginTop={topMargin}
-      >
-        <Text color={chatScreenTheme.textMuted}>// agent · response</Text>
-        <Text color={chatScreenTheme.textPrimary}>{conversationTranscriptEntry.message.text}</Text>
-      </Box>
-    );
-  });
-
   return (
     <Box flexDirection="column" flexGrow={1} overflow="hidden" position="relative" ref={conversationTranscriptViewportFrameRef}>
       <Box
@@ -118,8 +65,127 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
         top={shouldUseMeasuredTranscriptOffset ? -props.hiddenTranscriptRowsAboveViewport : undefined}
         width={shouldUseMeasuredTranscriptOffset ? "100%" : undefined}
       >
-        {conversationTranscriptMessageBlocks}
+        {props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => (
+          <Box
+            flexDirection="column"
+            key={`transcript-entry-${index}`}
+            marginTop={index === 0 ? 0 : 1}
+            width="100%"
+          >
+            <ConversationTranscriptEntryView conversationTranscriptEntry={conversationTranscriptEntry} />
+          </Box>
+        ))}
       </Box>
     </Box>
   );
 }
+
+// Memoised so cursor / snake / elapsed-timer ticks elsewhere in the tree
+// don't repaint every finalised tool-call card, reasoning chip, or message.
+// The reducer reuses object identity for entries it doesn't mutate, so
+// React.memo's default shallow compare correctly skips work for them and
+// only re-renders the one growing entry during streaming.
+const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntryView(props: {
+  conversationTranscriptEntry: ConversationTranscriptEntry;
+}): ReactNode {
+  const { conversationTranscriptEntry } = props;
+
+  if (conversationTranscriptEntry.kind === "error") {
+    return <ErrorBannerBlock errorText={conversationTranscriptEntry.text} />;
+  }
+
+  if (conversationTranscriptEntry.kind === "streaming_reasoning_summary") {
+    return (
+      <ReasoningStreamBlock
+        reasoningSummaryText={conversationTranscriptEntry.reasoningSummaryText}
+        reasoningStartedAtMs={conversationTranscriptEntry.reasoningStartedAtMs}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "completed_reasoning_summary") {
+    return (
+      <ReasoningCollapsedChip
+        reasoningDurationMs={conversationTranscriptEntry.reasoningDurationMs}
+        reasoningTokenCount={conversationTranscriptEntry.reasoningTokenCount}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "streaming_tool_call") {
+    return (
+      <ToolCallEntryView
+        renderState="streaming"
+        toolCallDetail={conversationTranscriptEntry.toolCallDetail}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "completed_tool_call") {
+    return (
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={conversationTranscriptEntry.toolCallDetail}
+        durationMs={conversationTranscriptEntry.durationMs}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "failed_tool_call") {
+    return (
+      <ToolCallEntryView
+        renderState="failed"
+        toolCallDetail={conversationTranscriptEntry.toolCallDetail}
+        durationMs={conversationTranscriptEntry.durationMs}
+        errorText={conversationTranscriptEntry.errorText}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "plan_proposal") {
+    return (
+      <PlanProposalBlock
+        planTitle={conversationTranscriptEntry.planTitle}
+        planSteps={conversationTranscriptEntry.planSteps}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "rate_limit_notice") {
+    return (
+      <RateLimitNoticeBlock
+        retryAfterSeconds={conversationTranscriptEntry.retryAfterSeconds}
+        limitExplanation={conversationTranscriptEntry.limitExplanation}
+        noticeStartedAtMs={conversationTranscriptEntry.noticeStartedAtMs}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "tool_approval_request") {
+    return (
+      <ToolApprovalRequestBlock
+        pendingToolCallDetail={conversationTranscriptEntry.pendingToolCallDetail}
+        riskExplanation={conversationTranscriptEntry.riskExplanation}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "turn_footer") {
+    return (
+      <TurnFooter
+        modelDisplayName={conversationTranscriptEntry.modelDisplayName}
+        turnDurationMs={conversationTranscriptEntry.turnDurationMs}
+        usage={conversationTranscriptEntry.usage}
+      />
+    );
+  }
+
+  // Remaining arm: kind === "message". User prompts get their own bordered
+  // block; assistant messages flow through the markdown parser so prose,
+  // code, lists, and callouts render as rich blocks instead of raw text.
+  if (conversationTranscriptEntry.message.role === "user") {
+    return <UserPromptBlock promptText={conversationTranscriptEntry.message.text} />;
+  }
+  const assistantMarkdownBlocks = parseAssistantResponseMarkdown(conversationTranscriptEntry.message.text);
+  return <RenderAssistantResponseTree assistantMarkdownBlocks={assistantMarkdownBlocks} />;
+});

@@ -39,6 +39,7 @@ import {
   type AuthenticationState,
   type ChatScreenState,
 } from "./chatScreenState.ts";
+import { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
 
 export type ChatScreenProps = {
   authenticationState: AuthenticationState;
@@ -80,38 +81,80 @@ export function ChatScreen(props: ChatScreenProps) {
   latestChatScreenStateRef.current = chatScreenState;
   latestConversationTranscriptViewportMeasurementsRef.current = latestConversationTranscriptViewportMeasurements;
 
+  // During rapid streaming the transcript pane fires height measurements
+  // dozens of times per second. Each measurement schedules a state update
+  // that forces another full repaint. We coalesce them into at most one
+  // dispatch per MIN_INTERVAL_MS so we paint the new content + new offset
+  // together rather than once per chunk.
+  const lastMeasurementFlushAtMsRef = useRef(0);
+  const pendingMeasurementRef = useRef<ConversationTranscriptViewportMeasurements | undefined>(undefined);
+  const scheduledMeasurementFlushRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const MEASUREMENT_FLUSH_MIN_INTERVAL_MS = 120;
+
+  const flushMeasurementToState = useEffectEvent(
+    (conversationTranscriptViewportMeasurements: ConversationTranscriptViewportMeasurements) => {
+      // startTransition deprioritises the measurement-driven state updates
+      // so they don't preempt user keystrokes routed through useInput.
+      startTransition(() => {
+        setLatestConversationTranscriptViewportMeasurements((currentConversationTranscriptViewportMeasurements) => {
+          if (
+            currentConversationTranscriptViewportMeasurements?.visibleViewportHeightInRows ===
+              conversationTranscriptViewportMeasurements.visibleViewportHeightInRows &&
+            currentConversationTranscriptViewportMeasurements.fullTranscriptContentHeightInRows ===
+              conversationTranscriptViewportMeasurements.fullTranscriptContentHeightInRows
+          ) {
+            return currentConversationTranscriptViewportMeasurements;
+          }
+          return conversationTranscriptViewportMeasurements;
+        });
+
+        setConversationTranscriptViewportState((currentConversationTranscriptViewportState) => {
+          const nextConversationTranscriptViewportState = reconcileConversationTranscriptViewportAfterMeasurement(
+            currentConversationTranscriptViewportState,
+            conversationTranscriptViewportMeasurements,
+          );
+          if (
+            nextConversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport ===
+              currentConversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport &&
+            nextConversationTranscriptViewportState.isFollowingNewestTranscriptRows ===
+              currentConversationTranscriptViewportState.isFollowingNewestTranscriptRows
+          ) {
+            return currentConversationTranscriptViewportState;
+          }
+          return nextConversationTranscriptViewportState;
+        });
+      });
+    },
+  );
+
   const applyMeasuredConversationTranscriptViewport = useEffectEvent(
     (conversationTranscriptViewportMeasurements: ConversationTranscriptViewportMeasurements) => {
-      setLatestConversationTranscriptViewportMeasurements((currentConversationTranscriptViewportMeasurements) => {
-        if (
-          currentConversationTranscriptViewportMeasurements?.visibleViewportHeightInRows ===
-            conversationTranscriptViewportMeasurements.visibleViewportHeightInRows &&
-          currentConversationTranscriptViewportMeasurements.fullTranscriptContentHeightInRows ===
-            conversationTranscriptViewportMeasurements.fullTranscriptContentHeightInRows
-        ) {
-          return currentConversationTranscriptViewportMeasurements;
+      const nowMs = Date.now();
+      const elapsedSinceLastFlushMs = nowMs - lastMeasurementFlushAtMsRef.current;
+
+      if (elapsedSinceLastFlushMs >= MEASUREMENT_FLUSH_MIN_INTERVAL_MS) {
+        lastMeasurementFlushAtMsRef.current = nowMs;
+        flushMeasurementToState(conversationTranscriptViewportMeasurements);
+        return;
+      }
+
+      // Inside the throttle window: keep the most recent measurement and
+      // schedule a single trailing-edge flush. Repeated calls collapse onto
+      // the already-scheduled timer.
+      pendingMeasurementRef.current = conversationTranscriptViewportMeasurements;
+      if (scheduledMeasurementFlushRef.current) {
+        return;
+      }
+      scheduledMeasurementFlushRef.current = setTimeout(() => {
+        scheduledMeasurementFlushRef.current = undefined;
+        const pendingMeasurement = pendingMeasurementRef.current;
+        if (!pendingMeasurement) {
+          return;
         }
-
-        return conversationTranscriptViewportMeasurements;
-      });
-
-      setConversationTranscriptViewportState((currentConversationTranscriptViewportState) => {
-        const nextConversationTranscriptViewportState = reconcileConversationTranscriptViewportAfterMeasurement(
-          currentConversationTranscriptViewportState,
-          conversationTranscriptViewportMeasurements,
-        );
-
-        if (
-          nextConversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport ===
-            currentConversationTranscriptViewportState.hiddenTranscriptRowsAboveViewport &&
-          nextConversationTranscriptViewportState.isFollowingNewestTranscriptRows ===
-            currentConversationTranscriptViewportState.isFollowingNewestTranscriptRows
-        ) {
-          return currentConversationTranscriptViewportState;
-        }
-
-        return nextConversationTranscriptViewportState;
-      });
+        pendingMeasurementRef.current = undefined;
+        lastMeasurementFlushAtMsRef.current = Date.now();
+        flushMeasurementToState(pendingMeasurement);
+      }, MEASUREMENT_FLUSH_MIN_INTERVAL_MS - elapsedSinceLastFlushMs);
     },
   );
 
@@ -374,9 +417,18 @@ export function ChatScreen(props: ChatScreenProps) {
 
   const modeLabel = "implementation";
   const reasoningEffortLabel = chatScreenState.selectedReasoningEffort ?? "default";
-  // Token usage percentage is wired once the context-window helper is plumbed
-  // through to the live token counts; left undefined until that happens.
-  const tokenUsagePercentageOfContextWindow = undefined;
+  // latestTokenUsage.total reflects the prompt + completion tokens billed for
+  // the most recent turn. Because the Responses API sends the full running
+  // context on each turn, that value approximates the current conversation's
+  // context-window fill for this session.
+  const totalContextTokensUsed =
+    chatScreenState.latestTokenUsage?.total ??
+    (chatScreenState.latestTokenUsage
+      ? chatScreenState.latestTokenUsage.input +
+        chatScreenState.latestTokenUsage.output +
+        chatScreenState.latestTokenUsage.reasoning
+      : undefined);
+  const contextWindowTokenCapacity = lookupContextWindowTokenCapacityForModel(chatScreenState.selectedModelId);
 
   // The return value below is just a React tree.
   // Ink reads that tree, turns it into terminal text, compares it with the last frame,
@@ -410,7 +462,8 @@ export function ChatScreen(props: ChatScreenProps) {
         modelIdentifier={chatScreenState.selectedModelId}
         reasoningEffortLabel={reasoningEffortLabel}
         assistantResponseStatus={chatScreenState.assistantResponseStatus}
-        tokenUsagePercentageOfContextWindow={tokenUsagePercentageOfContextWindow}
+        totalContextTokensUsed={totalContextTokensUsed}
+        contextWindowTokenCapacity={contextWindowTokenCapacity}
       />
     </Box>
   );

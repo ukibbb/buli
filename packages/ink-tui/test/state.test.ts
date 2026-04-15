@@ -370,6 +370,134 @@ test("applyAssistantResponseEventToChatScreenState ignores reasoning text chunks
   expect(next).toBe(streaming);
 });
 
+test("applyAssistantResponseEventToChatScreenState pins a streaming_tool_call entry when a tool call starts", () => {
+  const streaming = createStreamingTurnState();
+  const afterStart = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_tool_call_started",
+    toolCallId: "tc_read_1",
+    toolCallDetail: { toolName: "read", readFilePath: "apps/api/indexer.py" },
+  });
+  const lastEntry = afterStart.conversationTranscript.at(-1);
+  if (lastEntry?.kind !== "streaming_tool_call") {
+    throw new Error("expected streaming_tool_call entry");
+  }
+  expect(lastEntry.toolCallId).toBe("tc_read_1");
+  expect(lastEntry.toolCallDetail.toolName).toBe("read");
+});
+
+test("applyAssistantResponseEventToChatScreenState swaps the streaming tool call for a completed_tool_call when it finishes", () => {
+  const streaming = createStreamingTurnState();
+  const afterStart = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_tool_call_started",
+    toolCallId: "tc_read_1",
+    toolCallDetail: { toolName: "read", readFilePath: "apps/api/indexer.py" },
+  });
+  const afterCompletion = applyAssistantResponseEventToChatScreenState(afterStart, {
+    type: "assistant_tool_call_completed",
+    toolCallId: "tc_read_1",
+    toolCallDetail: {
+      toolName: "read",
+      readFilePath: "apps/api/indexer.py",
+      readLineCount: 46,
+    },
+    durationMs: 120,
+  });
+  const replacedEntry = afterCompletion.conversationTranscript.find(
+    (conversationTranscriptEntry) =>
+      conversationTranscriptEntry.kind === "completed_tool_call" &&
+      conversationTranscriptEntry.toolCallId === "tc_read_1",
+  );
+  if (replacedEntry?.kind !== "completed_tool_call") {
+    throw new Error("expected completed_tool_call entry");
+  }
+  expect(replacedEntry.durationMs).toBe(120);
+  const hasStreamingStillInTranscript = afterCompletion.conversationTranscript.some(
+    (conversationTranscriptEntry) =>
+      conversationTranscriptEntry.kind === "streaming_tool_call" &&
+      conversationTranscriptEntry.toolCallId === "tc_read_1",
+  );
+  expect(hasStreamingStillInTranscript).toBe(false);
+});
+
+test("applyAssistantResponseEventToChatScreenState swaps the streaming tool call for a failed_tool_call on failure", () => {
+  const streaming = createStreamingTurnState();
+  const afterStart = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_tool_call_started",
+    toolCallId: "tc_edit_1",
+    toolCallDetail: { toolName: "edit", editedFilePath: "missing/path.py" },
+  });
+  const afterFailure = applyAssistantResponseEventToChatScreenState(afterStart, {
+    type: "assistant_tool_call_failed",
+    toolCallId: "tc_edit_1",
+    toolCallDetail: { toolName: "edit", editedFilePath: "missing/path.py" },
+    errorText: "file not found",
+    durationMs: 5,
+  });
+  const replacedEntry = afterFailure.conversationTranscript.find(
+    (conversationTranscriptEntry) =>
+      conversationTranscriptEntry.kind === "failed_tool_call" &&
+      conversationTranscriptEntry.toolCallId === "tc_edit_1",
+  );
+  if (replacedEntry?.kind !== "failed_tool_call") {
+    throw new Error("expected failed_tool_call entry");
+  }
+  expect(replacedEntry.errorText).toBe("file not found");
+});
+
+test("applyAssistantResponseEventToChatScreenState appends an orphan tool completion when no matching streaming entry exists", () => {
+  const streaming = createStreamingTurnState();
+  const afterOrphanCompletion = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_tool_call_completed",
+    toolCallId: "tc_grep_orphan",
+    toolCallDetail: { toolName: "grep", searchPattern: "foo" },
+    durationMs: 20,
+  });
+  const lastEntry = afterOrphanCompletion.conversationTranscript.at(-1);
+  if (lastEntry?.kind !== "completed_tool_call") {
+    throw new Error("expected completed_tool_call entry at the tail");
+  }
+  expect(lastEntry.toolCallId).toBe("tc_grep_orphan");
+});
+
+test("applyAssistantResponseEventToChatScreenState pins plan_proposal, rate_limit_notice, tool_approval_request, and turn_footer entries", () => {
+  const streaming = createStreamingTurnState();
+  const afterPlan = applyAssistantResponseEventToChatScreenState(streaming, {
+    type: "assistant_plan_proposed",
+    planId: "plan_1",
+    planTitle: "Wire atlas stream export",
+    planSteps: [
+      { stepIndex: 0, stepTitle: "Expose endpoint", stepStatus: "pending" },
+      { stepIndex: 1, stepTitle: "Cover integration tests", stepStatus: "pending" },
+    ],
+  });
+  const afterRateLimit = applyAssistantResponseEventToChatScreenState(afterPlan, {
+    type: "assistant_rate_limit_pending",
+    retryAfterSeconds: 30,
+    limitExplanation: "hourly cap",
+  });
+  const afterApproval = applyAssistantResponseEventToChatScreenState(afterRateLimit, {
+    type: "assistant_tool_approval_requested",
+    approvalId: "apv_1",
+    pendingToolCallId: "tc_bash_1",
+    pendingToolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
+    riskExplanation: "destructive",
+  });
+  const afterTurnFooter = applyAssistantResponseEventToChatScreenState(afterApproval, {
+    type: "assistant_turn_completed",
+    turnDurationMs: 1800,
+    modelDisplayName: "GPT-5.4",
+    usage: { input: 10, output: 5, reasoning: 3, cache: { read: 0, write: 0 } },
+  });
+
+  const pinnedKinds = afterTurnFooter.conversationTranscript.map((conversationTranscriptEntry) => conversationTranscriptEntry.kind);
+  expect(pinnedKinds.slice(-4)).toEqual([
+    "plan_proposal",
+    "rate_limit_notice",
+    "tool_approval_request",
+    "turn_footer",
+  ]);
+});
+
 test("applyAssistantResponseEventToChatScreenState back-fills reasoning token count when assistant response completes", () => {
   const streaming = createStreamingTurnState();
   const afterReasoningStart = applyAssistantResponseEventToChatScreenState(streaming, {

@@ -18,7 +18,8 @@ test("InputPanel renders mode and model labels in the header strip", () => {
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="reasoning:high"
       assistantResponseStatus="waiting_for_user_input"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   expect(output).toContain("implementation");
@@ -35,7 +36,8 @@ test("InputPanel renders working indicator only while assistant response is stre
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="streaming_assistant_response"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   const idleOutput = renderWithoutAnsi(
@@ -47,7 +49,8 @@ test("InputPanel renders working indicator only while assistant response is stre
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="waiting_for_user_input"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   expect(streamingOutput).toContain("working");
@@ -64,7 +67,8 @@ test("InputPanel renders context window percentage when token usage is known", (
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="waiting_for_user_input"
-      tokenUsagePercentageOfContextWindow={42}
+      totalContextTokensUsed={42_000}
+      contextWindowTokenCapacity={100_000}
     />,
   );
   expect(output).toContain("42%");
@@ -80,7 +84,8 @@ test("InputPanel renders a dim placeholder when context window capacity is unkno
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="waiting_for_user_input"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   expect(output).toContain("--");
@@ -96,7 +101,8 @@ test("InputPanel renders a cursor indicator when prompt input is enabled", () =>
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="waiting_for_user_input"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   const hasCursor = output.includes("█") || output.includes(" ");
@@ -115,7 +121,8 @@ test("InputPanel does not render a block cursor when prompt input is disabled", 
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="streaming_assistant_response"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   expect(output).not.toMatch(/hello█/);
@@ -131,7 +138,8 @@ test("InputPanel shows the snake animation only while assistant response is stre
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="streaming_assistant_response"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   const idleOutput = renderWithoutAnsi(
@@ -143,7 +151,8 @@ test("InputPanel shows the snake animation only while assistant response is stre
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
       assistantResponseStatus="waiting_for_user_input"
-      tokenUsagePercentageOfContextWindow={undefined}
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
     />,
   );
   expect(streamingOutput).toMatch(/▰|●/);

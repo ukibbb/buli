@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import {
   type AssistantResponseEvent,
   type AvailableAssistantModel,
+  type PlanStep,
   type ReasoningEffort,
   type TokenUsage,
+  type ToolCallDetail,
   type TranscriptMessage,
 } from "@buli/contracts";
 
@@ -73,6 +75,52 @@ export type ConversationTranscriptEntry =
       reasoningSummaryText: string;
       reasoningDurationMs: number;
       reasoningTokenCount: number | undefined;
+    }
+  | {
+      kind: "streaming_tool_call";
+      toolCallId: string;
+      toolCallDetail: ToolCallDetail;
+      toolCallStartedAtMs: number;
+    }
+  | {
+      kind: "completed_tool_call";
+      toolCallId: string;
+      toolCallDetail: ToolCallDetail;
+      durationMs: number;
+    }
+  | {
+      kind: "failed_tool_call";
+      toolCallId: string;
+      toolCallDetail: ToolCallDetail;
+      errorText: string;
+      durationMs: number;
+    }
+  | {
+      kind: "plan_proposal";
+      planId: string;
+      planTitle: string;
+      planSteps: PlanStep[];
+    }
+  | {
+      kind: "rate_limit_notice";
+      rateLimitNoticeId: string;
+      retryAfterSeconds: number;
+      limitExplanation: string;
+      noticeStartedAtMs: number;
+    }
+  | {
+      kind: "tool_approval_request";
+      approvalId: string;
+      pendingToolCallId: string;
+      pendingToolCallDetail: ToolCallDetail;
+      riskExplanation: string;
+    }
+  | {
+      kind: "turn_footer";
+      turnFooterId: string;
+      turnDurationMs: number;
+      usage: TokenUsage;
+      modelDisplayName: string;
     };
 
 export type ChatScreenState = {
@@ -586,10 +634,148 @@ export function applyAssistantResponseEventToChatScreenState(
     };
   }
 
+  // A tool-call started event pins a new streaming_tool_call entry. The card
+  // renders immediately with whatever detail was known at invocation time
+  // (file path, pattern, command) so the transcript reflects the agent's
+  // intent even while the tool is still running.
+  if (assistantResponseEvent.type === "assistant_tool_call_started") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "streaming_tool_call",
+          toolCallId: assistantResponseEvent.toolCallId,
+          toolCallDetail: assistantResponseEvent.toolCallDetail,
+          toolCallStartedAtMs: Date.now(),
+        },
+      ],
+    };
+  }
+
+  // Tool completion replaces the matching streaming entry by toolCallId. If
+  // no streaming entry exists (e.g. the provider skipped the started event)
+  // we still append the completion so the result is never dropped silently.
+  if (assistantResponseEvent.type === "assistant_tool_call_completed") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: replaceStreamingToolCallOrAppend(
+        chatScreenState.conversationTranscript,
+        assistantResponseEvent.toolCallId,
+        {
+          kind: "completed_tool_call",
+          toolCallId: assistantResponseEvent.toolCallId,
+          toolCallDetail: assistantResponseEvent.toolCallDetail,
+          durationMs: assistantResponseEvent.durationMs,
+        },
+      ),
+    };
+  }
+
+  // Mirror of the completion path, but the swapped-in entry carries the
+  // error text so the failed card can surface why the tool did not finish.
+  if (assistantResponseEvent.type === "assistant_tool_call_failed") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: replaceStreamingToolCallOrAppend(
+        chatScreenState.conversationTranscript,
+        assistantResponseEvent.toolCallId,
+        {
+          kind: "failed_tool_call",
+          toolCallId: assistantResponseEvent.toolCallId,
+          toolCallDetail: assistantResponseEvent.toolCallDetail,
+          errorText: assistantResponseEvent.errorText,
+          durationMs: assistantResponseEvent.durationMs,
+        },
+      ),
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_plan_proposed") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "plan_proposal",
+          planId: assistantResponseEvent.planId,
+          planTitle: assistantResponseEvent.planTitle,
+          planSteps: assistantResponseEvent.planSteps,
+        },
+      ],
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_rate_limit_pending") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "rate_limit_notice",
+          rateLimitNoticeId: randomUUID(),
+          retryAfterSeconds: assistantResponseEvent.retryAfterSeconds,
+          limitExplanation: assistantResponseEvent.limitExplanation,
+          noticeStartedAtMs: Date.now(),
+        },
+      ],
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_tool_approval_requested") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "tool_approval_request",
+          approvalId: assistantResponseEvent.approvalId,
+          pendingToolCallId: assistantResponseEvent.pendingToolCallId,
+          pendingToolCallDetail: assistantResponseEvent.pendingToolCallDetail,
+          riskExplanation: assistantResponseEvent.riskExplanation,
+        },
+      ],
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_turn_completed") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "turn_footer",
+          turnFooterId: randomUUID(),
+          turnDurationMs: assistantResponseEvent.turnDurationMs,
+          usage: assistantResponseEvent.usage,
+          modelDisplayName: assistantResponseEvent.modelDisplayName,
+        },
+      ],
+    };
+  }
+
   // Exhaustiveness: if a new arm is added to AssistantResponseEvent without
   // a matching branch above, TypeScript flags this line as a type error.
   const unreachableAssistantResponseEvent: never = assistantResponseEvent;
   return unreachableAssistantResponseEvent;
+}
+
+function replaceStreamingToolCallOrAppend(
+  conversationTranscript: ConversationTranscriptEntry[],
+  toolCallId: string,
+  replacementEntry: ConversationTranscriptEntry,
+): ConversationTranscriptEntry[] {
+  const streamingEntryIndex = conversationTranscript.findIndex(
+    (conversationTranscriptEntry) =>
+      conversationTranscriptEntry.kind === "streaming_tool_call" &&
+      conversationTranscriptEntry.toolCallId === toolCallId,
+  );
+  if (streamingEntryIndex === -1) {
+    return [...conversationTranscript, replacementEntry];
+  }
+  const nextConversationTranscript = [...conversationTranscript];
+  nextConversationTranscript[streamingEntryIndex] = replacementEntry;
+  return nextConversationTranscript;
 }
 
 function backfillReasoningTokenCountInCurrentTurn(

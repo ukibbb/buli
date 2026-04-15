@@ -1,16 +1,32 @@
 import { expect, test } from "bun:test";
 import {
+  AssistantPlanProposedEventSchema,
+  AssistantRateLimitPendingEventSchema,
   AssistantReasoningSummaryCompletedEventSchema,
   AssistantReasoningSummaryStartedEventSchema,
   AssistantReasoningSummaryTextChunkEventSchema,
   AssistantResponseEventSchema,
+  AssistantToolApprovalRequestedEventSchema,
+  AssistantToolCallCompletedEventSchema,
+  AssistantToolCallFailedEventSchema,
+  AssistantToolCallStartedEventSchema,
+  AssistantTurnCompletedEventSchema,
   AvailableAssistantModelSchema,
+  PlanStepSchema,
   ProviderCompletedEventSchema,
+  ProviderPlanProposedEventSchema,
+  ProviderRateLimitPendingEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
   ProviderReasoningSummaryStartedEventSchema,
   ProviderReasoningSummaryTextChunkEventSchema,
   ProviderStreamEventSchema,
+  ProviderToolApprovalRequestedEventSchema,
+  ProviderToolCallCompletedEventSchema,
+  ProviderToolCallFailedEventSchema,
+  ProviderToolCallStartedEventSchema,
+  ProviderTurnCompletedEventSchema,
   ReasoningEffortSchema,
+  ToolCallDetailSchema,
   TokenUsageSchema,
 } from "../src/index.ts";
 
@@ -225,4 +241,301 @@ test("ProviderStreamEventSchema accepts the three new reasoning arms", () => {
       reasoningDurationMs: 0,
     }).type,
   ).toBe("reasoning_summary_completed");
+});
+
+test("ToolCallDetailSchema parses each tool's detail arm", () => {
+  expect(
+    ToolCallDetailSchema.parse({
+      toolName: "read",
+      readFilePath: "apps/api/indexer.py",
+      readLineCount: 46,
+      readByteCount: 1820,
+      previewLines: [
+        { lineNumber: 38, lineText: "from __future__ import annotations" },
+      ],
+    }).toolName,
+  ).toBe("read");
+  expect(
+    ToolCallDetailSchema.parse({
+      toolName: "grep",
+      searchPattern: "GraphSyncService",
+      matchedFileCount: 4,
+      totalMatchCount: 14,
+      matchHits: [
+        { matchFilePath: "atlas/sync.py", matchLineNumber: 14, matchSnippet: "class GraphSyncService:" },
+      ],
+    }).toolName,
+  ).toBe("grep");
+  expect(
+    ToolCallDetailSchema.parse({
+      toolName: "edit",
+      editedFilePath: "atlas/infrastructure/sync.py",
+      addedLineCount: 3,
+      removedLineCount: 1,
+      diffLines: [
+        { lineNumber: 42, lineKind: "context", lineText: "async def sync(...)" },
+        { lineNumber: 43, lineKind: "removal", lineText: "fingerprints = self._collect(project_id)" },
+        { lineNumber: 43, lineKind: "addition", lineText: "fingerprints = await self._collect_async(project_id)" },
+      ],
+    }).toolName,
+  ).toBe("edit");
+  expect(
+    ToolCallDetailSchema.parse({
+      toolName: "bash",
+      commandLine: "atlas sync --project novibe",
+      exitCode: 0,
+      outputLines: [
+        { lineKind: "prompt", lineText: "$ atlas sync --project novibe" },
+        { lineKind: "stdout", lineText: "ok" },
+      ],
+    }).toolName,
+  ).toBe("bash");
+  expect(
+    ToolCallDetailSchema.parse({
+      toolName: "todowrite",
+      todoItems: [
+        { todoItemTitle: "Wire schema", todoItemStatus: "in_progress" },
+        { todoItemTitle: "Cover tests", todoItemStatus: "pending" },
+      ],
+    }).toolName,
+  ).toBe("todowrite");
+  expect(
+    ToolCallDetailSchema.parse({
+      toolName: "task",
+      subagentDescription: "Map the codebase",
+      subagentPrompt: "Summarize engine + contracts",
+      subagentResultSummary: "Map shipped",
+    }).toolName,
+  ).toBe("task");
+});
+
+test("ToolCallDetailSchema rejects an unknown toolName", () => {
+  expect(() =>
+    ToolCallDetailSchema.parse({ toolName: "made_up", anything: 1 }),
+  ).toThrow();
+});
+
+test("PlanStepSchema rejects an empty stepTitle", () => {
+  expect(() =>
+    PlanStepSchema.parse({ stepIndex: 0, stepTitle: "", stepStatus: "pending" }),
+  ).toThrow();
+});
+
+test("AssistantToolCallStartedEventSchema parses a started event with a read detail", () => {
+  const event = AssistantToolCallStartedEventSchema.parse({
+    type: "assistant_tool_call_started",
+    toolCallId: "tc_1",
+    toolCallDetail: { toolName: "read", readFilePath: "apps/api/indexer.py" },
+  });
+  expect(event.toolCallId).toBe("tc_1");
+  expect(event.toolCallDetail.toolName).toBe("read");
+});
+
+test("AssistantToolCallCompletedEventSchema requires a non-negative durationMs", () => {
+  expect(() =>
+    AssistantToolCallCompletedEventSchema.parse({
+      type: "assistant_tool_call_completed",
+      toolCallId: "tc_1",
+      toolCallDetail: { toolName: "read", readFilePath: "a" },
+      durationMs: -1,
+    }),
+  ).toThrow();
+});
+
+test("AssistantToolCallFailedEventSchema parses a failed grep event", () => {
+  const event = AssistantToolCallFailedEventSchema.parse({
+    type: "assistant_tool_call_failed",
+    toolCallId: "tc_2",
+    toolCallDetail: { toolName: "grep", searchPattern: "foo" },
+    errorText: "ripgrep missing",
+    durationMs: 10,
+  });
+  expect(event.errorText).toBe("ripgrep missing");
+});
+
+test("AssistantTurnCompletedEventSchema parses a turn summary", () => {
+  const event = AssistantTurnCompletedEventSchema.parse({
+    type: "assistant_turn_completed",
+    turnDurationMs: 2500,
+    modelDisplayName: "GPT-5.4",
+    usage: { input: 10, output: 5, reasoning: 3, cache: { read: 0, write: 0 } },
+  });
+  expect(event.turnDurationMs).toBe(2500);
+  expect(event.modelDisplayName).toBe("GPT-5.4");
+});
+
+test("AssistantRateLimitPendingEventSchema parses a rate-limit notice", () => {
+  const event = AssistantRateLimitPendingEventSchema.parse({
+    type: "assistant_rate_limit_pending",
+    retryAfterSeconds: 60,
+    limitExplanation: "Hourly token cap reached",
+  });
+  expect(event.retryAfterSeconds).toBe(60);
+});
+
+test("AssistantToolApprovalRequestedEventSchema parses an approval request", () => {
+  const event = AssistantToolApprovalRequestedEventSchema.parse({
+    type: "assistant_tool_approval_requested",
+    approvalId: "apv_1",
+    pendingToolCallId: "tc_3",
+    pendingToolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
+    riskExplanation: "Destructive command outside the project tree",
+  });
+  expect(event.approvalId).toBe("apv_1");
+});
+
+test("AssistantPlanProposedEventSchema parses a plan with at least one step", () => {
+  const event = AssistantPlanProposedEventSchema.parse({
+    type: "assistant_plan_proposed",
+    planId: "plan_1",
+    planTitle: "Wire atlas stream export",
+    planSteps: [
+      { stepIndex: 0, stepTitle: "Expose the stream endpoint", stepStatus: "pending" },
+      { stepIndex: 1, stepTitle: "Cover it with an integration test", stepStatus: "pending" },
+    ],
+  });
+  expect(event.planSteps.length).toBe(2);
+});
+
+test("AssistantResponseEventSchema accepts every new tool-call arm", () => {
+  expect(
+    AssistantResponseEventSchema.parse({
+      type: "assistant_tool_call_started",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "read", readFilePath: "a" },
+    }).type,
+  ).toBe("assistant_tool_call_started");
+  expect(
+    AssistantResponseEventSchema.parse({
+      type: "assistant_tool_call_completed",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "read", readFilePath: "a" },
+      durationMs: 1,
+    }).type,
+  ).toBe("assistant_tool_call_completed");
+  expect(
+    AssistantResponseEventSchema.parse({
+      type: "assistant_tool_call_failed",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "read", readFilePath: "a" },
+      errorText: "nope",
+      durationMs: 1,
+    }).type,
+  ).toBe("assistant_tool_call_failed");
+});
+
+test("ProviderStreamEventSchema accepts every new provider-level arm", () => {
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "tool_call_started",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "bash", commandLine: "ls" },
+    }).type,
+  ).toBe("tool_call_started");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "tool_call_completed",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "bash", commandLine: "ls" },
+      durationMs: 5,
+    }).type,
+  ).toBe("tool_call_completed");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "tool_call_failed",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "bash", commandLine: "ls" },
+      errorText: "oom",
+      durationMs: 3,
+    }).type,
+  ).toBe("tool_call_failed");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "turn_completed",
+      turnDurationMs: 100,
+      modelDisplayName: "GPT-5.4",
+    }).type,
+  ).toBe("turn_completed");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "rate_limit_pending",
+      retryAfterSeconds: 10,
+      limitExplanation: "x",
+    }).type,
+  ).toBe("rate_limit_pending");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "tool_approval_requested",
+      approvalId: "a",
+      pendingToolCallId: "tc",
+      pendingToolCallDetail: { toolName: "bash", commandLine: "ls" },
+      riskExplanation: "shell",
+    }).type,
+  ).toBe("tool_approval_requested");
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "plan_proposed",
+      planId: "p",
+      planTitle: "Do the thing",
+      planSteps: [{ stepIndex: 0, stepTitle: "Step 1", stepStatus: "pending" }],
+    }).type,
+  ).toBe("plan_proposed");
+});
+
+test("Provider tool-call schemas validate independently of the discriminated union", () => {
+  expect(
+    ProviderToolCallStartedEventSchema.parse({
+      type: "tool_call_started",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "edit", editedFilePath: "a.py" },
+    }).toolCallId,
+  ).toBe("tc");
+  expect(
+    ProviderToolCallCompletedEventSchema.parse({
+      type: "tool_call_completed",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "edit", editedFilePath: "a.py" },
+      durationMs: 2,
+    }).durationMs,
+  ).toBe(2);
+  expect(
+    ProviderToolCallFailedEventSchema.parse({
+      type: "tool_call_failed",
+      toolCallId: "tc",
+      toolCallDetail: { toolName: "edit", editedFilePath: "a.py" },
+      errorText: "missing",
+      durationMs: 1,
+    }).errorText,
+  ).toBe("missing");
+  expect(
+    ProviderTurnCompletedEventSchema.parse({
+      type: "turn_completed",
+      turnDurationMs: 0,
+      modelDisplayName: "m",
+    }).type,
+  ).toBe("turn_completed");
+  expect(
+    ProviderRateLimitPendingEventSchema.parse({
+      type: "rate_limit_pending",
+      retryAfterSeconds: 0,
+      limitExplanation: "x",
+    }).retryAfterSeconds,
+  ).toBe(0);
+  expect(
+    ProviderToolApprovalRequestedEventSchema.parse({
+      type: "tool_approval_requested",
+      approvalId: "a",
+      pendingToolCallId: "tc",
+      pendingToolCallDetail: { toolName: "bash", commandLine: "ls" },
+      riskExplanation: "sh",
+    }).approvalId,
+  ).toBe("a");
+  expect(
+    ProviderPlanProposedEventSchema.parse({
+      type: "plan_proposed",
+      planId: "p",
+      planTitle: "t",
+      planSteps: [{ stepIndex: 0, stepTitle: "s", stepStatus: "pending" }],
+    }).planSteps.length,
+  ).toBe(1);
 });

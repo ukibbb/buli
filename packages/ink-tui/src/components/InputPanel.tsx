@@ -2,6 +2,7 @@ import { Box, Text, useAnimation } from "ink";
 import React from "react";
 import type { AssistantResponseStatus } from "../chatScreenState.ts";
 import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
@@ -17,7 +18,8 @@ export type InputPanelProps = {
   modelIdentifier: string;
   reasoningEffortLabel: string;
   assistantResponseStatus: AssistantResponseStatus;
-  tokenUsagePercentageOfContextWindow: number | undefined;
+  totalContextTokensUsed: number | undefined;
+  contextWindowTokenCapacity: number | undefined;
 };
 
 export function InputPanel(props: InputPanelProps) {
@@ -59,11 +61,10 @@ export function InputPanel(props: InputPanelProps) {
         ) : (
           <Text color={chatScreenTheme.textMuted}>{props.promptInputHintText}</Text>
         )}
-        <Text color={chatScreenTheme.textMuted}>
-          {props.tokenUsagePercentageOfContextWindow === undefined
-            ? "ctx --"
-            : `ctx ${props.tokenUsagePercentageOfContextWindow}%`}
-        </Text>
+        <ContextWindowMeter
+          totalTokensUsed={props.totalContextTokensUsed}
+          contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+        />
       </Box>
     </Box>
   );

@@ -61,7 +61,9 @@ test("ConversationTranscriptPane renders user and assistant lines", () => {
   );
 
   expect(output).toContain("Hello");
-  expect(output).toContain("// agent · response");
+  // Assistant messages now render through the markdown pipeline, so plain
+  // text is rendered as a paragraph and the legacy "// agent · response"
+  // comment header has been dropped along with the raw-text renderer.
   expect(output).toContain("Hi");
 });
 
