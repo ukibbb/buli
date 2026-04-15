@@ -98,16 +98,11 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
 
     return (
       <Box
-        borderColor={chatScreenTheme.accentGreen}
-        borderStyle="round"
         flexDirection="column"
         key={conversationTranscriptEntry.message.id}
         marginTop={topMargin}
-        paddingX={1}
       >
-        <Text bold color={chatScreenTheme.accentGreen}>
-          // agent · response
-        </Text>
+        <Text color={chatScreenTheme.textMuted}>// agent · response</Text>
         <Text color={chatScreenTheme.textPrimary}>{conversationTranscriptEntry.message.text}</Text>
       </Box>
     );
