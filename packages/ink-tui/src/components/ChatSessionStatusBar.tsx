@@ -48,15 +48,15 @@ export function ChatSessionStatusBar(props: ChatSessionStatusBarProps) {
 
   return (
     <Box
-      backgroundColor={chatScreenTheme.panelBackgroundColor}
-      borderColor={chatScreenTheme.borderColor}
-      borderStyle={chatScreenTheme.borderStyle}
+      backgroundColor={chatScreenTheme.surfaceOne}
+      borderColor={chatScreenTheme.border}
+      borderStyle="round"
       flexDirection="column"
       paddingX={1}
     >
-      <Text color={chatScreenTheme.mutedTextColor}>{statusSummaryText}</Text>
-      <Text color={chatScreenTheme.mutedTextColor}>{props.conversationTranscriptViewportStatusText}</Text>
-      {formattedTokenUsage ? <Text color={chatScreenTheme.mutedTextColor}>{formattedTokenUsage}</Text> : null}
+      <Text color={chatScreenTheme.textMuted}>{statusSummaryText}</Text>
+      <Text color={chatScreenTheme.textMuted}>{props.conversationTranscriptViewportStatusText}</Text>
+      {formattedTokenUsage ? <Text color={chatScreenTheme.textMuted}>{formattedTokenUsage}</Text> : null}
     </Box>
   );
 }

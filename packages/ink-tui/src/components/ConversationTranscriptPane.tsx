@@ -40,7 +40,7 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
   if (props.conversationTranscriptEntries.length === 0) {
     return (
       <Box alignItems="center" flexGrow={1} justifyContent="center" ref={conversationTranscriptViewportFrameRef}>
-        <Text color={chatScreenTheme.mutedTextColor}>No messages yet.</Text>
+        <Text color={chatScreenTheme.textMuted}>No messages yet.</Text>
       </Box>
     );
   }
@@ -49,17 +49,17 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
     if (conversationTranscriptEntry.kind === "error") {
       return (
         <Box
-          borderColor={chatScreenTheme.errorColor}
-          borderStyle={chatScreenTheme.borderStyle}
+          borderColor={chatScreenTheme.accentRed}
+          borderStyle="round"
           flexDirection="column"
           key={`error-${index}`}
           marginTop={index === 0 ? 0 : 1}
           paddingX={1}
         >
-          <Text bold color={chatScreenTheme.errorColor}>
+          <Text bold color={chatScreenTheme.accentRed}>
             Error
           </Text>
-          <Text color={chatScreenTheme.primaryTextColor}>{conversationTranscriptEntry.text}</Text>
+          <Text color={chatScreenTheme.textPrimary}>{conversationTranscriptEntry.text}</Text>
         </Box>
       );
     }
@@ -75,7 +75,7 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
           marginTop={index === 0 ? 0 : 1}
           paddingX={1}
         >
-          <Text color={chatScreenTheme.mutedTextColor}>
+          <Text color={chatScreenTheme.textMuted}>
             Thinking... {conversationTranscriptEntry.reasoningSummaryText}
           </Text>
         </Box>
@@ -90,7 +90,7 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
           marginTop={index === 0 ? 0 : 1}
           paddingX={1}
         >
-          <Text color={chatScreenTheme.mutedTextColor}>
+          <Text color={chatScreenTheme.textMuted}>
             Thought for {conversationTranscriptEntry.reasoningDurationMs}ms
           </Text>
         </Box>
@@ -100,13 +100,13 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
     const speakerLabel = conversationTranscriptEntry.message.role === "user" ? "You" : "Assistant";
     const messageAccentColor =
       conversationTranscriptEntry.message.role === "user"
-        ? chatScreenTheme.userMessageAccentColor
-        : chatScreenTheme.assistantMessageAccentColor;
+        ? chatScreenTheme.accentCyan
+        : chatScreenTheme.accentGreen;
 
     return (
       <Box
         borderColor={messageAccentColor}
-        borderStyle={chatScreenTheme.borderStyle}
+        borderStyle="round"
         flexDirection="column"
         key={conversationTranscriptEntry.message.id}
         marginTop={index === 0 ? 0 : 1}
@@ -115,7 +115,7 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
         <Text bold color={messageAccentColor}>
           {speakerLabel}
         </Text>
-        <Text color={chatScreenTheme.primaryTextColor}>{conversationTranscriptEntry.message.text}</Text>
+        <Text color={chatScreenTheme.textPrimary}>{conversationTranscriptEntry.message.text}</Text>
       </Box>
     );
   });

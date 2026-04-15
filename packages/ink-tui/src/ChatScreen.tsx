@@ -329,15 +329,15 @@ export function ChatScreen(props: ChatScreenProps) {
   const modelAndReasoningSelectionPane =
     chatScreenState.modelAndReasoningSelectionState.step === "loading_available_models" ? (
       <Box alignItems="center" flexGrow={1} justifyContent="center">
-        <Text color={chatScreenTheme.warningColor}>Loading models...</Text>
+        <Text color={chatScreenTheme.accentAmber}>Loading models...</Text>
       </Box>
     ) : chatScreenState.modelAndReasoningSelectionState.step === "showing_model_loading_error" ? (
       <Box flexDirection="column" gap={1}>
-        <Text bold color={chatScreenTheme.errorColor}>
+        <Text bold color={chatScreenTheme.accentRed}>
           Could not load models
         </Text>
-        <Text color={chatScreenTheme.primaryTextColor}>{chatScreenState.modelAndReasoningSelectionState.errorMessage}</Text>
-        <Text color={chatScreenTheme.mutedTextColor}>Press Esc to close.</Text>
+        <Text color={chatScreenTheme.textPrimary}>{chatScreenState.modelAndReasoningSelectionState.errorMessage}</Text>
+        <Text color={chatScreenTheme.textMuted}>Press Esc to close.</Text>
       </Box>
     ) : chatScreenState.modelAndReasoningSelectionState.step === "showing_available_models" ? (
       <ModelAndReasoningSelectionPane
@@ -371,17 +371,17 @@ export function ChatScreen(props: ChatScreenProps) {
   const topApplicationBar = (
     <Box
       alignItems="center"
-      backgroundColor={chatScreenTheme.promptDockBackgroundColor}
-      borderColor={chatScreenTheme.borderColor}
-      borderStyle={chatScreenTheme.borderStyle}
+      backgroundColor={chatScreenTheme.surfaceTwo}
+      borderColor={chatScreenTheme.border}
+      borderStyle="round"
       flexDirection="row"
       justifyContent="space-between"
       paddingX={1}
     >
-      <Text bold color={chatScreenTheme.titleAccentColor}>
+      <Text bold color={chatScreenTheme.accentCyan}>
         buli
       </Text>
-      <Text color={chatScreenTheme.mutedTextColor}>{`${chatScreenState.selectedModelId} | ${chatScreenState.selectedReasoningEffort ?? "default"} | ${chatScreenState.authenticationState}`}</Text>
+      <Text color={chatScreenTheme.textMuted}>{`${chatScreenState.selectedModelId} | ${chatScreenState.selectedReasoningEffort ?? "default"} | ${chatScreenState.authenticationState}`}</Text>
     </Box>
   );
 
@@ -390,23 +390,21 @@ export function ChatScreen(props: ChatScreenProps) {
   // and writes only the changed characters back to the terminal.
   return (
     <Box
-      backgroundColor={chatScreenTheme.canvasBackgroundColor}
+      backgroundColor={chatScreenTheme.bg}
       flexDirection="column"
-      gap={chatScreenTheme.panelGap}
       height={rows}
-      padding={chatScreenTheme.outerPadding}
     >
       {topApplicationBar}
       <Box
-        backgroundColor={chatScreenTheme.panelBackgroundColor}
-        borderColor={chatScreenTheme.borderColor}
-        borderStyle={chatScreenTheme.borderStyle}
+        backgroundColor={chatScreenTheme.surfaceOne}
+        borderColor={chatScreenTheme.border}
+        borderStyle="round"
         flexDirection="column"
         flexGrow={1}
         overflow="hidden"
         padding={1}
       >
-        <Text color={chatScreenTheme.mutedTextColor}>
+        <Text color={chatScreenTheme.textMuted}>
           {chatScreenState.modelAndReasoningSelectionState.step === "hidden" ? "Conversation" : "Model and reasoning selection"}
         </Text>
         <Box flexDirection="column" flexGrow={1} marginTop={1} overflow="hidden">
