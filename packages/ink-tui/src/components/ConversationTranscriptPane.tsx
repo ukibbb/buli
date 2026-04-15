@@ -41,11 +41,7 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
   ]);
 
   if (props.conversationTranscriptEntries.length === 0) {
-    return (
-      <Box alignItems="center" flexGrow={1} justifyContent="center" ref={conversationTranscriptViewportFrameRef}>
-        <Text color={chatScreenTheme.textMuted}>No messages yet.</Text>
-      </Box>
-    );
+    return <Box flexGrow={1} ref={conversationTranscriptViewportFrameRef} />;
   }
 
   const conversationTranscriptMessageBlocks = props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => {
