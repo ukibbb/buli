@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, useAnimation } from "ink";
 import React from "react";
 import { chatScreenTheme } from "../chatScreenTheme.ts";
 import { glyphs } from "./glyphs.ts";
@@ -14,6 +14,8 @@ export type ReasoningStreamBlockProps = {
 };
 
 export function ReasoningStreamBlock(props: ReasoningStreamBlockProps) {
+  // Force a re-render every 100 ms so the elapsed timer increments live.
+  useAnimation({ interval: 100 });
   const elapsedSeconds = ((Date.now() - props.reasoningStartedAtMs) / 1000).toFixed(1);
 
   return (
