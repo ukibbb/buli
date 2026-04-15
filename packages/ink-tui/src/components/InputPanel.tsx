@@ -3,6 +3,7 @@ import React from "react";
 import type { AssistantResponseStatus } from "../chatScreenState.ts";
 import { chatScreenTheme } from "../chatScreenTheme.ts";
 import { glyphs } from "./glyphs.ts";
+import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Renders the HERO 1 input panel (pen frame HOeet). Owns three stacked rows:
 // a header strip with mode + model chips, a body with the prompt draft and
@@ -49,14 +50,15 @@ export function InputPanel(props: InputPanelProps) {
           {`${props.promptDraft}${cursorCharacter}`}
         </Text>
       </Box>
-      <Box
-        backgroundColor={chatScreenTheme.surfaceTwo}
-        justifyContent="space-between"
-        paddingX={2}
-      >
-        <Text color={chatScreenTheme.textMuted}>
-          {isStreamingResponse ? "working…" : props.promptInputHintText}
-        </Text>
+      <Box backgroundColor={chatScreenTheme.surfaceTwo} justifyContent="space-between" paddingX={2}>
+        {isStreamingResponse ? (
+          <Box gap={1}>
+            <SnakeAnimationIndicator />
+            <Text color={chatScreenTheme.textMuted}>working…</Text>
+          </Box>
+        ) : (
+          <Text color={chatScreenTheme.textMuted}>{props.promptInputHintText}</Text>
+        )}
         <Text color={chatScreenTheme.textMuted}>
           {props.tokenUsagePercentageOfContextWindow === undefined
             ? "ctx --"

@@ -120,3 +120,32 @@ test("InputPanel does not render a block cursor when prompt input is disabled", 
   );
   expect(output).not.toMatch(/hello█/);
 });
+
+test("InputPanel shows the snake animation only while assistant response is streaming", () => {
+  const streamingOutput = renderWithoutAnsi(
+    <InputPanel
+      promptDraft=""
+      isPromptInputDisabled
+      promptInputHintText="idle hint"
+      modeLabel="implementation"
+      modelIdentifier="opus-4.6"
+      reasoningEffortLabel="high"
+      assistantResponseStatus="streaming_assistant_response"
+      tokenUsagePercentageOfContextWindow={undefined}
+    />,
+  );
+  const idleOutput = renderWithoutAnsi(
+    <InputPanel
+      promptDraft=""
+      isPromptInputDisabled={false}
+      promptInputHintText="idle hint"
+      modeLabel="implementation"
+      modelIdentifier="opus-4.6"
+      reasoningEffortLabel="high"
+      assistantResponseStatus="waiting_for_user_input"
+      tokenUsagePercentageOfContextWindow={undefined}
+    />,
+  );
+  expect(streamingOutput).toMatch(/▰|●/);
+  expect(idleOutput).not.toMatch(/▰/);
+});
