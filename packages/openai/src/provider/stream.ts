@@ -105,18 +105,18 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
   let finished = false;
   let reasoningStartedAtMs: number | undefined;
-  let hasEmittedReasoningStarted = false;
-  let hasSeenReasoningPartSeparator = false;
+  let isReasoningSummaryInProgress = false;
+  let reasoningPartSeparatorPending = false;
 
   async function* emitPendingReasoningCompletedEvent(): AsyncGenerator<ProviderStreamEvent> {
-    if (hasEmittedReasoningStarted && reasoningStartedAtMs !== undefined) {
+    if (isReasoningSummaryInProgress && reasoningStartedAtMs !== undefined) {
       yield ProviderStreamEventSchema.parse({
         type: "reasoning_summary_completed",
         reasoningDurationMs: Math.max(0, Math.round(performance.now() - reasoningStartedAtMs)),
       });
       reasoningStartedAtMs = undefined;
-      hasEmittedReasoningStarted = false;
-      hasSeenReasoningPartSeparator = false;
+      isReasoningSummaryInProgress = false;
+      reasoningPartSeparatorPending = false;
     }
   }
 
@@ -134,17 +134,17 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
     const reasoningDelta = ReasoningDeltaChunkSchema.safeParse(value);
     if (reasoningDelta.success) {
-      if (!hasEmittedReasoningStarted) {
+      if (!isReasoningSummaryInProgress) {
         reasoningStartedAtMs = performance.now();
-        hasEmittedReasoningStarted = true;
+        isReasoningSummaryInProgress = true;
         yield ProviderStreamEventSchema.parse({ type: "reasoning_summary_started" });
       }
-      if (hasSeenReasoningPartSeparator) {
+      if (reasoningPartSeparatorPending) {
         yield ProviderStreamEventSchema.parse({
           type: "reasoning_summary_text_chunk",
           text: "\n\n",
         });
-        hasSeenReasoningPartSeparator = false;
+        reasoningPartSeparatorPending = false;
       }
       yield ProviderStreamEventSchema.parse({
         type: "reasoning_summary_text_chunk",
@@ -155,7 +155,7 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
     const reasoningDone = ReasoningDoneChunkSchema.safeParse(value);
     if (reasoningDone.success) {
-      hasSeenReasoningPartSeparator = true;
+      reasoningPartSeparatorPending = true;
       continue;
     }
 

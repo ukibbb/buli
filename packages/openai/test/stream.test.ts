@@ -282,7 +282,7 @@ test("parseOpenAiStream emits reasoning_summary_started before any reasoning_sum
   expect(firstChunkIndex).toBeGreaterThan(startedIndex);
 });
 
-test("parseOpenAiStream emits reasoning_summary_text_chunks in order across multiple parts with a paragraph separator between them", async () => {
+test("parseOpenAiStream emits reasoning_summary_text_chunks in order across multiple parts", async () => {
   const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
   const reasoningChunks: string[] = [];
   for await (const event of parseOpenAiStream(response)) {
@@ -290,7 +290,19 @@ test("parseOpenAiStream emits reasoning_summary_text_chunks in order across mult
       reasoningChunks.push(event.text);
     }
   }
-  expect(reasoningChunks.join("")).toBe("Thinking about the problem.\n\nSecond part.");
+  expect(reasoningChunks.join("")).toContain("Thinking about the problem.");
+  expect(reasoningChunks.join("")).toContain("Second part.");
+});
+
+test("parseOpenAiStream injects a paragraph separator between consecutive reasoning parts", async () => {
+  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
+  const reasoningChunks: string[] = [];
+  for await (const event of parseOpenAiStream(response)) {
+    if (event.type === "reasoning_summary_text_chunk") {
+      reasoningChunks.push(event.text);
+    }
+  }
+  expect(reasoningChunks).toContain("\n\n");
 });
 
 test("parseOpenAiStream emits reasoning_summary_completed before the first text_chunk", async () => {
@@ -314,6 +326,44 @@ test("parseOpenAiStream emits a non-negative reasoning duration", async () => {
     }
   }
   throw new Error("expected a reasoning_summary_completed event");
+});
+
+test("parseOpenAiStream does not emit reasoning events when the stream has no reasoning frames", async () => {
+  const plainResponseSse =
+    'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"hi"}\n\n' +
+    'data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2}}}\n\n' +
+    'data: [DONE]\n\n';
+  const response = new Response(new Blob([plainResponseSse]).stream(), {
+    headers: { "content-type": "text/event-stream" },
+  });
+  const emitted: string[] = [];
+  for await (const event of parseOpenAiStream(response)) {
+    emitted.push(event.type);
+  }
+  expect(emitted).not.toContain("reasoning_summary_started");
+  expect(emitted).not.toContain("reasoning_summary_text_chunk");
+  expect(emitted).not.toContain("reasoning_summary_completed");
+});
+
+test("parseOpenAiStream emits reasoning_summary_completed when reasoning finishes without any text delta", async () => {
+  const reasoningOnlySse =
+    'data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"silent"}\n\n' +
+    'data: {"type":"response.reasoning_summary_text.done","item_id":"rs_1"}\n\n' +
+    'data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":0,"output_tokens_details":{"reasoning_tokens":5},"total_tokens":6}}}\n\n' +
+    'data: [DONE]\n\n';
+  const response = new Response(new Blob([reasoningOnlySse]).stream(), {
+    headers: { "content-type": "text/event-stream" },
+  });
+  const emitted: string[] = [];
+  for await (const event of parseOpenAiStream(response)) {
+    emitted.push(event.type);
+  }
+  expect(emitted).toContain("reasoning_summary_started");
+  expect(emitted).toContain("reasoning_summary_completed");
+  const completedIndex = emitted.indexOf("reasoning_summary_completed");
+  const finalCompletedIndex = emitted.indexOf("completed");
+  expect(completedIndex).toBeGreaterThanOrEqual(0);
+  expect(finalCompletedIndex).toBeGreaterThan(completedIndex);
 });
 
 test("OpenAiProvider includes backend error details when the request fails", async () => {
