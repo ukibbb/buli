@@ -3,6 +3,7 @@ import { createRoot } from "@opentui/react";
 import React from "react";
 import type { AssistantResponseRunner } from "@buli/engine";
 import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
+import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
 export { ChatScreen } from "./ChatScreen.tsx";
 export type { ChatScreenProps } from "./ChatScreen.tsx";
 
@@ -16,7 +17,9 @@ export async function renderChatScreenInTerminalWithOpentui(input: {
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
   assistantResponseRunner: AssistantResponseRunner;
 }): Promise<OpentuiChatScreenInstance> {
+  const originalConsole = globalThis.console;
   const cliRenderer = await createCliRenderer({ screenMode: "alternate-screen" });
+  restoreConsoleTimeStampAfterOpentuiActivation({ originalConsole });
   const root = createRoot(cliRenderer);
   root.render(
     React.createElement(ChatScreen, {

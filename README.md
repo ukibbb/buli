@@ -82,8 +82,8 @@ buli --model gpt-5.4 --reasoning high
 We use the source runner as the primary development workflow because every `buli`
 invocation runs the latest code from the repo without waiting for a rebuild,
 even when launched outside the repo. The global wrapper also keeps the runtime on
-`bun` end to end, which is required for OpenTUI because `@opentui/core` ships
-`.scm` grammar assets that Node plus `tsx` does not load.
+`bun` end to end, so the source workflow and the packaged CLI exercise the same
+runtime for both Ink and OpenTUI.
 
 ## What `buli login` Does
 
