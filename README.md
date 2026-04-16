@@ -4,7 +4,7 @@
 
 This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen HERO 1 terminal chat screen, streamed assistant responses with a live reasoning-summary block that collapses into a compact chip once thinking ends, available model discovery, and model and reasoning-effort selection. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
 
-## Current Status
+ # Current Status
 
 V1 currently includes:
 
@@ -25,30 +25,20 @@ V1 currently includes:
 - model selection and reasoning-effort selection
 - streaming reasoning-summary display (live thinking block while the model reasons, collapsed chip after reasoning ends showing elapsed seconds and, once the response completes, reasoning token count)
 - HERO 1 visual design (see `ink-limitations.md` for terminal cell-grid translations)
+- typed `AssistantContentPart` discriminated union in `@buli/contracts` (paragraph, heading, bulleted/numbered/checklist, fenced code block, callout, horizontal rule, plus inline spans)
+- engine-side markdown parser (`parseAssistantResponseIntoContentParts` in `@buli/engine`) that attaches typed content parts to the completed assistant message
+- second terminal renderer `@buli/opentui-tui` backed by `@opentui/react`, with the same component inventory as ink-tui
+- shared design tokens (`@buli/assistant-design-tokens`) consumed by both renderers
+- shared test fixtures (`@buli/assistant-transcript-fixtures`) asserting both reducers interpret the same event sequences identically
+- `--ui ink|opentui` flag on the CLI to pick a renderer per invocation (`ink` default)
 
 V1 intentionally does not include yet:
 
 - `read`, `write`, `edit`, or `bash`
-- tool-call rendering
 - session persistence
 - session branching
 - extension loading
 - process RPC
-
-## Planned Next Slice
-
-The next slice is designed in
-`plans/2026-04-16-dual-tui-opentui-design.md`:
-
-- typed `AssistantContentPart` discriminated union in `@buli/contracts` (paragraph, heading, bulleted/numbered/checklist, fenced code block, callout, file reference, plus inline spans)
-- `@buli/engine` gains a pure `AssistantTurnPartAccumulator`, a line-oriented `classifyAssistantTextLine`, and `foldAssistantResponseEventIntoTranscript`. The flat `streamedAssistantText` field goes away.
-- `@buli/ink-tui` is reworked from scratch against the typed-part model. Flat-text rendering is replaced with a per-part component tree that matches the `.pen` component library.
-- `@buli/opentui-tui` is added as a second renderer with the same component inventory, built on `@opentui/react`.
-- `@buli/assistant-design-tokens` holds shared color/border/spacing values ported from the `.pen`.
-- `@buli/assistant-transcript-fixtures` holds canonical typed-part scenarios consumed by engine and both TUI tests.
-- `buli --ui ink|opentui` selects the renderer per invocation (default `ink`).
-
-Tool calls, `DiffBlock`, `ShellBlock`, `PlanProposal`, and `ToolApproval` remain deferred to later slices.
 
 ## Requirements
 
@@ -135,6 +125,8 @@ After logging in, you can:
 - start the app with a preselected model using `--model`
 - start the app with a preselected reasoning effort using `--reasoning`
 - see reasoning token usage on the collapsed reasoning chip after the assistant response completes
+- `buli --ui opentui` launches the chat UI with the OpenTUI renderer instead of Ink
+- both renderers read the same typed `AssistantContentPart[]` from the completed assistant message, so markdown structure (headings, lists, code blocks, callouts) is rendered identically in semantics
 
 If auth is missing, `buli` exits cleanly and tells you to run `buli login` first.
 
@@ -232,21 +224,17 @@ Current packages:
 - `apps/cli`
   - composition root and CLI entrypoints
 - `packages/contracts`
-  - shared schemas for transcript messages, assistant response events, model metadata, and token usage
+  - shared schemas for transcript messages, assistant response events, model metadata, token usage, and typed assistant content parts
 - `packages/engine`
-  - UI-agnostic assistant response orchestration
+  - UI-agnostic assistant response orchestration with markdown parser
 - `packages/openai`
   - OAuth, token refresh, OpenAI transport, available model discovery, usage parsing
 - `packages/ink-tui`
   - terminal chat screen rendering, reasoning-summary and prompt components, alternate-screen integration, and chat screen state transitions
-
-Planned packages for the next slice
-(see `plans/2026-04-16-dual-tui-opentui-design.md`):
-
 - `packages/opentui-tui`
   - second terminal chat renderer using `@opentui/react`, same component inventory as ink-tui
 - `packages/assistant-design-tokens`
-  - color, border, and spacing tokens ported from the `.pen` design file; shared by both TUIs
+  - shared color, border, and spacing tokens from the `.pen` design file
 - `packages/assistant-transcript-fixtures`
   - canonical typed-part scenarios consumed by engine and both TUI tests
 
@@ -260,8 +248,8 @@ blocks). Pen-file pixel values, sub-row accent heights, corner radius on
 filled surfaces, and font-size hierarchy do not translate 1:1 to a terminal
 cell grid. The documented translations — palette table, pixel-to-cell
 mapping, Lucide-to-Unicode glyph substitutions — live in `ink-limitations.md`.
-The dual-TUI spec at
-`plans/2026-04-16-dual-tui-opentui-design.md` pins the
+The dual-TUI implementation spec at
+`plans/2026-04-16-dual-tui-opentui-design.md` documents the
 visual-fidelity mapping applied in both renderers.
 
 ## Development Commands
