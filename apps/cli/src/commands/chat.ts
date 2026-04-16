@@ -1,6 +1,6 @@
 import type { ReasoningEffort } from "@buli/contracts";
 import { AssistantResponseRuntime } from "@buli/engine";
-import { renderChatScreenInTerminal } from "@buli/ink-tui";
+import { renderChatScreenInTerminalWithInk } from "@buli/ink-tui";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 
 const DEFAULT_MODEL_ID = "gpt-5.4";
@@ -24,7 +24,7 @@ export async function runInteractiveChat(input: {
 
   const provider = new OpenAiProvider({ store });
   const assistantResponseRunner = new AssistantResponseRuntime(provider);
-  const chatScreen = renderChatScreenInTerminal({
+  const chatScreen = renderChatScreenInTerminalWithInk({
     assistantResponseRunner,
     loadAvailableAssistantModels: () => provider.listAvailableAssistantModels(),
     selectedModelId: input.selectedModelId ?? DEFAULT_MODEL_ID,

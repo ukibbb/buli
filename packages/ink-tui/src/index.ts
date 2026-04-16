@@ -50,7 +50,7 @@ export type {
 } from "./chatScreenState.ts";
 export type { ConversationTranscriptViewportMeasurements, ConversationTranscriptViewportState } from "./conversationTranscriptViewportState.ts";
 
-export function renderChatScreenInTerminal(input: {
+export function renderChatScreenInTerminalWithInk(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
