@@ -58,6 +58,7 @@ test("AssistantResponseRuntime emits started chunk and completed events", async 
         id: expect.any(String),
         role: "assistant",
         text: "Hello world",
+        assistantContentParts: expect.any(Array),
       },
       usage: {
         total: 180,
@@ -208,6 +209,34 @@ test("AssistantResponseRuntime translates an incomplete provider terminal event"
       usage: { total: 24, input: 20, output: 3, reasoning: 1, cache: { read: 0, write: 0 } },
     },
   ]);
+});
+
+test("attaches_assistant_content_parts_to_completed_response_event", async () => {
+  const stubbedProvider: AssistantResponseProvider = {
+    async *streamAssistantResponse() {
+      yield { type: "text_chunk", text: "Hello " } as const;
+      yield { type: "text_chunk", text: "world" } as const;
+      yield {
+        type: "completed",
+        usage: { total: 3, input: 1, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+      } as const;
+    },
+  };
+  const runtime = new AssistantResponseRuntime(stubbedProvider);
+  const emittedEvents: import("@buli/contracts").AssistantResponseEvent[] = [];
+  for await (const event of runtime.streamAssistantResponse({
+    promptText: "say hello",
+    selectedModelId: "gpt-5.4",
+  })) {
+    emittedEvents.push(event);
+  }
+  const completedEvent = emittedEvents.find((event) => event.type === "assistant_response_completed");
+  expect(completedEvent).toBeDefined();
+  if (completedEvent?.type === "assistant_response_completed") {
+    expect(completedEvent.message.assistantContentParts).toEqual([
+      { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
+    ]);
+  }
 });
 
 test("AssistantResponseRuntime re-emits reasoning-summary events from the provider in order", async () => {

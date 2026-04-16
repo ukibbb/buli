@@ -16,6 +16,7 @@ import {
   type AssistantResponseEvent,
 } from "@buli/contracts";
 import type { AssistantResponseRequest, AssistantResponseProvider } from "./provider.ts";
+import { parseAssistantResponseIntoContentParts } from "./assistantContentPartParser.ts";
 import { createCompletedAssistantResponseEvent } from "./turn.ts";
 
 export interface AssistantResponseRunner {
@@ -159,6 +160,7 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
         // Remaining arm: providerStreamEvent.type === "completed".
         yield createCompletedAssistantResponseEvent({
           assistantText: streamedAssistantText,
+          assistantContentParts: parseAssistantResponseIntoContentParts(streamedAssistantText),
           usage: providerStreamEvent.usage,
         });
         return;
