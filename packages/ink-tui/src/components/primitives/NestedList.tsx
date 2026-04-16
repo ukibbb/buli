@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // A nested list renders a recursive tree. Each child level indents via the
 // parent's padding-left, so arbitrary depth is supported without explicit

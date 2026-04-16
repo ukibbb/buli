@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 export type ModelAndReasoningSelectionPaneProps = {
   headingText: string;

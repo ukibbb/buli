@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // Mirrors the modal shell from the design, but the legend rows stay limited to
 // shortcuts the current build actually supports. KEYBOARD_SHORTCUT_KEY_COLUMN_WIDTH

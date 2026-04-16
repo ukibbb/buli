@@ -1,7 +1,7 @@
 import { Text } from "ink";
 import type { ReactNode } from "react";
 import { Callout } from "../primitives/Callout.tsx";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // ErrorBannerBlock is the upgraded error transcript entry. The previous
 // inline `<Box borderColor=red>` is now a Callout, matching the pen-file

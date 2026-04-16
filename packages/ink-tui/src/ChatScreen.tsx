@@ -3,7 +3,7 @@ import { type AssistantResponseEvent, type AvailableAssistantModel, type Reasoni
 import { type AssistantResponseRunner } from "@buli/engine";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { startTransition, useEffectEvent, useRef, useState } from "react";
-import { chatScreenTheme } from "./chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
   createInitialConversationTranscriptViewportState,
   jumpConversationTranscriptViewportToNewestRows,

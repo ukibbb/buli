@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import type { ToolCallGrepDetail } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FileReference } from "../primitives/FileReference.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";

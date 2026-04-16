@@ -1,6 +1,6 @@
 import { Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // Inline-span vocabulary matches the pen file's inline components
 // (InlineBold, InlineItalic, InlineStrike, InlineLink, InlineCode). Keeping

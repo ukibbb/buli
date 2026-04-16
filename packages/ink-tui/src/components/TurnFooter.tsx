@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import type { TokenUsage } from "@buli/contracts";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
 // TurnFooter renders a one-row chip beneath an assistant turn so the user

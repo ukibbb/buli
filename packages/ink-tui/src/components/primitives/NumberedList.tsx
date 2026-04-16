@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // A numbered list aligns its gutter so all items line up even when the
 // largest index is two or three digits. The gutter width is computed from the

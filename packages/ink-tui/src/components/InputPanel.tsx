@@ -1,6 +1,6 @@
 import { Box, Text, useAnimation } from "ink";
 import type { AssistantResponseStatus } from "../chatScreenState.ts";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";

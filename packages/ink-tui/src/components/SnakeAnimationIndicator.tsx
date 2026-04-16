@@ -1,6 +1,6 @@
 import { Box, Text, useAnimation } from "ink";
 import React from "react";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
 // Renders the six-cell snake from pen component snakeA1-A6: four green

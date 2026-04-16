@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import React from "react";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // Renders a message transcript entry whose role is "user". Matches pen
 // component GgP0q: cyan caret, prompt text in the primary text color, one

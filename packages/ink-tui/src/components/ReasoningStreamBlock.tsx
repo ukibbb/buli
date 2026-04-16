@@ -1,6 +1,6 @@
 import { Box, Text, useAnimation } from "ink";
 import React from "react";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
 // Renders one streaming_reasoning_summary transcript entry. Pre-completion

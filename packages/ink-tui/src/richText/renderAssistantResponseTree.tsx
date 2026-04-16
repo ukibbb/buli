@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { BulletedList } from "../components/primitives/BulletedList.tsx";
 import { Callout } from "../components/primitives/Callout.tsx";
 import { Checklist } from "../components/primitives/Checklist.tsx";

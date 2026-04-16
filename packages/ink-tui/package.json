@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@buli/assistant-design-tokens": "workspace:*",
     "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
     "ink": "^7.0.0",

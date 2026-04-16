@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import React from "react";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
 // Renders one completed_reasoning_summary transcript entry. Post-reasoning

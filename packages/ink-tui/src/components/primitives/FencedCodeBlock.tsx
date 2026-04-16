@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import type { SyntaxHighlightSpan, SyntaxHighlightSpanStyle } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // Fenced code blocks in the design render as a surface-1 box with an optional
 // language label, then one row per code line. When the caller supplies

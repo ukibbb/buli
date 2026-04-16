@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
 // Renders the HERO 1 top bar. The mode chip, model chip, and close glyph
