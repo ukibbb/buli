@@ -121,48 +121,53 @@ Lives in `@buli/contracts`. Narrow scope — two new types plus one field added 
 
 ### 4.1. `AssistantContentPart`
 
+Field names match the **existing** ink-tui parser output and component prop shapes exactly. The move is a straight rename of the top-level discriminator (`blockKind` → `kind`) and the fenced-code kind (`fenced_code` → `fenced_code_block`). Every other field name is preserved so no ink-tui component has to change its prop surface.
+
 ```ts
 export type AssistantContentPart =
-  | ParagraphPart
-  | HeadingPart
-  | BulletedListPart
-  | NumberedListPart
-  | ChecklistPart
-  | FencedCodeBlockPart
-  | CalloutPart
-  | HorizontalRulePart;
+  | ParagraphContentPart
+  | HeadingContentPart
+  | BulletedListContentPart
+  | NumberedListContentPart
+  | ChecklistContentPart
+  | FencedCodeBlockContentPart
+  | CalloutContentPart
+  | HorizontalRuleContentPart;
 ```
 
-| `kind` | Fields |
+| `kind` | Fields (exact shapes — match current ink-tui) |
 | --- | --- |
 | `paragraph` | `inlineSpans: InlineSpan[]` |
-| `heading` | `headingLevel: 1 \| 2 \| 3, inlineSpans: InlineSpan[]` |
+| `heading` | `headingLevel: 1 \| 2 \| 3; inlineSpans: InlineSpan[]` |
 | `bulleted_list` | `itemSpanArrays: InlineSpan[][]` |
 | `numbered_list` | `itemSpanArrays: InlineSpan[][]` |
-| `checklist` | `items: { isChecked: boolean; inlineSpans: InlineSpan[] }[]` |
+| `checklist` | `items: { itemTitle: string; itemStatus: "pending" \| "in_progress" \| "completed" }[]` |
 | `fenced_code_block` | `languageLabel?: string; codeLines: string[]` |
-| `callout` | `severity: "info" \| "success" \| "warn" \| "error"; titleText?: string; inlineSpans: InlineSpan[]` |
+| `callout` | `severity: "info" \| "success" \| "warning" \| "error"; titleText?: string; inlineSpans: InlineSpan[]` |
 | `horizontal_rule` | (no fields) |
 
-Field names mirror the existing ink-tui parser output (`inlineSpans`, `itemSpanArrays`, `headingLevel`, `languageLabel`, `codeLines`) so the move is a straight rename of the top-level tag (`blockKind` → `kind`) and `fenced_code` → `fenced_code_block`. Everything else is preserved.
+Notes on specific shapes:
 
-No `status` field on parts. This slice does per-turn parse-at-completion, so every part the engine emits is already in its final state.
-
-Nested lists are not modeled here. The existing ink-tui `NestedList` primitive is a renderer-side composition over `BulletedList`/`NumberedList` items — not a parser output. If the model emits nested list markdown, it collapses into flat list items at parse time (the current behavior; unchanged).
+- `ChecklistItem.itemStatus` reuses the contract-level `ToolCallTodoItemStatus` values (`pending` / `in_progress` / `completed`). This is how `packages/ink-tui/src/components/primitives/Checklist.tsx` already models status; the contracts-level `ChecklistItemSchema` exposes the enum explicitly so nothing is shared via a back door.
+- `CalloutSeverity` is `"warning"` (full word) not `"warn"`. The existing parser maps GitHub admonition tags `WARNING` / `WARN` / `CAUTION` to this enum.
+- No `status` field on parts. This slice does per-turn parse-at-completion, so every part the engine emits is already in its final state.
+- Nested lists are not modeled here. The existing ink-tui `NestedList` primitive is a renderer-side composition — not a parser output. Nested-list markdown collapses into flat list items at parse time (current behavior; unchanged).
 
 ### 4.2. `InlineSpan`
 
+Field names match the existing `InlineMarkdownSpan` in `packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx` exactly. The move is a relocation + rename of the type alias only.
+
 ```ts
 export type InlineSpan =
-  | InlineTextSpan
-  | InlineBoldSpan
-  | InlineItalicSpan
-  | InlineStrikeSpan
-  | InlineLinkSpan
-  | InlineCodeSpan;
+  | { spanKind: "plain"; spanText: string }
+  | { spanKind: "bold"; spanText: string }
+  | { spanKind: "italic"; spanText: string }
+  | { spanKind: "strike"; spanText: string }
+  | { spanKind: "code"; spanText: string }
+  | { spanKind: "link"; spanText: string; hrefUrl: string };
 ```
 
-Mirrors the existing `InlineMarkdownSpan` shape in `packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx`. The move is a rename (`InlineMarkdownSpan` → `InlineSpan`) plus relocation into `@buli/contracts`. Bold/italic/strike/code hold a plain string. Link holds `{ linkText, linkTarget }`.
+Note: the default/non-styled variant is `"plain"`, not `"text"`. Links carry `spanText` (visible) + `hrefUrl` (target), not `linkText` / `linkTarget`.
 
 ### 4.3. `TranscriptMessage` extension
 

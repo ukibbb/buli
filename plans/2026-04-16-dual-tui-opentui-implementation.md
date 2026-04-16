@@ -63,15 +63,17 @@ At the end of Phase A, `@buli/contracts` exports `AssistantContentPart`, `Inline
 
 - [ ] **Step 1: Write the failing test**
 
+Field names here are deliberately identical to the existing `InlineMarkdownSpan` shape in `packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx` lines 10–16. Do **not** invent new names — the whole point of Phase A is additive wrapping.
+
 ```ts
 // packages/contracts/test/inlineSpan.test.ts
 import { describe, expect, test } from "bun:test";
 import { InlineSpanSchema } from "../src/inlineSpan.ts";
 
 describe("InlineSpanSchema", () => {
-  test("parses_inline_text_span_with_literal_text", () => {
-    const parsed = InlineSpanSchema.parse({ spanKind: "text", spanText: "hello world" });
-    expect(parsed).toEqual({ spanKind: "text", spanText: "hello world" });
+  test("parses_inline_plain_span_with_literal_text", () => {
+    const parsed = InlineSpanSchema.parse({ spanKind: "plain", spanText: "hello world" });
+    expect(parsed).toEqual({ spanKind: "plain", spanText: "hello world" });
   });
 
   test("parses_inline_bold_span_with_literal_text", () => {
@@ -94,21 +96,27 @@ describe("InlineSpanSchema", () => {
     expect(parsed).toEqual({ spanKind: "code", spanText: "identifier" });
   });
 
-  test("parses_inline_link_span_with_target_and_text", () => {
+  test("parses_inline_link_span_with_href_url_and_span_text", () => {
     const parsed = InlineSpanSchema.parse({
       spanKind: "link",
-      linkText: "click here",
-      linkTarget: "https://example.com",
+      spanText: "click here",
+      hrefUrl: "https://example.com",
     });
     expect(parsed).toEqual({
       spanKind: "link",
-      linkText: "click here",
-      linkTarget: "https://example.com",
+      spanText: "click here",
+      hrefUrl: "https://example.com",
     });
   });
 
   test("rejects_unknown_inline_span_kind", () => {
     expect(() => InlineSpanSchema.parse({ spanKind: "rainbow", spanText: "x" })).toThrow();
+  });
+
+  test("rejects_link_span_without_href_url", () => {
+    expect(() =>
+      InlineSpanSchema.parse({ spanKind: "link", spanText: "click" }),
+    ).toThrow();
   });
 });
 ```
@@ -126,8 +134,13 @@ Expected: FAIL. Cannot find module `../src/inlineSpan.ts`.
 // packages/contracts/src/inlineSpan.ts
 import { z } from "zod";
 
-export const InlineTextSpanSchema = z
-  .object({ spanKind: z.literal("text"), spanText: z.string() })
+// Shape is identical to InlineMarkdownSpan in
+// packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx.
+// The move is type-location only; field names are preserved so no component
+// needs a prop rename.
+
+export const InlinePlainSpanSchema = z
+  .object({ spanKind: z.literal("plain"), spanText: z.string() })
   .strict();
 
 export const InlineBoldSpanSchema = z
@@ -149,13 +162,13 @@ export const InlineCodeSpanSchema = z
 export const InlineLinkSpanSchema = z
   .object({
     spanKind: z.literal("link"),
-    linkText: z.string(),
-    linkTarget: z.string().min(1),
+    spanText: z.string(),
+    hrefUrl: z.string().min(1),
   })
   .strict();
 
 export const InlineSpanSchema = z.discriminatedUnion("spanKind", [
-  InlineTextSpanSchema,
+  InlinePlainSpanSchema,
   InlineBoldSpanSchema,
   InlineItalicSpanSchema,
   InlineStrikeSpanSchema,
@@ -163,7 +176,7 @@ export const InlineSpanSchema = z.discriminatedUnion("spanKind", [
   InlineLinkSpanSchema,
 ]);
 
-export type InlineTextSpan = z.infer<typeof InlineTextSpanSchema>;
+export type InlinePlainSpan = z.infer<typeof InlinePlainSpanSchema>;
 export type InlineBoldSpan = z.infer<typeof InlineBoldSpanSchema>;
 export type InlineItalicSpan = z.infer<typeof InlineItalicSpanSchema>;
 export type InlineStrikeSpan = z.infer<typeof InlineStrikeSpanSchema>;
@@ -196,6 +209,11 @@ git commit -m "feat(contracts): add InlineSpan discriminated union for assistant
 
 - [ ] **Step 1: Write the failing test**
 
+Field shapes match the existing ink-tui types exactly:
+- `AssistantMarkdownBlock` in `packages/ink-tui/src/richText/parseAssistantResponseMarkdown.ts` lines 13–21 (the block union).
+- `ChecklistItem` in `packages/ink-tui/src/components/primitives/Checklist.tsx` lines 11–14 (`{ itemTitle, itemStatus }`).
+- `CalloutSeverity` in `packages/ink-tui/src/components/primitives/Callout.tsx` line 10 (`"info" | "success" | "warning" | "error"` — full word `warning`).
+
 ```ts
 // packages/contracts/test/assistantContentPart.test.ts
 import { describe, expect, test } from "bun:test";
@@ -205,7 +223,7 @@ describe("AssistantContentPartSchema", () => {
   test("parses_paragraph_part_with_inline_spans", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "paragraph",
-      inlineSpans: [{ spanKind: "text", spanText: "hello" }],
+      inlineSpans: [{ spanKind: "plain", spanText: "hello" }],
     });
     expect(parsed.kind).toBe("paragraph");
   });
@@ -214,7 +232,7 @@ describe("AssistantContentPartSchema", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "heading",
       headingLevel: 1,
-      inlineSpans: [{ spanKind: "text", spanText: "Title" }],
+      inlineSpans: [{ spanKind: "plain", spanText: "Title" }],
     });
     expect(parsed).toMatchObject({ kind: "heading", headingLevel: 1 });
   });
@@ -223,7 +241,7 @@ describe("AssistantContentPartSchema", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "heading",
       headingLevel: 2,
-      inlineSpans: [{ spanKind: "text", spanText: "Subtitle" }],
+      inlineSpans: [{ spanKind: "plain", spanText: "Subtitle" }],
     });
     expect(parsed.kind === "heading" && parsed.headingLevel).toBe(2);
   });
@@ -232,7 +250,7 @@ describe("AssistantContentPartSchema", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "heading",
       headingLevel: 3,
-      inlineSpans: [{ spanKind: "text", spanText: "Section" }],
+      inlineSpans: [{ spanKind: "plain", spanText: "Section" }],
     });
     expect(parsed.kind === "heading" && parsed.headingLevel).toBe(3);
   });
@@ -251,8 +269,8 @@ describe("AssistantContentPartSchema", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "bulleted_list",
       itemSpanArrays: [
-        [{ spanKind: "text", spanText: "first item" }],
-        [{ spanKind: "text", spanText: "second item" }],
+        [{ spanKind: "plain", spanText: "first item" }],
+        [{ spanKind: "plain", spanText: "second item" }],
       ],
     });
     expect(parsed.kind === "bulleted_list" && parsed.itemSpanArrays.length).toBe(2);
@@ -261,20 +279,30 @@ describe("AssistantContentPartSchema", () => {
   test("parses_numbered_list_part_with_items", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "numbered_list",
-      itemSpanArrays: [[{ spanKind: "text", spanText: "step one" }]],
+      itemSpanArrays: [[{ spanKind: "plain", spanText: "step one" }]],
     });
     expect(parsed.kind).toBe("numbered_list");
   });
 
-  test("parses_checklist_part_with_mixed_checked_states", () => {
+  test("parses_checklist_part_with_mixed_item_statuses", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "checklist",
       items: [
-        { isChecked: false, inlineSpans: [{ spanKind: "text", spanText: "todo" }] },
-        { isChecked: true, inlineSpans: [{ spanKind: "text", spanText: "done" }] },
+        { itemTitle: "todo", itemStatus: "pending" },
+        { itemTitle: "in progress", itemStatus: "in_progress" },
+        { itemTitle: "done", itemStatus: "completed" },
       ],
     });
-    expect(parsed.kind === "checklist" && parsed.items.length).toBe(2);
+    expect(parsed.kind === "checklist" && parsed.items.length).toBe(3);
+  });
+
+  test("rejects_checklist_item_with_unknown_status", () => {
+    expect(() =>
+      AssistantContentPartSchema.parse({
+        kind: "checklist",
+        items: [{ itemTitle: "x", itemStatus: "frozen" }],
+      }),
+    ).toThrow();
   });
 
   test("parses_fenced_code_block_with_language_label", () => {
@@ -298,28 +326,38 @@ describe("AssistantContentPartSchema", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "callout",
       severity: "info",
-      inlineSpans: [{ spanKind: "text", spanText: "note" }],
+      inlineSpans: [{ spanKind: "plain", spanText: "note" }],
     });
     expect(parsed.kind === "callout" && parsed.severity).toBe("info");
   });
 
-  test("parses_callout_part_with_all_severity_values", () => {
-    for (const severity of ["info", "success", "warn", "error"] as const) {
+  test("parses_callout_part_with_all_severity_values_including_warning", () => {
+    for (const severity of ["info", "success", "warning", "error"] as const) {
       const parsed = AssistantContentPartSchema.parse({
         kind: "callout",
         severity,
-        inlineSpans: [{ spanKind: "text", spanText: "x" }],
+        inlineSpans: [{ spanKind: "plain", spanText: "x" }],
       });
       expect(parsed.kind === "callout" && parsed.severity).toBe(severity);
     }
   });
 
+  test("rejects_callout_severity_warn_without_trailing_ing", () => {
+    expect(() =>
+      AssistantContentPartSchema.parse({
+        kind: "callout",
+        severity: "warn",
+        inlineSpans: [{ spanKind: "plain", spanText: "x" }],
+      }),
+    ).toThrow();
+  });
+
   test("parses_callout_part_with_optional_title_text", () => {
     const parsed = AssistantContentPartSchema.parse({
       kind: "callout",
-      severity: "warn",
+      severity: "warning",
       titleText: "Heads up",
-      inlineSpans: [{ spanKind: "text", spanText: "watch out" }],
+      inlineSpans: [{ spanKind: "plain", spanText: "watch out" }],
     });
     expect(parsed.kind === "callout" && parsed.titleText).toBe("Heads up");
   });
@@ -344,18 +382,27 @@ Expected: FAIL. Cannot find module `../src/assistantContentPart.ts`.
 
 - [ ] **Step 3: Implement `assistantContentPart.ts`**
 
+`ChecklistItemSchema` uses `itemTitle` + `itemStatus` to match the existing ink-tui primitive prop surface. `CalloutSeveritySchema` uses the full word `"warning"`. Both of these align 1:1 with what ink-tui already expects.
+
 ```ts
 // packages/contracts/src/assistantContentPart.ts
 import { z } from "zod";
 import { InlineSpanSchema } from "./inlineSpan.ts";
+import { ToolCallTodoItemStatusSchema } from "./toolCallDetail.ts";
 
-export const CalloutSeveritySchema = z.enum(["info", "success", "warn", "error"]);
+// Callout severity matches the existing ink-tui CalloutSeverity type.
+// "warning" is the full word — not "warn" — because the existing parser
+// maps GitHub admonition tags WARNING/WARN/CAUTION to this enum value.
+export const CalloutSeveritySchema = z.enum(["info", "success", "warning", "error"]);
 export type CalloutSeverity = z.infer<typeof CalloutSeveritySchema>;
 
+// Checklist item shape matches packages/ink-tui/src/components/primitives/Checklist.tsx
+// so the ink-tui Checklist component's props surface is unchanged after the
+// type relocates into contracts. itemStatus reuses ToolCallTodoItemStatus.
 export const ChecklistItemSchema = z
   .object({
-    isChecked: z.boolean(),
-    inlineSpans: z.array(InlineSpanSchema),
+    itemTitle: z.string(),
+    itemStatus: ToolCallTodoItemStatusSchema,
   })
   .strict();
 export type ChecklistItem = z.infer<typeof ChecklistItemSchema>;
@@ -484,7 +531,7 @@ describe("TranscriptMessageSchema", () => {
       role: "assistant",
       text: "Hello world",
       assistantContentParts: [
-        { kind: "paragraph", inlineSpans: [{ spanKind: "text", spanText: "Hello world" }] },
+        { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
       ],
     });
     expect(parsed.assistantContentParts?.length).toBe(1);
@@ -671,12 +718,14 @@ At the end of Phase B, `@buli/assistant-design-tokens` exists and exports the pa
 
 - [ ] **Step 2: Create `tsconfig.json`**
 
-Copy the contracts tsconfig as a template:
-```bash
-cp packages/contracts/tsconfig.json packages/assistant-design-tokens/tsconfig.json
-```
+Write `packages/assistant-design-tokens/tsconfig.json` with exactly this content — identical to `packages/contracts/tsconfig.json`:
 
-Open the resulting file and confirm the `compilerOptions.rootDir` / `include` paths point at `src`. No edits needed if they do (match contracts layout).
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
+```
 
 - [ ] **Step 3: Write the failing test**
 
@@ -809,12 +858,58 @@ git commit -m "feat(design-tokens): add @buli/assistant-design-tokens with palet
 - Modify: every file that imports from `../chatScreenTheme.ts` or similar relative paths — switch to `@buli/assistant-design-tokens`
 - Delete: `packages/ink-tui/src/chatScreenTheme.ts`
 
-- [ ] **Step 1: Find every importer**
+- [ ] **Step 1: Inventory — 38 files import `chatScreenTheme`, plus the source file**
 
+Confirm by running:
 ```bash
 grep -rln "chatScreenTheme" packages/ink-tui/src
 ```
-Record every file listed. These are the files that need their imports updated.
+
+Expected output (39 files total — 38 importers + the source file itself; order may vary):
+
+```
+packages/ink-tui/src/ChatScreen.tsx
+packages/ink-tui/src/chatScreenTheme.ts
+packages/ink-tui/src/components/ContextWindowMeter.tsx
+packages/ink-tui/src/components/InputPanel.tsx
+packages/ink-tui/src/components/ModelAndReasoningSelectionPane.tsx
+packages/ink-tui/src/components/ReasoningCollapsedChip.tsx
+packages/ink-tui/src/components/ReasoningStreamBlock.tsx
+packages/ink-tui/src/components/ShortcutsModal.tsx
+packages/ink-tui/src/components/SnakeAnimationIndicator.tsx
+packages/ink-tui/src/components/TopBar.tsx
+packages/ink-tui/src/components/TurnFooter.tsx
+packages/ink-tui/src/components/UserPromptBlock.tsx
+packages/ink-tui/src/components/behavior/ErrorBannerBlock.tsx
+packages/ink-tui/src/components/behavior/IncompleteResponseNoticeBlock.tsx
+packages/ink-tui/src/components/behavior/PlanProposalBlock.tsx
+packages/ink-tui/src/components/behavior/RateLimitNoticeBlock.tsx
+packages/ink-tui/src/components/behavior/ToolApprovalRequestBlock.tsx
+packages/ink-tui/src/components/primitives/BulletedList.tsx
+packages/ink-tui/src/components/primitives/Callout.tsx
+packages/ink-tui/src/components/primitives/Checklist.tsx
+packages/ink-tui/src/components/primitives/DataTable.tsx
+packages/ink-tui/src/components/primitives/DiffBlock.tsx
+packages/ink-tui/src/components/primitives/FencedCodeBlock.tsx
+packages/ink-tui/src/components/primitives/FileReference.tsx
+packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx
+packages/ink-tui/src/components/primitives/KeyValueList.tsx
+packages/ink-tui/src/components/primitives/NestedList.tsx
+packages/ink-tui/src/components/primitives/NumberedList.tsx
+packages/ink-tui/src/components/primitives/ShellBlock.tsx
+packages/ink-tui/src/components/primitives/StreamingCursor.tsx
+packages/ink-tui/src/components/primitives/SurfaceCard.tsx
+packages/ink-tui/src/components/toolCalls/BashToolCallCard.tsx
+packages/ink-tui/src/components/toolCalls/EditToolCallCard.tsx
+packages/ink-tui/src/components/toolCalls/GrepToolCallCard.tsx
+packages/ink-tui/src/components/toolCalls/ReadToolCallCard.tsx
+packages/ink-tui/src/components/toolCalls/TaskToolCallCard.tsx
+packages/ink-tui/src/components/toolCalls/ToolCallCardHeaderSlots.tsx
+packages/ink-tui/src/components/toolCalls/TodoWriteToolCallCard.tsx
+packages/ink-tui/src/richText/renderAssistantResponseTree.tsx
+```
+
+If the actual output diverges (e.g. a new file added since this plan was written, or a file removed), treat the live grep output as authoritative and apply Step 3 to that list.
 
 - [ ] **Step 2: Add workspace dependency to ink-tui**
 
@@ -894,9 +989,8 @@ Note the full text. The parser file will be copied over with two renames:
 | Block kind `blockKind: "fenced_code"` | `kind: "fenced_code_block"` |
 | Block kind `blockKind: "callout"` | `kind: "callout"` |
 | Block kind `blockKind: "horizontal_rule"` | `kind: "horizontal_rule"` |
-| Inline span `spanKind: "text"` → stays the same | stays the same |
 
-Also map the checklist item shape: `{ isChecked, inlineSpans }` (matches the `ChecklistItemSchema` in `@buli/contracts`). If the old shape differs (e.g. `{ isChecked, spans }`), rename the field. Same for `callout.titleText` — if the old shape has `titleText`, keep it; if `title`, rename to `titleText`.
+Every other field inside each block is preserved. `InlineSpan` values (`spanKind: "plain" | "bold" | "italic" | "strike" | "code" | "link"` with `spanText` and link `hrefUrl`) are already identical to the contract's `InlineSpan`. `ChecklistItem` is `{ itemTitle, itemStatus }` on both sides. `CalloutSeverity` is `"info" | "success" | "warning" | "error"` on both sides. So the parser implementation body does not need any field renames — only the block-union tag rename (`blockKind` → `kind`) and the `fenced_code` → `fenced_code_block` kind rename.
 
 - [ ] **Step 2: Relocate the test file first**
 
@@ -933,11 +1027,11 @@ Open `packages/engine/src/assistantContentPartParser.ts`. Apply:
 3. Replace imports:
    - Remove imports from `../components/primitives/...`.
    - Add: `import type { AssistantContentPart, CalloutSeverity, ChecklistItem, InlineSpan } from "@buli/contracts";`
-4. Rename every `blockKind` literal-assignment to `kind` per the table.
-5. Rename `fenced_code` → `fenced_code_block` in every place.
-6. Replace internal `InlineMarkdownSpan` type usage with `InlineSpan`. Replace `AssistantMarkdownBlock` type alias at the top of the file with `AssistantContentPart` (or remove entirely if the new return type is enough).
-7. Verify the checklist item shape matches `{ isChecked, inlineSpans }`. If the existing code used `{ isChecked, spans }`, rename the property.
-8. Remove any helper-only exports that referenced the old type aliases.
+4. Rename every `blockKind` literal-assignment to `kind` per the table above.
+5. Rename `fenced_code` → `fenced_code_block` in every place (both in the output object `kind` value and any helper function names such as `tryParseFencedCodeBlock` if it was named after the old kind — in this repo it already uses the clearer name, so no rename needed).
+6. Remove the local `AssistantMarkdownBlock` type alias declaration at the top of the file. `parseAssistantResponseIntoContentParts` now returns `readonly AssistantContentPart[]` imported from contracts.
+7. Replace internal `InlineMarkdownSpan` type usage with `InlineSpan`. Replace `ChecklistItem` / `CalloutSeverity` import paths (from `../components/primitives/...`) with contracts imports. Both types already have the same shape; only the import path changes.
+8. `parseInlineMarkdownSpans` stays exported for the relocated test file to import; the return type becomes `InlineSpan[]`.
 
 - [ ] **Step 5: Run the test to verify it passes**
 
@@ -982,7 +1076,7 @@ import { createCompletedAssistantResponseEvent } from "../src/turn.ts";
 describe("createCompletedAssistantResponseEvent", () => {
   test("attaches_assistant_content_parts_to_completed_message", () => {
     const parts: readonly AssistantContentPart[] = [
-      { kind: "paragraph", inlineSpans: [{ spanKind: "text", spanText: "Hello world" }] },
+      { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
     ];
     const event = createCompletedAssistantResponseEvent({
       assistantText: "Hello world",
@@ -1082,7 +1176,7 @@ test("attaches_assistant_content_parts_to_completed_response_event", async () =>
   const completedEvent = emittedEvents.find((event) => event.type === "assistant_response_completed");
   expect(completedEvent).toBeDefined();
   expect(completedEvent?.message.assistantContentParts).toEqual([
-    { kind: "paragraph", inlineSpans: [{ spanKind: "text", spanText: "Hello world" }] },
+    { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
   ]);
 });
 ```
@@ -1170,7 +1264,7 @@ import { RenderAssistantResponseTree } from "../src/richText/renderAssistantResp
 describe("RenderAssistantResponseTree", () => {
   test("renders_paragraph_content_part_with_inline_text", () => {
     const parts: readonly AssistantContentPart[] = [
-      { kind: "paragraph", inlineSpans: [{ spanKind: "text", spanText: "hello" }] },
+      { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "hello" }] },
     ];
     const { lastFrame } = render(<RenderAssistantResponseTree assistantContentParts={parts} />);
     expect(lastFrame()).toContain("hello");
@@ -1178,7 +1272,7 @@ describe("RenderAssistantResponseTree", () => {
 
   test("renders_heading_level_1_with_prefix_and_bold_text", () => {
     const parts: readonly AssistantContentPart[] = [
-      { kind: "heading", headingLevel: 1, inlineSpans: [{ spanKind: "text", spanText: "Title" }] },
+      { kind: "heading", headingLevel: 1, inlineSpans: [{ spanKind: "plain", spanText: "Title" }] },
     ];
     const { lastFrame } = render(<RenderAssistantResponseTree assistantContentParts={parts} />);
     expect(lastFrame()).toContain("# Title");
@@ -1368,14 +1462,17 @@ import type { ChecklistItem } from "@buli/contracts";
 export type { ChecklistItem };
 ```
 
-(If field names on the local shape differ from contracts — e.g. `spans` instead of `inlineSpans` — adjust the component's JSX accordingly. The contracts shape is `{ isChecked, inlineSpans }`.)
+The existing component already uses `{ itemTitle, itemStatus }` — identical to the contracts `ChecklistItem`, so no JSX change is needed.
 
 - [ ] **Step 6: Update the consumer that renders assistant messages**
 
+The single callsite today is `packages/ink-tui/src/richText/renderAssistantResponseTree.tsx` itself via the consumer component that renders assistant transcript entries. Run this grep once to confirm — it should return exactly one hit under `packages/ink-tui/src`:
+
 ```bash
-grep -rn "RenderAssistantResponseTree" packages/ink-tui/src
+grep -rn "RenderAssistantResponseTree\|parseAssistantResponseMarkdown" packages/ink-tui/src
 ```
-Locate the callsite (likely in `ConversationTranscriptEntryView.tsx` or similar). Update:
+
+The consumer is `ConversationTranscriptPane.tsx` (which renders each assistant message by calling `RenderAssistantResponseTree`). Open it and update:
 
 ```tsx
 // old:
@@ -1660,7 +1757,7 @@ export const simpleUserPromptAndAssistantParagraphReply: AssistantTranscriptScen
         role: "assistant",
         text: "Hello world",
         assistantContentParts: [
-          { kind: "paragraph", inlineSpans: [{ spanKind: "text", spanText: "Hello world" }] },
+          { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
         ],
       },
       usage: { input: 5, output: 2, reasoning: 0 },
@@ -1672,7 +1769,7 @@ export const simpleUserPromptAndAssistantParagraphReply: AssistantTranscriptScen
       role: "assistant",
       text: "Hello world",
       assistantContentParts: [
-        { kind: "paragraph", inlineSpans: [{ spanKind: "text", spanText: "Hello world" }] },
+        { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
       ],
     },
   ],
@@ -2056,7 +2153,7 @@ import { InlineMarkdownText } from "../../../src/components/primitives/InlineMar
 
 describe("InlineMarkdownText", () => {
   test("renders_text_span_literally", () => {
-    const { lastFrame } = render(<InlineMarkdownText spans={[{ spanKind: "text", spanText: "hello" }]} />);
+    const { lastFrame } = render(<InlineMarkdownText spans={[{ spanKind: "plain", spanText: "hello" }]} />);
     expect(lastFrame()).toContain("hello");
   });
 });
@@ -2589,7 +2686,7 @@ If any of these fail, STOP and debug. Do not proceed.
 
 All transcript entry kinds visible during the same probe conversation (bulleted list, fenced code block, reasoning summary, tool calls if the prompt provokes them). Keyboard shortcuts behave equivalently. Visual output matches `.pen` palette per the design tokens (cyan accents, green input border, amber reasoning block, etc.).
 
-If any divergence from ink renderer is more than cosmetic, record in `plans/2026-04-16-dual-tui-opentui-implementation-followups.md` for follow-up work. Cosmetic divergences (e.g. list bullet glyph varies) are acceptable; functional divergences (a transcript entry not rendering, a keyboard shortcut not firing) are blockers.
+Any functional divergence between the two renderers is a blocker and must be fixed inside this slice before the plan is considered complete (AGENTS.md §13 — do not leave problems as "follow-up" or "out of scope"). Examples of blockers: a transcript entry kind that does not render in one TUI, a keyboard shortcut that fires in one TUI but not the other, the input panel accent color missing. Cosmetic differences caused by framework primitives — e.g. a list bullet glyph rendered slightly differently, italic rendering collapsing to dim on terminals that do not support italic, corner radius rendering with a different Unicode box corner — are acceptable as long as they affect both renderers equivalently on the same terminal; if they affect only one renderer and not the other, treat them as blockers too.
 
 ---
 
