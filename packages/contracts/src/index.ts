@@ -1,4 +1,30 @@
 export {
+  AssistantContentPartSchema,
+  BulletedListContentPartSchema,
+  CalloutContentPartSchema,
+  CalloutSeveritySchema,
+  ChecklistContentPartSchema,
+  ChecklistItemSchema,
+  FencedCodeBlockContentPartSchema,
+  HeadingContentPartSchema,
+  HorizontalRuleContentPartSchema,
+  NumberedListContentPartSchema,
+  ParagraphContentPartSchema,
+} from "./assistantContentPart.ts";
+export type {
+  AssistantContentPart,
+  BulletedListContentPart,
+  CalloutContentPart,
+  CalloutSeverity,
+  ChecklistContentPart,
+  ChecklistItem,
+  FencedCodeBlockContentPart,
+  HeadingContentPart,
+  HorizontalRuleContentPart,
+  NumberedListContentPart,
+  ParagraphContentPart,
+} from "./assistantContentPart.ts";
+export {
   AssistantPlanProposedEventSchema,
   AssistantRateLimitPendingEventSchema,
   AssistantReasoningSummaryCompletedEventSchema,
@@ -36,6 +62,24 @@ export type {
 } from "./events.ts";
 export { MessageRoleSchema, TranscriptMessageSchema } from "./messages.ts";
 export type { MessageRole, TranscriptMessage } from "./messages.ts";
+export {
+  InlineBoldSpanSchema,
+  InlineCodeSpanSchema,
+  InlineItalicSpanSchema,
+  InlineLinkSpanSchema,
+  InlinePlainSpanSchema,
+  InlineSpanSchema,
+  InlineStrikeSpanSchema,
+} from "./inlineSpan.ts";
+export type {
+  InlineBoldSpan,
+  InlineCodeSpan,
+  InlineItalicSpan,
+  InlineLinkSpan,
+  InlinePlainSpan,
+  InlineSpan,
+  InlineStrikeSpan,
+} from "./inlineSpan.ts";
 export { PlanStepSchema, PlanStepStatusSchema } from "./planProposal.ts";
 export type { PlanStep, PlanStepStatus } from "./planProposal.ts";
 export {
