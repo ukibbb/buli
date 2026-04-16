@@ -1,5 +1,42 @@
+import { createCliRenderer } from "@opentui/core";
+import { createRoot } from "@opentui/react";
+import React from "react";
+import type { AssistantResponseRunner } from "@buli/engine";
+import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 export { ChatScreen } from "./ChatScreen.tsx";
 export type { ChatScreenProps } from "./ChatScreen.tsx";
+
+export type OpentuiChatScreenInstance = {
+  waitUntilExit(): Promise<void>;
+};
+
+export async function renderChatScreenInTerminalWithOpentui(input: {
+  selectedModelId: string;
+  selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
+  loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
+  assistantResponseRunner: AssistantResponseRunner;
+}): Promise<OpentuiChatScreenInstance> {
+  const cliRenderer = await createCliRenderer({ screenMode: "alternate-screen" });
+  const root = createRoot(cliRenderer);
+  root.render(
+    React.createElement(ChatScreen, {
+      assistantResponseRunner: input.assistantResponseRunner,
+      loadAvailableAssistantModels: input.loadAvailableAssistantModels,
+      selectedModelId: input.selectedModelId,
+      ...(input.selectedReasoningEffort !== undefined
+        ? { selectedReasoningEffort: input.selectedReasoningEffort }
+        : {}),
+    }),
+  );
+
+  return {
+    waitUntilExit(): Promise<void> {
+      return new Promise<void>((resolve) => {
+        cliRenderer.once("destroy", () => resolve());
+      });
+    },
+  };
+}
 export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 export {
   appendTypedTextToPromptDraft,
