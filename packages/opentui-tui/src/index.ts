@@ -1,7 +1,6 @@
-// packages/opentui-tui/src/index.ts
-// Implementation lands in Task 27. This placeholder exists so the package
-// typechecks and can be installed as a dependency before the full renderer
-// is wired up.
+export { ChatScreen } from "./ChatScreen.tsx";
+export type { ChatScreenProps } from "./ChatScreen.tsx";
+export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 export {
   appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
@@ -41,9 +40,10 @@ export {
 export type { ConversationTranscriptViewportMeasurements, ConversationTranscriptViewportState } from "./conversationTranscriptViewportState.ts";
 export { RenderAssistantResponseTree } from "./richText/renderAssistantResponseTree.tsx";
 export type { RenderAssistantResponseTreeProps } from "./richText/renderAssistantResponseTree.tsx";
-
-export function renderChatScreenInTerminalWithOpentui(): never {
-  throw new Error(
-    "renderChatScreenInTerminalWithOpentui is not yet implemented — stub placeholder from Task 15 scaffolding.",
-  );
-}
+export { ConversationTranscriptPane } from "./components/ConversationTranscriptPane.tsx";
+export { InputPanel } from "./components/InputPanel.tsx";
+export { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
+export { ReasoningCollapsedChip } from "./components/ReasoningCollapsedChip.tsx";
+export { ReasoningStreamBlock } from "./components/ReasoningStreamBlock.tsx";
+export { TopBar } from "./components/TopBar.tsx";
+export { UserPromptBlock } from "./components/UserPromptBlock.tsx";

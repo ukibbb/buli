@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, type ReactNode } from "react";
-import type { BoxRenderable, LayoutEvents } from "@opentui/core";
+import type { BoxRenderable } from "@opentui/core";
 import type { ConversationTranscriptEntry } from "../chatScreenState.ts";
 import type { ConversationTranscriptViewportMeasurements } from "../conversationTranscriptViewportState.ts";
 import { RenderAssistantResponseTree } from "../richText/renderAssistantResponseTree.tsx";
