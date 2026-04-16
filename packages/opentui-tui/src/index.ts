@@ -39,6 +39,8 @@ export {
   scrollConversationTranscriptViewportUpByRows,
 } from "./conversationTranscriptViewportState.ts";
 export type { ConversationTranscriptViewportMeasurements, ConversationTranscriptViewportState } from "./conversationTranscriptViewportState.ts";
+export { RenderAssistantResponseTree } from "./richText/renderAssistantResponseTree.tsx";
+export type { RenderAssistantResponseTreeProps } from "./richText/renderAssistantResponseTree.tsx";
 
 export function renderChatScreenInTerminalWithOpentui(): never {
   throw new Error(
