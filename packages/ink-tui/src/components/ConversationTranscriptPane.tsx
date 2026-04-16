@@ -2,7 +2,11 @@ import { Box, type DOMElement, useBoxMetrics } from "ink";
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import type { ConversationTranscriptEntry } from "../chatScreenState.ts";
 import type { ConversationTranscriptViewportMeasurements } from "../conversationTranscriptViewportState.ts";
-import { parseAssistantResponseMarkdown } from "../richText/parseAssistantResponseMarkdown.ts";
+import type { AssistantContentPart } from "@buli/contracts";
+import {
+  parseAssistantResponseMarkdown,
+  type AssistantMarkdownBlock,
+} from "../richText/parseAssistantResponseMarkdown.ts";
 import { RenderAssistantResponseTree } from "../richText/renderAssistantResponseTree.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoticeBlock.tsx";
@@ -14,6 +18,24 @@ import { ReasoningStreamBlock } from "./ReasoningStreamBlock.tsx";
 import { ToolCallEntryView } from "./toolCalls/ToolCallEntryView.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
+
+// Adapts the local parser's block shape to the contract's part shape during
+// streaming, when assistantContentParts isn't yet on the message. The only
+// structural difference is blockKind→kind and "fenced_code"→"fenced_code_block";
+// all other field names are identical.
+function mapAssistantMarkdownBlockToAssistantContentPart(
+  assistantMarkdownBlock: AssistantMarkdownBlock,
+): AssistantContentPart {
+  if (assistantMarkdownBlock.blockKind === "fenced_code") {
+    return {
+      kind: "fenced_code_block",
+      ...(assistantMarkdownBlock.languageLabel ? { languageLabel: assistantMarkdownBlock.languageLabel } : {}),
+      codeLines: assistantMarkdownBlock.codeLines,
+    };
+  }
+  const { blockKind, ...rest } = assistantMarkdownBlock;
+  return { kind: blockKind, ...rest } as AssistantContentPart;
+}
 
 // ConversationTranscriptPane is the dispatch switch for every transcript
 // entry kind. Each arm returns the component that matches the design for
@@ -191,6 +213,14 @@ const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntr
   if (conversationTranscriptEntry.message.role === "user") {
     return <UserPromptBlock promptText={conversationTranscriptEntry.message.text} />;
   }
-  const assistantMarkdownBlocks = parseAssistantResponseMarkdown(conversationTranscriptEntry.message.text);
-  return <RenderAssistantResponseTree assistantMarkdownBlocks={assistantMarkdownBlocks} />;
+  return (
+    <RenderAssistantResponseTree
+      assistantContentParts={
+        conversationTranscriptEntry.message.assistantContentParts ??
+        parseAssistantResponseMarkdown(conversationTranscriptEntry.message.text).map(
+          mapAssistantMarkdownBlockToAssistantContentPart,
+        )
+      }
+    />
+  );
 });

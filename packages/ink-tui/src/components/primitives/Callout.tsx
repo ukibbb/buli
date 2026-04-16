@@ -3,11 +3,13 @@ import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "../glyphs.ts";
 
+import type { CalloutSeverity } from "@buli/contracts";
+export type { CalloutSeverity };
+
 // Callouts attach an accent colour, icon, and optional title to a prose block.
 // The four severity levels mirror the pen-file components
 // CalloutInfo / Success / Warn / Error so the design's visual grammar is
 // preserved in the terminal.
-export type CalloutSeverity = "info" | "success" | "warning" | "error";
 
 export type CalloutProps = {
   severity: CalloutSeverity;
