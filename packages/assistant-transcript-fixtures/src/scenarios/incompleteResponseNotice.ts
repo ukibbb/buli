@@ -13,6 +13,11 @@ export const incompleteResponseNotice: AssistantTranscriptScenario = {
   ],
   expectedConversationTranscriptEntries: [
     {
+      kind: "message",
+      role: "assistant",
+      text: "Here is a partial",
+    },
+    {
       kind: "incomplete_response_notice",
       incompleteReason: "max_output_tokens",
     },

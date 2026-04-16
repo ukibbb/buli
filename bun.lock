@@ -22,6 +22,15 @@
         "@buli/openai": "workspace:*",
       },
     },
+    "packages/assistant-design-tokens": {
+      "name": "@buli/assistant-design-tokens",
+    },
+    "packages/assistant-transcript-fixtures": {
+      "name": "@buli/assistant-transcript-fixtures",
+      "dependencies": {
+        "@buli/contracts": "workspace:*",
+      },
+    },
     "packages/contracts": {
       "name": "@buli/contracts",
       "dependencies": {
@@ -37,12 +46,14 @@
     "packages/ink-tui": {
       "name": "@buli/ink-tui",
       "dependencies": {
+        "@buli/assistant-design-tokens": "workspace:*",
         "@buli/contracts": "workspace:*",
         "@buli/engine": "workspace:*",
         "ink": "^7.0.0",
         "react": "^19.2.0",
       },
       "devDependencies": {
+        "@buli/assistant-transcript-fixtures": "workspace:*",
         "@types/react": "^19.2.2",
       },
     },
@@ -57,6 +68,10 @@
   },
   "packages": {
     "@alcalzone/ansi-tokenize": ["@alcalzone/ansi-tokenize@0.3.0", "", { "dependencies": { "ansi-styles": "^6.2.1", "is-fullwidth-code-point": "^5.0.0" } }, "sha512-p+CMKJ93HFmLkjXKlXiVGlMQEuRb6H0MokBSwUsX+S6BRX8eV5naFZpQJFfJHjRZY0Hmnqy1/r6UWl3x+19zYA=="],
+
+    "@buli/assistant-design-tokens": ["@buli/assistant-design-tokens@workspace:packages/assistant-design-tokens"],
+
+    "@buli/assistant-transcript-fixtures": ["@buli/assistant-transcript-fixtures@workspace:packages/assistant-transcript-fixtures"],
 
     "@buli/cli": ["@buli/cli@workspace:apps/cli"],
 
