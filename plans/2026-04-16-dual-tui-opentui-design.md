@@ -3,7 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Date | 2026-04-16 |
-| Status | Proposed — pending user review |
+| Status | Revised — corrected current-state assumptions after code read |
+| Revision | 2 (original at commit `58f7155`; this revision corrects the current-state description after reading the actual codebase) |
 | Branch | `feature/opentui-tui-and-typed-assistant-parts` |
 | Depends on | `docs/buli-package-roadmap.md` (Slice 2) |
 | Design source | `../novibe.space/designs/my-design.pen` nodes `idXGN` (component library) and `j20vJ` (HERO 1 assembled screen) |
@@ -12,51 +13,83 @@
 
 Build two interchangeable terminal UIs for `buli`, both rendering the same typed assistant transcript against the `.pen` design system:
 
-- `@buli/ink-tui` — reworked from the current flat-text renderer into a per-part component tree.
-- `@buli/opentui-tui` — new package, same component inventory, rendered via `@opentui/react`.
+- `@buli/ink-tui` — existing per-part component tree, updated to consume typed content parts from the engine instead of re-parsing the assistant's flat text at render time.
+- `@buli/opentui-tui` — new package, same component inventory as ink-tui, rendered via `@opentui/react`.
 
 The user picks a renderer per invocation with `--ui ink|opentui`. Both consume the same `AssistantResponseRunner` seam that already exists in `@buli/engine`.
 
-The underlying driver for the rework is roadmap Slice 2: replace the flat `streamedAssistantText` string with a typed `AssistantContentPart` discriminated union, so both TUIs can render structured output (headings, lists, code blocks, callouts, inline formatting) rather than raw markdown characters.
+The underlying driver is roadmap Slice 2: lift the markdown parser out of ink-tui and into `@buli/engine` so assistant messages carry typed `AssistantContentPart[]` alongside their flat text. Both TUIs consume the typed parts directly — no per-render parsing, and opentui-tui can read the same structured content without importing ink-tui code.
 
-Scope is bounded to Slice 2 in the roadmap. Tool-call components (`ToolCall-Read`, `ToolCall-Grep`, `ToolCall-Edit`, `ToolCall-Bash`, `ToolCall-TodoWrite`, `ToolCall-Task`), `DiffBlock`, `ShellBlock`, `PlanProposal`, and `ToolApproval` from the `.pen` library are explicitly deferred to Slices 3–4.
+Tool-call events, `PlanProposal`, `RateLimitNotice`, `ToolApproval`, and `ErrorBanner` components already exist in ink-tui and in `@buli/contracts`. Those are **not** deferred — opentui-tui will implement equivalents of each from scratch, and the shared data path already works end-to-end for them today.
 
 ## 2. Scope
 
-### In this slice
+### 2.1. Current state (what already exists)
 
-- `@buli/contracts` gains the typed `AssistantContentPart` union, `InlineSpan` union, `TranscriptEntry` union, and expanded `AssistantResponseEvent` vocabulary.
-- `@buli/engine` gains `AssistantTurnPartAccumulator`, `classifyAssistantTextLine`, and `foldAssistantResponseEventIntoTranscript`. `AssistantResponseRuntime` loses its flat `streamedAssistantText` field.
-- `@buli/ink-tui` is reworked from scratch against the typed union. Existing components (`ConversationTranscriptPane`, flat `ChatScreen` composition) are replaced, not extended.
-- `@buli/opentui-tui` is new. Same component inventory as ink-tui, built on `@opentui/react`.
-- `@buli/assistant-design-tokens` is new. Holds shared color, border, and spacing values ported from the `.pen`.
-- `@buli/assistant-transcript-fixtures` is new. Holds canonical typed-part scenarios consumed by engine and both TUI tests.
-- `apps/cli` gains `--ui ink|opentui`. `ink` is the default.
+This section is the ground truth the rest of the spec builds on. Do not re-introduce assumptions that contradict it.
 
-### Deferred to future slices
+**`@buli/contracts` already has:**
+- 18 `AssistantResponseEvent` variants covering response lifecycle (started / text_chunk / completed / incomplete / failed), reasoning summary lifecycle (started / text_chunk / completed), tool-call lifecycle (started / completed / failed) with typed `ToolCallDetail` per tool (read, grep, edit, bash, todowrite, task), turn_completed, rate_limit_pending, tool_approval_requested, plan_proposed.
+- `ToolCallDetail` discriminated union with per-tool preview payloads (file contents, diff lines, shell output, grep matches, todo items).
+- `SyntaxHighlightSpan` for code-block syntax coloring.
+- `PlanStep` for plan proposals.
+- `TranscriptMessage` shape: `{ id, role: "user" | "assistant", text: string }`. Flat text — this is the one contract that needs extending.
 
-- Tool calls (read/glob/grep/write/edit/apply_patch/bash) — roadmap Slices 3–4.
-- `DiffBlock`, `ShellBlock`, `PlanProposal`, `ToolApproval` components — require tool-call data.
-- `Table`, `KeyValueList` components — prose data exists but model rarely emits structured tabular markdown; revisit when there is a real data source.
+**`@buli/engine/src/runtime.ts` already:**
+- Accumulates `streamedAssistantText` locally during streaming (still needed for the flat `TranscriptMessage.text` field).
+- Forwards every provider event to the correct `AssistantResponseEvent`.
+- Emits `AssistantResponseCompletedEvent` carrying the final `TranscriptMessage` with flat text.
+- Handles reasoning, tool-call, plan, rate-limit, and approval flows — no changes needed there.
+
+**`@buli/ink-tui` already has ~30 components and a fully typed `ConversationTranscriptEntry` union** (11 kinds: `message`, `error`, `incomplete_response_notice`, `streaming_reasoning_summary`, `completed_reasoning_summary`, `streaming_tool_call`, `completed_tool_call`, `failed_tool_call`, `plan_proposal`, `rate_limit_notice`, `tool_approval_request`, `turn_footer`). `ConversationTranscriptPane` dispatches per kind. Existing component tree:
+- `components/behavior/` — `ErrorBannerBlock`, `IncompleteResponseNoticeBlock`, `PlanProposalBlock`, `RateLimitNoticeBlock`, `ToolApprovalRequestBlock`.
+- `components/toolCalls/` — `ToolCallEntryView` + per-tool cards (`ReadToolCallCard`, `GrepToolCallCard`, `EditToolCallCard`, `BashToolCallCard`, `TodoWriteToolCallCard`, `TaskToolCallCard`) + `ToolCallCardHeaderSlots`.
+- `components/primitives/` — `Paragraph`, `Heading1/2/3`, `BulletedList`, `NumberedList`, `NestedList`, `Checklist`, `FencedCodeBlock`, `DiffBlock`, `ShellBlock`, `InlineMarkdownText`, `Callout`, `FileReference`, `DataTable`, `KeyValueList`, `StreamingCursor`, `SnakeAnimationIndicator`, `SurfaceCard`, `Stripe`.
+- Chrome: `ChatScreen`, `TopBar`, `InputPanel`, `ModelAndReasoningSelectionPane`, `ShortcutsModal`, `ConversationTranscriptPane`, `UserPromptBlock`, `ReasoningStreamBlock`, `ReasoningCollapsedChip`, `TurnFooter`.
+- `richText/parseAssistantResponseMarkdown.ts` produces `AssistantMarkdownBlock[]` (paragraph, heading, bulleted_list, numbered_list, checklist, fenced_code, callout, horizontal_rule) with `InlineMarkdownSpan[]` inlines.
+- `richText/renderAssistantResponseTree.tsx` dispatches each block kind to the matching primitive. Called from `ConversationTranscriptPane` on every render for every assistant message, which re-parses the flat text each time.
+
+**`chatScreenTheme.ts` already holds** the design-token palette sourced 1:1 from the `.pen`. Extracting it is a move, not a new design.
+
+**The real gap to close:**
+1. Move the markdown parser (`parseAssistantResponseMarkdown`) from `ink-tui/src/richText/` into `@buli/engine`.
+2. Extend `TranscriptMessage` with `contentParts: AssistantContentPart[]` alongside the existing `text` field.
+3. Relocate `AssistantMarkdownBlock` / `InlineMarkdownSpan` types into `@buli/contracts` under the domain names `AssistantContentPart` / `InlineSpan`.
+4. Engine runs the parser inside `AssistantResponseRuntime` so the `AssistantResponseCompletedEvent` ships `message.contentParts`.
+5. ink-tui's `renderAssistantResponseTree` reads `message.contentParts` from the transcript entry instead of calling the parser.
+6. opentui-tui is new: it needs every one of the ~30 components above reimplemented against `@opentui/react`, consuming the same `ConversationTranscriptEntry` kinds.
+7. Design tokens extracted into `@buli/assistant-design-tokens`; both TUIs import from there.
+8. Fixtures package added.
+9. `--ui ink|opentui` flag added to the CLI.
+
+### 2.2. Deferred (not in this slice)
+
+- Real tool-call execution (`read`, `glob`, `grep`, `write`, `edit`, `apply_patch`, `bash`). The UI for tool calls exists; the engine-side tool loop does not and is explicitly out of scope for this slice. Tool-call events in the current code are wired through from the provider; a local tool loop comes later.
 - Session persistence — roadmap Slice 5.
+- Streaming content-part events (incremental per-part `ContentPartAppended` / `Updated` / `Closed` updates). We start with parse-at-completion: the parser runs once inside the runtime when the provider stream completes, and the completed-event carries the final typed parts. During streaming, the TUI keeps its current behavior of rendering from the growing flat text. This is a deliberate simplification — it preserves today's streaming UX with one less moving part. Incremental per-part events are a follow-up if parse-on-render becomes a performance problem.
 
-### Non-goals
+### 2.3. Non-goals
 
 - Pixel-perfect reproduction of `.pen` font sizes. Terminals render one cell per character; hierarchy is expressed via weight, color, and layout instead.
 - Animated shadows or blur effects. Terminals cannot render `effect: shadow` or `background_blur`.
 - Shared rendering code between the two TUIs. Per `AGENTS.md` §16, cross-renderer abstraction would be substitution-on-paper; fixtures enforce the correctness contract instead.
-- Compat shim on ink-tui. The rework is a full replacement against the same typed-part model that drives opentui-tui.
+- A from-scratch ink-tui rewrite. Only the wiring between the transcript entry and the rendered tree changes; every existing component stays.
 
 ## 3. Package Layout
 
 ```
 packages/
-  contracts/                            ← expanded typed-part union + events
+  contracts/                            ← add AssistantContentPart + InlineSpan;
+                                           extend TranscriptMessage with contentParts
   openai/                               ← untouched
-  engine/                               ← accumulator + classifier + fold
-  ink-tui/                              ← reworked from scratch
-  opentui-tui/                          ← NEW
-  assistant-design-tokens/              ← NEW, small
+  engine/                               ← host the relocated markdown parser;
+                                           runtime attaches contentParts at completion
+  ink-tui/                              ← one seam flip in renderAssistantResponseTree;
+                                           delete the local parser;
+                                           switch chatScreenTheme → design-tokens import
+  opentui-tui/                          ← NEW package, full component tree against
+                                           @opentui/react, same consumer contract as ink-tui
+  assistant-design-tokens/              ← NEW; extracted from ink-tui's chatScreenTheme.ts
   assistant-transcript-fixtures/        ← NEW, test-only
 apps/
   cli/                                  ← --ui flag, dispatch
@@ -82,67 +115,11 @@ Guardrails (per roadmap §Guardrails) preserved:
 - `@buli/openai` is not touched this slice.
 - Each TUI owns its own rendering and local screen state only.
 
-## 4. Typed-Parts Contract
+## 4. Contract Additions
 
-Lives in `@buli/contracts`. Three nested layers.
+Lives in `@buli/contracts`. Narrow scope — two new types plus one field added to an existing schema. No event kinds added, none renamed, none removed.
 
-### 4.1. Layer 1 — `TranscriptEntry`
-
-Top-level items the TUIs render in order:
-
-```ts
-export type TranscriptEntry =
-  | UserPromptEntry
-  | AssistantTurnEntry
-  | ErrorBannerEntry
-  | RateLimitNoticeEntry;
-```
-
-| `kind` | Purpose |
-| --- | --- |
-| `user_prompt` | One user submission. `{ id, submittedAt, text }`. |
-| `assistant_turn` | One assistant response with reasoning, content parts, and usage. See §4.2. |
-| `error_banner` | Turn-level failure (auth error, parse error, stream abort). `{ id, occurredAt, title, detail? }`. |
-| `rate_limit_notice` | Rate-limit hit. `{ id, occurredAt, retryAfterMs?, message }`. |
-
-### 4.2. Layer 2 — `AssistantTurnEntry`
-
-```ts
-export type AssistantTurnEntry = {
-  kind: "assistant_turn";
-  id: string;
-  status: AssistantTurnStatus;
-  startedAt: number;
-  completedAt?: number;
-  reasoningSummary?: AssistantTurnReasoningSummary;
-  contentParts: AssistantContentPart[];
-  usage?: AssistantTurnUsage;
-};
-
-export type AssistantTurnStatus =
-  | "awaiting_first_event"
-  | "reasoning_summary_streaming"
-  | "content_streaming"
-  | "completed"
-  | "errored";
-
-export type AssistantTurnReasoningSummary =
-  | { status: "streaming"; textSoFar: string; elapsedMs: number }
-  | { status: "completed"; text: string; totalMs: number; tokenCount?: number };
-
-export type AssistantTurnUsage = {
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens?: number;
-};
-```
-
-Notes:
-- Reasoning is nested inside the turn, not a sibling transcript entry. The turn is the unit of retry/error/usage and the `.pen` visual grouping matches this.
-- `TurnFooter` from the `.pen` library is not a data kind — renderers derive footer view data from `usage`, `completedAt - startedAt`, and `status`.
-- `AssistantTurnStatus` uses distinct stage values per `AGENTS.md` §22 (lifecycle explicit in the type, not a `status` string with unconstrained values).
-
-### 4.3. Layer 3 — `AssistantContentPart`
+### 4.1. `AssistantContentPart`
 
 ```ts
 export type AssistantContentPart =
@@ -153,32 +130,27 @@ export type AssistantContentPart =
   | ChecklistPart
   | FencedCodeBlockPart
   | CalloutPart
-  | FileReferencePart;
+  | HorizontalRulePart;
 ```
 
 | `kind` | Fields |
 | --- | --- |
-| `paragraph` | `id, status, spans: InlineSpan[]` |
-| `heading` | `id, status, level: 1 \| 2 \| 3, spans: InlineSpan[]` |
-| `bulleted_list` | `id, status, items: AssistantListItem[]` (recursive, supports nested lists) |
-| `numbered_list` | `id, status, items: AssistantListItem[]` |
-| `checklist` | `id, status, items: { checked: boolean; spans: InlineSpan[] }[]` |
-| `fenced_code_block` | `id, status, language?: string, content: string` |
-| `callout` | `id, status, severity: "info" \| "success" \| "warn" \| "error", spans: InlineSpan[]` |
-| `file_reference` | `id, status, path: string, lineRange?: { start: number; end: number }` |
+| `paragraph` | `inlineSpans: InlineSpan[]` |
+| `heading` | `headingLevel: 1 \| 2 \| 3, inlineSpans: InlineSpan[]` |
+| `bulleted_list` | `itemSpanArrays: InlineSpan[][]` |
+| `numbered_list` | `itemSpanArrays: InlineSpan[][]` |
+| `checklist` | `items: { isChecked: boolean; inlineSpans: InlineSpan[] }[]` |
+| `fenced_code_block` | `languageLabel?: string; codeLines: string[]` |
+| `callout` | `severity: "info" \| "success" \| "warn" \| "error"; titleText?: string; inlineSpans: InlineSpan[]` |
+| `horizontal_rule` | (no fields) |
 
-`status` on each part: `"streaming" | "completed"`. The `StreamingCursor` in the `.pen` is a visual affordance the renderer attaches to whichever part has `status: "streaming"`. It is not a content-part kind.
+Field names mirror the existing ink-tui parser output (`inlineSpans`, `itemSpanArrays`, `headingLevel`, `languageLabel`, `codeLines`) so the move is a straight rename of the top-level tag (`blockKind` → `kind`) and `fenced_code` → `fenced_code_block`. Everything else is preserved.
 
-`AssistantListItem` is recursive:
+No `status` field on parts. This slice does per-turn parse-at-completion, so every part the engine emits is already in its final state.
 
-```ts
-export type AssistantListItem = {
-  spans: InlineSpan[];
-  nestedList?: BulletedListPart | NumberedListPart;
-};
-```
+Nested lists are not modeled here. The existing ink-tui `NestedList` primitive is a renderer-side composition over `BulletedList`/`NumberedList` items — not a parser output. If the model emits nested list markdown, it collapses into flat list items at parse time (the current behavior; unchanged).
 
-### 4.4. `InlineSpan`
+### 4.2. `InlineSpan`
 
 ```ts
 export type InlineSpan =
@@ -190,206 +162,223 @@ export type InlineSpan =
   | InlineCodeSpan;
 ```
 
-Non-nested by default. `InlineLinkSpan.children: InlineSpan[]` holds the link text and allows bold/italic inside a link. All other spans hold a plain string — nested formatting outside of links is not represented (the model rarely emits it and flattening it at parse time is correct).
+Mirrors the existing `InlineMarkdownSpan` shape in `packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx`. The move is a rename (`InlineMarkdownSpan` → `InlineSpan`) plus relocation into `@buli/contracts`. Bold/italic/strike/code hold a plain string. Link holds `{ linkText, linkTarget }`.
 
-### 4.5. `AssistantResponseEvent` vocabulary
+### 4.3. `TranscriptMessage` extension
 
-```ts
-export type AssistantResponseEvent =
-  | AssistantTurnStartedEvent
-  | ReasoningSummaryStreamingUpdatedEvent
-  | ReasoningSummaryCompletedEvent
-  | ContentPartAppendedEvent
-  | ContentPartUpdatedEvent
-  | ContentPartClosedEvent
-  | AssistantTurnCompletedEvent
-  | AssistantTurnErroredEvent;
-```
-
-Each event carries the turn id plus minimal payload:
-- `ContentPartAppendedEvent`: full part object with `status: "streaming"`.
-- `ContentPartUpdatedEvent`: `partId` + patch (text delta for paragraphs/headings/code blocks; item append for lists).
-- `ContentPartClosedEvent`: `partId` only — the TUI flips `status` to `"completed"` in its local transcript.
-- `AssistantTurnCompletedEvent`: terminal, carries `usage` and `completedAt`.
-- `AssistantTurnErroredEvent`: terminal, carries a structured error.
-
-Per `AGENTS.md` §3/§15/§18: every event variant is its own shape with its own fields. No `{ type, payload: unknown }` escape hatch.
-
-## 5. Engine Streaming Lifecycle
-
-Two new collaborators inside `@buli/engine`, plus changes to `AssistantResponseRuntime`.
-
-### 5.1. `classifyAssistantTextLine`
-
-Pure function. Input: one finalized line of assistant text plus the current accumulator state. Output: a classification intent.
+Existing schema in `packages/contracts/src/messages.ts`:
 
 ```ts
-export type AssistantTextLineClassification =
-  | { intent: "start_new_part"; part: AssistantContentPart }
-  | { intent: "append_to_current_part" }
-  | { intent: "close_current_part" }
-  | { intent: "toggle_fenced_code_block"; language?: string };
+export const TranscriptMessageSchema = z.object({
+  id: z.string().min(1),
+  role: MessageRoleSchema,
+  text: z.string(),
+}).strict();
 ```
 
-Detection rules (line-prefix based, no regex required beyond leading-character checks):
+New field added:
 
-| Line pattern | Intent |
+```ts
+export const TranscriptMessageSchema = z.object({
+  id: z.string().min(1),
+  role: MessageRoleSchema,
+  text: z.string(),
+  assistantContentParts: z.array(AssistantContentPartSchema).optional(),
+}).strict();
+```
+
+Optional for schema compatibility with user messages (users don't carry parsed parts). Assistant messages always set it; user messages always omit it. Validated by Zod.
+
+### 4.4. Event vocabulary — unchanged
+
+The existing 18 `AssistantResponseEvent` variants stay exactly as they are. No renames, no new kinds. The only effect of this slice on events is that `AssistantResponseCompletedEvent.message` now carries `assistantContentParts` because `TranscriptMessage` carries it.
+
+Existing events stay authoritative for their domains:
+- reasoning: `assistant_reasoning_summary_*`
+- tool calls: `assistant_tool_call_*`
+- plan: `assistant_plan_proposed`
+- rate limit: `assistant_rate_limit_pending`
+- approval: `assistant_tool_approval_requested`
+- lifecycle: `assistant_response_started` / `_text_chunk` / `_completed` / `_incomplete` / `_failed`
+- cosmetic: `assistant_turn_completed`
+
+The TUIs continue to fold these events into their own transcript-entry unions. No shared fold function in contracts — see §6.4 for why.
+
+## 5. Engine-Side Parsing
+
+The parser that turns assistant markdown text into typed content parts already exists — at `packages/ink-tui/src/richText/parseAssistantResponseMarkdown.ts`. This slice relocates it into `@buli/engine` and wires it into the runtime so the completed `TranscriptMessage` ships with typed `contentParts`. The parser code itself is kept; only its location, import surface, and the name of its return type change.
+
+### 5.1. Relocating the parser
+
+The existing parser at `packages/ink-tui/src/richText/parseAssistantResponseMarkdown.ts` moves to `packages/engine/src/assistantContentPartParser.ts`. Same line-oriented logic it has today. Rules already covered:
+
+| Line pattern | Produces |
 | --- | --- |
-| ```` ``` ```` opening fence | `toggle_fenced_code_block` (enter) |
-| ```` ``` ```` closing fence | `toggle_fenced_code_block` (exit) |
-| `# ` | `start_new_part` (heading level 1) |
-| `## ` | `start_new_part` (heading level 2) |
-| `### ` | `start_new_part` (heading level 3) |
-| `- `, `* ` | `start_new_part` (bulleted_list) or append to existing bulleted list |
-| `1. `, `2. `, … | `start_new_part` (numbered_list) or append to existing numbered list |
-| `- [ ] `, `- [x] ` | `start_new_part` (checklist) or append to existing checklist |
-| `> [!info]`, `> [!success]`, `> [!warn]`, `> [!error]` | `start_new_part` (callout) |
-| blank line | `close_current_part` |
-| any other | `start_new_part` (paragraph) or `append_to_current_part` if current part is a paragraph |
+| ATX headings (`# `, `## `, `### `) | `heading` part, level 1/2/3 |
+| Fenced code (```` ``` ````) | `fenced_code_block` part |
+| Bulleted list (`- `, `* `) | `bulleted_list` part with `items: InlineSpan[][]` |
+| Numbered list (`1. `, …) | `numbered_list` part |
+| Checklist (`- [ ] `, `- [x] `) | `checklist` part |
+| GitHub callout (`> [!info]` etc.) | `callout` part with severity |
+| Horizontal rule (`---`) | `horizontal_rule` part |
+| Anything else | `paragraph` part |
 
-Inline spans (`bold`, `italic`, `strike`, `link`, `code`) are parsed from each finalized line by a small tokenizer that runs once per line, not per character.
-
-Inside a fenced code block, the classifier short-circuits and returns `append_to_current_part` until the closing fence.
-
-### 5.2. `AssistantTurnPartAccumulator`
-
-A concrete typed struct plus pure reducer functions. Not an interface, not a class — per `AGENTS.md` §16, no abstraction for substitution-on-paper.
+The parser function signature becomes:
 
 ```ts
-export type AssistantTurnPartAccumulatorState = {
-  turnId: string;
-  status: AssistantTurnStatus;
-  reasoningSummary?: AssistantTurnReasoningSummary;
-  contentParts: AssistantContentPart[];
-  partialLineBuffer: string;
-  isInsideFencedCodeBlock: boolean;
-  fencedCodeBlockLanguage?: string;
-  startedAt: number;
-};
-
-export function applyProviderEventToAssistantTurnPartAccumulator(
-  accumulatorState: AssistantTurnPartAccumulatorState,
-  providerEvent: ProviderStreamEvent,
-): {
-  nextState: AssistantTurnPartAccumulatorState;
-  emittedResponseEvents: AssistantResponseEvent[];
-};
+export function parseAssistantResponseIntoContentParts(
+  assistantResponseText: string,
+): readonly AssistantContentPart[];
 ```
 
-Three responsibilities, strictly separated (`AGENTS.md` §4):
-1. Reasoning-summary events → update `reasoningSummary`, emit `ReasoningSummaryStreamingUpdatedEvent` or `ReasoningSummaryCompletedEvent`.
-2. Assistant-text deltas → append to `partialLineBuffer`; on newline, run `classifyAssistantTextLine`, update `contentParts`, emit `ContentPartAppendedEvent` / `ContentPartUpdatedEvent` / `ContentPartClosedEvent`.
-3. Provider `completed` / `error` → close any still-open part, emit `AssistantTurnCompletedEvent` or `AssistantTurnErroredEvent`.
+The return type is imported from `@buli/contracts` (see §4 for the renamed types). Internally the parser's block-kind naming aligns with the contract:
 
-**Mid-line streaming:** each delta appends to `partialLineBuffer` and emits a `ContentPartUpdatedEvent` with the current partial text so the TUI can render character-by-character streaming without reclassifying.
+- `blockKind: "paragraph"` → `kind: "paragraph"`
+- `blockKind: "heading"` → `kind: "heading"`
+- `blockKind: "bulleted_list"` → `kind: "bulleted_list"`
+- `blockKind: "numbered_list"` → `kind: "numbered_list"`
+- `blockKind: "checklist"` → `kind: "checklist"`
+- `blockKind: "fenced_code"` → `kind: "fenced_code_block"` (name alignment with §4.3)
+- `blockKind: "callout"` → `kind: "callout"`
+- `blockKind: "horizontal_rule"` → `kind: "horizontal_rule"` (not in original §4.3 — adding to the contract since the parser emits it)
 
-**On newline:** the classifier runs. If the line closes the current part, emit `ContentPartClosedEvent`. If it opens a new one, emit `ContentPartAppendedEvent`. If it appends, emit `ContentPartUpdatedEvent`.
+### 5.2. Runtime integration
 
-### 5.3. `foldAssistantResponseEventIntoTranscript`
-
-Pure function in `@buli/engine`. Both TUIs import and call it to fold the event stream into transcript state.
+`packages/engine/src/runtime.ts` keeps the `streamedAssistantText` accumulator for the flat `TranscriptMessage.text` field. At the terminal `"completed"` arm, it also parses the accumulated text into typed parts and attaches them to the completed message:
 
 ```ts
-export function foldAssistantResponseEventIntoTranscript(
-  currentTranscript: readonly TranscriptEntry[],
-  event: AssistantResponseEvent,
-): readonly TranscriptEntry[];
+// Remaining arm: providerStreamEvent.type === "completed".
+yield createCompletedAssistantResponseEvent({
+  assistantText: streamedAssistantText,
+  assistantContentParts: parseAssistantResponseIntoContentParts(streamedAssistantText),
+  usage: providerStreamEvent.usage,
+});
 ```
 
-This is the *semantic* fold — turning events into a transcript with current part states. Per `AGENTS.md` §16, it lives with the engine because it is a data concern shared across two bounded contexts (a real seam). It is not a rendering concern.
+`createCompletedAssistantResponseEvent` (in `packages/engine/src/turn.ts`) gains a required `assistantContentParts` input and threads it into the `TranscriptMessage` it constructs.
 
-### 5.4. `AssistantResponseRuntime` changes
+### 5.3. No new accumulator, no new event kinds
 
-Becomes thinner:
-- Loses the flat `streamedAssistantText` field.
-- Holds one `AssistantTurnPartAccumulatorState` per active turn.
-- Forwards provider events through `applyProviderEventToAssistantTurnPartAccumulator`.
-- Fans out the emitted `AssistantResponseEvent`s to subscribers (the TUI).
-- Continues to expose the same `AssistantResponseRunner` interface to TUIs — the TUI-facing seam does not change.
+The original spec proposed an `AssistantTurnPartAccumulator` + `ContentPartAppendedEvent` / `ContentPartUpdatedEvent` / `ContentPartClosedEvent` event types for live per-part streaming. Deferred. Rationale:
 
-### 5.5. Error path
+- Current ink-tui already renders streamed text into typed parts by re-parsing on render. That works; the performance is acceptable.
+- Parse-at-completion is one file of change in the runtime, no new event vocabulary, and keeps the `AssistantResponseEvent` shape stable across the slice.
+- Incremental per-part events can be layered on later if parse-on-render shows up as a real performance issue. The contract we add in §4 does not foreclose that — `AssistantContentPart` is the correct shape for incremental events too.
 
-- The classifier cannot fail (any line has a valid classification; `paragraph` is the default).
-- Provider errors become `AssistantTurnErroredEvent`, which the TUI folds into an `error_banner` transcript entry.
-- Rate-limit SSE events from `@buli/openai` (already parsed in `packages/openai/src/provider/stream.ts`) become `rate_limit_notice` transcript entries — the runtime emits a dedicated event the fold handles.
+### 5.4. Error path
+
+- Provider errors → `assistant_response_failed` event (already exists). The TUI renders them through the existing `ErrorBannerBlock`.
+- `assistant_response_incomplete` → already exists; ink-tui already renders `IncompleteResponseNoticeBlock`. No change.
+- `assistant_rate_limit_pending` → already exists; renders through `RateLimitNoticeBlock`. No change.
 
 ## 6. Renderer Packages
 
-### 6.1. Internal structure (applies to both TUIs identically)
+### 6.1. ink-tui — narrow, targeted changes
+
+Everything structural in ink-tui stays: the 11-kind `ConversationTranscriptEntry` union in `chatScreenState.ts`, the `applyAssistantResponseEventToChatScreenState` reducer, the `ConversationTranscriptPane` dispatcher, every component under `components/`, viewport state, relay, top bar, input panel, shortcuts modal, model selection pane.
+
+Files touched:
+
+| File | Change |
+| --- | --- |
+| `packages/ink-tui/src/richText/parseAssistantResponseMarkdown.ts` | **Deleted.** The parser lives in `@buli/engine` now. |
+| `packages/ink-tui/src/richText/renderAssistantResponseTree.tsx` | Reads `message.assistantContentParts` from props instead of calling `parseAssistantResponseMarkdown(message.text)`. Fallback to empty array if absent (defensive, but the engine always sets it on assistant messages). |
+| `packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx` | `InlineMarkdownSpan` type import switches to `InlineSpan` from `@buli/contracts`. Component implementation unchanged. |
+| `packages/ink-tui/src/components/primitives/Checklist.tsx` | `ChecklistItem` type moves to `@buli/contracts` as part of `AssistantContentPart`. Import path updates. |
+| `packages/ink-tui/src/components/primitives/Callout.tsx` | `CalloutSeverity` type moves to `@buli/contracts`. Import path updates. |
+| `packages/ink-tui/src/chatScreenTheme.ts` | **Deleted.** Theme tokens live in `@buli/assistant-design-tokens` now. |
+| Every component that imports `chatScreenTheme` | Switches to `import { chatScreenTheme } from "@buli/assistant-design-tokens"`. |
+| `packages/ink-tui/src/index.ts` | Exports renamed: `renderChatScreenInTerminal` → `renderChatScreenInTerminalWithInk`. |
+
+No component logic changes. No new components. The reducer, the dispatcher, and the relay are untouched. The flat `message.text` field stays for rendering during streaming (when `assistantContentParts` is still absent from the growing message); once the completion event arrives with parts, the renderer uses those instead of re-parsing.
+
+### 6.2. opentui-tui — new package, same component inventory
+
+`packages/opentui-tui/` is greenfield. It mirrors ink-tui's layout and component responsibilities, reimplemented against `@opentui/react`. Layout:
 
 ```
-packages/<tui>/src/
-  index.ts                           ← renderChatScreenInTerminalWith<Tui>(input)
-  ChatScreen.tsx                     ← top-level screen composition
-  chatScreenState.ts                 ← local screen state + reducer
+packages/opentui-tui/src/
+  index.ts                                 ← renderChatScreenInTerminalWithOpentui(input)
+  ChatScreen.tsx
+  chatScreenState.ts                       ← local reducer (same shape as ink-tui's)
   conversationTranscriptViewportState.ts
+  relayAssistantResponseRunnerEvents.ts
+  richText/
+    renderAssistantResponseTree.tsx        ← reads message.assistantContentParts
   components/
-    screen-chrome/
-      TopBar.tsx
-      InputPanel.tsx                  ← inputTop + inputBody + inputBottom
-      ModelAndReasoningSelectionPane.tsx
-    transcript-entries/
-      UserPromptBlock.tsx
-      AssistantTurnView.tsx           ← composes reasoning + parts + footer
-      ErrorBanner.tsx
-      RateLimitNotice.tsx
-    reasoning/
-      ReasoningStream.tsx
-      ReasoningCollapsed.tsx
+    ConversationTranscriptPane.tsx
+    ConversationTranscriptEntryView.tsx    ← per-kind dispatcher
+    TopBar.tsx
+    InputPanel.tsx
+    ModelAndReasoningSelectionPane.tsx
+    ShortcutsModal.tsx
+    UserPromptBlock.tsx
+    ReasoningStreamBlock.tsx
+    ReasoningCollapsedChip.tsx
+    TurnFooter.tsx
+    SnakeAnimationIndicator.tsx
+    behavior/
+      ErrorBannerBlock.tsx
+      IncompleteResponseNoticeBlock.tsx
+      PlanProposalBlock.tsx
+      RateLimitNoticeBlock.tsx
+      ToolApprovalRequestBlock.tsx
+    toolCalls/
+      ToolCallEntryView.tsx
+      ToolCallCardHeaderSlots.tsx
+      ReadToolCallCard.tsx
+      GrepToolCallCard.tsx
+      EditToolCallCard.tsx
+      BashToolCallCard.tsx
+      TodoWriteToolCallCard.tsx
+      TaskToolCallCard.tsx
+    primitives/
+      Paragraph.tsx
+      Heading1.tsx
+      Heading2.tsx
+      Heading3.tsx
+      BulletedList.tsx
+      NumberedList.tsx
+      NestedList.tsx
+      Checklist.tsx
+      FencedCodeBlock.tsx
+      DiffBlock.tsx
+      ShellBlock.tsx
+      InlineMarkdownText.tsx
+      Callout.tsx
+      FileReference.tsx
+      DataTable.tsx
+      KeyValueList.tsx
       StreamingCursor.tsx
-    content-parts/
-      ParagraphPart.tsx
-      HeadingPart.tsx
-      BulletedListPart.tsx
-      NumberedListPart.tsx
-      ChecklistPart.tsx
-      FencedCodeBlockPart.tsx
-      CalloutPart.tsx
-      FileReferencePart.tsx
-    inline-spans/
-      InlineText.tsx
-      InlineBold.tsx
-      InlineItalic.tsx
-      InlineStrike.tsx
-      InlineLink.tsx
-      InlineCode.tsx
+      SurfaceCard.tsx
+      Stripe.tsx
+      glyphs.ts
 ```
 
-Roughly 24 components per TUI. Export surface of `index.ts` stays the same shape as today's `ink-tui/src/index.ts`:
+Each component covers the same responsibility as its ink-tui counterpart. Implementations differ because layout primitives differ (`@opentui/react` has its own components; Ink has `Box` / `Text` via yoga). Visual output matches the `.pen` designs identically, by construction — both TUIs import the same tokens from `@buli/assistant-design-tokens` and apply the same visual-fidelity mapping from §6.4.
+
+Export surface of `index.ts` mirrors ink-tui's:
 
 ```ts
-export function renderChatScreenInTerminalWith<Tui>(input: {
+export function renderChatScreenInTerminalWithOpentui(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
-  loadAvailableAssistantModels: () => Promise<AssistantModel[]>;
+  loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   assistantResponseRunner: AssistantResponseRunner;
-}): <Instance>;
+}): <OpentuiInstance>;
 ```
 
-### 6.2. ink-tui rework (not extension)
+The `@opentui/react` dependency is wired via workspace path to `tui/opentui/packages/react`.
 
-The current `ConversationTranscriptPane`, flat `ChatScreen.tsx` composition, `UserPromptBlock`, `ReasoningStreamBlock`, and `ReasoningCollapsedChip` are replaced. Per `AGENTS.md` §5 the rework targets the root (flat-text assumption) rather than patching typed parts on top.
+### 6.3. Shared state-folding
 
-The existing pure-reducer pattern in `chatScreenState.ts` is preserved. Viewport state (`conversationTranscriptViewportState.ts`) is preserved. Event wiring (`relayAssistantResponseRunnerEvents.ts`) adapts to the new `AssistantResponseEvent` vocabulary.
+Each TUI keeps its own `applyAssistantResponseEventToChatScreenState` reducer, consuming the same `AssistantResponseEvent` union from `@buli/contracts`. The reducers produce the same `ConversationTranscriptEntry` shape.
 
-### 6.3. opentui-tui (new)
+The original spec proposed a shared `foldAssistantResponseEventIntoTranscript` function in `@buli/engine`. Removed from this slice — ink-tui's reducer already exists, works, and has tests. Copying its logic into opentui-tui is faster and clearer than extracting it into engine and having both TUIs import from there. The reducer is small enough that divergence risk is low, and the fixtures package (see §7) catches any drift.
 
-Same structure. Uses `@opentui/react` primitives in place of `ink` components. Test utilities from `tui/opentui/packages/react/src/test-utils.ts`.
+Each TUI owns its local screen state (input draft, model picker, scroll position, shortcuts modal, keyboard dispatch). None of that is shared.
 
-`@buli/opentui-tui` depends on `@opentui/react` via workspace path. The bundled `tui/opentui/` repo is already part of the monorepo.
-
-### 6.4. Shared state-folding
-
-Both TUIs import `foldAssistantResponseEventIntoTranscript` from `@buli/engine` and call it from within their own `chatScreenState.ts` reducer. This is the only semantic logic shared between the two TUIs.
-
-Each TUI owns locally (not shared):
-- Input draft state.
-- Model/reasoning picker state.
-- Scroll position and viewport measurements.
-- Shortcuts-help modal state.
-- Keyboard binding dispatch.
-
-### 6.5. Visual-fidelity mapping
+### 6.4. Visual-fidelity mapping
 
 The `.pen` designs are the visual spec. Applied identically in both TUIs, translated via `@buli/assistant-design-tokens`:
 
@@ -419,32 +408,43 @@ packages/assistant-transcript-fixtures/src/
     simpleUserPromptAndAssistantParagraphReply.ts
     reasoningSummaryStreamingMidFlight.ts
     reasoningSummaryCompletedThenMultiPartReply.ts
-    assistantReplyWithHeadingAndNestedBulletedList.ts
+    assistantReplyWithHeadingAndBulletedList.ts
     assistantReplyWithFencedCodeBlockAndInlineCode.ts
     assistantReplyWithCalloutSeverityVariants.ts
     assistantReplyWithChecklistProgression.ts
-    assistantReplyWithFileReferenceAndLineRange.ts
+    assistantReplyWithToolCallReadPreview.ts
+    assistantReplyWithToolCallGrepMatches.ts
+    assistantReplyWithToolCallEditDiff.ts
+    assistantReplyWithToolCallBashOutput.ts
+    assistantReplyWithToolCallTodoWrite.ts
+    assistantReplyWithPlanProposal.ts
+    assistantReplyWithToolApprovalRequest.ts
     errorBannerFromProviderStreamFailure.ts
+    incompleteResponseNotice.ts
     rateLimitNoticeWithRetryAfter.ts
-    streamingContentPartsWithCursorOnTail.ts
 ```
 
 Each scenario file exports:
 
 ```ts
-export const <scenarioName>: AssistantTranscriptScenario = {
-  startingTranscript: readonly TranscriptEntry[],
-  responseEventSequence: readonly AssistantResponseEvent[],
-  expectedTranscriptAfterFullApplication: readonly TranscriptEntry[],
+export type AssistantTranscriptScenario = {
+  responseEventSequence: readonly AssistantResponseEvent[];
+  // The transcript state each TUI's reducer should reach after
+  // applying every event in order, starting from an empty transcript.
+  expectedConversationTranscriptEntries: readonly ConversationTranscriptEntryShape[];
 };
+
+export const <scenarioName>: AssistantTranscriptScenario = { ... };
 ```
 
-Used three ways:
-1. **Engine tests** — verify `foldAssistantResponseEventIntoTranscript` produces the expected transcript from the event sequence.
-2. **TUI reducer tests** — verify each TUI's `chatScreenState` reducer handles the resulting transcript without drops or reordering.
-3. **TUI rendering snapshots** — each TUI renders the final transcript; snapshots stored per-TUI (they look different by design).
+The fixture package does **not** import a reducer from either TUI. It declares the expected *shape* of each entry (kind + key fields) and each TUI's reducer test asserts that its own reducer output matches. This keeps the fixture dependency-free and lets both TUI reducers be verified against the same contract.
 
-Per `AGENTS.md` §20, scenario names read like domain sentences rather than numeric suffixes.
+Used three ways:
+1. **ink-tui reducer tests** — feed the event sequence through `applyAssistantResponseEventToChatScreenState`, assert the resulting transcript matches the fixture's expected entries.
+2. **opentui-tui reducer tests** — same as above with its own reducer.
+3. **TUI rendering snapshots** — each TUI renders the final transcript; snapshots stored per-TUI (they look different by design, same semantic content).
+
+Per `AGENTS.md` "Practical Naming Examples", scenario names read like domain sentences rather than numeric suffixes.
 
 ## 8. CLI Wiring
 
@@ -491,24 +491,25 @@ Per `AGENTS.md` §7/§8/§17: real behavior tested directly, mocking avoided, sm
 
 | Package | Focus | Real vs fake |
 | --- | --- | --- |
-| `@buli/contracts` | Zod parse/serialize round-trips for every typed-part, inline-span, transcript-entry, and event variant. | Real Zod. |
-| `@buli/engine` | (a) `classifyAssistantTextLine` — one test per classification rule. (b) `applyProviderEventToAssistantTurnPartAccumulator` — feed event sequences, assert state + emitted events. (c) `foldAssistantResponseEventIntoTranscript` — driven by every fixture scenario. (d) `AssistantResponseRuntime` end-to-end via a real `AsyncIterable` test double carrying synthetic provider events. | Real accumulator, classifier, fold. Test-only `AsyncIterable` as the provider seam. |
+| `@buli/contracts` | Zod parse/serialize round-trips for new `AssistantContentPart` variants, `InlineSpan` variants, and extended `TranscriptMessage` (with and without `assistantContentParts`). Existing event schemas keep their current tests. | Real Zod. |
+| `@buli/engine` | (a) `parseAssistantResponseIntoContentParts` — one test per `AssistantContentPart` variant the parser emits (paragraph, heading 1/2/3, bulleted list, numbered list, checklist, fenced code, callout, horizontal rule), plus the existing edge-case tests relocated from ink-tui. (b) `AssistantResponseRuntime` — extend existing tests to assert `assistant_response_completed` carries `message.assistantContentParts`. | Real parser, real runtime. Existing test fakes reused. |
 | `@buli/openai` | Existing SSE parse tests unchanged. | As-is. |
-| `@buli/ink-tui` | Reducer tests, per-component snapshot tests via `ink-testing-library`, integration test driving the chat screen with a fixture scenario via a stub `AssistantResponseRunner`. | Real reducer. Stub runner is a real seam (cross-context, test-only implementation) per `AGENTS.md` §17. |
-| `@buli/opentui-tui` | Same three layers as ink-tui, using `@opentui/react` test utilities. Snapshots per-TUI, intentionally not shared. | Same shape as ink-tui. |
+| `@buli/ink-tui` | (a) Existing reducer tests pass unchanged (the reducer is not edited). (b) New `renderAssistantResponseTree` test: passes typed parts directly and asserts the same primitive tree that the old parse-on-render path produced. (c) Existing integration tests pass unchanged once they are updated to feed completed events carrying `assistantContentParts`. | Real reducer. Stub runner is a real seam (cross-context, test-only implementation) per `AGENTS.md` §17. |
+| `@buli/opentui-tui` | Same layers as ink-tui: reducer tests, per-component snapshot tests via `@opentui/react` test utilities, integration test driving the chat screen with a fixture scenario via a stub `AssistantResponseRunner`. Snapshots per-TUI, intentionally not shared with ink-tui. | Real reducer, real `@opentui/react` renderer. |
 | `@buli/assistant-design-tokens` | Static token value validation (hex format, enum exhaustiveness). | Real. |
-| `@buli/assistant-transcript-fixtures` | Self-test: each scenario's event sequence, when folded, produces the declared expected transcript. Catches drift. | Real fold. |
+| `@buli/assistant-transcript-fixtures` | Self-test: the scenario event sequences schema-validate against `AssistantResponseEventSchema`; the expected entry shapes are well-formed. No reducer runs inside the fixtures package itself. | Real Zod. |
 | `apps/cli` | `runCli` with `--ui ink`, `--ui opentui`, and `--ui bogus` — via existing `commandHandlers` injection in `apps/cli/src/main.ts:66`. | Existing stubbed handlers. |
 
 ### 9.2. Test naming
 
 Per `AGENTS.md` "Practical Naming Examples → Test names should read like business rules" — tests read like business rules:
 
-- `classifies_triple_backtick_line_as_fenced_code_block_toggle`
-- `emits_content_part_closed_event_when_blank_line_follows_paragraph`
+- `parses_triple_backtick_line_as_fenced_code_block_part`
+- `attaches_assistant_content_parts_to_completed_response_event`
 - `renders_reasoning_collapsed_with_duration_and_token_count`
 - `dispatches_opentui_renderer_when_ui_flag_set_to_opentui`
-- `folds_reasoning_summary_streaming_update_into_assistant_turn_entry`
+- `folds_reasoning_summary_text_chunk_into_streaming_reasoning_entry`
+- `renders_file_reference_pill_when_content_part_is_file_reference`
 
 Not `should_classify`, `test_rendering`, `handles_input`.
 
@@ -561,25 +562,26 @@ Both renderers must render a live streaming response with reasoning-summary bloc
 
 Captured here so they do not need to be relitigated at plan-writing time.
 
-1. **Scope** — typed assistant parts only (roadmap Slice 2). No tools. Non-tool components from the `.pen` library go live now; tool-dependent components (`DiffBlock`, `ShellBlock`, all `ToolCall-*`, `PlanProposal`, `ToolApproval`) deferred to Slices 3–4.
+1. **Scope** — move the markdown parser into the engine and attach typed `AssistantContentPart[]` to the completed assistant message; build opentui-tui as a second renderer with the full existing component inventory. Existing tool-call, plan, rate-limit, approval, reasoning pipelines stay as-is.
 2. **CLI surface** — `--ui ink|opentui` flag on the default interactive command. `ink` default.
-3. **ink-tui treatment** — full rework against typed parts, not a compat shim. Ink gets its own per-part component tree.
-4. **Cross-TUI sharing** — Approach 3: independent renderers, shared fixtures package. One pure fold function (`foldAssistantResponseEventIntoTranscript`) lives in `@buli/engine` because it is a data concern, not a rendering one.
-5. **Design tokens** — live in their own package `@buli/assistant-design-tokens`, imported by both TUIs.
-6. **Reasoning summary** — nested inside `AssistantTurnEntry`, not a sibling transcript entry.
-7. **`TurnFooter`** — derived view data, not a content-part kind.
-8. **`StreamingCursor`** — visual affordance, not a content-part kind. Attached by the renderer to whichever part has `status: "streaming"`.
-9. **Line-oriented classification** — classifier runs on finalized lines at newline boundaries; mid-line text deltas pass through as `ContentPartUpdatedEvent` without reclassification.
-10. **Accumulator shape** — concrete struct + pure reducer functions, not an interface (AGENTS.md §16).
+3. **ink-tui treatment** — targeted seam flip, not a rewrite. `renderAssistantResponseTree` reads typed parts from the transcript message; the local parser is deleted. Every existing component stays. Theme imports switch to `@buli/assistant-design-tokens`.
+4. **Cross-TUI sharing** — Approach 3: independent renderers, shared fixtures package. Each TUI owns its own reducer; the fixtures declare the expected transcript entry shapes and both reducers are asserted against them. No shared fold function.
+5. **Design tokens** — extracted from ink-tui's `chatScreenTheme.ts` into `@buli/assistant-design-tokens`. Both TUIs import from there.
+6. **Parse-at-completion, not incremental.** The engine parses the accumulated assistant text once when the provider stream completes. During streaming, each TUI renders from the growing flat text (current behavior). Incremental per-part events are deferred; the `AssistantContentPart` contract does not foreclose them.
+7. **Existing event vocabulary preserved.** No renames, no new event kinds. The 18 `AssistantResponseEvent` variants in `@buli/contracts` stay exactly as-is. The only contract change is adding `assistantContentParts` to `TranscriptMessage`.
+8. **Existing transcript entry unions preserved.** Each TUI keeps its `ConversationTranscriptEntry` shape (11 kinds today). Not lifted into contracts — that's TUI-local state shape, not a data contract.
+9. **No `TurnEntry` nesting of reasoning inside assistant turns.** Reasoning stays as its own transcript entry kind (`streaming_reasoning_summary` / `completed_reasoning_summary`), matching the current code. Earlier spec proposal to nest reasoning inside an `AssistantTurnEntry` is dropped — it would re-architect working code for no slice-level benefit.
+10. **Existing `TurnFooter` stays as an entry kind.** Already works in current ink-tui as `kind: "turn_footer"`; opentui-tui mirrors this.
 
 ## 12. Open Questions for Implementation
 
 Questions that do not block the plan but need an answer during implementation:
 
-- **Inline-span tokenizer corner cases.** Should unmatched `*` or `` ` `` be rendered literally or treated as plain text? Default to literal.
-- **Nested list depth cap.** The contract allows unbounded recursion via `AssistantListItem.nestedList`. Renderers should cap visual indentation at a sensible depth (likely 4) to avoid runaway indentation on pathological model output.
-- **Code-block scrolling.** Long fenced code blocks may exceed transcript viewport height. Scroll behavior — soft-wrap, horizontal scroll, or vertical overflow — should be consistent across both TUIs. Decide during implementation by reference to the `.pen` `FencedCodeBlock` component.
-- **Keyboard shortcuts parity.** ink-tui has a current set of shortcuts (model picker, reasoning picker, shortcuts help, submit). opentui-tui should support the same bindings. Verify during the opentui-tui implementation that `@opentui/react` input handling supports the same keys.
+- **Parser test relocation.** The existing `packages/ink-tui/test/parseAssistantResponseMarkdown.test.ts` covers the parser's edge cases today. Those tests move with the parser into `packages/engine/test/`. Trivial — noting here so it isn't forgotten.
+- **Type-name migration of `InlineMarkdownSpan` consumers.** Several ink-tui components import `InlineMarkdownSpan` from `components/primitives/InlineMarkdownText.tsx`. After the type moves to `@buli/contracts` as `InlineSpan`, update all consumer imports. Exact files to touch are identified during the plan pass.
+- **Type-name migration of `AssistantMarkdownBlock` consumers.** Same as above for the block type. The renderer uses it as `AssistantMarkdownBlock` today; renames to `AssistantContentPart` at the import boundary.
+- **Keyboard shortcuts parity.** Verify `@opentui/react` input handling supports the same keys ink-tui binds (Ctrl+L, arrows, Home/End, PageUp/PageDown, Enter, Esc, `?`). If any key is unsupported, pick the nearest equivalent and document the divergence.
+- **Code-block scrolling.** Long fenced code blocks may exceed transcript viewport height. Behavior should match across TUIs (today ink-tui does horizontal overflow via `chalk`-padded lines). Carry that behavior into opentui-tui.
 
 ---
 
