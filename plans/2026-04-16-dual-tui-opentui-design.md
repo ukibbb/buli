@@ -107,7 +107,7 @@ packages/engine
 packages/contracts
 ```
 
-Both TUIs additionally depend on `@buli/assistant-design-tokens`. The fixtures package depends only on `@buli/contracts`. `@buli/opentui-tui` depends on `@opentui/react` via workspace path at `tui/opentui/packages/react`.
+Both TUIs additionally depend on `@buli/assistant-design-tokens`. The fixtures package depends only on `@buli/contracts`. `@buli/opentui-tui` depends on `@opentui/react` (and its transitive `@opentui/core`) as published npm packages, NOT on the vendored `tui/opentui/` copy in this repo. The vendored copy stays in the tree as a reference / source-of-truth for the upstream library but is not linked into our workspace — `@opentui/core` ships native Zig binaries only via its published package, and registering the vendored mini-monorepo into our workspace would require a local Zig build step.
 
 Guardrails (per roadmap §Guardrails) preserved:
 - `@buli/engine` stays UI-agnostic.
@@ -373,7 +373,7 @@ export function renderChatScreenInTerminalWithOpentui(input: {
 }): <OpentuiInstance>;
 ```
 
-The `@opentui/react` dependency is wired via workspace path to `tui/opentui/packages/react`.
+The `@opentui/react` dependency is pulled from npm as a regular published package (pinned to the same minor version as the vendored copy for reference).
 
 ### 6.3. Shared state-folding
 
