@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { renderToString } from "ink";
 import React from "react";
+import { parseAssistantResponseIntoContentParts } from "@buli/engine";
 import type { ConversationTranscriptEntry } from "../../src/chatScreenState.ts";
 import { ConversationTranscriptPane } from "../../src/components/ConversationTranscriptPane.tsx";
 
@@ -140,24 +141,26 @@ test("ConversationTranscriptPane renders a turn footer before usage arrives", ()
 });
 
 test("ConversationTranscriptPane parses assistant markdown into rich blocks", () => {
+  const markdownText = [
+    "# Report",
+    "",
+    "Here is a **bold** and `code` phrase.",
+    "",
+    "1. first",
+    "2. second",
+    "",
+    "```ts",
+    "const answer = 42;",
+    "```",
+  ].join("\n");
   const conversationTranscriptEntries: ConversationTranscriptEntry[] = [
     {
       kind: "message",
       message: {
         id: "a1",
         role: "assistant",
-        text: [
-          "# Report",
-          "",
-          "Here is a **bold** and `code` phrase.",
-          "",
-          "1. first",
-          "2. second",
-          "",
-          "```ts",
-          "const answer = 42;",
-          "```",
-        ].join("\n"),
+        text: markdownText,
+        assistantContentParts: [...parseAssistantResponseIntoContentParts(markdownText)],
       },
     },
   ];

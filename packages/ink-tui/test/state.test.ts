@@ -607,6 +607,12 @@ test("applyAssistantResponseEventToChatScreenState appends an incomplete notice 
       id: "assistant-streaming",
       role: "assistant",
       text: "Partial answer",
+      assistantContentParts: [
+        {
+          kind: "paragraph",
+          inlineSpans: [{ spanKind: "plain", spanText: "Partial answer" }],
+        },
+      ],
     },
   });
 });

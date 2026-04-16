@@ -4,6 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { renderToString } from "ink";
 import React from "react";
 import type { AssistantResponseRunner } from "@buli/engine";
+import { parseAssistantResponseIntoContentParts } from "@buli/engine";
 import {
   ChatScreen,
   ConversationTranscriptPane,
@@ -58,7 +59,7 @@ test("ConversationTranscriptPane renders user and assistant lines", () => {
         },
         {
           kind: "message",
-          message: { id: "assistant-1", role: "assistant", text: "Hi" },
+          message: { id: "assistant-1", role: "assistant", text: "Hi", assistantContentParts: [...parseAssistantResponseIntoContentParts("Hi")] },
         },
       ]}
       hiddenTranscriptRowsAboveViewport={0}

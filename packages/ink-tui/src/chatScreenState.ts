@@ -8,6 +8,7 @@ import {
   type ToolCallDetail,
   type TranscriptMessage,
 } from "@buli/contracts";
+import { parseAssistantResponseIntoContentParts } from "@buli/engine";
 
 // This file is the state machine for the terminal chat screen.
 //
@@ -496,6 +497,7 @@ export function applyAssistantResponseEventToChatScreenState(
       lastTranscriptEntry?.kind === "message" &&
       lastTranscriptEntry.message.id === chatScreenState.streamingAssistantMessageId
     ) {
+      const grownText = lastTranscriptEntry.message.text + assistantResponseEvent.text;
       return {
         ...chatScreenState,
         conversationTranscript: [
@@ -504,7 +506,8 @@ export function applyAssistantResponseEventToChatScreenState(
             kind: "message",
             message: {
               ...lastTranscriptEntry.message,
-              text: lastTranscriptEntry.message.text + assistantResponseEvent.text,
+              text: grownText,
+              assistantContentParts: [...parseAssistantResponseIntoContentParts(grownText)],
             },
           },
         ],
@@ -521,6 +524,7 @@ export function applyAssistantResponseEventToChatScreenState(
             id: chatScreenState.streamingAssistantMessageId ?? STREAMING_ASSISTANT_MESSAGE_ID,
             role: "assistant",
             text: assistantResponseEvent.text,
+            assistantContentParts: [...parseAssistantResponseIntoContentParts(assistantResponseEvent.text)],
           },
         },
       ],
