@@ -20,6 +20,7 @@
         "@buli/engine": "workspace:*",
         "@buli/ink-tui": "workspace:*",
         "@buli/openai": "workspace:*",
+        "@buli/opentui-tui": "workspace:*",
       },
     },
     "packages/assistant-design-tokens": {

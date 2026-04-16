@@ -6,7 +6,10 @@
     "node": ">=24"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/types/src/index.d.ts",
+      "default": "./src/index.ts"
+    }
   },
   "dependencies": {
     "@buli/assistant-design-tokens": "workspace:*",

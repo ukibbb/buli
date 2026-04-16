@@ -19,7 +19,8 @@
   "dependencies": {
     "@buli/engine": "workspace:*",
     "@buli/ink-tui": "workspace:*",
-    "@buli/openai": "workspace:*"
+    "@buli/openai": "workspace:*",
+    "@buli/opentui-tui": "workspace:*"
   },
   "scripts": {
     "build": "bun build ./src/cli.ts --target=node --outfile ./dist/cli.js",
