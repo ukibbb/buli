@@ -42,8 +42,7 @@ V1 intentionally does not include yet:
 
 ## Requirements
 
-- `bun`
-- `Node 24`
+- `Bun 1.3.12` or newer
 
 ## Recommended Workflow
 
@@ -82,9 +81,9 @@ buli --model gpt-5.4 --reasoning high
 
 We use the source runner as the primary development workflow because every `buli`
 invocation runs the latest code from the repo without waiting for a rebuild,
-even when launched outside the repo. The global wrapper also pins `tsx` to this
-repo's `tsconfig.json`, so JSX and other TypeScript settings stay consistent no
-matter where you run `buli` from.
+even when launched outside the repo. The global wrapper also keeps the runtime on
+`bun` end to end, which is required for OpenTUI because `@opentui/core` ships
+`.scm` grammar assets that Node plus `tsx` does not load.
 
 ## What `buli login` Does
 
@@ -182,7 +181,7 @@ bun run build:cli
 Run the built wrapper directly:
 
 ```bash
-node apps/cli/bin/buli.js
+bun apps/cli/bin/buli.js
 ```
 
 If you want to continuously rebuild that packaged path while testing it, run:
@@ -286,7 +285,6 @@ bun run link:cli
 
 ## Notes
 
-- `bun` is used for package management and workspaces.
-- The CLI/TUI runtime target is `Node 24`.
+- `bun` 1.3.12+ is used for package management, workspaces, and the CLI/TUI runtime.
 - Exact token counts are provider-derived and reasoning tokens are shown after a completed assistant response.
 - The source-runner is the preferred development workflow because it avoids unnecessary rebuild steps while the product is still changing quickly, even when you launch `buli` from another directory.

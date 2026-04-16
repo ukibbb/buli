@@ -9,15 +9,16 @@ while [ -L "$SOURCE" ]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-TSX_RUNNER="$SCRIPT_DIR/node_modules/.bin/tsx"
-TS_CONFIG="$SCRIPT_DIR/tsconfig.json"
 CLI_ENTRYPOINT="$SCRIPT_DIR/apps/cli/src/cli.ts"
 
-if [ ! -x "$TSX_RUNNER" ]; then
-  printf 'buli dependencies are not installed in %s.\nRun `bun install` in the buli repo and try again.\n' "$SCRIPT_DIR" >&2
+# Run through bun, not tsx/Node. @opentui/core ships tree-sitter grammar
+# files (.scm) as package assets, and Node's ESM loader has no format for
+# unknown extensions so tsx fails with ERR_UNKNOWN_FILE_EXTENSION before the
+# CLI can boot. Bun treats TypeScript as first-class and resolves arbitrary
+# asset paths, so both the ink and opentui renderers load cleanly.
+if ! command -v bun >/dev/null 2>&1; then
+  printf 'bun is required to run buli from source. Install from https://bun.sh and retry.\n' >&2
   exit 1
 fi
 
-# Run the CLI from source so each invocation sees the latest repo code without
-# waiting for a rebuild, even when launched from another directory.
-exec "$TSX_RUNNER" --tsconfig "$TS_CONFIG" "$CLI_ENTRYPOINT" "$@"
+exec bun "$CLI_ENTRYPOINT" "$@"
