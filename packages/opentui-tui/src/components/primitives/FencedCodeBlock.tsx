@@ -12,7 +12,15 @@ export type FencedCodeBlockLine = {
   syntaxHighlightSpans?: SyntaxHighlightSpan[];
 };
 
+// "standalone" is the pen-file FencedCodeBlock card — surface-1 background
+// inside a rounded subtle border (used when the code is a first-class block
+// of assistant prose). "embedded" is the pen-file Read tool card's code body
+// (ZDqFx) — flush against the card's bg with no second border, used when an
+// outer SurfaceCard already provides the chrome.
+export type FencedCodeBlockVariant = "standalone" | "embedded";
+
 export type FencedCodeBlockProps = {
+  variant?: FencedCodeBlockVariant;
   languageLabel?: string;
   codeLines: FencedCodeBlockLine[];
 };
@@ -35,11 +43,18 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
     2,
     String(props.codeLines.at(-1)?.lineNumber ?? props.codeLines.length).length,
   );
+  const variant: FencedCodeBlockVariant = props.variant ?? "standalone";
+  const isStandalone = variant === "standalone";
   return (
     <box
-      backgroundColor={chatScreenTheme.surfaceOne}
-      borderColor={chatScreenTheme.borderSubtle}
-      borderStyle="rounded"
+      {...(isStandalone
+        ? {
+            backgroundColor: chatScreenTheme.surfaceOne,
+            borderColor: chatScreenTheme.borderSubtle,
+            borderStyle: "rounded" as const,
+            border: true,
+          }
+        : {})}
       flexDirection="column"
       paddingX={1}
       paddingY={0}

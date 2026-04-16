@@ -10,17 +10,9 @@ import {
 } from "@buli/contracts";
 import { parseAssistantResponseIntoContentParts } from "@buli/engine";
 
-// This file is the state machine for the terminal chat screen.
-//
-// It does not talk to Ink, React, or OpenAI directly.
-// Instead, it describes how the chat screen data changes over time.
-//
-// Each exported function takes the current screen state and returns the next one.
-// That keeps the screen behavior predictable and easy to test.
-//
-// There are two main stories in this file:
-// 1. The user types a prompt, submits it, and receives a streamed assistant response.
-// 2. The user opens the model selection flow, chooses a model, and may choose a reasoning effort.
+// Pure reducer functions so the render layer stays free of side-effect
+// branching and each transition can be asserted directly in unit tests
+// without mounting OpenTUI.
 
 const STREAMING_ASSISTANT_MESSAGE_ID = "assistant-streaming";
 
@@ -140,8 +132,6 @@ export type ChatScreenState = {
   isShortcutsHelpModalVisible: boolean;
 };
 
-// This is all the information needed to draw one terminal frame.
-// If any field here changes, React runs again and Ink redraws the changed output.
 export function createInitialChatScreenState(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -188,12 +178,10 @@ export function removeLastCharacterFromPromptDraft(chatScreenState: ChatScreenSt
   };
 }
 
-// Submitting a prompt draft changes the screen in one immediate step.
-// The draft is cleared, the user's message is added to the transcript,
-// and the screen enters the streaming assistant response phase.
-//
-// The assistant text does not appear here yet.
-// That arrives later through assistant response events.
+// Returns the submitted text separately so the caller can fire the async
+// streaming request after the reducer commits the user message; bundling the
+// two would force submit callers to reach back into the transcript to find
+// the text they just pushed.
 export function submitPromptDraft(chatScreenState: ChatScreenState): {
   nextChatScreenState: ChatScreenState;
   submittedPromptText: string | undefined;
@@ -230,14 +218,10 @@ export function submitPromptDraft(chatScreenState: ChatScreenState): {
   };
 }
 
-// The model selection flow moves through these phases:
-// hidden
-// -> loading_available_models
-// -> showing_available_models
-// -> showing_reasoning_effort_choices
-// -> hidden
-//
-// If loading fails, it goes to showing_model_loading_error instead.
+// State-machine transitions for the model-selection overlay. The shape of
+// the union enforces that reasoning choices only become available after a
+// model has been picked, so the terminal can never show a reasoning list
+// without the selected-model context needed to build it.
 export function showModelSelectionLoadingState(chatScreenState: ChatScreenState): ChatScreenState {
   return {
     ...chatScreenState,
@@ -307,9 +291,9 @@ function clampHighlightIndex(index: number, numberOfChoices: number): number {
   return Math.min(Math.max(index, 0), numberOfChoices - 1);
 }
 
-// The reasoning list always includes one extra choice: use the model default.
-// That lets the screen represent both an explicit reasoning choice
-// and the absence of one.
+// Prepends a sentinel "use the model default" choice so `undefined` is a
+// first-class selectable value; without it the user could only pick an
+// explicit effort and could never un-pick back to provider default.
 function buildReasoningEffortChoicesForModel(selectedModel: AvailableAssistantModel): ReasoningEffortChoice[] {
   const defaultChoiceLabel = selectedModel.defaultReasoningEffort
     ? `Use model default (${selectedModel.defaultReasoningEffort})`
@@ -358,11 +342,9 @@ export function moveHighlightedModelSelectionDown(chatScreenState: ChatScreenSta
   };
 }
 
-// Confirming a model can end the selection flow immediately,
-// or it can open a second step for reasoning effort.
-//
-// Models without reasoning choices are applied right away.
-// Models with reasoning choices open a follow-up list.
+// Models without any reasoning choices short-circuit to hidden: forcing a
+// follow-up step would present a one-item list, which is a worse affordance
+// than applying the choice immediately.
 export function confirmHighlightedModelSelection(chatScreenState: ChatScreenState): ChatScreenState {
   if (chatScreenState.modelAndReasoningSelectionState.step !== "showing_available_models") {
     return chatScreenState;
@@ -644,8 +626,8 @@ export function applyAssistantResponseEventToChatScreenState(
     };
   }
 
-  // A failed response does not remove the user's submitted message.
-  // It adds an error entry after it so the screen still shows what happened.
+  // Failure preserves the user message so the transcript remains an honest
+  // record of the turn even when the provider call did not succeed.
   if (assistantResponseEvent.type === "assistant_response_failed") {
     return {
       ...chatScreenState,

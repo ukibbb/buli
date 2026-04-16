@@ -3,15 +3,10 @@ import type { TokenUsage } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
-// TurnFooter renders a one-row chip beneath an assistant turn so the user
-// sees the model and timing immediately, then token usage once the terminal
-// response event arrives. Mirrors the pen-file component/TurnFooter: muted
-// divider glyphs with accent numbers.
-//
-// All items are inline spans inside a single <text> parent so they render
-// on one row. In OpenTUI, adjacent <box> elements stack vertically (Yoga
-// default column direction) while <span> elements inside <text> are truly
-// inline.
+// Mirrors pen component/TurnFooter (qfHh3): a state indicator on the left
+// ("✓ done · {duration}") and turn metadata on the right ("tokens · model
+// [· reasoning][· cached]"), separated across a space-between flex row so
+// the two sides read as distinct regions rather than a run-on line.
 export type TurnFooterProps = {
   modelDisplayName: string;
   turnDurationMs: number;
@@ -22,32 +17,38 @@ export function TurnFooter(props: TurnFooterProps): ReactNode {
   const totalTokenCount = props.usage
     ? props.usage.total ?? props.usage.input + props.usage.output + props.usage.reasoning
     : undefined;
+  const durationLabel = formatTurnDurationMs(props.turnDurationMs);
 
   return (
-    <text>
-      <span fg={chatScreenTheme.textDim}>{glyphs.chevronRight}</span>
-      <span fg={chatScreenTheme.textMuted}>{` ${props.modelDisplayName}`}</span>
-      <span fg={chatScreenTheme.textDim}>{" ·"}</span>
-      <span fg={chatScreenTheme.accentPrimaryMuted}>{` ${formatTurnDurationMs(props.turnDurationMs)}`}</span>
-      {totalTokenCount !== undefined ? (
-        <>
-          <span fg={chatScreenTheme.textDim}>{" ·"}</span>
-          <span fg={chatScreenTheme.accentPrimaryMuted}>{` ${totalTokenCount} tok`}</span>
-        </>
-      ) : null}
-      {props.usage && props.usage.reasoning > 0 ? (
-        <>
-          <span fg={chatScreenTheme.textDim}>{" ·"}</span>
-          <span fg={chatScreenTheme.textMuted}>{` ${props.usage.reasoning} reasoning`}</span>
-        </>
-      ) : null}
-      {props.usage && props.usage.cache.read > 0 ? (
-        <>
-          <span fg={chatScreenTheme.textDim}>{" ·"}</span>
-          <span fg={chatScreenTheme.textMuted}>{` ${props.usage.cache.read} cached`}</span>
-        </>
-      ) : null}
-    </text>
+    <box flexDirection="row" justifyContent="space-between" width="100%">
+      <text>
+        <span fg={chatScreenTheme.accentGreen}>{glyphs.checkMark}</span>
+        <span fg={chatScreenTheme.textMuted}>{" done"}</span>
+        <span fg={chatScreenTheme.textDim}>{" · "}</span>
+        <span fg={chatScreenTheme.accentPrimaryMuted}>{durationLabel}</span>
+      </text>
+      <text>
+        {totalTokenCount !== undefined ? (
+          <>
+            <span fg={chatScreenTheme.accentPrimaryMuted}>{`${totalTokenCount} tok`}</span>
+            <span fg={chatScreenTheme.textDim}>{" · "}</span>
+          </>
+        ) : null}
+        <span fg={chatScreenTheme.textMuted}>{props.modelDisplayName}</span>
+        {props.usage && props.usage.reasoning > 0 ? (
+          <>
+            <span fg={chatScreenTheme.textDim}>{" · "}</span>
+            <span fg={chatScreenTheme.textMuted}>{`${props.usage.reasoning} reasoning`}</span>
+          </>
+        ) : null}
+        {props.usage && props.usage.cache.read > 0 ? (
+          <>
+            <span fg={chatScreenTheme.textDim}>{" · "}</span>
+            <span fg={chatScreenTheme.textMuted}>{`${props.usage.cache.read} cached`}</span>
+          </>
+        ) : null}
+      </text>
+    </box>
   );
 }
 

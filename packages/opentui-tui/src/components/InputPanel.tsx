@@ -6,18 +6,19 @@ import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
-// Renders the HERO 1 input panel (pen frame HOeet). Owns three stacked rows:
-// a header strip with mode + model chips, a body with the prompt draft and
-// a caret, and a footer that shows either the scroll/help hint or the
-// working indicator plus the context-window meter.
+// Pen frame HOeet. Owns three stacked rows: a header strip with mode + model
+// chips, a body with the prompt draft and caret, and a footer that shows the
+// persistent `[?] help · shortcuts` block when idle, the working indicator
+// while streaming, or a contextual override message (e.g. selection open)
+// when a modal/selection owns keyboard focus.
 //
-// useAnimation from Ink has no direct equivalent in OpenTUI. The cursor blink
-// is driven by a plain useState + setInterval at 500 ms, same pattern used by
-// StreamingCursor.
+// promptInputHintOverride is undefined in the default idle state so the
+// footer can render the design's coloured bracket-cyan-?-dim glyphs rather
+// than being forced through a plain monochrome string.
 export type InputPanelProps = {
   promptDraft: string;
   isPromptInputDisabled: boolean;
-  promptInputHintText: string;
+  promptInputHintOverride?: string;
   modeLabel: string;
   modelIdentifier: string;
   reasoningEffortLabel: string;
@@ -74,8 +75,15 @@ export function InputPanel(props: InputPanelProps): ReactNode {
             <SnakeAnimationIndicator />
             <text fg={chatScreenTheme.textMuted}>{"working…"}</text>
           </box>
+        ) : props.promptInputHintOverride ? (
+          <text fg={chatScreenTheme.textMuted}>{props.promptInputHintOverride}</text>
         ) : (
-          <text fg={chatScreenTheme.textMuted}>{props.promptInputHintText}</text>
+          <text>
+            <span fg={chatScreenTheme.textDim}>{"[ "}</span>
+            <b fg={chatScreenTheme.accentCyan}>{"?"}</b>
+            <span fg={chatScreenTheme.textDim}>{" ] "}</span>
+            <span fg={chatScreenTheme.textMuted}>{"help · shortcuts"}</span>
+          </text>
         )}
         <ContextWindowMeter
           totalTokensUsed={props.totalContextTokensUsed}

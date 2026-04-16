@@ -8,7 +8,6 @@ describe("InputPanel", () => {
       <InputPanel
         promptDraft=""
         isPromptInputDisabled={false}
-        promptInputHintText="enter to send"
         modeLabel="chat"
         modelIdentifier="claude-3-5-sonnet"
         reasoningEffortLabel="none"
@@ -24,12 +23,11 @@ describe("InputPanel", () => {
     expect(frame).toContain("claude-3-5-sonnet");
   });
 
-  test("renders_hint_text_when_idle", async () => {
+  test("renders_persistent_help_hint_when_idle", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
         promptDraft="hello world"
         isPromptInputDisabled={false}
-        promptInputHintText="enter to send · ? for help"
         modeLabel="chat"
         modelIdentifier="claude-3-5-haiku"
         reasoningEffortLabel="low"
@@ -41,7 +39,26 @@ describe("InputPanel", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("enter to send");
+    expect(frame).toContain("help · shortcuts");
     expect(frame).toContain("hello world");
+  });
+
+  test("renders_override_hint_when_provided", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InputPanel
+        promptDraft=""
+        isPromptInputDisabled={true}
+        promptInputHintOverride="Selection is open. Press Esc to close it."
+        modeLabel="chat"
+        modelIdentifier="claude-3-5-haiku"
+        reasoningEffortLabel="low"
+        assistantResponseStatus="waiting_for_user_input"
+        totalContextTokensUsed={undefined}
+        contextWindowTokenCapacity={undefined}
+      />,
+      { width: 80, height: 8 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("Selection is open");
   });
 });

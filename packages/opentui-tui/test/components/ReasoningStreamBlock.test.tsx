@@ -13,7 +13,7 @@ describe("ReasoningStreamBlock", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("reasoning");
+    expect(frame).toContain("Streaming");
     expect(frame).toContain("The user wants to know about prime numbers.");
   });
 });

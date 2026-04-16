@@ -55,10 +55,6 @@ export type ChatScreenProps = {
 export function ChatScreen(props: ChatScreenProps) {
   const { height: rows } = useTerminalDimensions();
 
-  // This component is the whole chat screen.
-  // It stores all screen data in one local state object.
-  // Every time that state changes, React runs this function again,
-  // and OpenTUI turns the new result into updated terminal output.
   const [chatScreenState, setChatScreenState] = useState(() =>
     createInitialChatScreenState({
       selectedModelId: props.selectedModelId,
@@ -71,10 +67,9 @@ export function ChatScreen(props: ChatScreenProps) {
   const [latestConversationTranscriptViewportMeasurements, setLatestConversationTranscriptViewportMeasurements] =
     useState<ConversationTranscriptViewportMeasurements | undefined>(undefined);
 
-  // React reruns this component after each state change, but keyboard handlers
-  // and async code keep running in between renders.
-  // This ref always points at the newest screen state so those later callbacks
-  // can read the latest model, prompt draft, and selection screen values.
+  // Keyboard handlers and async callbacks created by useEffectEvent close
+  // over a stale state snapshot; these refs give them a hatch to the newest
+  // value without re-subscribing on every render.
   const latestChatScreenStateRef = useRef<ChatScreenState>(chatScreenState);
   const latestConversationTranscriptViewportMeasurementsRef = useRef<ConversationTranscriptViewportMeasurements | undefined>(
     latestConversationTranscriptViewportMeasurements,
@@ -160,10 +155,6 @@ export function ChatScreen(props: ChatScreenProps) {
     },
   );
 
-  // The assistant response arrives as a stream of events over time.
-  // Each event describes one new piece of information, like text arriving,
-  // the response starting, or the response completing.
-  // We fold each event into the screen state so the terminal can redraw.
   const applyIncomingAssistantResponseEventToChatScreen = useEffectEvent((assistantResponseEvent: AssistantResponseEvent) => {
     startTransition(() => {
       setChatScreenState((currentChatScreenState) =>
@@ -172,9 +163,6 @@ export function ChatScreen(props: ChatScreenProps) {
     });
   });
 
-  // When the user submits a prompt, we start one background assistant response.
-  // The request uses whatever model and reasoning effort are currently selected.
-  // As the runner streams events back, we apply them one by one to screen state.
   const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (submittedPromptText: string) => {
     const assistantResponseRequest = {
       promptText: submittedPromptText,
@@ -191,9 +179,6 @@ export function ChatScreen(props: ChatScreenProps) {
     });
   });
 
-  // The model selection flow also changes over time.
-  // First we show a loading state, then we replace it with the available models,
-  // or with an error message if loading fails.
   const loadAvailableModelsForSelection = useEffectEvent(async () => {
     setChatScreenState((currentChatScreenState) => showModelSelectionLoadingState(currentChatScreenState));
 
@@ -216,13 +201,6 @@ export function ChatScreen(props: ChatScreenProps) {
     }
   });
 
-  // useKeyboard gives us one parsed key event at a time.
-  // This is the main traffic controller for user input.
-  // It looks at the current screen mode and decides whether a key should:
-  // move around the selection screen,
-  // change the prompt draft,
-  // submit a prompt,
-  // or open the model selection flow.
   useKeyboard((e: KeyEvent) => {
     // The shortcuts modal owns Esc; let ShortcutsModal's own useKeyboard handle it.
     if (chatScreenState.isShortcutsHelpModalVisible) {
@@ -362,9 +340,9 @@ export function ChatScreen(props: ChatScreenProps) {
         return;
       }
 
-      // A submitted prompt changes the screen in two phases.
-      // First we immediately show the user's message and clear the draft.
-      // Then the background assistant response keeps updating the screen as text arrives.
+      // Phase ordering matters: commit the user message synchronously so the
+      // transcript shows it immediately, then kick off streaming which will
+      // grow the assistant entry on subsequent events.
       setChatScreenState(promptDraftSubmission.nextChatScreenState);
       void streamAssistantResponseForSubmittedPrompt(promptDraftSubmission.submittedPromptText);
       return;
@@ -380,13 +358,6 @@ export function ChatScreen(props: ChatScreenProps) {
     }
   });
 
-  // This decides what the middle area of the terminal should show right now.
-  // The user either sees:
-  // a loading message,
-  // a model list,
-  // a reasoning-effort list,
-  // an error message,
-  // or the normal prompt draft line.
   const modelAndReasoningSelectionPane =
     chatScreenState.modelAndReasoningSelectionState.step === "loading_available_models" ? (
       <box alignItems="center" flexGrow={1} justifyContent="center">
@@ -418,13 +389,13 @@ export function ChatScreen(props: ChatScreenProps) {
       />
     ) : null;
 
-  const promptInputHintText = chatScreenState.isShortcutsHelpModalVisible
+  // Idle state intentionally leaves the override undefined so InputPanel
+  // renders the coloured `[?] help · shortcuts` footer from the design.
+  const promptInputHintOverride = chatScreenState.isShortcutsHelpModalVisible
     ? "[ esc ] close shortcuts"
     : chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
       ? "Selection is open. Press Esc to close it."
-      : chatScreenState.assistantResponseStatus === "streaming_assistant_response"
-        ? "Assistant response is streaming. PgUp/PgDn/Home/End scroll."
-        : "[ ? ] help on empty draft";
+      : undefined;
 
   const homeDirectoryPath = os.homedir();
   const rawWorkingDirectoryPath = process.cwd();
@@ -448,9 +419,6 @@ export function ChatScreen(props: ChatScreenProps) {
       : undefined);
   const contextWindowTokenCapacity = lookupContextWindowTokenCapacityForModel(chatScreenState.selectedModelId);
 
-  // The return value below is just a React tree.
-  // OpenTUI reads that tree, turns it into terminal text, compares it with
-  // the last frame, and writes only the changed characters back to the terminal.
   return (
     <box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows}>
       <TopBar workingDirectoryPath={workingDirectoryPath} />
@@ -479,7 +447,7 @@ export function ChatScreen(props: ChatScreenProps) {
           chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
           chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
         }
-        promptInputHintText={promptInputHintText}
+        {...(promptInputHintOverride !== undefined ? { promptInputHintOverride } : {})}
         modeLabel={modeLabel}
         modelIdentifier={chatScreenState.selectedModelId}
         reasoningEffortLabel={reasoningEffortLabel}

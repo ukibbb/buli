@@ -33,7 +33,7 @@ export function ReasoningStreamBlock(props: ReasoningStreamBlockProps): ReactNod
     <box flexDirection="column">
       <box flexDirection="row" gap={1}>
         <text fg={chatScreenTheme.accentAmber}>{glyphs.statusDot}</text>
-        <text fg={chatScreenTheme.textMuted}>{"// reasoning"}</text>
+        <text fg={chatScreenTheme.textMuted}>{"// Streaming"}</text>
         <text fg={chatScreenTheme.textDim}>{`${elapsedSeconds}s`}</text>
       </box>
       <box

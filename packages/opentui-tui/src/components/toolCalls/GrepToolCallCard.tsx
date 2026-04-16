@@ -9,10 +9,10 @@ import {
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
 
-// GrepToolCallCard renders the design's component/ToolCall-Grep: cyan stripe,
-// search glyph, the search pattern as the target, and a matches · files
-// status. The body lists each hit with a cyan path:line reference followed by
-// a muted snippet on the same row.
+// GrepToolCallCard renders the design's component/ToolCall-Grep: green stripe,
+// search glyph, the search pattern as the target (cyan so the pattern reads
+// as code), and a matches · files status. The body lists each hit with a
+// cyan path:line reference followed by a muted snippet on the same row.
 export type GrepToolCallCardProps = {
   toolCallDetail: ToolCallGrepDetail;
   renderState: "streaming" | "completed" | "failed";
@@ -22,7 +22,7 @@ export type GrepToolCallCardProps = {
 
 export function GrepToolCallCard(props: GrepToolCallCardProps): ReactNode {
   const stripeColor =
-    props.renderState === "failed" ? chatScreenTheme.accentRed : chatScreenTheme.accentCyan;
+    props.renderState === "failed" ? chatScreenTheme.accentRed : chatScreenTheme.accentGreen;
   const statusKind =
     props.renderState === "completed"
       ? "success"

@@ -19,6 +19,6 @@ describe("UserPromptBlock", () => {
       { width: 40, height: 3 },
     );
     await renderOnce();
-    expect(captureCharFrame()).toContain(">");
+    expect(captureCharFrame()).toContain("›");
   });
 });
