@@ -28,6 +28,17 @@ export type {
   ModelAndReasoningSelectionState,
   ReasoningEffortChoice,
 } from "./chatScreenState.ts";
+export {
+  createInitialConversationTranscriptViewportState,
+  jumpConversationTranscriptViewportToNewestRows,
+  jumpConversationTranscriptViewportToOldestRows,
+  reconcileConversationTranscriptViewportAfterMeasurement,
+  scrollConversationTranscriptViewportDownByPage,
+  scrollConversationTranscriptViewportDownByRows,
+  scrollConversationTranscriptViewportUpByPage,
+  scrollConversationTranscriptViewportUpByRows,
+} from "./conversationTranscriptViewportState.ts";
+export type { ConversationTranscriptViewportMeasurements, ConversationTranscriptViewportState } from "./conversationTranscriptViewportState.ts";
 
 export function renderChatScreenInTerminalWithOpentui(): never {
   throw new Error(
