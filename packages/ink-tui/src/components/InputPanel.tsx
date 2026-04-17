@@ -9,6 +9,12 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 // a header strip with mode + model chips, a body with the prompt draft and
 // a caret, and a footer that shows either the scroll/help hint or the
 // working indicator plus the context-window meter.
+//
+// Exported row count = 2 (rounded border) + 1 (header) + 3 (body w/ paddingY)
+// + 1 (footer). It is the source of truth for ChatScreen's responsive
+// budgeting math — keep it in sync with the rendered output below.
+export const INPUT_PANEL_NATURAL_ROW_COUNT = 7;
+
 export type InputPanelProps = {
   promptDraft: string;
   isPromptInputDisabled: boolean;
@@ -34,6 +40,7 @@ export function InputPanel(props: InputPanelProps) {
       borderColor={chatScreenTheme.accentGreen}
       flexDirection="column"
       backgroundColor={chatScreenTheme.surfaceOne}
+      flexShrink={0}
     >
       <Box justifyContent="space-between" paddingX={2}>
         <Text color={chatScreenTheme.accentGreen}>

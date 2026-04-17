@@ -3,7 +3,7 @@ import { type AssistantResponseEvent, type AvailableAssistantModel, type Reasoni
 import { type AssistantResponseRunner } from "@buli/engine";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { startTransition, useEffectEvent, useRef, useState } from "react";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { chatScreenTheme, minimumTerminalSizeTier } from "@buli/assistant-design-tokens";
 import {
   createInitialConversationTranscriptViewportState,
   jumpConversationTranscriptViewportToNewestRows,
@@ -17,10 +17,20 @@ import {
   type ConversationTranscriptViewportState,
 } from "./conversationTranscriptViewportState.ts";
 import { ConversationTranscriptPane } from "./components/ConversationTranscriptPane.tsx";
-import { InputPanel } from "./components/InputPanel.tsx";
+import { InputPanel, INPUT_PANEL_NATURAL_ROW_COUNT } from "./components/InputPanel.tsx";
+import {
+  MinimumHeightPromptStrip,
+  MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT,
+} from "./components/MinimumHeightPromptStrip.tsx";
 import { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
 import { ShortcutsModal } from "./components/ShortcutsModal.tsx";
-import { TopBar } from "./components/TopBar.tsx";
+import { TopBar, TOP_BAR_NATURAL_ROW_COUNT } from "./components/TopBar.tsx";
+import { useTerminalSizeTierForChatScreen } from "./components/behavior/useTerminalSizeTierForChatScreen.ts";
+
+// The chat screen's middle area renders with paddingTop=1 to keep the
+// transcript / modal off the top bar's surface fill. Owned here because the
+// padding is part of ChatScreen's layout, not a leaf component's concern.
+const CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT = 1;
 import {
   appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
@@ -53,6 +63,7 @@ export type ChatScreenProps = {
 
 export function ChatScreen(props: ChatScreenProps) {
   const { rows } = useWindowSize();
+  const terminalSizeTierForChatScreen = useTerminalSizeTierForChatScreen();
 
   // This component is the whole chat screen.
   // It stores all screen data in one local state object.
@@ -429,6 +440,18 @@ export function ChatScreen(props: ChatScreenProps) {
 
   const modeLabel = "implementation";
   const reasoningEffortLabel = chatScreenState.selectedReasoningEffort ?? "default";
+
+  const inputRegionRowCount =
+    terminalSizeTierForChatScreen === minimumTerminalSizeTier
+      ? MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT
+      : INPUT_PANEL_NATURAL_ROW_COUNT;
+  const availableShortcutsModalRowCount = Math.max(
+    0,
+    rows
+      - TOP_BAR_NATURAL_ROW_COUNT
+      - CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT
+      - inputRegionRowCount,
+  );
   // latestTokenUsage.total reflects the prompt + completion tokens billed for
   // the most recent turn. Because the Responses API sends the full running
   // context on each turn, that value approximates the current conversation's
@@ -448,13 +471,15 @@ export function ChatScreen(props: ChatScreenProps) {
   return (
     <Box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows}>
       <TopBar workingDirectoryPath={workingDirectoryPath} />
-      <Box flexGrow={1} overflow="hidden" paddingX={2} paddingTop={1}>
+      <Box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden" paddingX={2} paddingTop={1}>
         {chatScreenState.isShortcutsHelpModalVisible ? (
           <Box alignItems="center" flexGrow={1} justifyContent="center">
             <ShortcutsModal
               onCloseRequested={() =>
                 setChatScreenState((currentChatScreenState) => hideShortcutsHelpModal(currentChatScreenState))
               }
+              availableModalRowCount={availableShortcutsModalRowCount}
+              terminalSizeTierForChatScreen={terminalSizeTierForChatScreen}
             />
           </Box>
         ) : (
@@ -467,20 +492,31 @@ export function ChatScreen(props: ChatScreenProps) {
           )
         )}
       </Box>
-      <InputPanel
-        promptDraft={chatScreenState.promptDraft}
-        isPromptInputDisabled={
-          chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
-          chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
-        }
-        promptInputHintText={promptInputHintText}
-        modeLabel={modeLabel}
-        modelIdentifier={chatScreenState.selectedModelId}
-        reasoningEffortLabel={reasoningEffortLabel}
-        assistantResponseStatus={chatScreenState.assistantResponseStatus}
-        totalContextTokensUsed={totalContextTokensUsed}
-        contextWindowTokenCapacity={contextWindowTokenCapacity}
-      />
+      {terminalSizeTierForChatScreen === minimumTerminalSizeTier ? (
+        <MinimumHeightPromptStrip
+          promptDraft={chatScreenState.promptDraft}
+          isPromptInputDisabled={
+            chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
+            chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
+          }
+          assistantResponseStatus={chatScreenState.assistantResponseStatus}
+        />
+      ) : (
+        <InputPanel
+          promptDraft={chatScreenState.promptDraft}
+          isPromptInputDisabled={
+            chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
+            chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
+          }
+          promptInputHintText={promptInputHintText}
+          modeLabel={modeLabel}
+          modelIdentifier={chatScreenState.selectedModelId}
+          reasoningEffortLabel={reasoningEffortLabel}
+          assistantResponseStatus={chatScreenState.assistantResponseStatus}
+          totalContextTokensUsed={totalContextTokensUsed}
+          contextWindowTokenCapacity={contextWindowTokenCapacity}
+        />
+      )}
     </Box>
   );
 }

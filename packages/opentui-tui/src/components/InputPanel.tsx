@@ -15,6 +15,12 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 // promptInputHintOverride is undefined in the default idle state so the
 // footer can render the design's coloured bracket-cyan-?-dim glyphs rather
 // than being forced through a plain monochrome string.
+//
+// Exported row count = 2 (rounded border) + 1 (header) + 3 (body w/ paddingY)
+// + 1 (footer). It is the source of truth for ChatScreen's responsive
+// budgeting math — keep it in sync with the rendered output below.
+export const INPUT_PANEL_NATURAL_ROW_COUNT = 7;
+
 export type InputPanelProps = {
   promptDraft: string;
   isPromptInputDisabled: boolean;
@@ -47,6 +53,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
       borderColor={chatScreenTheme.accentGreen}
       flexDirection="column"
       backgroundColor={chatScreenTheme.surfaceOne}
+      flexShrink={0}
     >
       <box flexDirection="row" justifyContent="space-between" paddingX={2}>
         <text fg={chatScreenTheme.accentGreen}>

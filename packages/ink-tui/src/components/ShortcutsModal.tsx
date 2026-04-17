@@ -1,10 +1,19 @@
 import { Box, Text, useInput } from "ink";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import {
+  chatScreenTheme,
+  comfortableTerminalSizeTier,
+  planShortcutsModalRowBudget,
+  type TerminalSizeTierForChatScreen,
+} from "@buli/assistant-design-tokens";
 
-// Mirrors the modal shell from the design, but the legend rows stay limited to
-// shortcuts the current build actually supports. KEYBOARD_SHORTCUT_KEY_COLUMN_WIDTH
-// pins the key column so the description column lines up across every row.
+// Presentational shell of the design's shortcuts modal. The modal does not
+// touch terminal dimensions or tier classification on its own — ChatScreen
+// owns the layout and hands the modal an exact row budget plus the tier the
+// surrounding chat screen is in. The modal then asks
+// planShortcutsModalRowBudget how much content fits and renders that much, so
+// the visual collapses cleanly as the terminal shrinks.
 const KEYBOARD_SHORTCUT_KEY_COLUMN_WIDTH_IN_CELLS = 18;
+const SHORTCUTS_MODAL_MAX_WIDTH_IN_CELLS = 70;
 
 type ShortcutLegendRow = {
   keyLabel: string;
@@ -25,12 +34,9 @@ const helpShortcutLegendRows: ShortcutLegendRow[] = [
 ];
 
 export type ShortcutsModalProps = {
-  // Fired when the user presses Esc or "?" while the modal is visible. The
-  // modal does not close itself — ownership of the isVisible flag stays with
-  // the parent so every modal surface consistently coordinates visibility
-  // through ChatScreenState, and so tests can render the modal without a
-  // parent tree.
   onCloseRequested: () => void;
+  availableModalRowCount: number;
+  terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
 };
 
 export function ShortcutsModal(props: ShortcutsModalProps) {
@@ -40,44 +46,88 @@ export function ShortcutsModal(props: ShortcutsModalProps) {
     }
   });
 
+  const rendersComfortableChrome =
+    props.terminalSizeTierForChatScreen === comfortableTerminalSizeTier;
+  const shortcutsModalRowBudgetPlan = planShortcutsModalRowBudget({
+    availableModalRowCount: props.availableModalRowCount,
+    keyboardLegendRowCountAtFull: keyboardShortcutLegendRows.length,
+    helpLegendRowCountAtFull: helpShortcutLegendRows.length,
+    rendersComfortableChrome,
+  });
+  const visibleKeyboardLegendRows = keyboardShortcutLegendRows.slice(
+    0,
+    shortcutsModalRowBudgetPlan.visibleKeyboardLegendRowCount,
+  );
+
   return (
     <Box
       borderStyle="round"
       borderColor={chatScreenTheme.accentGreen}
       flexDirection="column"
       backgroundColor={chatScreenTheme.surfaceOne}
+      flexShrink={1}
+      width={SHORTCUTS_MODAL_MAX_WIDTH_IN_CELLS}
+      overflow="hidden"
     >
-      <Box backgroundColor={chatScreenTheme.accentGreen} height={1} />
-      <Box justifyContent="space-between" paddingX={2} paddingY={1}>
+      {rendersComfortableChrome ? (
+        <Box backgroundColor={chatScreenTheme.accentGreen} height={1} flexShrink={0} />
+      ) : null}
+      <Box
+        justifyContent="space-between"
+        paddingX={2}
+        paddingY={rendersComfortableChrome ? 1 : 0}
+        flexShrink={0}
+      >
         <Text bold color={chatScreenTheme.textPrimary}>
           help · shortcuts
         </Text>
         <Text color={chatScreenTheme.textDim}>[ esc ] close</Text>
       </Box>
-      <Box backgroundColor={chatScreenTheme.borderSubtle} height={1} />
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
+      {rendersComfortableChrome ? (
+        <Box backgroundColor={chatScreenTheme.borderSubtle} height={1} flexShrink={0} />
+      ) : null}
+      <Box
+        flexDirection="column"
+        paddingX={2}
+        paddingY={rendersComfortableChrome ? 1 : 0}
+        flexShrink={0}
+      >
         <ShortcutLegendSection
           sectionLabel="// keyboard"
           sectionLabelColor={chatScreenTheme.accentGreen}
           keyLabelColor={chatScreenTheme.accentCyan}
-          rows={keyboardShortcutLegendRows}
+          rows={visibleKeyboardLegendRows}
         />
-        <Box backgroundColor={chatScreenTheme.borderSubtle} height={1} marginY={1} />
-        <ShortcutLegendSection
-          sectionLabel="// help"
-          sectionLabelColor={chatScreenTheme.accentCyan}
-          keyLabelColor={chatScreenTheme.accentAmber}
-          rows={helpShortcutLegendRows}
-        />
+        {shortcutsModalRowBudgetPlan.showsHelpSection ? (
+          <>
+            {rendersComfortableChrome ? (
+              <Box
+                backgroundColor={chatScreenTheme.borderSubtle}
+                height={1}
+                marginY={1}
+                flexShrink={0}
+              />
+            ) : null}
+            <ShortcutLegendSection
+              sectionLabel="// help"
+              sectionLabelColor={chatScreenTheme.accentCyan}
+              keyLabelColor={chatScreenTheme.accentAmber}
+              rows={helpShortcutLegendRows}
+            />
+          </>
+        ) : null}
       </Box>
-      <Box
-        backgroundColor={chatScreenTheme.surfaceTwo}
-        justifyContent="space-between"
-        paddingX={2}
-      >
-        <Text color={chatScreenTheme.textDim}>buli · tui · v0.1</Text>
-        <Text color={chatScreenTheme.textMuted}>close with ? or esc</Text>
-      </Box>
+      {rendersComfortableChrome ? (
+        <Box
+          backgroundColor={chatScreenTheme.surfaceTwo}
+          justifyContent="space-between"
+          paddingX={2}
+          flexShrink={0}
+        >
+          <Text color={chatScreenTheme.textDim}>buli · tui · v0.1</Text>
+          <Text color={chatScreenTheme.textMuted}>close with ? or esc</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
