@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { renderToString } from "ink";
 import React from "react";
-import type { AssistantResponseRunner } from "@buli/engine";
+import type { AssistantConversationRunner } from "@buli/engine";
 import { parseAssistantResponseIntoContentParts } from "@buli/engine";
 import {
   ChatScreen,
@@ -16,13 +16,23 @@ import {
   UserPromptBlock,
 } from "../src/index.ts";
 
-const assistantResponseRunner: AssistantResponseRunner = {
-  async *streamAssistantResponse() {
-    return;
+const assistantConversationRunner: AssistantConversationRunner = {
+  startConversationTurn() {
+    return {
+      async *streamAssistantResponseEvents() {
+        return;
+      },
+      async approvePendingToolCall() {},
+      async denyPendingToolCall() {},
+    };
   },
 };
 
 async function loadAvailableAssistantModels() {
+  return [];
+}
+
+async function loadPromptContextCandidates() {
   return [];
 }
 
@@ -38,8 +48,9 @@ test("ChatScreen renders the working directory in the top bar and the selected m
     : rawWorkingDirectoryPath;
   const output = renderWithoutAnsi(
     <ChatScreen
-      assistantResponseRunner={assistantResponseRunner}
+      assistantConversationRunner={assistantConversationRunner}
       loadAvailableAssistantModels={loadAvailableAssistantModels}
+      loadPromptContextCandidates={loadPromptContextCandidates}
       selectedModelId="gpt-5.4"
     />,
   );

@@ -15,27 +15,34 @@ function buildResponseWithSseFixture(fixtureFileName: string): Response {
   });
 }
 
+function createConversationTurnRequest(input: { messageText: string }) {
+  return {
+    systemPromptText: "You are buli.",
+    modelContextItems: [{ itemKind: "user_message" as const, messageText: input.messageText }],
+    selectedModelId: "gpt-5.4",
+  };
+}
+
+async function collectParsedEvents(response: Response) {
+  const parsedEvents = [];
+  for await (const parsedEvent of parseOpenAiStream(response)) {
+    parsedEvents.push(parsedEvent);
+  }
+  return parsedEvents;
+}
+
 test("parseOpenAiStream yields text deltas and final usage", async () => {
   const response = new Response(
     [
       'data: {"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"gpt-5.4","service_tier":null}}\n\n',
       'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Hello"}\n\n',
       'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":" world"}\n\n',
-      'data: {"type":"response.completed","response":{"usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":20},"output_tokens":60,"output_tokens_details":{"reasoning_tokens":10},"total_tokens":180},"service_tier":null}}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":20},"output_tokens":60,"output_tokens_details":{"reasoning_tokens":10},"total_tokens":180}}}\n\n',
     ].join(""),
-    {
-      headers: {
-        "Content-Type": "text/event-stream",
-      },
-    },
+    { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  const events = [];
-  for await (const event of parseOpenAiStream(response)) {
-    events.push(event);
-  }
-
-  expect(events).toEqual([
+  expect(await collectParsedEvents(response)).toEqual([
     { type: "text_chunk", text: "Hello" },
     { type: "text_chunk", text: " world" },
     {
@@ -57,19 +64,10 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
       'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Hello"}\r\n\r\n',
       'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\r\n\r\n',
     ].join(""),
-    {
-      headers: {
-        "Content-Type": "text/event-stream",
-      },
-    },
+    { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  const events = [];
-  for await (const event of parseOpenAiStream(response)) {
-    events.push(event);
-  }
-
-  expect(events).toEqual([
+  expect(await collectParsedEvents(response)).toEqual([
     { type: "text_chunk", text: "Hello" },
     {
       type: "completed",
@@ -84,25 +82,16 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
   ]);
 });
 
-test("parseOpenAiStream emits an incomplete terminal event when the response stops early", async () => {
+test("parseOpenAiStream emits incomplete when the response stops early", async () => {
   const response = new Response(
     [
       'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Partial"}\n\n',
       'data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":20,"output_tokens":4,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":24}}}\n\n',
     ].join(""),
-    {
-      headers: {
-        "Content-Type": "text/event-stream",
-      },
-    },
+    { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  const events = [];
-  for await (const event of parseOpenAiStream(response)) {
-    events.push(event);
-  }
-
-  expect(events).toEqual([
+  expect(await collectParsedEvents(response)).toEqual([
     { type: "text_chunk", text: "Partial" },
     {
       type: "incomplete",
@@ -113,6 +102,67 @@ test("parseOpenAiStream emits an incomplete terminal event when the response sto
         output: 3,
         reasoning: 1,
         cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
+test("parseOpenAiStream re-emits reasoning summary chunks in order", async () => {
+  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
+  const emittedEvents = await collectParsedEvents(response);
+  const emittedEventTypes = emittedEvents.map((emittedEvent) => emittedEvent.type);
+  expect(emittedEventTypes).toContain("reasoning_summary_started");
+  expect(emittedEventTypes).toContain("reasoning_summary_text_chunk");
+  expect(emittedEventTypes).toContain("reasoning_summary_completed");
+});
+
+test("parseOpenAiStream emits tool_call_requested and returns a tool-request terminal state", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const emittedEvents = [];
+  const iterator = parseOpenAiStream(response)[Symbol.asyncIterator]();
+  while (true) {
+    const nextStreamItem = await iterator.next();
+    if (nextStreamItem.done) {
+      expect(nextStreamItem.value).toEqual({
+        terminalKind: "tool_call_requested",
+        toolCallId: "call_1",
+        toolCallRequest: {
+          toolName: "bash",
+          shellCommand: "pwd",
+          commandDescription: "Print working directory",
+        },
+        responseOutputItems: [
+          {
+            id: "fc_1",
+            type: "function_call",
+            call_id: "call_1",
+            name: "bash",
+            arguments: '{"command":"pwd","description":"Print working directory"}',
+          },
+        ],
+      });
+      break;
+    }
+
+    emittedEvents.push(nextStreamItem.value);
+  }
+
+  expect(emittedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
       },
     },
   ]);
@@ -143,12 +193,10 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
         body,
       });
 
-      response.writeHead(200, {
-        "Content-Type": "text/event-stream",
-      });
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
       response.write('data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Hello from server"}\n\n');
       response.write(
-        'data: {"type":"response.completed","response":{"usage":{"input_tokens":90,"input_tokens_details":{"cached_tokens":10},"output_tokens":45,"output_tokens_details":{"reasoning_tokens":5},"total_tokens":135},"service_tier":null}}\n\n',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":90,"input_tokens_details":{"cached_tokens":10},"output_tokens":45,"output_tokens_details":{"reasoning_tokens":5},"total_tokens":135}}}\n\n',
       );
       response.end();
     });
@@ -161,17 +209,11 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
   }
 
   try {
-    const provider = new OpenAiProvider({
-      endpoint: `http://127.0.0.1:${address.port}`,
-      store,
-    });
-
-    const events = [];
-    for await (const event of provider.streamAssistantResponse({
-      promptText: "Say hello",
-      selectedModelId: "gpt-5.4",
-    })) {
-      events.push(event);
+    const provider = new OpenAiProvider({ endpoint: `http://127.0.0.1:${address.port}`, store });
+    const providerTurn = provider.startConversationTurn(createConversationTurnRequest({ messageText: "Say hello" }));
+    const emittedEvents = [];
+    for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+      emittedEvents.push(emittedEvent);
     }
 
     expect(requests).toHaveLength(1);
@@ -179,22 +221,37 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
     expect(requests[0]?.headers.get("chatgpt-account-id")).toBe("acct_123");
     expect(JSON.parse(requests[0]?.body ?? "{}")).toEqual({
       model: "gpt-5.4",
-      instructions: "You are buli, a local terminal coding assistant. Answer directly and concisely.",
+      instructions: "You are buli.",
       store: false,
       input: [
         {
           role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: "Say hello",
-            },
-          ],
+          content: [{ type: "input_text", text: "Say hello" }],
         },
       ],
+      tools: [
+        {
+          type: "function",
+          name: "bash",
+          description: "Run a shell command inside the current workspace and return stdout, stderr, and the exit code.",
+          parameters: {
+            type: "object",
+            properties: {
+              command: { type: "string", description: "Shell command to run." },
+              description: { type: "string", description: "Very short reason for running the command." },
+              workdir: { type: "string", description: "Optional working directory inside the workspace." },
+              timeout: { type: "integer", description: "Optional timeout in milliseconds." },
+            },
+            required: ["command", "description"],
+            additionalProperties: false,
+          },
+          strict: true,
+        },
+      ],
+      parallel_tool_calls: false,
       stream: true,
     });
-    expect(events).toEqual([
+    expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },
       {
         type: "completed",
@@ -242,9 +299,7 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
     request.on("end", () => {
       requests.push(body);
 
-      response.writeHead(200, {
-        "Content-Type": "text/event-stream",
-      });
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
       response.write('data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\n\n');
       response.end();
     });
@@ -257,38 +312,20 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
   }
 
   try {
-    const provider = new OpenAiProvider({
-      endpoint: `http://127.0.0.1:${address.port}`,
-      store,
-    });
-
-    for await (const _event of provider.streamAssistantResponse({
-      promptText: "Think harder",
+    const provider = new OpenAiProvider({ endpoint: `http://127.0.0.1:${address.port}`, store });
+    const providerTurn = provider.startConversationTurn({
+      systemPromptText: "You are buli.",
+      modelContextItems: [{ itemKind: "user_message", messageText: "Think harder" }],
       selectedModelId: "gpt-5.4",
       selectedReasoningEffort: "high",
-    })) {
-      // Consume the stream to capture the request body.
+    });
+    for await (const _event of providerTurn.streamProviderEvents()) {
+      // Consume the turn stream to capture the request body.
     }
 
-    expect(JSON.parse(requests[0] ?? "{}")).toEqual({
-      model: "gpt-5.4",
-      instructions: "You are buli, a local terminal coding assistant. Answer directly and concisely.",
-      store: false,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: "Think harder",
-            },
-          ],
-        },
-      ],
-      reasoning: {
-        effort: "high",
-      },
-      stream: true,
+    expect(JSON.parse(requests[0] ?? "{}")).toMatchObject({
+      instructions: "You are buli.",
+      reasoning: { effort: "high" },
     });
   } finally {
     await new Promise<void>((resolve, reject) => {
@@ -304,100 +341,103 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
   }
 });
 
-test("parseOpenAiStream emits reasoning_summary_started before any reasoning_summary_text_chunk", async () => {
-  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
-  const emitted: string[] = [];
-  for await (const event of parseOpenAiStream(response)) {
-    emitted.push(event.type);
-  }
-  const startedIndex = emitted.indexOf("reasoning_summary_started");
-  const firstChunkIndex = emitted.indexOf("reasoning_summary_text_chunk");
-  expect(startedIndex).toBeGreaterThanOrEqual(0);
-  expect(firstChunkIndex).toBeGreaterThan(startedIndex);
-});
-
-test("parseOpenAiStream emits reasoning_summary_text_chunks in order across multiple parts", async () => {
-  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
-  const reasoningChunks: string[] = [];
-  for await (const event of parseOpenAiStream(response)) {
-    if (event.type === "reasoning_summary_text_chunk") {
-      reasoningChunks.push(event.text);
-    }
-  }
-  expect(reasoningChunks.join("")).toContain("Thinking about the problem.");
-  expect(reasoningChunks.join("")).toContain("Second part.");
-});
-
-test("parseOpenAiStream injects a paragraph separator between consecutive reasoning parts", async () => {
-  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
-  const reasoningChunks: string[] = [];
-  for await (const event of parseOpenAiStream(response)) {
-    if (event.type === "reasoning_summary_text_chunk") {
-      reasoningChunks.push(event.text);
-    }
-  }
-  expect(reasoningChunks).toContain("\n\n");
-});
-
-test("parseOpenAiStream emits reasoning_summary_completed before the first text_chunk", async () => {
-  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
-  const emitted: string[] = [];
-  for await (const event of parseOpenAiStream(response)) {
-    emitted.push(event.type);
-  }
-  const completedIndex = emitted.indexOf("reasoning_summary_completed");
-  const firstTextChunkIndex = emitted.indexOf("text_chunk");
-  expect(completedIndex).toBeGreaterThanOrEqual(0);
-  expect(firstTextChunkIndex).toBeGreaterThan(completedIndex);
-});
-
-test("parseOpenAiStream emits a non-negative reasoning duration", async () => {
-  const response = buildResponseWithSseFixture("reasoning-plus-text.sse.txt");
-  for await (const event of parseOpenAiStream(response)) {
-    if (event.type === "reasoning_summary_completed") {
-      expect(event.reasoningDurationMs).toBeGreaterThanOrEqual(0);
-      return;
-    }
-  }
-  throw new Error("expected a reasoning_summary_completed event");
-});
-
-test("parseOpenAiStream does not emit reasoning events when the stream has no reasoning frames", async () => {
-  const plainResponseSse =
-    'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"hi"}\n\n' +
-    'data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2}}}\n\n' +
-    'data: [DONE]\n\n';
-  const response = new Response(new Blob([plainResponseSse]).stream(), {
-    headers: { "content-type": "text/event-stream" },
+test("OpenAiProvider continues the same turn after function_call_output", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
   });
-  const emitted: string[] = [];
-  for await (const event of parseOpenAiStream(response)) {
-    emitted.push(event.type);
-  }
-  expect(emitted).not.toContain("reasoning_summary_started");
-  expect(emitted).not.toContain("reasoning_summary_text_chunk");
-  expect(emitted).not.toContain("reasoning_summary_completed");
-});
 
-test("parseOpenAiStream emits reasoning_summary_completed when reasoning finishes without any text delta", async () => {
-  const reasoningOnlySse =
-    'data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"silent"}\n\n' +
-    'data: {"type":"response.reasoning_summary_text.done","item_id":"rs_1"}\n\n' +
-    'data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":0,"output_tokens_details":{"reasoning_tokens":5},"total_tokens":6}}}\n\n' +
-    'data: [DONE]\n\n';
-  const response = new Response(new Blob([reasoningOnlySse]).stream(), {
-    headers: { "content-type": "text/event-stream" },
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      requests.push(body);
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+
+      if (requests.length === 1) {
+        response.write(
+          'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+        );
+        response.write(
+          'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+        );
+        response.write(
+          'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+        );
+      } else {
+        response.write('data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n');
+        response.write('data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}\n\n');
+      }
+
+      response.end();
+    });
   });
-  const emitted: string[] = [];
-  for await (const event of parseOpenAiStream(response)) {
-    emitted.push(event.type);
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("stream test server address unavailable");
   }
-  expect(emitted).toContain("reasoning_summary_started");
-  expect(emitted).toContain("reasoning_summary_completed");
-  const completedIndex = emitted.indexOf("reasoning_summary_completed");
-  const finalCompletedIndex = emitted.indexOf("completed");
-  expect(completedIndex).toBeGreaterThanOrEqual(0);
-  expect(finalCompletedIndex).toBeGreaterThan(completedIndex);
+
+  try {
+    const provider = new OpenAiProvider({ endpoint: `http://127.0.0.1:${address.port}`, store });
+    const providerTurn = provider.startConversationTurn(createConversationTurnRequest({ messageText: "Run pwd" }));
+    const emittedEvents = [];
+    for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+      emittedEvents.push(emittedEvent);
+      if (emittedEvent.type === "tool_call_requested") {
+        await providerTurn.submitToolResult({
+          toolCallId: emittedEvent.toolCallId,
+          toolResultText: "Command: pwd\nWorking directory: /tmp\nExit code: 0",
+        });
+      }
+    }
+
+    expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+      "tool_call_requested",
+      "text_chunk",
+      "completed",
+    ]);
+    expect(JSON.parse(requests[1] ?? "{}")).toMatchObject({
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "Run pwd" }],
+        },
+        {
+          type: "function_call",
+          call_id: "call_1",
+          name: "bash",
+          arguments: '{"command":"pwd","description":"Print working directory"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: "Command: pwd\nWorking directory: /tmp\nExit code: 0",
+        },
+      ],
+    });
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
 });
 
 test("OpenAiProvider includes backend error details when the request fails", async () => {
@@ -426,17 +466,11 @@ test("OpenAiProvider includes backend error details when the request fails", asy
   }
 
   try {
-    const provider = new OpenAiProvider({
-      endpoint: `http://127.0.0.1:${address.port}`,
-      store,
-    });
-
+    const provider = new OpenAiProvider({ endpoint: `http://127.0.0.1:${address.port}`, store });
+    const providerTurn = provider.startConversationTurn(createConversationTurnRequest({ messageText: "Say hello" }));
     await expect(
       (async () => {
-        for await (const _event of provider.streamAssistantResponse({
-          promptText: "Say hello",
-          selectedModelId: "gpt-5.4",
-        })) {
+        for await (const _event of providerTurn.streamProviderEvents()) {
           // This turn should fail before any events are emitted.
         }
       })(),

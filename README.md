@@ -2,7 +2,7 @@
 
 `buli` is a local-first, terminal-only agentic software engineering agent built for one user: ukibbb.
 
-This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen HERO 1 terminal chat screen, streamed assistant responses with a live reasoning-summary block that collapses into a compact chip once thinking ends, available model discovery, and model and reasoning-effort selection. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
+This repository now contains the first real local agent slice: OpenAI/ChatGPT browser OAuth, a fullscreen HERO 1 terminal chat screen, streamed assistant responses with a live reasoning-summary block that collapses into a compact chip once thinking ends, available model discovery, model and reasoning-effort selection, in-memory cross-turn conversation history, and a first local `bash` tool with explicit approval before execution.
 
  # Current Status
 
@@ -24,6 +24,9 @@ V1 currently includes:
 - provider-backed available model discovery
 - model selection and reasoning-effort selection
 - streaming reasoning-summary display (live thinking block while the model reasons, collapsed chip after reasoning ends showing elapsed seconds and, once the response completes, reasoning token count)
+- engine-owned in-memory conversation history that carries prior user prompts, assistant replies, and completed `bash` tool outcomes across turns during the current session
+- first local `bash` tool wired through the engine and OpenAI Responses function-calling loop
+- explicit tool approval flow: `y` approves the pending bash command, `n` denies it, and the model continues the same turn after the decision
 - HERO 1 visual design (see `ink-limitations.md` for terminal cell-grid translations)
 - typed `AssistantContentPart` discriminated union in `@buli/contracts` (paragraph, heading, bulleted/numbered/checklist, fenced code block, callout, horizontal rule, plus inline spans)
 - engine-side markdown parser (`parseAssistantResponseIntoContentParts` in `@buli/engine`) that attaches typed content parts to the completed assistant message
@@ -34,7 +37,7 @@ V1 currently includes:
 
 V1 intentionally does not include yet:
 
-- `read`, `write`, `edit`, or `bash`
+- `read`, `write`, `edit`, or wider multi-tool support beyond `bash`
 - session persistence
 - session branching
 - extension loading
@@ -119,6 +122,8 @@ After logging in, you can:
 - press `?` on an empty prompt to open shortcuts help
 - press `Ctrl+L` to open model selection inside the TUI
 - choose a model and, when supported, choose a reasoning effort
+- approve a pending `bash` command with `y` or deny it with `n`
+- ask follow-up questions that depend on earlier assistant replies and completed `bash` results inside the same fullscreen session
 - list available models with `buli models`
 - scroll the fullscreen conversation transcript with `Up`, `Down`, `PageUp`, `PageDown`, `Home`, and `End`
 - start the app with a preselected model using `--model`
@@ -223,11 +228,11 @@ Current packages:
 - `apps/cli`
   - composition root and CLI entrypoints
 - `packages/contracts`
-  - shared schemas for transcript messages, assistant response events, model metadata, token usage, and typed assistant content parts
+  - shared schemas for transcript messages, assistant response events, model metadata, token usage, canonical conversation history, typed tool requests, and typed assistant content parts
 - `packages/engine`
-  - UI-agnostic assistant response orchestration with markdown parser
+  - UI-agnostic conversation runner, in-memory history projection, approval flow, local `bash` execution, and markdown parser
 - `packages/openai`
-  - OAuth, token refresh, OpenAI transport, available model discovery, usage parsing
+  - OAuth, token refresh, Responses transport, available model discovery, function-call parsing, and same-turn continuation after tool output
 - `packages/ink-tui`
   - terminal chat screen rendering, reasoning-summary and prompt components, alternate-screen integration, and chat screen state transitions
 - `packages/opentui-tui`

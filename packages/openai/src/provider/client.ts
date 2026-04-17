@@ -1,32 +1,17 @@
-import type { AvailableAssistantModel, ProviderStreamEvent, ReasoningEffort } from "@buli/contracts";
+import type { AvailableAssistantModel, ModelContextItem, ReasoningEffort } from "@buli/contracts";
 import { OPENAI_CODEX_API_ENDPOINT } from "../auth/constants.ts";
 import { refreshStoredAuth } from "../auth/refresh.ts";
 import type { OpenAiAuthInfo } from "../auth/schema.ts";
 import { OpenAiAuthStore } from "../auth/store.ts";
 import { deriveOpenAiModelListEndpoint, parseAvailableAssistantModelsFromOpenAiResponse } from "./models.ts";
-import { parseOpenAiStream } from "./stream.ts";
+import { OpenAiProviderConversationTurn } from "./turnSession.ts";
 
-export type OpenAiAssistantResponseRequest = {
-  promptText: string;
+export type OpenAiConversationTurnRequest = {
+  systemPromptText: string;
+  modelContextItems: readonly ModelContextItem[];
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
 };
-
-const DEFAULT_INSTRUCTIONS = "You are buli, a local terminal coding assistant. Answer directly and concisely.";
-
-function createResponsesInput(promptText: string) {
-  return [
-    {
-      role: "user",
-      content: [
-        {
-          type: "input_text",
-          text: promptText,
-        },
-      ],
-    },
-  ];
-}
 
 async function createHttpError(response: Response, operation: "models" | "stream"): Promise<Error> {
   const body = (await response.text()).trim();
@@ -104,35 +89,25 @@ export class OpenAiProvider {
     return parseAvailableAssistantModelsFromOpenAiResponse(await response.json());
   }
 
-  async *streamAssistantResponse(input: OpenAiAssistantResponseRequest): AsyncGenerator<ProviderStreamEvent> {
-    const auth = await loadOpenAiAuth({
-      store: this.store,
+  startConversationTurn(input: OpenAiConversationTurnRequest): OpenAiProviderConversationTurn {
+    return new OpenAiProviderConversationTurn({
+      endpoint: this.endpoint,
       fetchImpl: this.fetchImpl,
+      loadRequestHeaders: async () => {
+        const auth = await loadOpenAiAuth({
+          store: this.store,
+          fetchImpl: this.fetchImpl,
+        });
+
+        const headers = createRequestHeaders(auth, "text/event-stream");
+        headers.set("Content-Type", "application/json");
+        return headers;
+      },
+      selectedModelId: input.selectedModelId,
+      ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      systemPromptText: input.systemPromptText,
+      modelContextItems: input.modelContextItems,
+      onStepRequestFailed: async (response) => createHttpError(response, "stream"),
     });
-
-    const headers = createRequestHeaders(auth, "text/event-stream");
-    headers.set("Content-Type", "application/json");
-
-    const response = await this.fetchImpl(this.endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: input.selectedModelId,
-        instructions: DEFAULT_INSTRUCTIONS,
-        store: false,
-        // The Codex backend expects Responses-style message items, not a bare
-        // prompt string. Keeping this conversion here isolates provider quirks
-        // away from the engine and TUI layers.
-        input: createResponsesInput(input.promptText),
-        ...(input.selectedReasoningEffort ? { reasoning: { effort: input.selectedReasoningEffort } } : {}),
-        stream: true,
-      }),
-    });
-
-    if (!response.ok) {
-      throw await createHttpError(response, "stream");
-    }
-
-    yield* parseOpenAiStream(response);
   }
 }

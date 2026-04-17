@@ -1,8 +1,13 @@
 import os from "node:os";
 import { type AssistantResponseEvent, type AvailableAssistantModel, type ReasoningEffort } from "@buli/contracts";
-import { type AssistantResponseRunner } from "@buli/engine";
+import {
+  extractTrailingPromptContextQueryFromPromptDraft,
+  type ActiveConversationTurn,
+  type AssistantConversationRunner,
+  type PromptContextCandidate,
+} from "@buli/engine";
 import { Box, Text, useInput, useWindowSize } from "ink";
-import { startTransition, useEffectEvent, useRef, useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 import { chatScreenTheme, minimumTerminalSizeTier } from "@buli/assistant-design-tokens";
 import {
   createInitialConversationTranscriptViewportState,
@@ -23,6 +28,7 @@ import {
   MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT,
 } from "./components/MinimumHeightPromptStrip.tsx";
 import { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
+import { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";
 import { ShortcutsModal } from "./components/ShortcutsModal.tsx";
 import { TopBar, TOP_BAR_NATURAL_ROW_COUNT } from "./components/TopBar.tsx";
 import { useTerminalSizeTierForChatScreen } from "./components/behavior/useTerminalSizeTierForChatScreen.ts";
@@ -37,16 +43,21 @@ import {
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatScreenState,
+  hidePromptContextSelection,
   hideModelAndReasoningSelection,
+  moveHighlightedPromptContextCandidateDown,
+  moveHighlightedPromptContextCandidateUp,
   moveHighlightedModelSelectionDown,
   moveHighlightedModelSelectionUp,
   moveHighlightedReasoningEffortChoiceDown,
   moveHighlightedReasoningEffortChoiceUp,
   hideShortcutsHelpModal,
   removeLastCharacterFromPromptDraft,
+  selectHighlightedPromptContextCandidate,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
+  showPromptContextCandidatesForSelection,
   showShortcutsHelpModal,
   submitPromptDraft,
   type ChatScreenState,
@@ -58,7 +69,8 @@ export type ChatScreenProps = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
-  assistantResponseRunner: AssistantResponseRunner;
+  loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
+  assistantConversationRunner: AssistantConversationRunner;
 };
 
 export function ChatScreen(props: ChatScreenProps) {
@@ -86,6 +98,7 @@ export function ChatScreen(props: ChatScreenProps) {
   // This ref always points at the newest screen state so those later callbacks
   // can read the latest model, prompt draft, and selection screen values.
   const latestChatScreenStateRef = useRef<ChatScreenState>(chatScreenState);
+  const latestActiveConversationTurnRef = useRef<ActiveConversationTurn | undefined>(undefined);
   const latestConversationTranscriptViewportMeasurementsRef = useRef<ConversationTranscriptViewportMeasurements | undefined>(
     latestConversationTranscriptViewportMeasurements,
   );
@@ -186,8 +199,8 @@ export function ChatScreen(props: ChatScreenProps) {
   // The request uses whatever model and reasoning effort are currently selected.
   // As the runner streams events back, we apply them one by one to screen state.
   const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (submittedPromptText: string) => {
-    const assistantResponseRequest = {
-      promptText: submittedPromptText,
+    const conversationTurnRequest = {
+      userPromptText: submittedPromptText,
       selectedModelId: latestChatScreenStateRef.current.selectedModelId,
       ...(latestChatScreenStateRef.current.selectedReasoningEffort
         ? { selectedReasoningEffort: latestChatScreenStateRef.current.selectedReasoningEffort }
@@ -195,11 +208,65 @@ export function ChatScreen(props: ChatScreenProps) {
     };
 
     await relayAssistantResponseRunnerEvents({
-      assistantResponseRunner: props.assistantResponseRunner,
-      assistantResponseRequest,
+      assistantConversationRunner: props.assistantConversationRunner,
+      conversationTurnRequest,
+      onConversationTurnStarted: (activeConversationTurn) => {
+        latestActiveConversationTurnRef.current = activeConversationTurn;
+      },
+      onConversationTurnFinished: () => {
+        latestActiveConversationTurnRef.current = undefined;
+      },
       onAssistantResponseEvent: applyIncomingAssistantResponseEventToChatScreen,
     });
   });
+
+  const refreshPromptContextSelectionForCurrentDraft = useEffectEvent(async () => {
+    const latestChatScreenState = latestChatScreenStateRef.current;
+    const shouldHidePromptContextSelection =
+      latestChatScreenState.isShortcutsHelpModalVisible ||
+      latestChatScreenState.assistantResponseStatus !== "waiting_for_user_input" ||
+      latestChatScreenState.modelAndReasoningSelectionState.step !== "hidden";
+    if (shouldHidePromptContextSelection) {
+      setChatScreenState((currentChatScreenState) => hidePromptContextSelection(currentChatScreenState));
+      return;
+    }
+
+    const trailingPromptContextQuery = extractTrailingPromptContextQueryFromPromptDraft(latestChatScreenState.promptDraft);
+    if (!trailingPromptContextQuery) {
+      setChatScreenState((currentChatScreenState) => hidePromptContextSelection(currentChatScreenState));
+      return;
+    }
+
+    const promptContextCandidates = await props.loadPromptContextCandidates(trailingPromptContextQuery.decodedQueryText);
+    const refreshedTrailingPromptContextQuery = extractTrailingPromptContextQueryFromPromptDraft(
+      latestChatScreenStateRef.current.promptDraft,
+    );
+    if (
+      !refreshedTrailingPromptContextQuery ||
+      refreshedTrailingPromptContextQuery.startOffset !== trailingPromptContextQuery.startOffset ||
+      refreshedTrailingPromptContextQuery.rawQueryText !== trailingPromptContextQuery.rawQueryText
+    ) {
+      return;
+    }
+
+    setChatScreenState((currentChatScreenState) =>
+      showPromptContextCandidatesForSelection(
+        currentChatScreenState,
+        trailingPromptContextQuery.decodedQueryText,
+        promptContextCandidates,
+      ),
+    );
+  });
+
+  useEffect(() => {
+    void refreshPromptContextSelectionForCurrentDraft();
+  }, [
+    chatScreenState.promptDraft,
+    chatScreenState.assistantResponseStatus,
+    chatScreenState.modelAndReasoningSelectionState.step,
+    chatScreenState.isShortcutsHelpModalVisible,
+    refreshPromptContextSelectionForCurrentDraft,
+  ]);
 
   // The model selection flow also changes over time.
   // First we show a loading state, then we replace it with the available models,
@@ -283,6 +350,55 @@ export function ChatScreen(props: ChatScreenProps) {
       }
 
       return;
+    }
+
+    const promptContextSelectionState = latestChatScreenStateRef.current.promptContextSelectionState;
+    if (promptContextSelectionState.step !== "hidden") {
+      if (pressedKey.escape) {
+        setChatScreenState((currentChatScreenState) => hidePromptContextSelection(currentChatScreenState));
+        return;
+      }
+
+      if (pressedKey.upArrow) {
+        setChatScreenState((currentChatScreenState) => moveHighlightedPromptContextCandidateUp(currentChatScreenState));
+        return;
+      }
+
+      if (pressedKey.downArrow) {
+        setChatScreenState((currentChatScreenState) => moveHighlightedPromptContextCandidateDown(currentChatScreenState));
+        return;
+      }
+
+      if (pressedKey.return) {
+        setChatScreenState((currentChatScreenState) => selectHighlightedPromptContextCandidate(currentChatScreenState));
+        return;
+      }
+    }
+
+    const currentPendingToolApprovalId = latestChatScreenStateRef.current.currentPendingToolApprovalId;
+    if (
+      latestChatScreenStateRef.current.assistantResponseStatus === "waiting_for_tool_approval" &&
+      currentPendingToolApprovalId
+    ) {
+      if (typedText === "y" || typedText === "Y") {
+        void latestActiveConversationTurnRef.current?.approvePendingToolCall(currentPendingToolApprovalId);
+        return;
+      }
+
+      if (typedText === "n" || typedText === "N") {
+        void latestActiveConversationTurnRef.current?.denyPendingToolCall(currentPendingToolApprovalId);
+        return;
+      }
+
+      if (
+        pressedKey.return ||
+        pressedKey.backspace ||
+        pressedKey.delete ||
+        (pressedKey.ctrl && !pressedKey.meta && !pressedKey.shift && (typedText === "l" || typedText === "L" || typedText === "\f")) ||
+        typedText
+      ) {
+        return;
+      }
     }
 
     if (pressedKey.ctrl && !pressedKey.meta && !pressedKey.shift && (typedText === "l" || typedText === "L" || typedText === "\f")) {
@@ -427,9 +543,23 @@ export function ChatScreen(props: ChatScreenProps) {
     ? "[ esc ] close shortcuts"
     : chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
       ? "Selection is open. Press Esc to close it."
-      : chatScreenState.assistantResponseStatus === "streaming_assistant_response"
-        ? "Assistant response is streaming. PgUp/PgDn/Home/End scroll."
-        : "[ ? ] help on empty draft";
+      : chatScreenState.promptContextSelectionState.step !== "hidden"
+        ? "Desktop context picker is open. Up/Down choose, Enter inserts, Esc closes."
+      : chatScreenState.assistantResponseStatus === "waiting_for_tool_approval"
+        ? "Approval required. Press y to approve or n to deny."
+        : chatScreenState.assistantResponseStatus === "streaming_assistant_response"
+          ? "Assistant response is streaming. PgUp/PgDn/Home/End scroll."
+          : "[ ? ] help on empty draft";
+
+  const promptContextSelectionPane =
+    chatScreenState.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
+      <PromptContextSelectionPane
+        promptContextCandidates={chatScreenState.promptContextSelectionState.promptContextCandidates}
+        highlightedPromptContextCandidateIndex={
+          chatScreenState.promptContextSelectionState.highlightedPromptContextCandidateIndex
+        }
+      />
+    ) : null;
 
   const homeDirectoryPath = os.homedir();
   const rawWorkingDirectoryPath = process.cwd();
@@ -492,31 +622,38 @@ export function ChatScreen(props: ChatScreenProps) {
           )
         )}
       </Box>
-      {terminalSizeTierForChatScreen === minimumTerminalSizeTier ? (
-        <MinimumHeightPromptStrip
-          promptDraft={chatScreenState.promptDraft}
-          isPromptInputDisabled={
-            chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
-            chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
-          }
-          assistantResponseStatus={chatScreenState.assistantResponseStatus}
-        />
-      ) : (
-        <InputPanel
-          promptDraft={chatScreenState.promptDraft}
-          isPromptInputDisabled={
-            chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
-            chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
-          }
-          promptInputHintText={promptInputHintText}
-          modeLabel={modeLabel}
-          modelIdentifier={chatScreenState.selectedModelId}
-          reasoningEffortLabel={reasoningEffortLabel}
-          assistantResponseStatus={chatScreenState.assistantResponseStatus}
-          totalContextTokensUsed={totalContextTokensUsed}
-          contextWindowTokenCapacity={contextWindowTokenCapacity}
-        />
-      )}
+      <Box flexDirection="column" flexShrink={0}>
+        {promptContextSelectionPane}
+        {terminalSizeTierForChatScreen === minimumTerminalSizeTier ? (
+          <MinimumHeightPromptStrip
+            promptDraft={chatScreenState.promptDraft}
+            selectedPromptContextReferenceTexts={chatScreenState.selectedPromptContextReferenceTexts}
+            isPromptInputDisabled={
+              chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
+              chatScreenState.assistantResponseStatus === "waiting_for_tool_approval" ||
+              chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
+            }
+            assistantResponseStatus={chatScreenState.assistantResponseStatus}
+          />
+        ) : (
+          <InputPanel
+            promptDraft={chatScreenState.promptDraft}
+            selectedPromptContextReferenceTexts={chatScreenState.selectedPromptContextReferenceTexts}
+            isPromptInputDisabled={
+              chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
+              chatScreenState.assistantResponseStatus === "waiting_for_tool_approval" ||
+              chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
+            }
+            promptInputHintText={promptInputHintText}
+            modeLabel={modeLabel}
+            modelIdentifier={chatScreenState.selectedModelId}
+            reasoningEffortLabel={reasoningEffortLabel}
+            assistantResponseStatus={chatScreenState.assistantResponseStatus}
+            totalContextTokensUsed={totalContextTokensUsed}
+            contextWindowTokenCapacity={contextWindowTokenCapacity}
+          />
+        )}
+      </Box>
     </Box>
   );
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { AssistantResponseStatus } from "../chatScreenState.ts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { PromptDraftText } from "./PromptDraftText.tsx";
 
 // Single-row degraded replacement for InputPanel used at minimumTerminalSizeTier.
 // Drops every secondary element (mode chip, model chip, help footer, context
@@ -13,6 +14,7 @@ export const MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT = 1;
 
 export type MinimumHeightPromptStripProps = {
   promptDraft: string;
+  selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   assistantResponseStatus: AssistantResponseStatus;
 };
@@ -44,9 +46,11 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
       <text fg={chatScreenTheme.accentGreen}>
         <b>{">"}</b>
       </text>
-      <text fg={chatScreenTheme.textPrimary}>
-        {`${props.promptDraft}${cursorCharacter}`}
-      </text>
+      <PromptDraftText
+        promptDraft={props.promptDraft}
+        selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+        cursorCharacter={cursorCharacter}
+      />
     </box>
   );
 }

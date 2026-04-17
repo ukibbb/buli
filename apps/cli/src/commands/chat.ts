@@ -1,5 +1,7 @@
+import os from "node:os";
+import { join } from "node:path";
 import type { ReasoningEffort } from "@buli/contracts";
-import { AssistantResponseRuntime } from "@buli/engine";
+import { AssistantConversationRuntime, listPromptContextCandidates } from "@buli/engine";
 import { renderChatScreenInTerminalWithInk } from "@buli/ink-tui";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 import { renderChatScreenInTerminalWithOpentui } from "@buli/opentui-tui";
@@ -25,10 +27,20 @@ export async function runInteractiveChat(input: {
   }
 
   const provider = new OpenAiProvider({ store });
-  const assistantResponseRunner = new AssistantResponseRuntime(provider);
+  const promptContextBrowseRootPath = join(os.homedir(), "Desktop");
+  const assistantConversationRunner = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath,
+  });
   const renderArgs = {
-    assistantResponseRunner,
+    assistantConversationRunner,
     loadAvailableAssistantModels: () => provider.listAvailableAssistantModels(),
+    loadPromptContextCandidates: (promptContextQueryText: string) =>
+      listPromptContextCandidates({
+        promptContextBrowseRootPath,
+        promptContextQueryText,
+      }),
     selectedModelId: input.selectedModelId ?? DEFAULT_MODEL_ID,
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
   };

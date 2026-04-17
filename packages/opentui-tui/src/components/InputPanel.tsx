@@ -4,6 +4,7 @@ import type { AssistantResponseStatus } from "../chatScreenState.ts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
+import { PromptDraftText } from "./PromptDraftText.tsx";
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Pen frame HOeet. Owns three stacked rows: a header strip with mode + model
@@ -23,6 +24,7 @@ export const INPUT_PANEL_NATURAL_ROW_COUNT = 7;
 
 export type InputPanelProps = {
   promptDraft: string;
+  selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   promptInputHintOverride?: string;
   modeLabel: string;
@@ -67,9 +69,11 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         <text fg={chatScreenTheme.accentGreen}>
           <b>{">"}</b>
         </text>
-        <text fg={chatScreenTheme.textPrimary}>
-          {`${props.promptDraft}${cursorCharacter}`}
-        </text>
+        <PromptDraftText
+          promptDraft={props.promptDraft}
+          selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+          cursorCharacter={cursorCharacter}
+        />
       </box>
       <box
         backgroundColor={chatScreenTheme.surfaceTwo}

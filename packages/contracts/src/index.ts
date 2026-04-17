@@ -25,6 +25,24 @@ export type {
   ParagraphContentPart,
 } from "./assistantContentPart.ts";
 export {
+  AssistantMessageConversationSessionEntrySchema,
+  CompletedToolResultConversationSessionEntrySchema,
+  ConversationSessionEntrySchema,
+  DeniedToolResultConversationSessionEntrySchema,
+  FailedToolResultConversationSessionEntrySchema,
+  ToolCallConversationSessionEntrySchema,
+  UserPromptConversationSessionEntrySchema,
+} from "./conversationSessionEntry.ts";
+export type {
+  AssistantMessageConversationSessionEntry,
+  CompletedToolResultConversationSessionEntry,
+  ConversationSessionEntry,
+  DeniedToolResultConversationSessionEntry,
+  FailedToolResultConversationSessionEntry,
+  ToolCallConversationSessionEntry,
+  UserPromptConversationSessionEntry,
+} from "./conversationSessionEntry.ts";
+export {
   AssistantPlanProposedEventSchema,
   AssistantRateLimitPendingEventSchema,
   AssistantReasoningSummaryCompletedEventSchema,
@@ -38,6 +56,7 @@ export {
   AssistantResponseTextChunkEventSchema,
   AssistantToolApprovalRequestedEventSchema,
   AssistantToolCallCompletedEventSchema,
+  AssistantToolCallDeniedEventSchema,
   AssistantToolCallFailedEventSchema,
   AssistantToolCallStartedEventSchema,
   AssistantTurnCompletedEventSchema,
@@ -56,10 +75,25 @@ export type {
   AssistantResponseTextChunkEvent,
   AssistantToolApprovalRequestedEvent,
   AssistantToolCallCompletedEvent,
+  AssistantToolCallDeniedEvent,
   AssistantToolCallFailedEvent,
   AssistantToolCallStartedEvent,
   AssistantTurnCompletedEvent,
 } from "./events.ts";
+export {
+  AssistantMessageModelContextItemSchema,
+  ModelContextItemSchema,
+  ToolCallModelContextItemSchema,
+  ToolResultModelContextItemSchema,
+  UserMessageModelContextItemSchema,
+} from "./modelContextItem.ts";
+export type {
+  AssistantMessageModelContextItem,
+  ModelContextItem,
+  ToolCallModelContextItem,
+  ToolResultModelContextItem,
+  UserMessageModelContextItem,
+} from "./modelContextItem.ts";
 export { MessageRoleSchema, TranscriptMessageSchema } from "./messages.ts";
 export type { MessageRole, TranscriptMessage } from "./messages.ts";
 export {
@@ -93,11 +127,7 @@ export {
   ProviderReasoningSummaryTextChunkEventSchema,
   ProviderStreamEventSchema,
   ProviderTextChunkEventSchema,
-  ProviderToolApprovalRequestedEventSchema,
-  ProviderToolCallCompletedEventSchema,
-  ProviderToolCallFailedEventSchema,
-  ProviderToolCallStartedEventSchema,
-  ProviderTurnCompletedEventSchema,
+  ProviderToolCallRequestedEventSchema,
   ReasoningEffortSchema,
   TokenUsageSchema,
 } from "./provider.ts";
@@ -112,11 +142,7 @@ export type {
   ProviderReasoningSummaryTextChunkEvent,
   ProviderStreamEvent,
   ProviderTextChunkEvent,
-  ProviderToolApprovalRequestedEvent,
-  ProviderToolCallCompletedEvent,
-  ProviderToolCallFailedEvent,
-  ProviderToolCallStartedEvent,
-  ProviderTurnCompletedEvent,
+  ProviderToolCallRequestedEvent,
   ReasoningEffort,
   TokenUsage,
 } from "./provider.ts";
@@ -158,3 +184,5 @@ export type {
   ToolCallTodoItemStatus,
   ToolCallTodoWriteDetail,
 } from "./toolCallDetail.ts";
+export { BashToolCallRequestSchema, ToolCallRequestSchema } from "./toolCallRequest.ts";
+export type { BashToolCallRequest, ToolCallRequest } from "./toolCallRequest.ts";

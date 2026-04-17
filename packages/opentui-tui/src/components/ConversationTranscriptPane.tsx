@@ -160,6 +160,16 @@ const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntr
     );
   }
 
+  if (conversationTranscriptEntry.kind === "denied_tool_call") {
+    return (
+      <ToolCallEntryView
+        renderState="failed"
+        toolCallDetail={conversationTranscriptEntry.toolCallDetail}
+        errorText={conversationTranscriptEntry.denialText}
+      />
+    );
+  }
+
   if (conversationTranscriptEntry.kind === "plan_proposal") {
     return (
       <PlanProposalBlock

@@ -1,16 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import type { AssistantResponseRunner } from "@buli/engine";
+import type { AssistantConversationRunner } from "@buli/engine";
 import { ChatScreen } from "../../src/ChatScreen.tsx";
 
-const neverEmittingAssistantResponseRunner: AssistantResponseRunner = {
-  // eslint-disable-next-line require-yield -- intentional: stub never yields a turn.
-  async *streamAssistantResponse() {
-    return;
+const neverEmittingAssistantConversationRunner: AssistantConversationRunner = {
+  startConversationTurn() {
+    return {
+      // eslint-disable-next-line require-yield -- intentional: stub never yields a turn.
+      async *streamAssistantResponseEvents() {
+        return;
+      },
+      async approvePendingToolCall() {},
+      async denyPendingToolCall() {},
+    };
   },
 };
 
 const noopAvailableModelsLoader = async () => [];
+const noopPromptContextCandidatesLoader = async () => [];
 
 describe("ChatScreen responsive layout", () => {
   test("renders_minimum_height_prompt_strip_when_terminal_falls_below_compact_tier", async () => {
@@ -18,7 +25,8 @@ describe("ChatScreen responsive layout", () => {
       <ChatScreen
         selectedModelId="gpt-5.4"
         loadAvailableAssistantModels={noopAvailableModelsLoader}
-        assistantResponseRunner={neverEmittingAssistantResponseRunner}
+        loadPromptContextCandidates={noopPromptContextCandidatesLoader}
+        assistantConversationRunner={neverEmittingAssistantConversationRunner}
       />,
       { width: 50, height: 8 },
     );
@@ -34,7 +42,8 @@ describe("ChatScreen responsive layout", () => {
       <ChatScreen
         selectedModelId="gpt-5.4"
         loadAvailableAssistantModels={noopAvailableModelsLoader}
-        assistantResponseRunner={neverEmittingAssistantResponseRunner}
+        loadPromptContextCandidates={noopPromptContextCandidatesLoader}
+        assistantConversationRunner={neverEmittingAssistantConversationRunner}
       />,
       { width: 120, height: 32 },
     );

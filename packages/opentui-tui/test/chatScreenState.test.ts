@@ -5,14 +5,18 @@ import {
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatScreenState,
+  hidePromptContextSelection,
   hideShortcutsHelpModal,
   hideModelAndReasoningSelection,
+  moveHighlightedPromptContextCandidateDown,
   moveHighlightedModelSelectionDown,
   moveHighlightedReasoningEffortChoiceDown,
   removeLastCharacterFromPromptDraft,
+  selectHighlightedPromptContextCandidate,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
+  showPromptContextCandidatesForSelection,
   showShortcutsHelpModal,
   submitPromptDraft,
 } from "../src/index.ts";
@@ -50,6 +54,72 @@ test("removeLastCharacterFromPromptDraft removes one character", () => {
   );
 
   expect(removeLastCharacterFromPromptDraft(state).promptDraft).toBe("Hell");
+});
+
+test("selectHighlightedPromptContextCandidate replaces the trailing query and records the selected reference text", () => {
+  const initialState = appendTypedTextToPromptDraft(
+    createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
+    'Inspect @"Desk',
+  );
+  const pickerState = showPromptContextCandidatesForSelection(initialState, "Desk", [
+    {
+      kind: "file",
+      displayPath: "Desktop Notes/todo list.txt",
+      promptReferenceText: '@"Desktop Notes/todo list.txt"',
+    },
+  ]);
+
+  expect(selectHighlightedPromptContextCandidate(pickerState)).toMatchObject({
+    promptDraft: 'Inspect @"Desktop Notes/todo list.txt" ',
+    promptContextSelectionState: { step: "hidden" },
+    selectedPromptContextReferenceTexts: ['@"Desktop Notes/todo list.txt"'],
+  });
+});
+
+test("removeLastCharacterFromPromptDraft removes selected prompt-context references after they stop matching the draft", () => {
+  let state = createInitialChatScreenState({ selectedModelId: "gpt-5.4" });
+  state = appendTypedTextToPromptDraft(state, "Inspect @notes.txt");
+  state = {
+    ...state,
+    selectedPromptContextReferenceTexts: ["@notes.txt"],
+  };
+
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    state = removeLastCharacterFromPromptDraft(state);
+  }
+
+  expect(state.promptDraft).toBe("Inspect @notes");
+  expect(state.selectedPromptContextReferenceTexts).toEqual([]);
+});
+
+test("showPromptContextCandidatesForSelection, moveHighlightedPromptContextCandidateDown, and hidePromptContextSelection manage picker state", () => {
+  const hiddenState = createInitialChatScreenState({ selectedModelId: "gpt-5.4" });
+  const visibleState = showPromptContextCandidatesForSelection(hiddenState, "Pro", [
+    { kind: "directory", displayPath: "Projects/", promptReferenceText: "@Projects/" },
+    { kind: "file", displayPath: "Projects/README.md", promptReferenceText: "@Projects/README.md" },
+  ]);
+  const movedState = moveHighlightedPromptContextCandidateDown(visibleState);
+
+  expect(movedState.promptContextSelectionState).toEqual({
+    step: "showing_prompt_context_candidates",
+    promptContextQueryText: "Pro",
+    promptContextCandidates: [
+      { kind: "directory", displayPath: "Projects/", promptReferenceText: "@Projects/" },
+      { kind: "file", displayPath: "Projects/README.md", promptReferenceText: "@Projects/README.md" },
+    ],
+    highlightedPromptContextCandidateIndex: 1,
+  });
+  expect(hidePromptContextSelection(movedState).promptContextSelectionState).toEqual({ step: "hidden" });
+});
+
+test("submitPromptDraft does nothing while the prompt-context picker is open", () => {
+  const state = showPromptContextCandidatesForSelection(
+    appendTypedTextToPromptDraft(createInitialChatScreenState({ selectedModelId: "gpt-5.4" }), "Inspect @Pro"),
+    "Pro",
+    [{ kind: "directory", displayPath: "Projects/", promptReferenceText: "@Projects/" }],
+  );
+
+  expect(submitPromptDraft(state)).toEqual({ nextChatScreenState: state, submittedPromptText: undefined });
 });
 
 test("applyAssistantResponseEventToChatScreenState appends text chunks and stores final token usage", () => {

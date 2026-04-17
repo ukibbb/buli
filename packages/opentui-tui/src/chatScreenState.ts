@@ -8,7 +8,12 @@ import {
   type ToolCallDetail,
   type TranscriptMessage,
 } from "@buli/contracts";
-import { parseAssistantResponseIntoContentParts } from "@buli/engine";
+import {
+  parseAssistantResponseIntoContentParts,
+  type PromptContextCandidate,
+  reconcileSelectedPromptContextReferenceTextsWithPromptDraft,
+  replaceTrailingPromptContextQueryWithSelectedReference,
+} from "@buli/engine";
 
 // Pure reducer functions so the render layer stays free of side-effect
 // branching and each transition can be asserted directly in unit tests
@@ -16,7 +21,11 @@ import { parseAssistantResponseIntoContentParts } from "@buli/engine";
 
 const STREAMING_ASSISTANT_MESSAGE_ID = "assistant-streaming";
 
-export type AssistantResponseStatus = "waiting_for_user_input" | "streaming_assistant_response" | "assistant_response_failed";
+export type AssistantResponseStatus =
+  | "waiting_for_user_input"
+  | "waiting_for_tool_approval"
+  | "streaming_assistant_response"
+  | "assistant_response_failed";
 
 export type ReasoningEffortChoice = {
   displayLabel: string;
@@ -44,6 +53,17 @@ export type ModelAndReasoningSelectionState =
       selectedModel: AvailableAssistantModel;
       availableReasoningEffortChoices: ReasoningEffortChoice[];
       highlightedReasoningEffortChoiceIndex: number;
+    };
+
+export type PromptContextSelectionState =
+  | {
+      step: "hidden";
+    }
+  | {
+      step: "showing_prompt_context_candidates";
+      promptContextQueryText: string;
+      promptContextCandidates: readonly PromptContextCandidate[];
+      highlightedPromptContextCandidateIndex: number;
     };
 
 export type ConversationTranscriptEntry =
@@ -92,6 +112,12 @@ export type ConversationTranscriptEntry =
       durationMs: number;
     }
   | {
+      kind: "denied_tool_call";
+      toolCallId: string;
+      toolCallDetail: ToolCallDetail;
+      denialText: string;
+    }
+  | {
       kind: "plan_proposal";
       planId: string;
       planTitle: string;
@@ -128,6 +154,9 @@ export type ChatScreenState = {
   conversationTranscript: ConversationTranscriptEntry[];
   streamingAssistantMessageId: string | undefined;
   currentStreamingReasoningSummaryId: string | undefined;
+  currentPendingToolApprovalId: string | undefined;
+  promptContextSelectionState: PromptContextSelectionState;
+  selectedPromptContextReferenceTexts: string[];
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
   isShortcutsHelpModalVisible: boolean;
 };
@@ -145,6 +174,9 @@ export function createInitialChatScreenState(input: {
     conversationTranscript: [],
     streamingAssistantMessageId: undefined,
     currentStreamingReasoningSummaryId: undefined,
+    currentPendingToolApprovalId: undefined,
+    promptContextSelectionState: { step: "hidden" },
+    selectedPromptContextReferenceTexts: [],
     modelAndReasoningSelectionState: { step: "hidden" },
     isShortcutsHelpModalVisible: false,
   };
@@ -165,16 +197,122 @@ export function hideShortcutsHelpModal(chatScreenState: ChatScreenState): ChatSc
 }
 
 export function appendTypedTextToPromptDraft(chatScreenState: ChatScreenState, typedText: string): ChatScreenState {
+  const promptDraft = chatScreenState.promptDraft + typedText;
   return {
     ...chatScreenState,
-    promptDraft: chatScreenState.promptDraft + typedText,
+    promptDraft,
+    selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
+      promptDraft,
+      selectedPromptContextReferenceTexts: chatScreenState.selectedPromptContextReferenceTexts,
+    }),
   };
 }
 
 export function removeLastCharacterFromPromptDraft(chatScreenState: ChatScreenState): ChatScreenState {
+  const promptDraft = chatScreenState.promptDraft.slice(0, -1);
   return {
     ...chatScreenState,
-    promptDraft: chatScreenState.promptDraft.slice(0, -1),
+    promptDraft,
+    selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
+      promptDraft,
+      selectedPromptContextReferenceTexts: chatScreenState.selectedPromptContextReferenceTexts,
+    }),
+  };
+}
+
+export function showPromptContextCandidatesForSelection(
+  chatScreenState: ChatScreenState,
+  promptContextQueryText: string,
+  promptContextCandidates: readonly PromptContextCandidate[],
+): ChatScreenState {
+  return {
+    ...chatScreenState,
+    promptContextSelectionState: {
+      step: "showing_prompt_context_candidates",
+      promptContextQueryText,
+      promptContextCandidates,
+      highlightedPromptContextCandidateIndex: 0,
+    },
+  };
+}
+
+export function hidePromptContextSelection(chatScreenState: ChatScreenState): ChatScreenState {
+  if (chatScreenState.promptContextSelectionState.step === "hidden") {
+    return chatScreenState;
+  }
+
+  return {
+    ...chatScreenState,
+    promptContextSelectionState: { step: "hidden" },
+  };
+}
+
+export function moveHighlightedPromptContextCandidateUp(chatScreenState: ChatScreenState): ChatScreenState {
+  if (chatScreenState.promptContextSelectionState.step !== "showing_prompt_context_candidates") {
+    return chatScreenState;
+  }
+
+  return {
+    ...chatScreenState,
+    promptContextSelectionState: {
+      ...chatScreenState.promptContextSelectionState,
+      highlightedPromptContextCandidateIndex: Math.max(
+        0,
+        chatScreenState.promptContextSelectionState.highlightedPromptContextCandidateIndex - 1,
+      ),
+    },
+  };
+}
+
+export function moveHighlightedPromptContextCandidateDown(chatScreenState: ChatScreenState): ChatScreenState {
+  if (chatScreenState.promptContextSelectionState.step !== "showing_prompt_context_candidates") {
+    return chatScreenState;
+  }
+
+  if (chatScreenState.promptContextSelectionState.promptContextCandidates.length === 0) {
+    return chatScreenState;
+  }
+
+  return {
+    ...chatScreenState,
+    promptContextSelectionState: {
+      ...chatScreenState.promptContextSelectionState,
+      highlightedPromptContextCandidateIndex: Math.min(
+        chatScreenState.promptContextSelectionState.promptContextCandidates.length - 1,
+        chatScreenState.promptContextSelectionState.highlightedPromptContextCandidateIndex + 1,
+      ),
+    },
+  };
+}
+
+export function selectHighlightedPromptContextCandidate(chatScreenState: ChatScreenState): ChatScreenState {
+  if (chatScreenState.promptContextSelectionState.step !== "showing_prompt_context_candidates") {
+    return chatScreenState;
+  }
+
+  const selectedPromptContextCandidate = chatScreenState.promptContextSelectionState.promptContextCandidates[
+    chatScreenState.promptContextSelectionState.highlightedPromptContextCandidateIndex
+  ];
+  if (!selectedPromptContextCandidate) {
+    return chatScreenState;
+  }
+
+  const replacedPromptContextQuery = replaceTrailingPromptContextQueryWithSelectedReference({
+    promptDraft: chatScreenState.promptDraft,
+    selectedPromptContextReferenceText: selectedPromptContextCandidate.promptReferenceText,
+  });
+  const promptDraft = replacedPromptContextQuery.endsWith(" ") ? replacedPromptContextQuery : `${replacedPromptContextQuery} `;
+  return {
+    ...chatScreenState,
+    promptDraft,
+    promptContextSelectionState: { step: "hidden" },
+    selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
+      promptDraft,
+      selectedPromptContextReferenceTexts: [
+        ...chatScreenState.selectedPromptContextReferenceTexts,
+        selectedPromptContextCandidate.promptReferenceText,
+      ],
+    }),
   };
 }
 
@@ -190,6 +328,8 @@ export function submitPromptDraft(chatScreenState: ChatScreenState): {
   if (
     !submittedPromptText ||
     chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
+    chatScreenState.assistantResponseStatus === "waiting_for_tool_approval" ||
+    chatScreenState.promptContextSelectionState.step !== "hidden" ||
     chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
   ) {
     return { nextChatScreenState: chatScreenState, submittedPromptText: undefined };
@@ -202,6 +342,8 @@ export function submitPromptDraft(chatScreenState: ChatScreenState): {
       promptDraft: "",
       assistantResponseStatus: "streaming_assistant_response",
       latestTokenUsage: undefined,
+      promptContextSelectionState: { step: "hidden" },
+      selectedPromptContextReferenceTexts: [],
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         {
@@ -214,6 +356,7 @@ export function submitPromptDraft(chatScreenState: ChatScreenState): {
         },
       ],
       streamingAssistantMessageId: STREAMING_ASSISTANT_MESSAGE_ID,
+      currentPendingToolApprovalId: undefined,
     },
   };
 }
@@ -468,6 +611,7 @@ export function applyAssistantResponseEventToChatScreenState(
       assistantResponseStatus: "streaming_assistant_response",
       latestTokenUsage: undefined,
       streamingAssistantMessageId: STREAMING_ASSISTANT_MESSAGE_ID,
+      currentPendingToolApprovalId: undefined,
     };
   }
 
@@ -634,6 +778,7 @@ export function applyAssistantResponseEventToChatScreenState(
       assistantResponseStatus: "assistant_response_failed",
       streamingAssistantMessageId: undefined,
       currentStreamingReasoningSummaryId: undefined,
+      currentPendingToolApprovalId: undefined,
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         { kind: "error", text: assistantResponseEvent.error },
@@ -648,6 +793,8 @@ export function applyAssistantResponseEventToChatScreenState(
   if (assistantResponseEvent.type === "assistant_tool_call_started") {
     return {
       ...chatScreenState,
+      assistantResponseStatus: "streaming_assistant_response",
+      currentPendingToolApprovalId: undefined,
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         {
@@ -666,6 +813,8 @@ export function applyAssistantResponseEventToChatScreenState(
   if (assistantResponseEvent.type === "assistant_tool_call_completed") {
     return {
       ...chatScreenState,
+      assistantResponseStatus: "streaming_assistant_response",
+      currentPendingToolApprovalId: undefined,
       conversationTranscript: replaceStreamingToolCallOrAppend(
         chatScreenState.conversationTranscript,
         assistantResponseEvent.toolCallId,
@@ -684,6 +833,8 @@ export function applyAssistantResponseEventToChatScreenState(
   if (assistantResponseEvent.type === "assistant_tool_call_failed") {
     return {
       ...chatScreenState,
+      assistantResponseStatus: "streaming_assistant_response",
+      currentPendingToolApprovalId: undefined,
       conversationTranscript: replaceStreamingToolCallOrAppend(
         chatScreenState.conversationTranscript,
         assistantResponseEvent.toolCallId,
@@ -695,6 +846,23 @@ export function applyAssistantResponseEventToChatScreenState(
           durationMs: assistantResponseEvent.durationMs,
         },
       ),
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_tool_call_denied") {
+    return {
+      ...chatScreenState,
+      assistantResponseStatus: "streaming_assistant_response",
+      currentPendingToolApprovalId: undefined,
+      conversationTranscript: [
+        ...chatScreenState.conversationTranscript,
+        {
+          kind: "denied_tool_call",
+          toolCallId: assistantResponseEvent.toolCallId,
+          toolCallDetail: assistantResponseEvent.toolCallDetail,
+          denialText: assistantResponseEvent.denialText,
+        },
+      ],
     };
   }
 
@@ -732,6 +900,8 @@ export function applyAssistantResponseEventToChatScreenState(
   if (assistantResponseEvent.type === "assistant_tool_approval_requested") {
     return {
       ...chatScreenState,
+      assistantResponseStatus: "waiting_for_tool_approval",
+      currentPendingToolApprovalId: assistantResponseEvent.approvalId,
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         {
@@ -802,11 +972,12 @@ function finalizeCurrentTurnAfterTerminalResponse(
   return {
     ...chatScreenState,
     assistantResponseStatus: "waiting_for_user_input",
-    latestTokenUsage: usage,
-    conversationTranscript: conversationTranscriptWithTurnFooterUsage,
-    streamingAssistantMessageId: undefined,
-    currentStreamingReasoningSummaryId: undefined,
-  };
+      latestTokenUsage: usage,
+      conversationTranscript: conversationTranscriptWithTurnFooterUsage,
+      streamingAssistantMessageId: undefined,
+      currentStreamingReasoningSummaryId: undefined,
+      currentPendingToolApprovalId: undefined,
+    };
 }
 
 function backfillUsageIntoCurrentTurnFooter(
