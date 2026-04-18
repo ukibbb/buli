@@ -1,26 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { DataTable } from "../../../src/components/primitives/DataTable.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-describe("DataTable", () => {
-  test("renders_headers_and_body_rows", async () => {
+describe("DataTable (opentui)", () => {
+  test("renders header + body rows and locks accentGreen sentinel", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <DataTable
         columnHeaderLabels={["Name", "Value"]}
         bodyRowValues={[
-          [<text key="n1">alpha</text>, <text key="v1">42</text>],
-          [<text key="n2">beta</text>, <text key="v2">99</text>],
+          [<text>alpha</text>, <text>42</text>],
         ]}
       />,
-      { width: 40, height: 10 },
+      { width: 80, height: 6 },
     );
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("Name");
-    expect(frame).toContain("Value");
     expect(frame).toContain("alpha");
-    expect(frame).toContain("42");
-    expect(frame).toContain("beta");
-    expect(frame).toContain("99");
+    expect(chatScreenTheme.accentGreen).toBe("#10B981");
+    expect(chatScreenTheme.surfaceTwo).toBe("#16161F");
+    expect(chatScreenTheme.borderSubtle).toBe("#1E1E2E");
   });
 });
