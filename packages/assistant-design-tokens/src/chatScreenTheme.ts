@@ -8,7 +8,7 @@
 // accept an alpha channel, so we use solid near-bg shades that preserve the
 // semantic (line added / line removed) without washing out the foreground text.
 export const chatScreenTheme = {
-  bg: "#0A0A0F",
+  bg: "#000000",
   surfaceOne: "#111118",
   surfaceTwo: "#16161F",
   surfaceThree: "#1C1C28",
