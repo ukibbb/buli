@@ -33,7 +33,8 @@ export function ContextWindowMeter(props: ContextWindowMeterProps): ReactNode {
       <Text color={chatScreenTheme.textDim}>
         {glyphs.progressEmpty.repeat(CONTEXT_WINDOW_BAR_CELL_WIDTH - filledCellCount)}
       </Text>
-      <Text color={chatScreenTheme.textMuted}>{` ${clampedPercentage}%`}</Text>
+      <Text color={chatScreenTheme.textMuted}>{" "}</Text>
+      <Text bold color={chatScreenTheme.accentCyan}>{`${clampedPercentage}%`}</Text>
     </Box>
   );
 }
