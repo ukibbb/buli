@@ -47,7 +47,7 @@ export function InputPanel(props: InputPanelProps) {
       borderStyle="round"
       borderColor={chatScreenTheme.accentGreen}
       flexDirection="column"
-      backgroundColor={chatScreenTheme.surfaceOne}
+      backgroundColor={chatScreenTheme.bg}
       flexShrink={0}
     >
       <Box justifyContent="space-between" paddingX={2}>
@@ -72,7 +72,7 @@ export function InputPanel(props: InputPanelProps) {
           />
         </Box>
       </Box>
-      <Box backgroundColor={chatScreenTheme.surfaceTwo} justifyContent="space-between" paddingX={2}>
+      <Box backgroundColor={chatScreenTheme.bg} justifyContent="space-between" paddingX={2}>
         {isStreamingResponse ? (
           <Box gap={1}>
             <SnakeAnimationIndicator />

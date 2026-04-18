@@ -17,7 +17,7 @@ export type TopBarProps = {
 export function TopBar(props: TopBarProps) {
   return (
     <Box
-      backgroundColor={chatScreenTheme.surfaceOne}
+      backgroundColor={chatScreenTheme.bg}
       paddingX={2}
       gap={1}
       alignItems="center"

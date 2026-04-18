@@ -17,7 +17,7 @@ export type TopBarProps = {
 export function TopBar(props: TopBarProps): ReactNode {
   return (
     <box
-      backgroundColor={chatScreenTheme.surfaceOne}
+      backgroundColor={chatScreenTheme.bg}
       flexDirection="row"
       paddingX={2}
       gap={1}

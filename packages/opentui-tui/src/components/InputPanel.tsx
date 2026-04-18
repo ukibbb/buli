@@ -59,7 +59,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
       borderStyle="rounded"
       borderColor={chatScreenTheme.accentGreen}
       flexDirection="column"
-      backgroundColor={chatScreenTheme.surfaceOne}
+      backgroundColor={chatScreenTheme.bg}
       flexShrink={0}
     >
       <box flexDirection="row" justifyContent="space-between" paddingX={2}>
@@ -85,7 +85,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         </box>
       </box>
       <box
-        backgroundColor={chatScreenTheme.surfaceTwo}
+        backgroundColor={chatScreenTheme.bg}
         flexDirection="row"
         justifyContent="space-between"
         paddingX={2}

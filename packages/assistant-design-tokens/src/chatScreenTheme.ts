@@ -14,7 +14,7 @@ export const chatScreenTheme = {
   surfaceThree: "#1C1C28",
   border: "#2A2A3A",
   borderSubtle: "#1E1E2E",
-  textPrimary: "#F1F5F9",
+  textPrimary: "#FFFFFF",
   textSecondary: "#94A3B8",
   textMuted: "#64748B",
   textDim: "#475569",
