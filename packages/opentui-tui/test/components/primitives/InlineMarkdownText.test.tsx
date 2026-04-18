@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { InlineMarkdownText } from "../../../src/components/primitives/InlineMarkdownText.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("InlineMarkdownText", () => {
   test("renders_plain_span_literally", async () => {
@@ -29,5 +30,44 @@ describe("InlineMarkdownText", () => {
     );
     await renderOnce();
     expect(captureCharFrame()).toContain("npm");
+  });
+
+  test("renders code span text and locks surfaceTwo + accentCyan tokens", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InlineMarkdownText spans={[
+        { spanKind: "plain", spanText: "Mount " },
+        { spanKind: "code", spanText: "@buli/library" },
+      ]} />,
+      { width: 60, height: 4 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("@buli/library");
+    expect(chatScreenTheme.surfaceTwo).toBe("#16161F");
+    expect(chatScreenTheme.accentCyan).toBe("#22D3EE");
+  });
+
+  test("renders strike span text and locks textMuted token", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InlineMarkdownText spans={[
+        { spanKind: "plain", spanText: "old endpoint " },
+        { spanKind: "strike", spanText: "/api/library" },
+      ]} />,
+      { width: 60, height: 4 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("/api/library");
+    expect(chatScreenTheme.textMuted).toBe("#64748B");
+  });
+
+  test("renders link span text", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InlineMarkdownText spans={[
+        { spanKind: "link", spanText: "commonmark.org", hrefUrl: "https://commonmark.org" },
+      ]} />,
+      { width: 60, height: 4 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("commonmark.org");
   });
 });
