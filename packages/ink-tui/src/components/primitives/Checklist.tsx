@@ -3,26 +3,27 @@ import type { ReactNode } from "react";
 import type { ChecklistItem, ToolCallTodoItemStatus } from "@buli/contracts";
 export type { ChecklistItem };
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { glyphs } from "../glyphs.ts";
 
 // Checklist reuses ToolCallTodoItemStatus so a TodoWrite tool card and a
-// standalone checklist block share the same status semantics. Done items get
-// a strikethrough to match the pen-file Checklist component; in-progress
-// items get an amber arrow so the "currently working" step reads at a glance.
+// standalone checklist block share the same status semantics. Pen frame
+// 7uPCa (ch04 task list) shows two visual states — checked (☑ in accentCyan
+// + body in textMuted with strikethrough) and unchecked (☐ in textDim +
+// body in textSecondary). in_progress is a code-only state with no gallery
+// design — kept as the amber ▸ arrow signalling the active step.
 export type ChecklistProps = {
   items: ChecklistItem[];
 };
 
 const statusGlyphs: Record<ToolCallTodoItemStatus, string> = {
-  pending: "·",
-  in_progress: glyphs.arrowDown === "↓" ? "▸" : "▸",
-  completed: glyphs.checkMark,
+  pending: "☐",
+  in_progress: "▸",
+  completed: "☑",
 };
 
 const statusColors: Record<ToolCallTodoItemStatus, string> = {
   pending: chatScreenTheme.textDim,
   in_progress: chatScreenTheme.accentAmber,
-  completed: chatScreenTheme.accentGreen,
+  completed: chatScreenTheme.accentCyan,
 };
 
 const statusTextColors: Record<ToolCallTodoItemStatus, string> = {
