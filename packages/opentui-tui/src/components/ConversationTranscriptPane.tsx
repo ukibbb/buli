@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, type ReactNode } from "react";
-import type { BoxRenderable } from "@opentui/core";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ConversationTranscriptEntry } from "../chatScreenState.ts";
 import type { ConversationTranscriptViewportMeasurements } from "../conversationTranscriptViewportState.ts";
 import { RenderAssistantResponseTree } from "../richText/renderAssistantResponseTree.tsx";
@@ -11,6 +11,7 @@ import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.ts
 import { ReasoningCollapsedChip } from "./ReasoningCollapsedChip.tsx";
 import { ReasoningStreamBlock } from "./ReasoningStreamBlock.tsx";
 import { ToolCallEntryView } from "./toolCalls/ToolCallEntryView.tsx";
+import { StreamingAssistantMessageBlock } from "./StreamingAssistantMessageBlock.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 
@@ -25,72 +26,114 @@ import { UserPromptBlock } from "./UserPromptBlock.tsx";
 export type ConversationTranscriptPaneProps = {
   conversationTranscriptEntries: ConversationTranscriptEntry[];
   hiddenTranscriptRowsAboveViewport: number;
+  isFollowingNewestTranscriptRows: boolean;
   onConversationTranscriptViewportMeasured: (
     conversationTranscriptViewportMeasurements: ConversationTranscriptViewportMeasurements,
   ) => void;
+  onConversationTranscriptWheelScroll?: (direction: "up" | "down") => void;
+  onConversationTranscriptScrollPositionChanged?: (hiddenTranscriptRowsAboveViewport: number) => void;
 };
 
 export function ConversationTranscriptPane(props: ConversationTranscriptPaneProps) {
-  const conversationTranscriptViewportFrameRef = useRef<BoxRenderable>(null!);
-  const fullConversationTranscriptContentRef = useRef<BoxRenderable>(null!);
+  const conversationTranscriptScrollBoxRef = useRef<ScrollBoxRenderable>(null!);
+  const lastMeasuredConversationTranscriptViewportMeasurementsRef = useRef<
+    ConversationTranscriptViewportMeasurements | undefined
+  >(undefined);
+  const lastReportedConversationTranscriptScrollTopRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    const viewportBox = conversationTranscriptViewportFrameRef.current;
-    const contentBox = fullConversationTranscriptContentRef.current;
-    if (!viewportBox || !contentBox) return;
+    const conversationTranscriptScrollBox = conversationTranscriptScrollBoxRef.current;
+    if (!conversationTranscriptScrollBox) {
+      return;
+    }
 
     function handleLayoutChanged() {
-      const visibleViewportHeightInRows = viewportBox.height;
-      const fullTranscriptContentHeightInRows = contentBox.height;
+      const visibleViewportHeightInRows = conversationTranscriptScrollBox.viewport.height;
+      const fullTranscriptContentHeightInRows = conversationTranscriptScrollBox.scrollHeight;
+      const targetScrollTop = props.isFollowingNewestTranscriptRows
+        ? Math.max(0, fullTranscriptContentHeightInRows - visibleViewportHeightInRows)
+        : props.hiddenTranscriptRowsAboveViewport;
+
+      if (conversationTranscriptScrollBox.scrollTop !== targetScrollTop) {
+        conversationTranscriptScrollBox.scrollTop = targetScrollTop;
+      }
+
       if (visibleViewportHeightInRows > 0 || fullTranscriptContentHeightInRows > 0) {
-        props.onConversationTranscriptViewportMeasured({
+        const nextConversationTranscriptViewportMeasurements = {
           visibleViewportHeightInRows,
           fullTranscriptContentHeightInRows,
-        });
+        };
+        if (
+          lastMeasuredConversationTranscriptViewportMeasurementsRef.current?.visibleViewportHeightInRows ===
+            nextConversationTranscriptViewportMeasurements.visibleViewportHeightInRows &&
+          lastMeasuredConversationTranscriptViewportMeasurementsRef.current?.fullTranscriptContentHeightInRows ===
+            nextConversationTranscriptViewportMeasurements.fullTranscriptContentHeightInRows
+        ) {
+          return;
+        }
+
+        lastMeasuredConversationTranscriptViewportMeasurementsRef.current = nextConversationTranscriptViewportMeasurements;
+        props.onConversationTranscriptViewportMeasured(nextConversationTranscriptViewportMeasurements);
       }
     }
 
-    viewportBox.on("layout-changed", handleLayoutChanged);
-    contentBox.on("layout-changed", handleLayoutChanged);
+    conversationTranscriptScrollBox.on("layout-changed", handleLayoutChanged);
+    conversationTranscriptScrollBox.content.on("layout-changed", handleLayoutChanged);
+    handleLayoutChanged();
 
     return () => {
-      viewportBox.off("layout-changed", handleLayoutChanged);
-      contentBox.off("layout-changed", handleLayoutChanged);
+      conversationTranscriptScrollBox.off("layout-changed", handleLayoutChanged);
+      conversationTranscriptScrollBox.content.off("layout-changed", handleLayoutChanged);
     };
-  });
+  }, [
+    props.hiddenTranscriptRowsAboveViewport,
+    props.isFollowingNewestTranscriptRows,
+    props.onConversationTranscriptViewportMeasured,
+    props.conversationTranscriptEntries.length,
+  ]);
 
   if (props.conversationTranscriptEntries.length === 0) {
-    return <box flexGrow={1} ref={conversationTranscriptViewportFrameRef} />;
+    return <scrollbox flexGrow={1} ref={conversationTranscriptScrollBoxRef} />;
   }
 
   return (
-    <box
+    <scrollbox
       flexDirection="column"
       flexGrow={1}
-      overflow="hidden"
-      position="relative"
-      ref={conversationTranscriptViewportFrameRef}
+      onMouseScroll={(mouseEvent) => {
+        const scrollDirection = mouseEvent.scroll?.direction;
+        if (scrollDirection !== "up" && scrollDirection !== "down") {
+          return;
+        }
+
+        mouseEvent.stopPropagation();
+        props.onConversationTranscriptWheelScroll?.(scrollDirection);
+        queueMicrotask(() => {
+          const conversationTranscriptScrollBox = conversationTranscriptScrollBoxRef.current;
+          if (!conversationTranscriptScrollBox) {
+            return;
+          }
+          if (lastReportedConversationTranscriptScrollTopRef.current === conversationTranscriptScrollBox.scrollTop) {
+            return;
+          }
+
+          lastReportedConversationTranscriptScrollTopRef.current = conversationTranscriptScrollBox.scrollTop;
+          props.onConversationTranscriptScrollPositionChanged?.(conversationTranscriptScrollBox.scrollTop);
+        });
+      }}
+      ref={conversationTranscriptScrollBoxRef}
     >
-      <box
-        flexDirection="column"
-        left={0}
-        position="absolute"
-        ref={fullConversationTranscriptContentRef}
-        top={-props.hiddenTranscriptRowsAboveViewport}
-        width="100%"
-      >
-        {props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => (
-          <box
-            flexDirection="column"
-            key={`transcript-entry-${index}`}
-            marginTop={index === 0 ? 0 : 1}
-            width="100%"
-          >
-            <ConversationTranscriptEntryView conversationTranscriptEntry={conversationTranscriptEntry} />
-          </box>
-        ))}
-      </box>
-    </box>
+      {props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => (
+        <box
+          flexDirection="column"
+          key={`transcript-entry-${index}`}
+          marginTop={index === 0 ? 0 : 1}
+          width="100%"
+        >
+          <ConversationTranscriptEntryView conversationTranscriptEntry={conversationTranscriptEntry} />
+        </box>
+      ))}
+    </scrollbox>
   );
 }
 
@@ -204,6 +247,15 @@ const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntr
         modelDisplayName={conversationTranscriptEntry.modelDisplayName}
         turnDurationMs={conversationTranscriptEntry.turnDurationMs}
         usage={conversationTranscriptEntry.usage}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "streaming_assistant_message") {
+    return (
+      <StreamingAssistantMessageBlock
+        renderState={conversationTranscriptEntry.renderState}
+        streamingProjection={conversationTranscriptEntry.streamingProjection}
       />
     );
   }

@@ -14,6 +14,7 @@
 // streams because the UI needs to pin each as its own transcript entry and
 // back-pressure the streaming message accordingly.
 import { z } from "zod";
+import { AssistantStreamingProjectionSchema } from "./assistantStreamingProjection.ts";
 import { TranscriptMessageSchema } from "./messages.ts";
 import { PlanStepSchema } from "./planProposal.ts";
 import { TokenUsageSchema } from "./provider.ts";
@@ -23,6 +24,7 @@ export const AssistantResponseStartedEventSchema = z
   .object({
     type: z.literal("assistant_response_started"),
     model: z.string().min(1),
+    messageId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -30,6 +32,15 @@ export const AssistantResponseTextChunkEventSchema = z
   .object({
     type: z.literal("assistant_response_text_chunk"),
     text: z.string(),
+  })
+  .strict();
+
+export const AssistantResponseStreamProjectionUpdatedEventSchema = z
+  .object({
+    type: z.literal("assistant_response_stream_projection_updated"),
+    messageId: z.string().min(1),
+    textDelta: z.string(),
+    projection: AssistantStreamingProjectionSchema,
   })
   .strict();
 
@@ -175,6 +186,7 @@ export const AssistantPlanProposedEventSchema = z
 export const AssistantResponseEventSchema = z.discriminatedUnion("type", [
   AssistantResponseStartedEventSchema,
   AssistantResponseTextChunkEventSchema,
+  AssistantResponseStreamProjectionUpdatedEventSchema,
   AssistantResponseCompletedEventSchema,
   AssistantResponseIncompleteEventSchema,
   AssistantResponseFailedEventSchema,
@@ -193,6 +205,9 @@ export const AssistantResponseEventSchema = z.discriminatedUnion("type", [
 
 export type AssistantResponseStartedEvent = z.infer<typeof AssistantResponseStartedEventSchema>;
 export type AssistantResponseTextChunkEvent = z.infer<typeof AssistantResponseTextChunkEventSchema>;
+export type AssistantResponseStreamProjectionUpdatedEvent = z.infer<
+  typeof AssistantResponseStreamProjectionUpdatedEventSchema
+>;
 export type AssistantResponseCompletedEvent = z.infer<typeof AssistantResponseCompletedEventSchema>;
 export type AssistantResponseIncompleteEvent = z.infer<typeof AssistantResponseIncompleteEventSchema>;
 export type AssistantResponseFailedEvent = z.infer<typeof AssistantResponseFailedEventSchema>;

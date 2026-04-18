@@ -21,6 +21,7 @@ describe("chatScreenTheme", () => {
       "accentPrimary",
       "accentPrimaryMuted",
       "accentPurple",
+      "promptContextReferenceText",
       "diffAdditionBg",
       "diffRemovalBg",
       "calloutInfoBg",
@@ -31,5 +32,9 @@ describe("chatScreenTheme", () => {
     for (const tokenKey of requiredTokenKeys) {
       expect(chatScreenTheme[tokenKey]).toMatch(/^#[0-9A-F]{6}$/i);
     }
+  });
+
+  test("keeps prompt-context references aligned with the implementation mode colour", () => {
+    expect(chatScreenTheme.promptContextReferenceText).toBe(chatScreenTheme.accentGreen);
   });
 });

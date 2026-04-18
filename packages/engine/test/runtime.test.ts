@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelContextItem, ProviderStreamEvent } from "@buli/contracts";
 import type { ConversationTurnProvider, ProviderConversationTurn, ProviderConversationTurnRequest } from "../src/index.ts";
 import { AssistantConversationRuntime, WorkspaceShellCommandExecutor } from "../src/index.ts";
+
+function toPortablePath(pathText: string): string {
+  return pathText.replaceAll("\\", "/");
+}
 
 class ScriptedProviderTurn implements ProviderConversationTurn {
   readonly beforeToolResultEvents: ProviderStreamEvent[];
@@ -113,9 +117,27 @@ test("AssistantConversationRuntime emits started, streamed text, turn footer, an
   expect(provider.startedTurnRequests).toHaveLength(1);
   expect(provider.startedTurnRequests[0]?.modelContextItems).toEqual([{ itemKind: "user_message", messageText: "Say hello" }]);
   expect(emittedAssistantEvents).toEqual([
-    { type: "assistant_response_started", model: "gpt-5.4" },
-    { type: "assistant_response_text_chunk", text: "Hello" },
-    { type: "assistant_response_text_chunk", text: " world" },
+    { type: "assistant_response_started", model: "gpt-5.4", messageId: expect.any(String) },
+    {
+      type: "assistant_response_stream_projection_updated",
+      messageId: expect.any(String),
+      textDelta: "Hello",
+      projection: {
+        fullResponseText: "Hello",
+        completedContentParts: [],
+        openContentPart: { kind: "streaming_markdown_text", text: "Hello" },
+      },
+    },
+    {
+      type: "assistant_response_stream_projection_updated",
+      messageId: expect.any(String),
+      textDelta: " world",
+      projection: {
+        fullResponseText: "Hello world",
+        completedContentParts: [],
+        openContentPart: { kind: "streaming_markdown_text", text: "Hello world" },
+      },
+    },
     {
       type: "assistant_turn_completed",
       turnDurationMs: expect.any(Number),
@@ -234,7 +256,7 @@ test("AssistantConversationRuntime emits explicit denied-tool events and stores 
     "assistant_response_started",
     "assistant_tool_approval_requested",
     "assistant_tool_call_denied",
-    "assistant_response_text_chunk",
+    "assistant_response_stream_projection_updated",
     "assistant_turn_completed",
     "assistant_response_completed",
   ]);
@@ -319,7 +341,7 @@ test("AssistantConversationRuntime executes approved bash tool calls and carries
     "assistant_tool_approval_requested",
     "assistant_tool_call_started",
     "assistant_tool_call_completed",
-    "assistant_response_text_chunk",
+    "assistant_response_stream_projection_updated",
     "assistant_turn_completed",
     "assistant_response_completed",
   ]);
@@ -358,6 +380,7 @@ test("AssistantConversationRuntime replays the stored model-facing prompt snapsh
   const promptContextBrowseRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-history-"));
   const referencedFilePath = join(promptContextBrowseRootPath, "notes.txt");
   await Bun.write(referencedFilePath, "first file contents");
+  const realReferencedFilePath = await realpath(referencedFilePath);
 
   const firstProviderTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
@@ -396,13 +419,15 @@ test("AssistantConversationRuntime replays the stored model-facing prompt snapsh
   expect(provider.startedTurnRequests[0]?.modelContextItems).toEqual<ModelContextItem[]>([
     {
       itemKind: "user_message",
-      messageText: "Inspect @notes.txt\n\nAttached prompt context:\n\n<context_file path=\"notes.txt\">\nfirst file contents\n</context_file>",
+      messageText:
+        `Inspect @notes.txt\n\nAttached prompt context:\n\n<context_file path=\"${toPortablePath(realReferencedFilePath)}\">\nfirst file contents\n</context_file>`,
     },
   ]);
   expect(provider.startedTurnRequests[1]?.modelContextItems).toEqual<ModelContextItem[]>([
     {
       itemKind: "user_message",
-      messageText: "Inspect @notes.txt\n\nAttached prompt context:\n\n<context_file path=\"notes.txt\">\nfirst file contents\n</context_file>",
+      messageText:
+        `Inspect @notes.txt\n\nAttached prompt context:\n\n<context_file path=\"${toPortablePath(realReferencedFilePath)}\">\nfirst file contents\n</context_file>`,
     },
     { itemKind: "assistant_message", messageText: "Stored the context." },
     { itemKind: "user_message", messageText: "What did the earlier notes say?" },
@@ -411,6 +436,43 @@ test("AssistantConversationRuntime replays the stored model-facing prompt snapsh
     entryKind: "user_prompt",
     promptText: "Inspect @notes.txt",
     modelFacingPromptText:
-      "Inspect @notes.txt\n\nAttached prompt context:\n\n<context_file path=\"notes.txt\">\nfirst file contents\n</context_file>",
+      `Inspect @notes.txt\n\nAttached prompt context:\n\n<context_file path=\"${toPortablePath(realReferencedFilePath)}\">\nfirst file contents\n</context_file>`,
   });
+});
+
+test("AssistantConversationRuntime resolves prompt-context references from the configured starting directory", async () => {
+  const promptContextBrowseRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-parent-context-"));
+  const repositoryPath = join(promptContextBrowseRootPath, "repo");
+  await mkdir(repositoryPath);
+  await Bun.write(join(promptContextBrowseRootPath, "shared.txt"), "outside repo");
+
+  const provider = new RecordingConversationTurnProvider([
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "completed", usage: { total: 4, input: 2, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    }),
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: repositoryPath,
+    promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath: repositoryPath,
+  });
+  const realSharedFilePath = await realpath(join(promptContextBrowseRootPath, "shared.txt"));
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect @../shared.txt",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.modelContextItems).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "user_message",
+      messageText:
+        `Inspect @../shared.txt\n\nAttached prompt context:\n\n<context_file path=\"${toPortablePath(realSharedFilePath)}\">\noutside repo\n</context_file>`,
+    },
+  ]);
 });

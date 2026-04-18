@@ -168,6 +168,34 @@ test("parseOpenAiStream emits tool_call_requested and returns a tool-request ter
   ]);
 });
 
+test("parseOpenAiStream accepts nullable bash function arguments", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\",\\"workdir\\":null,\\"timeout\\":null}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\",\\"workdir\\":null,\\"timeout\\":null}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const emittedEvents = [];
+  for await (const emittedEvent of parseOpenAiStream(response)) {
+    emittedEvents.push(emittedEvent);
+  }
+
+  expect(emittedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+});
+
 test("OpenAiProvider sends auth headers and streams assistant response provider events", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
@@ -226,7 +254,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       input: [
         {
           role: "user",
-          content: [{ type: "input_text", text: "Say hello" }],
+          content: "Say hello",
         },
       ],
       tools: [
@@ -239,10 +267,16 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
             properties: {
               command: { type: "string", description: "Shell command to run." },
               description: { type: "string", description: "Very short reason for running the command." },
-              workdir: { type: "string", description: "Optional working directory inside the workspace." },
-              timeout: { type: "integer", description: "Optional timeout in milliseconds." },
+              workdir: {
+                type: ["string", "null"],
+                description: "Working directory inside the workspace, or null to use the workspace root.",
+              },
+              timeout: {
+                type: ["integer", "null"],
+                description: "Timeout in milliseconds, or null to use the default timeout.",
+              },
             },
-            required: ["command", "description"],
+            required: ["command", "description", "workdir", "timeout"],
             additionalProperties: false,
           },
           strict: true,
@@ -411,7 +445,7 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
       input: [
         {
           role: "user",
-          content: [{ type: "input_text", text: "Run pwd" }],
+          content: "Run pwd",
         },
         {
           type: "function_call",

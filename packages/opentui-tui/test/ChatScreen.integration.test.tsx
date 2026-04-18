@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import type { AssistantResponseEvent } from "@buli/contracts";
 import {
-  appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
   createInitialChatScreenState,
+  insertTextIntoPromptDraftAtCursor,
   submitPromptDraft,
 } from "../src/index.ts";
 
@@ -16,7 +16,7 @@ import {
 // The ink-tui counterpart used ink-testing-library render + lastFrame(); those
 // helpers have no opentui equivalent so we assert on state shape directly.
 test("applyAssistantResponseEventToChatScreenState renders a full turn through streaming reasoning into a collapsed chip", () => {
-  let chatScreenState = appendTypedTextToPromptDraft(
+  let chatScreenState = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "why",
   );

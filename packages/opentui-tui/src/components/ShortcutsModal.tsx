@@ -26,9 +26,13 @@ type ShortcutLegendRow = {
 const keyboardShortcutLegendRows: ShortcutLegendRow[] = [
   { keyLabel: "[ enter ]", description: "send non-empty draft" },
   { keyLabel: "[ ctrl + l ]", description: "open model picker when idle" },
+  { keyLabel: "[ ← / → ]", description: "move caret inside draft" },
+  { keyLabel: "[ backspace / del ]", description: "delete around caret" },
+  { keyLabel: "[ @ picker ]", description: "↑ ↓ choose · enter insert" },
   { keyLabel: "[ up / down ]", description: "scroll transcript by row" },
   { keyLabel: "[ pgup / pgdn ]", description: "scroll transcript by page" },
   { keyLabel: "[ home / end ]", description: "jump oldest · newest" },
+  { keyLabel: "[ wheel ]", description: "scroll transcript under pointer" },
 ];
 
 const helpShortcutLegendRows: ShortcutLegendRow[] = [

@@ -1,6 +1,10 @@
 import { Box, type DOMElement, useBoxMetrics } from "ink";
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import type { ConversationTranscriptEntry } from "../chatScreenState.ts";
+import {
+  measureConversationTranscriptPointerZone,
+  type ConversationTranscriptPointerZone,
+} from "../conversationTranscriptPointerZone.ts";
 import type { ConversationTranscriptViewportMeasurements } from "../conversationTranscriptViewportState.ts";
 import { RenderAssistantResponseTree } from "../richText/renderAssistantResponseTree.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
@@ -11,6 +15,7 @@ import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.ts
 import { ReasoningCollapsedChip } from "./ReasoningCollapsedChip.tsx";
 import { ReasoningStreamBlock } from "./ReasoningStreamBlock.tsx";
 import { ToolCallEntryView } from "./toolCalls/ToolCallEntryView.tsx";
+import { StreamingAssistantMessageBlock } from "./StreamingAssistantMessageBlock.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 
@@ -24,6 +29,9 @@ export type ConversationTranscriptPaneProps = {
   onConversationTranscriptViewportMeasured: (
     conversationTranscriptViewportMeasurements: ConversationTranscriptViewportMeasurements,
   ) => void;
+  onConversationTranscriptPointerZoneMeasured?: (
+    conversationTranscriptPointerZone: ConversationTranscriptPointerZone | undefined,
+  ) => void;
 };
 
 export function ConversationTranscriptPane(props: ConversationTranscriptPaneProps) {
@@ -31,6 +39,10 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
   const fullConversationTranscriptContentRef = useRef<DOMElement>(null!);
   const conversationTranscriptViewportFrameMetrics = useBoxMetrics(conversationTranscriptViewportFrameRef);
   const fullConversationTranscriptContentMetrics = useBoxMetrics(fullConversationTranscriptContentRef);
+  const lastEmittedConversationTranscriptViewportMeasurementsRef = useRef<
+    ConversationTranscriptViewportMeasurements | undefined
+  >(undefined);
+  const lastEmittedConversationTranscriptPointerZoneRef = useRef<ConversationTranscriptPointerZone | undefined>(undefined);
   const shouldUseMeasuredTranscriptOffset =
     conversationTranscriptViewportFrameMetrics.hasMeasured && fullConversationTranscriptContentMetrics.hasMeasured;
 
@@ -39,16 +51,56 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
       return;
     }
 
-    props.onConversationTranscriptViewportMeasured({
+    const nextConversationTranscriptViewportMeasurements = {
       visibleViewportHeightInRows: conversationTranscriptViewportFrameMetrics.height,
       fullTranscriptContentHeightInRows: fullConversationTranscriptContentMetrics.height,
-    });
+    };
+    if (
+      lastEmittedConversationTranscriptViewportMeasurementsRef.current?.visibleViewportHeightInRows ===
+        nextConversationTranscriptViewportMeasurements.visibleViewportHeightInRows &&
+      lastEmittedConversationTranscriptViewportMeasurementsRef.current?.fullTranscriptContentHeightInRows ===
+        nextConversationTranscriptViewportMeasurements.fullTranscriptContentHeightInRows
+    ) {
+      return;
+    }
+
+    lastEmittedConversationTranscriptViewportMeasurementsRef.current = nextConversationTranscriptViewportMeasurements;
+    props.onConversationTranscriptViewportMeasured(nextConversationTranscriptViewportMeasurements);
   }, [
     conversationTranscriptViewportFrameMetrics.hasMeasured,
     conversationTranscriptViewportFrameMetrics.height,
     fullConversationTranscriptContentMetrics.hasMeasured,
     fullConversationTranscriptContentMetrics.height,
-    props,
+    props.onConversationTranscriptViewportMeasured,
+  ]);
+
+  useEffect(() => {
+    if (!props.onConversationTranscriptPointerZoneMeasured || !conversationTranscriptViewportFrameMetrics.hasMeasured) {
+      return;
+    }
+
+    const nextConversationTranscriptPointerZone = measureConversationTranscriptPointerZone(
+      conversationTranscriptViewportFrameRef.current,
+    );
+    if (
+      lastEmittedConversationTranscriptPointerZoneRef.current?.leftColumn ===
+        nextConversationTranscriptPointerZone?.leftColumn &&
+      lastEmittedConversationTranscriptPointerZoneRef.current?.topRow === nextConversationTranscriptPointerZone?.topRow &&
+      lastEmittedConversationTranscriptPointerZoneRef.current?.width === nextConversationTranscriptPointerZone?.width &&
+      lastEmittedConversationTranscriptPointerZoneRef.current?.height === nextConversationTranscriptPointerZone?.height
+    ) {
+      return;
+    }
+
+    lastEmittedConversationTranscriptPointerZoneRef.current = nextConversationTranscriptPointerZone;
+    props.onConversationTranscriptPointerZoneMeasured(nextConversationTranscriptPointerZone);
+  }, [
+    conversationTranscriptViewportFrameMetrics.hasMeasured,
+    conversationTranscriptViewportFrameMetrics.height,
+    conversationTranscriptViewportFrameMetrics.left,
+    conversationTranscriptViewportFrameMetrics.top,
+    conversationTranscriptViewportFrameMetrics.width,
+    props.onConversationTranscriptPointerZoneMeasured,
   ]);
 
   if (props.conversationTranscriptEntries.length === 0) {
@@ -61,20 +113,21 @@ export function ConversationTranscriptPane(props: ConversationTranscriptPaneProp
         flexDirection="column"
         left={shouldUseMeasuredTranscriptOffset ? 0 : undefined}
         position={shouldUseMeasuredTranscriptOffset ? "absolute" : "relative"}
-        ref={fullConversationTranscriptContentRef}
         top={shouldUseMeasuredTranscriptOffset ? -props.hiddenTranscriptRowsAboveViewport : undefined}
-        width={shouldUseMeasuredTranscriptOffset ? "100%" : undefined}
+        width="100%"
       >
-        {props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => (
-          <Box
-            flexDirection="column"
-            key={`transcript-entry-${index}`}
-            marginTop={index === 0 ? 0 : 1}
-            width="100%"
-          >
-            <ConversationTranscriptEntryView conversationTranscriptEntry={conversationTranscriptEntry} />
-          </Box>
-        ))}
+        <Box flexDirection="column" ref={fullConversationTranscriptContentRef} width="100%">
+          {props.conversationTranscriptEntries.map((conversationTranscriptEntry, index) => (
+            <Box
+              flexDirection="column"
+              key={`transcript-entry-${index}`}
+              marginTop={index === 0 ? 0 : 1}
+              width="100%"
+            >
+              <ConversationTranscriptEntryView conversationTranscriptEntry={conversationTranscriptEntry} />
+            </Box>
+          ))}
+        </Box>
       </Box>
     </Box>
   );
@@ -190,6 +243,15 @@ const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntr
         modelDisplayName={conversationTranscriptEntry.modelDisplayName}
         turnDurationMs={conversationTranscriptEntry.turnDurationMs}
         usage={conversationTranscriptEntry.usage}
+      />
+    );
+  }
+
+  if (conversationTranscriptEntry.kind === "streaming_assistant_message") {
+    return (
+      <StreamingAssistantMessageBlock
+        renderState={conversationTranscriptEntry.renderState}
+        streamingProjection={conversationTranscriptEntry.streamingProjection}
       />
     );
   }

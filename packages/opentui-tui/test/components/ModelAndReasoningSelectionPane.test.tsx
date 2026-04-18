@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../testRenderWithCleanup.ts";
 import { ModelAndReasoningSelectionPane } from "../../src/components/ModelAndReasoningSelectionPane.tsx";
 
 describe("ModelAndReasoningSelectionPane", () => {

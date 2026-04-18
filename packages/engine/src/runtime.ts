@@ -7,8 +7,8 @@ import {
   AssistantReasoningSummaryTextChunkEventSchema,
   AssistantResponseFailedEventSchema,
   AssistantResponseIncompleteEventSchema,
+  AssistantResponseStreamProjectionUpdatedEventSchema,
   AssistantResponseStartedEventSchema,
-  AssistantResponseTextChunkEventSchema,
   AssistantToolApprovalRequestedEventSchema,
   AssistantToolCallCompletedEventSchema,
   AssistantToolCallDeniedEventSchema,
@@ -19,6 +19,11 @@ import {
   type BashToolCallRequest,
   type ToolCallRequest,
 } from "@buli/contracts";
+import {
+  appendAssistantTextDeltaToStreamingProjectorState,
+  createInitialAssistantStreamingProjectorState,
+  finalizeAssistantStreamingProjectorState,
+} from "./assistantStreamingProjection.ts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { buildBuliSystemPrompt } from "./systemPrompt.ts";
 import type {
@@ -28,7 +33,6 @@ import type {
   ConversationTurnRequest,
   ProviderConversationTurn,
 } from "./provider.ts";
-import { parseAssistantResponseIntoContentParts } from "./assistantContentPartParser.ts";
 import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import { createCompletedAssistantResponseEvent } from "./turn.ts";
 import { runApprovedBashToolCall, createStartedBashToolCallDetail } from "./tools/bashTool.ts";
@@ -45,6 +49,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly conversationTurnProvider: ConversationTurnProvider;
   readonly workspaceRootPath: string;
   readonly promptContextBrowseRootPath: string;
+  readonly promptContextStartingDirectoryPath: string;
   readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   readonly conversationHistory: InMemoryConversationHistory;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
@@ -53,12 +58,14 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     conversationTurnProvider: ConversationTurnProvider;
     workspaceRootPath: string;
     promptContextBrowseRootPath: string;
+    promptContextStartingDirectoryPath?: string;
     workspaceShellCommandExecutor?: WorkspaceShellCommandExecutor;
     conversationHistory?: InMemoryConversationHistory;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.workspaceRootPath = input.workspaceRootPath;
     this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
+    this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath ?? input.promptContextBrowseRootPath;
     this.workspaceShellCommandExecutor =
       input.workspaceShellCommandExecutor ?? new WorkspaceShellCommandExecutor({ workspaceRootPath: input.workspaceRootPath });
     this.conversationHistory = input.conversationHistory ?? new InMemoryConversationHistory();
@@ -75,6 +82,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       conversationHistory: this.conversationHistory,
       workspaceRootPath: this.workspaceRootPath,
       promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+      promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
       onConversationTurnFinished: () => {
         if (this.currentPendingConversationTurn === runtimeConversationTurn) {
@@ -94,6 +102,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly conversationHistory: InMemoryConversationHistory;
   readonly workspaceRootPath: string;
   readonly promptContextBrowseRootPath: string;
+  readonly promptContextStartingDirectoryPath: string;
   readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   readonly onConversationTurnFinished: () => void;
   currentPendingToolApprovalState: PendingToolApprovalState | undefined;
@@ -106,6 +115,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     conversationHistory: InMemoryConversationHistory;
     workspaceRootPath: string;
     promptContextBrowseRootPath: string;
+    promptContextStartingDirectoryPath: string;
     workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
     onConversationTurnFinished: () => void;
   }) {
@@ -114,6 +124,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.conversationHistory = input.conversationHistory;
     this.workspaceRootPath = input.workspaceRootPath;
     this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
+    this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath;
     this.workspaceShellCommandExecutor = input.workspaceShellCommandExecutor;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
   }
@@ -150,6 +161,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     const modelFacingPromptText = await buildModelFacingPromptTextFromPromptContextReferences({
       promptText: this.conversationTurnInput.userPromptText,
       promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+      promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
     });
     this.conversationHistory.appendConversationSessionEntry({
       entryKind: "user_prompt",
@@ -166,12 +178,14 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         : {}),
     });
 
-    let streamedAssistantText = "";
+    const assistantResponseMessageId = randomUUID();
+    let assistantStreamingProjectorState = createInitialAssistantStreamingProjectorState();
 
     try {
       yield AssistantResponseStartedEventSchema.parse({
         type: "assistant_response_started",
         model: this.conversationTurnInput.selectedModelId,
+        messageId: assistantResponseMessageId,
       });
 
       for await (const providerStreamEvent of providerConversationTurn.streamProviderEvents()) {
@@ -197,10 +211,15 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         }
 
         if (providerStreamEvent.type === "text_chunk") {
-          streamedAssistantText += providerStreamEvent.text;
-          yield AssistantResponseTextChunkEventSchema.parse({
-            type: "assistant_response_text_chunk",
-            text: providerStreamEvent.text,
+          assistantStreamingProjectorState = appendAssistantTextDeltaToStreamingProjectorState(
+            assistantStreamingProjectorState,
+            providerStreamEvent.text,
+          );
+          yield AssistantResponseStreamProjectionUpdatedEventSchema.parse({
+            type: "assistant_response_stream_projection_updated",
+            messageId: assistantResponseMessageId,
+            textDelta: providerStreamEvent.text,
+            projection: assistantStreamingProjectorState.projection,
           });
           continue;
         }
@@ -252,10 +271,12 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
           modelDisplayName: this.conversationTurnInput.selectedModelId,
         });
+        const finalAssistantStreamingProjection = finalizeAssistantStreamingProjectorState(assistantStreamingProjectorState);
         const completedAssistantResponseEvent = createCompletedAssistantResponseEvent({
-          assistantText: streamedAssistantText,
-          assistantContentParts: parseAssistantResponseIntoContentParts(streamedAssistantText),
+          assistantText: finalAssistantStreamingProjection.fullResponseText,
+          assistantContentParts: finalAssistantStreamingProjection.completedContentParts,
           usage: providerStreamEvent.usage,
+          id: assistantResponseMessageId,
         });
         this.conversationHistory.appendConversationSessionEntry({
           entryKind: "assistant_message",

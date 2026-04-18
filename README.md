@@ -164,6 +164,12 @@ That means:
 
 This is the default interactive experience.
 
+If you run Buli inside tmux, enable `focus-events` so pane switches pass focus changes through to the fullscreen TUI reliably:
+
+```tmux
+set -g focus-events on
+```
+
 Inside the fullscreen session:
 
 - `Up` and `Down` scroll one row at a time

@@ -21,12 +21,6 @@ test("preserves console timestamp support when the opentui console overlay becom
     width: 24,
     height: 6,
     consoleMode: "console-overlay",
-    onDestroy() {
-      act(() => {
-        root?.unmount();
-        root = undefined;
-      });
-    },
   });
 
   try {
@@ -37,17 +31,26 @@ test("preserves console timestamp support when the opentui console overlay becom
     expect(() => activeConsole.timeStamp?.("OpenTUI scheduler track")).not.toThrow();
 
     root = createRoot(testSetup.renderer);
-    act(() => {
+    await act(async () => {
       root?.render(
         <box>
           <text>overlay</text>
         </box>,
       );
     });
-    await testSetup.renderOnce();
+    await act(async () => {
+      await testSetup.renderOnce();
+    });
 
     expect(testSetup.captureCharFrame()).toContain("overlay");
   } finally {
+    if (root) {
+      await act(async () => {
+        root?.unmount();
+        root = undefined;
+      });
+    }
+
     testSetup.renderer.destroy();
     globalThis.console = originalConsole;
   }

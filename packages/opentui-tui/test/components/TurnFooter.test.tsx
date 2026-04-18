@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../testRenderWithCleanup.ts";
 import { TurnFooter } from "../../src/components/TurnFooter.tsx";
 
 describe("TurnFooter", () => {

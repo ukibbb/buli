@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import {
-  appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
@@ -11,7 +10,10 @@ import {
   moveHighlightedPromptContextCandidateDown,
   moveHighlightedModelSelectionDown,
   moveHighlightedReasoningEffortChoiceDown,
-  removeLastCharacterFromPromptDraft,
+  insertTextIntoPromptDraftAtCursor,
+  movePromptDraftCursorLeft,
+  removePromptDraftCharacterAtCursor,
+  removePromptDraftCharacterBeforeCursor,
   selectHighlightedPromptContextCandidate,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
@@ -20,9 +22,10 @@ import {
   showShortcutsHelpModal,
   submitPromptDraft,
 } from "../src/index.ts";
+import { refreshPromptContextCandidatesForSelection } from "../src/chatScreenState.ts";
 
 test("submitPromptDraft starts streaming and appends the user message", () => {
-  const initial = appendTypedTextToPromptDraft(
+  const initial = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({
       selectedModelId: "gpt-5.4",
       selectedReasoningEffort: "high",
@@ -48,16 +51,25 @@ test("submitPromptDraft starts streaming and appends the user message", () => {
 });
 
 test("removeLastCharacterFromPromptDraft removes one character", () => {
-  const state = appendTypedTextToPromptDraft(
+  const state = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "Hello",
   );
 
-  expect(removeLastCharacterFromPromptDraft(state).promptDraft).toBe("Hell");
+  expect(removePromptDraftCharacterBeforeCursor(state).promptDraft).toBe("Hell");
+});
+
+test("movePromptDraftCursorLeft and removePromptDraftCharacterAtCursor edit around the caret", () => {
+  let state = insertTextIntoPromptDraftAtCursor(createInitialChatScreenState({ selectedModelId: "gpt-5.4" }), "Hello");
+  state = movePromptDraftCursorLeft(movePromptDraftCursorLeft(state));
+  state = removePromptDraftCharacterAtCursor(state);
+
+  expect(state.promptDraft).toBe("Helo");
+  expect(state.promptDraftCursorOffset).toBe(3);
 });
 
 test("selectHighlightedPromptContextCandidate replaces the trailing query and records the selected reference text", () => {
-  const initialState = appendTypedTextToPromptDraft(
+  const initialState = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     'Inspect @"Desk',
   );
@@ -71,21 +83,109 @@ test("selectHighlightedPromptContextCandidate replaces the trailing query and re
 
   expect(selectHighlightedPromptContextCandidate(pickerState)).toMatchObject({
     promptDraft: 'Inspect @"Desktop Notes/todo list.txt" ',
+    promptDraftCursorOffset: 'Inspect @"Desktop Notes/todo list.txt" '.length,
     promptContextSelectionState: { step: "hidden" },
     selectedPromptContextReferenceTexts: ['@"Desktop Notes/todo list.txt"'],
   });
 });
 
+test("selectHighlightedPromptContextCandidate closes the picker after choosing a directory and appends a trailing space", () => {
+  const initialState = insertTextIntoPromptDraftAtCursor(
+    createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
+    "Inspect @app",
+  );
+  const pickerState = showPromptContextCandidatesForSelection(initialState, "app", [
+    {
+      kind: "directory",
+      displayPath: "apps/",
+      promptReferenceText: "@apps/",
+    },
+  ]);
+
+  expect(selectHighlightedPromptContextCandidate(pickerState)).toMatchObject({
+    promptDraft: "Inspect @apps/ ",
+    promptDraftCursorOffset: "Inspect @apps/ ".length,
+    promptContextSelectionState: { step: "hidden" },
+    selectedPromptContextReferenceTexts: ["@apps/"],
+  });
+});
+
+test("selectHighlightedPromptContextCandidate replaces a middle @query and moves the caret past the preserved separator", () => {
+  let state = insertTextIntoPromptDraftAtCursor(
+    createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
+    "Inspect @app later",
+  );
+
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    state = movePromptDraftCursorLeft(state);
+  }
+
+  state = showPromptContextCandidatesForSelection(state, "app", [
+    {
+      kind: "directory",
+      displayPath: "apps/",
+      promptReferenceText: "@apps/",
+    },
+  ]);
+
+  expect(selectHighlightedPromptContextCandidate(state)).toMatchObject({
+    promptDraft: "Inspect @apps/ later",
+    promptDraftCursorOffset: "Inspect @apps/ ".length,
+    promptContextSelectionState: { step: "hidden" },
+  });
+});
+
+test("refreshPromptContextCandidatesForSelection keeps the highlighted candidate when the same query adds more results", () => {
+  const initialPromptContextCandidates = [
+    {
+      kind: "file" as const,
+      displayPath: "project/file-1.ts",
+      promptReferenceText: "@project/file-1.ts",
+    },
+    {
+      kind: "file" as const,
+      displayPath: "project/file-2.ts",
+      promptReferenceText: "@project/file-2.ts",
+    },
+  ];
+  const refreshedPromptContextCandidates = [
+    ...initialPromptContextCandidates,
+    {
+      kind: "file" as const,
+      displayPath: "project/file-3.ts",
+      promptReferenceText: "@project/file-3.ts",
+    },
+  ];
+
+  const stateWithSecondCandidateHighlighted = moveHighlightedPromptContextCandidateDown(
+    showPromptContextCandidatesForSelection(
+      insertTextIntoPromptDraftAtCursor(createInitialChatScreenState({ selectedModelId: "gpt-5.4" }), "@pr"),
+      "pr",
+      initialPromptContextCandidates,
+    ),
+  );
+
+  expect(refreshPromptContextCandidatesForSelection(stateWithSecondCandidateHighlighted, "pr", refreshedPromptContextCandidates))
+    .toMatchObject({
+      promptContextSelectionState: {
+        step: "showing_prompt_context_candidates",
+        promptContextQueryText: "pr",
+        highlightedPromptContextCandidateIndex: 1,
+        promptContextCandidates: refreshedPromptContextCandidates,
+      },
+    });
+});
+
 test("removeLastCharacterFromPromptDraft removes selected prompt-context references after they stop matching the draft", () => {
   let state = createInitialChatScreenState({ selectedModelId: "gpt-5.4" });
-  state = appendTypedTextToPromptDraft(state, "Inspect @notes.txt");
+  state = insertTextIntoPromptDraftAtCursor(state, "Inspect @notes.txt");
   state = {
     ...state,
     selectedPromptContextReferenceTexts: ["@notes.txt"],
   };
 
   for (let iteration = 0; iteration < 4; iteration += 1) {
-    state = removeLastCharacterFromPromptDraft(state);
+    state = removePromptDraftCharacterBeforeCursor(state);
   }
 
   expect(state.promptDraft).toBe("Inspect @notes");
@@ -114,7 +214,7 @@ test("showPromptContextCandidatesForSelection, moveHighlightedPromptContextCandi
 
 test("submitPromptDraft does nothing while the prompt-context picker is open", () => {
   const state = showPromptContextCandidatesForSelection(
-    appendTypedTextToPromptDraft(createInitialChatScreenState({ selectedModelId: "gpt-5.4" }), "Inspect @Pro"),
+    insertTextIntoPromptDraftAtCursor(createInitialChatScreenState({ selectedModelId: "gpt-5.4" }), "Inspect @Pro"),
     "Pro",
     [{ kind: "directory", displayPath: "Projects/", promptReferenceText: "@Projects/" }],
   );
@@ -123,7 +223,7 @@ test("submitPromptDraft does nothing while the prompt-context picker is open", (
 });
 
 test("applyAssistantResponseEventToChatScreenState appends text chunks and stores final token usage", () => {
-  let state = appendTypedTextToPromptDraft(
+  let state = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "Hello",
   );
@@ -155,6 +255,39 @@ test("applyAssistantResponseEventToChatScreenState appends text chunks and store
       id: "assistant-1",
       role: "assistant",
       text: "Hi there",
+    },
+  });
+});
+
+test("applyAssistantResponseEventToChatScreenState stores engine-projected streaming assistant content without reparsing markdown locally", () => {
+  let state = createStreamingTurnState();
+  state = applyAssistantResponseEventToChatScreenState(state, {
+    type: "assistant_response_stream_projection_updated",
+    messageId: "assistant-stream-1",
+    textDelta: "Hello\n\n",
+    projection: {
+      fullResponseText: "Hello\n\n",
+      completedContentParts: [
+        {
+          kind: "paragraph",
+          inlineSpans: [{ spanKind: "plain", spanText: "Hello" }],
+        },
+      ],
+    },
+  });
+
+  expect(state.conversationTranscript.at(-1)).toEqual({
+    kind: "streaming_assistant_message",
+    messageId: "assistant-stream-1",
+    renderState: "streaming",
+    streamingProjection: {
+      fullResponseText: "Hello\n\n",
+      completedContentParts: [
+        {
+          kind: "paragraph",
+          inlineSpans: [{ spanKind: "plain", spanText: "Hello" }],
+        },
+      ],
     },
   });
 });
@@ -381,7 +514,7 @@ test("showModelSelectionLoadingError and hideModelAndReasoningSelection manage l
 });
 
 test("submitPromptDraft does nothing while an assistant response is already streaming", () => {
-  let state = appendTypedTextToPromptDraft(
+  let state = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "Hello",
   );
@@ -413,7 +546,7 @@ test("applyAssistantResponseEventToChatScreenState adds an error entry when the 
 // assistant turn marked as streaming, mimicking what happens right after
 // submitPromptDraft + assistant_response_started.
 function createStreamingTurnState() {
-  const initial = appendTypedTextToPromptDraft(
+  const initial = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({
       selectedModelId: "gpt-5.4",
     }),
@@ -669,20 +802,19 @@ test("applyAssistantResponseEventToChatScreenState appends an incomplete notice 
   });
 
   const partialAssistantMessage = state.conversationTranscript.find(
-    (entry) => entry.kind === "message" && entry.message.role === "assistant",
+    (entry) => entry.kind === "streaming_assistant_message",
   );
   expect(partialAssistantMessage).toEqual({
-    kind: "message",
-    message: {
-      id: "assistant-streaming",
-      role: "assistant",
-      text: "Partial answer",
-      assistantContentParts: [
-        {
-          kind: "paragraph",
-          inlineSpans: [{ spanKind: "plain", spanText: "Partial answer" }],
-        },
-      ],
+    kind: "streaming_assistant_message",
+    messageId: "assistant-streaming",
+    renderState: "incomplete",
+    streamingProjection: {
+      fullResponseText: "Partial answer",
+      completedContentParts: [],
+      openContentPart: {
+        kind: "streaming_markdown_text",
+        text: "Partial answer",
+      },
     },
   });
 });

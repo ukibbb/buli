@@ -12,6 +12,7 @@ export { PromptContextSelectionPane } from "./components/PromptContextSelectionP
 export { PromptDraftText } from "./components/PromptDraftText.tsx";
 export { ReasoningCollapsedChip } from "./components/ReasoningCollapsedChip.tsx";
 export { ReasoningStreamBlock } from "./components/ReasoningStreamBlock.tsx";
+export { StreamingAssistantMessageBlock } from "./components/StreamingAssistantMessageBlock.tsx";
 export { TopBar } from "./components/TopBar.tsx";
 export { UserPromptBlock } from "./components/UserPromptBlock.tsx";
 export {
@@ -25,7 +26,6 @@ export {
   scrollConversationTranscriptViewportUpByRows,
 } from "./conversationTranscriptViewportState.ts";
 export {
-  appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
@@ -39,7 +39,11 @@ export {
   moveHighlightedModelSelectionUp,
   moveHighlightedReasoningEffortChoiceDown,
   moveHighlightedReasoningEffortChoiceUp,
-  removeLastCharacterFromPromptDraft,
+  insertTextIntoPromptDraftAtCursor,
+  movePromptDraftCursorLeft,
+  movePromptDraftCursorRight,
+  removePromptDraftCharacterAtCursor,
+  removePromptDraftCharacterBeforeCursor,
   selectHighlightedPromptContextCandidate,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,

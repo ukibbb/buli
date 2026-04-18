@@ -2,17 +2,22 @@ import { expect, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { renderToString } from "ink";
 import React from "react";
-import { InputPanel } from "../../src/components/InputPanel.tsx";
+import { InputPanel, INPUT_PANEL_NATURAL_ROW_COUNT } from "../../src/components/InputPanel.tsx";
 
-function renderWithoutAnsi(node: React.ReactElement) {
-  return stripVTControlCharacters(renderToString(node));
+function renderWithoutAnsi(node: React.ReactElement, columns = 80) {
+  return stripVTControlCharacters(renderToString(node, { columns }));
+}
+
+function countRenderedLinesMatchingPattern(renderedOutput: string, pattern: RegExp): number {
+  return renderedOutput.split("\n").filter((renderedLine) => pattern.test(renderedLine)).length;
 }
 
 test("InputPanel renders mode and model labels in the header strip", () => {
   const output = renderWithoutAnsi(
-    <InputPanel
-      promptDraft=""
-      isPromptInputDisabled={false}
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled={false}
       promptInputHintText="Enter to send"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -28,9 +33,10 @@ test("InputPanel renders mode and model labels in the header strip", () => {
 
 test("InputPanel renders working indicator only while assistant response is streaming", () => {
   const streamingOutput = renderWithoutAnsi(
-    <InputPanel
-      promptDraft="hello"
-      isPromptInputDisabled
+      <InputPanel
+        promptDraft="hello"
+        promptDraftCursorOffset={5}
+        isPromptInputDisabled
       promptInputHintText="streaming"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -41,9 +47,10 @@ test("InputPanel renders working indicator only while assistant response is stre
     />,
   );
   const idleOutput = renderWithoutAnsi(
-    <InputPanel
-      promptDraft=""
-      isPromptInputDisabled={false}
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled={false}
       promptInputHintText="Enter to send"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -59,9 +66,10 @@ test("InputPanel renders working indicator only while assistant response is stre
 
 test("InputPanel renders context window percentage when token usage is known", () => {
   const output = renderWithoutAnsi(
-    <InputPanel
-      promptDraft=""
-      isPromptInputDisabled={false}
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled={false}
       promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -78,6 +86,7 @@ test("InputPanel renders a dim placeholder when context window capacity is unkno
   const output = renderWithoutAnsi(
     <InputPanel
       promptDraft=""
+      promptDraftCursorOffset={0}
       isPromptInputDisabled={false}
       promptInputHintText=""
       modeLabel="implementation"
@@ -93,9 +102,10 @@ test("InputPanel renders a dim placeholder when context window capacity is unkno
 
 test("InputPanel renders a cursor indicator when prompt input is enabled", () => {
   const output = renderWithoutAnsi(
-    <InputPanel
-      promptDraft="hello"
-      isPromptInputDisabled={false}
+      <InputPanel
+        promptDraft="hello"
+        promptDraftCursorOffset={5}
+        isPromptInputDisabled={false}
       promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -110,9 +120,10 @@ test("InputPanel renders a cursor indicator when prompt input is enabled", () =>
 
 test("InputPanel does not render a block cursor when prompt input is disabled", () => {
   const output = renderWithoutAnsi(
-    <InputPanel
-      promptDraft="hello"
-      isPromptInputDisabled
+      <InputPanel
+        promptDraft="hello"
+        promptDraftCursorOffset={5}
+        isPromptInputDisabled
       promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -127,9 +138,10 @@ test("InputPanel does not render a block cursor when prompt input is disabled", 
 
 test("InputPanel shows the snake animation only while assistant response is streaming", () => {
   const streamingOutput = renderWithoutAnsi(
-    <InputPanel
-      promptDraft=""
-      isPromptInputDisabled
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled
       promptInputHintText="idle hint"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -140,9 +152,10 @@ test("InputPanel shows the snake animation only while assistant response is stre
     />,
   );
   const idleOutput = renderWithoutAnsi(
-    <InputPanel
-      promptDraft=""
-      isPromptInputDisabled={false}
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled={false}
       promptInputHintText="idle hint"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
@@ -158,10 +171,11 @@ test("InputPanel shows the snake animation only while assistant response is stre
 
 test("InputPanel centers the prompt row between header and footer", () => {
   const output = renderWithoutAnsi(
-    <InputPanel
-      promptDraft=""
-      isPromptInputDisabled={false}
-      promptInputHintText="[ ? ] help · shortcuts"
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled={false}
+      promptInputHintText="[ ? ] help · shortcuts · [ ← → ] caret · [ ↑ ↓ ] transcript"
       modeLabel="implementation"
       modelIdentifier="gpt-5.4"
       reasoningEffortLabel="default"
@@ -177,4 +191,44 @@ test("InputPanel centers the prompt row between header and footer", () => {
   expect(promptLineIndex).toBeGreaterThan(0);
   expect(renderedLines[promptLineIndex - 1]).toMatch(/^│\s+│$/);
   expect(renderedLines[promptLineIndex + 1]).toMatch(/^│\s+│$/);
+});
+
+test("InputPanel keeps a long prompt draft on one visual row at narrow widths", () => {
+  const output = renderWithoutAnsi(
+      <InputPanel
+        promptDraft="@/Users/lukasz/Desktop/Projekty/buli/.bun/install/cache/@babel/helper-annotate-as-pure@7.27.3@@@1/README.md"
+        promptDraftCursorOffset={107}
+        isPromptInputDisabled={false}
+      promptInputHintText=""
+      modeLabel="implementation"
+      modelIdentifier="gpt-5.4"
+      reasoningEffortLabel="default"
+      assistantResponseStatus="waiting_for_user_input"
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
+    />,
+    58,
+  );
+
+  expect(output.split("\n")).toHaveLength(INPUT_PANEL_NATURAL_ROW_COUNT);
+  expect(countRenderedLinesMatchingPattern(output, /install\/cache|helper-annotate|README\.md/)).toBe(1);
+});
+
+test("InputPanel renders the cursor at the current prompt draft offset", () => {
+  const output = renderWithoutAnsi(
+    <InputPanel
+      promptDraft="hello"
+      promptDraftCursorOffset={2}
+      isPromptInputDisabled={false}
+      promptInputHintText=""
+      modeLabel="implementation"
+      modelIdentifier="opus-4.6"
+      reasoningEffortLabel="high"
+      assistantResponseStatus="waiting_for_user_input"
+      totalContextTokensUsed={undefined}
+      contextWindowTokenCapacity={undefined}
+    />,
+  );
+
+  expect(output).toContain("he█llo");
 });

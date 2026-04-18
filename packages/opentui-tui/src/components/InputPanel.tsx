@@ -9,13 +9,13 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Pen frame HOeet. Owns three stacked rows: a header strip with mode + model
 // chips, a body with the prompt draft and caret, and a footer that shows the
-// persistent `[?] help · shortcuts` block when idle, the working indicator
+// persistent idle shortcuts block when idle, the working indicator
 // while streaming, or a contextual override message (e.g. selection open)
 // when a modal/selection owns keyboard focus.
 //
 // promptInputHintOverride is undefined in the default idle state so the
-// footer can render the design's coloured bracket-cyan-?-dim glyphs rather
-// than being forced through a plain monochrome string.
+// footer can render the coloured `[ ? ] help · shortcuts` glyphs plus the
+// always-visible caret/transcript hints instead of a plain monochrome string.
 //
 // Exported row count = 2 (rounded border) + 1 (header) + 3 (body w/ paddingY)
 // + 1 (footer). It is the source of truth for ChatScreen's responsive
@@ -24,6 +24,7 @@ export const INPUT_PANEL_NATURAL_ROW_COUNT = 7;
 
 export type InputPanelProps = {
   promptDraft: string;
+  promptDraftCursorOffset: number;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   promptInputHintOverride?: string;
@@ -39,11 +40,15 @@ export function InputPanel(props: InputPanelProps): ReactNode {
   const [frameIndex, setFrameIndex] = useState(0);
 
   useEffect(() => {
+    if (props.isPromptInputDisabled) {
+      return;
+    }
+
     const id = setInterval(() => {
       setFrameIndex((prev) => prev + 1);
     }, 500);
     return () => clearInterval(id);
-  }, []);
+  }, [props.isPromptInputDisabled]);
 
   const isCursorVisible = frameIndex % 2 === 0;
   const cursorCharacter = !props.isPromptInputDisabled && isCursorVisible ? "█" : " ";
@@ -69,11 +74,15 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         <text fg={chatScreenTheme.accentGreen}>
           <b>{">"}</b>
         </text>
-        <PromptDraftText
-          promptDraft={props.promptDraft}
-          selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
-          cursorCharacter={cursorCharacter}
-        />
+        <box flexGrow={1}>
+          <PromptDraftText
+            promptDraft={props.promptDraft}
+            promptDraftCursorOffset={props.promptDraftCursorOffset}
+            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+            cursorCharacter={cursorCharacter}
+            shouldRenderPromptDraftOnSingleLine={true}
+          />
+        </box>
       </box>
       <box
         backgroundColor={chatScreenTheme.surfaceTwo}
@@ -86,14 +95,18 @@ export function InputPanel(props: InputPanelProps): ReactNode {
             <SnakeAnimationIndicator />
             <text fg={chatScreenTheme.textMuted}>{"working…"}</text>
           </box>
-        ) : props.promptInputHintOverride ? (
+        ) : props.promptInputHintOverride !== undefined ? (
           <text fg={chatScreenTheme.textMuted}>{props.promptInputHintOverride}</text>
         ) : (
           <text>
             <span fg={chatScreenTheme.textDim}>{"[ "}</span>
             <b fg={chatScreenTheme.accentCyan}>{"?"}</b>
             <span fg={chatScreenTheme.textDim}>{" ] "}</span>
-            <span fg={chatScreenTheme.textMuted}>{"help · shortcuts"}</span>
+            <span fg={chatScreenTheme.textMuted}>{"help · shortcuts · "}</span>
+            <span fg={chatScreenTheme.textDim}>{"[ ← → ] "}</span>
+            <span fg={chatScreenTheme.textMuted}>{"caret · "}</span>
+            <span fg={chatScreenTheme.textDim}>{"[ ↑ ↓ ] "}</span>
+            <span fg={chatScreenTheme.textMuted}>{"transcript"}</span>
           </text>
         )}
         <ContextWindowMeter

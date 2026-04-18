@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../testRenderWithCleanup.ts";
 import {
   comfortableTerminalSizeTier,
   compactTerminalSizeTier,
@@ -22,6 +22,10 @@ describe("ShortcutsModal", () => {
     expect(frame).toContain("help · shortcuts");
     expect(frame).toContain("// keyboard");
     expect(frame).toContain("// help");
+    expect(frame).toContain("move caret inside draft");
+    expect(frame).toContain("delete around caret");
+    expect(frame).toContain("↑ ↓ choose · enter insert");
+    expect(frame).toContain("scroll transcript under pointer");
     expect(frame).toContain("buli · tui · v0.1");
     expect(frame).toContain("close with ? or esc");
   });

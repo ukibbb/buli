@@ -1,26 +1,29 @@
 import type { BashToolCallRequest, ModelContextItem } from "@buli/contracts";
 
-type OpenAiInputItem =
-  | {
-      role: "user" | "assistant";
-      content: Array<{
-        type: "input_text";
-        text: string;
-      }>;
-    }
-  | {
-      type: "function_call";
-      call_id: string;
-      name: string;
-      arguments: string;
-    }
-  | {
-      type: "function_call_output";
-      call_id: string;
-      output: string;
-    };
+export type OpenAiConversationMessageInputItem = {
+  role: "user" | "assistant";
+  content: string;
+};
 
-export function createOpenAiResponsesInputItems(modelContextItems: readonly ModelContextItem[]): OpenAiInputItem[] {
+export type OpenAiFunctionCallInputItem = {
+  type: "function_call";
+  call_id: string;
+  name: string;
+  arguments: string;
+};
+
+export type OpenAiFunctionCallOutputInputItem = {
+  type: "function_call_output";
+  call_id: string;
+  output: string;
+};
+
+export type OpenAiConversationInputItem =
+  | OpenAiConversationMessageInputItem
+  | OpenAiFunctionCallInputItem
+  | OpenAiFunctionCallOutputInputItem;
+
+export function createOpenAiResponsesInputItems(modelContextItems: readonly ModelContextItem[]): OpenAiConversationInputItem[] {
   return modelContextItems.map((modelContextItem) => {
     if (modelContextItem.itemKind === "user_message") {
       return createMessageInputItem("user", modelContextItem.messageText);
@@ -38,7 +41,10 @@ export function createOpenAiResponsesInputItems(modelContextItems: readonly Mode
   });
 }
 
-export function createFunctionCallOutputInputItem(toolCallId: string, toolResultText: string): OpenAiInputItem {
+export function createFunctionCallOutputInputItem(
+  toolCallId: string,
+  toolResultText: string,
+): OpenAiFunctionCallOutputInputItem {
   return {
     type: "function_call_output",
     call_id: toolCallId,
@@ -46,19 +52,20 @@ export function createFunctionCallOutputInputItem(toolCallId: string, toolResult
   };
 }
 
-function createMessageInputItem(role: "user" | "assistant", messageText: string): OpenAiInputItem {
+function createMessageInputItem(
+  role: "user" | "assistant",
+  messageText: string,
+): OpenAiConversationMessageInputItem {
   return {
     role,
-    content: [
-      {
-        type: "input_text",
-        text: messageText,
-      },
-    ],
+    content: messageText,
   };
 }
 
-function createFunctionCallInputItem(toolCallId: string, bashToolCallRequest: BashToolCallRequest): OpenAiInputItem {
+function createFunctionCallInputItem(
+  toolCallId: string,
+  bashToolCallRequest: BashToolCallRequest,
+): OpenAiFunctionCallInputItem {
   return {
     type: "function_call",
     call_id: toolCallId,
@@ -66,8 +73,8 @@ function createFunctionCallInputItem(toolCallId: string, bashToolCallRequest: Ba
     arguments: JSON.stringify({
       command: bashToolCallRequest.shellCommand,
       description: bashToolCallRequest.commandDescription,
-      ...(bashToolCallRequest.workingDirectoryPath ? { workdir: bashToolCallRequest.workingDirectoryPath } : {}),
-      ...(bashToolCallRequest.timeoutMilliseconds ? { timeout: bashToolCallRequest.timeoutMilliseconds } : {}),
+      workdir: bashToolCallRequest.workingDirectoryPath ?? null,
+      timeout: bashToolCallRequest.timeoutMilliseconds ?? null,
     }),
   };
 }

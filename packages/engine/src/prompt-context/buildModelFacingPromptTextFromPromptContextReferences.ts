@@ -1,12 +1,19 @@
 import { lstat, realpath } from "node:fs/promises";
-import { relative, resolve, sep } from "node:path";
 import { buildPromptContextDirectorySnapshotText } from "./buildPromptContextDirectorySnapshotText.ts";
 import { buildPromptContextFileSnapshotText } from "./buildPromptContextFileSnapshotText.ts";
 import { parsePromptContextReferencesFromPromptText } from "./parsePromptContextReferencesFromPromptText.ts";
+import {
+  buildPromptContextDisplayPathFromAbsolutePath,
+  isPathInsidePromptContextBrowseRoot,
+  resolvePromptContextPathFromReference,
+  resolvePromptContextPathScope,
+  type PromptContextPathScope,
+} from "./promptContextPathScope.ts";
 
 export async function buildModelFacingPromptTextFromPromptContextReferences(input: {
   promptText: string;
   promptContextBrowseRootPath: string;
+  promptContextStartingDirectoryPath?: string;
 }): Promise<string> {
   const parsedPromptContextReferences = parsePromptContextReferencesFromPromptText(input.promptText);
   if (parsedPromptContextReferences.length === 0) {
@@ -15,11 +22,16 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
 
   const promptContextBlocks: string[] = [];
   const seenPromptContextKeys = new Set<string>();
-  const browseRootRealPath = await realpath(input.promptContextBrowseRootPath);
+  const promptContextPathScope = await resolvePromptContextPathScope({
+    promptContextBrowseRootPath: input.promptContextBrowseRootPath,
+    ...(input.promptContextStartingDirectoryPath
+      ? { promptContextStartingDirectoryPath: input.promptContextStartingDirectoryPath }
+      : {}),
+  });
 
   for (const parsedPromptContextReference of parsedPromptContextReferences) {
     const resolvedPromptContextReference = await resolvePromptContextReference({
-      browseRootRealPath,
+      promptContextPathScope,
       parsedPromptContextReferenceDisplayPath: parsedPromptContextReference.displayPath,
     });
     const dedupeKey = resolvedPromptContextReference.kind === "resolved"
@@ -63,7 +75,7 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
 }
 
 async function resolvePromptContextReference(input: {
-  browseRootRealPath: string;
+  promptContextPathScope: PromptContextPathScope;
   parsedPromptContextReferenceDisplayPath: string;
 }): Promise<
   | {
@@ -77,22 +89,25 @@ async function resolvePromptContextReference(input: {
       errorMessage: string;
     }
 > {
-  const candidateAbsolutePath = resolve(input.browseRootRealPath, input.parsedPromptContextReferenceDisplayPath);
+  const candidateAbsolutePath = resolvePromptContextPathFromReference({
+    promptContextPathText: input.parsedPromptContextReferenceDisplayPath,
+    promptContextPathScope: input.promptContextPathScope,
+  });
 
   try {
-    const candidateRealPath = await realpath(candidateAbsolutePath);
-    if (!isPathInsidePromptContextBrowseRoot(input.browseRootRealPath, candidateRealPath)) {
-      return {
-        kind: "unresolved",
-        errorMessage: "The referenced path resolves outside the allowed Desktop prompt-context root.",
-      };
-    }
-
-    const candidateStats = await lstat(candidateRealPath);
+    const candidateStats = await lstat(candidateAbsolutePath);
     if (candidateStats.isSymbolicLink()) {
       return {
         kind: "unresolved",
         errorMessage: "Symbolic links are not allowed as prompt-context references.",
+      };
+    }
+
+    const candidateRealPath = await realpath(candidateAbsolutePath);
+    if (!isPathInsidePromptContextBrowseRoot(input.promptContextPathScope.promptContextBrowseRootPath, candidateRealPath)) {
+      return {
+        kind: "unresolved",
+        errorMessage: "The referenced path resolves outside the allowed prompt-context root.",
       };
     }
 
@@ -103,7 +118,11 @@ async function resolvePromptContextReference(input: {
       };
     }
 
-    const displayPath = toPortableRelativePath(relative(input.browseRootRealPath, candidateRealPath), candidateStats.isDirectory());
+    const displayPath = buildPromptContextDisplayPathFromAbsolutePath({
+      absolutePath: candidateRealPath,
+      promptContextStartingDirectoryPath: input.promptContextPathScope.promptContextStartingDirectoryPath,
+      isDirectory: candidateStats.isDirectory(),
+    });
     return {
       kind: "resolved",
       absolutePath: candidateRealPath,
@@ -113,25 +132,7 @@ async function resolvePromptContextReference(input: {
   } catch {
     return {
       kind: "unresolved",
-      errorMessage: "The referenced path does not exist under the allowed Desktop prompt-context root.",
+      errorMessage: "The referenced path does not exist under the allowed prompt-context root.",
     };
   }
-}
-
-function isPathInsidePromptContextBrowseRoot(browseRootRealPath: string, candidateRealPath: string): boolean {
-  if (candidateRealPath === browseRootRealPath) {
-    return true;
-  }
-
-  const rootPrefix = browseRootRealPath.endsWith(sep) ? browseRootRealPath : `${browseRootRealPath}${sep}`;
-  return candidateRealPath.startsWith(rootPrefix);
-}
-
-function toPortableRelativePath(relativePath: string, isDirectory: boolean): string {
-  const portableRelativePath = relativePath.split(sep).join("/");
-  if (!isDirectory || portableRelativePath.endsWith("/")) {
-    return portableRelativePath;
-  }
-
-  return `${portableRelativePath}/`;
 }

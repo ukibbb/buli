@@ -8,8 +8,38 @@ export type PromptContextSelectionPaneProps = {
   highlightedPromptContextCandidateIndex: number;
 };
 
+const MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT = 6;
+
+function selectVisiblePromptContextCandidateWindow(input: {
+  promptContextCandidates: readonly PromptContextCandidate[];
+  highlightedPromptContextCandidateIndex: number;
+}): {
+  firstVisiblePromptContextCandidateIndex: number;
+  visiblePromptContextCandidates: readonly PromptContextCandidate[];
+} {
+  const latestFirstVisiblePromptContextCandidateIndex = Math.max(
+    0,
+    input.promptContextCandidates.length - MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT,
+  );
+  const firstVisiblePromptContextCandidateIndex = Math.min(
+    Math.max(0, input.highlightedPromptContextCandidateIndex - (MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT - 1)),
+    latestFirstVisiblePromptContextCandidateIndex,
+  );
+
+  return {
+    firstVisiblePromptContextCandidateIndex,
+    visiblePromptContextCandidates: input.promptContextCandidates.slice(
+      firstVisiblePromptContextCandidateIndex,
+      firstVisiblePromptContextCandidateIndex + MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT,
+    ),
+  };
+}
+
 export function PromptContextSelectionPane(props: PromptContextSelectionPaneProps) {
-  const visiblePromptContextCandidates = props.promptContextCandidates.slice(0, 6);
+  const { firstVisiblePromptContextCandidateIndex, visiblePromptContextCandidates } = selectVisiblePromptContextCandidateWindow({
+    promptContextCandidates: props.promptContextCandidates,
+    highlightedPromptContextCandidateIndex: props.highlightedPromptContextCandidateIndex,
+  });
 
   return (
     <Box
@@ -22,20 +52,26 @@ export function PromptContextSelectionPane(props: PromptContextSelectionPaneProp
       marginBottom={1}
       paddingX={1}
     >
-      <Text color={chatScreenTheme.textMuted}>Desktop context</Text>
+      <Text color={chatScreenTheme.textMuted}>Context</Text>
       {visiblePromptContextCandidates.length === 0 ? (
         <Text color={chatScreenTheme.textSecondary}>No matching files or folders.</Text>
       ) : (
         visiblePromptContextCandidates.map((promptContextCandidate, index) => {
-          const isHighlightedPromptContextCandidate = index === props.highlightedPromptContextCandidateIndex;
+          const isHighlightedPromptContextCandidate =
+            firstVisiblePromptContextCandidateIndex + index === props.highlightedPromptContextCandidateIndex;
           return (
-            <Box key={`${promptContextCandidate.kind}:${promptContextCandidate.displayPath}`} gap={1}>
+            <Box key={`${promptContextCandidate.kind}:${promptContextCandidate.displayPath}`} gap={1} width="100%">
               <Text color={isHighlightedPromptContextCandidate ? chatScreenTheme.accentGreen : chatScreenTheme.textDim}>
                 {isHighlightedPromptContextCandidate ? ">" : " "}
               </Text>
-              <Text color={isHighlightedPromptContextCandidate ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}>
-                {promptContextCandidate.displayPath}
-              </Text>
+              <Box flexGrow={1}>
+                <Text
+                  color={isHighlightedPromptContextCandidate ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+                  wrap="truncate-end"
+                >
+                  {promptContextCandidate.displayPath}
+                </Text>
+              </Box>
             </Box>
           );
         })

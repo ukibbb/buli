@@ -25,6 +25,18 @@ export type {
   ParagraphContentPart,
 } from "./assistantContentPart.ts";
 export {
+  AssistantStreamingProjectionSchema,
+  StreamingAssistantContentPartSchema,
+  StreamingFencedCodeBlockContentPartSchema,
+  StreamingMarkdownTextContentPartSchema,
+} from "./assistantStreamingProjection.ts";
+export type {
+  AssistantStreamingProjection,
+  StreamingAssistantContentPart,
+  StreamingFencedCodeBlockContentPart,
+  StreamingMarkdownTextContentPart,
+} from "./assistantStreamingProjection.ts";
+export {
   AssistantMessageConversationSessionEntrySchema,
   CompletedToolResultConversationSessionEntrySchema,
   ConversationSessionEntrySchema,
@@ -52,6 +64,7 @@ export {
   AssistantResponseEventSchema,
   AssistantResponseFailedEventSchema,
   AssistantResponseIncompleteEventSchema,
+  AssistantResponseStreamProjectionUpdatedEventSchema,
   AssistantResponseStartedEventSchema,
   AssistantResponseTextChunkEventSchema,
   AssistantToolApprovalRequestedEventSchema,
@@ -71,6 +84,7 @@ export type {
   AssistantResponseEvent,
   AssistantResponseFailedEvent,
   AssistantResponseIncompleteEvent,
+  AssistantResponseStreamProjectionUpdatedEvent,
   AssistantResponseStartedEvent,
   AssistantResponseTextChunkEvent,
   AssistantToolApprovalRequestedEvent,

@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import type { AssistantResponseEvent } from "@buli/contracts";
 import {
-  appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
   createInitialChatScreenState,
+  insertTextIntoPromptDraftAtCursor,
   submitPromptDraft,
 } from "../src/index.ts";
 
 test("applyAssistantResponseEventToChatScreenState renders a full turn through streaming reasoning into a collapsed chip", () => {
-  let chatScreenState = appendTypedTextToPromptDraft(
+  let chatScreenState = insertTextIntoPromptDraftAtCursor(
     createInitialChatScreenState({ selectedModelId: "gpt-5.4" }),
     "why",
   );

@@ -185,8 +185,8 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
     const parsedArguments = JSON.parse(toolCallState.argumentsText) as {
       command?: string;
       description?: string;
-      workdir?: string;
-      timeout?: number;
+      workdir?: string | null;
+      timeout?: number | null;
     };
     if (!parsedArguments.command || !parsedArguments.description) {
       throw new Error("OpenAI function call for bash is missing required arguments");
@@ -196,7 +196,7 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       toolName: "bash",
       shellCommand: parsedArguments.command,
       commandDescription: parsedArguments.description,
-      ...(parsedArguments.workdir ? { workingDirectoryPath: parsedArguments.workdir } : {}),
+      ...(typeof parsedArguments.workdir === "string" ? { workingDirectoryPath: parsedArguments.workdir } : {}),
       ...(typeof parsedArguments.timeout === "number" ? { timeoutMilliseconds: parsedArguments.timeout } : {}),
     };
   }

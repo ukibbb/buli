@@ -18,6 +18,10 @@ export type ExpectedConversationTranscriptEntryShape =
       text: string;
       assistantContentParts?: readonly AssistantContentPart[];
     }
+  | {
+      kind: "streaming_assistant_message";
+      fullResponseText: string;
+    }
   | { kind: "error"; text: string }
   | { kind: "incomplete_response_notice"; incompleteReason: string }
   | { kind: "streaming_reasoning_summary"; reasoningSummaryText: string }

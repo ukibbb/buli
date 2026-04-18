@@ -12,6 +12,7 @@ test("MinimumHeightPromptStrip renders the caret and draft text when idle", () =
   const output = renderWithoutAnsi(
     <MinimumHeightPromptStrip
       promptDraft="hello world"
+      promptDraftCursorOffset={11}
       isPromptInputDisabled={false}
       assistantResponseStatus="waiting_for_user_input"
     />,
@@ -24,6 +25,7 @@ test("MinimumHeightPromptStrip swaps the caret line for the working label while 
   const output = renderWithoutAnsi(
     <MinimumHeightPromptStrip
       promptDraft="anything"
+      promptDraftCursorOffset={8}
       isPromptInputDisabled={true}
       assistantResponseStatus="streaming_assistant_response"
     />,
@@ -36,6 +38,7 @@ test("MinimumHeightPromptStrip omits the context meter and help shortcuts footer
   const output = renderWithoutAnsi(
     <MinimumHeightPromptStrip
       promptDraft=""
+      promptDraftCursorOffset={0}
       isPromptInputDisabled={false}
       assistantResponseStatus="waiting_for_user_input"
     />,

@@ -13,9 +13,8 @@ export const incompleteResponseNotice: AssistantTranscriptScenario = {
   ],
   expectedConversationTranscriptEntries: [
     {
-      kind: "message",
-      role: "assistant",
-      text: "Here is a partial",
+      kind: "streaming_assistant_message",
+      fullResponseText: "Here is a partial",
     },
     {
       kind: "incomplete_response_notice",

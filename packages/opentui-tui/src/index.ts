@@ -19,7 +19,11 @@ export async function renderChatScreenInTerminalWithOpentui(input: {
   assistantConversationRunner: AssistantConversationRunner;
 }): Promise<OpentuiChatScreenInstance> {
   const originalConsole = globalThis.console;
-  const cliRenderer = await createCliRenderer({ screenMode: "alternate-screen" });
+  const cliRenderer = await createCliRenderer({
+    screenMode: "alternate-screen",
+    useMouse: true,
+    enableMouseMovement: true,
+  });
   restoreConsoleTimeStampAfterOpentuiActivation({ originalConsole });
   const root = createRoot(cliRenderer);
   root.render(
@@ -44,7 +48,6 @@ export async function renderChatScreenInTerminalWithOpentui(input: {
 }
 export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 export {
-  appendTypedTextToPromptDraft,
   applyAssistantResponseEventToChatScreenState,
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
@@ -58,7 +61,11 @@ export {
   moveHighlightedModelSelectionUp,
   moveHighlightedReasoningEffortChoiceDown,
   moveHighlightedReasoningEffortChoiceUp,
-  removeLastCharacterFromPromptDraft,
+  insertTextIntoPromptDraftAtCursor,
+  movePromptDraftCursorLeft,
+  movePromptDraftCursorRight,
+  removePromptDraftCharacterAtCursor,
+  removePromptDraftCharacterBeforeCursor,
   selectHighlightedPromptContextCandidate,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
@@ -79,6 +86,7 @@ export {
   createInitialConversationTranscriptViewportState,
   jumpConversationTranscriptViewportToNewestRows,
   jumpConversationTranscriptViewportToOldestRows,
+  reconcileConversationTranscriptViewportAfterObservedScrollPosition,
   reconcileConversationTranscriptViewportAfterMeasurement,
   scrollConversationTranscriptViewportDownByPage,
   scrollConversationTranscriptViewportDownByRows,
@@ -95,5 +103,6 @@ export { PromptContextSelectionPane } from "./components/PromptContextSelectionP
 export { PromptDraftText } from "./components/PromptDraftText.tsx";
 export { ReasoningCollapsedChip } from "./components/ReasoningCollapsedChip.tsx";
 export { ReasoningStreamBlock } from "./components/ReasoningStreamBlock.tsx";
+export { StreamingAssistantMessageBlock } from "./components/StreamingAssistantMessageBlock.tsx";
 export { TopBar } from "./components/TopBar.tsx";
 export { UserPromptBlock } from "./components/UserPromptBlock.tsx";
