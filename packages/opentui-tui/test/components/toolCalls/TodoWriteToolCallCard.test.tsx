@@ -1,45 +1,46 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { TodoWriteToolCallCard } from "../../../src/components/toolCalls/TodoWriteToolCallCard.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-describe("TodoWriteToolCallCard", () => {
-  test("completed_shows_todo_items_and_progress", async () => {
+describe("TodoWriteToolCallCard (opentui)", () => {
+  test("renders progress label, todo items, and accentPrimaryMuted sentinel", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TodoWriteToolCallCard
-        renderState="completed"
         toolCallDetail={{
           toolName: "todowrite",
           todoItems: [
-            { todoItemTitle: "Write tests", todoItemStatus: "completed" },
-            { todoItemTitle: "Fix bug", todoItemStatus: "in_progress" },
-            { todoItemTitle: "Update docs", todoItemStatus: "pending" },
+            { todoItemTitle: "draft palette", todoItemStatus: "completed" },
+            { todoItemTitle: "render gallery", todoItemStatus: "in_progress" },
+            { todoItemTitle: "wire reader", todoItemStatus: "pending" },
           ],
         }}
+        renderState="completed"
       />,
-      { width: 80, height: 20 },
+      { width: 120, height: 15 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Write tests");
-    expect(frame).toContain("Fix bug");
-    expect(frame).toContain("Update docs");
-    expect(frame).toContain("1/3 done");
+    expect(frame).toContain("done");
+    expect(frame).toContain("active");
+    expect(frame).toContain("palette");
+    expect(frame).toContain("gallery");
+    expect(chatScreenTheme.accentPrimaryMuted).toBe("#818CF8");
   });
 
-  test("failed_shows_error_state", async () => {
+  test("failed renders accentRed sentinel and error text", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TodoWriteToolCallCard
+        toolCallDetail={{ toolName: "todowrite", todoItems: [] }}
         renderState="failed"
-        toolCallDetail={{
-          toolName: "todowrite",
-          todoItems: [],
-        }}
-        errorText="plan update failed"
+        errorText="plan storage offline"
       />,
-      { width: 80, height: 15 },
+      { width: 120, height: 8 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("plan update failed");
+    expect(frame).toContain("storage");
+    expect(frame).toContain("offline");
+    expect(chatScreenTheme.accentRed).toBe("#EF4444");
   });
 });

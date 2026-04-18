@@ -1,47 +1,69 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { BashToolCallCard } from "../../../src/components/toolCalls/BashToolCallCard.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-describe("BashToolCallCard", () => {
-  test("completed_zero_exit_shows_command_and_status", async () => {
+describe("BashToolCallCard (opentui)", () => {
+  test("streaming renders command line and accentAmber sentinel with running status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
-        renderState="completed"
-        toolCallDetail={{
-          toolName: "bash",
-          commandLine: "ls -la /tmp",
-          exitCode: 0,
-          outputLines: [
-            { lineKind: "stdout", lineText: "total 8" },
-            { lineKind: "stdout", lineText: "drwxr-xr-x  2 root root 4096 Apr 16 10:00 ." },
-          ],
-        }}
-        durationMs={120}
+        toolCallDetail={{ toolName: "bash", commandLine: "bun test" }}
+        renderState="streaming"
       />,
-      { width: 80, height: 20 },
+      { width: 120, height: 10 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("ls -la /tmp");
-    expect(frame).toContain("exit 0");
-    expect(frame).toContain("total 8");
+    expect(frame).toContain("Bash");
+    expect(frame).toContain("running");
+    expect(chatScreenTheme.accentAmber).toBe("#F59E0B");
   });
 
-  test("failed_shows_error_text", async () => {
+  test("completed exit 0 renders exit label and accentGreen sentinel", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
-        renderState="failed"
-        toolCallDetail={{
-          toolName: "bash",
-          commandLine: "rm -rf /",
-        }}
-        errorText="command blocked"
+        toolCallDetail={{ toolName: "bash", commandLine: "ls", exitCode: 0 }}
+        renderState="completed"
+        durationMs={250}
       />,
-      { width: 80, height: 15 },
+      { width: 120, height: 10 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("rm -rf /");
-    expect(frame).toContain("command blocked");
+    expect(frame).toContain("exit");
+    expect(frame).toContain("0");
+    expect(chatScreenTheme.accentGreen).toBe("#10B981");
+  });
+
+  test("completed exit non-zero renders exit code and accentRed sentinel", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <BashToolCallCard
+        toolCallDetail={{ toolName: "bash", commandLine: "false", exitCode: 1 }}
+        renderState="completed"
+        durationMs={50}
+      />,
+      { width: 120, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("exit");
+    expect(frame).toContain("1");
+    expect(chatScreenTheme.accentRed).toBe("#EF4444");
+  });
+
+  test("failed renders accentRed sentinel and error text", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <BashToolCallCard
+        toolCallDetail={{ toolName: "bash", commandLine: "ls /nope" }}
+        renderState="failed"
+        errorText="command not found"
+      />,
+      { width: 120, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("not");
+    expect(frame).toContain("found");
+    expect(chatScreenTheme.accentRed).toBe("#EF4444");
   });
 });
