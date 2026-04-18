@@ -87,27 +87,45 @@ function AssistantContentPartView(props: { assistantContentPart: AssistantConten
   }
   // Remaining arm: horizontal_rule.
   return (
-    <Box width="100%">
-      <Text color={chatScreenTheme.textDim}>{"─".repeat(40)}</Text>
+    <Box flexDirection="row" alignItems="center" gap={1} width="100%">
+      <Box flexGrow={1}>
+        <Text color={chatScreenTheme.border}>{"─".repeat(40)}</Text>
+      </Box>
+      <Text color={chatScreenTheme.textDim}>§</Text>
+      <Box flexGrow={1}>
+        <Text color={chatScreenTheme.border}>{"─".repeat(40)}</Text>
+      </Box>
     </Box>
   );
 }
 
 function HeadingView(props: { headingLevel: 1 | 2 | 3; inlineSpans: InlineSpan[] }): ReactNode {
-  const headingColor =
+  const prefixColor =
     props.headingLevel === 1
-      ? chatScreenTheme.textPrimary
+      ? chatScreenTheme.accentCyan
       : props.headingLevel === 2
-        ? chatScreenTheme.textPrimary
-        : chatScreenTheme.textSecondary;
+        ? chatScreenTheme.accentGreen
+        : chatScreenTheme.accentAmber;
+  const bodyColor =
+    props.headingLevel === 3 ? chatScreenTheme.textSecondary : chatScreenTheme.textPrimary;
   const headingPrefix =
-    props.headingLevel === 1 ? "# " : props.headingLevel === 2 ? "## " : "### ";
+    props.headingLevel === 1 ? ">_ " : props.headingLevel === 2 ? "## " : "### ";
   return (
     <Box width="100%">
-      <Text bold color={headingColor}>
+      <Text bold color={prefixColor}>
         {headingPrefix}
       </Text>
-      <InlineMarkdownText spans={props.inlineSpans} />
+      {props.headingLevel === 3 ? (
+        <Text bold color={bodyColor}>
+          {props.inlineSpans.map((span, index) => (
+            <Text key={index}>{span.spanText}</Text>
+          ))}
+        </Text>
+      ) : (
+        <Text bold color={bodyColor}>
+          <InlineMarkdownText spans={props.inlineSpans} />
+        </Text>
+      )}
     </Box>
   );
 }

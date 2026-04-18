@@ -86,30 +86,38 @@ function AssistantContentPartView(props: { assistantContentPart: AssistantConten
   }
   // Remaining arm: horizontal_rule.
   return (
-    <box width="100%">
-      <text fg={chatScreenTheme.textDim}>{"─".repeat(40)}</text>
+    <box flexDirection="row" alignItems="center" gap={1} width="100%">
+      <box flexGrow={1}>
+        <text fg={chatScreenTheme.border}>{"─".repeat(40)}</text>
+      </box>
+      <text fg={chatScreenTheme.textDim}>§</text>
+      <box flexGrow={1}>
+        <text fg={chatScreenTheme.border}>{"─".repeat(40)}</text>
+      </box>
     </box>
   );
 }
 
 function HeadingView(props: { headingLevel: 1 | 2 | 3; inlineSpans: InlineSpan[] }): ReactNode {
-  const headingColor =
+  const prefixColor =
     props.headingLevel === 1
-      ? chatScreenTheme.textPrimary
+      ? chatScreenTheme.accentCyan
       : props.headingLevel === 2
-        ? chatScreenTheme.textPrimary
-        : chatScreenTheme.textSecondary;
+        ? chatScreenTheme.accentGreen
+        : chatScreenTheme.accentAmber;
+  const bodyColor =
+    props.headingLevel === 3 ? chatScreenTheme.textSecondary : chatScreenTheme.textPrimary;
   const headingPrefix =
-    props.headingLevel === 1 ? "# " : props.headingLevel === 2 ? "## " : "### ";
+    props.headingLevel === 1 ? ">_ " : props.headingLevel === 2 ? "## " : "### ";
   // Prefix and spans must share a single <text> parent so they render on one
   // line — in OpenTUI <text> is block-level and two adjacent <text> elements
   // would appear on separate rows.
   return (
     <box width="100%">
       <text>
-        <b fg={headingColor}>{headingPrefix}</b>
+        <b fg={prefixColor}>{headingPrefix}</b>
         {props.inlineSpans.map((span, index) => (
-          <span key={index} fg={headingColor}>{span.spanText}</span>
+          <span key={index} fg={bodyColor}>{span.spanText}</span>
         ))}
       </text>
     </box>
