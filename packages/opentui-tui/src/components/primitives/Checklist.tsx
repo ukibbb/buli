@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { ChecklistItem, ToolCallTodoItemStatus } from "@buli/contracts";
 export type { ChecklistItem };
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { glyphs } from "../glyphs.ts";
 import { TextAttributes } from "@opentui/core";
 
 // Checklist reuses ToolCallTodoItemStatus so a TodoWrite tool card and a
