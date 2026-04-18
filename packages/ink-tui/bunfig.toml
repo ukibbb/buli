@@ -1,0 +1,5 @@
+[test]
+# Preloaded before any test module imports so chalk picks up FORCE_COLOR
+# before its color-level detection runs. Required by the chatScreenTheme
+# regression assertions in test/components/*.tsx.
+preload = ["./test/setup.ts"]

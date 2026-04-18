@@ -22,15 +22,19 @@ test("TopBar no longer renders the mode chip, model chip, or close glyph", () =>
   expect(output).not.toContain("×");
 });
 
+function ansi24BitFg(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `\x1b[38;2;${r};${g};${b}m`;
+}
+
 test("TopBar uses accentGreen for the status dot and textSecondary for the path", () => {
-  const output = renderWithoutAnsi(
+  const ansiOutput = renderToString(
     <TopBar workingDirectoryPath="~/workspace/novibe/apps/api" />,
   );
-  // Verify the glyphs and text are present (colors are configured in the component)
-  expect(output).toContain(glyphs.statusDot);
-  expect(output).toContain("~/workspace/novibe/apps/api");
-  // Verify the design tokens match expected values
-  expect(chatScreenTheme.accentGreen).toBe("#10B981");
-  expect(chatScreenTheme.textSecondary).toBe("#94A3B8");
-  expect(chatScreenTheme.surfaceOne).toBe("#111118");
+  const greenSeq = ansi24BitFg(chatScreenTheme.accentGreen);
+  const secondarySeq = ansi24BitFg(chatScreenTheme.textSecondary);
+  expect(ansiOutput).toContain(`${greenSeq}${glyphs.statusDot}`);
+  expect(ansiOutput).toContain(`${secondarySeq}~/workspace/novibe/apps/api`);
 });
