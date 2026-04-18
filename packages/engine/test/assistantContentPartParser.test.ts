@@ -16,6 +16,11 @@ test("parseAssistantResponseIntoContentParts parses ATX headings at levels 1, 2,
   expect(blocks.map((block) => block.kind === "heading" && block.headingLevel)).toEqual([1, 2, 3]);
 });
 
+test("parseAssistantResponseIntoContentParts parses ATX headings at levels 4, 5, and 6", () => {
+  const blocks = parseAssistantResponseIntoContentParts("#### Level Four\n\n##### Level Five\n\n###### Level Six");
+  expect(blocks.map((block) => block.kind === "heading" && block.headingLevel)).toEqual([4, 5, 6]);
+});
+
 test("parseAssistantResponseIntoContentParts parses a fenced code block with a language label", () => {
   const blocks = parseAssistantResponseIntoContentParts(
     "```ts\nconst a = 1;\nconst b = 2;\n```",

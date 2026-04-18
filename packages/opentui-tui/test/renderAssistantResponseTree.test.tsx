@@ -89,6 +89,50 @@ describe("RenderAssistantResponseTree", () => {
     expect(chatScreenTheme.textDim).toBe("#475569");
   });
 
+  test("heading level 4 uses textSecondary #### prefix and textPrimary body", async () => {
+    const parts: readonly AssistantContentPart[] = [
+      { kind: "heading", headingLevel: 4, inlineSpans: [{ spanKind: "plain", spanText: "Configuration flags" }] },
+    ];
+    const { captureCharFrame, renderOnce } = await testRender(
+      <RenderAssistantResponseTree assistantContentParts={parts} />,
+      { width: 80, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("#### ");
+    expect(frame).toContain("Configuration flags");
+    expect(chatScreenTheme.textSecondary).toBe("#94A3B8");
+    expect(chatScreenTheme.textPrimary).toBe("#FFFFFF");
+  });
+
+  test("heading level 5 uses textMuted ##### prefix and textSecondary body", async () => {
+    const parts: readonly AssistantContentPart[] = [
+      { kind: "heading", headingLevel: 5, inlineSpans: [{ spanKind: "plain", spanText: "default · override · fallback" }] },
+    ];
+    const { captureCharFrame, renderOnce } = await testRender(
+      <RenderAssistantResponseTree assistantContentParts={parts} />,
+      { width: 80, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("##### ");
+    expect(chatScreenTheme.textMuted).toBe("#64748B");
+  });
+
+  test("heading level 6 uses textDim ###### prefix and textMuted body", async () => {
+    const parts: readonly AssistantContentPart[] = [
+      { kind: "heading", headingLevel: 6, inlineSpans: [{ spanKind: "plain", spanText: "note on the note on the note" }] },
+    ];
+    const { captureCharFrame, renderOnce } = await testRender(
+      <RenderAssistantResponseTree assistantContentParts={parts} />,
+      { width: 80, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("###### ");
+    expect(chatScreenTheme.textDim).toBe("#475569");
+  });
+
   test("renders_fenced_code_block_with_each_code_line", async () => {
     const parts: readonly AssistantContentPart[] = [
       { kind: "fenced_code_block", languageLabel: "ts", codeLines: ["const x = 1;", "console.log(x);"] },

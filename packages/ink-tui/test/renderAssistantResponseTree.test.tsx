@@ -76,6 +76,37 @@ describe("RenderAssistantResponseTree", () => {
     expect(ansiOutput).toContain(ansi24BitFg_p2(chatScreenTheme.textDim));
   });
 
+  test("RenderAssistantResponseTree heading level 4 uses textSecondary #### prefix and textPrimary body", () => {
+    const ansiOutput = renderToString(
+      <RenderAssistantResponseTree assistantContentParts={[
+        { kind: "heading", headingLevel: 4, inlineSpans: [{ spanKind: "plain", spanText: "Configuration flags" }] },
+      ]} />,
+    );
+    expect(ansiOutput).toContain(ansi24BitFg_p2(chatScreenTheme.textSecondary));
+    expect(ansiOutput).toContain("#### ");
+    expect(ansiOutput).toContain("Configuration flags");
+  });
+
+  test("RenderAssistantResponseTree heading level 5 uses textMuted ##### prefix and textSecondary body", () => {
+    const ansiOutput = renderToString(
+      <RenderAssistantResponseTree assistantContentParts={[
+        { kind: "heading", headingLevel: 5, inlineSpans: [{ spanKind: "plain", spanText: "default · override · fallback" }] },
+      ]} />,
+    );
+    expect(ansiOutput).toContain(ansi24BitFg_p2(chatScreenTheme.textMuted));
+    expect(ansiOutput).toContain("##### ");
+  });
+
+  test("RenderAssistantResponseTree heading level 6 uses textDim ###### prefix and textMuted body", () => {
+    const ansiOutput = renderToString(
+      <RenderAssistantResponseTree assistantContentParts={[
+        { kind: "heading", headingLevel: 6, inlineSpans: [{ spanKind: "plain", spanText: "note on the note on the note" }] },
+      ]} />,
+    );
+    expect(ansiOutput).toContain(ansi24BitFg_p2(chatScreenTheme.textDim));
+    expect(ansiOutput).toContain("###### ");
+  });
+
   test("renders_fenced_code_block_with_each_code_line", () => {
     const parts: readonly AssistantContentPart[] = [
       { kind: "fenced_code_block", languageLabel: "ts", codeLines: ["const x = 1;", "console.log(x);"] },

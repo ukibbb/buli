@@ -37,11 +37,38 @@ describe("AssistantContentPartSchema", () => {
     expect(parsed.kind === "heading" && parsed.headingLevel).toBe(3);
   });
 
-  test("rejects_heading_part_at_level_4", () => {
+  test("parses_heading_part_at_level_4", () => {
+    const parsed = AssistantContentPartSchema.parse({
+      kind: "heading",
+      headingLevel: 4,
+      inlineSpans: [{ spanKind: "plain", spanText: "Subsection" }],
+    });
+    expect(parsed.kind === "heading" && parsed.headingLevel).toBe(4);
+  });
+
+  test("parses_heading_part_at_level_5", () => {
+    const parsed = AssistantContentPartSchema.parse({
+      kind: "heading",
+      headingLevel: 5,
+      inlineSpans: [{ spanKind: "plain", spanText: "Minor heading" }],
+    });
+    expect(parsed.kind === "heading" && parsed.headingLevel).toBe(5);
+  });
+
+  test("parses_heading_part_at_level_6", () => {
+    const parsed = AssistantContentPartSchema.parse({
+      kind: "heading",
+      headingLevel: 6,
+      inlineSpans: [{ spanKind: "plain", spanText: "Smallest heading" }],
+    });
+    expect(parsed.kind === "heading" && parsed.headingLevel).toBe(6);
+  });
+
+  test("rejects_heading_part_at_level_7", () => {
     expect(() =>
       AssistantContentPartSchema.parse({
         kind: "heading",
-        headingLevel: 4,
+        headingLevel: 7,
         inlineSpans: [],
       }),
     ).toThrow();

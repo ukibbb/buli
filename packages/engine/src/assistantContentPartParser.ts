@@ -169,11 +169,11 @@ function tryParseCalloutBlock(
 }
 
 function tryParseHeadingBlock(currentLine: string): AssistantContentPart | undefined {
-  const headingMatch = currentLine.match(/^(#{1,3})\s+(.+)$/);
+  const headingMatch = currentLine.match(/^(#{1,6})\s+(.+)$/);
   if (!headingMatch) {
     return undefined;
   }
-  const headingLevel = (headingMatch[1] ?? "#").length as 1 | 2 | 3;
+  const headingLevel = (headingMatch[1] ?? "#").length as 1 | 2 | 3 | 4 | 5 | 6;
   return {
     kind: "heading",
     headingLevel,

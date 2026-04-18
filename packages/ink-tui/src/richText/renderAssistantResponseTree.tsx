@@ -99,23 +99,43 @@ function AssistantContentPartView(props: { assistantContentPart: AssistantConten
   );
 }
 
-function HeadingView(props: { headingLevel: 1 | 2 | 3; inlineSpans: InlineSpan[] }): ReactNode {
+function HeadingView(props: { headingLevel: 1 | 2 | 3 | 4 | 5 | 6; inlineSpans: InlineSpan[] }): ReactNode {
   const prefixColor =
     props.headingLevel === 1
       ? chatScreenTheme.accentCyan
       : props.headingLevel === 2
         ? chatScreenTheme.accentGreen
-        : chatScreenTheme.accentAmber;
+        : props.headingLevel === 3
+          ? chatScreenTheme.accentAmber
+          : props.headingLevel === 4
+            ? chatScreenTheme.textSecondary
+            : props.headingLevel === 5
+              ? chatScreenTheme.textMuted
+              : chatScreenTheme.textDim;
   const bodyColor =
-    props.headingLevel === 3 ? chatScreenTheme.textSecondary : chatScreenTheme.textPrimary;
+    props.headingLevel === 3 || props.headingLevel === 5
+      ? chatScreenTheme.textSecondary
+      : props.headingLevel === 6
+        ? chatScreenTheme.textMuted
+        : chatScreenTheme.textPrimary;
   const headingPrefix =
-    props.headingLevel === 1 ? ">_ " : props.headingLevel === 2 ? "## " : "### ";
+    props.headingLevel === 1
+      ? ">_ "
+      : props.headingLevel === 2
+        ? "## "
+        : props.headingLevel === 3
+          ? "### "
+          : props.headingLevel === 4
+            ? "#### "
+            : props.headingLevel === 5
+              ? "##### "
+              : "###### ";
   return (
     <Box width="100%">
       <Text bold color={prefixColor}>
         {headingPrefix}
       </Text>
-      {props.headingLevel === 3 ? (
+      {props.headingLevel === 3 || props.headingLevel === 5 ? (
         <Text bold color={bodyColor}>
           {props.inlineSpans.map((span, index) => (
             <Text key={index}>{span.spanText}</Text>

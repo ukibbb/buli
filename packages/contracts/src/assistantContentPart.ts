@@ -29,7 +29,14 @@ export const ParagraphContentPartSchema = z
 export const HeadingContentPartSchema = z
   .object({
     kind: z.literal("heading"),
-    headingLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    headingLevel: z.union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(3),
+      z.literal(4),
+      z.literal(5),
+      z.literal(6),
+    ]),
     inlineSpans: z.array(InlineSpanSchema),
   })
   .strict();
