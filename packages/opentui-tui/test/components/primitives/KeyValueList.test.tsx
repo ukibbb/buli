@@ -1,23 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { KeyValueList } from "../../../src/components/primitives/KeyValueList.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-describe("KeyValueList", () => {
-  test("renders_keys_and_values", async () => {
+describe("KeyValueList (opentui)", () => {
+  test("renders keys and value content", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <KeyValueList
-        entries={[
-          { entryKeyLabel: "host", entryValueContent: <text>localhost</text> },
-          { entryKeyLabel: "port", entryValueContent: <text>3000</text> },
-        ]}
-      />,
-      { width: 40, height: 10 },
+      <KeyValueList entries={[
+        { entryKeyLabel: "$ novibe", entryValueContent: <text>A reading-first knowledge base</text> },
+      ]} />,
+      { width: 80, height: 4 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("host");
-    expect(frame).toContain("localhost");
-    expect(frame).toContain("port");
-    expect(frame).toContain("3000");
+    expect(frame).toContain("$ novibe");
+    expect(frame).toContain("A reading-first knowledge base");
+    expect(chatScreenTheme.accentCyan).toBe("#22D3EE");
   });
 });
