@@ -21,4 +21,14 @@ describe("UserPromptBlock", () => {
     await renderOnce();
     expect(captureCharFrame()).toContain("›");
   });
+
+  test("does_not_render_literal_gt_character", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <UserPromptBlock promptText="hello" />,
+      { width: 40, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).not.toContain(">");
+  });
 });
