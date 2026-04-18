@@ -816,7 +816,7 @@ export function ChatScreen(props: ChatScreenProps) {
       />
     ) : null;
 
-  const promptInputHintText = chatScreenState.isShortcutsHelpModalVisible
+  const promptInputHintOverride = chatScreenState.isShortcutsHelpModalVisible
     ? "[ esc ] close shortcuts"
     : chatScreenState.modelAndReasoningSelectionState.step !== "hidden"
       ? "Selection is open. Press Esc to close it."
@@ -826,7 +826,7 @@ export function ChatScreen(props: ChatScreenProps) {
         ? "approval required · [ y ] approve · [ n ] deny"
       : chatScreenState.assistantResponseStatus === "streaming_assistant_response"
         ? "Assistant response is streaming. PgUp/PgDn/Home/End scroll."
-        : "[ ? ] help · shortcuts · [ ← → ] caret · [ ↑ ↓ ] transcript";
+        : undefined;
 
   const isPromptInputDisabled =
     chatScreenState.assistantResponseStatus === "streaming_assistant_response" ||
@@ -921,7 +921,7 @@ export function ChatScreen(props: ChatScreenProps) {
             promptDraftCursorOffset={chatScreenState.promptDraftCursorOffset}
             selectedPromptContextReferenceTexts={chatScreenState.selectedPromptContextReferenceTexts}
             isPromptInputDisabled={isPromptInputDisabled}
-            promptInputHintText={promptInputHintText}
+            {...(promptInputHintOverride !== undefined ? { promptInputHintOverride } : {})}
             modeLabel={modeLabel}
             modelIdentifier={chatScreenState.selectedModelId}
             reasoningEffortLabel={reasoningEffortLabel}

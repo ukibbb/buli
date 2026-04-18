@@ -8,8 +8,13 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Renders the HERO 1 input panel (pen frame HOeet). Owns three stacked rows:
 // a header strip with mode + model chips, a body with the prompt draft and
-// a caret, and a footer that shows either the scroll/help hint or the
-// working indicator plus the context-window meter.
+// a caret, and a footer that shows the persistent idle shortcuts block when
+// idle, the working indicator while streaming, or a contextual override
+// message (e.g. selection open) when a modal/selection owns keyboard focus.
+//
+// promptInputHintOverride is undefined in the default idle state so the
+// footer can render the coloured `[ ? ] help · shortcuts` glyphs plus the
+// always-visible caret/transcript hints instead of a plain monochrome string.
 //
 // Exported row count = 2 (rounded border) + 1 (header) + 3 (body w/ paddingY)
 // + 1 (footer). It is the source of truth for ChatScreen's responsive
@@ -21,7 +26,7 @@ export type InputPanelProps = {
   promptDraftCursorOffset: number;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
-  promptInputHintText: string;
+  promptInputHintOverride?: string;
   modeLabel: string;
   modelIdentifier: string;
   reasoningEffortLabel: string;
@@ -73,8 +78,19 @@ export function InputPanel(props: InputPanelProps) {
             <SnakeAnimationIndicator />
             <Text color={chatScreenTheme.textMuted}>working…</Text>
           </Box>
+        ) : props.promptInputHintOverride !== undefined ? (
+          <Text color={chatScreenTheme.textMuted}>{props.promptInputHintOverride}</Text>
         ) : (
-          <Text color={chatScreenTheme.textMuted}>{props.promptInputHintText}</Text>
+          <Box>
+            <Text color={chatScreenTheme.textDim}>{"[ "}</Text>
+            <Text bold color={chatScreenTheme.accentCyan}>{"?"}</Text>
+            <Text color={chatScreenTheme.textDim}>{" ] "}</Text>
+            <Text color={chatScreenTheme.textMuted}>{"help · shortcuts · "}</Text>
+            <Text color={chatScreenTheme.textDim}>{"[ ← → ] "}</Text>
+            <Text color={chatScreenTheme.textMuted}>{"caret · "}</Text>
+            <Text color={chatScreenTheme.textDim}>{"[ ↑ ↓ ] "}</Text>
+            <Text color={chatScreenTheme.textMuted}>{"transcript"}</Text>
+          </Box>
         )}
         <ContextWindowMeter
           totalTokensUsed={props.totalContextTokensUsed}

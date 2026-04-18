@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { renderToString } from "ink";
-import React from "react";
+import type { ReactElement } from "react";
 import { InputPanel, INPUT_PANEL_NATURAL_ROW_COUNT } from "../../src/components/InputPanel.tsx";
 
-function renderWithoutAnsi(node: React.ReactElement, columns = 80) {
+function renderWithoutAnsi(node: ReactElement, columns = 80) {
   return stripVTControlCharacters(renderToString(node, { columns }));
 }
 
@@ -18,7 +18,6 @@ test("InputPanel renders mode and model labels in the header strip", () => {
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
-      promptInputHintText="Enter to send"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="reasoning:high"
@@ -37,7 +36,7 @@ test("InputPanel renders working indicator only while assistant response is stre
         promptDraft="hello"
         promptDraftCursorOffset={5}
         isPromptInputDisabled
-      promptInputHintText="streaming"
+      promptInputHintOverride="streaming"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -51,7 +50,6 @@ test("InputPanel renders working indicator only while assistant response is stre
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
-      promptInputHintText="Enter to send"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -70,7 +68,6 @@ test("InputPanel renders context window percentage when token usage is known", (
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
-      promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -88,7 +85,6 @@ test("InputPanel renders a dim placeholder when context window capacity is unkno
       promptDraft=""
       promptDraftCursorOffset={0}
       isPromptInputDisabled={false}
-      promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -106,7 +102,6 @@ test("InputPanel renders a cursor indicator when prompt input is enabled", () =>
         promptDraft="hello"
         promptDraftCursorOffset={5}
         isPromptInputDisabled={false}
-      promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -124,7 +119,6 @@ test("InputPanel does not render a block cursor when prompt input is disabled", 
         promptDraft="hello"
         promptDraftCursorOffset={5}
         isPromptInputDisabled
-      promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -142,7 +136,6 @@ test("InputPanel shows the snake animation only while assistant response is stre
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled
-      promptInputHintText="idle hint"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -156,7 +149,6 @@ test("InputPanel shows the snake animation only while assistant response is stre
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
-      promptInputHintText="idle hint"
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -175,7 +167,6 @@ test("InputPanel centers the prompt row between header and footer", () => {
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
-      promptInputHintText="[ ? ] help · shortcuts · [ ← → ] caret · [ ↑ ↓ ] transcript"
       modeLabel="implementation"
       modelIdentifier="gpt-5.4"
       reasoningEffortLabel="default"
@@ -199,7 +190,7 @@ test("InputPanel keeps a long prompt draft on one visual row at narrow widths", 
         promptDraft="@/Users/lukasz/Desktop/Projekty/buli/.bun/install/cache/@babel/helper-annotate-as-pure@7.27.3@@@1/README.md"
         promptDraftCursorOffset={107}
         isPromptInputDisabled={false}
-      promptInputHintText=""
+      promptInputHintOverride=""
       modeLabel="implementation"
       modelIdentifier="gpt-5.4"
       reasoningEffortLabel="default"
@@ -220,7 +211,6 @@ test("InputPanel renders the cursor at the current prompt draft offset", () => {
       promptDraft="hello"
       promptDraftCursorOffset={2}
       isPromptInputDisabled={false}
-      promptInputHintText=""
       modeLabel="implementation"
       modelIdentifier="opus-4.6"
       reasoningEffortLabel="high"
@@ -231,4 +221,51 @@ test("InputPanel renders the cursor at the current prompt draft offset", () => {
   );
 
   expect(output).toContain("he█llo");
+});
+
+test("InputPanel idle footer renders the rich help/caret/transcript hint cluster", () => {
+  const plain = stripVTControlCharacters(
+    renderToString(
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled={false}
+        modeLabel="implementation"
+        modelIdentifier="opus-4.6"
+        reasoningEffortLabel="reasoning:high"
+        assistantResponseStatus="waiting_for_user_input"
+        totalContextTokensUsed={42_000}
+        contextWindowTokenCapacity={100_000}
+      />,
+    ),
+  );
+  expect(plain).toContain("?");
+  expect(plain).toContain("help · shortcuts");
+  expect(plain).toContain("←");
+  expect(plain).toContain("→");
+  expect(plain).toContain("caret");
+  expect(plain).toContain("↑");
+  expect(plain).toContain("↓");
+  expect(plain).toContain("transcript");
+});
+
+test("InputPanel footer respects promptInputHintOverride when provided", () => {
+  const plain = stripVTControlCharacters(
+    renderToString(
+      <InputPanel
+        promptDraft=""
+        promptDraftCursorOffset={0}
+        isPromptInputDisabled={false}
+        promptInputHintOverride="press esc to close picker"
+        modeLabel="implementation"
+        modelIdentifier="opus-4.6"
+        reasoningEffortLabel="reasoning:high"
+        assistantResponseStatus="waiting_for_user_input"
+        totalContextTokensUsed={42_000}
+        contextWindowTokenCapacity={100_000}
+      />,
+    ),
+  );
+  expect(plain).toContain("press esc to close picker");
+  expect(plain).not.toContain("help · shortcuts");
 });
