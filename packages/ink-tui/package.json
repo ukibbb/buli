@@ -20,7 +20,7 @@
     "@types/react": "^19.2.2"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "FORCE_COLOR=3 bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

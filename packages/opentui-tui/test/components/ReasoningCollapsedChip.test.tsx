@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../testRenderWithCleanup.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ReasoningCollapsedChip } from "../../src/components/ReasoningCollapsedChip.tsx";
 
 describe("ReasoningCollapsedChip", () => {
@@ -22,5 +23,18 @@ describe("ReasoningCollapsedChip", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("512 tokens");
+  });
+
+  test("renders_duration_in_textMuted_and_token_count_in_textDim", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ReasoningCollapsedChip reasoningDurationMs={3200} reasoningTokenCount={1248} />,
+      { width: 80, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("3.2s");
+    expect(frame).toContain("1248 tokens");
+    expect(chatScreenTheme.textMuted).toBe("#64748B");
+    expect(chatScreenTheme.textDim).toBe("#475569");
   });
 });

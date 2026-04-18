@@ -24,7 +24,7 @@
     "@types/react": "^19.2.2"
   },
   "scripts": {
-    "test": "bun test --preload ./test/testLifecycle.ts",
+    "test": "FORCE_COLOR=3 bun test --preload ./test/testLifecycle.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }
