@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { Callout } from "../../../src/components/primitives/Callout.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("Callout", () => {
   test("renders_info_body_text", async () => {
@@ -49,4 +50,28 @@ describe("Callout", () => {
     expect(frame).toContain("Note");
     expect(frame).toContain("body");
   });
+
+  for (const [severity, tokenKey] of Object.entries({
+    info: "accentCyan",
+    success: "accentGreen",
+    warning: "accentAmber",
+    error: "accentRed",
+  }) as Array<[
+    "info" | "success" | "warning" | "error",
+    "accentCyan" | "accentGreen" | "accentAmber" | "accentRed",
+  ]>) {
+    test(`renders ${severity} body and locks ${tokenKey} sentinel`, async () => {
+      const { captureCharFrame, renderOnce } = await testRender(
+        <Callout
+          severity={severity}
+          bodyContent={<text>{`${severity} body`}</text>}
+        />,
+        { width: 60, height: 5 },
+      );
+      await renderOnce();
+      const frame = captureCharFrame();
+      expect(frame).toContain(`${severity} body`);
+      expect(chatScreenTheme[tokenKey]).toMatch(/^#[0-9A-F]{6}$/i);
+    });
+  }
 });

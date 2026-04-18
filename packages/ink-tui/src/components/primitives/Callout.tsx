@@ -18,7 +18,7 @@ export type CalloutProps = {
 };
 
 const severityAccentColors: Record<CalloutSeverity, string> = {
-  info: chatScreenTheme.accentPrimaryMuted,
+  info: chatScreenTheme.accentCyan,
   success: chatScreenTheme.accentGreen,
   warning: chatScreenTheme.accentAmber,
   error: chatScreenTheme.accentRed,
@@ -45,11 +45,7 @@ export function Callout(props: CalloutProps): ReactNode {
     <Box
       backgroundColor={backgroundColor}
       borderColor={accentColor}
-      borderLeft
-      borderRight={false}
-      borderTop={false}
-      borderBottom={false}
-      borderStyle="single"
+      borderStyle="round"
       flexDirection="column"
       paddingX={1}
       paddingY={0}
