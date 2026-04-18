@@ -9,11 +9,19 @@ import { deriveOpenAiModelListEndpoint, parseAvailableAssistantModelsFromOpenAiR
 
 test("deriveOpenAiModelListEndpoint swaps the responses path for models", () => {
   expect(deriveOpenAiModelListEndpoint("https://chatgpt.com/backend-api/codex/responses")).toBe(
-    "https://chatgpt.com/backend-api/codex/models",
+    "https://chatgpt.com/backend-api/codex/models?client_version=0.115.0",
   );
   expect(deriveOpenAiModelListEndpoint("http://127.0.0.1:3000/api/codex/responses?foo=bar")).toBe(
-    "http://127.0.0.1:3000/api/codex/models?foo=bar",
+    "http://127.0.0.1:3000/api/codex/models?foo=bar&client_version=0.115.0",
   );
+});
+
+test("deriveOpenAiModelListEndpoint preserves an explicit client_version query parameter", () => {
+  expect(
+    deriveOpenAiModelListEndpoint(
+      "https://chatgpt.com/backend-api/codex/responses?client_version=0.200.0&foo=bar",
+    ),
+  ).toBe("https://chatgpt.com/backend-api/codex/models?client_version=0.200.0&foo=bar");
 });
 
 test("parseAvailableAssistantModelsFromOpenAiResponse keeps visible api models and maps reasoning metadata", () => {
@@ -125,9 +133,64 @@ test("OpenAiProvider.listAvailableAssistantModels sends auth headers and maps th
     ]);
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.url).toBe("/backend-api/codex/models");
+    expect(requests[0]?.url).toBe("/backend-api/codex/models?client_version=0.115.0");
     expect(requests[0]?.headers.get("authorization")).toBe("Bearer access-token");
     expect(requests[0]?.headers.get("chatgpt-account-id")).toBe("acct_123");
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+});
+
+test("OpenAiProvider.listAvailableAssistantModels surfaces the backend error message from JSON responses", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-models-error-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+  });
+
+  const server = createServer((_request, response) => {
+    response.writeHead(400, {
+      "Content-Type": "application/json",
+      "x-request-id": "req_models_123",
+    });
+    response.end(
+      JSON.stringify({
+        error: {
+          message: "missing client_version",
+          type: "invalid_request_error",
+        },
+      }),
+    );
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("models error test server address unavailable");
+  }
+
+  try {
+    const provider = new OpenAiProvider({
+      endpoint: `http://127.0.0.1:${address.port}/backend-api/codex/responses`,
+      store,
+    });
+
+    await expect(provider.listAvailableAssistantModels()).rejects.toThrow(
+      "OpenAI models request failed: 400 | missing client_version | request_id=req_models_123",
+    );
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {

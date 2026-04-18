@@ -1,5 +1,5 @@
 import os from "node:os";
-import { join } from "node:path";
+import { resolve, sep } from "node:path";
 import type { ReasoningEffort } from "@buli/contracts";
 import { AssistantConversationRuntime, listPromptContextCandidates } from "@buli/engine";
 import { renderChatScreenInTerminalWithInk } from "@buli/ink-tui";
@@ -27,11 +27,16 @@ export async function runInteractiveChat(input: {
   }
 
   const provider = new OpenAiProvider({ store });
-  const promptContextBrowseRootPath = join(os.homedir(), "Desktop");
+  const promptContextBrowseRootPath = os.homedir();
+  const promptContextStartingDirectoryPath = resolvePromptContextStartingDirectoryPath({
+    promptContextBrowseRootPath,
+    requestedStartingDirectoryPath: process.cwd(),
+  });
   const assistantConversationRunner = new AssistantConversationRuntime({
     conversationTurnProvider: provider,
     workspaceRootPath: process.cwd(),
     promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath,
   });
   const renderArgs = {
     assistantConversationRunner,
@@ -39,6 +44,7 @@ export async function runInteractiveChat(input: {
     loadPromptContextCandidates: (promptContextQueryText: string) =>
       listPromptContextCandidates({
         promptContextBrowseRootPath,
+        promptContextStartingDirectoryPath,
         promptContextQueryText,
       }),
     selectedModelId: input.selectedModelId ?? DEFAULT_MODEL_ID,
@@ -52,4 +58,20 @@ export async function runInteractiveChat(input: {
 
   await chatScreen.waitUntilExit();
   return "";
+}
+
+function resolvePromptContextStartingDirectoryPath(input: {
+  promptContextBrowseRootPath: string;
+  requestedStartingDirectoryPath: string;
+}): string {
+  const browseRootPath = resolve(input.promptContextBrowseRootPath);
+  const requestedStartingDirectoryPath = resolve(input.requestedStartingDirectoryPath);
+  if (
+    requestedStartingDirectoryPath === browseRootPath
+    || requestedStartingDirectoryPath.startsWith(`${browseRootPath}${sep}`)
+  ) {
+    return requestedStartingDirectoryPath;
+  }
+
+  return browseRootPath;
 }

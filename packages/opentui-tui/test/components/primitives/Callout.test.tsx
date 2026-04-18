@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../testRenderWithCleanup.ts";
 import { Callout } from "../../../src/components/primitives/Callout.tsx";
 
 describe("Callout", () => {

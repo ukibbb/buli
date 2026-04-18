@@ -1,10 +1,21 @@
 import type { AvailableAssistantModel, ModelContextItem, ReasoningEffort } from "@buli/contracts";
+import { z } from "zod";
 import { OPENAI_CODEX_API_ENDPOINT } from "../auth/constants.ts";
 import { refreshStoredAuth } from "../auth/refresh.ts";
 import type { OpenAiAuthInfo } from "../auth/schema.ts";
 import { OpenAiAuthStore } from "../auth/store.ts";
 import { deriveOpenAiModelListEndpoint, parseAvailableAssistantModelsFromOpenAiResponse } from "./models.ts";
 import { OpenAiProviderConversationTurn } from "./turnSession.ts";
+
+const OpenAiErrorResponseBodySchema = z
+  .object({
+    error: z
+      .object({
+        message: z.string().min(1),
+      })
+      .passthrough(),
+  })
+  .passthrough();
 
 export type OpenAiConversationTurnRequest = {
   systemPromptText: string;
@@ -14,21 +25,43 @@ export type OpenAiConversationTurnRequest = {
 };
 
 async function createHttpError(response: Response, operation: "models" | "stream"): Promise<Error> {
-  const body = (await response.text()).trim();
+  const responseBodyText = (await response.text()).trim();
   const requestId =
     response.headers.get("x-request-id") ??
     response.headers.get("request-id") ??
     response.headers.get("openai-request-id");
 
   const parts = [`OpenAI ${operation} request failed: ${response.status}`];
-  if (body) {
-    parts.push(body);
+  const humanReadableErrorMessage = extractHumanReadableOpenAiErrorMessage(responseBodyText);
+  if (humanReadableErrorMessage) {
+    parts.push(humanReadableErrorMessage);
   }
   if (requestId) {
     parts.push(`request_id=${requestId}`);
   }
 
   return new Error(parts.join(" | "));
+}
+
+function extractHumanReadableOpenAiErrorMessage(responseBodyText: string): string | undefined {
+  if (responseBodyText.length === 0) {
+    return undefined;
+  }
+
+  const parsedErrorResponseBody = OpenAiErrorResponseBodySchema.safeParse(parseJsonResponseBody(responseBodyText));
+  if (parsedErrorResponseBody.success) {
+    return parsedErrorResponseBody.data.error.message.trim();
+  }
+
+  return responseBodyText;
+}
+
+function parseJsonResponseBody(responseBodyText: string): unknown {
+  try {
+    return JSON.parse(responseBodyText) as unknown;
+  } catch {
+    return responseBodyText;
+  }
 }
 
 async function loadOpenAiAuth(input: { store: OpenAiAuthStore; fetchImpl: typeof fetch }): Promise<OpenAiAuthInfo> {

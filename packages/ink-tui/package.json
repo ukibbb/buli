@@ -12,7 +12,7 @@
     "@buli/assistant-design-tokens": "workspace:*",
     "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
-    "ink": "^7.0.0",
+    "ink": "file:../../tui/ink",
     "react": "^19.2.0"
   },
   "devDependencies": {

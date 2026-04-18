@@ -6,6 +6,7 @@ import { Callout } from "../primitives/Callout.tsx";
 // inline border box is now a Callout, matching the pen-file CalloutError
 // component and giving the error a proper left accent.
 export type ErrorBannerBlockProps = {
+  titleText?: string;
   errorText: string;
   errorHintText?: string;
 };
@@ -14,11 +15,12 @@ export function ErrorBannerBlock(props: ErrorBannerBlockProps): ReactNode {
   return (
     <Callout
       severity="error"
-      titleText="Error"
+      titleText={props.titleText ?? "Error"}
       bodyContent={
-        <text fg={chatScreenTheme.textPrimary}>
-          {props.errorHintText ? `${props.errorText} — ${props.errorHintText}` : props.errorText}
-        </text>
+        <box flexDirection="column">
+          <text fg={chatScreenTheme.textPrimary}>{props.errorText}</text>
+          {props.errorHintText ? <text fg={chatScreenTheme.textMuted}>{props.errorHintText}</text> : null}
+        </box>
       }
     />
   );

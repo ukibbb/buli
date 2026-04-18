@@ -14,6 +14,7 @@ export const MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT = 1;
 
 export type MinimumHeightPromptStripProps = {
   promptDraft: string;
+  promptDraftCursorOffset: number;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   assistantResponseStatus: AssistantResponseStatus;
@@ -46,11 +47,15 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
       <text fg={chatScreenTheme.accentGreen}>
         <b>{">"}</b>
       </text>
-      <PromptDraftText
-        promptDraft={props.promptDraft}
-        selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
-        cursorCharacter={cursorCharacter}
-      />
+      <box flexGrow={1}>
+        <PromptDraftText
+          promptDraft={props.promptDraft}
+          promptDraftCursorOffset={props.promptDraftCursorOffset}
+          selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+          cursorCharacter={cursorCharacter}
+          shouldRenderPromptDraftOnSingleLine={true}
+        />
+      </box>
     </box>
   );
 }

@@ -18,6 +18,7 @@ export const INPUT_PANEL_NATURAL_ROW_COUNT = 7;
 
 export type InputPanelProps = {
   promptDraft: string;
+  promptDraftCursorOffset: number;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   promptInputHintText: string;
@@ -30,7 +31,7 @@ export type InputPanelProps = {
 };
 
 export function InputPanel(props: InputPanelProps) {
-  const { frame } = useAnimation({ interval: 500 });
+  const { frame } = useAnimation({ interval: 500, isActive: !props.isPromptInputDisabled });
   // Blink the cursor on/off by toggling between even and odd frames.
   const isCursorVisible = frame % 2 === 0;
   const cursorCharacter = !props.isPromptInputDisabled && isCursorVisible ? "█" : " ";
@@ -56,11 +57,15 @@ export function InputPanel(props: InputPanelProps) {
         <Text bold color={chatScreenTheme.accentGreen}>
           &gt;
         </Text>
-        <PromptDraftText
-          promptDraft={props.promptDraft}
-          selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
-          cursorCharacter={cursorCharacter}
-        />
+        <Box flexGrow={1}>
+          <PromptDraftText
+            promptDraft={props.promptDraft}
+            promptDraftCursorOffset={props.promptDraftCursorOffset}
+            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+            cursorCharacter={cursorCharacter}
+            shouldRenderPromptDraftOnSingleLine={true}
+          />
+        </Box>
       </Box>
       <Box backgroundColor={chatScreenTheme.surfaceTwo} justifyContent="space-between" paddingX={2}>
         {isStreamingResponse ? (

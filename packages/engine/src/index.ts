@@ -6,11 +6,20 @@ export { buildPromptContextDirectorySnapshotText } from "./prompt-context/buildP
 export { buildPromptContextDisplaySegments } from "./prompt-context/buildPromptContextDisplaySegments.ts";
 export { buildPromptContextFileSnapshotText } from "./prompt-context/buildPromptContextFileSnapshotText.ts";
 export { buildPromptContextReferenceTextFromDisplayPath } from "./prompt-context/buildPromptContextReferenceTextFromDisplayPath.ts";
-export { extractTrailingPromptContextQueryFromPromptDraft } from "./prompt-context/extractTrailingPromptContextQueryFromPromptDraft.ts";
-export { listPromptContextCandidates } from "./prompt-context/listPromptContextCandidates.ts";
+export {
+  appendAssistantTextDeltaToStreamingProjectorState,
+  createInitialAssistantStreamingProjectorState,
+  createLegacyStreamingProjectionFromText,
+  finalizeAssistantStreamingProjectorState,
+} from "./assistantStreamingProjection.ts";
+export { extractActivePromptContextQueryFromPromptDraft } from "./prompt-context/extractActivePromptContextQueryFromPromptDraft.ts";
+export {
+  determinePromptContextQueryLoadStrategy,
+  listPromptContextCandidates,
+} from "./prompt-context/listPromptContextCandidates.ts";
 export { parsePromptContextReferencesFromPromptText } from "./prompt-context/parsePromptContextReferencesFromPromptText.ts";
 export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./prompt-context/reconcileSelectedPromptContextReferenceTextsWithPromptDraft.ts";
-export { replaceTrailingPromptContextQueryWithSelectedReference } from "./prompt-context/replaceTrailingPromptContextQueryWithSelectedReference.ts";
+export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
 export { buildBuliSystemPrompt } from "./systemPrompt.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
@@ -21,8 +30,9 @@ export type {
   PromptContextCandidate,
   PromptContextCandidateKind,
   PromptDraftDisplaySegment,
-  TrailingPromptContextQuery,
+  ActivePromptContextQuery,
 } from "./prompt-context/types.ts";
+export type { PromptContextQueryLoadStrategy } from "./prompt-context/listPromptContextCandidates.ts";
 export type {
   ActiveConversationTurn,
   AssistantConversationRunner,

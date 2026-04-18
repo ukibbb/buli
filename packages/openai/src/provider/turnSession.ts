@@ -1,7 +1,17 @@
 import type { ProviderStreamEvent, ReasoningEffort } from "@buli/contracts";
-import { createFunctionCallOutputInputItem, createOpenAiResponsesInputItems } from "./request.ts";
+import {
+  createFunctionCallOutputInputItem,
+  createOpenAiResponsesInputItems,
+  type OpenAiConversationInputItem,
+} from "./request.ts";
 import { createBashToolDefinition } from "./toolDefinitions.ts";
 import { parseOpenAiStream } from "./stream.ts";
+
+type OpenAiStableResponseOutputItem = {
+  type: string;
+  id?: string;
+  [fieldName: string]: unknown;
+};
 
 type OpenAiProviderToolResultSubmission = {
   toolCallId: string;
@@ -12,7 +22,7 @@ function createHttpRequestBody(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   systemPromptText: string;
-  openAiInputItems: readonly unknown[];
+  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem | OpenAiStableResponseOutputItem>;
 }) {
   return {
     model: input.selectedModelId,
@@ -34,7 +44,7 @@ export class OpenAiProviderConversationTurn {
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
   readonly systemPromptText: string;
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
-  readonly openAiConversationInputItems: unknown[];
+  readonly openAiConversationInputItems: Array<OpenAiConversationInputItem | OpenAiStableResponseOutputItem>;
   currentPendingToolResultSubmission: {
     toolCallId: string;
     resolveSubmission: (toolResultSubmission: OpenAiProviderToolResultSubmission) => void;
@@ -137,13 +147,22 @@ export class OpenAiProviderConversationTurn {
   }
 }
 
-function stripTransientIdsFromResponseOutputItems(responseOutputItems: readonly unknown[]): unknown[] {
-  return responseOutputItems.map((responseOutputItem) => {
-    if (!responseOutputItem || typeof responseOutputItem !== "object" || Array.isArray(responseOutputItem)) {
-      return responseOutputItem;
+function isOpenAiStableResponseOutputItem(value: unknown): value is OpenAiStableResponseOutputItem {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as { type?: unknown }).type === "string"
+  );
+}
+
+function stripTransientIdsFromResponseOutputItems(responseOutputItems: readonly unknown[]): OpenAiStableResponseOutputItem[] {
+  return responseOutputItems.flatMap((responseOutputItem) => {
+    if (!isOpenAiStableResponseOutputItem(responseOutputItem)) {
+      return [];
     }
 
-    const { id: _ignoredTransientId, ...stableResponseOutputItem } = responseOutputItem as Record<string, unknown>;
-    return stableResponseOutputItem;
+    const { id: _ignoredTransientId, ...stableResponseOutputItem } = responseOutputItem;
+    return [stableResponseOutputItem];
   });
 }

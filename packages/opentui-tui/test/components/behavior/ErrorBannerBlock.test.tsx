@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../testRenderWithCleanup.ts";
 import { ErrorBannerBlock } from "../../../src/components/behavior/ErrorBannerBlock.tsx";
 
 describe("ErrorBannerBlock", () => {
@@ -9,17 +9,24 @@ describe("ErrorBannerBlock", () => {
       { width: 60, height: 8 },
     );
     await renderOnce();
-    expect(captureCharFrame()).toContain("auth failed");
+    const frame = captureCharFrame();
+    expect(frame).toContain("Error");
+    expect(frame).toContain("auth failed");
   });
 
-  test("shows_error_text_with_hint", async () => {
+  test("shows_error_text_with_custom_title_and_hint", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ErrorBannerBlock errorText="connection refused" errorHintText="check your network" />,
+      <ErrorBannerBlock
+        titleText="Could not load models"
+        errorText="missing client_version"
+        errorHintText="Press Esc to close."
+      />,
       { width: 80, height: 8 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("connection refused");
-    expect(frame).toContain("check your network");
+    expect(frame).toContain("Could not load models");
+    expect(frame).toContain("missing client_version");
+    expect(frame).toContain("Press Esc to close.");
   });
 });

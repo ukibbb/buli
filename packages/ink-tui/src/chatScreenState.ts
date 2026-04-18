@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  type AssistantStreamingProjection,
   type AssistantResponseEvent,
   type AvailableAssistantModel,
   type PlanStep,
@@ -9,10 +10,11 @@ import {
   type TranscriptMessage,
 } from "@buli/contracts";
 import {
-  parseAssistantResponseIntoContentParts,
+  createLegacyStreamingProjectionFromText,
+  extractActivePromptContextQueryFromPromptDraft,
   type PromptContextCandidate,
   reconcileSelectedPromptContextReferenceTextsWithPromptDraft,
-  replaceTrailingPromptContextQueryWithSelectedReference,
+  replaceActivePromptContextQueryWithSelectedReference,
 } from "@buli/engine";
 
 // This file is the state machine for the terminal chat screen.
@@ -78,6 +80,12 @@ export type ConversationTranscriptEntry =
   | {
       kind: "message";
       message: TranscriptMessage;
+    }
+  | {
+      kind: "streaming_assistant_message";
+      messageId: string;
+      renderState: "streaming" | "incomplete" | "failed";
+      streamingProjection: AssistantStreamingProjection;
     }
   | {
       kind: "error";
@@ -158,10 +166,15 @@ export type ChatScreenState = {
   selectedReasoningEffort: ReasoningEffort | undefined;
   assistantResponseStatus: AssistantResponseStatus;
   promptDraft: string;
+  promptDraftCursorOffset: number;
   latestTokenUsage: TokenUsage | undefined;
   conversationTranscript: ConversationTranscriptEntry[];
   streamingAssistantMessageId: string | undefined;
   currentStreamingReasoningSummaryId: string | undefined;
+  currentStreamingReasoningSummaryTranscriptEntryIndex: number | undefined;
+  currentTurnFooterTranscriptEntryIndex: number | undefined;
+  currentTurnCompletedReasoningSummaryTranscriptEntryIndexes: number[];
+  activeToolCallTranscriptEntryIndexByToolCallId: Record<string, number>;
   currentPendingToolApprovalId: string | undefined;
   promptContextSelectionState: PromptContextSelectionState;
   selectedPromptContextReferenceTexts: string[];
@@ -180,10 +193,15 @@ export function createInitialChatScreenState(input: {
     selectedReasoningEffort: input.selectedReasoningEffort,
     assistantResponseStatus: "waiting_for_user_input",
     promptDraft: "",
+    promptDraftCursorOffset: 0,
     latestTokenUsage: undefined,
     conversationTranscript: [],
     streamingAssistantMessageId: undefined,
     currentStreamingReasoningSummaryId: undefined,
+    currentStreamingReasoningSummaryTranscriptEntryIndex: undefined,
+    currentTurnFooterTranscriptEntryIndex: undefined,
+    currentTurnCompletedReasoningSummaryTranscriptEntryIndexes: [],
+    activeToolCallTranscriptEntryIndexByToolCallId: {},
     currentPendingToolApprovalId: undefined,
     promptContextSelectionState: { step: "hidden" },
     selectedPromptContextReferenceTexts: [],
@@ -206,28 +224,73 @@ export function hideShortcutsHelpModal(chatScreenState: ChatScreenState): ChatSc
   };
 }
 
-export function appendTypedTextToPromptDraft(chatScreenState: ChatScreenState, typedText: string): ChatScreenState {
-  const promptDraft = chatScreenState.promptDraft + typedText;
+function createPromptDraftEditedState(input: {
+  chatScreenState: ChatScreenState;
+  promptDraft: string;
+  promptDraftCursorOffset: number;
+}): ChatScreenState {
   return {
-    ...chatScreenState,
-    promptDraft,
+    ...input.chatScreenState,
+    promptDraft: input.promptDraft,
+    promptDraftCursorOffset: input.promptDraftCursorOffset,
     selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
-      promptDraft,
-      selectedPromptContextReferenceTexts: chatScreenState.selectedPromptContextReferenceTexts,
+      promptDraft: input.promptDraft,
+      selectedPromptContextReferenceTexts: input.chatScreenState.selectedPromptContextReferenceTexts,
     }),
   };
 }
 
-export function removeLastCharacterFromPromptDraft(chatScreenState: ChatScreenState): ChatScreenState {
-  const promptDraft = chatScreenState.promptDraft.slice(0, -1);
+export function insertTextIntoPromptDraftAtCursor(chatScreenState: ChatScreenState, insertedText: string): ChatScreenState {
+  const promptDraftPrefix = chatScreenState.promptDraft.slice(0, chatScreenState.promptDraftCursorOffset);
+  const promptDraftSuffix = chatScreenState.promptDraft.slice(chatScreenState.promptDraftCursorOffset);
+  const promptDraft = `${promptDraftPrefix}${insertedText}${promptDraftSuffix}`;
+  return createPromptDraftEditedState({
+    chatScreenState,
+    promptDraft,
+    promptDraftCursorOffset: chatScreenState.promptDraftCursorOffset + insertedText.length,
+  });
+}
+
+export function movePromptDraftCursorLeft(chatScreenState: ChatScreenState): ChatScreenState {
   return {
     ...chatScreenState,
-    promptDraft,
-    selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
-      promptDraft,
-      selectedPromptContextReferenceTexts: chatScreenState.selectedPromptContextReferenceTexts,
-    }),
+    promptDraftCursorOffset: Math.max(0, chatScreenState.promptDraftCursorOffset - 1),
   };
+}
+
+export function movePromptDraftCursorRight(chatScreenState: ChatScreenState): ChatScreenState {
+  return {
+    ...chatScreenState,
+    promptDraftCursorOffset: Math.min(chatScreenState.promptDraft.length, chatScreenState.promptDraftCursorOffset + 1),
+  };
+}
+
+export function removePromptDraftCharacterBeforeCursor(chatScreenState: ChatScreenState): ChatScreenState {
+  if (chatScreenState.promptDraftCursorOffset === 0) {
+    return chatScreenState;
+  }
+
+  const promptDraftPrefix = chatScreenState.promptDraft.slice(0, chatScreenState.promptDraftCursorOffset - 1);
+  const promptDraftSuffix = chatScreenState.promptDraft.slice(chatScreenState.promptDraftCursorOffset);
+  return createPromptDraftEditedState({
+    chatScreenState,
+    promptDraft: `${promptDraftPrefix}${promptDraftSuffix}`,
+    promptDraftCursorOffset: chatScreenState.promptDraftCursorOffset - 1,
+  });
+}
+
+export function removePromptDraftCharacterAtCursor(chatScreenState: ChatScreenState): ChatScreenState {
+  if (chatScreenState.promptDraftCursorOffset >= chatScreenState.promptDraft.length) {
+    return chatScreenState;
+  }
+
+  const promptDraftPrefix = chatScreenState.promptDraft.slice(0, chatScreenState.promptDraftCursorOffset);
+  const promptDraftSuffix = chatScreenState.promptDraft.slice(chatScreenState.promptDraftCursorOffset + 1);
+  return createPromptDraftEditedState({
+    chatScreenState,
+    promptDraft: `${promptDraftPrefix}${promptDraftSuffix}`,
+    promptDraftCursorOffset: chatScreenState.promptDraftCursorOffset,
+  });
 }
 
 export function showPromptContextCandidatesForSelection(
@@ -242,6 +305,57 @@ export function showPromptContextCandidatesForSelection(
       promptContextQueryText,
       promptContextCandidates,
       highlightedPromptContextCandidateIndex: 0,
+    },
+  };
+}
+
+function findHighlightedPromptContextCandidateIndexAfterRefresh(input: {
+  previousPromptContextCandidates: readonly PromptContextCandidate[];
+  refreshedPromptContextCandidates: readonly PromptContextCandidate[];
+  previousHighlightedPromptContextCandidateIndex: number;
+}): number {
+  const previouslyHighlightedPromptContextCandidate =
+    input.previousPromptContextCandidates[input.previousHighlightedPromptContextCandidateIndex];
+  if (previouslyHighlightedPromptContextCandidate) {
+    const refreshedHighlightedPromptContextCandidateIndex = input.refreshedPromptContextCandidates.findIndex(
+      (promptContextCandidate) =>
+        promptContextCandidate.promptReferenceText === previouslyHighlightedPromptContextCandidate.promptReferenceText,
+    );
+    if (refreshedHighlightedPromptContextCandidateIndex !== -1) {
+      return refreshedHighlightedPromptContextCandidateIndex;
+    }
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      input.previousHighlightedPromptContextCandidateIndex,
+      input.refreshedPromptContextCandidates.length - 1,
+    ),
+  );
+}
+
+export function refreshPromptContextCandidatesForSelection(
+  chatScreenState: ChatScreenState,
+  promptContextQueryText: string,
+  promptContextCandidates: readonly PromptContextCandidate[],
+): ChatScreenState {
+  if (chatScreenState.promptContextSelectionState.step !== "showing_prompt_context_candidates") {
+    return showPromptContextCandidatesForSelection(chatScreenState, promptContextQueryText, promptContextCandidates);
+  }
+
+  return {
+    ...chatScreenState,
+    promptContextSelectionState: {
+      ...chatScreenState.promptContextSelectionState,
+      promptContextQueryText,
+      promptContextCandidates,
+      highlightedPromptContextCandidateIndex: findHighlightedPromptContextCandidateIndexAfterRefresh({
+        previousPromptContextCandidates: chatScreenState.promptContextSelectionState.promptContextCandidates,
+        refreshedPromptContextCandidates: promptContextCandidates,
+        previousHighlightedPromptContextCandidateIndex:
+          chatScreenState.promptContextSelectionState.highlightedPromptContextCandidateIndex,
+      }),
     },
   };
 }
@@ -307,14 +421,34 @@ export function selectHighlightedPromptContextCandidate(chatScreenState: ChatScr
     return chatScreenState;
   }
 
-  const replacedPromptContextQuery = replaceTrailingPromptContextQueryWithSelectedReference({
+  const activePromptContextQuery = extractActivePromptContextQueryFromPromptDraft(
+    chatScreenState.promptDraft,
+    chatScreenState.promptDraftCursorOffset,
+  );
+  if (!activePromptContextQuery) {
+    return chatScreenState;
+  }
+
+  const replacedPromptContextQuery = replaceActivePromptContextQueryWithSelectedReference({
     promptDraft: chatScreenState.promptDraft,
+    activePromptContextQuery,
     selectedPromptContextReferenceText: selectedPromptContextCandidate.promptReferenceText,
   });
-  const promptDraft = replacedPromptContextQuery.endsWith(" ") ? replacedPromptContextQuery : `${replacedPromptContextQuery} `;
+  const promptDraft =
+    activePromptContextQuery.endOffset === chatScreenState.promptDraft.length && !replacedPromptContextQuery.endsWith(" ")
+      ? `${replacedPromptContextQuery} `
+      : replacedPromptContextQuery;
+  let promptDraftCursorOffset = activePromptContextQuery.startOffset + selectedPromptContextCandidate.promptReferenceText.length;
+  if (activePromptContextQuery.endOffset === chatScreenState.promptDraft.length && !replacedPromptContextQuery.endsWith(" ")) {
+    promptDraftCursorOffset += 1;
+  } else if (/\s/.test(promptDraft[promptDraftCursorOffset] ?? "")) {
+    promptDraftCursorOffset += 1;
+  }
+
   return {
     ...chatScreenState,
     promptDraft,
+    promptDraftCursorOffset,
     promptContextSelectionState: { step: "hidden" },
     selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
       promptDraft,
@@ -352,6 +486,7 @@ export function submitPromptDraft(chatScreenState: ChatScreenState): {
     nextChatScreenState: {
       ...chatScreenState,
       promptDraft: "",
+      promptDraftCursorOffset: 0,
       assistantResponseStatus: "streaming_assistant_response",
       latestTokenUsage: undefined,
       promptContextSelectionState: { step: "hidden" },
@@ -368,6 +503,10 @@ export function submitPromptDraft(chatScreenState: ChatScreenState): {
         },
       ],
       streamingAssistantMessageId: STREAMING_ASSISTANT_MESSAGE_ID,
+      currentStreamingReasoningSummaryTranscriptEntryIndex: undefined,
+      currentTurnFooterTranscriptEntryIndex: undefined,
+      currentTurnCompletedReasoningSummaryTranscriptEntryIndexes: [],
+      activeToolCallTranscriptEntryIndexByToolCallId: {},
       currentPendingToolApprovalId: undefined,
     },
   };
@@ -623,78 +762,67 @@ export function applyAssistantResponseEventToChatScreenState(
   assistantResponseEvent: AssistantResponseEvent,
 ): ChatScreenState {
   if (assistantResponseEvent.type === "assistant_response_started") {
+    const streamingAssistantMessageId = assistantResponseEvent.messageId ?? STREAMING_ASSISTANT_MESSAGE_ID;
     return {
       ...chatScreenState,
       selectedModelId: assistantResponseEvent.model,
       assistantResponseStatus: "streaming_assistant_response",
       latestTokenUsage: undefined,
-      streamingAssistantMessageId: STREAMING_ASSISTANT_MESSAGE_ID,
+      streamingAssistantMessageId: streamingAssistantMessageId,
       currentPendingToolApprovalId: undefined,
     };
   }
 
   if (assistantResponseEvent.type === "assistant_response_text_chunk") {
-    const lastTranscriptEntry = chatScreenState.conversationTranscript.at(-1);
-    // While text is still streaming, keep rewriting the same last assistant row
-    // so the transcript shows one growing message instead of many tiny fragments.
-    if (
-      lastTranscriptEntry?.kind === "message" &&
-      lastTranscriptEntry.message.id === chatScreenState.streamingAssistantMessageId
-    ) {
-      const grownText = lastTranscriptEntry.message.text + assistantResponseEvent.text;
-      return {
-        ...chatScreenState,
-        conversationTranscript: [
-          ...chatScreenState.conversationTranscript.slice(0, -1),
-          {
-            kind: "message",
-            message: {
-              ...lastTranscriptEntry.message,
-              text: grownText,
-              assistantContentParts: [...parseAssistantResponseIntoContentParts(grownText)],
-            },
-          },
-        ],
-      };
-    }
+    const streamingAssistantMessageId = chatScreenState.streamingAssistantMessageId ?? STREAMING_ASSISTANT_MESSAGE_ID;
+    const currentStreamingAssistantMessage = findStreamingAssistantMessageEntry(
+      chatScreenState.conversationTranscript,
+      streamingAssistantMessageId,
+    );
+    const grownStreamingAssistantText =
+      (currentStreamingAssistantMessage?.streamingProjection.fullResponseText ?? "") + assistantResponseEvent.text;
 
     return {
       ...chatScreenState,
-      conversationTranscript: [
-        ...chatScreenState.conversationTranscript,
+      conversationTranscript: replaceStreamingAssistantMessageOrAppend(
+        chatScreenState.conversationTranscript,
+        streamingAssistantMessageId,
         {
-          kind: "message",
-          message: {
-            id: chatScreenState.streamingAssistantMessageId ?? STREAMING_ASSISTANT_MESSAGE_ID,
-            role: "assistant",
-            text: assistantResponseEvent.text,
-            assistantContentParts: [...parseAssistantResponseIntoContentParts(assistantResponseEvent.text)],
-          },
+          kind: "streaming_assistant_message",
+          messageId: streamingAssistantMessageId,
+          renderState: "streaming",
+          streamingProjection: createLegacyStreamingProjectionFromText(grownStreamingAssistantText),
         },
-      ],
+      ),
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_response_stream_projection_updated") {
+    return {
+      ...chatScreenState,
+      conversationTranscript: replaceStreamingAssistantMessageOrAppend(
+        chatScreenState.conversationTranscript,
+        assistantResponseEvent.messageId,
+        {
+          kind: "streaming_assistant_message",
+          messageId: assistantResponseEvent.messageId,
+          renderState: "streaming",
+          streamingProjection: assistantResponseEvent.projection,
+        },
+      ),
     };
   }
 
   if (assistantResponseEvent.type === "assistant_response_completed") {
-    const lastTranscriptEntry = chatScreenState.conversationTranscript.at(-1);
-    // When the response is finished, replace the temporary streaming row
-    // with the final assistant message so the transcript ends with one stable entry.
-    const nextConversationTranscriptWithAssistantMessage =
-      lastTranscriptEntry?.kind === "message" &&
-      lastTranscriptEntry.message.id === chatScreenState.streamingAssistantMessageId
-        ? [
-            ...chatScreenState.conversationTranscript.slice(0, -1),
-            { kind: "message" as const, message: assistantResponseEvent.message },
-          ]
-        : [
-            ...chatScreenState.conversationTranscript,
-            { kind: "message" as const, message: assistantResponseEvent.message },
-          ];
-
+    const streamingAssistantMessageId = chatScreenState.streamingAssistantMessageId ?? assistantResponseEvent.message.id;
     return finalizeCurrentTurnAfterTerminalResponse(
       chatScreenState,
       assistantResponseEvent.usage,
-      nextConversationTranscriptWithAssistantMessage,
+      replaceStreamingAssistantMessageOrAppend(
+        chatScreenState.conversationTranscript,
+        streamingAssistantMessageId,
+        { kind: "message", message: assistantResponseEvent.message },
+      ),
     );
   }
 
@@ -703,7 +831,11 @@ export function applyAssistantResponseEventToChatScreenState(
       chatScreenState,
       assistantResponseEvent.usage,
       [
-        ...chatScreenState.conversationTranscript,
+        ...updateStreamingAssistantMessageRenderState(
+          chatScreenState.conversationTranscript,
+          chatScreenState.streamingAssistantMessageId,
+          "incomplete",
+        ),
         {
           kind: "incomplete_response_notice",
           incompleteReason: assistantResponseEvent.incompleteReason,
@@ -714,9 +846,11 @@ export function applyAssistantResponseEventToChatScreenState(
 
   if (assistantResponseEvent.type === "assistant_reasoning_summary_started") {
     const reasoningSummaryId = randomUUID();
+    const reasoningSummaryTranscriptEntryIndex = chatScreenState.conversationTranscript.length;
     return {
       ...chatScreenState,
       currentStreamingReasoningSummaryId: reasoningSummaryId,
+      currentStreamingReasoningSummaryTranscriptEntryIndex: reasoningSummaryTranscriptEntryIndex,
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         {
@@ -731,19 +865,15 @@ export function applyAssistantResponseEventToChatScreenState(
 
   if (assistantResponseEvent.type === "assistant_reasoning_summary_text_chunk") {
     const reasoningSummaryId = chatScreenState.currentStreamingReasoningSummaryId;
-    if (!reasoningSummaryId) {
+    const reasoningSummaryTranscriptEntryIndex = chatScreenState.currentStreamingReasoningSummaryTranscriptEntryIndex;
+    if (!reasoningSummaryId || reasoningSummaryTranscriptEntryIndex === undefined) {
       return chatScreenState;
     }
-    const entryIndex = chatScreenState.conversationTranscript.findIndex(
-      (conversationTranscriptEntry) =>
-        conversationTranscriptEntry.kind === "streaming_reasoning_summary" &&
-        conversationTranscriptEntry.reasoningSummaryId === reasoningSummaryId,
-    );
-    if (entryIndex === -1) {
-      return chatScreenState;
-    }
-    const existingStreamingEntry = chatScreenState.conversationTranscript[entryIndex];
+    const existingStreamingEntry = chatScreenState.conversationTranscript[reasoningSummaryTranscriptEntryIndex];
     if (!existingStreamingEntry || existingStreamingEntry.kind !== "streaming_reasoning_summary") {
+      return chatScreenState;
+    }
+    if (existingStreamingEntry.reasoningSummaryId !== reasoningSummaryId) {
       return chatScreenState;
     }
     const grownStreamingEntry: ConversationTranscriptEntry = {
@@ -751,26 +881,30 @@ export function applyAssistantResponseEventToChatScreenState(
       reasoningSummaryText: existingStreamingEntry.reasoningSummaryText + assistantResponseEvent.text,
     };
     const nextConversationTranscript = [...chatScreenState.conversationTranscript];
-    nextConversationTranscript[entryIndex] = grownStreamingEntry;
+    nextConversationTranscript[reasoningSummaryTranscriptEntryIndex] = grownStreamingEntry;
     return { ...chatScreenState, conversationTranscript: nextConversationTranscript };
   }
 
   if (assistantResponseEvent.type === "assistant_reasoning_summary_completed") {
     const reasoningSummaryId = chatScreenState.currentStreamingReasoningSummaryId;
-    if (!reasoningSummaryId) {
+    const reasoningSummaryTranscriptEntryIndex = chatScreenState.currentStreamingReasoningSummaryTranscriptEntryIndex;
+    if (!reasoningSummaryId || reasoningSummaryTranscriptEntryIndex === undefined) {
       return chatScreenState;
     }
-    const entryIndex = chatScreenState.conversationTranscript.findIndex(
-      (conversationTranscriptEntry) =>
-        conversationTranscriptEntry.kind === "streaming_reasoning_summary" &&
-        conversationTranscriptEntry.reasoningSummaryId === reasoningSummaryId,
-    );
-    if (entryIndex === -1) {
-      return { ...chatScreenState, currentStreamingReasoningSummaryId: undefined };
-    }
-    const existingStreamingEntry = chatScreenState.conversationTranscript[entryIndex];
+    const existingStreamingEntry = chatScreenState.conversationTranscript[reasoningSummaryTranscriptEntryIndex];
     if (!existingStreamingEntry || existingStreamingEntry.kind !== "streaming_reasoning_summary") {
-      return { ...chatScreenState, currentStreamingReasoningSummaryId: undefined };
+      return {
+        ...chatScreenState,
+        currentStreamingReasoningSummaryId: undefined,
+        currentStreamingReasoningSummaryTranscriptEntryIndex: undefined,
+      };
+    }
+    if (existingStreamingEntry.reasoningSummaryId !== reasoningSummaryId) {
+      return {
+        ...chatScreenState,
+        currentStreamingReasoningSummaryId: undefined,
+        currentStreamingReasoningSummaryTranscriptEntryIndex: undefined,
+      };
     }
     const completedReasoningSummaryEntry: ConversationTranscriptEntry = {
       kind: "completed_reasoning_summary",
@@ -780,11 +914,16 @@ export function applyAssistantResponseEventToChatScreenState(
       reasoningTokenCount: undefined,
     };
     const nextConversationTranscript = [...chatScreenState.conversationTranscript];
-    nextConversationTranscript[entryIndex] = completedReasoningSummaryEntry;
+    nextConversationTranscript[reasoningSummaryTranscriptEntryIndex] = completedReasoningSummaryEntry;
     return {
       ...chatScreenState,
       conversationTranscript: nextConversationTranscript,
       currentStreamingReasoningSummaryId: undefined,
+      currentStreamingReasoningSummaryTranscriptEntryIndex: undefined,
+      currentTurnCompletedReasoningSummaryTranscriptEntryIndexes: [
+        ...chatScreenState.currentTurnCompletedReasoningSummaryTranscriptEntryIndexes,
+        reasoningSummaryTranscriptEntryIndex,
+      ],
     };
   }
 
@@ -796,9 +935,17 @@ export function applyAssistantResponseEventToChatScreenState(
       assistantResponseStatus: "assistant_response_failed",
       streamingAssistantMessageId: undefined,
       currentStreamingReasoningSummaryId: undefined,
+      currentStreamingReasoningSummaryTranscriptEntryIndex: undefined,
+      currentTurnFooterTranscriptEntryIndex: undefined,
+      currentTurnCompletedReasoningSummaryTranscriptEntryIndexes: [],
+      activeToolCallTranscriptEntryIndexByToolCallId: {},
       currentPendingToolApprovalId: undefined,
       conversationTranscript: [
-        ...chatScreenState.conversationTranscript,
+        ...updateStreamingAssistantMessageRenderState(
+          chatScreenState.conversationTranscript,
+          chatScreenState.streamingAssistantMessageId,
+          "failed",
+        ),
         { kind: "error", text: assistantResponseEvent.error },
       ],
     };
@@ -809,10 +956,15 @@ export function applyAssistantResponseEventToChatScreenState(
   // (file path, pattern, command) so the transcript reflects the agent's
   // intent even while the tool is still running.
   if (assistantResponseEvent.type === "assistant_tool_call_started") {
+    const toolCallTranscriptEntryIndex = chatScreenState.conversationTranscript.length;
     return {
       ...chatScreenState,
       assistantResponseStatus: "streaming_assistant_response",
       currentPendingToolApprovalId: undefined,
+      activeToolCallTranscriptEntryIndexByToolCallId: {
+        ...chatScreenState.activeToolCallTranscriptEntryIndexByToolCallId,
+        [assistantResponseEvent.toolCallId]: toolCallTranscriptEntryIndex,
+      },
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         {
@@ -829,49 +981,60 @@ export function applyAssistantResponseEventToChatScreenState(
   // no streaming entry exists (e.g. the provider skipped the started event)
   // we still append the completion so the result is never dropped silently.
   if (assistantResponseEvent.type === "assistant_tool_call_completed") {
+    const replacementResult = replaceStreamingToolCallAtTrackedIndexOrAppend({
+      conversationTranscript: chatScreenState.conversationTranscript,
+      activeToolCallTranscriptEntryIndexByToolCallId: chatScreenState.activeToolCallTranscriptEntryIndexByToolCallId,
+      toolCallId: assistantResponseEvent.toolCallId,
+      replacementEntry: {
+        kind: "completed_tool_call",
+        toolCallId: assistantResponseEvent.toolCallId,
+        toolCallDetail: assistantResponseEvent.toolCallDetail,
+        durationMs: assistantResponseEvent.durationMs,
+      },
+    });
     return {
       ...chatScreenState,
       assistantResponseStatus: "streaming_assistant_response",
       currentPendingToolApprovalId: undefined,
-      conversationTranscript: replaceStreamingToolCallOrAppend(
-        chatScreenState.conversationTranscript,
-        assistantResponseEvent.toolCallId,
-        {
-          kind: "completed_tool_call",
-          toolCallId: assistantResponseEvent.toolCallId,
-          toolCallDetail: assistantResponseEvent.toolCallDetail,
-          durationMs: assistantResponseEvent.durationMs,
-        },
-      ),
+      conversationTranscript: replacementResult.conversationTranscript,
+      activeToolCallTranscriptEntryIndexByToolCallId: replacementResult.activeToolCallTranscriptEntryIndexByToolCallId,
     };
   }
 
   // Mirror of the completion path, but the swapped-in entry carries the
   // error text so the failed card can surface why the tool did not finish.
   if (assistantResponseEvent.type === "assistant_tool_call_failed") {
+    const replacementResult = replaceStreamingToolCallAtTrackedIndexOrAppend({
+      conversationTranscript: chatScreenState.conversationTranscript,
+      activeToolCallTranscriptEntryIndexByToolCallId: chatScreenState.activeToolCallTranscriptEntryIndexByToolCallId,
+      toolCallId: assistantResponseEvent.toolCallId,
+      replacementEntry: {
+        kind: "failed_tool_call",
+        toolCallId: assistantResponseEvent.toolCallId,
+        toolCallDetail: assistantResponseEvent.toolCallDetail,
+        errorText: assistantResponseEvent.errorText,
+        durationMs: assistantResponseEvent.durationMs,
+      },
+    });
     return {
       ...chatScreenState,
       assistantResponseStatus: "streaming_assistant_response",
       currentPendingToolApprovalId: undefined,
-      conversationTranscript: replaceStreamingToolCallOrAppend(
-        chatScreenState.conversationTranscript,
-        assistantResponseEvent.toolCallId,
-        {
-          kind: "failed_tool_call",
-          toolCallId: assistantResponseEvent.toolCallId,
-          toolCallDetail: assistantResponseEvent.toolCallDetail,
-          errorText: assistantResponseEvent.errorText,
-          durationMs: assistantResponseEvent.durationMs,
-        },
-      ),
+      conversationTranscript: replacementResult.conversationTranscript,
+      activeToolCallTranscriptEntryIndexByToolCallId: replacementResult.activeToolCallTranscriptEntryIndexByToolCallId,
     };
   }
 
   if (assistantResponseEvent.type === "assistant_tool_call_denied") {
+    const nextActiveToolCallTranscriptEntryIndexByToolCallId = {
+      ...chatScreenState.activeToolCallTranscriptEntryIndexByToolCallId,
+    };
+    delete nextActiveToolCallTranscriptEntryIndexByToolCallId[assistantResponseEvent.toolCallId];
     return {
       ...chatScreenState,
       assistantResponseStatus: "streaming_assistant_response",
       currentPendingToolApprovalId: undefined,
+      activeToolCallTranscriptEntryIndexByToolCallId: nextActiveToolCallTranscriptEntryIndexByToolCallId,
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         {
@@ -934,8 +1097,10 @@ export function applyAssistantResponseEventToChatScreenState(
   }
 
   if (assistantResponseEvent.type === "assistant_turn_completed") {
+    const turnFooterTranscriptEntryIndex = chatScreenState.conversationTranscript.length;
     return {
       ...chatScreenState,
+      currentTurnFooterTranscriptEntryIndex: turnFooterTranscriptEntryIndex,
       conversationTranscript: [
         ...chatScreenState.conversationTranscript,
         {
@@ -955,22 +1120,99 @@ export function applyAssistantResponseEventToChatScreenState(
   return unreachableAssistantResponseEvent;
 }
 
-function replaceStreamingToolCallOrAppend(
+function replaceStreamingToolCallAtTrackedIndexOrAppend(input: {
+  conversationTranscript: ConversationTranscriptEntry[];
+  activeToolCallTranscriptEntryIndexByToolCallId: Record<string, number>;
+  toolCallId: string;
+  replacementEntry: ConversationTranscriptEntry;
+}): {
+  conversationTranscript: ConversationTranscriptEntry[];
+  activeToolCallTranscriptEntryIndexByToolCallId: Record<string, number>;
+} {
+  const trackedStreamingEntryIndex = input.activeToolCallTranscriptEntryIndexByToolCallId[input.toolCallId];
+  const nextActiveToolCallTranscriptEntryIndexByToolCallId = {
+    ...input.activeToolCallTranscriptEntryIndexByToolCallId,
+  };
+  delete nextActiveToolCallTranscriptEntryIndexByToolCallId[input.toolCallId];
+
+  if (trackedStreamingEntryIndex === undefined) {
+    return {
+      conversationTranscript: [...input.conversationTranscript, input.replacementEntry],
+      activeToolCallTranscriptEntryIndexByToolCallId: nextActiveToolCallTranscriptEntryIndexByToolCallId,
+    };
+  }
+
+  const trackedStreamingEntry = input.conversationTranscript[trackedStreamingEntryIndex];
+  if (
+    !trackedStreamingEntry ||
+    trackedStreamingEntry.kind !== "streaming_tool_call" ||
+    trackedStreamingEntry.toolCallId !== input.toolCallId
+  ) {
+    return {
+      conversationTranscript: [...input.conversationTranscript, input.replacementEntry],
+      activeToolCallTranscriptEntryIndexByToolCallId: nextActiveToolCallTranscriptEntryIndexByToolCallId,
+    };
+  }
+
+  const nextConversationTranscript = [...input.conversationTranscript];
+  nextConversationTranscript[trackedStreamingEntryIndex] = input.replacementEntry;
+  return {
+    conversationTranscript: nextConversationTranscript,
+    activeToolCallTranscriptEntryIndexByToolCallId: nextActiveToolCallTranscriptEntryIndexByToolCallId,
+  };
+}
+
+function findStreamingAssistantMessageEntry(
   conversationTranscript: ConversationTranscriptEntry[],
-  toolCallId: string,
-  replacementEntry: ConversationTranscriptEntry,
-): ConversationTranscriptEntry[] {
-  const streamingEntryIndex = conversationTranscript.findIndex(
+  messageId: string,
+): Extract<ConversationTranscriptEntry, { kind: "streaming_assistant_message" }> | undefined {
+  const streamingAssistantMessageEntry = conversationTranscript.find(
     (conversationTranscriptEntry) =>
-      conversationTranscriptEntry.kind === "streaming_tool_call" &&
-      conversationTranscriptEntry.toolCallId === toolCallId,
+      conversationTranscriptEntry.kind === "streaming_assistant_message" &&
+      conversationTranscriptEntry.messageId === messageId,
   );
-  if (streamingEntryIndex === -1) {
+  return streamingAssistantMessageEntry?.kind === "streaming_assistant_message"
+    ? streamingAssistantMessageEntry
+    : undefined;
+}
+
+function replaceStreamingAssistantMessageOrAppend(
+  conversationTranscript: ConversationTranscriptEntry[],
+  messageId: string,
+  replacementEntry: Extract<ConversationTranscriptEntry, { kind: "streaming_assistant_message" | "message" }>,
+): ConversationTranscriptEntry[] {
+  const streamingAssistantMessageEntryIndex = conversationTranscript.findIndex(
+    (conversationTranscriptEntry) =>
+      conversationTranscriptEntry.kind === "streaming_assistant_message" &&
+      conversationTranscriptEntry.messageId === messageId,
+  );
+  if (streamingAssistantMessageEntryIndex === -1) {
     return [...conversationTranscript, replacementEntry];
   }
+
   const nextConversationTranscript = [...conversationTranscript];
-  nextConversationTranscript[streamingEntryIndex] = replacementEntry;
+  nextConversationTranscript[streamingAssistantMessageEntryIndex] = replacementEntry;
   return nextConversationTranscript;
+}
+
+function updateStreamingAssistantMessageRenderState(
+  conversationTranscript: ConversationTranscriptEntry[],
+  streamingAssistantMessageId: string | undefined,
+  renderState: Extract<ConversationTranscriptEntry, { kind: "streaming_assistant_message" }>['renderState'],
+): ConversationTranscriptEntry[] {
+  if (!streamingAssistantMessageId) {
+    return conversationTranscript;
+  }
+
+  return conversationTranscript.map((conversationTranscriptEntry) =>
+    conversationTranscriptEntry.kind === "streaming_assistant_message" &&
+    conversationTranscriptEntry.messageId === streamingAssistantMessageId
+      ? {
+          ...conversationTranscriptEntry,
+          renderState,
+        }
+      : conversationTranscriptEntry,
+  );
 }
 
 function finalizeCurrentTurnAfterTerminalResponse(
@@ -978,73 +1220,68 @@ function finalizeCurrentTurnAfterTerminalResponse(
   usage: TokenUsage,
   conversationTranscript: ConversationTranscriptEntry[],
 ): ChatScreenState {
-  const conversationTranscriptWithReasoningTokenCount = backfillReasoningTokenCountInCurrentTurn(
+  const conversationTranscriptWithReasoningTokenCount = backfillReasoningTokenCountIntoIndexedEntries(
     conversationTranscript,
+    chatScreenState.currentTurnCompletedReasoningSummaryTranscriptEntryIndexes,
     usage.reasoning,
   );
-  const conversationTranscriptWithTurnFooterUsage = backfillUsageIntoCurrentTurnFooter(
+  const conversationTranscriptWithTurnFooterUsage = backfillUsageIntoTrackedTurnFooter(
     conversationTranscriptWithReasoningTokenCount,
+    chatScreenState.currentTurnFooterTranscriptEntryIndex,
     usage,
   );
 
   return {
     ...chatScreenState,
     assistantResponseStatus: "waiting_for_user_input",
-      latestTokenUsage: usage,
-      conversationTranscript: conversationTranscriptWithTurnFooterUsage,
-      streamingAssistantMessageId: undefined,
-      currentStreamingReasoningSummaryId: undefined,
-      currentPendingToolApprovalId: undefined,
-    };
+    latestTokenUsage: usage,
+    conversationTranscript: conversationTranscriptWithTurnFooterUsage,
+    streamingAssistantMessageId: undefined,
+    currentStreamingReasoningSummaryId: undefined,
+    currentStreamingReasoningSummaryTranscriptEntryIndex: undefined,
+    currentTurnFooterTranscriptEntryIndex: undefined,
+    currentTurnCompletedReasoningSummaryTranscriptEntryIndexes: [],
+    activeToolCallTranscriptEntryIndexByToolCallId: {},
+    currentPendingToolApprovalId: undefined,
+  };
 }
 
-function backfillUsageIntoCurrentTurnFooter(
+function backfillUsageIntoTrackedTurnFooter(
   conversationTranscript: ConversationTranscriptEntry[],
+  turnFooterTranscriptEntryIndex: number | undefined,
   usage: TokenUsage,
 ): ConversationTranscriptEntry[] {
-  const nextConversationTranscript = [...conversationTranscript];
-
-  for (let index = nextConversationTranscript.length - 1; index >= 0; index -= 1) {
-    const conversationTranscriptEntry = nextConversationTranscript[index];
-    if (!conversationTranscriptEntry) {
-      continue;
-    }
-    if (conversationTranscriptEntry.kind === "message" && conversationTranscriptEntry.message.role === "user") {
-      break;
-    }
-    if (conversationTranscriptEntry.kind === "turn_footer") {
-      nextConversationTranscript[index] = {
-        ...conversationTranscriptEntry,
-        usage,
-      };
-      break;
-    }
+  if (turnFooterTranscriptEntryIndex === undefined) {
+    return conversationTranscript;
   }
 
+  const turnFooterTranscriptEntry = conversationTranscript[turnFooterTranscriptEntryIndex];
+  if (!turnFooterTranscriptEntry || turnFooterTranscriptEntry.kind !== "turn_footer") {
+    return conversationTranscript;
+  }
+
+  const nextConversationTranscript = [...conversationTranscript];
+  nextConversationTranscript[turnFooterTranscriptEntryIndex] = {
+    ...turnFooterTranscriptEntry,
+    usage,
+  };
   return nextConversationTranscript;
 }
 
-function backfillReasoningTokenCountInCurrentTurn(
+function backfillReasoningTokenCountIntoIndexedEntries(
   conversationTranscript: ConversationTranscriptEntry[],
+  completedReasoningSummaryTranscriptEntryIndexes: readonly number[],
   reasoningTokenCount: number,
 ): ConversationTranscriptEntry[] {
-  // Walks the transcript backward to the most recent user message. Every
-  // completed_reasoning_summary entry between now and that user message
-  // belongs to the turn that just finished, so we patch its token count.
+  if (completedReasoningSummaryTranscriptEntryIndexes.length === 0) {
+    return conversationTranscript;
+  }
+
   const nextConversationTranscript = [...conversationTranscript];
-  for (let index = nextConversationTranscript.length - 1; index >= 0; index -= 1) {
-    const conversationTranscriptEntry = nextConversationTranscript[index];
-    if (!conversationTranscriptEntry) {
-      continue;
-    }
-    if (
-      conversationTranscriptEntry.kind === "message" &&
-      conversationTranscriptEntry.message.role === "user"
-    ) {
-      break;
-    }
-    if (conversationTranscriptEntry.kind === "completed_reasoning_summary") {
-      nextConversationTranscript[index] = {
+  for (const completedReasoningSummaryTranscriptEntryIndex of completedReasoningSummaryTranscriptEntryIndexes) {
+    const conversationTranscriptEntry = nextConversationTranscript[completedReasoningSummaryTranscriptEntryIndex];
+    if (conversationTranscriptEntry?.kind === "completed_reasoning_summary") {
+      nextConversationTranscript[completedReasoningSummaryTranscriptEntryIndex] = {
         ...conversationTranscriptEntry,
         reasoningTokenCount,
       };

@@ -23,7 +23,7 @@ export type PromptDraftDisplaySegment =
       text: string;
     };
 
-export type TrailingPromptContextQuery = {
+export type ActivePromptContextQuery = {
   rawQueryText: string;
   decodedQueryText: string;
   startOffset: number;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../testRenderWithCleanup.ts";
 import { MinimumHeightPromptStrip } from "../../src/components/MinimumHeightPromptStrip.tsx";
 
 describe("MinimumHeightPromptStrip", () => {
@@ -7,6 +7,7 @@ describe("MinimumHeightPromptStrip", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <MinimumHeightPromptStrip
         promptDraft="hello world"
+        promptDraftCursorOffset={11}
         isPromptInputDisabled={false}
         assistantResponseStatus="waiting_for_user_input"
       />,
@@ -22,6 +23,7 @@ describe("MinimumHeightPromptStrip", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <MinimumHeightPromptStrip
         promptDraft="anything"
+        promptDraftCursorOffset={8}
         isPromptInputDisabled={true}
         assistantResponseStatus="streaming_assistant_response"
       />,
@@ -37,6 +39,7 @@ describe("MinimumHeightPromptStrip", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <MinimumHeightPromptStrip
         promptDraft=""
+        promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
         assistantResponseStatus="waiting_for_user_input"
       />,

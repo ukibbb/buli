@@ -153,3 +153,22 @@ export function jumpConversationTranscriptViewportToNewestRows(
 ): ConversationTranscriptViewportState {
   return createViewportStateAtNewestTranscriptRows(conversationTranscriptViewportMeasurements);
 }
+
+export function reconcileConversationTranscriptViewportAfterObservedScrollPosition(
+  conversationTranscriptViewportMeasurements: ConversationTranscriptViewportMeasurements,
+  hiddenTranscriptRowsAboveViewport: number,
+): ConversationTranscriptViewportState {
+  const clampedHiddenTranscriptRowsAboveViewport = clampHiddenTranscriptRowsAboveViewport(
+    hiddenTranscriptRowsAboveViewport,
+    conversationTranscriptViewportMeasurements,
+  );
+  const maximumHiddenTranscriptRowsAboveViewport = calculateMaximumHiddenTranscriptRowsAboveViewport(
+    conversationTranscriptViewportMeasurements,
+  );
+
+  return {
+    hiddenTranscriptRowsAboveViewport: clampedHiddenTranscriptRowsAboveViewport,
+    isFollowingNewestTranscriptRows:
+      clampedHiddenTranscriptRowsAboveViewport === maximumHiddenTranscriptRowsAboveViewport,
+  };
+}

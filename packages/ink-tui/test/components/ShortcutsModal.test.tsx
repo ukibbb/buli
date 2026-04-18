@@ -41,9 +41,13 @@ test("ShortcutsModal renders the keyboard section with its shortcut rows at comf
   expect(output).toContain("[ enter ]");
   expect(output).toContain("send non-empty draft");
   expect(output).toContain("open model picker when idle");
+  expect(output).toContain("move caret inside draft");
+  expect(output).toContain("delete around caret");
+  expect(output).toContain("↑ ↓ choose · enter insert");
   expect(output).toContain("scroll transcript by row");
   expect(output).toContain("scroll transcript by page");
   expect(output).toContain("jump oldest · newest");
+  expect(output).toContain("scroll transcript under pointer");
 });
 
 test("ShortcutsModal renders the help section with only current-build help rows at comfortable tier", () => {

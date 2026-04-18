@@ -1,6 +1,8 @@
 import { AvailableAssistantModelSchema, ReasoningEffortSchema, type AvailableAssistantModel } from "@buli/contracts";
 import { z } from "zod";
 
+const DEFAULT_OPENAI_CODEX_MODEL_DISCOVERY_CLIENT_VERSION = "0.115.0";
+
 const OpenAiModelReasoningLevelSchema = z
   .object({
     effort: ReasoningEffortSchema,
@@ -29,10 +31,14 @@ export function deriveOpenAiModelListEndpoint(endpoint: string): string {
 
   if (url.pathname.endsWith("/responses")) {
     url.pathname = `${url.pathname.slice(0, -"/responses".length)}/models`;
-    return url.toString();
+  } else {
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/models`;
   }
 
-  url.pathname = `${url.pathname.replace(/\/$/, "")}/models`;
+  if (!url.searchParams.has("client_version")) {
+    url.searchParams.set("client_version", DEFAULT_OPENAI_CODEX_MODEL_DISCOVERY_CLIENT_VERSION);
+  }
+
   return url.toString();
 }
 
