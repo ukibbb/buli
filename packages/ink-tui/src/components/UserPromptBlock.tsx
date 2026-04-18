@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import React from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
