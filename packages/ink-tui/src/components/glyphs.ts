@@ -13,6 +13,7 @@ export const glyphs = {
   arrowUp: "↑",
   arrowDown: "↓",
   chevronRight: "›",
+  userPromptCaret: "›",
   close: "×",
   statusDot: "●",
   snakeRectangle: "▰",
