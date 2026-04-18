@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { renderToString } from "ink";
-import React from "react";
 import { GrepToolCallCard } from "../../src/components/toolCalls/GrepToolCallCard.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 

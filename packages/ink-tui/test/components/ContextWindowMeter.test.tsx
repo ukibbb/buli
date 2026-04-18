@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { renderToString } from "ink";
-import React from "react";
+import type { ReactElement } from "react";
 import { ContextWindowMeter } from "../../src/components/ContextWindowMeter.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-function renderWithoutAnsi(node: React.ReactElement): string {
+function renderWithoutAnsi(node: ReactElement): string {
   return stripVTControlCharacters(renderToString(node));
 }
 
