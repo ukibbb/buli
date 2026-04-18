@@ -70,11 +70,22 @@ function InlineMarkdownSpanView(props: { inlineMarkdownSpan: InlineMarkdownSpan 
   // Remaining arm: link. The url is embedded via OSC 8 so terminals that
   // support the sequence make it clickable; terminals that do not still
   // render the visible text thanks to Ink's ANSI sanitizer preserving OSC.
+  // External links (http:// or https://) get a trailing ↗ indicator
+  // glyph so readers can tell at a glance the link leaves the document
+  // (pen frame 0wurh in ch05 link block).
   const hyperlinkStart = `\u001b]8;;${inlineMarkdownSpan.hrefUrl}\u001b\\`;
   const hyperlinkEnd = "\u001b]8;;\u001b\\";
+  const isExternalLink =
+    inlineMarkdownSpan.hrefUrl.startsWith("http://") ||
+    inlineMarkdownSpan.hrefUrl.startsWith("https://");
   return (
-    <Text color={chatScreenTheme.accentCyan} underline>
-      {`${hyperlinkStart}${inlineMarkdownSpan.spanText}${hyperlinkEnd}`}
+    <Text>
+      <Text color={chatScreenTheme.accentCyan} underline>
+        {`${hyperlinkStart}${inlineMarkdownSpan.spanText}${hyperlinkEnd}`}
+      </Text>
+      {isExternalLink ? (
+        <Text color={chatScreenTheme.accentCyan}>{"↗"}</Text>
+      ) : null}
     </Text>
   );
 }

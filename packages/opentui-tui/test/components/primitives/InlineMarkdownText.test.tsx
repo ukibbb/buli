@@ -88,4 +88,26 @@ describe("InlineMarkdownText", () => {
     expect(chatScreenTheme.accentAmber).toBe("#F59E0B");
     expect(chatScreenTheme.textSecondary).toBe("#94A3B8");
   });
+
+  test("link with https URL appends ↗ glyph (opentui)", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InlineMarkdownText spans={[
+        { spanKind: "link", spanText: "commonmark.org", hrefUrl: "https://commonmark.org" },
+      ]} />,
+      { width: 60, height: 4 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("↗");
+  });
+
+  test("link with relative URL does not append ↗ glyph (opentui)", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InlineMarkdownText spans={[
+        { spanKind: "link", spanText: "internal anchor", hrefUrl: "#section" },
+      ]} />,
+      { width: 60, height: 4 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).not.toContain("↗");
+  });
 });

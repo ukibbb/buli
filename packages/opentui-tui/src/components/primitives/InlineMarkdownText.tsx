@@ -69,11 +69,22 @@ function InlineMarkdownSpanView(props: { inlineMarkdownSpan: InlineMarkdownSpan 
   }
   // Remaining arm: link. OSC 8 hyperlink sequence so terminals that support
   // it make the text clickable; terminals that do not still render the text.
+  // External links (http:// or https://) get a trailing ↗ indicator
+  // glyph so readers can tell at a glance the link leaves the document
+  // (pen frame 0wurh in ch05 link block).
   const hyperlinkStart = `\u001b]8;;${inlineMarkdownSpan.hrefUrl}\u001b\\`;
   const hyperlinkEnd = "\u001b]8;;\u001b\\";
+  const isExternalLink =
+    inlineMarkdownSpan.hrefUrl.startsWith("http://") ||
+    inlineMarkdownSpan.hrefUrl.startsWith("https://");
   return (
-    <u fg={chatScreenTheme.accentCyan}>
-      {`${hyperlinkStart}${inlineMarkdownSpan.spanText}${hyperlinkEnd}`}
-    </u>
+    <span>
+      <u fg={chatScreenTheme.accentCyan}>
+        {`${hyperlinkStart}${inlineMarkdownSpan.spanText}${hyperlinkEnd}`}
+      </u>
+      {isExternalLink ? (
+        <span fg={chatScreenTheme.accentCyan}>{"↗"}</span>
+      ) : null}
+    </span>
   );
 }

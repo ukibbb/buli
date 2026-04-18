@@ -88,3 +88,41 @@ test("InlineMarkdownText superscript span renders in textSecondary", () => {
   expect(ansiOutput).toContain(ansi24BitFg(chatScreenTheme.textSecondary));
   expect(ansiOutput).toContain("2");
 });
+
+test("InlineMarkdownText link span appends ↗ glyph for https:// URLs", () => {
+  const ansiOutput = renderToString(
+    <InlineMarkdownText spans={[
+      { spanKind: "link", spanText: "commonmark.org", hrefUrl: "https://commonmark.org" },
+    ]} />,
+  );
+  expect(ansiOutput).toContain("↗");
+  expect(ansiOutput).toContain("commonmark.org");
+});
+
+test("InlineMarkdownText link span appends ↗ glyph for http:// URLs", () => {
+  const ansiOutput = renderToString(
+    <InlineMarkdownText spans={[
+      { spanKind: "link", spanText: "old api", hrefUrl: "http://example.test" },
+    ]} />,
+  );
+  expect(ansiOutput).toContain("↗");
+});
+
+test("InlineMarkdownText link span does NOT append ↗ glyph for relative URLs", () => {
+  const ansiOutput = renderToString(
+    <InlineMarkdownText spans={[
+      { spanKind: "link", spanText: "internal anchor", hrefUrl: "#section" },
+    ]} />,
+  );
+  expect(ansiOutput).not.toContain("↗");
+  expect(ansiOutput).toContain("internal anchor");
+});
+
+test("InlineMarkdownText link span does NOT append ↗ glyph for in-document paths", () => {
+  const ansiOutput = renderToString(
+    <InlineMarkdownText spans={[
+      { spanKind: "link", spanText: "local file", hrefUrl: "./doc.md" },
+    ]} />,
+  );
+  expect(ansiOutput).not.toContain("↗");
+});
