@@ -58,6 +58,15 @@ function InlineMarkdownSpanView(props: { inlineMarkdownSpan: InlineMarkdownSpan 
       </Text>
     );
   }
+  if (inlineMarkdownSpan.spanKind === "highlight") {
+    return <Text color={chatScreenTheme.accentAmber}>{inlineMarkdownSpan.spanText}</Text>;
+  }
+  if (inlineMarkdownSpan.spanKind === "subscript") {
+    return <Text color={chatScreenTheme.textSecondary}>{inlineMarkdownSpan.spanText}</Text>;
+  }
+  if (inlineMarkdownSpan.spanKind === "superscript") {
+    return <Text color={chatScreenTheme.textSecondary}>{inlineMarkdownSpan.spanText}</Text>;
+  }
   // Remaining arm: link. The url is embedded via OSC 8 so terminals that
   // support the sequence make it clickable; terminals that do not still
   // render the visible text thanks to Ink's ANSI sanitizer preserving OSC.

@@ -111,6 +111,7 @@ These stay in the "translate, don't fake" column.
 | Drop shadows / blur effects | No sub-cell alpha. | Ignore; express emphasis via border or accent stripe. |
 | Raster images / icon fonts | Ink has no image / sixel / kitty-graphics backend (verified: no imports). | Substitute Unicode glyphs (`glyphs.ts`). |
 | Text `backgroundColor` spanning entire row beyond its glyphs | Chalk `bgX` only paints glyph cells. | Use a `<Box backgroundColor>` parent when you need a full-row band. |
+| Subscript / superscript vertical positioning | Cell grid has no vertical half-step. | Render as `textSecondary` color shift only — visual hierarchy and semantic meaning preserved via foreground color. |
 
 ---
 

@@ -55,6 +55,20 @@ export type {
   UserPromptConversationSessionEntry,
 } from "./conversationSessionEntry.ts";
 export {
+  OpenAiFunctionCallOutputReplayItemSchema,
+  OpenAiFunctionCallReplayItemSchema,
+  OpenAiProviderTurnReplayInputItemSchema,
+  OpenAiProviderTurnReplaySchema,
+  ProviderTurnReplaySchema,
+} from "./providerTurnReplay.ts";
+export type {
+  OpenAiFunctionCallOutputReplayItem,
+  OpenAiFunctionCallReplayItem,
+  OpenAiProviderTurnReplay,
+  OpenAiProviderTurnReplayInputItem,
+  ProviderTurnReplay,
+} from "./providerTurnReplay.ts";
+export {
   AssistantPlanProposedEventSchema,
   AssistantRateLimitPendingEventSchema,
   AssistantReasoningSummaryCompletedEventSchema,
@@ -113,20 +127,26 @@ export type { MessageRole, TranscriptMessage } from "./messages.ts";
 export {
   InlineBoldSpanSchema,
   InlineCodeSpanSchema,
+  InlineHighlightSpanSchema,
   InlineItalicSpanSchema,
   InlineLinkSpanSchema,
   InlinePlainSpanSchema,
   InlineSpanSchema,
   InlineStrikeSpanSchema,
+  InlineSubscriptSpanSchema,
+  InlineSuperscriptSpanSchema,
 } from "./inlineSpan.ts";
 export type {
   InlineBoldSpan,
   InlineCodeSpan,
+  InlineHighlightSpan,
   InlineItalicSpan,
   InlineLinkSpan,
   InlinePlainSpan,
   InlineSpan,
   InlineStrikeSpan,
+  InlineSubscriptSpan,
+  InlineSuperscriptSpan,
 } from "./inlineSpan.ts";
 export { PlanStepSchema, PlanStepStatusSchema } from "./planProposal.ts";
 export type { PlanStep, PlanStepStatus } from "./planProposal.ts";

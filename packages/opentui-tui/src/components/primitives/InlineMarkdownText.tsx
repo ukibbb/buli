@@ -58,6 +58,15 @@ function InlineMarkdownSpanView(props: { inlineMarkdownSpan: InlineMarkdownSpan 
       </span>
     );
   }
+  if (inlineMarkdownSpan.spanKind === "highlight") {
+    return <span fg={chatScreenTheme.accentAmber}>{inlineMarkdownSpan.spanText}</span>;
+  }
+  if (inlineMarkdownSpan.spanKind === "subscript") {
+    return <span fg={chatScreenTheme.textSecondary}>{inlineMarkdownSpan.spanText}</span>;
+  }
+  if (inlineMarkdownSpan.spanKind === "superscript") {
+    return <span fg={chatScreenTheme.textSecondary}>{inlineMarkdownSpan.spanText}</span>;
+  }
   // Remaining arm: link. OSC 8 hyperlink sequence so terminals that support
   // it make the text clickable; terminals that do not still render the text.
   const hyperlinkStart = `\u001b]8;;${inlineMarkdownSpan.hrefUrl}\u001b\\`;

@@ -55,3 +55,36 @@ test("InlineMarkdownText link span renders accentCyan with OSC 8 hyperlink wrapp
   // OSC 8 hyperlink wrapper.
   expect(ansiOutput).toContain("\u001b]8;;https://commonmark.org\u001b\\");
 });
+
+test("InlineMarkdownText highlight span renders in accentAmber", () => {
+  const ansiOutput = renderToString(
+    <InlineMarkdownText spans={[
+      { spanKind: "plain", spanText: "The important bit is " },
+      { spanKind: "highlight", spanText: "sessions are cookie-based" },
+    ]} />,
+  );
+  expect(ansiOutput).toContain(ansi24BitFg(chatScreenTheme.accentAmber));
+  expect(ansiOutput).toContain("sessions are cookie-based");
+});
+
+test("InlineMarkdownText subscript span renders in textSecondary", () => {
+  const ansiOutput = renderToString(
+    <InlineMarkdownText spans={[
+      { spanKind: "plain", spanText: "Formula: x" },
+      { spanKind: "subscript", spanText: "n" },
+    ]} />,
+  );
+  expect(ansiOutput).toContain(ansi24BitFg(chatScreenTheme.textSecondary));
+  expect(ansiOutput).toContain("n");
+});
+
+test("InlineMarkdownText superscript span renders in textSecondary", () => {
+  const ansiOutput = renderToString(
+    <InlineMarkdownText spans={[
+      { spanKind: "plain", spanText: "Formula: x" },
+      { spanKind: "superscript", spanText: "2" },
+    ]} />,
+  );
+  expect(ansiOutput).toContain(ansi24BitFg(chatScreenTheme.textSecondary));
+  expect(ansiOutput).toContain("2");
+});

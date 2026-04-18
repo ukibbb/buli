@@ -49,4 +49,19 @@ describe("InlineSpanSchema", () => {
       InlineSpanSchema.parse({ spanKind: "link", spanText: "click" }),
     ).toThrow();
   });
+
+  test("parses_inline_highlight_span_with_literal_text", () => {
+    const parsed = InlineSpanSchema.parse({ spanKind: "highlight", spanText: "important" });
+    expect(parsed).toEqual({ spanKind: "highlight", spanText: "important" });
+  });
+
+  test("parses_inline_subscript_span_with_literal_text", () => {
+    const parsed = InlineSpanSchema.parse({ spanKind: "subscript", spanText: "sub" });
+    expect(parsed).toEqual({ spanKind: "subscript", spanText: "sub" });
+  });
+
+  test("parses_inline_superscript_span_with_literal_text", () => {
+    const parsed = InlineSpanSchema.parse({ spanKind: "superscript", spanText: "sup" });
+    expect(parsed).toEqual({ spanKind: "superscript", spanText: "sup" });
+  });
 });

@@ -33,6 +33,18 @@ export const InlineLinkSpanSchema = z
   })
   .strict();
 
+export const InlineHighlightSpanSchema = z
+  .object({ spanKind: z.literal("highlight"), spanText: z.string() })
+  .strict();
+
+export const InlineSubscriptSpanSchema = z
+  .object({ spanKind: z.literal("subscript"), spanText: z.string() })
+  .strict();
+
+export const InlineSuperscriptSpanSchema = z
+  .object({ spanKind: z.literal("superscript"), spanText: z.string() })
+  .strict();
+
 export const InlineSpanSchema = z.discriminatedUnion("spanKind", [
   InlinePlainSpanSchema,
   InlineBoldSpanSchema,
@@ -40,6 +52,9 @@ export const InlineSpanSchema = z.discriminatedUnion("spanKind", [
   InlineStrikeSpanSchema,
   InlineCodeSpanSchema,
   InlineLinkSpanSchema,
+  InlineHighlightSpanSchema,
+  InlineSubscriptSpanSchema,
+  InlineSuperscriptSpanSchema,
 ]);
 
 export type InlinePlainSpan = z.infer<typeof InlinePlainSpanSchema>;
@@ -48,4 +63,7 @@ export type InlineItalicSpan = z.infer<typeof InlineItalicSpanSchema>;
 export type InlineStrikeSpan = z.infer<typeof InlineStrikeSpanSchema>;
 export type InlineCodeSpan = z.infer<typeof InlineCodeSpanSchema>;
 export type InlineLinkSpan = z.infer<typeof InlineLinkSpanSchema>;
+export type InlineHighlightSpan = z.infer<typeof InlineHighlightSpanSchema>;
+export type InlineSubscriptSpan = z.infer<typeof InlineSubscriptSpanSchema>;
+export type InlineSuperscriptSpan = z.infer<typeof InlineSuperscriptSpanSchema>;
 export type InlineSpan = z.infer<typeof InlineSpanSchema>;

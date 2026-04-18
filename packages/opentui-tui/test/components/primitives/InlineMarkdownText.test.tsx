@@ -70,4 +70,22 @@ describe("InlineMarkdownText", () => {
     await renderOnce();
     expect(captureCharFrame()).toContain("commonmark.org");
   });
+
+  test("renders highlight subscript and superscript spans (opentui)", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InlineMarkdownText spans={[
+        { spanKind: "highlight", spanText: "important" },
+        { spanKind: "subscript", spanText: "sub" },
+        { spanKind: "superscript", spanText: "sup" },
+      ]} />,
+      { width: 60, height: 4 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("important");
+    expect(frame).toContain("sub");
+    expect(frame).toContain("sup");
+    expect(chatScreenTheme.accentAmber).toBe("#F59E0B");
+    expect(chatScreenTheme.textSecondary).toBe("#94A3B8");
+  });
 });
