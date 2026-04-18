@@ -6,8 +6,8 @@ import { glyphs } from "./glyphs.ts";
 // Renders one streaming_reasoning_summary transcript entry. Pre-completion
 // lifecycle stage: the model is still producing reasoning summary text. The
 // header shows an amber dot plus how long reasoning has been running; the
-// body renders the partial summary behind a left accent stroke to mirror
-// the pen component WU3cj.
+// body renders the partial summary behind a 2-cell-wide textDim stripe to match
+// the pen frame EwHmY and the Blockquote pattern from the Phase 2 spec.
 export type ReasoningStreamBlockProps = {
   reasoningSummaryText: string;
   reasoningStartedAtMs: number;
@@ -28,17 +28,13 @@ export function ReasoningStreamBlock(props: ReasoningStreamBlockProps) {
         <Text color={chatScreenTheme.textMuted}>// reasoning</Text>
         <Text color={chatScreenTheme.textDim}>{`${elapsedSeconds}s`}</Text>
       </Box>
-      <Box
-        borderStyle="single"
-        borderTop={false}
-        borderRight={false}
-        borderBottom={false}
-        borderLeftColor={chatScreenTheme.textDim}
-        paddingLeft={1}
-      >
-        <Text color={chatScreenTheme.textDim} italic>
-          {props.reasoningSummaryText}
-        </Text>
+      <Box flexDirection="row" gap={1}>
+        <Box backgroundColor={chatScreenTheme.textDim} width={2} flexShrink={0} />
+        <Box flexShrink={1}>
+          <Text color={chatScreenTheme.textDim} italic>
+            {props.reasoningSummaryText}
+          </Text>
+        </Box>
       </Box>
     </Box>
   );
