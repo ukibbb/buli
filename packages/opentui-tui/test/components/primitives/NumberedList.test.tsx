@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { NumberedList } from "../../../src/components/primitives/NumberedList.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("NumberedList", () => {
   test("renders_numbers_and_items", async () => {
@@ -15,10 +16,11 @@ describe("NumberedList", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("1.");
-    expect(frame).toContain("2.");
+    expect(frame).toContain("01.");
+    expect(frame).toContain("02.");
     expect(frame).toContain("first");
     expect(frame).toContain("second");
+    expect(chatScreenTheme.accentGreen).toBe("#10B981");
   });
 
   test("respects_startingIndex", async () => {
@@ -34,7 +36,7 @@ describe("NumberedList", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("5.");
-    expect(frame).toContain("6.");
+    expect(frame).toContain("05.");
+    expect(frame).toContain("06.");
   });
 });

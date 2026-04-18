@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-// A bulleted list renders one row per item, each prefixed with a "·" glyph in
-// a muted colour so the bullet reads as punctuation rather than competing
-// with the item's content for attention.
+// A bulleted list renders one row per item, each prefixed with a ">_" glyph
+// in bold accentCyan to draw the eye to the list structure while keeping the
+// item content clear. Design: pen frame lNP2q (ch04 ulBlock).
 export type BulletedListProps = {
   itemContents: ReactNode[];
 };
@@ -15,7 +15,7 @@ export function BulletedList(props: BulletedListProps): ReactNode {
         <box key={`bulleted-item-${index}`} width="100%">
           <box flexShrink={0} marginRight={1}>
             <text>
-              <span fg={chatScreenTheme.accentPrimaryMuted}>·</span>
+              <b fg={chatScreenTheme.accentCyan}>{">_"}</b>
             </text>
           </box>
           <box flexShrink={1}>{itemContent}</box>
