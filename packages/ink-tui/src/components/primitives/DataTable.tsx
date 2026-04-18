@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // DataTable emulates a bordered table using flexbox rows. A dedicated header
 // row gets stronger text + a thin divider beneath it, and each body row

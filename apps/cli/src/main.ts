@@ -3,9 +3,12 @@ import { runInteractiveChat } from "./commands/chat.ts";
 import { runLogin } from "./commands/login.ts";
 import { runListAvailableModels } from "./commands/models.ts";
 
+export type SelectedTerminalUserInterface = "ink" | "opentui";
+
 export type InteractiveChatStartOptions = {
   selectedModelId?: string;
   selectedReasoningEffort?: ReasoningEffort;
+  selectedTerminalUserInterface?: SelectedTerminalUserInterface;
 };
 
 type CommandHandlers = {
@@ -20,7 +23,7 @@ const defaultCommandHandlers: CommandHandlers = {
   runLogin,
 };
 
-const USAGE = "Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>]";
+const USAGE = "Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--ui <ink|opentui>]";
 
 function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveChatStartOptions | undefined {
   const interactiveChatStartOptions: InteractiveChatStartOptions = {};
@@ -51,6 +54,19 @@ function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveC
       }
 
       interactiveChatStartOptions.selectedReasoningEffort = parsedReasoningEffort.data;
+      index += 1;
+      continue;
+    }
+
+    if (argument === "--ui") {
+      const rawUiValue = args[index + 1];
+      if (!rawUiValue || rawUiValue.startsWith("--")) {
+        return undefined;
+      }
+      if (rawUiValue !== "ink" && rawUiValue !== "opentui") {
+        return undefined;
+      }
+      interactiveChatStartOptions.selectedTerminalUserInterface = rawUiValue;
       index += 1;
       continue;
     }

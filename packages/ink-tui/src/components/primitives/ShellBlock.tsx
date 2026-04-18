@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import type { ToolCallBashOutputLine, ToolCallBashOutputLineKind } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // ShellBlock visualises command transcripts. A "prompt" line is shown in
 // accent colour so it reads as intent, stdout as primary text, and stderr in

@@ -1,6 +1,6 @@
 import { Box } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Stripe } from "./Stripe.tsx";
 
 // SurfaceCard is the skeleton for every HERO-1 framed block: tool-call cards,

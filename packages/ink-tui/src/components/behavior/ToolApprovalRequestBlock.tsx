@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import type { ToolCallDetail } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { BashToolCallCard } from "../toolCalls/BashToolCallCard.tsx";
 import { EditToolCallCard } from "../toolCalls/EditToolCallCard.tsx";
 import { GrepToolCallCard } from "../toolCalls/GrepToolCallCard.tsx";

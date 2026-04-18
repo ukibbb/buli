@@ -116,6 +116,15 @@ export const AssistantToolCallFailedEventSchema = z
   })
   .strict();
 
+export const AssistantToolCallDeniedEventSchema = z
+  .object({
+    type: z.literal("assistant_tool_call_denied"),
+    toolCallId: z.string().min(1),
+    toolCallDetail: ToolCallDetailSchema,
+    denialText: z.string().min(1),
+  })
+  .strict();
+
 // Emitted when the UI should pin turn metadata (model · duration) for the
 // current turn. Token usage arrives later on assistant_response_completed or
 // assistant_response_incomplete so this event stays truthful instead of
@@ -175,6 +184,7 @@ export const AssistantResponseEventSchema = z.discriminatedUnion("type", [
   AssistantToolCallStartedEventSchema,
   AssistantToolCallCompletedEventSchema,
   AssistantToolCallFailedEventSchema,
+  AssistantToolCallDeniedEventSchema,
   AssistantTurnCompletedEventSchema,
   AssistantRateLimitPendingEventSchema,
   AssistantToolApprovalRequestedEventSchema,
@@ -192,6 +202,7 @@ export type AssistantReasoningSummaryCompletedEvent = z.infer<typeof AssistantRe
 export type AssistantToolCallStartedEvent = z.infer<typeof AssistantToolCallStartedEventSchema>;
 export type AssistantToolCallCompletedEvent = z.infer<typeof AssistantToolCallCompletedEventSchema>;
 export type AssistantToolCallFailedEvent = z.infer<typeof AssistantToolCallFailedEventSchema>;
+export type AssistantToolCallDeniedEvent = z.infer<typeof AssistantToolCallDeniedEventSchema>;
 export type AssistantTurnCompletedEvent = z.infer<typeof AssistantTurnCompletedEventSchema>;
 export type AssistantRateLimitPendingEvent = z.infer<typeof AssistantRateLimitPendingEventSchema>;
 export type AssistantToolApprovalRequestedEvent = z.infer<typeof AssistantToolApprovalRequestedEventSchema>;

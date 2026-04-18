@@ -1,6 +1,6 @@
 import { Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Callout } from "../primitives/Callout.tsx";
 
 export type IncompleteResponseNoticeBlockProps = {

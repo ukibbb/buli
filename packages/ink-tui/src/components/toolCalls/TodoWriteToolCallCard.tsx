@@ -1,7 +1,7 @@
 import { Text } from "ink";
 import type { ReactNode } from "react";
 import type { ToolCallTodoWriteDetail } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Checklist } from "../primitives/Checklist.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";

@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // A bulleted list renders one row per item, each prefixed with a "·" glyph in
 // a muted colour so the bullet reads as punctuation rather than competing

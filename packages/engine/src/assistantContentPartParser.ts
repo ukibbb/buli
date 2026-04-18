@@ -1,6 +1,4 @@
-import type { InlineMarkdownSpan } from "../components/primitives/InlineMarkdownText.tsx";
-import type { CalloutSeverity } from "../components/primitives/Callout.tsx";
-import type { ChecklistItem } from "../components/primitives/Checklist.tsx";
+import type { AssistantContentPart, CalloutSeverity, ChecklistItem, InlineSpan } from "@buli/contracts";
 
 // Parses the assistant's streamed markdown text into a typed block tree that
 // the renderer turns into primitives. We support the subset of CommonMark
@@ -10,18 +8,8 @@ import type { ChecklistItem } from "../components/primitives/Checklist.tsx";
 // block kinds explicit — rather than shuttling a generic "node" — means the
 // renderer can dispatch straight to the matching component without guessing.
 
-export type AssistantMarkdownBlock =
-  | { blockKind: "paragraph"; inlineSpans: InlineMarkdownSpan[] }
-  | { blockKind: "heading"; headingLevel: 1 | 2 | 3; inlineSpans: InlineMarkdownSpan[] }
-  | { blockKind: "bulleted_list"; itemSpanArrays: InlineMarkdownSpan[][] }
-  | { blockKind: "numbered_list"; itemSpanArrays: InlineMarkdownSpan[][] }
-  | { blockKind: "checklist"; items: ChecklistItem[] }
-  | { blockKind: "fenced_code"; languageLabel?: string; codeLines: string[] }
-  | { blockKind: "callout"; severity: CalloutSeverity; titleText?: string; inlineSpans: InlineMarkdownSpan[] }
-  | { blockKind: "horizontal_rule" };
-
-export function parseAssistantResponseMarkdown(assistantResponseText: string): AssistantMarkdownBlock[] {
-  const blocks: AssistantMarkdownBlock[] = [];
+export function parseAssistantResponseIntoContentParts(assistantResponseText: string): readonly AssistantContentPart[] {
+  const blocks: AssistantContentPart[] = [];
   const responseLines = assistantResponseText.replace(/\r\n?/g, "\n").split("\n");
 
   let cursorLineIndex = 0;
@@ -55,7 +43,7 @@ export function parseAssistantResponseMarkdown(assistantResponseText: string): A
     }
 
     if (isHorizontalRuleLine(currentLine)) {
-      blocks.push({ blockKind: "horizontal_rule" });
+      blocks.push({ kind: "horizontal_rule" });
       cursorLineIndex += 1;
       continue;
     }
@@ -92,7 +80,7 @@ export function parseAssistantResponseMarkdown(assistantResponseText: string): A
 function tryParseFencedCodeBlock(
   responseLines: string[],
   startLineIndex: number,
-): { block: AssistantMarkdownBlock; nextLineIndex: number } | undefined {
+): { block: AssistantContentPart; nextLineIndex: number } | undefined {
   const openingLine = responseLines[startLineIndex] ?? "";
   const openingFenceMatch = openingLine.match(/^```(\w+)?\s*$/);
   if (!openingFenceMatch) {
@@ -106,7 +94,7 @@ function tryParseFencedCodeBlock(
     if (currentLine.match(/^```\s*$/)) {
       return {
         block: {
-          blockKind: "fenced_code",
+          kind: "fenced_code_block",
           ...(rawLanguageLabel ? { languageLabel: rawLanguageLabel } : {}),
           codeLines,
         },
@@ -120,7 +108,7 @@ function tryParseFencedCodeBlock(
   // streams render sensibly.
   return {
     block: {
-      blockKind: "fenced_code",
+      kind: "fenced_code_block",
       ...(rawLanguageLabel ? { languageLabel: rawLanguageLabel } : {}),
       codeLines,
     },
@@ -144,7 +132,7 @@ const calloutSeverityByAdmonitionTag: Record<string, CalloutSeverity> = {
 function tryParseCalloutBlock(
   responseLines: string[],
   startLineIndex: number,
-): { block: AssistantMarkdownBlock; nextLineIndex: number } | undefined {
+): { block: AssistantContentPart; nextLineIndex: number } | undefined {
   const openingLine = responseLines[startLineIndex] ?? "";
   const admonitionMatch = openingLine.match(/^>\s*\[!(\w+)](.*)$/);
   if (!admonitionMatch) {
@@ -171,7 +159,7 @@ function tryParseCalloutBlock(
   const bodyText = bodyLines.join(" ").trim();
   return {
     block: {
-      blockKind: "callout",
+      kind: "callout",
       severity,
       ...(rawTitleText ? { titleText: rawTitleText } : {}),
       inlineSpans: parseInlineMarkdownSpans(bodyText),
@@ -180,14 +168,14 @@ function tryParseCalloutBlock(
   };
 }
 
-function tryParseHeadingBlock(currentLine: string): AssistantMarkdownBlock | undefined {
+function tryParseHeadingBlock(currentLine: string): AssistantContentPart | undefined {
   const headingMatch = currentLine.match(/^(#{1,3})\s+(.+)$/);
   if (!headingMatch) {
     return undefined;
   }
   const headingLevel = (headingMatch[1] ?? "#").length as 1 | 2 | 3;
   return {
-    blockKind: "heading",
+    kind: "heading",
     headingLevel,
     inlineSpans: parseInlineMarkdownSpans(headingMatch[2] ?? ""),
   };
@@ -200,7 +188,7 @@ function isHorizontalRuleLine(currentLine: string): boolean {
 function tryParseChecklistBlock(
   responseLines: string[],
   startLineIndex: number,
-): { block: AssistantMarkdownBlock; nextLineIndex: number } | undefined {
+): { block: AssistantContentPart; nextLineIndex: number } | undefined {
   const firstLine = responseLines[startLineIndex] ?? "";
   if (!/^\s*[-*]\s+\[[ xX]]\s+/.test(firstLine)) {
     return undefined;
@@ -221,7 +209,7 @@ function tryParseChecklistBlock(
     scanningLineIndex += 1;
   }
   return {
-    block: { blockKind: "checklist", items },
+    block: { kind: "checklist", items },
     nextLineIndex: scanningLineIndex,
   };
 }
@@ -229,12 +217,12 @@ function tryParseChecklistBlock(
 function tryParseBulletedListBlock(
   responseLines: string[],
   startLineIndex: number,
-): { block: AssistantMarkdownBlock; nextLineIndex: number } | undefined {
+): { block: AssistantContentPart; nextLineIndex: number } | undefined {
   const firstLine = responseLines[startLineIndex] ?? "";
   if (!/^\s*[-*]\s+/.test(firstLine) || /^\s*[-*]\s+\[[ xX]]\s+/.test(firstLine)) {
     return undefined;
   }
-  const itemSpanArrays: InlineMarkdownSpan[][] = [];
+  const itemSpanArrays: InlineSpan[][] = [];
   let scanningLineIndex = startLineIndex;
   while (scanningLineIndex < responseLines.length) {
     const currentLine = responseLines[scanningLineIndex] ?? "";
@@ -246,7 +234,7 @@ function tryParseBulletedListBlock(
     scanningLineIndex += 1;
   }
   return {
-    block: { blockKind: "bulleted_list", itemSpanArrays },
+    block: { kind: "bulleted_list", itemSpanArrays },
     nextLineIndex: scanningLineIndex,
   };
 }
@@ -254,12 +242,12 @@ function tryParseBulletedListBlock(
 function tryParseNumberedListBlock(
   responseLines: string[],
   startLineIndex: number,
-): { block: AssistantMarkdownBlock; nextLineIndex: number } | undefined {
+): { block: AssistantContentPart; nextLineIndex: number } | undefined {
   const firstLine = responseLines[startLineIndex] ?? "";
   if (!/^\s*\d+[.)]\s+/.test(firstLine)) {
     return undefined;
   }
-  const itemSpanArrays: InlineMarkdownSpan[][] = [];
+  const itemSpanArrays: InlineSpan[][] = [];
   let scanningLineIndex = startLineIndex;
   while (scanningLineIndex < responseLines.length) {
     const currentLine = responseLines[scanningLineIndex] ?? "";
@@ -271,7 +259,7 @@ function tryParseNumberedListBlock(
     scanningLineIndex += 1;
   }
   return {
-    block: { blockKind: "numbered_list", itemSpanArrays },
+    block: { kind: "numbered_list", itemSpanArrays },
     nextLineIndex: scanningLineIndex,
   };
 }
@@ -279,7 +267,7 @@ function tryParseNumberedListBlock(
 function parseParagraphBlock(
   responseLines: string[],
   startLineIndex: number,
-): { block: AssistantMarkdownBlock; nextLineIndex: number } {
+): { block: AssistantContentPart; nextLineIndex: number } {
   const paragraphLines: string[] = [];
   let scanningLineIndex = startLineIndex;
   while (scanningLineIndex < responseLines.length) {
@@ -295,7 +283,7 @@ function parseParagraphBlock(
   }
   const paragraphText = paragraphLines.join(" ").trim();
   return {
-    block: { blockKind: "paragraph", inlineSpans: parseInlineMarkdownSpans(paragraphText) },
+    block: { kind: "paragraph", inlineSpans: parseInlineMarkdownSpans(paragraphText) },
     nextLineIndex: scanningLineIndex,
   };
 }
@@ -322,8 +310,8 @@ function lineStartsANewBlock(currentLine: string): boolean {
 // Inline parser. Scans left-to-right and greedily consumes the longest
 // recognised marker at each position. Unrecognised markers fall through as
 // plain text so odd inputs degrade gracefully rather than throwing.
-export function parseInlineMarkdownSpans(inlineMarkdownText: string): InlineMarkdownSpan[] {
-  const inlineSpans: InlineMarkdownSpan[] = [];
+export function parseInlineMarkdownSpans(inlineMarkdownText: string): InlineSpan[] {
+  const inlineSpans: InlineSpan[] = [];
   let pendingPlainText = "";
   let cursorCharIndex = 0;
 

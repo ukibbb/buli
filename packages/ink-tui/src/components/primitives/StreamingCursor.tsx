@@ -1,6 +1,6 @@
 import { Text, useAnimation } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // Mirrors the pen-file StreamingCursor variants (amber / green / cyan / dim).
 // Implemented as a single-cell blinking block so it reads as "still

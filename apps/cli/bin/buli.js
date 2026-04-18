@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { main } from "../dist/cli.js";
 
 // Call the built entrypoint explicitly. Import side effects are not reliable

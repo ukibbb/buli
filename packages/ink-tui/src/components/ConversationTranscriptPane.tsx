@@ -2,7 +2,6 @@ import { Box, type DOMElement, useBoxMetrics } from "ink";
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import type { ConversationTranscriptEntry } from "../chatScreenState.ts";
 import type { ConversationTranscriptViewportMeasurements } from "../conversationTranscriptViewportState.ts";
-import { parseAssistantResponseMarkdown } from "../richText/parseAssistantResponseMarkdown.ts";
 import { RenderAssistantResponseTree } from "../richText/renderAssistantResponseTree.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoticeBlock.tsx";
@@ -147,6 +146,16 @@ const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntr
     );
   }
 
+  if (conversationTranscriptEntry.kind === "denied_tool_call") {
+    return (
+      <ToolCallEntryView
+        renderState="failed"
+        toolCallDetail={conversationTranscriptEntry.toolCallDetail}
+        errorText={conversationTranscriptEntry.denialText}
+      />
+    );
+  }
+
   if (conversationTranscriptEntry.kind === "plan_proposal") {
     return (
       <PlanProposalBlock
@@ -191,6 +200,9 @@ const ConversationTranscriptEntryView = memo(function ConversationTranscriptEntr
   if (conversationTranscriptEntry.message.role === "user") {
     return <UserPromptBlock promptText={conversationTranscriptEntry.message.text} />;
   }
-  const assistantMarkdownBlocks = parseAssistantResponseMarkdown(conversationTranscriptEntry.message.text);
-  return <RenderAssistantResponseTree assistantMarkdownBlocks={assistantMarkdownBlocks} />;
+  return (
+    <RenderAssistantResponseTree
+      assistantContentParts={conversationTranscriptEntry.message.assistantContentParts ?? []}
+    />
+  );
 });

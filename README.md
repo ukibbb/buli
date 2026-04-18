@@ -1,10 +1,10 @@
 # buli
 
-`buli` is a local-first, terminal-only coding agent built for one user: you.
+`buli` is a local-first, terminal-only agentic software engineering agent built for one user: ukibbb.
 
-This repository currently contains the first working scaffold: OpenAI/ChatGPT browser OAuth, a fullscreen HERO 1 terminal chat screen, streamed assistant responses with a live reasoning-summary block that collapses into a compact chip once thinking ends, available model discovery, and model and reasoning-effort selection. It is intentionally small so the architecture can be inspected before tools, sessions, branching, and extensions are added.
+This repository now contains the first real local agent slice: OpenAI/ChatGPT browser OAuth, a fullscreen HERO 1 terminal chat screen, streamed assistant responses with a live reasoning-summary block that collapses into a compact chip once thinking ends, available model discovery, model and reasoning-effort selection, in-memory cross-turn conversation history, and a first local `bash` tool with explicit approval before execution.
 
-## Current Status
+ # Current Status
 
 V1 currently includes:
 
@@ -24,12 +24,20 @@ V1 currently includes:
 - provider-backed available model discovery
 - model selection and reasoning-effort selection
 - streaming reasoning-summary display (live thinking block while the model reasons, collapsed chip after reasoning ends showing elapsed seconds and, once the response completes, reasoning token count)
+- engine-owned in-memory conversation history that carries prior user prompts, assistant replies, and completed `bash` tool outcomes across turns during the current session
+- first local `bash` tool wired through the engine and OpenAI Responses function-calling loop
+- explicit tool approval flow: `y` approves the pending bash command, `n` denies it, and the model continues the same turn after the decision
 - HERO 1 visual design (see `ink-limitations.md` for terminal cell-grid translations)
+- typed `AssistantContentPart` discriminated union in `@buli/contracts` (paragraph, heading, bulleted/numbered/checklist, fenced code block, callout, horizontal rule, plus inline spans)
+- engine-side markdown parser (`parseAssistantResponseIntoContentParts` in `@buli/engine`) that attaches typed content parts to the completed assistant message
+- second terminal renderer `@buli/opentui-tui` backed by `@opentui/react`, with the same component inventory as ink-tui
+- shared design tokens (`@buli/assistant-design-tokens`) consumed by both renderers
+- shared test fixtures (`@buli/assistant-transcript-fixtures`) asserting both reducers interpret the same event sequences identically
+- `--ui ink|opentui` flag on the CLI to pick a renderer per invocation (`ink` default)
 
 V1 intentionally does not include yet:
 
-- `read`, `write`, `edit`, or `bash`
-- tool-call rendering
+- `read`, `write`, `edit`, or wider multi-tool support beyond `bash`
 - session persistence
 - session branching
 - extension loading
@@ -37,8 +45,7 @@ V1 intentionally does not include yet:
 
 ## Requirements
 
-- `bun`
-- `Node 24`
+- `Bun 1.3.12` or newer
 
 ## Recommended Workflow
 
@@ -77,9 +84,9 @@ buli --model gpt-5.4 --reasoning high
 
 We use the source runner as the primary development workflow because every `buli`
 invocation runs the latest code from the repo without waiting for a rebuild,
-even when launched outside the repo. The global wrapper also pins `tsx` to this
-repo's `tsconfig.json`, so JSX and other TypeScript settings stay consistent no
-matter where you run `buli` from.
+even when launched outside the repo. The global wrapper also keeps the runtime on
+`bun` end to end, so the source workflow and the packaged CLI exercise the same
+runtime for both Ink and OpenTUI.
 
 ## What `buli login` Does
 
@@ -115,11 +122,15 @@ After logging in, you can:
 - press `?` on an empty prompt to open shortcuts help
 - press `Ctrl+L` to open model selection inside the TUI
 - choose a model and, when supported, choose a reasoning effort
+- approve a pending `bash` command with `y` or deny it with `n`
+- ask follow-up questions that depend on earlier assistant replies and completed `bash` results inside the same fullscreen session
 - list available models with `buli models`
 - scroll the fullscreen conversation transcript with `Up`, `Down`, `PageUp`, `PageDown`, `Home`, and `End`
 - start the app with a preselected model using `--model`
 - start the app with a preselected reasoning effort using `--reasoning`
 - see reasoning token usage on the collapsed reasoning chip after the assistant response completes
+- `buli --ui opentui` launches the chat UI with the OpenTUI renderer instead of Ink
+- both renderers read the same typed `AssistantContentPart[]` from the completed assistant message, so markdown structure (headings, lists, code blocks, callouts) is rendered identically in semantics
 
 If auth is missing, `buli` exits cleanly and tells you to run `buli login` first.
 
@@ -175,7 +186,7 @@ bun run build:cli
 Run the built wrapper directly:
 
 ```bash
-node apps/cli/bin/buli.js
+bun apps/cli/bin/buli.js
 ```
 
 If you want to continuously rebuild that packaged path while testing it, run:
@@ -212,26 +223,38 @@ export PATH="$(bun pm bin -g):$PATH"
 
 ## Project Structure
 
+Current packages:
+
 - `apps/cli`
   - composition root and CLI entrypoints
 - `packages/contracts`
-  - shared schemas for transcript messages, assistant response events, model metadata, and token usage
+  - shared schemas for transcript messages, assistant response events, model metadata, token usage, canonical conversation history, typed tool requests, and typed assistant content parts
 - `packages/engine`
-  - UI-agnostic assistant response orchestration
+  - UI-agnostic conversation runner, in-memory history projection, approval flow, local `bash` execution, and markdown parser
 - `packages/openai`
-  - OAuth, token refresh, OpenAI transport, available model discovery, usage parsing
+  - OAuth, token refresh, Responses transport, available model discovery, function-call parsing, and same-turn continuation after tool output
 - `packages/ink-tui`
   - terminal chat screen rendering, reasoning-summary and prompt components, alternate-screen integration, and chat screen state transitions
+- `packages/opentui-tui`
+  - second terminal chat renderer using `@opentui/react`, same component inventory as ink-tui
+- `packages/assistant-design-tokens`
+  - shared color, border, and spacing tokens from the `.pen` design file
+- `packages/assistant-transcript-fixtures`
+  - canonical typed-part scenarios consumed by engine and both TUI tests
 
 ## Design Source of Truth
 
 The HERO 1 single-pane layout lives in the Pencil design file at
-`novibe.space/designs/my-design.pen` (frame `j20vJ`). Pen-file pixel values,
-sub-row accent heights, corner radius on filled surfaces, and font-size
-hierarchy do not translate 1:1 to a terminal cell grid. The documented
-translations — palette table, pixel-to-cell mapping, Lucide-to-Unicode glyph
-substitutions — live in `ink-limitations.md`. Any visual change to the TUI
-should reference that file.
+`novibe.space/designs/my-design.pen` (frame `j20vJ`). The per-component
+library backing it is in the same file at frame `idXGN` (43 reusable
+components covering reasoning, prose, lists, code, tool calls, and behavior
+blocks). Pen-file pixel values, sub-row accent heights, corner radius on
+filled surfaces, and font-size hierarchy do not translate 1:1 to a terminal
+cell grid. The documented translations — palette table, pixel-to-cell
+mapping, Lucide-to-Unicode glyph substitutions — live in `ink-limitations.md`.
+The dual-TUI implementation spec at
+`plans/2026-04-16-dual-tui-opentui-design.md` documents the
+visual-fidelity mapping applied in both renderers.
 
 ## Development Commands
 
@@ -267,7 +290,6 @@ bun run link:cli
 
 ## Notes
 
-- `bun` is used for package management and workspaces.
-- The CLI/TUI runtime target is `Node 24`.
+- `bun` 1.3.12+ is used for package management, workspaces, and the CLI/TUI runtime.
 - Exact token counts are provider-derived and reasoning tokens are shown after a completed assistant response.
 - The source-runner is the preferred development workflow because it avoids unnecessary rebuild steps while the product is still changing quickly, even when you launch `buli` from another directory.

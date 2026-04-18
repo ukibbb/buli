@@ -1,19 +1,15 @@
 import { Text } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
+
+import type { InlineSpan } from "@buli/contracts";
 
 // Inline-span vocabulary matches the pen file's inline components
 // (InlineBold, InlineItalic, InlineStrike, InlineLink, InlineCode). Keeping
 // them explicit rather than a generic "styled string" means rendering can
 // apply the right chalk style per span and Ink's nested-Text model can
 // compose them into a single line without fighting the transform chain.
-export type InlineMarkdownSpan =
-  | { spanKind: "plain"; spanText: string }
-  | { spanKind: "bold"; spanText: string }
-  | { spanKind: "italic"; spanText: string }
-  | { spanKind: "strike"; spanText: string }
-  | { spanKind: "code"; spanText: string }
-  | { spanKind: "link"; spanText: string; hrefUrl: string };
+export type InlineMarkdownSpan = InlineSpan;
 
 export type InlineMarkdownTextProps = {
   spans: InlineMarkdownSpan[];

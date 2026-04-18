@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   AssistantPlanProposedEventSchema,
   AssistantRateLimitPendingEventSchema,
@@ -10,42 +11,172 @@ import {
   AssistantResponseTextChunkEventSchema,
   AssistantToolApprovalRequestedEventSchema,
   AssistantToolCallCompletedEventSchema,
+  AssistantToolCallDeniedEventSchema,
   AssistantToolCallFailedEventSchema,
   AssistantToolCallStartedEventSchema,
   AssistantTurnCompletedEventSchema,
   type AssistantResponseEvent,
+  type BashToolCallRequest,
+  type ToolCallRequest,
 } from "@buli/contracts";
-import type { AssistantResponseRequest, AssistantResponseProvider } from "./provider.ts";
+import { InMemoryConversationHistory } from "./conversationHistory.ts";
+import { buildBuliSystemPrompt } from "./systemPrompt.ts";
+import type {
+  ActiveConversationTurn,
+  AssistantConversationRunner,
+  ConversationTurnProvider,
+  ConversationTurnRequest,
+  ProviderConversationTurn,
+} from "./provider.ts";
+import { parseAssistantResponseIntoContentParts } from "./assistantContentPartParser.ts";
+import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import { createCompletedAssistantResponseEvent } from "./turn.ts";
+import { runApprovedBashToolCall, createStartedBashToolCallDetail } from "./tools/bashTool.ts";
+import { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 
-export interface AssistantResponseRunner {
-  streamAssistantResponse(input: AssistantResponseRequest): AsyncIterable<AssistantResponseEvent>;
-}
+type PendingToolApprovalState = {
+  approvalId: string;
+  toolCallId: string;
+  toolCallRequest: ToolCallRequest;
+  resolveDecision: (decision: "approved" | "denied") => void;
+};
 
-export class AssistantResponseRuntime implements AssistantResponseRunner {
-  readonly provider: AssistantResponseProvider;
+export class AssistantConversationRuntime implements AssistantConversationRunner {
+  readonly conversationTurnProvider: ConversationTurnProvider;
+  readonly workspaceRootPath: string;
+  readonly promptContextBrowseRootPath: string;
+  readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
+  readonly conversationHistory: InMemoryConversationHistory;
+  currentPendingConversationTurn: RuntimeConversationTurn | undefined;
 
-  constructor(provider: AssistantResponseProvider) {
-    this.provider = provider;
+  constructor(input: {
+    conversationTurnProvider: ConversationTurnProvider;
+    workspaceRootPath: string;
+    promptContextBrowseRootPath: string;
+    workspaceShellCommandExecutor?: WorkspaceShellCommandExecutor;
+    conversationHistory?: InMemoryConversationHistory;
+  }) {
+    this.conversationTurnProvider = input.conversationTurnProvider;
+    this.workspaceRootPath = input.workspaceRootPath;
+    this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
+    this.workspaceShellCommandExecutor =
+      input.workspaceShellCommandExecutor ?? new WorkspaceShellCommandExecutor({ workspaceRootPath: input.workspaceRootPath });
+    this.conversationHistory = input.conversationHistory ?? new InMemoryConversationHistory();
   }
 
-  async *streamAssistantResponse(input: AssistantResponseRequest): AsyncGenerator<AssistantResponseEvent> {
-    // The runtime converts provider-specific stream updates into neutral
-    // assistant-response events. That keeps the engine usable without Ink
-    // and keeps the provider boundary simple to test.
-    yield AssistantResponseStartedEventSchema.parse({
-      type: "assistant_response_started",
-      model: input.selectedModelId,
+  startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
+    if (this.currentPendingConversationTurn && !this.currentPendingConversationTurn.hasFinishedTurn()) {
+      throw new Error("A conversation turn is already running");
+    }
+
+    const runtimeConversationTurn = new RuntimeConversationTurn({
+      conversationTurnInput: input,
+      conversationTurnProvider: this.conversationTurnProvider,
+      conversationHistory: this.conversationHistory,
+      workspaceRootPath: this.workspaceRootPath,
+      promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+      workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
+      onConversationTurnFinished: () => {
+        if (this.currentPendingConversationTurn === runtimeConversationTurn) {
+          this.currentPendingConversationTurn = undefined;
+        }
+      },
+    });
+
+    this.currentPendingConversationTurn = runtimeConversationTurn;
+    return runtimeConversationTurn;
+  }
+}
+
+class RuntimeConversationTurn implements ActiveConversationTurn {
+  readonly conversationTurnInput: ConversationTurnRequest;
+  readonly conversationTurnProvider: ConversationTurnProvider;
+  readonly conversationHistory: InMemoryConversationHistory;
+  readonly workspaceRootPath: string;
+  readonly promptContextBrowseRootPath: string;
+  readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
+  readonly onConversationTurnFinished: () => void;
+  currentPendingToolApprovalState: PendingToolApprovalState | undefined;
+  hasStartedStreamingAssistantResponseEvents = false;
+  hasFinishedConversationTurn = false;
+
+  constructor(input: {
+    conversationTurnInput: ConversationTurnRequest;
+    conversationTurnProvider: ConversationTurnProvider;
+    conversationHistory: InMemoryConversationHistory;
+    workspaceRootPath: string;
+    promptContextBrowseRootPath: string;
+    workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
+    onConversationTurnFinished: () => void;
+  }) {
+    this.conversationTurnInput = input.conversationTurnInput;
+    this.conversationTurnProvider = input.conversationTurnProvider;
+    this.conversationHistory = input.conversationHistory;
+    this.workspaceRootPath = input.workspaceRootPath;
+    this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
+    this.workspaceShellCommandExecutor = input.workspaceShellCommandExecutor;
+    this.onConversationTurnFinished = input.onConversationTurnFinished;
+  }
+
+  hasFinishedTurn(): boolean {
+    return this.hasFinishedConversationTurn;
+  }
+
+  async approvePendingToolCall(approvalId: string): Promise<void> {
+    if (!this.currentPendingToolApprovalState || this.currentPendingToolApprovalState.approvalId !== approvalId) {
+      throw new Error(`No pending tool approval matches approvalId=${approvalId}`);
+    }
+
+    this.currentPendingToolApprovalState.resolveDecision("approved");
+    this.currentPendingToolApprovalState = undefined;
+  }
+
+  async denyPendingToolCall(approvalId: string): Promise<void> {
+    if (!this.currentPendingToolApprovalState || this.currentPendingToolApprovalState.approvalId !== approvalId) {
+      throw new Error(`No pending tool approval matches approvalId=${approvalId}`);
+    }
+
+    this.currentPendingToolApprovalState.resolveDecision("denied");
+    this.currentPendingToolApprovalState = undefined;
+  }
+
+  async *streamAssistantResponseEvents(): AsyncGenerator<AssistantResponseEvent> {
+    if (this.hasStartedStreamingAssistantResponseEvents) {
+      throw new Error("Conversation turn events can only be streamed once");
+    }
+    this.hasStartedStreamingAssistantResponseEvents = true;
+
+    const conversationTurnStartedAtMilliseconds = Date.now();
+    const modelFacingPromptText = await buildModelFacingPromptTextFromPromptContextReferences({
+      promptText: this.conversationTurnInput.userPromptText,
+      promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+    });
+    this.conversationHistory.appendConversationSessionEntry({
+      entryKind: "user_prompt",
+      promptText: this.conversationTurnInput.userPromptText,
+      modelFacingPromptText,
+    });
+
+    const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
+      systemPromptText: buildBuliSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
+      modelContextItems: this.conversationHistory.buildModelContextItems(),
+      selectedModelId: this.conversationTurnInput.selectedModelId,
+      ...(this.conversationTurnInput.selectedReasoningEffort
+        ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
+        : {}),
     });
 
     let streamedAssistantText = "";
 
     try {
-      for await (const providerStreamEvent of this.provider.streamAssistantResponse(input)) {
+      yield AssistantResponseStartedEventSchema.parse({
+        type: "assistant_response_started",
+        model: this.conversationTurnInput.selectedModelId,
+      });
+
+      for await (const providerStreamEvent of providerConversationTurn.streamProviderEvents()) {
         if (providerStreamEvent.type === "reasoning_summary_started") {
-          yield AssistantReasoningSummaryStartedEventSchema.parse({
-            type: "assistant_reasoning_summary_started",
-          });
+          yield AssistantReasoningSummaryStartedEventSchema.parse({ type: "assistant_reasoning_summary_started" });
           continue;
         }
 
@@ -74,32 +205,11 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
           continue;
         }
 
-        if (providerStreamEvent.type === "tool_call_started") {
-          yield AssistantToolCallStartedEventSchema.parse({
-            type: "assistant_tool_call_started",
+        if (providerStreamEvent.type === "tool_call_requested") {
+          yield* this.handleRequestedToolCall({
+            providerConversationTurn,
             toolCallId: providerStreamEvent.toolCallId,
-            toolCallDetail: providerStreamEvent.toolCallDetail,
-          });
-          continue;
-        }
-
-        if (providerStreamEvent.type === "tool_call_completed") {
-          yield AssistantToolCallCompletedEventSchema.parse({
-            type: "assistant_tool_call_completed",
-            toolCallId: providerStreamEvent.toolCallId,
-            toolCallDetail: providerStreamEvent.toolCallDetail,
-            durationMs: providerStreamEvent.durationMs,
-          });
-          continue;
-        }
-
-        if (providerStreamEvent.type === "tool_call_failed") {
-          yield AssistantToolCallFailedEventSchema.parse({
-            type: "assistant_tool_call_failed",
-            toolCallId: providerStreamEvent.toolCallId,
-            toolCallDetail: providerStreamEvent.toolCallDetail,
-            errorText: providerStreamEvent.errorText,
-            durationMs: providerStreamEvent.durationMs,
+            toolCallRequest: providerStreamEvent.toolCallRequest,
           });
           continue;
         }
@@ -109,17 +219,6 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
             type: "assistant_rate_limit_pending",
             retryAfterSeconds: providerStreamEvent.retryAfterSeconds,
             limitExplanation: providerStreamEvent.limitExplanation,
-          });
-          continue;
-        }
-
-        if (providerStreamEvent.type === "tool_approval_requested") {
-          yield AssistantToolApprovalRequestedEventSchema.parse({
-            type: "assistant_tool_approval_requested",
-            approvalId: providerStreamEvent.approvalId,
-            pendingToolCallId: providerStreamEvent.pendingToolCallId,
-            pendingToolCallDetail: providerStreamEvent.pendingToolCallDetail,
-            riskExplanation: providerStreamEvent.riskExplanation,
           });
           continue;
         }
@@ -134,20 +233,12 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
           continue;
         }
 
-        if (providerStreamEvent.type === "turn_completed") {
-          // A turn_completed frame is cosmetic: the UI uses it to pin a
-          // TurnFooter. Authoritative token usage arrives later on the terminal
-          // completed or incomplete response event, so this event only carries
-          // the display metadata the footer can show immediately.
+        if (providerStreamEvent.type === "incomplete") {
           yield AssistantTurnCompletedEventSchema.parse({
             type: "assistant_turn_completed",
-            turnDurationMs: providerStreamEvent.turnDurationMs,
-            modelDisplayName: providerStreamEvent.modelDisplayName,
+            turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
+            modelDisplayName: this.conversationTurnInput.selectedModelId,
           });
-          continue;
-        }
-
-        if (providerStreamEvent.type === "incomplete") {
           yield AssistantResponseIncompleteEventSchema.parse({
             type: "assistant_response_incomplete",
             incompleteReason: providerStreamEvent.incompleteReason,
@@ -156,11 +247,21 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
           return;
         }
 
-        // Remaining arm: providerStreamEvent.type === "completed".
-        yield createCompletedAssistantResponseEvent({
+        yield AssistantTurnCompletedEventSchema.parse({
+          type: "assistant_turn_completed",
+          turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
+          modelDisplayName: this.conversationTurnInput.selectedModelId,
+        });
+        const completedAssistantResponseEvent = createCompletedAssistantResponseEvent({
           assistantText: streamedAssistantText,
+          assistantContentParts: parseAssistantResponseIntoContentParts(streamedAssistantText),
           usage: providerStreamEvent.usage,
         });
+        this.conversationHistory.appendConversationSessionEntry({
+          entryKind: "assistant_message",
+          assistantMessageText: completedAssistantResponseEvent.message.text,
+        });
+        yield completedAssistantResponseEvent;
         return;
       }
 
@@ -173,6 +274,130 @@ export class AssistantResponseRuntime implements AssistantResponseRunner {
         type: "assistant_response_failed",
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      this.hasFinishedConversationTurn = true;
+      this.currentPendingToolApprovalState = undefined;
+      this.onConversationTurnFinished();
     }
+  }
+
+  private async *handleRequestedToolCall(input: {
+    providerConversationTurn: ProviderConversationTurn;
+    toolCallId: string;
+    toolCallRequest: ToolCallRequest;
+  }): AsyncGenerator<AssistantResponseEvent> {
+    this.conversationHistory.appendConversationSessionEntry({
+      entryKind: "tool_call",
+      toolCallId: input.toolCallId,
+      toolCallRequest: input.toolCallRequest,
+    });
+
+    if (input.toolCallRequest.toolName !== "bash") {
+      throw new Error(`Unsupported tool requested: ${input.toolCallRequest.toolName}`);
+    }
+
+    const bashToolCallRequest: BashToolCallRequest = input.toolCallRequest;
+    const startedToolCallDetail = createStartedBashToolCallDetail(bashToolCallRequest);
+    const { approvalId, approvalDecisionPromise } = this.createPendingToolApproval({
+      toolCallId: input.toolCallId,
+      toolCallRequest: bashToolCallRequest,
+    });
+    yield AssistantToolApprovalRequestedEventSchema.parse({
+      type: "assistant_tool_approval_requested",
+      approvalId,
+      pendingToolCallId: input.toolCallId,
+      pendingToolCallDetail: startedToolCallDetail,
+      riskExplanation: "This bash command will run inside the current workspace.",
+    });
+    const approvalDecision = await approvalDecisionPromise;
+
+    if (approvalDecision === "denied") {
+      const denialText = "The user denied this bash command, so it was not executed.";
+      this.conversationHistory.appendConversationSessionEntry({
+        entryKind: "denied_tool_result",
+        toolCallId: input.toolCallId,
+        toolCallDetail: startedToolCallDetail,
+        toolResultText: denialText,
+        denialExplanation: denialText,
+      });
+      yield AssistantToolCallDeniedEventSchema.parse({
+        type: "assistant_tool_call_denied",
+        toolCallId: input.toolCallId,
+        toolCallDetail: startedToolCallDetail,
+        denialText,
+      });
+      await input.providerConversationTurn.submitToolResult({
+        toolCallId: input.toolCallId,
+        toolResultText: denialText,
+      });
+      return;
+    }
+
+    yield AssistantToolCallStartedEventSchema.parse({
+      type: "assistant_tool_call_started",
+      toolCallId: input.toolCallId,
+      toolCallDetail: startedToolCallDetail,
+    });
+
+    const bashToolCallOutcome = await runApprovedBashToolCall({
+      bashToolCallRequest,
+      workspaceRootPath: this.workspaceRootPath,
+      workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
+    });
+
+    if (bashToolCallOutcome.outcomeKind === "completed") {
+      this.conversationHistory.appendConversationSessionEntry({
+        entryKind: "completed_tool_result",
+        toolCallId: input.toolCallId,
+        toolCallDetail: bashToolCallOutcome.toolCallDetail,
+        toolResultText: bashToolCallOutcome.toolResultText,
+      });
+      yield AssistantToolCallCompletedEventSchema.parse({
+        type: "assistant_tool_call_completed",
+        toolCallId: input.toolCallId,
+        toolCallDetail: bashToolCallOutcome.toolCallDetail,
+        durationMs: bashToolCallOutcome.durationMilliseconds,
+      });
+      await input.providerConversationTurn.submitToolResult({
+        toolCallId: input.toolCallId,
+        toolResultText: bashToolCallOutcome.toolResultText,
+      });
+      return;
+    }
+
+    this.conversationHistory.appendConversationSessionEntry({
+      entryKind: "failed_tool_result",
+      toolCallId: input.toolCallId,
+      toolCallDetail: bashToolCallOutcome.toolCallDetail,
+      toolResultText: bashToolCallOutcome.toolResultText,
+      failureExplanation: bashToolCallOutcome.failureExplanation,
+    });
+    yield AssistantToolCallFailedEventSchema.parse({
+      type: "assistant_tool_call_failed",
+      toolCallId: input.toolCallId,
+      toolCallDetail: bashToolCallOutcome.toolCallDetail,
+      errorText: bashToolCallOutcome.failureExplanation,
+      durationMs: bashToolCallOutcome.durationMilliseconds,
+    });
+    await input.providerConversationTurn.submitToolResult({
+      toolCallId: input.toolCallId,
+      toolResultText: bashToolCallOutcome.toolResultText,
+    });
+  }
+
+  private createPendingToolApproval(input: {
+    toolCallId: string;
+    toolCallRequest: ToolCallRequest;
+  }): { approvalId: string; approvalDecisionPromise: Promise<"approved" | "denied"> } {
+    const approvalId = randomUUID();
+    const approvalDecisionPromise = new Promise<"approved" | "denied">((resolveDecision) => {
+      this.currentPendingToolApprovalState = {
+        approvalId,
+        toolCallId: input.toolCallId,
+        toolCallRequest: input.toolCallRequest,
+        resolveDecision,
+      };
+    });
+    return { approvalId, approvalDecisionPromise };
   }
 }

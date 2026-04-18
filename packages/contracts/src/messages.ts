@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AssistantContentPartSchema } from "./assistantContentPart.ts";
 
 export const MessageRoleSchema = z.enum(["user", "assistant"]);
 
@@ -7,6 +8,7 @@ export const TranscriptMessageSchema = z
     id: z.string().min(1),
     role: MessageRoleSchema,
     text: z.string(),
+    assistantContentParts: z.array(AssistantContentPartSchema).optional(),
   })
   .strict();
 

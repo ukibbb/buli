@@ -18,7 +18,7 @@
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": true,
     "useUnknownInCatchVariables": true,
-    "types": ["bun", "node"],
+    "types": ["bun"],
     "noEmit": true
   }
 }

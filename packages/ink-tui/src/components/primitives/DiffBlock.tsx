@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import type { ToolCallEditDiffLine, ToolCallEditDiffLineKind } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 // DiffBlock renders unified diff lines. Addition / removal rows use a dark
 // tinted background (see diffAdditionBg / diffRemovalBg in the theme) because

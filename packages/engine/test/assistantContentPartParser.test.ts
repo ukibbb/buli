@@ -1,68 +1,68 @@
 import { expect, test } from "bun:test";
 import {
-  parseAssistantResponseMarkdown,
+  parseAssistantResponseIntoContentParts,
   parseInlineMarkdownSpans,
-} from "../src/richText/parseAssistantResponseMarkdown.ts";
+} from "../src/assistantContentPartParser.ts";
 
-test("parseAssistantResponseMarkdown parses a single paragraph into one plain span", () => {
-  const blocks = parseAssistantResponseMarkdown("Hello world");
+test("parseAssistantResponseIntoContentParts parses a single paragraph into one plain span", () => {
+  const blocks = parseAssistantResponseIntoContentParts("Hello world");
   expect(blocks).toEqual([
-    { blockKind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
+    { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
   ]);
 });
 
-test("parseAssistantResponseMarkdown parses ATX headings at levels 1, 2, and 3", () => {
-  const blocks = parseAssistantResponseMarkdown("# Title\n\n## Sub\n\n### Section");
-  expect(blocks.map((block) => block.blockKind === "heading" && block.headingLevel)).toEqual([1, 2, 3]);
+test("parseAssistantResponseIntoContentParts parses ATX headings at levels 1, 2, and 3", () => {
+  const blocks = parseAssistantResponseIntoContentParts("# Title\n\n## Sub\n\n### Section");
+  expect(blocks.map((block) => block.kind === "heading" && block.headingLevel)).toEqual([1, 2, 3]);
 });
 
-test("parseAssistantResponseMarkdown parses a fenced code block with a language label", () => {
-  const blocks = parseAssistantResponseMarkdown(
+test("parseAssistantResponseIntoContentParts parses a fenced code block with a language label", () => {
+  const blocks = parseAssistantResponseIntoContentParts(
     "```ts\nconst a = 1;\nconst b = 2;\n```",
   );
   expect(blocks).toEqual([
     {
-      blockKind: "fenced_code",
+      kind: "fenced_code_block",
       languageLabel: "ts",
       codeLines: ["const a = 1;", "const b = 2;"],
     },
   ]);
 });
 
-test("parseAssistantResponseMarkdown parses a fenced code block without a language label", () => {
-  const blocks = parseAssistantResponseMarkdown("```\nplain\n```");
+test("parseAssistantResponseIntoContentParts parses a fenced code block without a language label", () => {
+  const blocks = parseAssistantResponseIntoContentParts("```\nplain\n```");
   expect(blocks).toEqual([
     {
-      blockKind: "fenced_code",
+      kind: "fenced_code_block",
       codeLines: ["plain"],
     },
   ]);
 });
 
-test("parseAssistantResponseMarkdown treats an unterminated fence as code until end of stream", () => {
-  const blocks = parseAssistantResponseMarkdown("```py\nstill typing\nmore");
+test("parseAssistantResponseIntoContentParts treats an unterminated fence as code until end of stream", () => {
+  const blocks = parseAssistantResponseIntoContentParts("```py\nstill typing\nmore");
   expect(blocks).toEqual([
     {
-      blockKind: "fenced_code",
+      kind: "fenced_code_block",
       languageLabel: "py",
       codeLines: ["still typing", "more"],
     },
   ]);
 });
 
-test("parseAssistantResponseMarkdown parses bulleted and numbered lists", () => {
-  const bulletedBlocks = parseAssistantResponseMarkdown("- first\n- second");
+test("parseAssistantResponseIntoContentParts parses bulleted and numbered lists", () => {
+  const bulletedBlocks = parseAssistantResponseIntoContentParts("- first\n- second");
   expect(bulletedBlocks[0]).toEqual({
-    blockKind: "bulleted_list",
+    kind: "bulleted_list",
     itemSpanArrays: [
       [{ spanKind: "plain", spanText: "first" }],
       [{ spanKind: "plain", spanText: "second" }],
     ],
   });
 
-  const numberedBlocks = parseAssistantResponseMarkdown("1. one\n2. two\n3. three");
+  const numberedBlocks = parseAssistantResponseIntoContentParts("1. one\n2. two\n3. three");
   expect(numberedBlocks[0]).toEqual({
-    blockKind: "numbered_list",
+    kind: "numbered_list",
     itemSpanArrays: [
       [{ spanKind: "plain", spanText: "one" }],
       [{ spanKind: "plain", spanText: "two" }],
@@ -71,11 +71,11 @@ test("parseAssistantResponseMarkdown parses bulleted and numbered lists", () => 
   });
 });
 
-test("parseAssistantResponseMarkdown parses a checklist with pending and completed items", () => {
-  const blocks = parseAssistantResponseMarkdown("- [ ] open\n- [x] done\n- [X] also done");
+test("parseAssistantResponseIntoContentParts parses a checklist with pending and completed items", () => {
+  const blocks = parseAssistantResponseIntoContentParts("- [ ] open\n- [x] done\n- [X] also done");
   expect(blocks).toEqual([
     {
-      blockKind: "checklist",
+      kind: "checklist",
       items: [
         { itemTitle: "open", itemStatus: "pending" },
         { itemTitle: "done", itemStatus: "completed" },
@@ -85,11 +85,11 @@ test("parseAssistantResponseMarkdown parses a checklist with pending and complet
   ]);
 });
 
-test("parseAssistantResponseMarkdown parses a GitHub-style admonition into a callout", () => {
-  const blocks = parseAssistantResponseMarkdown("> [!WARNING] Heads up\n> Be careful here");
+test("parseAssistantResponseIntoContentParts parses a GitHub-style admonition into a callout", () => {
+  const blocks = parseAssistantResponseIntoContentParts("> [!WARNING] Heads up\n> Be careful here");
   expect(blocks).toEqual([
     {
-      blockKind: "callout",
+      kind: "callout",
       severity: "warning",
       titleText: "Heads up",
       inlineSpans: [{ spanKind: "plain", spanText: "Be careful here" }],
@@ -97,9 +97,9 @@ test("parseAssistantResponseMarkdown parses a GitHub-style admonition into a cal
   ]);
 });
 
-test("parseAssistantResponseMarkdown parses a horizontal rule as its own block", () => {
-  const blocks = parseAssistantResponseMarkdown("above\n\n---\n\nbelow");
-  expect(blocks.map((block) => block.blockKind)).toEqual([
+test("parseAssistantResponseIntoContentParts parses a horizontal rule as its own block", () => {
+  const blocks = parseAssistantResponseIntoContentParts("above\n\n---\n\nbelow");
+  expect(blocks.map((block) => block.kind)).toEqual([
     "paragraph",
     "horizontal_rule",
     "paragraph",
@@ -132,8 +132,8 @@ test("parseInlineMarkdownSpans leaves unpaired markers as plain text", () => {
   expect(spans).toEqual([{ spanKind: "plain", spanText: "hello **world" }]);
 });
 
-test("parseAssistantResponseMarkdown handles a mixed document end-to-end", () => {
-  const blocks = parseAssistantResponseMarkdown(
+test("parseAssistantResponseIntoContentParts handles a mixed document end-to-end", () => {
+  const blocks = parseAssistantResponseIntoContentParts(
     [
       "# Report",
       "",
@@ -150,11 +150,11 @@ test("parseAssistantResponseMarkdown handles a mixed document end-to-end", () =>
       "> Sync is incremental.",
     ].join("\n"),
   );
-  expect(blocks.map((block) => block.blockKind)).toEqual([
+  expect(blocks.map((block) => block.kind)).toEqual([
     "heading",
     "paragraph",
     "numbered_list",
-    "fenced_code",
+    "fenced_code_block",
     "callout",
   ]);
 });

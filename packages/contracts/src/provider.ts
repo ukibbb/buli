@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PlanStepSchema } from "./planProposal.ts";
-import { ToolCallDetailSchema } from "./toolCallDetail.ts";
+import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 
 export const ReasoningEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
@@ -72,41 +72,14 @@ export const ProviderReasoningSummaryCompletedEventSchema = z
   })
   .strict();
 
-// Provider-level tool-call events mirror the assistant-level arms 1:1. Keeping
-// them as a separate namespace means a provider can emit tool events without
-// importing engine-layer types, and the runtime stays a thin translation layer.
-export const ProviderToolCallStartedEventSchema = z
+// Provider-level tool-call events model only the model's intent. Local
+// execution lifecycle belongs to the engine because approvals, subprocesses,
+// and render details are all local concerns outside the provider boundary.
+export const ProviderToolCallRequestedEventSchema = z
   .object({
-    type: z.literal("tool_call_started"),
+    type: z.literal("tool_call_requested"),
     toolCallId: z.string().min(1),
-    toolCallDetail: ToolCallDetailSchema,
-  })
-  .strict();
-
-export const ProviderToolCallCompletedEventSchema = z
-  .object({
-    type: z.literal("tool_call_completed"),
-    toolCallId: z.string().min(1),
-    toolCallDetail: ToolCallDetailSchema,
-    durationMs: z.number().int().nonnegative(),
-  })
-  .strict();
-
-export const ProviderToolCallFailedEventSchema = z
-  .object({
-    type: z.literal("tool_call_failed"),
-    toolCallId: z.string().min(1),
-    toolCallDetail: ToolCallDetailSchema,
-    errorText: z.string().min(1),
-    durationMs: z.number().int().nonnegative(),
-  })
-  .strict();
-
-export const ProviderTurnCompletedEventSchema = z
-  .object({
-    type: z.literal("turn_completed"),
-    turnDurationMs: z.number().int().nonnegative(),
-    modelDisplayName: z.string().min(1),
+    toolCallRequest: ToolCallRequestSchema,
   })
   .strict();
 
@@ -115,16 +88,6 @@ export const ProviderRateLimitPendingEventSchema = z
     type: z.literal("rate_limit_pending"),
     retryAfterSeconds: z.number().int().nonnegative(),
     limitExplanation: z.string().min(1),
-  })
-  .strict();
-
-export const ProviderToolApprovalRequestedEventSchema = z
-  .object({
-    type: z.literal("tool_approval_requested"),
-    approvalId: z.string().min(1),
-    pendingToolCallId: z.string().min(1),
-    pendingToolCallDetail: ToolCallDetailSchema,
-    riskExplanation: z.string().min(1),
   })
   .strict();
 
@@ -144,12 +107,8 @@ export const ProviderStreamEventSchema = z.discriminatedUnion("type", [
   ProviderReasoningSummaryStartedEventSchema,
   ProviderReasoningSummaryTextChunkEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
-  ProviderToolCallStartedEventSchema,
-  ProviderToolCallCompletedEventSchema,
-  ProviderToolCallFailedEventSchema,
-  ProviderTurnCompletedEventSchema,
+  ProviderToolCallRequestedEventSchema,
   ProviderRateLimitPendingEventSchema,
-  ProviderToolApprovalRequestedEventSchema,
   ProviderPlanProposedEventSchema,
 ]);
 
@@ -162,11 +121,7 @@ export type ProviderIncompleteEvent = z.infer<typeof ProviderIncompleteEventSche
 export type ProviderReasoningSummaryStartedEvent = z.infer<typeof ProviderReasoningSummaryStartedEventSchema>;
 export type ProviderReasoningSummaryTextChunkEvent = z.infer<typeof ProviderReasoningSummaryTextChunkEventSchema>;
 export type ProviderReasoningSummaryCompletedEvent = z.infer<typeof ProviderReasoningSummaryCompletedEventSchema>;
-export type ProviderToolCallStartedEvent = z.infer<typeof ProviderToolCallStartedEventSchema>;
-export type ProviderToolCallCompletedEvent = z.infer<typeof ProviderToolCallCompletedEventSchema>;
-export type ProviderToolCallFailedEvent = z.infer<typeof ProviderToolCallFailedEventSchema>;
-export type ProviderTurnCompletedEvent = z.infer<typeof ProviderTurnCompletedEventSchema>;
+export type ProviderToolCallRequestedEvent = z.infer<typeof ProviderToolCallRequestedEventSchema>;
 export type ProviderRateLimitPendingEvent = z.infer<typeof ProviderRateLimitPendingEventSchema>;
-export type ProviderToolApprovalRequestedEvent = z.infer<typeof ProviderToolApprovalRequestedEventSchema>;
 export type ProviderPlanProposedEvent = z.infer<typeof ProviderPlanProposedEventSchema>;
 export type ProviderStreamEvent = z.infer<typeof ProviderStreamEventSchema>;

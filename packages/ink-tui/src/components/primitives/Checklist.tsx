@@ -1,18 +1,14 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import type { ToolCallTodoItemStatus } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import type { ChecklistItem, ToolCallTodoItemStatus } from "@buli/contracts";
+export type { ChecklistItem };
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "../glyphs.ts";
 
 // Checklist reuses ToolCallTodoItemStatus so a TodoWrite tool card and a
 // standalone checklist block share the same status semantics. Done items get
 // a strikethrough to match the pen-file Checklist component; in-progress
 // items get an amber arrow so the "currently working" step reads at a glance.
-export type ChecklistItem = {
-  itemTitle: string;
-  itemStatus: ToolCallTodoItemStatus;
-};
-
 export type ChecklistProps = {
   items: ChecklistItem[];
 };

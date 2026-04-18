@@ -1,16 +1,24 @@
 import { Box, Text, useAnimation } from "ink";
 import type { AssistantResponseStatus } from "../chatScreenState.ts";
-import { chatScreenTheme } from "../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
+import { PromptDraftText } from "./PromptDraftText.tsx";
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Renders the HERO 1 input panel (pen frame HOeet). Owns three stacked rows:
 // a header strip with mode + model chips, a body with the prompt draft and
 // a caret, and a footer that shows either the scroll/help hint or the
 // working indicator plus the context-window meter.
+//
+// Exported row count = 2 (rounded border) + 1 (header) + 3 (body w/ paddingY)
+// + 1 (footer). It is the source of truth for ChatScreen's responsive
+// budgeting math — keep it in sync with the rendered output below.
+export const INPUT_PANEL_NATURAL_ROW_COUNT = 7;
+
 export type InputPanelProps = {
   promptDraft: string;
+  selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   promptInputHintText: string;
   modeLabel: string;
@@ -34,6 +42,7 @@ export function InputPanel(props: InputPanelProps) {
       borderColor={chatScreenTheme.accentGreen}
       flexDirection="column"
       backgroundColor={chatScreenTheme.surfaceOne}
+      flexShrink={0}
     >
       <Box justifyContent="space-between" paddingX={2}>
         <Text color={chatScreenTheme.accentGreen}>
@@ -47,9 +56,11 @@ export function InputPanel(props: InputPanelProps) {
         <Text bold color={chatScreenTheme.accentGreen}>
           &gt;
         </Text>
-        <Text color={chatScreenTheme.textPrimary}>
-          {`${props.promptDraft}${cursorCharacter}`}
-        </Text>
+        <PromptDraftText
+          promptDraft={props.promptDraft}
+          selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+          cursorCharacter={cursorCharacter}
+        />
       </Box>
       <Box backgroundColor={chatScreenTheme.surfaceTwo} justifyContent="space-between" paddingX={2}>
         {isStreamingResponse ? (

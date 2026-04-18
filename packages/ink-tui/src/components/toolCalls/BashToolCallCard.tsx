@@ -1,7 +1,7 @@
 import { Text } from "ink";
 import type { ReactNode } from "react";
 import type { ToolCallBashDetail } from "@buli/contracts";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ShellBlock } from "../primitives/ShellBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";

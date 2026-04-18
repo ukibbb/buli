@@ -1,6 +1,6 @@
 import { Text, useAnimation } from "ink";
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "../../chatScreenTheme.ts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Callout } from "../primitives/Callout.tsx";
 
 // RateLimitNoticeBlock renders a live countdown so the user can tell when

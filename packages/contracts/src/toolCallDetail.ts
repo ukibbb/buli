@@ -105,6 +105,9 @@ export const ToolCallBashDetailSchema = z
   .object({
     toolName: z.literal("bash"),
     commandLine: z.string().min(1),
+    commandDescription: z.string().min(1).optional(),
+    workingDirectoryPath: z.string().min(1).optional(),
+    timeoutMilliseconds: z.number().int().positive().optional(),
     exitCode: z.number().int().optional(),
     outputLines: z.array(ToolCallBashOutputLineSchema).optional(),
   })
