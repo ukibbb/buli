@@ -5,6 +5,7 @@ import React from "react";
 import {
   comfortableTerminalSizeTier,
   compactTerminalSizeTier,
+  chatScreenTheme,
 } from "@buli/assistant-design-tokens";
 import { ShortcutsModal } from "../../src/components/ShortcutsModal.tsx";
 
@@ -90,4 +91,22 @@ test("ShortcutsModal drops comfortable chrome at compact tier so the legend keep
   expect(output).toContain("// keyboard");
   expect(output).not.toContain("buli · tui · v0.1");
   expect(output).not.toContain("close with ? or esc");
+});
+
+function ansi24BitBg(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `\x1b[48;2;${r};${g};${b}m`;
+}
+
+test("ShortcutsModal renders the accentGreen accent stripe in comfortable tier", () => {
+  const ansiOutput = renderToString(
+    <ShortcutsModal
+      onCloseRequested={() => {}}
+      availableModalRowCount={20}
+      terminalSizeTierForChatScreen={comfortableTerminalSizeTier}
+    />,
+  );
+  expect(ansiOutput).toContain(ansi24BitBg(chatScreenTheme.accentGreen));
 });

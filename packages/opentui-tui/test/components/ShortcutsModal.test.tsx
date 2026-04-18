@@ -4,6 +4,7 @@ import {
   comfortableTerminalSizeTier,
   compactTerminalSizeTier,
   minimumTerminalSizeTier,
+  chatScreenTheme,
 } from "@buli/assistant-design-tokens";
 import { ShortcutsModal } from "../../src/components/ShortcutsModal.tsx";
 
@@ -116,5 +117,20 @@ describe("ShortcutsModal", () => {
       .map((row) => row.replace(/\s+$/, "").length)
       .reduce((widest, current) => Math.max(widest, current), 0);
     expect(widestRenderedRowWidth).toBeLessThanOrEqual(70);
+  });
+
+  test("renders_accentGreen_stripe_and_border_in_comfortable_tier", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ShortcutsModal
+        onCloseRequested={() => {}}
+        availableModalRowCount={20}
+        terminalSizeTierForChatScreen={comfortableTerminalSizeTier}
+      />,
+      { width: 80, height: 24 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("help · shortcuts");
+    expect(chatScreenTheme.accentGreen).toBe("#10B981");
   });
 });
