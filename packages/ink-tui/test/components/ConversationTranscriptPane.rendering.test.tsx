@@ -223,7 +223,7 @@ test("ConversationTranscriptPane renders a dedicated streaming assistant message
     />,
   );
 
-  expect(output).toContain("assistant · streaming");
+  expect(output).toContain("// agent · response");
   expect(output).toContain("Done");
   expect(output).toContain("Tail text");
 });

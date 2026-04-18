@@ -124,8 +124,8 @@ describe("ConversationTranscriptPane", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("assistant · streaming");
+    expect(frame).toContain("// agent · response");
     expect(frame).toContain("Done");
-    expect(frame).toContain("working…");
+    expect(frame).toContain("Tail text");
   });
 });
