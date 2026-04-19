@@ -1,29 +1,28 @@
 import { randomUUID } from "node:crypto";
 import {
-  AssistantPlanProposedEventSchema,
-  AssistantRateLimitPendingEventSchema,
-  AssistantReasoningSummaryCompletedEventSchema,
-  AssistantReasoningSummaryStartedEventSchema,
-  AssistantReasoningSummaryTextChunkEventSchema,
-  AssistantResponseFailedEventSchema,
-  AssistantResponseIncompleteEventSchema,
-  AssistantResponseStreamProjectionUpdatedEventSchema,
-  AssistantResponseStartedEventSchema,
-  AssistantToolApprovalRequestedEventSchema,
-  AssistantToolCallCompletedEventSchema,
-  AssistantToolCallDeniedEventSchema,
-  AssistantToolCallFailedEventSchema,
-  AssistantToolCallStartedEventSchema,
-  AssistantTurnCompletedEventSchema,
+  AssistantMessageCompletedEventSchema,
+  AssistantMessageFailedEventSchema,
+  AssistantMessageIncompleteEventSchema,
+  AssistantMessagePartAddedEventSchema,
+  AssistantMessagePartUpdatedEventSchema,
+  AssistantPendingToolApprovalClearedEventSchema,
+  AssistantPendingToolApprovalRequestedEventSchema,
+  AssistantPlanProposalConversationMessagePartSchema,
+  AssistantRateLimitNoticeConversationMessagePartSchema,
+  AssistantReasoningConversationMessagePartSchema,
+  AssistantToolCallConversationMessagePartSchema,
+  AssistantTurnStartedEventSchema,
+  AssistantTurnSummaryConversationMessagePartSchema,
   type AssistantResponseEvent,
   type BashToolCallRequest,
   type ToolCallRequest,
 } from "@buli/contracts";
 import {
-  appendAssistantTextDeltaToStreamingProjectorState,
-  createInitialAssistantStreamingProjectorState,
-  finalizeAssistantStreamingProjectorState,
-} from "./assistantStreamingProjection.ts";
+  appendAssistantTextDeltaToAssistantTextMessagePartBuilder,
+  buildCompletedAssistantTextConversationMessagePart,
+  buildStreamingAssistantTextConversationMessagePart,
+  createInitialAssistantTextMessagePartBuilder,
+} from "./assistantTextMessagePartBuilder.ts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { buildBuliSystemPrompt } from "./systemPrompt.ts";
 import type {
@@ -34,7 +33,6 @@ import type {
   ProviderConversationTurn,
 } from "./provider.ts";
 import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
-import { createCompletedAssistantResponseEvent } from "./turn.ts";
 import { classifyBashToolApprovalRequirement } from "./tools/bashToolApprovalPolicy.ts";
 import { runApprovedBashToolCall, createStartedBashToolCallDetail } from "./tools/bashTool.ts";
 import { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
@@ -181,53 +179,105 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     });
 
     const assistantResponseMessageId = randomUUID();
-    let assistantStreamingProjectorState = createInitialAssistantStreamingProjectorState();
+    const assistantTextPartId = randomUUID();
+    let assistantTextMessagePartBuilderState = createInitialAssistantTextMessagePartBuilder(assistantTextPartId);
+    let hasEmittedAssistantTextMessagePart = false;
+    let currentReasoningPartId: string | undefined;
+    let currentReasoningSummaryText = "";
+    let currentReasoningStartedAtMs: number | undefined;
 
     try {
-      yield AssistantResponseStartedEventSchema.parse({
-        type: "assistant_response_started",
-        model: this.conversationTurnInput.selectedModelId,
+      yield AssistantTurnStartedEventSchema.parse({
+        type: "assistant_turn_started",
         messageId: assistantResponseMessageId,
+        startedAtMs: conversationTurnStartedAtMilliseconds,
       });
 
       for await (const providerStreamEvent of providerConversationTurn.streamProviderEvents()) {
         if (providerStreamEvent.type === "reasoning_summary_started") {
-          yield AssistantReasoningSummaryStartedEventSchema.parse({ type: "assistant_reasoning_summary_started" });
+          currentReasoningPartId = randomUUID();
+          currentReasoningSummaryText = "";
+          currentReasoningStartedAtMs = Date.now();
+          yield AssistantMessagePartAddedEventSchema.parse({
+            type: "assistant_message_part_added",
+            messageId: assistantResponseMessageId,
+            part: AssistantReasoningConversationMessagePartSchema.parse({
+              id: currentReasoningPartId,
+              partKind: "assistant_reasoning",
+              partStatus: "streaming",
+              reasoningSummaryText: "",
+              reasoningStartedAtMs: currentReasoningStartedAtMs,
+            }),
+          });
           continue;
         }
 
         if (providerStreamEvent.type === "reasoning_summary_text_chunk") {
-          yield AssistantReasoningSummaryTextChunkEventSchema.parse({
-            type: "assistant_reasoning_summary_text_chunk",
-            text: providerStreamEvent.text,
+          if (!currentReasoningPartId || currentReasoningStartedAtMs === undefined) {
+            continue;
+          }
+
+          currentReasoningSummaryText += providerStreamEvent.text;
+          yield AssistantMessagePartUpdatedEventSchema.parse({
+            type: "assistant_message_part_updated",
+            messageId: assistantResponseMessageId,
+            part: AssistantReasoningConversationMessagePartSchema.parse({
+              id: currentReasoningPartId,
+              partKind: "assistant_reasoning",
+              partStatus: "streaming",
+              reasoningSummaryText: currentReasoningSummaryText,
+              reasoningStartedAtMs: currentReasoningStartedAtMs,
+            }),
           });
           continue;
         }
 
         if (providerStreamEvent.type === "reasoning_summary_completed") {
-          yield AssistantReasoningSummaryCompletedEventSchema.parse({
-            type: "assistant_reasoning_summary_completed",
-            reasoningDurationMs: providerStreamEvent.reasoningDurationMs,
+          if (!currentReasoningPartId || currentReasoningStartedAtMs === undefined) {
+            continue;
+          }
+
+          yield AssistantMessagePartUpdatedEventSchema.parse({
+            type: "assistant_message_part_updated",
+            messageId: assistantResponseMessageId,
+            part: AssistantReasoningConversationMessagePartSchema.parse({
+              id: currentReasoningPartId,
+              partKind: "assistant_reasoning",
+              partStatus: "completed",
+              reasoningSummaryText: currentReasoningSummaryText,
+              reasoningStartedAtMs: currentReasoningStartedAtMs,
+              reasoningDurationMs: providerStreamEvent.reasoningDurationMs,
+            }),
           });
+          currentReasoningPartId = undefined;
+          currentReasoningStartedAtMs = undefined;
           continue;
         }
 
         if (providerStreamEvent.type === "text_chunk") {
-          assistantStreamingProjectorState = appendAssistantTextDeltaToStreamingProjectorState(
-            assistantStreamingProjectorState,
+          assistantTextMessagePartBuilderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
+            assistantTextMessagePartBuilderState,
             providerStreamEvent.text,
           );
-          yield AssistantResponseStreamProjectionUpdatedEventSchema.parse({
-            type: "assistant_response_stream_projection_updated",
+
+          const assistantTextConversationMessagePart = buildStreamingAssistantTextConversationMessagePart(
+            assistantTextMessagePartBuilderState,
+          );
+          yield (hasEmittedAssistantTextMessagePart
+            ? AssistantMessagePartUpdatedEventSchema
+            : AssistantMessagePartAddedEventSchema
+          ).parse({
+            type: hasEmittedAssistantTextMessagePart ? "assistant_message_part_updated" : "assistant_message_part_added",
             messageId: assistantResponseMessageId,
-            textDelta: providerStreamEvent.text,
-            projection: assistantStreamingProjectorState.projection,
+            part: assistantTextConversationMessagePart,
           });
+          hasEmittedAssistantTextMessagePart = true;
           continue;
         }
 
         if (providerStreamEvent.type === "tool_call_requested") {
           yield* this.handleRequestedToolCall({
+            assistantResponseMessageId,
             providerConversationTurn,
             toolCallId: providerStreamEvent.toolCallId,
             toolCallRequest: providerStreamEvent.toolCallRequest,
@@ -236,68 +286,96 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         }
 
         if (providerStreamEvent.type === "rate_limit_pending") {
-          yield AssistantRateLimitPendingEventSchema.parse({
-            type: "assistant_rate_limit_pending",
-            retryAfterSeconds: providerStreamEvent.retryAfterSeconds,
-            limitExplanation: providerStreamEvent.limitExplanation,
+          yield AssistantMessagePartAddedEventSchema.parse({
+            type: "assistant_message_part_added",
+            messageId: assistantResponseMessageId,
+            part: AssistantRateLimitNoticeConversationMessagePartSchema.parse({
+              id: randomUUID(),
+              partKind: "assistant_rate_limit_notice",
+              retryAfterSeconds: providerStreamEvent.retryAfterSeconds,
+              limitExplanation: providerStreamEvent.limitExplanation,
+              noticeStartedAtMs: Date.now(),
+            }),
           });
           continue;
         }
 
         if (providerStreamEvent.type === "plan_proposed") {
-          yield AssistantPlanProposedEventSchema.parse({
-            type: "assistant_plan_proposed",
-            planId: providerStreamEvent.planId,
-            planTitle: providerStreamEvent.planTitle,
-            planSteps: providerStreamEvent.planSteps,
+          yield AssistantMessagePartAddedEventSchema.parse({
+            type: "assistant_message_part_added",
+            messageId: assistantResponseMessageId,
+            part: AssistantPlanProposalConversationMessagePartSchema.parse({
+              id: randomUUID(),
+              partKind: "assistant_plan_proposal",
+              planId: providerStreamEvent.planId,
+              planTitle: providerStreamEvent.planTitle,
+              planSteps: providerStreamEvent.planSteps,
+            }),
           });
           continue;
         }
 
         if (providerStreamEvent.type === "incomplete") {
-          yield AssistantTurnCompletedEventSchema.parse({
-            type: "assistant_turn_completed",
-            turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
-            modelDisplayName: this.conversationTurnInput.selectedModelId,
+          yield AssistantMessagePartAddedEventSchema.parse({
+            type: "assistant_message_part_added",
+            messageId: assistantResponseMessageId,
+            part: AssistantTurnSummaryConversationMessagePartSchema.parse({
+              id: randomUUID(),
+              partKind: "assistant_turn_summary",
+              turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
+              modelDisplayName: this.conversationTurnInput.selectedModelId,
+            }),
           });
-          yield AssistantResponseIncompleteEventSchema.parse({
-            type: "assistant_response_incomplete",
+          yield AssistantMessageIncompleteEventSchema.parse({
+            type: "assistant_message_incomplete",
+            messageId: assistantResponseMessageId,
             incompleteReason: providerStreamEvent.incompleteReason,
             usage: providerStreamEvent.usage,
           });
           return;
         }
 
-        yield AssistantTurnCompletedEventSchema.parse({
-          type: "assistant_turn_completed",
-          turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
-          modelDisplayName: this.conversationTurnInput.selectedModelId,
+        yield AssistantMessagePartAddedEventSchema.parse({
+          type: "assistant_message_part_added",
+          messageId: assistantResponseMessageId,
+          part: AssistantTurnSummaryConversationMessagePartSchema.parse({
+            id: randomUUID(),
+            partKind: "assistant_turn_summary",
+            turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
+            modelDisplayName: this.conversationTurnInput.selectedModelId,
+          }),
         });
-        const finalAssistantStreamingProjection = finalizeAssistantStreamingProjectorState(assistantStreamingProjectorState);
-        const completedAssistantResponseEvent = createCompletedAssistantResponseEvent({
-          assistantText: finalAssistantStreamingProjection.fullResponseText,
-          assistantContentParts: finalAssistantStreamingProjection.completedContentParts,
-          usage: providerStreamEvent.usage,
-          id: assistantResponseMessageId,
-        });
+        if (hasEmittedAssistantTextMessagePart) {
+          yield AssistantMessagePartUpdatedEventSchema.parse({
+            type: "assistant_message_part_updated",
+            messageId: assistantResponseMessageId,
+            part: buildCompletedAssistantTextConversationMessagePart(assistantTextMessagePartBuilderState),
+          });
+        }
         const providerTurnReplay = providerConversationTurn.getProviderTurnReplay();
         this.conversationHistory.appendConversationSessionEntry({
           entryKind: "assistant_message",
-          assistantMessageText: completedAssistantResponseEvent.message.text,
+          assistantMessageText: assistantTextMessagePartBuilderState.rawMarkdownText,
           ...(providerTurnReplay ? { providerTurnReplay } : {}),
         });
-        yield completedAssistantResponseEvent;
+        yield AssistantMessageCompletedEventSchema.parse({
+          type: "assistant_message_completed",
+          messageId: assistantResponseMessageId,
+          usage: providerStreamEvent.usage,
+        });
         return;
       }
 
-      yield AssistantResponseFailedEventSchema.parse({
-        type: "assistant_response_failed",
-        error: "Provider stream ended before completion",
+      yield AssistantMessageFailedEventSchema.parse({
+        type: "assistant_message_failed",
+        messageId: assistantResponseMessageId,
+        errorText: "Provider stream ended before completion",
       });
     } catch (error) {
-      yield AssistantResponseFailedEventSchema.parse({
-        type: "assistant_response_failed",
-        error: error instanceof Error ? error.message : String(error),
+      yield AssistantMessageFailedEventSchema.parse({
+        type: "assistant_message_failed",
+        messageId: assistantResponseMessageId,
+        errorText: error instanceof Error ? error.message : String(error),
       });
     } finally {
       this.hasFinishedConversationTurn = true;
@@ -307,6 +385,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   }
 
   private async *handleRequestedToolCall(input: {
+    assistantResponseMessageId: string;
     providerConversationTurn: ProviderConversationTurn;
     toolCallId: string;
     toolCallRequest: ToolCallRequest;
@@ -324,20 +403,40 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     const bashToolCallRequest: BashToolCallRequest = input.toolCallRequest;
     const startedToolCallDetail = createStartedBashToolCallDetail(bashToolCallRequest);
     const bashToolApprovalDecision = classifyBashToolApprovalRequirement(bashToolCallRequest);
+    const toolCallPartId = randomUUID();
+    const toolCallStartedAtMs = Date.now();
 
     if (bashToolApprovalDecision.approvalPolicy === "requires_user_approval") {
+      yield AssistantMessagePartAddedEventSchema.parse({
+        type: "assistant_message_part_added",
+        messageId: input.assistantResponseMessageId,
+        part: AssistantToolCallConversationMessagePartSchema.parse({
+          id: toolCallPartId,
+          partKind: "assistant_tool_call",
+          toolCallId: input.toolCallId,
+          toolCallStatus: "pending_approval",
+          toolCallStartedAtMs,
+          toolCallDetail: startedToolCallDetail,
+        }),
+      });
       const { approvalId, approvalDecisionPromise } = this.createPendingToolApproval({
         toolCallId: input.toolCallId,
         toolCallRequest: bashToolCallRequest,
       });
-      yield AssistantToolApprovalRequestedEventSchema.parse({
-        type: "assistant_tool_approval_requested",
-        approvalId,
-        pendingToolCallId: input.toolCallId,
-        pendingToolCallDetail: startedToolCallDetail,
-        riskExplanation: bashToolApprovalDecision.riskExplanation,
+      yield AssistantPendingToolApprovalRequestedEventSchema.parse({
+        type: "assistant_pending_tool_approval_requested",
+        approvalRequest: {
+          approvalId,
+          pendingToolCallId: input.toolCallId,
+          pendingToolCallDetail: startedToolCallDetail,
+          riskExplanation: bashToolApprovalDecision.riskExplanation,
+        },
       });
       const approvalDecision = await approvalDecisionPromise;
+      yield AssistantPendingToolApprovalClearedEventSchema.parse({
+        type: "assistant_pending_tool_approval_cleared",
+        approvalId,
+      });
 
       if (approvalDecision === "denied") {
         const denialText = "The user denied this bash command, so it was not executed.";
@@ -348,11 +447,18 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           toolResultText: denialText,
           denialExplanation: denialText,
         });
-        yield AssistantToolCallDeniedEventSchema.parse({
-          type: "assistant_tool_call_denied",
-          toolCallId: input.toolCallId,
-          toolCallDetail: startedToolCallDetail,
-          denialText,
+        yield AssistantMessagePartUpdatedEventSchema.parse({
+          type: "assistant_message_part_updated",
+          messageId: input.assistantResponseMessageId,
+          part: AssistantToolCallConversationMessagePartSchema.parse({
+            id: toolCallPartId,
+            partKind: "assistant_tool_call",
+            toolCallId: input.toolCallId,
+            toolCallStatus: "denied",
+            toolCallStartedAtMs,
+            toolCallDetail: startedToolCallDetail,
+            denialText,
+          }),
         });
         await input.providerConversationTurn.submitToolResult({
           toolCallId: input.toolCallId,
@@ -360,13 +466,33 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         });
         return;
       }
-    }
 
-    yield AssistantToolCallStartedEventSchema.parse({
-      type: "assistant_tool_call_started",
-      toolCallId: input.toolCallId,
-      toolCallDetail: startedToolCallDetail,
-    });
+      yield AssistantMessagePartUpdatedEventSchema.parse({
+        type: "assistant_message_part_updated",
+        messageId: input.assistantResponseMessageId,
+        part: AssistantToolCallConversationMessagePartSchema.parse({
+          id: toolCallPartId,
+          partKind: "assistant_tool_call",
+          toolCallId: input.toolCallId,
+          toolCallStatus: "running",
+          toolCallStartedAtMs,
+          toolCallDetail: startedToolCallDetail,
+        }),
+      });
+    } else {
+      yield AssistantMessagePartAddedEventSchema.parse({
+        type: "assistant_message_part_added",
+        messageId: input.assistantResponseMessageId,
+        part: AssistantToolCallConversationMessagePartSchema.parse({
+          id: toolCallPartId,
+          partKind: "assistant_tool_call",
+          toolCallId: input.toolCallId,
+          toolCallStatus: "running",
+          toolCallStartedAtMs,
+          toolCallDetail: startedToolCallDetail,
+        }),
+      });
+    }
 
     const bashToolCallOutcome = await runApprovedBashToolCall({
       bashToolCallRequest,
@@ -381,11 +507,18 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         toolCallDetail: bashToolCallOutcome.toolCallDetail,
         toolResultText: bashToolCallOutcome.toolResultText,
       });
-      yield AssistantToolCallCompletedEventSchema.parse({
-        type: "assistant_tool_call_completed",
-        toolCallId: input.toolCallId,
-        toolCallDetail: bashToolCallOutcome.toolCallDetail,
-        durationMs: bashToolCallOutcome.durationMilliseconds,
+      yield AssistantMessagePartUpdatedEventSchema.parse({
+        type: "assistant_message_part_updated",
+        messageId: input.assistantResponseMessageId,
+        part: AssistantToolCallConversationMessagePartSchema.parse({
+          id: toolCallPartId,
+          partKind: "assistant_tool_call",
+          toolCallId: input.toolCallId,
+          toolCallStatus: "completed",
+          toolCallStartedAtMs,
+          toolCallDetail: bashToolCallOutcome.toolCallDetail,
+          durationMs: bashToolCallOutcome.durationMilliseconds,
+        }),
       });
       await input.providerConversationTurn.submitToolResult({
         toolCallId: input.toolCallId,
@@ -401,12 +534,19 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       toolResultText: bashToolCallOutcome.toolResultText,
       failureExplanation: bashToolCallOutcome.failureExplanation,
     });
-    yield AssistantToolCallFailedEventSchema.parse({
-      type: "assistant_tool_call_failed",
-      toolCallId: input.toolCallId,
-      toolCallDetail: bashToolCallOutcome.toolCallDetail,
-      errorText: bashToolCallOutcome.failureExplanation,
-      durationMs: bashToolCallOutcome.durationMilliseconds,
+    yield AssistantMessagePartUpdatedEventSchema.parse({
+      type: "assistant_message_part_updated",
+      messageId: input.assistantResponseMessageId,
+      part: AssistantToolCallConversationMessagePartSchema.parse({
+        id: toolCallPartId,
+        partKind: "assistant_tool_call",
+        toolCallId: input.toolCallId,
+        toolCallStatus: "failed",
+        toolCallStartedAtMs,
+        toolCallDetail: bashToolCallOutcome.toolCallDetail,
+        errorText: bashToolCallOutcome.failureExplanation,
+        durationMs: bashToolCallOutcome.durationMilliseconds,
+      }),
     });
     await input.providerConversationTurn.submitToolResult({
       toolCallId: input.toolCallId,

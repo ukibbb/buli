@@ -1,0 +1,14 @@
+{
+  "name": "@buli/chat-session-fixtures",
+  "private": true,
+  "type": "module",
+  "engines": { "bun": ">=1.3.12" },
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@buli/contracts": "workspace:*"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

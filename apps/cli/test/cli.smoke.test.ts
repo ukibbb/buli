@@ -35,7 +35,7 @@ test("runCli returns usage for unknown commands", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe("Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--ui <ink|opentui>]");
+  expect(output).toBe("Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>]");
 });
 
 test("runCli delegates the default command when no args are provided", async () => {
@@ -61,7 +61,7 @@ test("runCli returns usage for the removed chat alias", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe("Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--ui <ink|opentui>]");
+  expect(output).toBe("Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>]");
 });
 
 test("runCli passes startup flags to the chat command", async () => {
@@ -87,59 +87,7 @@ test("runCli returns usage when a startup flag is invalid", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe("Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--ui <ink|opentui>]");
-});
-
-test("dispatches_interactive_chat_with_opentui_when_ui_flag_set_to_opentui", async () => {
-  let capturedInteractiveChatStartOptions: InteractiveChatStartOptions | undefined;
-  const stubbedCommandHandlers = {
-    runInteractiveChat: async (options: InteractiveChatStartOptions = {}) => {
-      capturedInteractiveChatStartOptions = options;
-      return "";
-    },
-    runListAvailableModels: async () => "",
-    runLogin: async () => "",
-  };
-  await runCli(["--ui", "opentui"], stubbedCommandHandlers);
-  expect(capturedInteractiveChatStartOptions?.selectedTerminalUserInterface).toBe("opentui");
-});
-
-test("dispatches_interactive_chat_with_ink_when_ui_flag_set_to_ink", async () => {
-  let capturedInteractiveChatStartOptions: InteractiveChatStartOptions | undefined;
-  const stubbedCommandHandlers = {
-    runInteractiveChat: async (options: InteractiveChatStartOptions = {}) => {
-      capturedInteractiveChatStartOptions = options;
-      return "";
-    },
-    runListAvailableModels: async () => "",
-    runLogin: async () => "",
-  };
-  await runCli(["--ui", "ink"], stubbedCommandHandlers);
-  expect(capturedInteractiveChatStartOptions?.selectedTerminalUserInterface).toBe("ink");
-});
-
-test("returns_usage_when_ui_flag_value_is_invalid", async () => {
-  const stubbedCommandHandlers = {
-    runInteractiveChat: async () => "",
-    runListAvailableModels: async () => "",
-    runLogin: async () => "",
-  };
-  const commandOutput = await runCli(["--ui", "bogus"], stubbedCommandHandlers);
-  expect(commandOutput).toContain("Usage:");
-});
-
-test("defaults_selectedTerminalUserInterface_to_undefined_when_no_ui_flag_provided", async () => {
-  let capturedInteractiveChatStartOptions: InteractiveChatStartOptions | undefined;
-  const stubbedCommandHandlers = {
-    runInteractiveChat: async (options: InteractiveChatStartOptions = {}) => {
-      capturedInteractiveChatStartOptions = options;
-      return "";
-    },
-    runListAvailableModels: async () => "",
-    runLogin: async () => "",
-  };
-  await runCli([], stubbedCommandHandlers);
-  expect(capturedInteractiveChatStartOptions?.selectedTerminalUserInterface).toBeUndefined();
+  expect(output).toBe("Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>]");
 });
 
 test("runInteractiveChat returns a clean message when auth is missing", async () => {
@@ -188,5 +136,5 @@ test("main prints usage for an unknown command", async () => {
     console.log = originalLog;
   }
 
-  expect(outputs).toEqual(["Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--ui <ink|opentui>]"]);
+  expect(outputs).toEqual(["Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>]"]);
 });

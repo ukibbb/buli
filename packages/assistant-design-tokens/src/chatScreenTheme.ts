@@ -1,5 +1,5 @@
 // Palette sourced 1:1 from novibe.space/designs/my-design.pen.
-// See ink-limitations.md for the full mapping table and the rationale behind
+// See terminal-rendering-limitations.md for the full mapping table and the rationale behind
 // tokens whose pen-file equivalents do not translate to a terminal cell grid
 // (sub-row stripes, font-size hierarchy, corner radius on fills).
 //

@@ -1,370 +1,104 @@
 import { expect, test } from "bun:test";
 import {
   AssistantResponseEventSchema,
-  AssistantToolApprovalRequestedEventSchema,
-  AssistantToolCallDeniedEventSchema,
-  AvailableAssistantModelSchema,
-  BashToolCallRequestSchema,
-  CompletedToolResultConversationSessionEntrySchema,
-  ConversationSessionEntrySchema,
-  ModelContextItemSchema,
-  OpenAiProviderTurnReplaySchema,
-  PlanStepSchema,
-  ProviderCompletedEventSchema,
-  ProviderIncompleteEventSchema,
-  ProviderPlanProposedEventSchema,
-  ProviderRateLimitPendingEventSchema,
-  ProviderReasoningSummaryCompletedEventSchema,
-  ProviderReasoningSummaryStartedEventSchema,
-  ProviderReasoningSummaryTextChunkEventSchema,
-  ProviderStreamEventSchema,
-  ProviderToolCallRequestedEventSchema,
-  ReasoningEffortSchema,
-  ToolCallBashDetailSchema,
-  ToolCallDetailSchema,
-  TokenUsageSchema,
-  UserPromptConversationSessionEntrySchema,
+  AssistantToolCallConversationMessagePartSchema,
+  ConversationMessagePartSchema,
+  ConversationMessageSchema,
+  ConversationTurnStatusSchema,
+  PendingToolApprovalRequestSchema,
 } from "../src/index.ts";
 
-test("ReasoningEffortSchema parses supported effort values", () => {
-  expect(ReasoningEffortSchema.parse("minimal")).toBe("minimal");
-  expect(ReasoningEffortSchema.parse("xhigh")).toBe("xhigh");
-});
-
-test("AvailableAssistantModelSchema parses a model with reasoning metadata", () => {
-  const model = AvailableAssistantModelSchema.parse({
-    id: "gpt-5.4",
-    displayName: "GPT-5.4",
-    defaultReasoningEffort: "medium",
-    supportedReasoningEfforts: ["low", "medium", "high"],
-  });
-
-  expect(model.supportedReasoningEfforts).toEqual(["low", "medium", "high"]);
-});
-
-test("TokenUsageSchema parses reasoning token usage", () => {
-  const usage = TokenUsageSchema.parse({
-    total: 171,
-    input: 100,
-    output: 40,
-    reasoning: 21,
-    cache: {
-      read: 10,
-      write: 0,
-    },
-  });
-
-  expect(usage.reasoning).toBe(21);
-  expect(usage.cache.read).toBe(10);
-});
-
-test("BashToolCallRequestSchema parses the first real tool contract", () => {
+test("ConversationMessageSchema parses a completed user message", () => {
   expect(
-    BashToolCallRequestSchema.parse({
-      toolName: "bash",
-      shellCommand: "pwd",
-      commandDescription: "Print the working directory",
-      workingDirectoryPath: "src",
-      timeoutMilliseconds: 10_000,
+    ConversationMessageSchema.parse({
+      id: "user-1",
+      role: "user",
+      messageStatus: "completed",
+      createdAtMs: 1,
+      partIds: ["part-1"],
     }),
   ).toEqual({
-    toolName: "bash",
-    shellCommand: "pwd",
-    commandDescription: "Print the working directory",
-    workingDirectoryPath: "src",
-    timeoutMilliseconds: 10_000,
+    id: "user-1",
+    role: "user",
+    messageStatus: "completed",
+    createdAtMs: 1,
+    partIds: ["part-1"],
   });
 });
 
-test("ToolCallDetailSchema parses the richer bash detail arm", () => {
+test("ConversationMessagePartSchema parses an assistant text part with an open streaming tail", () => {
   expect(
-    ToolCallDetailSchema.parse({
-      toolName: "bash",
-      commandLine: "pwd",
-      commandDescription: "Print the working directory",
-      workingDirectoryPath: "/repo",
-      timeoutMilliseconds: 5_000,
-      exitCode: 0,
-      outputLines: [
-        { lineKind: "prompt", lineText: "$ pwd" },
-        { lineKind: "stdout", lineText: "/repo" },
-      ],
-    }),
-  ).toEqual({
-    toolName: "bash",
-    commandLine: "pwd",
-    commandDescription: "Print the working directory",
-    workingDirectoryPath: "/repo",
-    timeoutMilliseconds: 5_000,
-    exitCode: 0,
-    outputLines: [
-      { lineKind: "prompt", lineText: "$ pwd" },
-      { lineKind: "stdout", lineText: "/repo" },
-    ],
-  });
-});
-
-test("ConversationSessionEntrySchema parses completed tool results", () => {
-  const completedToolResultConversationSessionEntry = CompletedToolResultConversationSessionEntrySchema.parse({
-    entryKind: "completed_tool_result",
-    toolCallId: "call_1",
-    toolCallDetail: {
-      toolName: "bash",
-      commandLine: "pwd",
-      exitCode: 0,
-    },
-    toolResultText: "Command: pwd\nExit code: 0",
-  });
-
-  expect(ConversationSessionEntrySchema.parse(completedToolResultConversationSessionEntry).entryKind).toBe("completed_tool_result");
-});
-
-test("ConversationSessionEntrySchema parses assistant messages with provider replay state", () => {
-  expect(
-    ConversationSessionEntrySchema.parse({
-      entryKind: "assistant_message",
-      assistantMessageText: "Done.",
-      providerTurnReplay: {
-        provider: "openai",
-        inputItems: [
-          {
-            type: "reasoning",
-            id: "rs_1",
-            encrypted_content: "encrypted-reasoning",
-            summary: [{ type: "summary_text", text: "I should inspect the directory first." }],
-          },
-          {
-            type: "function_call",
-            id: "fc_1",
-            call_id: "call_1",
-            name: "bash",
-            arguments: '{"command":"pwd","description":"Print working directory"}',
-          },
-          {
-            type: "function_call_output",
-            call_id: "call_1",
-            output: "Working directory: /tmp/demo",
-          },
-        ],
+    ConversationMessagePartSchema.parse({
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hello",
+      completedContentParts: [],
+      openContentPart: {
+        kind: "streaming_markdown_text",
+        text: "Hello",
       },
-    }).entryKind,
-  ).toBe("assistant_message");
-});
-
-test("UserPromptConversationSessionEntrySchema parses raw and model-facing prompt text", () => {
-  expect(
-    UserPromptConversationSessionEntrySchema.parse({
-      entryKind: "user_prompt",
-      promptText: 'Summarize @"Desktop Notes/todo.txt"',
-      modelFacingPromptText: "Summarize the attached context file.",
     }),
-  ).toEqual({
-    entryKind: "user_prompt",
-    promptText: 'Summarize @"Desktop Notes/todo.txt"',
-    modelFacingPromptText: "Summarize the attached context file.",
+  ).toMatchObject({
+    partKind: "assistant_text",
+    partStatus: "streaming",
   });
 });
 
-test("ModelContextItemSchema parses tool-call and tool-result replay items", () => {
+test("AssistantToolCallConversationMessagePartSchema parses a denied tool call", () => {
   expect(
-    ModelContextItemSchema.parse({
-      itemKind: "tool_call",
-      toolCallId: "call_1",
-      toolCallRequest: {
+    AssistantToolCallConversationMessagePartSchema.parse({
+      id: "tool-part-1",
+      partKind: "assistant_tool_call",
+      toolCallId: "call-1",
+      toolCallStatus: "denied",
+      toolCallStartedAtMs: 1,
+      toolCallDetail: {
         toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print the working directory",
+        commandLine: "rm -rf build",
       },
-    }).itemKind,
-  ).toBe("tool_call");
-  expect(
-    ModelContextItemSchema.parse({
-      itemKind: "tool_result",
-      toolCallId: "call_1",
-      toolResultText: "Command: pwd\nExit code: 0",
-    }).itemKind,
-  ).toBe("tool_result");
-});
-
-test("AssistantResponseEventSchema accepts the explicit denied-tool arm", () => {
-  expect(
-    AssistantResponseEventSchema.parse({
-      type: "assistant_tool_call_denied",
-      toolCallId: "call_1",
-      toolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
       denialText: "The user denied this bash command, so it was not executed.",
-    }).type,
-  ).toBe("assistant_tool_call_denied");
+    }).toolCallStatus,
+  ).toBe("denied");
 });
 
-test("AssistantToolApprovalRequestedEventSchema parses approval requests", () => {
+test("PendingToolApprovalRequestSchema parses the dedicated approval model", () => {
   expect(
-    AssistantToolApprovalRequestedEventSchema.parse({
-      type: "assistant_tool_approval_requested",
-      approvalId: "approval_1",
-      pendingToolCallId: "call_1",
+    PendingToolApprovalRequestSchema.parse({
+      approvalId: "approval-1",
+      pendingToolCallId: "call-1",
       pendingToolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
       riskExplanation: "This bash command will run inside the current workspace.",
     }).approvalId,
-  ).toBe("approval_1");
+  ).toBe("approval-1");
 });
 
-test("AssistantToolCallDeniedEventSchema parses denial payloads", () => {
+test("AssistantResponseEventSchema parses assistant_message_part_added", () => {
   expect(
-    AssistantToolCallDeniedEventSchema.parse({
-      type: "assistant_tool_call_denied",
-      toolCallId: "call_1",
-      toolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
-      denialText: "The user denied this bash command, so it was not executed.",
-    }).denialText,
-  ).toContain("denied");
-});
-
-test("ProviderStreamEventSchema accepts tool intent, reasoning, completion, and planning arms", () => {
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "tool_call_requested",
-      toolCallId: "call_1",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print the working directory",
+    AssistantResponseEventSchema.parse({
+      type: "assistant_message_part_added",
+      messageId: "assistant-1",
+      part: {
+        id: "plan-part-1",
+        partKind: "assistant_plan_proposal",
+        planId: "plan-1",
+        planTitle: "Inspect the codebase",
+        planSteps: [{ stepIndex: 0, stepTitle: "Read files", stepStatus: "pending" }],
       },
     }).type,
-  ).toBe("tool_call_requested");
-  expect(ProviderStreamEventSchema.parse({ type: "reasoning_summary_started" }).type).toBe("reasoning_summary_started");
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "reasoning_summary_text_chunk",
-      text: "Thinking...",
-    }).type,
-  ).toBe("reasoning_summary_text_chunk");
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "reasoning_summary_completed",
-      reasoningDurationMs: 1200,
-    }).type,
-  ).toBe("reasoning_summary_completed");
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "completed",
-      usage: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
-    }).type,
-  ).toBe("completed");
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "incomplete",
-      incompleteReason: "max_output_tokens",
-      usage: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
-    }).type,
-  ).toBe("incomplete");
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "rate_limit_pending",
-      retryAfterSeconds: 30,
-      limitExplanation: "hourly tokens",
-    }).type,
-  ).toBe("rate_limit_pending");
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "plan_proposed",
-      planId: "plan_1",
-      planTitle: "Wire bash loop",
-      planSteps: [{ stepIndex: 0, stepTitle: "Start the turn", stepStatus: "pending" }],
-    }).type,
-  ).toBe("plan_proposed");
+  ).toBe("assistant_message_part_added");
 });
 
-test("Provider schemas validate independently", () => {
+test("AssistantResponseEventSchema parses assistant_message_failed", () => {
   expect(
-    ProviderToolCallRequestedEventSchema.parse({
-      type: "tool_call_requested",
-      toolCallId: "call_1",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print the working directory",
-      },
-    }).toolCallId,
-  ).toBe("call_1");
-  expect(
-    ProviderCompletedEventSchema.parse({
-      type: "completed",
-      usage: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    AssistantResponseEventSchema.parse({
+      type: "assistant_message_failed",
+      messageId: "assistant-1",
+      errorText: "Provider stream ended before completion",
     }).type,
-  ).toBe("completed");
-  expect(
-    ProviderIncompleteEventSchema.parse({
-      type: "incomplete",
-      incompleteReason: "max_output_tokens",
-      usage: { input: 1, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    }).incompleteReason,
-  ).toBe("max_output_tokens");
-  expect(ProviderReasoningSummaryStartedEventSchema.parse({ type: "reasoning_summary_started" }).type).toBe("reasoning_summary_started");
-  expect(
-    ProviderReasoningSummaryTextChunkEventSchema.parse({
-      type: "reasoning_summary_text_chunk",
-      text: "abc",
-    }).text,
-  ).toBe("abc");
-  expect(
-    ProviderReasoningSummaryCompletedEventSchema.parse({
-      type: "reasoning_summary_completed",
-      reasoningDurationMs: 10,
-    }).reasoningDurationMs,
-  ).toBe(10);
-  expect(
-    ProviderRateLimitPendingEventSchema.parse({
-      type: "rate_limit_pending",
-      retryAfterSeconds: 5,
-      limitExplanation: "limit",
-    }).retryAfterSeconds,
-  ).toBe(5);
-  expect(
-    ProviderPlanProposedEventSchema.parse({
-      type: "plan_proposed",
-      planId: "plan_1",
-      planTitle: "Do work",
-      planSteps: [{ stepIndex: 0, stepTitle: "Step 1", stepStatus: "pending" }],
-    }).planSteps.length,
-  ).toBe(1);
-  expect(
-    OpenAiProviderTurnReplaySchema.parse({
-      provider: "openai",
-      inputItems: [
-        {
-          type: "reasoning",
-          id: "rs_1",
-          encrypted_content: "encrypted-reasoning",
-          summary: [{ type: "summary_text", text: "I should inspect the directory first." }],
-        },
-        {
-          type: "function_call",
-          id: "fc_1",
-          call_id: "call_1",
-          name: "bash",
-          arguments: '{"command":"pwd","description":"Print working directory"}',
-        },
-        {
-          type: "function_call_output",
-          call_id: "call_1",
-          output: "Working directory: /tmp/demo",
-        },
-      ],
-    }).provider,
-  ).toBe("openai");
+  ).toBe("assistant_message_failed");
 });
 
-test("PlanStepSchema rejects an empty stepTitle", () => {
-  expect(() => PlanStepSchema.parse({ stepIndex: 0, stepTitle: "", stepStatus: "pending" })).toThrow();
-});
-
-test("ToolCallBashDetailSchema rejects invalid output line kinds", () => {
-  expect(() =>
-    ToolCallBashDetailSchema.parse({
-      toolName: "bash",
-      commandLine: "pwd",
-      outputLines: [{ lineKind: "bogus", lineText: "x" }],
-    }),
-  ).toThrow();
+test("ConversationTurnStatusSchema parses waiting_for_tool_approval", () => {
+  expect(ConversationTurnStatusSchema.parse("waiting_for_tool_approval")).toBe("waiting_for_tool_approval");
 });

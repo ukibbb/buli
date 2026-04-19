@@ -224,6 +224,80 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       .map(([, outputItem]) => outputItem);
   }
 
+  function updateTrackedOutputItemByItemId(
+    itemId: string,
+    createUpdatedOutputItem: (outputItem: OpenAiChunkObject) => unknown,
+  ): boolean {
+    for (const [outputIndex, outputItem] of trackedOutputItemsByIndex.entries()) {
+      if (!isOpenAiChunkObject(outputItem) || typeof outputItem.id !== "string" || outputItem.id !== itemId) {
+        continue;
+      }
+
+      trackedOutputItemsByIndex.set(outputIndex, createUpdatedOutputItem(outputItem));
+      return true;
+    }
+
+    return false;
+  }
+
+  // Tool-call continuation needs a replay-safe item list even when the terminal
+  // response.output omits or weakens the function_call item we already observed
+  // in streamed output_item events.
+  function createTrackedBackedResponseOutputItems(responseOutputItems: readonly unknown[] | undefined): unknown[] {
+    const trackedOutputItems = listTrackedOutputItems();
+    if (trackedOutputItems.length === 0) {
+      return responseOutputItems ? [...responseOutputItems] : [];
+    }
+    if (!responseOutputItems || responseOutputItems.length === 0) {
+      return trackedOutputItems;
+    }
+
+    const responseOutputItemById = new Map<string, OpenAiChunkObject>();
+    for (const responseOutputItem of responseOutputItems) {
+      if (!isOpenAiChunkObject(responseOutputItem) || typeof responseOutputItem.id !== "string") {
+        continue;
+      }
+
+      responseOutputItemById.set(responseOutputItem.id, responseOutputItem);
+    }
+
+    const consumedResponseOutputItemIds = new Set<string>();
+    const mergedOutputItems: unknown[] = [];
+    for (const trackedOutputItem of trackedOutputItems) {
+      if (!isOpenAiChunkObject(trackedOutputItem) || typeof trackedOutputItem.id !== "string") {
+        mergedOutputItems.push(trackedOutputItem);
+        continue;
+      }
+
+      const responseOutputItem = responseOutputItemById.get(trackedOutputItem.id);
+      if (!responseOutputItem || responseOutputItem.type !== trackedOutputItem.type) {
+        mergedOutputItems.push(trackedOutputItem);
+        continue;
+      }
+
+      consumedResponseOutputItemIds.add(trackedOutputItem.id);
+      mergedOutputItems.push(
+        trackedOutputItem.type === "function_call"
+          ? { ...responseOutputItem, ...trackedOutputItem }
+          : { ...trackedOutputItem, ...responseOutputItem },
+      );
+    }
+
+    for (const responseOutputItem of responseOutputItems) {
+      if (
+        isOpenAiChunkObject(responseOutputItem) &&
+        typeof responseOutputItem.id === "string" &&
+        consumedResponseOutputItemIds.has(responseOutputItem.id)
+      ) {
+        continue;
+      }
+
+      mergedOutputItems.push(responseOutputItem);
+    }
+
+    return mergedOutputItems;
+  }
+
   function createToolCallRequest(toolCallState: PendingFunctionCallState): ToolCallRequest {
     if (toolCallState.toolName !== "bash") {
       throw new Error(`Unsupported tool requested by OpenAI: ${toolCallState.toolName}`);
@@ -346,12 +420,13 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
             id?: string;
             call_id?: string;
             name?: string;
+            arguments?: string;
           };
           if (functionCallItem.id && functionCallItem.call_id && functionCallItem.name) {
             pendingFunctionCallStateByItemId.set(functionCallItem.id, {
               toolCallId: functionCallItem.call_id,
               toolName: functionCallItem.name,
-              argumentsText: "",
+              argumentsText: functionCallItem.arguments ?? "",
               hasEmittedProviderEvent: false,
             });
           }
@@ -368,6 +443,11 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
         const pendingFunctionCallState = pendingFunctionCallStateByItemId.get(functionCallArgumentsDone.data.item_id);
         if (pendingFunctionCallState) {
           pendingFunctionCallState.argumentsText = functionCallArgumentsDone.data.arguments;
+          updateTrackedOutputItemByItemId(functionCallArgumentsDone.data.item_id, (trackedOutputItem) =>
+            trackedOutputItem.type === "function_call"
+              ? { ...trackedOutputItem, arguments: functionCallArgumentsDone.data.arguments }
+              : trackedOutputItem,
+          );
           const requestedToolCallEvent = emitRequestedToolCallIfReady(functionCallArgumentsDone.data.item_id);
           if (requestedToolCallEvent) {
             yield requestedToolCallEvent;
@@ -384,6 +464,8 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
         if (outputItemDone.data.output_index !== undefined) {
           trackedOutputItemsByIndex.set(outputItemDone.data.output_index, outputItemDone.data.item);
+        } else if (typeof outputItemDone.data.item.id === "string") {
+          updateTrackedOutputItemByItemId(outputItemDone.data.item.id, () => outputItemDone.data.item);
         }
         if (outputItemDone.data.item.type === "function_call") {
           const functionCallItem = outputItemDone.data.item as {
@@ -416,11 +498,10 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
         const completedResponse = ResponseCompletedChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
-        const responseOutputItems = completedResponse.response.output ?? listTrackedOutputItems();
         if (terminalState?.terminalKind === "tool_call_requested") {
           terminalState = {
             ...terminalState,
-            responseOutputItems,
+            responseOutputItems: createTrackedBackedResponseOutputItems(completedResponse.response.output),
           };
           continue;
         }
@@ -433,11 +514,10 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
         const incompleteResponse = ResponseIncompleteChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
-        const responseOutputItems = incompleteResponse.response.output ?? listTrackedOutputItems();
         if (terminalState?.terminalKind === "tool_call_requested") {
           terminalState = {
             ...terminalState,
-            responseOutputItems,
+            responseOutputItems: createTrackedBackedResponseOutputItems(incompleteResponse.response.output),
           };
           continue;
         }

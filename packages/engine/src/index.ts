@@ -10,12 +10,6 @@ export { buildPromptContextDisplaySegments } from "./prompt-context/buildPromptC
 export { buildPromptContextFileSnapshotText } from "./prompt-context/buildPromptContextFileSnapshotText.ts";
 export { buildPromptContextReferenceTextFromDisplayPath } from "./prompt-context/buildPromptContextReferenceTextFromDisplayPath.ts";
 export { PromptContextCandidateCatalog } from "./prompt-context/promptContextCandidateCatalog.ts";
-export {
-  appendAssistantTextDeltaToStreamingProjectorState,
-  createInitialAssistantStreamingProjectorState,
-  createLegacyStreamingProjectionFromText,
-  finalizeAssistantStreamingProjectorState,
-} from "./assistantStreamingProjection.ts";
 export { extractActivePromptContextQueryFromPromptDraft } from "./prompt-context/extractActivePromptContextQueryFromPromptDraft.ts";
 export {
   determinePromptContextQueryLoadStrategy,
@@ -28,7 +22,6 @@ export { AssistantConversationRuntime } from "./runtime.ts";
 export { buildBuliSystemPrompt } from "./systemPrompt.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
 export { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
-export { createAssistantTranscriptMessage, createCompletedAssistantResponseEvent } from "./turn.ts";
 export type {
   ParsedPromptContextReference,
   PromptContextCandidate,

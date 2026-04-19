@@ -18,13 +18,12 @@
   ],
   "dependencies": {
     "@buli/engine": "workspace:*",
-    "@buli/ink-tui": "workspace:*",
     "@buli/openai": "workspace:*",
-    "@buli/opentui-tui": "workspace:*"
+    "@buli/tui": "workspace:*"
   },
   "scripts": {
-    "build": "bun build ./src/cli.ts --target=bun --outdir ./dist --entry-naming cli.js --external @buli/ink-tui --external @buli/opentui-tui",
-    "dev": "bun build ./src/cli.ts --target=bun --outdir ./dist --entry-naming cli.js --watch --external @buli/ink-tui --external @buli/opentui-tui",
+    "build": "bun build ./src/cli.ts --target=bun --outdir ./dist --entry-naming cli.js --external @buli/tui",
+    "dev": "bun build ./src/cli.ts --target=bun --outdir ./dist --entry-naming cli.js --watch --external @buli/tui",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "login": "bun src/cli.ts login",

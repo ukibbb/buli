@@ -38,6 +38,22 @@ async function collectParsedEvents(response: Response) {
   return parsedEvents;
 }
 
+async function collectParsedEventsAndTerminalState(response: Response) {
+  const parsedEvents = [];
+  const iterator = parseOpenAiStream(response)[Symbol.asyncIterator]();
+  while (true) {
+    const nextStreamItem = await iterator.next();
+    if (nextStreamItem.done) {
+      return {
+        parsedEvents,
+        terminalState: nextStreamItem.value,
+      };
+    }
+
+    parsedEvents.push(nextStreamItem.value);
+  }
+}
+
 test("parseOpenAiStream yields text deltas and final usage", async () => {
   const response = new Response(
     [
@@ -283,6 +299,155 @@ test("parseOpenAiStream accepts nullable bash function arguments", async () => {
       },
     },
   ]);
+});
+
+test("parseOpenAiStream repairs tool-turn output when response.completed omits the function_call item", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I will inspect the docs first."}]}}\n\n',
+      'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I will inspect the docs first."}]}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+  expect(terminalState).toEqual({
+    terminalKind: "tool_call_requested",
+    toolCallId: "call_1",
+    toolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+    },
+    responseOutputItems: [
+      {
+        type: "message",
+        id: "msg_1",
+        role: "assistant",
+        status: "completed",
+        content: [{ type: "output_text", text: "I will inspect the docs first." }],
+      },
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream repairs weakened function_call arguments from response.completed output", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"","status":"completed"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toEqual({
+    terminalKind: "tool_call_requested",
+    toolCallId: "call_1",
+    toolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+    },
+    responseOutputItems: [
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+        status: "completed",
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream repairs tracked function_call items from output_item.done without output_index", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}","status":"completed"}}\n\n',
+      'data: {"type":"response.completed","response":{"output":[],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toEqual({
+    terminalKind: "tool_call_requested",
+    toolCallId: "call_1",
+    toolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+    },
+    responseOutputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+        status: "completed",
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream repairs tool-turn output when response.incomplete omits the function_call item", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toEqual({
+    terminalKind: "tool_call_requested",
+    toolCallId: "call_1",
+    toolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+    },
+    responseOutputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+  });
 });
 
 test("OpenAiProvider sends auth headers and streams assistant response provider events", async () => {

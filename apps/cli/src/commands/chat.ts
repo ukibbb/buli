@@ -2,16 +2,14 @@ import os from "node:os";
 import { resolve, sep } from "node:path";
 import type { ReasoningEffort } from "@buli/contracts";
 import { AssistantConversationRuntime, PromptContextCandidateCatalog } from "@buli/engine";
-import { renderChatScreenInTerminalWithInk } from "@buli/ink-tui";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
-import { renderChatScreenInTerminalWithOpentui } from "@buli/opentui-tui";
+import { renderChatScreenInTerminal } from "@buli/tui";
 
 const DEFAULT_MODEL_ID = "gpt-5.4";
 
 export async function runInteractiveChat(input: {
   selectedModelId?: string;
   selectedReasoningEffort?: ReasoningEffort;
-  selectedTerminalUserInterface?: "ink" | "opentui";
   store?: OpenAiAuthStore;
   stdin?: Pick<NodeJS.ReadStream, "isTTY">;
 } = {}): Promise<string> {
@@ -51,10 +49,7 @@ export async function runInteractiveChat(input: {
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
   };
 
-  const chatScreen =
-    input.selectedTerminalUserInterface === "opentui"
-      ? await renderChatScreenInTerminalWithOpentui(renderArgs)
-      : renderChatScreenInTerminalWithInk(renderArgs);
+  const chatScreen = await renderChatScreenInTerminal(renderArgs);
 
   await chatScreen.waitUntilExit();
   return "";

@@ -2,14 +2,14 @@ import { z } from "zod";
 import { InlineSpanSchema } from "./inlineSpan.ts";
 import { ToolCallTodoItemStatusSchema } from "./toolCallDetail.ts";
 
-// Callout severity matches the existing ink-tui CalloutSeverity type.
+// Callout severity matches the existing TUI callout severity type.
 // "warning" is the full word — not "warn" — because the existing parser
 // maps GitHub admonition tags WARNING/WARN/CAUTION to this enum value.
 export const CalloutSeveritySchema = z.enum(["info", "success", "warning", "error"]);
 export type CalloutSeverity = z.infer<typeof CalloutSeveritySchema>;
 
-// Checklist item shape matches packages/ink-tui/src/components/primitives/Checklist.tsx
-// so the ink-tui Checklist component's props surface is unchanged after the
+// Checklist item shape matches packages/tui/src/components/primitives/Checklist.tsx
+// so the TUI Checklist component's props surface is unchanged after the
 // type relocates into contracts. itemStatus reuses ToolCallTodoItemStatus.
 export const ChecklistItemSchema = z
   .object({

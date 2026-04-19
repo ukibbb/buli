@@ -1,4 +1,54 @@
 export {
+  ConversationMessageRoleSchema,
+  ConversationMessageSchema,
+  ConversationMessageStatusSchema,
+} from "./conversationMessage.ts";
+export type {
+  ConversationMessage,
+  ConversationMessageRole,
+  ConversationMessageStatus,
+} from "./conversationMessage.ts";
+export {
+  AssistantErrorNoticeConversationMessagePartSchema,
+  AssistantIncompleteNoticeConversationMessagePartSchema,
+  AssistantPlanProposalConversationMessagePartSchema,
+  AssistantRateLimitNoticeConversationMessagePartSchema,
+  AssistantReasoningConversationMessagePartSchema,
+  AssistantReasoningPartStatusSchema,
+  AssistantTextConversationMessagePartSchema,
+  AssistantTextPartStatusSchema,
+  AssistantToolCallConversationMessagePartSchema,
+  AssistantToolCallPartStatusSchema,
+  AssistantTurnSummaryConversationMessagePartSchema,
+  ConversationMessagePartSchema,
+  ConversationOpenAssistantTextPartSchema,
+  ConversationOpenFencedCodeBlockPartSchema,
+  ConversationOpenMarkdownTextPartSchema,
+  UserTextConversationMessagePartSchema,
+} from "./conversationMessagePart.ts";
+export type {
+  AssistantErrorNoticeConversationMessagePart,
+  AssistantIncompleteNoticeConversationMessagePart,
+  AssistantPlanProposalConversationMessagePart,
+  AssistantRateLimitNoticeConversationMessagePart,
+  AssistantReasoningConversationMessagePart,
+  AssistantReasoningPartStatus,
+  AssistantTextConversationMessagePart,
+  AssistantTextPartStatus,
+  AssistantToolCallConversationMessagePart,
+  AssistantToolCallPartStatus,
+  AssistantTurnSummaryConversationMessagePart,
+  ConversationMessagePart,
+  ConversationOpenAssistantTextPart,
+  ConversationOpenFencedCodeBlockPart,
+  ConversationOpenMarkdownTextPart,
+  UserTextConversationMessagePart,
+} from "./conversationMessagePart.ts";
+export { ConversationTurnStatusSchema } from "./conversationTurnStatus.ts";
+export type { ConversationTurnStatus } from "./conversationTurnStatus.ts";
+export { PendingToolApprovalRequestSchema } from "./pendingToolApprovalRequest.ts";
+export type { PendingToolApprovalRequest } from "./pendingToolApprovalRequest.ts";
+export {
   AssistantContentPartSchema,
   BulletedListContentPartSchema,
   CalloutContentPartSchema,
@@ -24,18 +74,6 @@ export type {
   NumberedListContentPart,
   ParagraphContentPart,
 } from "./assistantContentPart.ts";
-export {
-  AssistantStreamingProjectionSchema,
-  StreamingAssistantContentPartSchema,
-  StreamingFencedCodeBlockContentPartSchema,
-  StreamingMarkdownTextContentPartSchema,
-} from "./assistantStreamingProjection.ts";
-export type {
-  AssistantStreamingProjection,
-  StreamingAssistantContentPart,
-  StreamingFencedCodeBlockContentPart,
-  StreamingMarkdownTextContentPart,
-} from "./assistantStreamingProjection.ts";
 export {
   AssistantMessageConversationSessionEntrySchema,
   CompletedToolResultConversationSessionEntrySchema,
@@ -73,44 +111,26 @@ export type {
   ProviderTurnReplay,
 } from "./providerTurnReplay.ts";
 export {
-  AssistantPlanProposedEventSchema,
-  AssistantRateLimitPendingEventSchema,
-  AssistantReasoningSummaryCompletedEventSchema,
-  AssistantReasoningSummaryStartedEventSchema,
-  AssistantReasoningSummaryTextChunkEventSchema,
-  AssistantResponseCompletedEventSchema,
   AssistantResponseEventSchema,
-  AssistantResponseFailedEventSchema,
-  AssistantResponseIncompleteEventSchema,
-  AssistantResponseStreamProjectionUpdatedEventSchema,
-  AssistantResponseStartedEventSchema,
-  AssistantResponseTextChunkEventSchema,
-  AssistantToolApprovalRequestedEventSchema,
-  AssistantToolCallCompletedEventSchema,
-  AssistantToolCallDeniedEventSchema,
-  AssistantToolCallFailedEventSchema,
-  AssistantToolCallStartedEventSchema,
-  AssistantTurnCompletedEventSchema,
+  AssistantMessageCompletedEventSchema,
+  AssistantMessageFailedEventSchema,
+  AssistantMessageIncompleteEventSchema,
+  AssistantMessagePartAddedEventSchema,
+  AssistantMessagePartUpdatedEventSchema,
+  AssistantPendingToolApprovalClearedEventSchema,
+  AssistantPendingToolApprovalRequestedEventSchema,
+  AssistantTurnStartedEventSchema,
 } from "./events.ts";
 export type {
-  AssistantPlanProposedEvent,
-  AssistantRateLimitPendingEvent,
-  AssistantReasoningSummaryCompletedEvent,
-  AssistantReasoningSummaryStartedEvent,
-  AssistantReasoningSummaryTextChunkEvent,
-  AssistantResponseCompletedEvent,
   AssistantResponseEvent,
-  AssistantResponseFailedEvent,
-  AssistantResponseIncompleteEvent,
-  AssistantResponseStreamProjectionUpdatedEvent,
-  AssistantResponseStartedEvent,
-  AssistantResponseTextChunkEvent,
-  AssistantToolApprovalRequestedEvent,
-  AssistantToolCallCompletedEvent,
-  AssistantToolCallDeniedEvent,
-  AssistantToolCallFailedEvent,
-  AssistantToolCallStartedEvent,
-  AssistantTurnCompletedEvent,
+  AssistantMessageCompletedEvent,
+  AssistantMessageFailedEvent,
+  AssistantMessageIncompleteEvent,
+  AssistantMessagePartAddedEvent,
+  AssistantMessagePartUpdatedEvent,
+  AssistantPendingToolApprovalClearedEvent,
+  AssistantPendingToolApprovalRequestedEvent,
+  AssistantTurnStartedEvent,
 } from "./events.ts";
 export {
   AssistantMessageModelContextItemSchema,
@@ -126,8 +146,6 @@ export type {
   ToolResultModelContextItem,
   UserMessageModelContextItem,
 } from "./modelContextItem.ts";
-export { MessageRoleSchema, TranscriptMessageSchema } from "./messages.ts";
-export type { MessageRole, TranscriptMessage } from "./messages.ts";
 export {
   InlineBoldSpanSchema,
   InlineCodeSpanSchema,

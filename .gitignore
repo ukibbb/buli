@@ -7,7 +7,9 @@ dist/
 
 docs/*
 !docs/
+!docs/current-chat-session-architecture.md
+!docs/chat-session-rewrite-walkthrough.md
 !docs/openai-conversation-logic.md
 examples/
 skills/
-tui/
+tui-examples/

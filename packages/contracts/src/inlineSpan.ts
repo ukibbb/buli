@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Shape is identical to InlineMarkdownSpan in
-// packages/ink-tui/src/components/primitives/InlineMarkdownText.tsx.
+// packages/tui/src/components/primitives/InlineMarkdownText.tsx.
 // The move is type-location only; field names are preserved so no component
 // needs a prop rename.
 
