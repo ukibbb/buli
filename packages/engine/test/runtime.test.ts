@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ModelContextItem, ProviderStreamEvent } from "@buli/contracts";
+import type { ModelContextItem, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import type { ConversationTurnProvider, ProviderConversationTurn, ProviderConversationTurnRequest } from "../src/index.ts";
 import { AssistantConversationRuntime, WorkspaceShellCommandExecutor } from "../src/index.ts";
 
@@ -13,6 +13,7 @@ function toPortablePath(pathText: string): string {
 class ScriptedProviderTurn implements ProviderConversationTurn {
   readonly beforeToolResultEvents: ProviderStreamEvent[];
   readonly afterToolResultEvents: ProviderStreamEvent[];
+  readonly providerTurnReplay: ProviderTurnReplay | undefined;
   submittedToolResults: Array<{ toolCallId: string; toolResultText: string }> = [];
   pendingToolResultPromise: Promise<void> | undefined;
   resolvePendingToolResult: (() => void) | undefined;
@@ -21,9 +22,11 @@ class ScriptedProviderTurn implements ProviderConversationTurn {
   constructor(input: {
     beforeToolResultEvents: ProviderStreamEvent[];
     afterToolResultEvents?: ProviderStreamEvent[];
+    providerTurnReplay?: ProviderTurnReplay;
   }) {
     this.beforeToolResultEvents = input.beforeToolResultEvents;
     this.afterToolResultEvents = input.afterToolResultEvents ?? [];
+    this.providerTurnReplay = input.providerTurnReplay;
   }
 
   async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
@@ -52,6 +55,10 @@ class ScriptedProviderTurn implements ProviderConversationTurn {
     this.submittedToolResults.push(input);
     this.hasReceivedToolResultSubmission = true;
     this.resolvePendingToolResult?.();
+  }
+
+  getProviderTurnReplay(): ProviderTurnReplay | undefined {
+    return this.providerTurnReplay;
   }
 }
 
@@ -168,6 +175,29 @@ test("AssistantConversationRuntime reuses prior user and assistant messages on t
       { type: "text_chunk", text: "First answer" },
       { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
     ],
+    providerTurnReplay: {
+      provider: "openai",
+      inputItems: [
+        {
+          type: "reasoning",
+          id: "rs_1",
+          encrypted_content: "encrypted-reasoning",
+          summary: [{ type: "summary_text", text: "I should inspect the directory first." }],
+        },
+        {
+          type: "function_call",
+          id: "fc_1",
+          call_id: "call_1",
+          name: "bash",
+          arguments: '{"command":"pwd","description":"Print working directory"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: "Working directory: /tmp/demo",
+        },
+      ],
+    },
   });
   const secondProviderTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
@@ -201,6 +231,33 @@ test("AssistantConversationRuntime reuses prior user and assistant messages on t
     { itemKind: "assistant_message", messageText: "First answer" },
     { itemKind: "user_message", messageText: "Second prompt" },
   ]);
+  expect(provider.startedTurnRequests[1]?.conversationSessionEntries).toContainEqual({
+    entryKind: "assistant_message",
+    assistantMessageText: "First answer",
+      providerTurnReplay: {
+        provider: "openai",
+        inputItems: [
+          {
+            type: "reasoning",
+            id: "rs_1",
+            encrypted_content: "encrypted-reasoning",
+            summary: [{ type: "summary_text", text: "I should inspect the directory first." }],
+          },
+          {
+            type: "function_call",
+            id: "fc_1",
+          call_id: "call_1",
+          name: "bash",
+          arguments: '{"command":"pwd","description":"Print working directory"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: "Working directory: /tmp/demo",
+        },
+      ],
+    },
+  });
 });
 
 test("AssistantConversationRuntime emits explicit denied-tool events and stores denied tool results in history", async () => {
@@ -211,7 +268,7 @@ test("AssistantConversationRuntime emits explicit denied-tool events and stores 
         toolCallId: "call_bash_1",
         toolCallRequest: {
           toolName: "bash",
-          shellCommand: "echo denied-test",
+          shellCommand: "mkdir denied-test",
           commandDescription: "Show denied flow",
         },
       },
@@ -271,7 +328,7 @@ test("AssistantConversationRuntime emits explicit denied-tool events and stores 
     toolCallId: "call_bash_1",
     toolCallDetail: {
       toolName: "bash",
-      commandLine: "echo denied-test",
+      commandLine: "mkdir denied-test",
       commandDescription: "Show denied flow",
     },
     toolResultText: "The user denied this bash command, so it was not executed.",
@@ -279,9 +336,9 @@ test("AssistantConversationRuntime emits explicit denied-tool events and stores 
   });
 });
 
-test("AssistantConversationRuntime executes approved bash tool calls and carries tool history into the next turn", async () => {
+test("AssistantConversationRuntime auto-runs clearly non-destructive bash commands without approval", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-engine-runtime-"));
-  const firstProviderTurn = new ScriptedProviderTurn({
+  const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
       {
         type: "tool_call_requested",
@@ -295,6 +352,52 @@ test("AssistantConversationRuntime executes approved bash tool calls and carries
     ],
     afterToolResultEvents: [
       { type: "text_chunk", text: "Ran pwd." },
+      { type: "completed", usage: { total: 18, input: 9, output: 9, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    workspaceShellCommandExecutor: new WorkspaceShellCommandExecutor({ workspaceRootPath, shellExecutablePath: "/bin/zsh" }),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Run pwd",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_response_started",
+    "assistant_tool_call_started",
+    "assistant_tool_call_completed",
+    "assistant_response_stream_projection_updated",
+    "assistant_turn_completed",
+    "assistant_response_completed",
+  ]);
+  expect(providerTurn.submittedToolResults).toHaveLength(1);
+  expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain(`Working directory: ${workspaceRootPath}`);
+});
+
+test("AssistantConversationRuntime executes approved destructive bash tool calls and carries tool history into the next turn", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-engine-runtime-"));
+  const firstProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_bash_1",
+        toolCallRequest: {
+          toolName: "bash",
+          shellCommand: "mkdir created-by-buli",
+          commandDescription: "Create a test directory",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Created the directory." },
       { type: "completed", usage: { total: 18, input: 9, output: 9, reasoning: 0, cache: { read: 0, write: 0 } } },
     ],
   });
@@ -312,7 +415,7 @@ test("AssistantConversationRuntime executes approved bash tool calls and carries
     workspaceShellCommandExecutor: new WorkspaceShellCommandExecutor({ workspaceRootPath, shellExecutablePath: "/bin/zsh" }),
   });
   const activeConversationTurn = runtime.startConversationTurn({
-    userPromptText: "Run pwd",
+    userPromptText: "Create a directory",
     selectedModelId: "gpt-5.4",
   });
   const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
@@ -346,7 +449,8 @@ test("AssistantConversationRuntime executes approved bash tool calls and carries
     "assistant_response_completed",
   ]);
   expect(firstProviderTurn.submittedToolResults).toHaveLength(1);
-  expect(firstProviderTurn.submittedToolResults[0]?.toolResultText).toContain(`Working directory: ${workspaceRootPath}`);
+  expect(firstProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Command: mkdir created-by-buli");
+  await realpath(join(workspaceRootPath, "created-by-buli"));
 
   await collectAssistantEvents(
     runtime.startConversationTurn({
@@ -356,22 +460,22 @@ test("AssistantConversationRuntime executes approved bash tool calls and carries
   );
 
   expect(provider.startedTurnRequests[1]?.modelContextItems).toEqual<ModelContextItem[]>([
-    { itemKind: "user_message", messageText: "Run pwd" },
+    { itemKind: "user_message", messageText: "Create a directory" },
     {
       itemKind: "tool_call",
       toolCallId: "call_bash_1",
       toolCallRequest: {
         toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print working directory",
+        shellCommand: "mkdir created-by-buli",
+        commandDescription: "Create a test directory",
       },
     },
     {
       itemKind: "tool_result",
       toolCallId: "call_bash_1",
-      toolResultText: expect.stringContaining(`Working directory: ${workspaceRootPath}`),
+      toolResultText: expect.stringContaining("Command: mkdir created-by-buli"),
     },
-    { itemKind: "assistant_message", messageText: "Ran pwd." },
+    { itemKind: "assistant_message", messageText: "Created the directory." },
     { itemKind: "user_message", messageText: "What command did you run earlier?" },
   ]);
 });

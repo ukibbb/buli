@@ -8,6 +8,7 @@ import {
   CompletedToolResultConversationSessionEntrySchema,
   ConversationSessionEntrySchema,
   ModelContextItemSchema,
+  OpenAiProviderTurnReplaySchema,
   PlanStepSchema,
   ProviderCompletedEventSchema,
   ProviderIncompleteEventSchema,
@@ -116,6 +117,38 @@ test("ConversationSessionEntrySchema parses completed tool results", () => {
   });
 
   expect(ConversationSessionEntrySchema.parse(completedToolResultConversationSessionEntry).entryKind).toBe("completed_tool_result");
+});
+
+test("ConversationSessionEntrySchema parses assistant messages with provider replay state", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "assistant_message",
+      assistantMessageText: "Done.",
+      providerTurnReplay: {
+        provider: "openai",
+        inputItems: [
+          {
+            type: "reasoning",
+            id: "rs_1",
+            encrypted_content: "encrypted-reasoning",
+            summary: [{ type: "summary_text", text: "I should inspect the directory first." }],
+          },
+          {
+            type: "function_call",
+            id: "fc_1",
+            call_id: "call_1",
+            name: "bash",
+            arguments: '{"command":"pwd","description":"Print working directory"}',
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_1",
+            output: "Working directory: /tmp/demo",
+          },
+        ],
+      },
+    }).entryKind,
+  ).toBe("assistant_message");
 });
 
 test("UserPromptConversationSessionEntrySchema parses raw and model-facing prompt text", () => {
@@ -295,6 +328,31 @@ test("Provider schemas validate independently", () => {
       planSteps: [{ stepIndex: 0, stepTitle: "Step 1", stepStatus: "pending" }],
     }).planSteps.length,
   ).toBe(1);
+  expect(
+    OpenAiProviderTurnReplaySchema.parse({
+      provider: "openai",
+      inputItems: [
+        {
+          type: "reasoning",
+          id: "rs_1",
+          encrypted_content: "encrypted-reasoning",
+          summary: [{ type: "summary_text", text: "I should inspect the directory first." }],
+        },
+        {
+          type: "function_call",
+          id: "fc_1",
+          call_id: "call_1",
+          name: "bash",
+          arguments: '{"command":"pwd","description":"Print working directory"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: "Working directory: /tmp/demo",
+        },
+      ],
+    }).provider,
+  ).toBe("openai");
 });
 
 test("PlanStepSchema rejects an empty stepTitle", () => {

@@ -1,11 +1,15 @@
 export { parseAssistantResponseIntoContentParts } from "./assistantContentPartParser.ts";
 export { InMemoryConversationHistory } from "./conversationHistory.ts";
-export { projectConversationSessionEntriesToModelContextItems } from "./conversationHistoryProjection.ts";
+export {
+  projectConversationSessionEntriesToModelContextItems,
+  projectConversationSessionEntryToModelContextItems,
+} from "./conversationHistoryProjection.ts";
 export { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 export { buildPromptContextDirectorySnapshotText } from "./prompt-context/buildPromptContextDirectorySnapshotText.ts";
 export { buildPromptContextDisplaySegments } from "./prompt-context/buildPromptContextDisplaySegments.ts";
 export { buildPromptContextFileSnapshotText } from "./prompt-context/buildPromptContextFileSnapshotText.ts";
 export { buildPromptContextReferenceTextFromDisplayPath } from "./prompt-context/buildPromptContextReferenceTextFromDisplayPath.ts";
+export { PromptContextCandidateCatalog } from "./prompt-context/promptContextCandidateCatalog.ts";
 export {
   appendAssistantTextDeltaToStreamingProjectorState,
   createInitialAssistantStreamingProjectorState,

@@ -10,8 +10,8 @@ import {
 } from "./promptContextPathScope.ts";
 import type { PromptContextCandidate } from "./types.ts";
 
-const DEFAULT_MAXIMUM_PROMPT_CONTEXT_CANDIDATE_COUNT = 50;
-const DEFAULT_MAXIMUM_PROMPT_CONTEXT_SEARCH_ENTRY_COUNT = 2_000;
+export const DEFAULT_MAXIMUM_PROMPT_CONTEXT_CANDIDATE_COUNT = 50;
+export const DEFAULT_MAXIMUM_PROMPT_CONTEXT_SEARCH_ENTRY_COUNT = 2_000;
 
 export type PromptContextQueryLoadStrategy = "browse_current_directory" | "path_query" | "fuzzy_query";
 
@@ -44,10 +44,7 @@ export async function listPromptContextCandidates(input: {
   const promptContextPathQuery = parsePromptContextPathQuery(normalizedPromptContextQueryText);
 
   const visiblePromptContextEntries = normalizedPromptContextQueryText.length === 0
-    ? await listDirectoryPromptContextEntries({
-        directoryPath: promptContextPathScope.promptContextStartingDirectoryPath,
-        promptContextPathScope,
-      })
+    ? await listCurrentDirectoryPromptContextEntries({ promptContextPathScope })
     : promptContextPathQuery
       ? await listPromptContextPathQueryEntries({
           promptContextPathQuery,
@@ -58,35 +55,27 @@ export async function listPromptContextCandidates(input: {
           maximumSearchEntryCount,
         });
 
-  return visiblePromptContextEntries
-    .filter((entry) => {
-      if (normalizedPromptContextQueryText.length === 0) {
-        return true;
-      }
-
-      if (promptContextPathQuery) {
-        return true;
-      }
-
-      return entry.displayPath.toLowerCase().includes(normalizedPromptContextQueryText.toLowerCase());
-    })
-    .sort((leftCandidate, rightCandidate) => comparePromptContextCandidates(
-      leftCandidate,
-      rightCandidate,
-      normalizedPromptContextQueryText,
-      promptContextPathScope.promptContextStartingDirectoryPath,
-    ))
-    .slice(0, maximumCandidateCount)
-    .map((entry) => ({
-      kind: entry.kind,
-      displayPath: entry.displayPath,
-      promptReferenceText: buildPromptContextReferenceTextFromDisplayPath(entry.displayPath),
-    }));
+  return filterAndSortPromptContextEntries({
+    promptContextEntries: visiblePromptContextEntries,
+    promptContextQueryText: normalizedPromptContextQueryText,
+    maximumCandidateCount,
+    promptContextStartingDirectoryPath: promptContextPathScope.promptContextStartingDirectoryPath,
+    treatsEntriesAsPathQueryResults: promptContextPathQuery !== undefined,
+  });
 }
 
-type PromptContextEntry = Omit<PromptContextCandidate, "promptReferenceText"> & {
+export type PromptContextEntry = Omit<PromptContextCandidate, "promptReferenceText"> & {
   absolutePath: string;
 };
+
+export async function listCurrentDirectoryPromptContextEntries(input: {
+  promptContextPathScope: PromptContextPathScope;
+}): Promise<PromptContextEntry[]> {
+  return listDirectoryPromptContextEntries({
+    directoryPath: input.promptContextPathScope.promptContextStartingDirectoryPath,
+    promptContextPathScope: input.promptContextPathScope,
+  });
+}
 
 async function listDirectoryPromptContextEntries(input: {
   directoryPath: string;
@@ -114,7 +103,7 @@ async function listDirectoryPromptContextEntries(input: {
     }));
 }
 
-async function listRecursivePromptContextEntries(input: {
+export async function listRecursivePromptContextEntries(input: {
   promptContextPathScope: PromptContextPathScope;
   maximumSearchEntryCount: number;
 }): Promise<PromptContextEntry[]> {
@@ -253,6 +242,40 @@ function normalizePromptContextQueryText(promptContextQueryText: string): string
     ? promptContextQueryText.slice(1)
     : promptContextQueryText;
   return queryWithoutLeadingQuote.replace(/\\([\\"\s])/g, "$1");
+}
+
+export function filterAndSortPromptContextEntries(input: {
+  promptContextEntries: readonly PromptContextEntry[];
+  promptContextQueryText: string;
+  maximumCandidateCount: number;
+  promptContextStartingDirectoryPath: string;
+  treatsEntriesAsPathQueryResults: boolean;
+}): PromptContextCandidate[] {
+  const normalizedPromptContextQueryText = normalizePromptContextQueryText(input.promptContextQueryText);
+  return input.promptContextEntries
+    .filter((entry) => {
+      if (normalizedPromptContextQueryText.length === 0) {
+        return true;
+      }
+
+      if (input.treatsEntriesAsPathQueryResults) {
+        return true;
+      }
+
+      return entry.displayPath.toLowerCase().includes(normalizedPromptContextQueryText.toLowerCase());
+    })
+    .sort((leftCandidate, rightCandidate) => comparePromptContextCandidates(
+      leftCandidate,
+      rightCandidate,
+      normalizedPromptContextQueryText,
+      input.promptContextStartingDirectoryPath,
+    ))
+    .slice(0, input.maximumCandidateCount)
+    .map((entry) => ({
+      kind: entry.kind,
+      displayPath: entry.displayPath,
+      promptReferenceText: buildPromptContextReferenceTextFromDisplayPath(entry.displayPath),
+    }));
 }
 
 function comparePromptContextCandidates(

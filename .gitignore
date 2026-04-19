@@ -5,7 +5,9 @@ dist/
 *.tsbuildinfo
 .env
 
-docs/
+docs/*
+!docs/
+!docs/openai-conversation-logic.md
 examples/
 skills/
 tui/

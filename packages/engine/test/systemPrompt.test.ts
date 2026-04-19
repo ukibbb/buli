@@ -33,10 +33,13 @@ test("requires simple explanations and strong challenge of risks", () => {
   expect(systemPromptText).toContain("Point out risks, dangers, and second-order effects clearly.");
 });
 
-test("documents truthful execution and bash approval", () => {
+test("documents truthful execution and selective bash approval", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
   expect(systemPromptText).toContain("Do not claim actions you did not take.");
   expect(systemPromptText).toContain("Do not imply capabilities that are not available.");
-  expect(systemPromptText).toContain("The bash tool requires explicit user approval before execution.");
+  expect(systemPromptText).toContain("Clearly non-destructive bash commands may run automatically.");
+  expect(systemPromptText).toContain(
+    "Destructive, state-changing, or ambiguous bash commands still require explicit user approval before execution.",
+  );
 });

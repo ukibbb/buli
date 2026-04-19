@@ -1,28 +1,36 @@
-import type { ProviderStreamEvent, ReasoningEffort } from "@buli/contracts";
+import type {
+  ConversationSessionEntry,
+  OpenAiProviderTurnReplay,
+  OpenAiProviderTurnReplayInputItem,
+  ProviderStreamEvent,
+  ReasoningEffort,
+} from "@buli/contracts";
 import {
   createFunctionCallOutputInputItem,
+  createOpenAiResponseReplayItems,
   createOpenAiResponsesInputItems,
   type OpenAiConversationInputItem,
 } from "./request.ts";
+import { writeOpenAiDebugLog } from "./debugLog.ts";
 import { createBashToolDefinition } from "./toolDefinitions.ts";
 import { parseOpenAiStream } from "./stream.ts";
-
-type OpenAiStableResponseOutputItem = {
-  type: string;
-  id?: string;
-  [fieldName: string]: unknown;
-};
 
 type OpenAiProviderToolResultSubmission = {
   toolCallId: string;
   toolResultText: string;
 };
 
+type HttpErrorDebugResponse = {
+  status: number;
+  headers: { get(name: string): string | null };
+  text(): Promise<string>;
+};
+
 function createHttpRequestBody(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   systemPromptText: string;
-  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem | OpenAiStableResponseOutputItem>;
+  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 }) {
   return {
     model: input.selectedModelId,
@@ -31,6 +39,7 @@ function createHttpRequestBody(input: {
     input: input.openAiInputItems,
     tools: [createBashToolDefinition()],
     parallel_tool_calls: false,
+    ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] } : {}),
     ...(input.selectedReasoningEffort ? { reasoning: { effort: input.selectedReasoningEffort } } : {}),
     stream: true,
   };
@@ -44,12 +53,13 @@ export class OpenAiProviderConversationTurn {
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
   readonly systemPromptText: string;
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
-  readonly openAiConversationInputItems: Array<OpenAiConversationInputItem | OpenAiStableResponseOutputItem>;
-  currentPendingToolResultSubmission: {
-    toolCallId: string;
-    resolveSubmission: (toolResultSubmission: OpenAiProviderToolResultSubmission) => void;
-  } | undefined;
-  queuedToolResultSubmission: OpenAiProviderToolResultSubmission | undefined;
+  readonly openAiConversationInputItems: OpenAiConversationInputItem[];
+  readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
+  readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
+  readonly pendingToolResultSubmissionResolverByToolCallId: Map<
+    string,
+    (toolResultSubmission: OpenAiProviderToolResultSubmission) => void
+  >;
   hasStartedStreamingProviderEvents = false;
 
   constructor(input: {
@@ -59,7 +69,7 @@ export class OpenAiProviderConversationTurn {
     selectedModelId: string;
     selectedReasoningEffort?: ReasoningEffort;
     systemPromptText: string;
-    modelContextItems: Parameters<typeof createOpenAiResponsesInputItems>[0];
+    conversationSessionEntries: readonly ConversationSessionEntry[];
     onStepRequestFailed: (response: Response) => Promise<Error>;
   }) {
     this.endpoint = input.endpoint;
@@ -69,17 +79,35 @@ export class OpenAiProviderConversationTurn {
     this.selectedReasoningEffort = input.selectedReasoningEffort;
     this.systemPromptText = input.systemPromptText;
     this.onStepRequestFailed = input.onStepRequestFailed;
-    this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.modelContextItems);
+    this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
+    this.providerTurnReplayInputItems = [];
+    this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
+    this.pendingToolResultSubmissionResolverByToolCallId = new Map<
+      string,
+      (toolResultSubmission: OpenAiProviderToolResultSubmission) => void
+    >();
   }
 
   async submitToolResult(input: OpenAiProviderToolResultSubmission): Promise<void> {
-    if (this.currentPendingToolResultSubmission?.toolCallId === input.toolCallId) {
-      this.currentPendingToolResultSubmission.resolveSubmission(input);
-      this.currentPendingToolResultSubmission = undefined;
+    const resolveSubmission = this.pendingToolResultSubmissionResolverByToolCallId.get(input.toolCallId);
+    if (resolveSubmission) {
+      this.pendingToolResultSubmissionResolverByToolCallId.delete(input.toolCallId);
+      resolveSubmission(input);
       return;
     }
 
-    this.queuedToolResultSubmission = input;
+    this.queuedToolResultSubmissionByToolCallId.set(input.toolCallId, input);
+  }
+
+  getProviderTurnReplay(): OpenAiProviderTurnReplay | undefined {
+    if (this.providerTurnReplayInputItems.length === 0) {
+      return undefined;
+    }
+
+    return {
+      provider: "openai",
+      inputItems: [...this.providerTurnReplayInputItems],
+    };
   }
 
   async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
@@ -89,20 +117,22 @@ export class OpenAiProviderConversationTurn {
     this.hasStartedStreamingProviderEvents = true;
 
     while (true) {
+      const requestBody = createHttpRequestBody({
+        selectedModelId: this.selectedModelId,
+        ...(this.selectedReasoningEffort ? { selectedReasoningEffort: this.selectedReasoningEffort } : {}),
+        systemPromptText: this.systemPromptText,
+        openAiInputItems: this.openAiConversationInputItems,
+      });
+      await writeOpenAiDebugLog("OpenAI responses request", requestBody);
+
       const response = await this.fetchImpl(this.endpoint, {
         method: "POST",
         headers: await this.loadRequestHeaders(),
-        body: JSON.stringify(
-          createHttpRequestBody({
-            selectedModelId: this.selectedModelId,
-            ...(this.selectedReasoningEffort ? { selectedReasoningEffort: this.selectedReasoningEffort } : {}),
-            systemPromptText: this.systemPromptText,
-            openAiInputItems: this.openAiConversationInputItems,
-          }),
-        ),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
+        await writeOpenAiDebugLog("OpenAI responses request failed", await createFailedResponseDebugPayload(response.clone()));
         throw await this.onStepRequestFailed(response);
       }
 
@@ -119,11 +149,29 @@ export class OpenAiProviderConversationTurn {
       }
 
       if (terminalState.terminalKind === "tool_call_requested") {
-        this.openAiConversationInputItems.push(...stripTransientIdsFromResponseOutputItems(terminalState.responseOutputItems));
+        const responseReplayItems = createOpenAiResponseReplayItems(terminalState.responseOutputItems);
+        await writeOpenAiDebugLog("OpenAI tool-call terminal state", {
+          toolCallId: terminalState.toolCallId,
+          toolCallRequest: terminalState.toolCallRequest,
+          responseOutputItems: terminalState.responseOutputItems,
+          responseReplayItems,
+        });
+        if (!responseReplayItems.providerTurnReplayInputItems.some(isMatchingFunctionCallReplayItem(terminalState.toolCallId))) {
+          throw new Error(
+            `OpenAI response omitted a replayable function_call item for tool call ${terminalState.toolCallId}.`,
+          );
+        }
+
+        this.openAiConversationInputItems.push(...responseReplayItems.continuationInputItems);
+        this.providerTurnReplayInputItems.push(...responseReplayItems.providerTurnReplayInputItems);
         const toolResultSubmission = await this.waitForToolResultSubmission(terminalState.toolCallId);
-        this.openAiConversationInputItems.push(
-          createFunctionCallOutputInputItem(toolResultSubmission.toolCallId, toolResultSubmission.toolResultText),
+        const functionCallOutputInputItem = createFunctionCallOutputInputItem(
+          toolResultSubmission.toolCallId,
+          toolResultSubmission.toolResultText,
         );
+        await writeOpenAiDebugLog("OpenAI tool result submission", functionCallOutputInputItem);
+        this.openAiConversationInputItems.push(functionCallOutputInputItem);
+        this.providerTurnReplayInputItems.push(functionCallOutputInputItem);
         continue;
       }
 
@@ -132,37 +180,57 @@ export class OpenAiProviderConversationTurn {
   }
 
   private waitForToolResultSubmission(toolCallId: string): Promise<OpenAiProviderToolResultSubmission> {
-    if (this.queuedToolResultSubmission?.toolCallId === toolCallId) {
-      const queuedToolResultSubmission = this.queuedToolResultSubmission;
-      this.queuedToolResultSubmission = undefined;
+    const queuedToolResultSubmission = this.queuedToolResultSubmissionByToolCallId.get(toolCallId);
+    if (queuedToolResultSubmission) {
+      this.queuedToolResultSubmissionByToolCallId.delete(toolCallId);
       return Promise.resolve(queuedToolResultSubmission);
     }
 
     return new Promise<OpenAiProviderToolResultSubmission>((resolveSubmission) => {
-      this.currentPendingToolResultSubmission = {
-        toolCallId,
-        resolveSubmission,
-      };
+      this.pendingToolResultSubmissionResolverByToolCallId.set(toolCallId, (toolResultSubmission) => {
+        this.pendingToolResultSubmissionResolverByToolCallId.delete(toolCallId);
+        resolveSubmission(toolResultSubmission);
+      });
     });
   }
 }
 
-function isOpenAiStableResponseOutputItem(value: unknown): value is OpenAiStableResponseOutputItem {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    typeof (value as { type?: unknown }).type === "string"
-  );
+function shouldIncludeReasoningEncryptedContent(input: {
+  selectedModelId: string;
+  selectedReasoningEffort?: ReasoningEffort;
+  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
+}): boolean {
+  if (input.selectedReasoningEffort) {
+    return true;
+  }
+
+  if (input.openAiInputItems.some(isOpenAiReasoningInputItem)) {
+    return true;
+  }
+
+  return /gpt-5|codex/i.test(input.selectedModelId);
 }
 
-function stripTransientIdsFromResponseOutputItems(responseOutputItems: readonly unknown[]): OpenAiStableResponseOutputItem[] {
-  return responseOutputItems.flatMap((responseOutputItem) => {
-    if (!isOpenAiStableResponseOutputItem(responseOutputItem)) {
-      return [];
-    }
+function isMatchingFunctionCallReplayItem(toolCallId: string) {
+  return (openAiInputItem: OpenAiProviderTurnReplayInputItem): boolean =>
+    openAiInputItem.type === "function_call" && openAiInputItem.call_id === toolCallId;
+}
 
-    const { id: _ignoredTransientId, ...stableResponseOutputItem } = responseOutputItem;
-    return [stableResponseOutputItem];
-  });
+function isOpenAiReasoningInputItem(openAiInputItem: OpenAiConversationInputItem): openAiInputItem is Extract<OpenAiConversationInputItem, { type: "reasoning" }> {
+  return "type" in openAiInputItem && openAiInputItem.type === "reasoning";
+}
+
+async function createFailedResponseDebugPayload(response: HttpErrorDebugResponse): Promise<{
+  status: number;
+  requestId: string | null;
+  bodyText: string;
+}> {
+  return {
+    status: response.status,
+    requestId:
+      response.headers.get("x-request-id") ??
+      response.headers.get("request-id") ??
+      response.headers.get("openai-request-id"),
+    bodyText: await response.text(),
+  };
 }

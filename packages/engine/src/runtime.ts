@@ -35,6 +35,7 @@ import type {
 } from "./provider.ts";
 import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import { createCompletedAssistantResponseEvent } from "./turn.ts";
+import { classifyBashToolApprovalRequirement } from "./tools/bashToolApprovalPolicy.ts";
 import { runApprovedBashToolCall, createStartedBashToolCallDetail } from "./tools/bashTool.ts";
 import { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 
@@ -171,7 +172,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
 
     const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
       systemPromptText: buildBuliSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
-      modelContextItems: this.conversationHistory.buildModelContextItems(),
+      conversationSessionEntries: this.conversationHistory.listConversationSessionEntries(),
+      modelContextItems: this.conversationHistory.listModelContextItems(),
       selectedModelId: this.conversationTurnInput.selectedModelId,
       ...(this.conversationTurnInput.selectedReasoningEffort
         ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
@@ -278,9 +280,11 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           usage: providerStreamEvent.usage,
           id: assistantResponseMessageId,
         });
+        const providerTurnReplay = providerConversationTurn.getProviderTurnReplay();
         this.conversationHistory.appendConversationSessionEntry({
           entryKind: "assistant_message",
           assistantMessageText: completedAssistantResponseEvent.message.text,
+          ...(providerTurnReplay ? { providerTurnReplay } : {}),
         });
         yield completedAssistantResponseEvent;
         return;
@@ -319,39 +323,43 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
 
     const bashToolCallRequest: BashToolCallRequest = input.toolCallRequest;
     const startedToolCallDetail = createStartedBashToolCallDetail(bashToolCallRequest);
-    const { approvalId, approvalDecisionPromise } = this.createPendingToolApproval({
-      toolCallId: input.toolCallId,
-      toolCallRequest: bashToolCallRequest,
-    });
-    yield AssistantToolApprovalRequestedEventSchema.parse({
-      type: "assistant_tool_approval_requested",
-      approvalId,
-      pendingToolCallId: input.toolCallId,
-      pendingToolCallDetail: startedToolCallDetail,
-      riskExplanation: "This bash command will run inside the current workspace.",
-    });
-    const approvalDecision = await approvalDecisionPromise;
+    const bashToolApprovalDecision = classifyBashToolApprovalRequirement(bashToolCallRequest);
 
-    if (approvalDecision === "denied") {
-      const denialText = "The user denied this bash command, so it was not executed.";
-      this.conversationHistory.appendConversationSessionEntry({
-        entryKind: "denied_tool_result",
+    if (bashToolApprovalDecision.approvalPolicy === "requires_user_approval") {
+      const { approvalId, approvalDecisionPromise } = this.createPendingToolApproval({
         toolCallId: input.toolCallId,
-        toolCallDetail: startedToolCallDetail,
-        toolResultText: denialText,
-        denialExplanation: denialText,
+        toolCallRequest: bashToolCallRequest,
       });
-      yield AssistantToolCallDeniedEventSchema.parse({
-        type: "assistant_tool_call_denied",
-        toolCallId: input.toolCallId,
-        toolCallDetail: startedToolCallDetail,
-        denialText,
+      yield AssistantToolApprovalRequestedEventSchema.parse({
+        type: "assistant_tool_approval_requested",
+        approvalId,
+        pendingToolCallId: input.toolCallId,
+        pendingToolCallDetail: startedToolCallDetail,
+        riskExplanation: bashToolApprovalDecision.riskExplanation,
       });
-      await input.providerConversationTurn.submitToolResult({
-        toolCallId: input.toolCallId,
-        toolResultText: denialText,
-      });
-      return;
+      const approvalDecision = await approvalDecisionPromise;
+
+      if (approvalDecision === "denied") {
+        const denialText = "The user denied this bash command, so it was not executed.";
+        this.conversationHistory.appendConversationSessionEntry({
+          entryKind: "denied_tool_result",
+          toolCallId: input.toolCallId,
+          toolCallDetail: startedToolCallDetail,
+          toolResultText: denialText,
+          denialExplanation: denialText,
+        });
+        yield AssistantToolCallDeniedEventSchema.parse({
+          type: "assistant_tool_call_denied",
+          toolCallId: input.toolCallId,
+          toolCallDetail: startedToolCallDetail,
+          denialText,
+        });
+        await input.providerConversationTurn.submitToolResult({
+          toolCallId: input.toolCallId,
+          toolResultText: denialText,
+        });
+        return;
+      }
     }
 
     yield AssistantToolCallStartedEventSchema.parse({

@@ -289,3 +289,70 @@ test("ConversationTranscriptPane keeps full transcript height stable when only t
     await renderedConversationTranscriptPane.waitUntilExit();
   }
 });
+
+test("ConversationTranscriptPane does not re-emit pointer-zone measurements when only the scroll offset changes", async () => {
+  const mockStdout = createMockStdout();
+  const measuredConversationTranscriptPointerZones: Array<{
+    leftColumn: number;
+    topRow: number;
+    width: number;
+    height: number;
+  }> = [];
+  const conversationTranscriptEntries: ConversationTranscriptEntry[] = Array.from({ length: 6 }, (_, index) => ({
+    kind: "message",
+    message: {
+      id: `user-${index}`,
+      role: "user",
+      text: `Message ${index + 1}`,
+    },
+  }));
+
+  const renderedConversationTranscriptPane = render(
+    <Box flexDirection="column" height={4}>
+      <ConversationTranscriptPane
+        conversationTranscriptEntries={conversationTranscriptEntries}
+        hiddenTranscriptRowsAboveViewport={0}
+        onConversationTranscriptViewportMeasured={() => {}}
+        onConversationTranscriptPointerZoneMeasured={(conversationTranscriptPointerZone) => {
+          if (conversationTranscriptPointerZone) {
+            measuredConversationTranscriptPointerZones.push(conversationTranscriptPointerZone);
+          }
+        }}
+      />
+    </Box>,
+    {
+      debug: true,
+      stdout: mockStdout,
+    },
+  );
+
+  try {
+    await renderedConversationTranscriptPane.waitUntilRenderFlush();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(measuredConversationTranscriptPointerZones.length).toBeGreaterThan(0);
+
+    measuredConversationTranscriptPointerZones.length = 0;
+    renderedConversationTranscriptPane.rerender(
+      <Box flexDirection="column" height={4}>
+        <ConversationTranscriptPane
+          conversationTranscriptEntries={conversationTranscriptEntries}
+          hiddenTranscriptRowsAboveViewport={2}
+          onConversationTranscriptViewportMeasured={() => {}}
+          onConversationTranscriptPointerZoneMeasured={(conversationTranscriptPointerZone) => {
+            if (conversationTranscriptPointerZone) {
+              measuredConversationTranscriptPointerZones.push(conversationTranscriptPointerZone);
+            }
+          }}
+        />
+      </Box>,
+    );
+    await renderedConversationTranscriptPane.waitUntilRenderFlush();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(measuredConversationTranscriptPointerZones).toHaveLength(0);
+  } finally {
+    renderedConversationTranscriptPane.unmount();
+    await renderedConversationTranscriptPane.waitUntilExit();
+  }
+});

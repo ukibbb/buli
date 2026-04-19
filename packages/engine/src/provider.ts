@@ -1,4 +1,11 @@
-import type { AssistantResponseEvent, ModelContextItem, ProviderStreamEvent, ReasoningEffort } from "@buli/contracts";
+import type {
+  AssistantResponseEvent,
+  ConversationSessionEntry,
+  ModelContextItem,
+  ProviderStreamEvent,
+  ProviderTurnReplay,
+  ReasoningEffort,
+} from "@buli/contracts";
 
 export type ConversationTurnRequest = {
   userPromptText: string;
@@ -8,6 +15,7 @@ export type ConversationTurnRequest = {
 
 export type ProviderConversationTurnRequest = {
   systemPromptText: string;
+  conversationSessionEntries: readonly ConversationSessionEntry[];
   modelContextItems: readonly ModelContextItem[];
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -21,6 +29,7 @@ export type ProviderToolResultSubmission = {
 export interface ProviderConversationTurn {
   streamProviderEvents(): AsyncIterable<ProviderStreamEvent>;
   submitToolResult(input: ProviderToolResultSubmission): Promise<void>;
+  getProviderTurnReplay(): ProviderTurnReplay | undefined;
 }
 
 export interface ConversationTurnProvider {

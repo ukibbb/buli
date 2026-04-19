@@ -18,6 +18,13 @@ function buildResponseWithSseFixture(fixtureFileName: string): Response {
 function createConversationTurnRequest(input: { messageText: string }) {
   return {
     systemPromptText: "You are buli.",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt" as const,
+        promptText: input.messageText,
+        modelFacingPromptText: input.messageText,
+      },
+    ],
     modelContextItems: [{ itemKind: "user_message" as const, messageText: input.messageText }],
     selectedModelId: "gpt-5.4",
   };
@@ -114,6 +121,88 @@ test("parseOpenAiStream re-emits reasoning summary chunks in order", async () =>
   expect(emittedEventTypes).toContain("reasoning_summary_started");
   expect(emittedEventTypes).toContain("reasoning_summary_text_chunk");
   expect(emittedEventTypes).toContain("reasoning_summary_completed");
+});
+
+test("parseOpenAiStream ignores unknown SSE event types and malformed hot delta payloads", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.unknown_event","foo":"bar"}\n\n',
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":42}\n\n',
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Hello"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect(await collectParsedEvents(response)).toEqual([
+    {
+      type: "text_chunk",
+      text: "Hello",
+    },
+    {
+      type: "completed",
+      usage: {
+        total: 15,
+        input: 10,
+        output: 5,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
+test("parseOpenAiStream emits reasoning_summary_completed before the first non-reasoning text chunk", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.reasoning_summary_text.delta","item_id":"r_1","delta":"Thinking"}\n\n',
+      'data: {"type":"response.reasoning_summary_text.done","item_id":"r_1"}\n\n',
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Answer"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect((await collectParsedEvents(response)).map((emittedEvent) => emittedEvent.type)).toEqual([
+    "reasoning_summary_started",
+    "reasoning_summary_text_chunk",
+    "reasoning_summary_completed",
+    "text_chunk",
+    "completed",
+  ]);
+});
+
+test("parseOpenAiStream emits tool_call_requested only once when arguments.done and output_item.done both make the call ready", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect(await collectParsedEvents(response)).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+});
+
+test("parseOpenAiStream throws when a terminal completed event has malformed usage", async () => {
+  const response = new Response(
+    'data: {"type":"response.completed","response":{"usage":{"input_tokens":"oops"}}}\n\n',
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow();
 });
 
 test("parseOpenAiStream emits tool_call_requested and returns a tool-request terminal state", async () => {
@@ -251,6 +340,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       model: "gpt-5.4",
       instructions: "You are buli.",
       store: false,
+      include: ["reasoning.encrypted_content"],
       input: [
         {
           role: "user",
@@ -349,6 +439,13 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
     const provider = new OpenAiProvider({ endpoint: `http://127.0.0.1:${address.port}`, store });
     const providerTurn = provider.startConversationTurn({
       systemPromptText: "You are buli.",
+      conversationSessionEntries: [
+        {
+          entryKind: "user_prompt",
+          promptText: "Think harder",
+          modelFacingPromptText: "Think harder",
+        },
+      ],
       modelContextItems: [{ itemKind: "user_message", messageText: "Think harder" }],
       selectedModelId: "gpt-5.4",
       selectedReasoningEffort: "high",
@@ -359,6 +456,7 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
 
     expect(JSON.parse(requests[0] ?? "{}")).toMatchObject({
       instructions: "You are buli.",
+      include: ["reasoning.encrypted_content"],
       reasoning: { effort: "high" },
     });
   } finally {
@@ -399,13 +497,19 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
 
       if (requests.length === 1) {
         response.write(
-          'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+          'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"encrypted-reasoning"}}\n\n',
+        );
+        response.write(
+          'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Running pwd first."}]}}\n\n',
+        );
+        response.write(
+          'data: {"type":"response.output_item.added","output_index":2,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
         );
         response.write(
           'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
         );
         response.write(
-          'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+          'data: {"type":"response.completed","response":{"output":[{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"encrypted-reasoning"},{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Running pwd first."}]},{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}","status":"completed"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
         );
       } else {
         response.write('data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n');
@@ -448,6 +552,17 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
           content: "Run pwd",
         },
         {
+          type: "reasoning",
+          id: "rs_1",
+          encrypted_content: "encrypted-reasoning",
+          summary: [],
+        },
+        {
+          role: "assistant",
+          content: "Running pwd first.",
+        },
+        {
+          id: "fc_1",
           type: "function_call",
           call_id: "call_1",
           name: "bash",
@@ -459,6 +574,7 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
           output: "Command: pwd\nWorking directory: /tmp\nExit code: 0",
         },
       ],
+      include: ["reasoning.encrypted_content"],
     });
   } finally {
     await new Promise<void>((resolve, reject) => {

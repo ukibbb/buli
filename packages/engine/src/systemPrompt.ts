@@ -32,6 +32,10 @@ export function buildBuliSystemPrompt(input: { workspaceRootPath: string }): str
       "- Do not imply capabilities that are not available.",
       "- Once the user agrees on the intended outcome and approach, prefer the smallest correct change and verify important results before claiming success.",
     ].join("\n"),
-    ["Safety:", "- The bash tool requires explicit user approval before execution."].join("\n"),
+    [
+      "Safety:",
+      "- Clearly non-destructive bash commands may run automatically.",
+      "- Destructive, state-changing, or ambiguous bash commands still require explicit user approval before execution.",
+    ].join("\n"),
   ].join("\n\n");
 }

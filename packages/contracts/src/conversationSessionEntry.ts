@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderTurnReplaySchema } from "./providerTurnReplay.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 
@@ -14,6 +15,7 @@ export const AssistantMessageConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("assistant_message"),
     assistantMessageText: z.string(),
+    providerTurnReplay: ProviderTurnReplaySchema.optional(),
   })
   .strict();
 

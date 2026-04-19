@@ -55,6 +55,8 @@ export type {
   UserPromptConversationSessionEntry,
 } from "./conversationSessionEntry.ts";
 export {
+  OpenAiReasoningReplayItemSchema,
+  OpenAiReasoningSummaryReplayPartSchema,
   OpenAiFunctionCallOutputReplayItemSchema,
   OpenAiFunctionCallReplayItemSchema,
   OpenAiProviderTurnReplayInputItemSchema,
@@ -62,6 +64,8 @@ export {
   ProviderTurnReplaySchema,
 } from "./providerTurnReplay.ts";
 export type {
+  OpenAiReasoningReplayItem,
+  OpenAiReasoningSummaryReplayPart,
   OpenAiFunctionCallOutputReplayItem,
   OpenAiFunctionCallReplayItem,
   OpenAiProviderTurnReplay,

@@ -1,4 +1,4 @@
-import type { AvailableAssistantModel, ModelContextItem, ReasoningEffort } from "@buli/contracts";
+import type { AvailableAssistantModel, ConversationSessionEntry, ModelContextItem, ReasoningEffort } from "@buli/contracts";
 import { z } from "zod";
 import { OPENAI_CODEX_API_ENDPOINT } from "../auth/constants.ts";
 import { refreshStoredAuth } from "../auth/refresh.ts";
@@ -19,6 +19,7 @@ const OpenAiErrorResponseBodySchema = z
 
 export type OpenAiConversationTurnRequest = {
   systemPromptText: string;
+  conversationSessionEntries: readonly ConversationSessionEntry[];
   modelContextItems: readonly ModelContextItem[];
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -139,7 +140,7 @@ export class OpenAiProvider {
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       systemPromptText: input.systemPromptText,
-      modelContextItems: input.modelContextItems,
+      conversationSessionEntries: input.conversationSessionEntries,
       onStepRequestFailed: async (response) => createHttpError(response, "stream"),
     });
   }
