@@ -4,7 +4,29 @@ import { TodoWriteToolCallCard } from "../../../src/components/toolCalls/TodoWri
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("TodoWriteToolCallCard (opentui)", () => {
-  test("renders progress label, todo items, and accentPrimaryMuted sentinel", async () => {
+  test("streaming: renders TodoWrite label, bracketed item count, and updating status", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <TodoWriteToolCallCard
+        toolCallDetail={{
+          toolName: "todowrite",
+          todoItems: [
+            { todoItemTitle: "draft palette", todoItemStatus: "in_progress" },
+            { todoItemTitle: "render gallery", todoItemStatus: "pending" },
+          ],
+        }}
+        renderState="streaming"
+      />,
+      { width: 120, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("TodoWrite");
+    expect(frame).toMatch(/\[\d+ items/);
+    expect(frame).toContain("updating");
+    expect(frame).toContain("draft palette");
+  });
+
+  test("completed: renders TodoWrite label, bracketed item count, and updated status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TodoWriteToolCallCard
         toolCallDetail={{
@@ -21,14 +43,15 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("done");
-    expect(frame).toContain("active");
+    expect(frame).toContain("TodoWrite");
+    expect(frame).toMatch(/\[\d+ items/);
+    expect(frame).toContain("updated");
     expect(frame).toContain("palette");
     expect(frame).toContain("gallery");
-    expect(chatScreenTheme.accentPrimaryMuted).toBe("#818CF8");
+    expect(chatScreenTheme.accentGreen).toBeDefined();
   });
 
-  test("failed renders accentRed sentinel and error text", async () => {
+  test("failed: renders TodoWrite label, accentRed sentinel, and error text", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TodoWriteToolCallCard
         toolCallDetail={{ toolName: "todowrite", todoItems: [] }}
@@ -39,6 +62,7 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("TodoWrite");
     expect(frame).toContain("storage");
     expect(frame).toContain("offline");
     expect(chatScreenTheme.accentRed).toBe("#EF4444");

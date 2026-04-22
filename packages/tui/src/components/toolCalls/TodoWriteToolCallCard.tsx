@@ -4,14 +4,12 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Checklist } from "../primitives/Checklist.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";
+import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
 
-// TodoWriteToolCallCard renders the agent's live to-do list. The summary
-// counts completed over total so the user can glance at the header to see
-// overall progress, while the body shows every item with its status glyph.
 export type TodoWriteToolCallCardProps = {
   toolCallDetail: ToolCallTodoWriteDetail;
   renderState: "streaming" | "completed" | "failed";
@@ -20,8 +18,12 @@ export type TodoWriteToolCallCardProps = {
 };
 
 export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactNode {
-  const stripeColor =
-    props.renderState === "failed" ? chatScreenTheme.accentRed : chatScreenTheme.accentPrimaryMuted;
+  const accentColor =
+    props.renderState === "failed"
+      ? chatScreenTheme.accentRed
+      : props.renderState === "streaming"
+        ? chatScreenTheme.accentAmber
+        : chatScreenTheme.accentGreen;
   const statusKind =
     props.renderState === "completed"
       ? "success"
@@ -30,17 +32,20 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
         : "pending";
   return (
     <SurfaceCard
-      stripeColor={stripeColor}
+      accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
           toolGlyph={glyphs.todoList}
-          toolGlyphColor={stripeColor}
-          toolNameLabel="Plan"
+          toolGlyphColor={accentColor}
+          toolNameLabel="TodoWrite"
+          toolTargetContent={
+            <BracketedTarget accentColor={accentColor} targetText={buildTodoTargetText(props)} />
+          }
         />
       }
       headerRight={
         <ToolCallHeaderRight
-          statusColor={stripeColor}
+          statusColor={accentColor}
           statusKind={statusKind}
           statusLabel={buildTodoStatusLabel(props)}
         />
@@ -63,12 +68,24 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
   );
 }
 
+function buildTodoTargetText(props: TodoWriteToolCallCardProps): string {
+  const todoItems = props.toolCallDetail.todoItems;
+  const totalCount = todoItems.length;
+  const inProgressCount = todoItems.filter(
+    (toolCallTodoItem) => toolCallTodoItem.todoItemStatus === "in_progress",
+  ).length;
+  if (inProgressCount > 0) {
+    return `${totalCount} items · ${inProgressCount} in progress`;
+  }
+  return `${totalCount} items`;
+}
+
 function buildTodoStatusLabel(props: TodoWriteToolCallCardProps): string {
   if (props.renderState === "failed") {
     return props.errorText ?? "plan update failed";
   }
-  const todoItems = props.toolCallDetail.todoItems;
-  const completedCount = todoItems.filter((toolCallTodoItem) => toolCallTodoItem.todoItemStatus === "completed").length;
-  const inProgressCount = todoItems.filter((toolCallTodoItem) => toolCallTodoItem.todoItemStatus === "in_progress").length;
-  return `${completedCount}/${todoItems.length} done${inProgressCount > 0 ? ` · ${inProgressCount} active` : ""}`;
+  if (props.renderState === "streaming") {
+    return "updating…";
+  }
+  return "updated";
 }
