@@ -9,6 +9,13 @@ export type SurfaceCardProps = {
   borderColor?: string;
 };
 
+// The hairline glyph (U+258F, LEFT ONE EIGHTH BLOCK) paints only the leftmost
+// 1/8 of a character cell, giving the accent a sub-cell visual thickness. The
+// repeat count just has to exceed any reasonable card height; overflow is
+// clipped by the parent box.
+const HAIRLINE_GLYPH = "▏";
+const HAIRLINE_COLUMN = Array.from({ length: 200 }, () => HAIRLINE_GLYPH).join("\n");
+
 export function SurfaceCard(props: SurfaceCardProps): ReactNode {
   return (
     <box
@@ -18,7 +25,9 @@ export function SurfaceCard(props: SurfaceCardProps): ReactNode {
       flexDirection="row"
       width="100%"
     >
-      <box backgroundColor={props.accentColor} width={1} flexShrink={0} />
+      <box width={1} flexShrink={0} overflow="hidden">
+        <text fg={props.accentColor} position="absolute">{HAIRLINE_COLUMN}</text>
+      </box>
       <box flexDirection="column" flexGrow={1}>
         <box
           flexDirection="row"
