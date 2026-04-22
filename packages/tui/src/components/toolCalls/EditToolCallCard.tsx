@@ -2,18 +2,14 @@ import type { ReactNode } from "react";
 import type { ToolCallEditDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { DiffBlock } from "../primitives/DiffBlock.tsx";
-import { FileReference } from "../primitives/FileReference.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";
+import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
 
-// EditToolCallCard covers both the success and error variants from the pen
-// file (toolCall_edit_success / toolCall_edit_error). Success uses the green
-// stripe plus diff body; error uses the red stripe, no body, and surfaces the
-// error message in the status slot.
 export type EditToolCallCardProps = {
   toolCallDetail: ToolCallEditDetail;
   renderState: "streaming" | "completed" | "failed";
@@ -22,8 +18,12 @@ export type EditToolCallCardProps = {
 };
 
 export function EditToolCallCard(props: EditToolCallCardProps): ReactNode {
-  const stripeColor =
-    props.renderState === "failed" ? chatScreenTheme.accentRed : chatScreenTheme.accentGreen;
+  const accentColor =
+    props.renderState === "failed"
+      ? chatScreenTheme.accentRed
+      : props.renderState === "streaming"
+        ? chatScreenTheme.accentAmber
+        : chatScreenTheme.accentGreen;
   const statusKind =
     props.renderState === "completed"
       ? "success"
@@ -32,63 +32,46 @@ export function EditToolCallCard(props: EditToolCallCardProps): ReactNode {
         : "pending";
   return (
     <SurfaceCard
-      stripeColor={stripeColor}
+      accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
           toolGlyph={glyphs.editPencil}
-          toolGlyphColor={stripeColor}
+          toolGlyphColor={accentColor}
           toolNameLabel="Edit"
           toolTargetContent={
-            <FileReference filePath={props.toolCallDetail.editedFilePath} variant="inline" />
+            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.editedFilePath} />
           }
         />
       }
       headerRight={
-        props.renderState === "completed" ? (
-          <EditSuccessStatusSlot
-            {...(props.toolCallDetail.addedLineCount !== undefined
-              ? { addedLineCount: props.toolCallDetail.addedLineCount }
-              : {})}
-            {...(props.toolCallDetail.removedLineCount !== undefined
-              ? { removedLineCount: props.toolCallDetail.removedLineCount }
-              : {})}
-          />
-        ) : (
-          <ToolCallHeaderRight
-            statusColor={stripeColor}
-            statusKind={statusKind}
-            statusLabel={props.renderState === "failed" ? props.errorText ?? "edit failed" : "editing…"}
-          />
-        )
+        <ToolCallHeaderRight
+          statusColor={accentColor}
+          statusKind={statusKind}
+          statusLabel={buildEditStatusLabel(props)}
+        />
       }
       bodyContent={buildEditBodyContent(props)}
     />
   );
 }
 
-function EditSuccessStatusSlot(props: {
-  addedLineCount?: number;
-  removedLineCount?: number;
-}): ReactNode {
-  return (
-    <box>
-      {props.addedLineCount !== undefined ? (
-        <text>
-          <b fg={chatScreenTheme.accentGreen}>{`+${props.addedLineCount}`}</b>
-        </text>
-      ) : null}
-      {props.removedLineCount !== undefined ? (
-        <box marginLeft={1}>
-          <text>
-            <b fg={chatScreenTheme.accentRed}>{`-${props.removedLineCount}`}</b>
-          </text>
-        </box>
-      ) : null}
-      <box marginLeft={1}>
-        <text fg={chatScreenTheme.accentGreen}>{glyphs.checkMark}</text>
-      </box>
-    </box>
-  );
+function buildEditStatusLabel(props: EditToolCallCardProps): string {
+  if (props.renderState === "failed") {
+    return props.errorText ?? "edit failed";
+  }
+  if (props.renderState === "streaming") {
+    return "editing…";
+  }
+  const addedLineCount = props.toolCallDetail.addedLineCount;
+  const removedLineCount = props.toolCallDetail.removedLineCount;
+  const parts: string[] = [];
+  if (addedLineCount !== undefined) {
+    parts.push(`+${addedLineCount}`);
+  }
+  if (removedLineCount !== undefined) {
+    parts.push(`−${removedLineCount}`);
+  }
+  return parts.length > 0 ? parts.join(" ") : "edited";
 }
 
 function buildEditBodyContent(props: EditToolCallCardProps): ReactNode {

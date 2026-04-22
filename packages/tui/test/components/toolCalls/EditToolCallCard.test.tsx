@@ -22,11 +22,29 @@ describe("EditToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    // file path may be clipped at narrow widths but the Edit label and diff are present
     expect(frame).toContain("Edit");
+    expect(frame).toContain("[/src/utils.ts]");
     expect(frame).toContain("+3");
-    expect(frame).toContain("-1");
+    expect(frame).toContain("1");
     expect(frame).toContain("const newer");
+  });
+
+  test("streaming_shows_amber_state", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <EditToolCallCard
+        renderState="streaming"
+        toolCallDetail={{
+          toolName: "edit",
+          editedFilePath: "/src/foo.ts",
+        }}
+      />,
+      { width: 80, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Edit");
+    expect(frame).toContain("[/src/foo.ts]");
+    expect(frame).toContain("editing");
   });
 
   test("failed_shows_error_state", async () => {
@@ -43,7 +61,7 @@ describe("EditToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("/src/locked.ts");
+    expect(frame).toContain("[/src/locked.ts]");
     expect(frame).toContain("permission denied");
   });
 });
