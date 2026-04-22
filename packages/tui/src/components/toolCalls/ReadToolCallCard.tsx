@@ -2,19 +2,14 @@ import type { ReactNode } from "react";
 import type { ToolCallReadDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
-import { FileReference } from "../primitives/FileReference.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";
+import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
 
-// ReadToolCallCard renders the design's component/ToolCall-Read: green stripe,
-// file icon, tool name, file-path target, and a lineCount · byteCount status.
-// While in flight we show a pending dot; once completed the status flips to
-// ✓ and the preview body renders with line numbers and optional syntax
-// highlighting.
 export type ReadToolCallCardProps = {
   toolCallDetail: ToolCallReadDetail;
   renderState: "streaming" | "completed" | "failed";
@@ -23,10 +18,12 @@ export type ReadToolCallCardProps = {
 };
 
 export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
-  const stripeColor =
-    props.renderState === "failed" ? chatScreenTheme.accentRed : chatScreenTheme.accentGreen;
-  const statusColor = stripeColor;
-  const statusLabel = buildReadStatusLabel(props);
+  const accentColor =
+    props.renderState === "failed"
+      ? chatScreenTheme.accentRed
+      : props.renderState === "streaming"
+        ? chatScreenTheme.accentAmber
+        : chatScreenTheme.accentGreen;
   const statusKind =
     props.renderState === "completed"
       ? "success"
@@ -35,17 +32,23 @@ export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
         : "pending";
   return (
     <SurfaceCard
-      stripeColor={stripeColor}
+      accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
           toolGlyph={glyphs.fileText}
-          toolGlyphColor={stripeColor}
+          toolGlyphColor={accentColor}
           toolNameLabel="Read"
-          toolTargetContent={<FileReference filePath={props.toolCallDetail.readFilePath} variant="inline" />}
+          toolTargetContent={
+            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.readFilePath} />
+          }
         />
       }
       headerRight={
-        <ToolCallHeaderRight statusColor={statusColor} statusKind={statusKind} statusLabel={statusLabel} />
+        <ToolCallHeaderRight
+          statusColor={accentColor}
+          statusKind={statusKind}
+          statusLabel={buildReadStatusLabel(props)}
+        />
       }
       bodyContent={buildReadBodyContent(props)}
     />
