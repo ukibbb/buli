@@ -25,7 +25,7 @@ describe("EditToolCallCard", () => {
     expect(frame).toContain("Edit");
     expect(frame).toContain("[/src/utils.ts]");
     expect(frame).toContain("+3");
-    expect(frame).toContain("1");
+    expect(frame).toContain("−1");
     expect(frame).toContain("const newer");
   });
 
