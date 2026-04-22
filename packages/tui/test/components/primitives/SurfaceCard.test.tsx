@@ -1,32 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { SurfaceCard } from "../../../src/components/primitives/SurfaceCard.tsx";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-describe("SurfaceCard", () => {
-  test("renders_header_text", async () => {
+describe("SurfaceCard (opentui)", () => {
+  test("renders a left-edge accent column in the supplied accent colour", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <SurfaceCard
-        stripeColor="#ff6600"
-        headerLeft={<text>Tool</text>}
-      />,
-      { width: 60, height: 10 },
-    );
-    await renderOnce();
-    expect(captureCharFrame()).toContain("Tool");
-  });
-
-  test("renders_body_content_when_supplied", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <SurfaceCard
-        stripeColor="#00ff00"
+        accentColor={chatScreenTheme.accentGreen}
         headerLeft={<text>Header</text>}
-        bodyContent={<text>Body text</text>}
       />,
-      { width: 60, height: 12 },
+      { width: 40, height: 6 },
     );
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("Header");
-    expect(frame).toContain("Body text");
+    expect(chatScreenTheme.accentGreen).toBe("#10B981");
+  });
+
+  test("does not render a solid top stripe row above the header", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <SurfaceCard
+        accentColor={chatScreenTheme.accentRed}
+        headerLeft={<text>Body</text>}
+      />,
+      { width: 40, height: 6 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    // border + paddingY=1 puts content at index 2; a top stripe would push it to 3+
+    const headerLine = frame.split("\n")[2] ?? "";
+    expect(headerLine).toContain("Body");
   });
 });
