@@ -2,11 +2,6 @@ import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "../glyphs.ts";
 
-// Small shared helpers for the two sides of a tool-call card header so each
-// variant doesn't repeat the same glyph-plus-label layout. Keeping these
-// component-shaped (not string utilities) means the caller can weave in a
-// FileReference, a pattern, or a custom status glyph without rebuilding the
-// layout from scratch.
 export type ToolCallHeaderLeftProps = {
   toolGlyph: string;
   toolGlyphColor: string;
@@ -16,20 +11,15 @@ export type ToolCallHeaderLeftProps = {
 
 export function ToolCallHeaderLeft(props: ToolCallHeaderLeftProps): ReactNode {
   return (
-    <box>
-      <text>
-        <span fg={props.toolGlyphColor}>{props.toolGlyph}</span>
-      </text>
-      <text>
-        <b fg={chatScreenTheme.textPrimary}>{` ${props.toolNameLabel}`}</b>
-      </text>
+    <box flexDirection="row" alignItems="center">
+      <text fg={props.toolGlyphColor}>{props.toolGlyph}</text>
+      <box marginLeft={1}>
+        <text>
+          <b fg={chatScreenTheme.textPrimary}>{props.toolNameLabel}</b>
+        </text>
+      </box>
       {props.toolTargetContent ? (
-        <box marginLeft={1}>
-          <text>
-            <span fg={chatScreenTheme.textMuted}>{"· "}</span>
-          </text>
-          <box>{props.toolTargetContent}</box>
-        </box>
+        <box marginLeft={1}>{props.toolTargetContent}</box>
       ) : null}
     </box>
   );
@@ -49,13 +39,13 @@ export function ToolCallHeaderRight(props: ToolCallHeaderRightProps): ReactNode 
         ? glyphs.close
         : glyphs.statusDot;
   return (
-    <box>
+    <box flexDirection="row" alignItems="center">
       <text>
         <b fg={props.statusColor}>{props.statusLabel}</b>
       </text>
-      <text>
-        <span fg={props.statusColor}>{` ${statusGlyph}`}</span>
-      </text>
+      <box marginLeft={1}>
+        <text fg={props.statusColor}>{statusGlyph}</text>
+      </box>
     </box>
   );
 }
