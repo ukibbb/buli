@@ -3,7 +3,24 @@ import { testRender } from "../../testRenderWithCleanup.ts";
 import { GrepToolCallCard } from "../../../src/components/toolCalls/GrepToolCallCard.tsx";
 
 describe("GrepToolCallCard", () => {
-  test("completed_shows_pattern_and_match_count", async () => {
+  test("streaming_shows_bracketed_pattern", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <GrepToolCallCard
+        renderState="streaming"
+        toolCallDetail={{
+          toolName: "grep",
+          searchPattern: "useEffect",
+        }}
+      />,
+      { width: 80, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("[useEffect]");
+    expect(frame).toContain("searching");
+  });
+
+  test("completed_shows_bracketed_pattern_and_match_count", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GrepToolCallCard
         renderState="completed"
@@ -25,12 +42,12 @@ describe("GrepToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("useState");
+    expect(frame).toContain("[useState]");
     expect(frame).toContain("5 matches");
     expect(frame).toContain("/src/App.tsx");
   });
 
-  test("failed_shows_error_state", async () => {
+  test("failed_shows_bracketed_pattern_and_error", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GrepToolCallCard
         renderState="failed"
@@ -44,7 +61,7 @@ describe("GrepToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("badPattern");
+    expect(frame).toContain("[badPattern]");
     expect(frame).toContain("grep failed");
   });
 });
