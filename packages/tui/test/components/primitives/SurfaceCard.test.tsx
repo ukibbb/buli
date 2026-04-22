@@ -4,7 +4,7 @@ import { SurfaceCard } from "../../../src/components/primitives/SurfaceCard.tsx"
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("SurfaceCard (opentui)", () => {
-  test("renders a left-edge accent column in the supplied accent colour", async () => {
+  test("renders header content next to the accent column", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <SurfaceCard
         accentColor={chatScreenTheme.accentGreen}
@@ -13,9 +13,25 @@ describe("SurfaceCard (opentui)", () => {
       { width: 40, height: 6 },
     );
     await renderOnce();
+    // char-frame captures glyphs only; colour of the accent column cannot be asserted directly here.
     const frame = captureCharFrame();
     expect(frame).toContain("Header");
     expect(chatScreenTheme.accentGreen).toBe("#10B981");
+  });
+
+  test("renders body content below the header when supplied", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <SurfaceCard
+        accentColor={chatScreenTheme.accentGreen}
+        headerLeft={<text>Header</text>}
+        bodyContent={<text>BodyPayload</text>}
+      />,
+      { width: 40, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Header");
+    expect(frame).toContain("BodyPayload");
   });
 
   test("does not render a solid top stripe row above the header", async () => {
