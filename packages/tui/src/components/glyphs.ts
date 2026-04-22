@@ -23,7 +23,7 @@ export const glyphs = {
   fileText: "≡",
   grepSearch: "⌕",
   editPencil: "✎",
-  bashTerminal: "▸",
+  bashTerminal: ">_",
   todoList: "☐",
   taskSpawn: "◈",
 } as const;
