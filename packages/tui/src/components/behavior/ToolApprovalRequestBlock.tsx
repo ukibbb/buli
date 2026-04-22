@@ -22,7 +22,7 @@ export type ToolApprovalRequestBlockProps = {
 export function ToolApprovalRequestBlock(props: ToolApprovalRequestBlockProps): ReactNode {
   return (
     <SurfaceCard
-      stripeColor={chatScreenTheme.accentAmber}
+      accentColor={chatScreenTheme.accentAmber}
       headerLeft={
         <box flexDirection="row">
           <text fg={chatScreenTheme.accentAmber}>{glyphs.statusDot}</text>

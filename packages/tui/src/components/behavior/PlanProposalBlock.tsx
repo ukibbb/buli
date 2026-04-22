@@ -30,7 +30,7 @@ export function PlanProposalBlock(props: PlanProposalBlockProps): ReactNode {
   const gutterWidth = String(highestStepNumber).length + 1;
   return (
     <SurfaceCard
-      stripeColor={chatScreenTheme.accentPrimary}
+      accentColor={chatScreenTheme.accentPrimary}
       headerLeft={
         <box flexDirection="row">
           <text fg={chatScreenTheme.accentPrimary}>{glyphs.chevronRight}</text>
