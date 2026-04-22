@@ -97,7 +97,7 @@ function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
             />
           </box>
           <box flexShrink={1}>
-            <text fg={chatScreenTheme.textMuted}>{matchHit.matchSnippet}</text>
+            <text fg={chatScreenTheme.textSecondary}>{matchHit.matchSnippet}</text>
           </box>
         </box>
       ))}

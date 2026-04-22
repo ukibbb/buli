@@ -50,20 +50,28 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
           statusLabel={buildTodoStatusLabel(props)}
         />
       }
-      bodyContent={
-        props.renderState === "failed" ? (
-          <text fg={chatScreenTheme.accentRed}>
-            {props.errorText ?? "Failed to update plan."}
-          </text>
-        ) : (
-          <Checklist
-            items={props.toolCallDetail.todoItems.map((toolCallTodoItem) => ({
-              itemTitle: toolCallTodoItem.todoItemTitle,
-              itemStatus: toolCallTodoItem.todoItemStatus,
-            }))}
-          />
-        )
-      }
+      bodyContent={buildTodoBodyContent(props)}
+    />
+  );
+}
+
+function buildTodoBodyContent(props: TodoWriteToolCallCardProps): ReactNode {
+  if (props.renderState === "failed") {
+    return (
+      <text fg={chatScreenTheme.accentRed}>
+        {props.errorText ?? "Failed to update plan."}
+      </text>
+    );
+  }
+  if (props.toolCallDetail.todoItems.length === 0) {
+    return undefined;
+  }
+  return (
+    <Checklist
+      items={props.toolCallDetail.todoItems.map((toolCallTodoItem) => ({
+        itemTitle: toolCallTodoItem.todoItemTitle,
+        itemStatus: toolCallTodoItem.todoItemStatus,
+      }))}
     />
   );
 }

@@ -3,7 +3,7 @@ import { testRender } from "../../testRenderWithCleanup.ts";
 import { TaskToolCallCard } from "../../../src/components/toolCalls/TaskToolCallCard.tsx";
 
 describe("TaskToolCallCard (opentui)", () => {
-  test("streaming renders Task label, bracketed description, and dispatched status", async () => {
+  test("streaming renders Task label, bracketed description, and running status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TaskToolCallCard
         toolCallDetail={{
@@ -18,7 +18,7 @@ describe("TaskToolCallCard (opentui)", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("Task");
     expect(frame).toContain("[fetch release notes]");
-    expect(frame).toContain("dispatched");
+    expect(frame).toContain("running");
   });
 
   test("completed renders Task label, bracketed description, prompt, result, and duration", async () => {

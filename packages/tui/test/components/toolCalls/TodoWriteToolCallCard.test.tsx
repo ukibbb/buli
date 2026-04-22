@@ -51,6 +51,21 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     expect(chatScreenTheme.accentGreen).toBeDefined();
   });
 
+  test("completed with zero items renders no body", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <TodoWriteToolCallCard
+        toolCallDetail={{ toolName: "todowrite", todoItems: [] }}
+        renderState="completed"
+      />,
+      { width: 80, height: 6 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("TodoWrite");
+    expect(frame).toContain("[0 items]");
+    // body suppressed: nothing that looks like a checklist item row
+  });
+
   test("failed: renders TodoWrite label, accentRed sentinel, and error text", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TodoWriteToolCallCard

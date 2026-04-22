@@ -59,7 +59,7 @@ function buildTaskStatusLabel(props: TaskToolCallCardProps): string {
     return props.errorText ?? "sub-agent failed";
   }
   if (props.renderState === "streaming") {
-    return "dispatched…";
+    return "running…";
   }
   const durationLabel =
     props.durationMs === undefined ? "" : ` · ${formatDurationMs(props.durationMs)}`;
