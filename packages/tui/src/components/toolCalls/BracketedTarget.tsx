@@ -1,11 +1,9 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-export type BracketedTargetProps = {
-  accentColor: string;
-  targetText?: string;
-  children?: ReactNode;
-};
+export type BracketedTargetProps =
+  | { accentColor: string; targetText: string; children?: never }
+  | { accentColor: string; targetText?: never; children: ReactNode };
 
 export function BracketedTarget(props: BracketedTargetProps): ReactNode {
   return (
@@ -13,10 +11,10 @@ export function BracketedTarget(props: BracketedTargetProps): ReactNode {
       <text>
         <b fg={props.accentColor}>{"["}</b>
       </text>
-      {props.children ? (
+      {props.children !== undefined ? (
         props.children
       ) : (
-        <text fg={chatScreenTheme.textMuted}>{props.targetText ?? ""}</text>
+        <text fg={chatScreenTheme.textMuted}>{props.targetText}</text>
       )}
       <text>
         <b fg={props.accentColor}>{"]"}</b>
