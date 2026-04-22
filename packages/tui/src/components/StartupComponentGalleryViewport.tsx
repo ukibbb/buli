@@ -1027,7 +1027,7 @@ export function StartupComponentGalleryViewport(props: StartupComponentGalleryVi
             <GalleryExample labelText="SurfaceCard">
               <box flexDirection="column" gap={1} width="100%">
                 <SurfaceCard
-                  stripeColor={chatScreenTheme.accentCyan}
+                  accentColor={chatScreenTheme.accentCyan}
                   headerLeft={<text fg={chatScreenTheme.textPrimary}>{"SurfaceCard skeleton"}</text>}
                   headerRight={<text fg={chatScreenTheme.textMuted}>{"header-right"}</text>}
                   bodyContent={
@@ -1037,7 +1037,7 @@ export function StartupComponentGalleryViewport(props: StartupComponentGalleryVi
                   }
                 />
                 <SurfaceCard
-                  stripeColor={chatScreenTheme.accentAmber}
+                  accentColor={chatScreenTheme.accentAmber}
                   headerLeft={<text fg={chatScreenTheme.textPrimary}>{"Bodyless SurfaceCard"}</text>}
                 />
               </box>
