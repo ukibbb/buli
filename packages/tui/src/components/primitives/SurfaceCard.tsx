@@ -12,6 +12,7 @@ export type SurfaceCardProps = {
 export function SurfaceCard(props: SurfaceCardProps): ReactNode {
   return (
     <box
+      backgroundColor={chatScreenTheme.surfaceOne}
       borderColor={props.borderColor ?? chatScreenTheme.border}
       borderStyle="rounded"
       border={true}
