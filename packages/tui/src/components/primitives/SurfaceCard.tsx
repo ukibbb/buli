@@ -12,14 +12,13 @@ export type SurfaceCardProps = {
 export function SurfaceCard(props: SurfaceCardProps): ReactNode {
   return (
     <box
-      backgroundColor={chatScreenTheme.surfaceOne}
       borderColor={props.borderColor ?? chatScreenTheme.border}
       borderStyle="rounded"
       border={true}
       flexDirection="row"
       width="100%"
     >
-      <box backgroundColor={props.accentColor} width={2} flexShrink={0} />
+      <box backgroundColor={props.accentColor} width={1} flexShrink={0} />
       <box flexDirection="column" flexGrow={1}>
         <box
           flexDirection="row"
