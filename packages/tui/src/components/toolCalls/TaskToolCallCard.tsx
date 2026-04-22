@@ -3,14 +3,12 @@ import type { ToolCallTaskDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";
+import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
 
-// TaskToolCallCard surfaces a sub-agent invocation: the description the
-// assistant gave the sub-agent, the full prompt it dispatched (optional),
-// and the result summary that came back.
 export type TaskToolCallCardProps = {
   toolCallDetail: ToolCallTaskDetail;
   renderState: "streaming" | "completed" | "failed";
@@ -19,8 +17,12 @@ export type TaskToolCallCardProps = {
 };
 
 export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
-  const stripeColor =
-    props.renderState === "failed" ? chatScreenTheme.accentRed : chatScreenTheme.accentPurple;
+  const accentColor =
+    props.renderState === "failed"
+      ? chatScreenTheme.accentRed
+      : props.renderState === "streaming"
+        ? chatScreenTheme.accentAmber
+        : chatScreenTheme.accentGreen;
   const statusKind =
     props.renderState === "completed"
       ? "success"
@@ -29,33 +31,39 @@ export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
         : "pending";
   return (
     <SurfaceCard
-      stripeColor={stripeColor}
+      accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
           toolGlyph={glyphs.taskSpawn}
-          toolGlyphColor={stripeColor}
+          toolGlyphColor={accentColor}
           toolNameLabel="Task"
           toolTargetContent={
-            <text fg={chatScreenTheme.textSecondary}>{props.toolCallDetail.subagentDescription}</text>
+            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.subagentDescription} />
           }
         />
       }
       headerRight={
         <ToolCallHeaderRight
-          statusColor={stripeColor}
+          statusColor={accentColor}
           statusKind={statusKind}
-          statusLabel={
-            props.renderState === "failed"
-              ? props.errorText ?? "sub-agent failed"
-              : props.renderState === "streaming"
-                ? "dispatched…"
-                : "returned"
-          }
+          statusLabel={buildTaskStatusLabel(props)}
         />
       }
       bodyContent={buildTaskBodyContent(props)}
     />
   );
+}
+
+function buildTaskStatusLabel(props: TaskToolCallCardProps): string {
+  if (props.renderState === "failed") {
+    return props.errorText ?? "sub-agent failed";
+  }
+  if (props.renderState === "streaming") {
+    return "dispatched…";
+  }
+  const durationLabel =
+    props.durationMs === undefined ? "" : ` · ${formatDurationMs(props.durationMs)}`;
+  return `returned${durationLabel}`;
 }
 
 function buildTaskBodyContent(props: TaskToolCallCardProps): ReactNode {
@@ -94,4 +102,11 @@ function buildTaskBodyContent(props: TaskToolCallCardProps): ReactNode {
       ) : null}
     </box>
   );
+}
+
+function formatDurationMs(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+  return `${(durationMs / 1000).toFixed(1)}s`;
 }
