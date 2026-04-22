@@ -4,15 +4,12 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ShellBlock } from "../primitives/ShellBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";
+import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
 
-// BashToolCallCard renders the design's component/ToolCall-Bash: amber stripe,
-// terminal glyph, the command as the target, and an exit · duration status.
-// Non-zero exit codes flip the status colour to red so failing commands are
-// immediately recognisable in the transcript.
 export type BashToolCallCardProps = {
   toolCallDetail: ToolCallBashDetail;
   renderState: "streaming" | "completed" | "failed";
@@ -23,9 +20,7 @@ export type BashToolCallCardProps = {
 const MAX_VISIBLE_BASH_OUTPUT_LINES = 24;
 
 export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
-  const stripeColor =
-    props.renderState === "failed" ? chatScreenTheme.accentRed : chatScreenTheme.accentAmber;
-  const statusColor = deriveBashStatusColor(props);
+  const accentColor = deriveBashAccentColor(props);
   const statusKind =
     props.renderState === "completed" &&
     (props.toolCallDetail.exitCode === undefined || props.toolCallDetail.exitCode === 0)
@@ -35,20 +30,20 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
         : "pending";
   return (
     <SurfaceCard
-      stripeColor={stripeColor}
+      accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
           toolGlyph={glyphs.bashTerminal}
-          toolGlyphColor={stripeColor}
+          toolGlyphColor={accentColor}
           toolNameLabel="Bash"
           toolTargetContent={
-            <text fg={chatScreenTheme.textMuted}>{props.toolCallDetail.commandLine}</text>
+            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.commandLine} />
           }
         />
       }
       headerRight={
         <ToolCallHeaderRight
-          statusColor={statusColor}
+          statusColor={accentColor}
           statusKind={statusKind}
           statusLabel={buildBashStatusLabel(props)}
         />
@@ -58,7 +53,7 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
   );
 }
 
-function deriveBashStatusColor(props: BashToolCallCardProps): string {
+function deriveBashAccentColor(props: BashToolCallCardProps): string {
   if (props.renderState === "failed") {
     return chatScreenTheme.accentRed;
   }

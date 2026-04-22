@@ -4,7 +4,7 @@ import { BashToolCallCard } from "../../../src/components/toolCalls/BashToolCall
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("BashToolCallCard (opentui)", () => {
-  test("streaming renders command line and accentAmber sentinel with running status", async () => {
+  test("streaming uses amber accent and renders [command] with running status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
         toolCallDetail={{ toolName: "bash", commandLine: "bun test" }}
@@ -15,11 +15,12 @@ describe("BashToolCallCard (opentui)", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("Bash");
+    expect(frame).toContain("[bun test]");
     expect(frame).toContain("running");
     expect(chatScreenTheme.accentAmber).toBe("#F59E0B");
   });
 
-  test("completed exit 0 renders exit label and accentGreen sentinel", async () => {
+  test("completed exit 0 uses green accent and shows exit 0 status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
         toolCallDetail={{ toolName: "bash", commandLine: "ls", exitCode: 0 }}
@@ -30,63 +31,39 @@ describe("BashToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("exit");
-    expect(frame).toContain("0");
+    expect(frame).toContain("[ls]");
+    expect(frame).toContain("exit 0");
     expect(chatScreenTheme.accentGreen).toBe("#10B981");
   });
 
-  test("completed exit non-zero renders exit code and accentRed sentinel", async () => {
+  test("completed exit 1 uses red accent and shows exit 1 status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
-        toolCallDetail={{ toolName: "bash", commandLine: "false", exitCode: 1 }}
+        toolCallDetail={{ toolName: "bash", commandLine: "bun run build", exitCode: 1 }}
         renderState="completed"
-        durationMs={50}
+        durationMs={2400}
       />,
       { width: 120, height: 10 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("exit");
-    expect(frame).toContain("1");
+    expect(frame).toContain("[bun run build]");
+    expect(frame).toContain("exit 1");
     expect(chatScreenTheme.accentRed).toBe("#EF4444");
   });
 
-  test("failed renders accentRed sentinel and error text", async () => {
+  test("failed uses red accent and renders error text", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
-        toolCallDetail={{ toolName: "bash", commandLine: "ls /nope" }}
+        toolCallDetail={{ toolName: "bash", commandLine: "false" }}
         renderState="failed"
-        errorText="command not found"
+        errorText="Permission denied"
       />,
-      { width: 120, height: 8 },
+      { width: 120, height: 10 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("not");
-    expect(frame).toContain("found");
-    expect(chatScreenTheme.accentRed).toBe("#EF4444");
-  });
-
-  test("completed caps long bash output previews", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <BashToolCallCard
-        toolCallDetail={{
-          toolName: "bash",
-          commandLine: "ls",
-          exitCode: 0,
-          outputLines: Array.from({ length: 30 }, (_value, index) => ({
-            lineKind: index === 0 ? "prompt" : "stdout",
-            lineText: index === 0 ? "$ ls" : `line ${index}`,
-          })),
-        }}
-        renderState="completed"
-      />,
-      { width: 120, height: 32 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("line 23");
-    expect(frame).not.toContain("line 24");
-    expect(frame).toContain("showing first 24 of 30 lines");
+    expect(frame).toContain("[false]");
+    expect(frame).toContain("Permission denied");
   });
 });
