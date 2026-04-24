@@ -37,26 +37,40 @@ const severityGlyphs: Record<CalloutSeverity, string> = {
   error: glyphs.close,
 };
 
+const leftRailBorderChars = {
+  topLeft: "",
+  bottomLeft: "",
+  vertical: "┃",
+  topRight: "",
+  bottomRight: "",
+  horizontal: " ",
+  bottomT: "",
+  topT: "",
+  cross: "",
+  leftT: "",
+  rightT: "",
+} as const;
+
 export function Callout(props: CalloutProps): ReactNode {
   const accentColor = severityAccentColors[props.severity];
   const backgroundColor = severityBackgroundColors[props.severity];
   return (
     <box
-      backgroundColor={backgroundColor}
       borderColor={accentColor}
-      borderStyle="rounded"
+      border={["left"]}
+      customBorderChars={leftRailBorderChars}
       flexDirection="column"
-      paddingX={1}
-      paddingY={0}
       width="100%"
     >
-      <box>
-        <text fg={accentColor}>
-          {severityGlyphs[props.severity]}
-          {props.titleText ? ` ${props.titleText}` : ""}
-        </text>
+      <box backgroundColor={backgroundColor} flexDirection="column" paddingX={2} paddingY={1} width="100%">
+        <box width="100%">
+          <text fg={accentColor}>
+            {severityGlyphs[props.severity]}
+            {props.titleText ? ` ${props.titleText}` : ""}
+          </text>
+        </box>
+        <box width="100%">{props.bodyContent}</box>
       </box>
-      <box>{props.bodyContent}</box>
     </box>
   );
 }

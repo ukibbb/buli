@@ -4,6 +4,10 @@ This document explains the message-part rewrite in plain English.
 
 Read `docs/current-chat-session-architecture.md` first if you want the shorter overview.
 
+If you want the detailed render lifecycle and screen-surface precedence, read `docs/chat-lifecycle-rendering-map.md` after this document.
+
+If you want the exhaustive UI component reference, read `docs/tui-component-rendering-reference.md`.
+
 ## What Changed At The Highest Level
 
 The old system treated a conversation like a transcript made of many UI row types. The current system treats a conversation like:

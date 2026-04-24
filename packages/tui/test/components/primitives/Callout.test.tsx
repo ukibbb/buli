@@ -47,6 +47,7 @@ describe("Callout", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("┃");
     expect(frame).toContain("Note");
     expect(frame).toContain("body");
   });

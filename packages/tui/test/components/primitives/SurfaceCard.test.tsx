@@ -16,6 +16,7 @@ describe("SurfaceCard (opentui)", () => {
     // char-frame captures glyphs only; colour of the accent column cannot be asserted directly here.
     const frame = captureCharFrame();
     expect(frame).toContain("Header");
+    expect(frame).toContain("┃");
     expect(chatScreenTheme.accentGreen).toBe("#10B981");
   });
 
@@ -34,7 +35,7 @@ describe("SurfaceCard (opentui)", () => {
     expect(frame).toContain("BodyPayload");
   });
 
-  test("does not render a solid top stripe row above the header", async () => {
+  test("renders a left rail without the old full rounded shell", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <SurfaceCard
         accentColor={chatScreenTheme.accentRed}
@@ -44,8 +45,9 @@ describe("SurfaceCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    // border + paddingY=1 puts content at index 2; a top stripe would push it to 3+
-    const headerLine = frame.split("\n")[2] ?? "";
-    expect(headerLine).toContain("Body");
+    expect(frame).toContain("┃");
+    expect(frame).not.toContain("╭");
+    expect(frame).not.toContain("╮");
+    expect(frame).toContain("Body");
   });
 });
