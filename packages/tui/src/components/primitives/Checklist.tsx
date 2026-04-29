@@ -36,7 +36,7 @@ export function Checklist(props: ChecklistProps): ReactNode {
   return (
     <box flexDirection="column" width="100%">
       {props.items.map((checklistItem, index) => (
-        <box key={`checklist-item-${index}`} width="100%">
+        <box key={`checklist-item-${index}`} flexDirection="row" alignItems="center" width="100%">
           <box flexShrink={0} marginRight={1}>
             <text>
               <span fg={statusColors[checklistItem.itemStatus]}>

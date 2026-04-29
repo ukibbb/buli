@@ -75,10 +75,12 @@ function buildReadStatusLabel(props: ReadToolCallCardProps): string {
 
 function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
   if (props.renderState === "failed") {
+    if (props.errorText !== undefined) {
+      // Status header already carries errorText; suppress body to avoid duplicating it.
+      return undefined;
+    }
     return (
-      <text fg={chatScreenTheme.accentRed}>
-        {props.errorText ?? "The file could not be read."}
-      </text>
+      <text fg={chatScreenTheme.accentRed}>{"The file could not be read."}</text>
     );
   }
   const previewLines = props.toolCallDetail.previewLines;

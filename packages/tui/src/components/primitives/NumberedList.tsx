@@ -16,7 +16,7 @@ export function NumberedList(props: NumberedListProps): ReactNode {
   return (
     <box flexDirection="column" width="100%">
       {props.itemContents.map((itemContent, index) => (
-        <box key={`numbered-item-${index}`} width="100%">
+        <box key={`numbered-item-${index}`} flexDirection="row" alignItems="center" width="100%">
           <box flexShrink={0} marginRight={1} width={gutterWidth}>
             <text>
               <b fg={chatScreenTheme.accentGreen}>

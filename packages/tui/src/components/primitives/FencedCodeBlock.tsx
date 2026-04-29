@@ -66,7 +66,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
         </box>
       ) : null}
       {props.codeLines.map((fencedCodeBlockLine, index) => (
-        <box key={`code-line-${index}`} width="100%">
+        <box key={`code-line-${index}`} flexDirection="row" alignItems="center" overflow="hidden" width="100%">
           <box flexShrink={0} marginRight={1} width={gutterWidth}>
             <text fg={chatScreenTheme.textDim}>
               {fencedCodeBlockLine.lineNumber === undefined
@@ -74,7 +74,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
                 : String(fencedCodeBlockLine.lineNumber).padStart(gutterWidth, " ")}
             </text>
           </box>
-          <box flexShrink={1}>
+          <box flexShrink={1} minWidth={0} overflow="hidden" width="100%">
             <FencedCodeBlockLineContent fencedCodeBlockLine={fencedCodeBlockLine} />
           </box>
         </box>
@@ -86,10 +86,10 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
 function FencedCodeBlockLineContent(props: { fencedCodeBlockLine: FencedCodeBlockLine }): ReactNode {
   const { fencedCodeBlockLine } = props;
   if (!fencedCodeBlockLine.syntaxHighlightSpans || fencedCodeBlockLine.syntaxHighlightSpans.length === 0) {
-    return <text fg={chatScreenTheme.textPrimary}>{fencedCodeBlockLine.lineText}</text>;
+    return <text fg={chatScreenTheme.textPrimary} truncate={true} wrapMode="none" width="100%">{fencedCodeBlockLine.lineText}</text>;
   }
   return (
-    <text>
+    <text truncate={true} wrapMode="none" width="100%">
       {fencedCodeBlockLine.syntaxHighlightSpans.map((syntaxHighlightSpan, index) => (
         <span fg={syntaxStyleColors[syntaxHighlightSpan.spanStyle]} key={index}>
           {syntaxHighlightSpan.spanText}

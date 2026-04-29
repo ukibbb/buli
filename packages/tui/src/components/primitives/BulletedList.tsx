@@ -12,7 +12,7 @@ export function BulletedList(props: BulletedListProps): ReactNode {
   return (
     <box flexDirection="column" width="100%">
       {props.itemContents.map((itemContent, index) => (
-        <box key={`bulleted-item-${index}`} width="100%">
+        <box key={`bulleted-item-${index}`} flexDirection="row" alignItems="center" width="100%">
           <box flexShrink={0} marginRight={1}>
             <text>
               <b fg={chatScreenTheme.accentCyan}>{">_"}</b>

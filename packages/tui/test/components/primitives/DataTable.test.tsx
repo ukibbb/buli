@@ -19,7 +19,7 @@ describe("DataTable (opentui)", () => {
     expect(frame).toContain("Name");
     expect(frame).toContain("alpha");
     expect(chatScreenTheme.accentGreen).toBe("#10B981");
-    expect(chatScreenTheme.surfaceTwo).toBe("#16161F");
+    expect(chatScreenTheme.surfaceTwo).toBe("#000000");
     expect(chatScreenTheme.borderSubtle).toBe("#1E1E2E");
   });
 });

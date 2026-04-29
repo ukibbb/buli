@@ -28,16 +28,21 @@ const diffLineKindSigils: Record<ToolCallEditDiffLineKind, string> = {
 };
 
 export function DiffBlock(props: DiffBlockProps): ReactNode {
-  const gutterWidth = Math.max(
-    2,
-    String(props.diffLines.at(-1)?.lineNumber ?? props.diffLines.length).length,
+  const widestLineNumber = Math.max(
+    props.diffLines.length,
+    ...props.diffLines.map((toolCallEditDiffLine) => toolCallEditDiffLine.lineNumber ?? 0),
   );
+  const gutterWidth = Math.max(2, String(widestLineNumber).length);
+
   return (
     <box flexDirection="column" width="100%">
       {props.diffLines.map((toolCallEditDiffLine, index) => (
         <box
+          alignItems="center"
           backgroundColor={diffLineKindBackgroundColors[toolCallEditDiffLine.lineKind]}
+          flexDirection="row"
           key={`diff-line-${index}`}
+          overflow="hidden"
           paddingX={1}
           width="100%"
         >
@@ -53,8 +58,8 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
               {diffLineKindSigils[toolCallEditDiffLine.lineKind]}
             </text>
           </box>
-          <box flexShrink={1}>
-            <text fg={diffLineKindTextColors[toolCallEditDiffLine.lineKind]}>
+          <box flexShrink={1} minWidth={0} overflow="hidden" width="100%">
+            <text fg={diffLineKindTextColors[toolCallEditDiffLine.lineKind]} truncate={true} wrapMode="none" width="100%">
               {toolCallEditDiffLine.lineText}
             </text>
           </box>

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { ToolCallGrepDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
 import { FileReference } from "../primitives/FileReference.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";
@@ -75,10 +76,12 @@ function buildGrepStatusLabel(props: GrepToolCallCardProps): string {
 
 function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
   if (props.renderState === "failed") {
+    if (props.errorText !== undefined) {
+      // Status header already carries errorText; suppress body to avoid duplicating it.
+      return undefined;
+    }
     return (
-      <text fg={chatScreenTheme.accentRed}>
-        {props.errorText ?? "grep failed to run"}
-      </text>
+      <text fg={chatScreenTheme.accentRed}>{"grep failed to run"}</text>
     );
   }
   const matchHits = props.toolCallDetail.matchHits;
@@ -88,17 +91,23 @@ function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
   return (
     <box flexDirection="column" paddingX={1} width="100%">
       {matchHits.map((matchHit, index) => (
-        <box key={`grep-hit-${index}`} width="100%">
-          <box flexShrink={0} marginRight={2}>
-            <FileReference
-              filePath={matchHit.matchFilePath}
-              lineNumber={matchHit.matchLineNumber}
-              variant="inline"
-            />
-          </box>
-          <box flexShrink={1}>
-            <text fg={chatScreenTheme.textSecondary}>{matchHit.matchSnippet}</text>
-          </box>
+        <box
+          key={`grep-hit-${index}`}
+          flexDirection="column"
+          width="100%"
+          {...(index > 0 ? { marginTop: 1 } : {})}
+        >
+          <FileReference
+            filePath={matchHit.matchFilePath}
+            lineNumber={matchHit.matchLineNumber}
+            variant="inline"
+          />
+          <FencedCodeBlock
+            variant="embedded"
+            codeLines={[
+              { lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet },
+            ]}
+          />
         </box>
       ))}
     </box>

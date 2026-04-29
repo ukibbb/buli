@@ -14,6 +14,22 @@ describe("BracketedTarget (opentui)", () => {
     expect(frame).toContain("[bun test]");
   });
 
+  test("middle-truncates long plain-text targets before the terminal wraps them", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <BracketedTarget
+        accentColor={chatScreenTheme.accentGreen}
+        targetText="packages/tui/src/components/ConversationMessageList.tsx"
+      />,
+      { width: 34, height: 4 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("[");
+    expect(frame).toContain("…");
+    expect(frame).toContain("]");
+    expect(frame).not.toContain("ConversationMessageList.tsx");
+  });
+
   test("accepts a ReactNode as target for rich content", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BracketedTarget accentColor={chatScreenTheme.accentRed}>

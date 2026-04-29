@@ -37,15 +37,16 @@ export function SurfaceCard(props: SurfaceCardProps): ReactNode {
           flexDirection="row"
           alignItems="center"
           justifyContent="space-between"
+          overflow="hidden"
           paddingX={2}
           paddingY={1}
           width="100%"
         >
-          <box flexShrink={1}>{props.headerLeft}</box>
-          {props.headerRight ? <box flexShrink={0}>{props.headerRight}</box> : null}
+          <box flexShrink={1} minWidth={0} overflow="hidden">{props.headerLeft}</box>
+          {props.headerRight ? <box flexShrink={0} marginLeft={1}>{props.headerRight}</box> : null}
         </box>
         {props.bodyContent ? (
-          <box flexDirection="column" paddingBottom={1} width="100%">
+          <box flexDirection="column" paddingBottom={1} paddingX={2} width="100%">
             {props.bodyContent}
           </box>
         ) : null}

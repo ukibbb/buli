@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { TokenUsage } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
+import { shortenTerminalTextWithMiddleEllipsis } from "./shortenTerminalTextWithMiddleEllipsis.ts";
 
 // Mirrors pen component/TurnFooter (qfHh3): a state indicator on the left
 // ("✓ done · {duration}") and turn metadata on the right ("tokens · model
@@ -18,38 +19,46 @@ export function TurnFooter(props: TurnFooterProps): ReactNode {
     ? props.usage.total ?? props.usage.input + props.usage.output + props.usage.reasoning
     : undefined;
   const durationLabel = formatTurnDurationMs(props.turnDurationMs);
+  const turnMetadataText = buildTurnMetadataText(props, totalTokenCount);
+  const displayedTurnMetadataText = shortenTerminalTextWithMiddleEllipsis(turnMetadataText, 36);
 
   return (
-    <box flexDirection="row" justifyContent="space-between" width="100%">
-      <text>
-        <span fg={chatScreenTheme.accentGreen}>{glyphs.checkMark}</span>
-        <span fg={chatScreenTheme.textMuted}>{" done"}</span>
-        <span fg={chatScreenTheme.textDim}>{" · "}</span>
-        <span fg={chatScreenTheme.accentPrimaryMuted}>{durationLabel}</span>
-      </text>
-      <text>
-        {totalTokenCount !== undefined ? (
-          <>
-            <span fg={chatScreenTheme.accentPrimaryMuted}>{`${totalTokenCount} tok`}</span>
-            <span fg={chatScreenTheme.textDim}>{" · "}</span>
-          </>
-        ) : null}
-        <span fg={chatScreenTheme.textMuted}>{props.modelDisplayName}</span>
-        {props.usage && props.usage.reasoning > 0 ? (
-          <>
-            <span fg={chatScreenTheme.textDim}>{" · "}</span>
-            <span fg={chatScreenTheme.textMuted}>{`${props.usage.reasoning} reasoning`}</span>
-          </>
-        ) : null}
-        {props.usage && props.usage.cache.read > 0 ? (
-          <>
-            <span fg={chatScreenTheme.textDim}>{" · "}</span>
-            <span fg={chatScreenTheme.textMuted}>{`${props.usage.cache.read} cached`}</span>
-          </>
-        ) : null}
-      </text>
+    <box flexDirection="row" justifyContent="space-between" minWidth={0} overflow="hidden" width="100%">
+      <box flexShrink={0}>
+        <text wrapMode="none">
+          <span fg={chatScreenTheme.accentGreen}>{glyphs.checkMark}</span>
+          <span fg={chatScreenTheme.textMuted}>{" done"}</span>
+          <span fg={chatScreenTheme.textDim}>{" · "}</span>
+          <span fg={chatScreenTheme.accentPrimaryMuted}>{durationLabel}</span>
+        </text>
+      </box>
+      <box flexShrink={1} marginLeft={1} minWidth={0} overflow="hidden">
+        <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none" width="100%">
+          {displayedTurnMetadataText}
+        </text>
+      </box>
     </box>
   );
+}
+
+function buildTurnMetadataText(props: TurnFooterProps, totalTokenCount: number | undefined): string {
+  const metadataLabels: string[] = [];
+
+  if (totalTokenCount !== undefined) {
+    metadataLabels.push(`${totalTokenCount} tok`);
+  }
+
+  metadataLabels.push(props.modelDisplayName);
+
+  if (props.usage && props.usage.reasoning > 0) {
+    metadataLabels.push(`${props.usage.reasoning} reasoning`);
+  }
+
+  if (props.usage && props.usage.cache.read > 0) {
+    metadataLabels.push(`${props.usage.cache.read} cached`);
+  }
+
+  return metadataLabels.join(" · ");
 }
 
 function formatTurnDurationMs(turnDurationMs: number): string {

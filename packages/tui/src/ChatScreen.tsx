@@ -51,7 +51,6 @@ import {
 import { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
 import { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";
 import { ShortcutsModal } from "./components/ShortcutsModal.tsx";
-import { StartupComponentGalleryViewport } from "./components/StartupComponentGalleryViewport.tsx";
 import { TopBar, TOP_BAR_NATURAL_ROW_COUNT } from "./components/TopBar.tsx";
 import { ErrorBannerBlock } from "./components/behavior/ErrorBannerBlock.tsx";
 import { ToolApprovalRequestBlock } from "./components/behavior/ToolApprovalRequestBlock.tsx";
@@ -640,7 +639,7 @@ export function ChatScreen(props: ChatScreenProps) {
       : chatSessionState.promptContextSelectionState.step !== "hidden"
         ? "@ picker · ↑ ↓ choose · enter insert · esc close"
         : chatSessionState.conversationTurnStatus === "waiting_for_tool_approval"
-          ? "approval required · [ y ] approve · [ n ] deny"
+          ? "approval required above"
           : undefined;
 
   const isPromptInputDisabled =
@@ -682,7 +681,6 @@ export function ChatScreen(props: ChatScreenProps) {
       : undefined);
   const contextWindowTokenCapacity = lookupContextWindowTokenCapacityForModel(chatSessionState.selectedModelId);
   const orderedConversationMessages = listOrderedConversationMessages(chatSessionState);
-  const shouldShowStartupComponentGallery = orderedConversationMessages.length === 0;
 
   return (
     <box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows}>
@@ -700,13 +698,6 @@ export function ChatScreen(props: ChatScreenProps) {
           </box>
         ) : modelAndReasoningSelectionPane ? (
           modelAndReasoningSelectionPane
-        ) : shouldShowStartupComponentGallery ? (
-          <StartupComponentGalleryViewport
-            conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
-            onConversationMessageWheelScroll={(direction) =>
-              scrollConversationMessagesByRows(direction === "up" ? -TRANSCRIPT_WHEEL_SCROLL_ROW_COUNT : TRANSCRIPT_WHEEL_SCROLL_ROW_COUNT)
-            }
-          />
         ) : (
           <ConversationMessageList
             conversationMessages={orderedConversationMessages}

@@ -33,4 +33,27 @@ describe("TurnFooter", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("150 tok");
   });
+
+  test("shortens_right_side_metadata_in_narrow_widths", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <TurnFooter
+        modelDisplayName="gpt-5.4-preview-with-very-long-provider-suffix"
+        turnDurationMs={2300}
+        usage={{
+          input: 280,
+          output: 180,
+          reasoning: 52,
+          total: 512,
+          cache: { read: 24, write: 0 },
+        }}
+      />,
+      { width: 44, height: 4 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("done");
+    expect(frame).toContain("2.3s");
+    expect(frame).toContain("...");
+    expect(frame).not.toContain("very-long-provider-suffix");
+  });
 });

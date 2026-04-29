@@ -32,7 +32,7 @@ describe("InlineMarkdownText", () => {
     expect(captureCharFrame()).toContain("npm");
   });
 
-  test("renders code span text and locks surfaceTwo + accentCyan tokens", async () => {
+  test("renders code span text and locks black surface + accentCyan tokens", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InlineMarkdownText spans={[
         { spanKind: "plain", spanText: "Mount " },
@@ -43,7 +43,7 @@ describe("InlineMarkdownText", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("@buli/library");
-    expect(chatScreenTheme.surfaceTwo).toBe("#16161F");
+    expect(chatScreenTheme.surfaceTwo).toBe("#000000");
     expect(chatScreenTheme.accentCyan).toBe("#22D3EE");
   });
 

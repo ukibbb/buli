@@ -43,6 +43,28 @@ describe("ReadToolCallCard", () => {
     expect(frame).toContain("reading");
   });
 
+  test("streaming_keeps_long_path_on_the_header_row_without_wrapping", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ReadToolCallCard
+        renderState="streaming"
+        toolCallDetail={{
+          toolName: "read",
+          readFilePath: "packages/tui/src/components/ConversationMessageList.tsx",
+        }}
+      />,
+      { width: 48, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    const identityLine = frame.split("\n").find((line) => line.includes("Read"));
+    expect(identityLine).toBeDefined();
+    expect(identityLine ?? "").toContain("packages/");
+    expect(identityLine ?? "").not.toContain("ConversationMessageList.tsx");
+    expect(frame.split("\n").filter((line) => line.includes("packages/"))).toHaveLength(1);
+    expect(frame).toContain("...");
+    expect(frame).toContain("reading");
+  });
+
   test("failed_shows_error_state", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReadToolCallCard

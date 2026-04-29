@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { shortenTerminalTextWithMiddleEllipsis } from "../shortenTerminalTextWithMiddleEllipsis.ts";
 
 // File references appear in three visual shapes in the design:
 // inline   — plain cyan, underlined, "path:line" style for use inside prose
@@ -16,12 +17,13 @@ export type FileReferenceProps = {
 
 export function FileReference(props: FileReferenceProps): ReactNode {
   const displayText = props.lineNumber === undefined ? props.filePath : `${props.filePath}:${props.lineNumber}`;
+  const shortenedDisplayText = shortenTerminalTextWithMiddleEllipsis(displayText, 48);
   if (props.variant === "inline") {
     // <u> is a text-node element and must live inside a <text> parent.
     return (
-      <text>
+      <text truncate={true} wrapMode="none" width="100%">
         <u fg={chatScreenTheme.accentCyan}>
-          {displayText}
+          {shortenedDisplayText}
         </u>
       </text>
     );
@@ -29,17 +31,19 @@ export function FileReference(props: FileReferenceProps): ReactNode {
   if (props.variant === "symbol") {
     // <span> elements are text-node elements; each must be inside a <text>.
     return (
-      <box>
+      <box flexDirection="row" minWidth={0} overflow="hidden" width="100%">
         <text><span fg={chatScreenTheme.accentPrimaryMuted}>{"⌘ "}</span></text>
-        <text><span fg={chatScreenTheme.accentCyan}>{displayText}</span></text>
+        <box flexShrink={1} minWidth={0} overflow="hidden" width="100%">
+          <text truncate={true} wrapMode="none" width="100%"><span fg={chatScreenTheme.accentCyan}>{shortenedDisplayText}</span></text>
+        </box>
       </box>
     );
   }
   // Remaining arm: pill — bordered chip suitable for headers.
   // borderStyle "round" becomes "rounded" in OpenTUI; all four sides enabled.
   return (
-    <box borderColor={chatScreenTheme.border} borderStyle="rounded" border={true} paddingX={1}>
-      <text><span fg={chatScreenTheme.accentCyan}>{displayText}</span></text>
+    <box borderColor={chatScreenTheme.border} borderStyle="rounded" border={true} minWidth={0} overflow="hidden" paddingX={1}>
+      <text truncate={true} wrapMode="none" width="100%"><span fg={chatScreenTheme.accentCyan}>{shortenedDisplayText}</span></text>
     </box>
   );
 }

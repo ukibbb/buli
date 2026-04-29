@@ -5,6 +5,7 @@ import { BashToolCallCard } from "../toolCalls/BashToolCallCard.tsx";
 import { EditToolCallCard } from "../toolCalls/EditToolCallCard.tsx";
 import { GrepToolCallCard } from "../toolCalls/GrepToolCallCard.tsx";
 import { ReadToolCallCard } from "../toolCalls/ReadToolCallCard.tsx";
+import { ApprovalDecisionControl } from "../primitives/ApprovalDecisionControl.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { TaskToolCallCard } from "../toolCalls/TaskToolCallCard.tsx";
 import { TodoWriteToolCallCard } from "../toolCalls/TodoWriteToolCallCard.tsx";
@@ -31,7 +32,7 @@ export function ToolApprovalRequestBlock(props: ToolApprovalRequestBlockProps): 
           </text>
         </box>
       }
-      headerRight={<text fg={chatScreenTheme.textMuted}>y approve · n deny</text>}
+      headerRight={<ApprovalDecisionControl />}
       bodyContent={
         <box flexDirection="column" paddingX={1} width="100%">
           <box marginBottom={1} width="100%">

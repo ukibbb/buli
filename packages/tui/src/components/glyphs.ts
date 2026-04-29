@@ -24,7 +24,7 @@ export const glyphs = {
   grepSearch: "⌕",
   editPencil: "✎",
   bashTerminal: ">_",
-  todoList: "☐",
+  todoList: "☷",
   taskSpawn: "◈",
 } as const;
 

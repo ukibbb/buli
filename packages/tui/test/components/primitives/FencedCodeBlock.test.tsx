@@ -59,9 +59,9 @@ describe("FencedCodeBlock", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("typescript");
     expect(frame).toContain("export const foo = 1;");
-    // Sentinel — surfaceOne and borderSubtle tokens must remain stable
-    // because the standalone variant binds the chrome to them.
-    expect(chatScreenTheme.surfaceOne).toBe("#111118");
+    // Sentinel — standalone code blocks share the app's black canvas while
+    // borderSubtle keeps their frame visible.
+    expect(chatScreenTheme.surfaceOne).toBe("#000000");
     expect(chatScreenTheme.borderSubtle).toBe("#1E1E2E");
   });
 
@@ -76,5 +76,19 @@ describe("FencedCodeBlock", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("embedded line");
+  });
+
+  test("embedded_truncates_long_code_rows_instead_of_wrapping_them", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <FencedCodeBlock
+        variant="embedded"
+        codeLines={[{ lineNumber: 1, lineText: "const path = 'packages/tui/src/components/ConversationMessageList.tsx';" }]}
+      />,
+      { width: 34, height: 5 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("const path");
+    expect(frame).not.toContain("ConversationMessageList.tsx");
   });
 });

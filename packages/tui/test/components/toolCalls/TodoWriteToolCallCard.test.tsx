@@ -62,6 +62,8 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("TodoWrite");
+    expect(frame).toContain("☷");
+    expect(frame).not.toContain("☐");
     expect(frame).toContain("[0 items]");
     // body suppressed: nothing that looks like a checklist item row
   });

@@ -8,6 +8,7 @@ describe("Checklist (opentui)", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <Checklist items={[
         { itemTitle: "draft the terminal palette", itemStatus: "completed" },
+        { itemTitle: "review active task", itemStatus: "in_progress" },
         { itemTitle: "wire the kinds into the library reader", itemStatus: "pending" },
       ]} />,
       { width: 60, height: 5 },
@@ -15,6 +16,7 @@ describe("Checklist (opentui)", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("☑");
+    expect(frame).toContain("▸");
     expect(frame).toContain("☐");
     expect(frame).toContain("draft the terminal palette");
     expect(frame).toContain("wire the kinds into the library reader");

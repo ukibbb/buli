@@ -47,6 +47,29 @@ describe("GrepToolCallCard", () => {
     expect(frame).toContain("/src/App.tsx");
   });
 
+  test("completed_shortens_long_search_patterns_in_narrow_cards", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <GrepToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "grep",
+          searchPattern: "ConversationMessageList|ToolCallHeaderSlots|PromptDraftText",
+          totalMatchCount: 5,
+          matchedFileCount: 3,
+          matchHits: [],
+        }}
+      />,
+      { width: 50, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    const identityLine = frame.split("\n").find((line) => line.includes("Grep"));
+    expect(identityLine).toBeDefined();
+    expect(identityLine ?? "").not.toContain("ComponentGallery");
+    expect(frame).toContain("...");
+    expect(frame).toContain("5 matches");
+  });
+
   test("failed_shows_bracketed_pattern_and_error", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GrepToolCallCard

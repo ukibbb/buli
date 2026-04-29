@@ -33,7 +33,9 @@ describe("ToolApprovalRequestBlock", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("y approve");
+    expect(frame).toContain("y Yes");
+    expect(frame).toContain("n No");
+    expect(frame).not.toContain("y approve");
     expect(frame).toContain("Executes remote code without inspection");
   });
 });

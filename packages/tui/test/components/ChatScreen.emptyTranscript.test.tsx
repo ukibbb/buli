@@ -69,26 +69,23 @@ async function renderChatScreen(input: {
   };
 }
 
-test("ChatScreen shows the startup gallery before any real conversation exists", async () => {
+test("ChatScreen starts with an empty transcript before any real conversation exists", async () => {
   const renderedChatScreen = await renderChatScreen({
     loadPromptContextCandidates: async () => [],
   });
 
   const frame = await renderedChatScreen.captureFrame();
-  expect(frame).toContain("Startup Component Gallery");
-  expect(frame).toContain("Shell And Control Surfaces");
-  expect(frame).toContain("Temporary redesign surface");
-  expect(frame).toContain("TopBar");
+  expect(frame).toContain("gpt-5.4");
+  expect(frame).toContain("implementation");
 });
 
-test("ChatScreen hides the startup gallery after the first submitted prompt", async () => {
+test("ChatScreen shows the submitted prompt after the first message is added", async () => {
   const renderedChatScreen = await renderChatScreen({
     loadPromptContextCandidates: async () => [],
   });
 
   await renderedChatScreen.typeText("show me the live transcript");
   const frameAfterSubmit = await renderedChatScreen.pressEnter();
-  expect(frameAfterSubmit).not.toContain("Startup Component Gallery");
   expect(frameAfterSubmit).toContain("show me the live transcript");
   expect(frameAfterSubmit).toContain("working");
 });

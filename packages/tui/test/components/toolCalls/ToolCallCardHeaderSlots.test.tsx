@@ -4,10 +4,11 @@ import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "../../../src/components/toolCalls/ToolCallCardHeaderSlots.tsx";
+import { BracketedTarget } from "../../../src/components/toolCalls/BracketedTarget.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("ToolCallCardHeaderSlots (opentui)", () => {
-  test("ToolCallHeaderLeft renders glyph, label, and target on a single row", async () => {
+  test("ToolCallHeaderLeft keeps the icon and label on the identity row", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallHeaderLeft
         toolGlyph="▸"
@@ -22,7 +23,32 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     const singleHeaderLine = frame.split("\n").find((line) => line.includes("Bash"));
     expect(singleHeaderLine).toBeDefined();
     expect(singleHeaderLine ?? "").toContain("▸");
-    expect(singleHeaderLine ?? "").toContain("bun test");
+    expect(frame).toContain("bun test");
+  });
+
+  test("ToolCallHeaderLeft keeps long targets on the tool identity row", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallHeaderLeft
+        toolGlyph="≡"
+        toolGlyphColor={chatScreenTheme.accentAmber}
+        toolNameLabel="Read"
+        toolTargetContent={
+          <BracketedTarget
+            accentColor={chatScreenTheme.accentAmber}
+            targetText="packages/tui/src/components/ConversationMessageList.tsx"
+          />
+        }
+      />,
+      { width: 60, height: 4 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    const identityLine = frame.split("\n").find((line) => line.includes("Read"));
+    expect(identityLine).toBeDefined();
+    expect(identityLine ?? "").toContain("≡");
+    expect(identityLine ?? "").toContain("[");
+    expect(identityLine ?? "").toContain("packages/");
+    expect(frame.split("\n").filter((line) => line.includes("packages/"))).toHaveLength(1);
   });
 
   test("ToolCallHeaderLeft omits the target slot when no target content is provided", async () => {
@@ -53,5 +79,21 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("exit 0 · 620ms");
     expect(frame).toContain("✓");
+  });
+
+  test("ToolCallHeaderRight shortens long status labels to one terminal row", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallHeaderRight
+        statusColor={chatScreenTheme.accentRed}
+        statusKind="error"
+        statusLabel="The user denied this edit because the patch touched an unsafe file path"
+      />,
+      { width: 34, height: 4 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("…");
+    expect(frame).toContain("×");
+    expect(frame).not.toContain("unsafe file path");
   });
 });

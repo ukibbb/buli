@@ -3,15 +3,14 @@
 // tokens whose pen-file equivalents do not translate to a terminal cell grid
 // (sub-row stripes, font-size hierarchy, corner radius on fills).
 //
-// diffAdditionBg / diffRemovalBg substitute for the design's low-alpha
-// red/green row tints (`#EF444418`, `#10B98118`). Chalk truecolor does not
-// accept an alpha channel, so we use solid near-bg shades that preserve the
-// semantic (line added / line removed) without washing out the foreground text.
+// The terminal shell uses one black canvas across app chrome, cards, modals,
+// callouts, and code blocks. Semantic states are carried by rails, borders,
+// glyphs, and text colour rather than filled panel backgrounds.
 export const chatScreenTheme = {
   bg: "#000000",
-  surfaceOne: "#111118",
-  surfaceTwo: "#16161F",
-  surfaceThree: "#1C1C28",
+  surfaceOne: "#000000",
+  surfaceTwo: "#000000",
+  surfaceThree: "#000000",
   border: "#2A2A3A",
   borderSubtle: "#1E1E2E",
   textPrimary: "#FFFFFF",
@@ -26,12 +25,12 @@ export const chatScreenTheme = {
   accentPrimaryMuted: "#818CF8",
   accentPurple: "#A855F7",
   promptContextReferenceText: "#10B981",
-  diffAdditionBg: "#0C1C15",
-  diffRemovalBg: "#1C0D0F",
-  calloutInfoBg: "#0C1520",
-  calloutSuccessBg: "#0C1C15",
-  calloutWarningBg: "#1D1505",
-  calloutErrorBg: "#1C0D0F",
+  diffAdditionBg: "#000000",
+  diffRemovalBg: "#000000",
+  calloutInfoBg: "#000000",
+  calloutSuccessBg: "#000000",
+  calloutWarningBg: "#000000",
+  calloutErrorBg: "#000000",
 } as const;
 
 export type ChatScreenTheme = typeof chatScreenTheme;

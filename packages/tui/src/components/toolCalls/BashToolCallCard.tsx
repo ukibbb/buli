@@ -84,10 +84,12 @@ function buildBashStatusLabel(props: BashToolCallCardProps): string {
 
 function buildBashBodyContent(props: BashToolCallCardProps): ReactNode {
   if (props.renderState === "failed") {
+    if (props.errorText !== undefined) {
+      // Status header already carries errorText; suppress body to avoid duplicating it.
+      return undefined;
+    }
     return (
-      <text fg={chatScreenTheme.accentRed}>
-        {props.errorText ?? "Command did not run."}
-      </text>
+      <text fg={chatScreenTheme.accentRed}>{"Command did not run."}</text>
     );
   }
   const outputLines = props.toolCallDetail.outputLines;

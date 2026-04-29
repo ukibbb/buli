@@ -23,6 +23,7 @@ export async function renderChatScreenInTerminal(input: {
     screenMode: "alternate-screen",
     useMouse: true,
     enableMouseMovement: true,
+    consoleMode: process.env.BULI_CONSOLE_LOG_FILE?.trim() ? "disabled" : "console-overlay",
   });
   restoreConsoleTimeStampAfterOpentuiActivation({ originalConsole });
   const root = createRoot(cliRenderer);
@@ -46,6 +47,7 @@ export async function renderChatScreenInTerminal(input: {
     },
   };
 }
+
 export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 export { RenderAssistantResponseTree } from "./richText/renderAssistantResponseTree.tsx";
 export type { RenderAssistantResponseTreeProps } from "./richText/renderAssistantResponseTree.tsx";

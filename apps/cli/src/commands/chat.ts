@@ -4,6 +4,7 @@ import type { ReasoningEffort } from "@buli/contracts";
 import { AssistantConversationRuntime, PromptContextCandidateCatalog } from "@buli/engine";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 import { renderChatScreenInTerminal } from "@buli/tui";
+import { installConsoleFileLogger } from "../consoleFileLogger.ts";
 
 const DEFAULT_MODEL_ID = "gpt-5.4";
 
@@ -23,6 +24,8 @@ export async function runInteractiveChat(input: {
   if (!stdin.isTTY) {
     return "Interactive chat requires a TTY. Run `buli` in a terminal.";
   }
+
+  installConsoleFileLogger();
 
   const provider = new OpenAiProvider({ store });
   const promptContextBrowseRootPath = os.homedir();
@@ -48,6 +51,7 @@ export async function runInteractiveChat(input: {
     selectedModelId: input.selectedModelId ?? DEFAULT_MODEL_ID,
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
   };
+
 
   const chatScreen = await renderChatScreenInTerminal(renderArgs);
 

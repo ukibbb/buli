@@ -18,4 +18,10 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
+: "${BULI_CONSOLE_LOG_FILE:=$SCRIPT_DIR/buli-console.log}"
+export BULI_CONSOLE_LOG_FILE
+
+: "${BULI_CONSOLE_LOG_RESET:=true}"
+export BULI_CONSOLE_LOG_RESET
+
 exec bun "$CLI_ENTRYPOINT" "$@"
