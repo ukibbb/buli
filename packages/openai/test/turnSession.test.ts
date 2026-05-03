@@ -134,6 +134,57 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
   });
 });
 
+test("OpenAiProviderConversationTurn aggregates usage across tool and final response steps", async () => {
+  const requestBodies: string[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":20},"output_tokens":30,"output_tokens_details":{"reasoning_tokens":12},"total_tokens":130}}}\n\n',
+    ]),
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":50,"input_tokens_details":{"cached_tokens":5},"output_tokens":25,"output_tokens_details":{"reasoning_tokens":7},"total_tokens":75}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Run pwd"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  const emittedEvents: ProviderStreamEvent[] = [];
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    emittedEvents.push(emittedEvent);
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: "Command: pwd\nWorking directory: /tmp\nExit code: 0",
+      });
+    }
+  }
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "tool_call_requested",
+    "text_chunk",
+    "completed",
+  ]);
+  expect(emittedEvents.find((emittedEvent) => emittedEvent.type === "completed")).toEqual({
+    type: "completed",
+    usage: {
+      total: 205,
+      input: 125,
+      output: 36,
+      reasoning: 19,
+      cache: { read: 25, write: 0 },
+    },
+  });
+});
+
 test("OpenAiProviderConversationTurn replays streamed function_call items when terminal response output omits them", async () => {
   const requestBodies: string[] = [];
   const queuedResponses = [

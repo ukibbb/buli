@@ -1,4 +1,4 @@
-import type { ProviderStreamEvent, ToolCallRequest } from "@buli/contracts";
+import type { ProviderStreamEvent, TokenUsage, ToolCallRequest } from "@buli/contracts";
 import { z } from "zod";
 import { OpenAiUsageSchema, normalizeOpenAiUsage } from "./usage.ts";
 
@@ -70,7 +70,10 @@ type OpenAiResponseStepToolCallRequestedState = {
   toolCallId: string;
   toolCallRequest: ToolCallRequest;
   responseOutputItems: unknown[];
+  usage: TokenUsage;
 };
+
+type PendingOpenAiResponseStepToolCallRequestedState = Omit<OpenAiResponseStepToolCallRequestedState, "responseOutputItems" | "usage">;
 
 type OpenAiResponseStepCompletedState = {
   terminalKind: "completed";
@@ -215,6 +218,7 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
   let isReasoningSummaryInProgress = false;
   let reasoningPartSeparatorPending = false;
   let terminalState: OpenAiResponseStepTerminalState | undefined;
+  let pendingToolCallTerminalState: PendingOpenAiResponseStepToolCallRequestedState | undefined;
   const pendingFunctionCallStateByItemId = new Map<string, PendingFunctionCallState>();
   const trackedOutputItemsByIndex = new Map<number, unknown>();
 
@@ -330,11 +334,10 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
     pendingFunctionCallState.hasEmittedProviderEvent = true;
     const toolCallRequest = createToolCallRequest(pendingFunctionCallState);
-    terminalState = {
+    pendingToolCallTerminalState = {
       terminalKind: "tool_call_requested",
       toolCallId: pendingFunctionCallState.toolCallId,
       toolCallRequest,
-      responseOutputItems: [],
     };
     return createProviderToolCallRequestedEvent(pendingFunctionCallState.toolCallId, toolCallRequest);
   }
@@ -498,10 +501,11 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
         const completedResponse = ResponseCompletedChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
-        if (terminalState?.terminalKind === "tool_call_requested") {
+        if (pendingToolCallTerminalState) {
           terminalState = {
-            ...terminalState,
+            ...pendingToolCallTerminalState,
             responseOutputItems: createTrackedBackedResponseOutputItems(completedResponse.response.output),
+            usage: normalizeOpenAiUsage(completedResponse.response.usage),
           };
           continue;
         }
@@ -514,10 +518,11 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
         const incompleteResponse = ResponseIncompleteChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
-        if (terminalState?.terminalKind === "tool_call_requested") {
+        if (pendingToolCallTerminalState) {
           terminalState = {
-            ...terminalState,
+            ...pendingToolCallTerminalState,
             responseOutputItems: createTrackedBackedResponseOutputItems(incompleteResponse.response.output),
+            usage: normalizeOpenAiUsage(incompleteResponse.response.usage),
           };
           continue;
         }

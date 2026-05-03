@@ -4,7 +4,7 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ReasoningCollapsedChip } from "../../src/components/ReasoningCollapsedChip.tsx";
 
 describe("ReasoningCollapsedChip", () => {
-  test("renders_duration_without_token_count", async () => {
+  test("renders_pending_token_label_when_token_count_is_unavailable", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningCollapsedChip reasoningDurationMs={2500} reasoningTokenCount={undefined} />,
       { width: 60, height: 3 },
@@ -13,6 +13,7 @@ describe("ReasoningCollapsedChip", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("thinking");
     expect(frame).toContain("2.5s");
+    expect(frame).toContain("reasoning tokens pending");
   });
 
   test("renders_token_count_when_provided", async () => {
@@ -22,7 +23,7 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("512 tokens");
+    expect(frame).toContain("512 reasoning tok");
   });
 
   test("renders_duration_in_textMuted_and_token_count_in_textDim", async () => {
@@ -33,7 +34,7 @@ describe("ReasoningCollapsedChip", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("3.2s");
-    expect(frame).toContain("1248 tokens");
+    expect(frame).toContain("1248 reasoning tok");
     expect(chatScreenTheme.textMuted).toBe("#64748B");
     expect(chatScreenTheme.textDim).toBe("#475569");
   });

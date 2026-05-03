@@ -42,7 +42,7 @@ function isFencedCodeFenceLineText(lineText: string): boolean {
 }
 
 function isHeadingLineText(lineText: string): boolean {
-  return /^(#{1,3})\s+.+$/.test(lineText);
+  return /^(#{1,6})\s+.+$/.test(lineText);
 }
 
 function isHorizontalRuleLineText(lineText: string): boolean {
@@ -117,6 +117,15 @@ function consumeBlankLineSeparators(completedLines: readonly CompletedLine[], st
     nextLineIndex,
     consumedOffset,
   };
+}
+
+function findNextNonBlankCompletedLineIndex(completedLines: readonly CompletedLine[], startLineIndex: number): number {
+  let scanningLineIndex = startLineIndex;
+  while (scanningLineIndex < completedLines.length && isBlankLineText(completedLines[scanningLineIndex]?.text ?? "")) {
+    scanningLineIndex += 1;
+  }
+
+  return scanningLineIndex;
 }
 
 function tryParseCompletedFencedCodeBlock(
@@ -215,9 +224,28 @@ function tryParseCompletedListBlock(
 
   let lastListLineIndex = startLineIndex;
   let nextLineIndex = startLineIndex + 1;
-  while (nextLineIndex < completedLines.length && matchesCurrentListLine(completedLines[nextLineIndex]?.text ?? "")) {
-    lastListLineIndex = nextLineIndex;
-    nextLineIndex += 1;
+  while (nextLineIndex < completedLines.length) {
+    const nextLineText = completedLines[nextLineIndex]?.text ?? "";
+    if (matchesCurrentListLine(nextLineText)) {
+      lastListLineIndex = nextLineIndex;
+      nextLineIndex += 1;
+      continue;
+    }
+
+    if (!isBlankLineText(nextLineText)) {
+      break;
+    }
+
+    const nextNonBlankLineIndex = findNextNonBlankCompletedLineIndex(completedLines, nextLineIndex);
+    if (nextNonBlankLineIndex >= completedLines.length) {
+      return undefined;
+    }
+
+    if (!matchesCurrentListLine(completedLines[nextNonBlankLineIndex]?.text ?? "")) {
+      break;
+    }
+
+    nextLineIndex = nextNonBlankLineIndex;
   }
 
   if (nextLineIndex >= completedLines.length) {
@@ -239,6 +267,10 @@ function tryParseCompletedParagraphBlock(
   startLineIndex: number,
   markdownBufferText: string,
 ): CompletedBlockParseResult | undefined {
+  if (startsNewMarkdownBlock(completedLines[startLineIndex]?.text ?? "")) {
+    return undefined;
+  }
+
   let lastParagraphLineIndex = startLineIndex;
   let nextLineIndex = startLineIndex + 1;
 

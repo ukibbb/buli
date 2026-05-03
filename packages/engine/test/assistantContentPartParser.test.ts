@@ -76,6 +76,38 @@ test("parseAssistantResponseIntoContentParts parses bulleted and numbered lists"
   });
 });
 
+test("parseAssistantResponseIntoContentParts merges blank-line-separated bullets into one list", () => {
+  const blocks = parseAssistantResponseIntoContentParts("- first\n\n- second\n\n- third");
+  expect(blocks).toEqual([
+    {
+      kind: "bulleted_list",
+      itemSpanArrays: [
+        [{ spanKind: "plain", spanText: "first" }],
+        [{ spanKind: "plain", spanText: "second" }],
+        [{ spanKind: "plain", spanText: "third" }],
+      ],
+    },
+  ]);
+});
+
+test("parseAssistantResponseIntoContentParts merges blank-line-separated numbered items into one list", () => {
+  const blocks = parseAssistantResponseIntoContentParts("1. one\n\n2. two");
+  expect(blocks).toEqual([
+    {
+      kind: "numbered_list",
+      itemSpanArrays: [
+        [{ spanKind: "plain", spanText: "one" }],
+        [{ spanKind: "plain", spanText: "two" }],
+      ],
+    },
+  ]);
+});
+
+test("parseAssistantResponseIntoContentParts keeps a paragraph between two bulleted lists separate", () => {
+  const blocks = parseAssistantResponseIntoContentParts("- a\n\nbreak\n\n- b");
+  expect(blocks.map((block) => block.kind)).toEqual(["bulleted_list", "paragraph", "bulleted_list"]);
+});
+
 test("parseAssistantResponseIntoContentParts parses a checklist with pending and completed items", () => {
   const blocks = parseAssistantResponseIntoContentParts("- [ ] open\n- [x] done\n- [X] also done");
   expect(blocks).toEqual([

@@ -34,6 +34,28 @@ describe("TurnFooter", () => {
     expect(frame).toContain("150 tok");
   });
 
+  test("renders_reasoning_token_usage_when_provided", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <TurnFooter
+        modelDisplayName="gpt-5.4"
+        turnDurationMs={1800}
+        usage={{
+          input: 120,
+          output: 30,
+          reasoning: 42,
+          total: 192,
+          cache: { read: 10, write: 0 },
+        }}
+      />,
+      { width: 80, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("192 tok");
+    expect(frame).toContain("42 reasoning tok");
+    expect(frame).toContain("gpt-5.4");
+  });
+
   test("shortens_right_side_metadata_in_narrow_widths", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TurnFooter

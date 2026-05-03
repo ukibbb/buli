@@ -714,28 +714,29 @@ export function ChatScreen(props: ChatScreenProps) {
       </box>
       <box flexDirection="column" flexShrink={0}>
         {chatSessionState.pendingToolApprovalRequest ? (
-          <ToolApprovalRequestBlock
-            pendingToolCallDetail={chatSessionState.pendingToolApprovalRequest.pendingToolCallDetail}
-            riskExplanation={chatSessionState.pendingToolApprovalRequest.riskExplanation}
-            onApprove={() => {
-              const pendingToolApprovalRequest = chatSessionState.pendingToolApprovalRequest;
-              if (!pendingToolApprovalRequest) {
-                return;
-              }
-              void latestActiveConversationTurnRef.current?.approvePendingToolCall(
-                pendingToolApprovalRequest.approvalId,
-              );
-            }}
-            onDeny={() => {
-              const pendingToolApprovalRequest = chatSessionState.pendingToolApprovalRequest;
-              if (!pendingToolApprovalRequest) {
-                return;
-              }
-              void latestActiveConversationTurnRef.current?.denyPendingToolCall(
-                pendingToolApprovalRequest.approvalId,
-              );
-            }}
-          />
+          <box paddingX={2}>
+            <ToolApprovalRequestBlock
+              riskExplanation={chatSessionState.pendingToolApprovalRequest.riskExplanation}
+              onApprove={() => {
+                const pendingToolApprovalRequest = chatSessionState.pendingToolApprovalRequest;
+                if (!pendingToolApprovalRequest) {
+                  return;
+                }
+                void latestActiveConversationTurnRef.current?.approvePendingToolCall(
+                  pendingToolApprovalRequest.approvalId,
+                );
+              }}
+              onDeny={() => {
+                const pendingToolApprovalRequest = chatSessionState.pendingToolApprovalRequest;
+                if (!pendingToolApprovalRequest) {
+                  return;
+                }
+                void latestActiveConversationTurnRef.current?.denyPendingToolCall(
+                  pendingToolApprovalRequest.approvalId,
+                );
+              }}
+            />
+          </box>
         ) : null}
         {promptContextSelectionPane}
         {terminalSizeTierForChatScreen === minimumTerminalSizeTier ? (

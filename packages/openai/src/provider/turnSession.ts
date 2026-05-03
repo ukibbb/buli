@@ -4,6 +4,7 @@ import type {
   OpenAiProviderTurnReplayInputItem,
   ProviderStreamEvent,
   ReasoningEffort,
+  TokenUsage,
 } from "@buli/contracts";
 import {
   createFunctionCallOutputInputItem,
@@ -13,12 +14,14 @@ import {
 } from "./request.ts";
 import { writeOpenAiDebugLog } from "./debugLog.ts";
 import { createBashToolDefinition } from "./toolDefinitions.ts";
-import { parseOpenAiStream } from "./stream.ts";
+import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
 
 type OpenAiProviderToolResultSubmission = {
   toolCallId: string;
   toolResultText: string;
 };
+
+type OpenAiTerminalUsageProviderEvent = Extract<ProviderStreamEvent, { type: "completed" | "incomplete" }>;
 
 type HttpErrorDebugResponse = {
   status: number;
@@ -42,6 +45,27 @@ function createHttpRequestBody(input: {
     ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] } : {}),
     ...(input.selectedReasoningEffort ? { reasoning: { effort: input.selectedReasoningEffort } } : {}),
     stream: true,
+  };
+}
+
+function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenUsage: TokenUsage): TokenUsage {
+  if (!accumulatedTokenUsage) {
+    return nextTokenUsage;
+  }
+
+  const accumulatedTotalTokenCount =
+    accumulatedTokenUsage.total ?? accumulatedTokenUsage.input + accumulatedTokenUsage.output + accumulatedTokenUsage.reasoning;
+  const nextTotalTokenCount = nextTokenUsage.total ?? nextTokenUsage.input + nextTokenUsage.output + nextTokenUsage.reasoning;
+
+  return {
+    total: accumulatedTotalTokenCount + nextTotalTokenCount,
+    input: accumulatedTokenUsage.input + nextTokenUsage.input,
+    output: accumulatedTokenUsage.output + nextTokenUsage.output,
+    reasoning: accumulatedTokenUsage.reasoning + nextTokenUsage.reasoning,
+    cache: {
+      read: accumulatedTokenUsage.cache.read + nextTokenUsage.cache.read,
+      write: accumulatedTokenUsage.cache.write + nextTokenUsage.cache.write,
+    },
   };
 }
 
@@ -115,6 +139,7 @@ export class OpenAiProviderConversationTurn {
       throw new Error("Provider turn events can only be streamed once");
     }
     this.hasStartedStreamingProviderEvents = true;
+    let accumulatedOpenAiTurnUsage: TokenUsage | undefined;
 
     while (true) {
       const requestBody = createHttpRequestBody({
@@ -137,7 +162,8 @@ export class OpenAiProviderConversationTurn {
       }
 
       const openAiStepEventIterator = parseOpenAiStream(response)[Symbol.asyncIterator]();
-      let terminalState;
+      let terminalState: OpenAiResponseStepTerminalState | undefined;
+      let terminalUsageProviderEvent: OpenAiTerminalUsageProviderEvent | undefined;
       while (true) {
         const nextStepItem = await openAiStepEventIterator.next();
         if (nextStepItem.done) {
@@ -145,15 +171,27 @@ export class OpenAiProviderConversationTurn {
           break;
         }
 
+        if (nextStepItem.value.type === "completed" || nextStepItem.value.type === "incomplete") {
+          terminalUsageProviderEvent = nextStepItem.value;
+          accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, nextStepItem.value.usage);
+          continue;
+        }
+
         yield nextStepItem.value;
       }
 
+      if (!terminalState) {
+        throw new Error("OpenAI response step ended without a terminal state");
+      }
+
       if (terminalState.terminalKind === "tool_call_requested") {
+        accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, terminalState.usage);
         const responseReplayItems = createOpenAiResponseReplayItems(terminalState.responseOutputItems);
         await writeOpenAiDebugLog("OpenAI tool-call terminal state", {
           toolCallId: terminalState.toolCallId,
           toolCallRequest: terminalState.toolCallRequest,
           responseOutputItems: terminalState.responseOutputItems,
+          usage: terminalState.usage,
           responseReplayItems,
         });
         if (!responseReplayItems.providerTurnReplayInputItems.some(isMatchingFunctionCallReplayItem(terminalState.toolCallId))) {
@@ -175,6 +213,26 @@ export class OpenAiProviderConversationTurn {
         continue;
       }
 
+      if (terminalState.terminalKind === "completed") {
+        if (!terminalUsageProviderEvent || terminalUsageProviderEvent.type !== "completed") {
+          throw new Error("OpenAI completed response ended without a completed usage event");
+        }
+
+        yield {
+          ...terminalUsageProviderEvent,
+          usage: accumulatedOpenAiTurnUsage ?? terminalUsageProviderEvent.usage,
+        };
+        return;
+      }
+
+      if (!terminalUsageProviderEvent || terminalUsageProviderEvent.type !== "incomplete") {
+        throw new Error("OpenAI incomplete response ended without an incomplete usage event");
+      }
+
+      yield {
+        ...terminalUsageProviderEvent,
+        usage: accumulatedOpenAiTurnUsage ?? terminalUsageProviderEvent.usage,
+      };
       return;
     }
   }

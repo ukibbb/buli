@@ -253,6 +253,7 @@ test("parseOpenAiStream emits tool_call_requested and returns a tool-request ter
             arguments: '{"command":"pwd","description":"Print working directory"}',
           },
         ],
+        usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       });
       break;
     }
@@ -349,6 +350,7 @@ test("parseOpenAiStream repairs tool-turn output when response.completed omits t
         arguments: '{"command":"pwd","description":"Print working directory"}',
       },
     ],
+    usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   });
 });
 
@@ -382,6 +384,7 @@ test("parseOpenAiStream repairs weakened function_call arguments from response.c
         status: "completed",
       },
     ],
+    usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   });
 });
 
@@ -415,6 +418,7 @@ test("parseOpenAiStream repairs tracked function_call items from output_item.don
         status: "completed",
       },
     ],
+    usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   });
 });
 
@@ -447,6 +451,7 @@ test("parseOpenAiStream repairs tool-turn output when response.incomplete omits 
         arguments: '{"command":"pwd","description":"Print working directory"}',
       },
     ],
+    usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   });
 });
 

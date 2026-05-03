@@ -185,6 +185,17 @@ function isHorizontalRuleLine(currentLine: string): boolean {
   return /^(?:-{3,}|_{3,}|\*{3,})\s*$/.test(currentLine.trim());
 }
 
+// Lists scan past blank lines so loose lists (CommonMark) and tight lists
+// collapse to a single block — otherwise blank-separated items render with
+// gaps while consecutive ones don't, which reads as inconsistent rhythm.
+function findNextNonBlankLineIndex(responseLines: string[], startLineIndex: number): number {
+  let scanningLineIndex = startLineIndex;
+  while (scanningLineIndex < responseLines.length && (responseLines[scanningLineIndex] ?? "").trim() === "") {
+    scanningLineIndex += 1;
+  }
+  return scanningLineIndex;
+}
+
 function tryParseChecklistBlock(
   responseLines: string[],
   startLineIndex: number,
@@ -195,8 +206,18 @@ function tryParseChecklistBlock(
   }
   const items: ChecklistItem[] = [];
   let scanningLineIndex = startLineIndex;
+  let lastConsumedLineIndex = startLineIndex;
   while (scanningLineIndex < responseLines.length) {
     const currentLine = responseLines[scanningLineIndex] ?? "";
+    if (currentLine.trim() === "") {
+      const nextNonBlankIndex = findNextNonBlankLineIndex(responseLines, scanningLineIndex);
+      const nextLine = responseLines[nextNonBlankIndex] ?? "";
+      if (/^\s*[-*]\s+\[[ xX]]\s+/.test(nextLine)) {
+        scanningLineIndex = nextNonBlankIndex;
+        continue;
+      }
+      break;
+    }
     const checklistLineMatch = currentLine.match(/^\s*[-*]\s+\[([ xX])]\s+(.*)$/);
     if (!checklistLineMatch) {
       break;
@@ -206,11 +227,12 @@ function tryParseChecklistBlock(
       itemTitle: (checklistLineMatch[2] ?? "").trim(),
       itemStatus,
     });
+    lastConsumedLineIndex = scanningLineIndex;
     scanningLineIndex += 1;
   }
   return {
     block: { kind: "checklist", items },
-    nextLineIndex: scanningLineIndex,
+    nextLineIndex: lastConsumedLineIndex + 1,
   };
 }
 
@@ -224,18 +246,29 @@ function tryParseBulletedListBlock(
   }
   const itemSpanArrays: InlineSpan[][] = [];
   let scanningLineIndex = startLineIndex;
+  let lastConsumedLineIndex = startLineIndex;
   while (scanningLineIndex < responseLines.length) {
     const currentLine = responseLines[scanningLineIndex] ?? "";
+    if (currentLine.trim() === "") {
+      const nextNonBlankIndex = findNextNonBlankLineIndex(responseLines, scanningLineIndex);
+      const nextLine = responseLines[nextNonBlankIndex] ?? "";
+      if (/^\s*[-*]\s+/.test(nextLine) && !/^\s*[-*]\s+\[[ xX]]\s+/.test(nextLine)) {
+        scanningLineIndex = nextNonBlankIndex;
+        continue;
+      }
+      break;
+    }
     const bulletedLineMatch = currentLine.match(/^\s*[-*]\s+(.*)$/);
     if (!bulletedLineMatch || /^\s*[-*]\s+\[[ xX]]\s+/.test(currentLine)) {
       break;
     }
     itemSpanArrays.push(parseInlineMarkdownSpans((bulletedLineMatch[1] ?? "").trim()));
+    lastConsumedLineIndex = scanningLineIndex;
     scanningLineIndex += 1;
   }
   return {
     block: { kind: "bulleted_list", itemSpanArrays },
-    nextLineIndex: scanningLineIndex,
+    nextLineIndex: lastConsumedLineIndex + 1,
   };
 }
 
@@ -249,18 +282,29 @@ function tryParseNumberedListBlock(
   }
   const itemSpanArrays: InlineSpan[][] = [];
   let scanningLineIndex = startLineIndex;
+  let lastConsumedLineIndex = startLineIndex;
   while (scanningLineIndex < responseLines.length) {
     const currentLine = responseLines[scanningLineIndex] ?? "";
+    if (currentLine.trim() === "") {
+      const nextNonBlankIndex = findNextNonBlankLineIndex(responseLines, scanningLineIndex);
+      const nextLine = responseLines[nextNonBlankIndex] ?? "";
+      if (/^\s*\d+[.)]\s+/.test(nextLine)) {
+        scanningLineIndex = nextNonBlankIndex;
+        continue;
+      }
+      break;
+    }
     const numberedLineMatch = currentLine.match(/^\s*\d+[.)]\s+(.*)$/);
     if (!numberedLineMatch) {
       break;
     }
     itemSpanArrays.push(parseInlineMarkdownSpans((numberedLineMatch[1] ?? "").trim()));
+    lastConsumedLineIndex = scanningLineIndex;
     scanningLineIndex += 1;
   }
   return {
     block: { kind: "numbered_list", itemSpanArrays },
-    nextLineIndex: scanningLineIndex,
+    nextLineIndex: lastConsumedLineIndex + 1,
   };
 }
 

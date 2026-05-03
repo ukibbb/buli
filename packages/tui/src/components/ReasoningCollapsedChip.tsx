@@ -19,12 +19,12 @@ export function ReasoningCollapsedChip(props: ReasoningCollapsedChipProps): Reac
         <span fg={chatScreenTheme.textMuted}>{"// thinking"}</span>
         <span fg={chatScreenTheme.textDim}>{" · "}</span>
         <span fg={chatScreenTheme.textMuted}>{`${durationInSeconds}s`}</span>
-        {props.reasoningTokenCount === undefined ? null : (
-          <>
-            <span fg={chatScreenTheme.textDim}>{" · "}</span>
-            <span fg={chatScreenTheme.textDim}>{`${props.reasoningTokenCount} tokens`}</span>
-          </>
-        )}
+        <>
+          <span fg={chatScreenTheme.textDim}>{" · "}</span>
+          <span fg={chatScreenTheme.textDim}>
+            {props.reasoningTokenCount === undefined ? "reasoning tokens pending" : `${props.reasoningTokenCount} reasoning tok`}
+          </span>
+        </>
       </text>
     </box>
   );

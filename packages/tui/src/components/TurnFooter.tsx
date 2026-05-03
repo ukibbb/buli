@@ -5,8 +5,8 @@ import { glyphs } from "./glyphs.ts";
 import { shortenTerminalTextWithMiddleEllipsis } from "./shortenTerminalTextWithMiddleEllipsis.ts";
 
 // Mirrors pen component/TurnFooter (qfHh3): a state indicator on the left
-// ("✓ done · {duration}") and turn metadata on the right ("tokens · model
-// [· reasoning][· cached]"), separated across a space-between flex row so
+// ("✓ done · {duration}") and turn metadata on the right ("tokens
+// [· reasoning] · model [· cached]"), separated across a space-between flex row so
 // the two sides read as distinct regions rather than a run-on line.
 export type TurnFooterProps = {
   modelDisplayName: string;
@@ -20,7 +20,7 @@ export function TurnFooter(props: TurnFooterProps): ReactNode {
     : undefined;
   const durationLabel = formatTurnDurationMs(props.turnDurationMs);
   const turnMetadataText = buildTurnMetadataText(props, totalTokenCount);
-  const displayedTurnMetadataText = shortenTerminalTextWithMiddleEllipsis(turnMetadataText, 36);
+  const displayedTurnMetadataText = shortenTerminalTextWithMiddleEllipsis(turnMetadataText, 64);
 
   return (
     <box flexDirection="row" justifyContent="space-between" minWidth={0} overflow="hidden" width="100%">
@@ -48,11 +48,11 @@ function buildTurnMetadataText(props: TurnFooterProps, totalTokenCount: number |
     metadataLabels.push(`${totalTokenCount} tok`);
   }
 
-  metadataLabels.push(props.modelDisplayName);
-
   if (props.usage && props.usage.reasoning > 0) {
-    metadataLabels.push(`${props.usage.reasoning} reasoning`);
+    metadataLabels.push(`${props.usage.reasoning} reasoning tok`);
   }
+
+  metadataLabels.push(props.modelDisplayName);
 
   if (props.usage && props.usage.cache.read > 0) {
     metadataLabels.push(`${props.usage.cache.read} cached`);

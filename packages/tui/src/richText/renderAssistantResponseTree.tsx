@@ -84,17 +84,18 @@ function AssistantContentPartView(props: { assistantContentPart: AssistantConten
       />
     );
   }
-  // Remaining arm: horizontal_rule.
+  // Remaining arm: horizontal_rule. Color matches the focused input border so
+  // the separator reads as a peer of the active surface, not generic chrome.
+  // border=["top"] lets the rule span the parent's full width responsively
+  // instead of guessing a character count.
   return (
-    <box flexDirection="row" alignItems="center" gap={1} width="100%">
-      <box flexGrow={1}>
-        <text fg={chatScreenTheme.border}>{"─".repeat(40)}</text>
-      </box>
-      <text fg={chatScreenTheme.textDim}>§</text>
-      <box flexGrow={1}>
-        <text fg={chatScreenTheme.border}>{"─".repeat(40)}</text>
-      </box>
-    </box>
+    <box
+      border={["top"]}
+      borderColor={chatScreenTheme.accentGreen}
+      flexShrink={0}
+      height={1}
+      width="100%"
+    />
   );
 }
 

@@ -74,7 +74,7 @@ describe("RenderAssistantResponseTree", () => {
     expect(chatScreenTheme.textSecondary).toBe("#94A3B8");
   });
 
-  test("horizontal_rule renders centered § glyph with border lines", async () => {
+  test("horizontal_rule renders a full-width line in the focused input accent color", async () => {
     const parts: readonly AssistantContentPart[] = [
       { kind: "horizontal_rule" },
     ];
@@ -84,9 +84,9 @@ describe("RenderAssistantResponseTree", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("§");
-    expect(chatScreenTheme.border).toBe("#2A2A3A");
-    expect(chatScreenTheme.textDim).toBe("#475569");
+    expect(frame).not.toContain("§");
+    expect(frame).toContain("─");
+    expect(chatScreenTheme.accentGreen).toBe("#10B981");
   });
 
   test("heading level 4 uses textSecondary #### prefix and textPrimary body", async () => {
