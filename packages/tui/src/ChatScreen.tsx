@@ -112,6 +112,7 @@ function resolveChatScreenInteractionScope(chatSessionState: ChatSessionState): 
 }
 
 function clampScrollTop(conversationMessageScrollBox: ScrollBoxRenderable, nextScrollTop: number): number {
+
   return Math.min(
     Math.max(nextScrollTop, 0),
     Math.max(0, conversationMessageScrollBox.scrollHeight - conversationMessageScrollBox.viewport.height),
@@ -262,17 +263,17 @@ export function ChatScreen(props: ChatScreenProps) {
 
       setChatSessionState((currentChatSessionState) =>
         currentChatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates" &&
-        currentChatSessionState.promptContextSelectionState.promptContextQueryText === input.promptContextQueryText
+          currentChatSessionState.promptContextSelectionState.promptContextQueryText === input.promptContextQueryText
           ? refreshPromptContextCandidatesForSelection(
-              currentChatSessionState,
-              input.promptContextQueryText,
-              promptContextCandidates,
-            )
+            currentChatSessionState,
+            input.promptContextQueryText,
+            promptContextCandidates,
+          )
           : showPromptContextCandidatesForSelection(
-              currentChatSessionState,
-              input.promptContextQueryText,
-              promptContextCandidates,
-            ),
+            currentChatSessionState,
+            input.promptContextQueryText,
+            promptContextCandidates,
+          ),
       );
     },
   );
@@ -676,8 +677,8 @@ export function ChatScreen(props: ChatScreenProps) {
     chatSessionState.latestTokenUsage?.total ??
     (chatSessionState.latestTokenUsage
       ? chatSessionState.latestTokenUsage.input +
-        chatSessionState.latestTokenUsage.output +
-        chatSessionState.latestTokenUsage.reasoning
+      chatSessionState.latestTokenUsage.output +
+      chatSessionState.latestTokenUsage.reasoning
       : undefined);
   const contextWindowTokenCapacity = lookupContextWindowTokenCapacityForModel(chatSessionState.selectedModelId);
   const orderedConversationMessages = listOrderedConversationMessages(chatSessionState);
@@ -716,6 +717,24 @@ export function ChatScreen(props: ChatScreenProps) {
           <ToolApprovalRequestBlock
             pendingToolCallDetail={chatSessionState.pendingToolApprovalRequest.pendingToolCallDetail}
             riskExplanation={chatSessionState.pendingToolApprovalRequest.riskExplanation}
+            onApprove={() => {
+              const pendingToolApprovalRequest = chatSessionState.pendingToolApprovalRequest;
+              if (!pendingToolApprovalRequest) {
+                return;
+              }
+              void latestActiveConversationTurnRef.current?.approvePendingToolCall(
+                pendingToolApprovalRequest.approvalId,
+              );
+            }}
+            onDeny={() => {
+              const pendingToolApprovalRequest = chatSessionState.pendingToolApprovalRequest;
+              if (!pendingToolApprovalRequest) {
+                return;
+              }
+              void latestActiveConversationTurnRef.current?.denyPendingToolCall(
+                pendingToolApprovalRequest.approvalId,
+              );
+            }}
           />
         ) : null}
         {promptContextSelectionPane}

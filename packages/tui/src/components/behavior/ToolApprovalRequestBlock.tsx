@@ -6,44 +6,42 @@ import { EditToolCallCard } from "../toolCalls/EditToolCallCard.tsx";
 import { GrepToolCallCard } from "../toolCalls/GrepToolCallCard.tsx";
 import { ReadToolCallCard } from "../toolCalls/ReadToolCallCard.tsx";
 import { ApprovalDecisionControl } from "../primitives/ApprovalDecisionControl.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { TaskToolCallCard } from "../toolCalls/TaskToolCallCard.tsx";
 import { TodoWriteToolCallCard } from "../toolCalls/TodoWriteToolCallCard.tsx";
 import { glyphs } from "../glyphs.ts";
 
-// ToolApprovalRequestBlock is the UI the agent shows when a pending tool
-// invocation needs explicit user approval. It reuses the matching tool card
-// (rendered in the streaming state) so the user judges the exact invocation
-// they're approving, with the risk explanation and decision hints beneath.
 export type ToolApprovalRequestBlockProps = {
   pendingToolCallDetail: ToolCallDetail;
   riskExplanation: string;
+  onApprove: () => void;
+  onDeny: () => void;
 };
 
 export function ToolApprovalRequestBlock(props: ToolApprovalRequestBlockProps): ReactNode {
   return (
-    <SurfaceCard
-      accentColor={chatScreenTheme.accentAmber}
-      headerLeft={
-        <box flexDirection="row">
-          <text fg={chatScreenTheme.accentAmber}>{glyphs.statusDot}</text>
-          <text>
-            <b>{` Approval required`}</b>
+    <box flexDirection="column" width="100%">
+      <box
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="space-between"
+        paddingX={1}
+        width="100%"
+      >
+        <box flexDirection="row" flexShrink={1} minWidth={0} overflow="hidden">
+          <text wrapMode="none">
+            <b fg={chatScreenTheme.accentAmber}>{`${glyphs.statusDot} Approval needed`}</b>
+            <span fg={chatScreenTheme.textMuted}>{" — "}</span>
+            <span fg={chatScreenTheme.accentAmber}>{props.riskExplanation}</span>
           </text>
         </box>
-      }
-      headerRight={<ApprovalDecisionControl />}
-      bodyContent={
-        <box flexDirection="column" paddingX={1} width="100%">
-          <box marginBottom={1} width="100%">
-            <text fg={chatScreenTheme.accentAmber}>{props.riskExplanation}</text>
-          </box>
-          <box width="100%">
-            <PendingToolCallPreview pendingToolCallDetail={props.pendingToolCallDetail} />
-          </box>
+        <box marginLeft={1}>
+          <ApprovalDecisionControl onApprove={props.onApprove} onDeny={props.onDeny} />
         </box>
-      }
-    />
+      </box>
+      <box width="100%">
+        <PendingToolCallPreview pendingToolCallDetail={props.pendingToolCallDetail} />
+      </box>
+    </box>
   );
 }
 
@@ -64,6 +62,6 @@ function PendingToolCallPreview(props: { pendingToolCallDetail: ToolCallDetail }
   if (pendingToolCallDetail.toolName === "todowrite") {
     return <TodoWriteToolCallCard renderState="streaming" toolCallDetail={pendingToolCallDetail} />;
   }
-  // Remaining arm: task. Exhaustive over ToolCallDetail's discriminated union.
+  // Exhaustive over ToolCallDetail's discriminated union; remaining arm is task.
   return <TaskToolCallCard renderState="streaming" toolCallDetail={pendingToolCallDetail} />;
 }

