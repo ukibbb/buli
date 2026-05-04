@@ -1,4 +1,5 @@
 import { ReasoningEffortSchema, type ReasoningEffort } from "@buli/contracts";
+import { parseBashToolApprovalMode, type BashToolApprovalMode } from "@buli/engine";
 import { runInteractiveChat } from "./commands/chat.ts";
 import { runLogin } from "./commands/login.ts";
 import { runListAvailableModels } from "./commands/models.ts";
@@ -6,6 +7,7 @@ import { runListAvailableModels } from "./commands/models.ts";
 export type InteractiveChatStartOptions = {
   selectedModelId?: string;
   selectedReasoningEffort?: ReasoningEffort;
+  bashToolApprovalMode?: BashToolApprovalMode;
 };
 
 type CommandHandlers = {
@@ -20,7 +22,7 @@ const defaultCommandHandlers: CommandHandlers = {
   runLogin,
 };
 
-const USAGE = "Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>]";
+const USAGE = "Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]";
 
 function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveChatStartOptions | undefined {
   const interactiveChatStartOptions: InteractiveChatStartOptions = {};
@@ -51,6 +53,22 @@ function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveC
       }
 
       interactiveChatStartOptions.selectedReasoningEffort = parsedReasoningEffort.data;
+      index += 1;
+      continue;
+    }
+
+    if (argument === "--bash-approval") {
+      const selectedBashToolApprovalMode = args[index + 1];
+      if (!selectedBashToolApprovalMode || selectedBashToolApprovalMode.startsWith("--")) {
+        return undefined;
+      }
+
+      const parsedBashToolApprovalMode = parseBashToolApprovalMode(selectedBashToolApprovalMode);
+      if (!parsedBashToolApprovalMode) {
+        return undefined;
+      }
+
+      interactiveChatStartOptions.bashToolApprovalMode = parsedBashToolApprovalMode;
       index += 1;
       continue;
     }

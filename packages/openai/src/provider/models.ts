@@ -1,7 +1,7 @@
 import { AvailableAssistantModelSchema, ReasoningEffortSchema, type AvailableAssistantModel } from "@buli/contracts";
 import { z } from "zod";
 
-const DEFAULT_OPENAI_CODEX_MODEL_DISCOVERY_CLIENT_VERSION = "0.115.0";
+const DEFAULT_OPENAI_CODEX_MODEL_DISCOVERY_CLIENT_VERSION = "0.128.0";
 
 const OpenAiModelReasoningLevelSchema = z
   .object({

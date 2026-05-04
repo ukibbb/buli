@@ -17,6 +17,7 @@
     "dist"
   ],
   "dependencies": {
+    "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
     "@buli/openai": "workspace:*",
     "@buli/tui": "workspace:*"

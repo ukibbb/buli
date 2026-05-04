@@ -49,7 +49,8 @@ describe("ChatScreen responsive layout", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("ctx");
+    expect(frame).toContain("--");
+    expect(frame).not.toContain("ctx");
     expect(frame).toContain("implementation");
   });
 });

@@ -14,7 +14,20 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
     },
     {
       entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
       assistantMessageText: "Stored the context.",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "incomplete",
+      assistantMessageText: "Partial answer",
+      incompleteReason: "max_output_tokens",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "Unsafe partial answer",
+      failureExplanation: "Provider failed mid-turn",
     },
     {
       entryKind: "tool_call",
@@ -58,28 +71,13 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       messageText: "Stored the context.",
     },
     {
-      itemKind: "tool_call",
-      toolCallId: "call_1",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print working directory",
-      },
-    },
-    {
-      itemKind: "tool_result",
-      toolCallId: "call_1",
-      toolResultText: "Working directory: /tmp",
-    },
-    {
-      itemKind: "tool_result",
-      toolCallId: "call_2",
-      toolResultText: "The user denied this bash command, so it was not executed.",
+      itemKind: "assistant_message",
+      messageText: "Partial answer",
     },
   ]);
 });
 
-test("projectConversationSessionEntriesToModelContextItems matches repeated single-entry projection", () => {
+test("projectConversationSessionEntriesToModelContextItems projects completed and incomplete turns", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
@@ -88,6 +86,7 @@ test("projectConversationSessionEntriesToModelContextItems matches repeated sing
     },
     {
       entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
       assistantMessageText: "First answer",
     },
     {
@@ -95,9 +94,93 @@ test("projectConversationSessionEntriesToModelContextItems matches repeated sing
       promptText: "Second prompt",
       modelFacingPromptText: "Second prompt",
     },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_1",
+      toolCallDetail: {
+        toolName: "bash",
+        commandLine: "pwd",
+        commandDescription: "Print working directory",
+      },
+      toolResultText: "Working directory: /tmp",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "incomplete",
+      assistantMessageText: "Second partial answer",
+      incompleteReason: "max_output_tokens",
+    },
   ];
 
-  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual(
-    conversationSessionEntries.flatMap(projectConversationSessionEntryToModelContextItems),
-  );
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    { itemKind: "user_message", messageText: "First prompt" },
+    { itemKind: "assistant_message", messageText: "First answer" },
+    { itemKind: "user_message", messageText: "Second prompt" },
+    {
+      itemKind: "tool_call",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+    { itemKind: "tool_result", toolCallId: "call_1", toolResultText: "Working directory: /tmp" },
+    { itemKind: "assistant_message", messageText: "Second partial answer" },
+  ]);
+});
+
+test("projectConversationSessionEntriesToModelContextItems skips failed turns", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Failed prompt",
+      modelFacingPromptText: "Failed prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "Partial unsafe answer",
+      failureExplanation: "Provider failed mid-turn",
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Next prompt",
+      modelFacingPromptText: "Next prompt",
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    { itemKind: "user_message", messageText: "Next prompt" },
+  ]);
+});
+
+test("projectConversationSessionEntriesToModelContextItems skips open tool turns with no result", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Run pwd",
+      modelFacingPromptText: "Run pwd",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([]);
 });

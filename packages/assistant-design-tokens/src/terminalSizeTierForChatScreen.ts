@@ -5,14 +5,13 @@
 //
 // Thresholds are driven by the HERO 1 design's row budget:
 //   - comfortableTerminalSizeTier ≥ 24 rows × 80 cols → full design renders
-//     with room to spare for the modal, the context meter, and a multi-entry
-//     transcript.
+//     with room to spare for command help, slash selection, the context meter,
+//     and a multi-entry transcript.
 //   - compactTerminalSizeTier ≥ 12 rows × 60 cols → TopBar + InputPanel fit
-//     with a 4+ row transcript window; the ShortcutsModal drops the accent
-//     strip / dividers / footer and wraps its legend in a scroll surface.
+//     with a 4+ row transcript window and bottom-stack selection panes.
 //   - minimumTerminalSizeTier otherwise → InputPanel collapses to a
 //     single-row prompt strip so the caret stays visible even at ~6 rows
-//     total; ShortcutsModal shows only the keyboard section.
+//     total.
 
 export const comfortableTerminalSizeTier = "comfortable" as const;
 export const compactTerminalSizeTier = "compact" as const;

@@ -1,6 +1,7 @@
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import React from "react";
+import type { BuliDiagnosticLogger } from "@buli/contracts";
 import type { AssistantConversationRunner } from "@buli/engine";
 import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
@@ -13,31 +14,64 @@ export type TuiChatScreenInstance = {
 
 export async function renderChatScreenInTerminal(input: {
   selectedModelId: string;
+  selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
   loadPromptContextCandidates: ChatScreenProps["loadPromptContextCandidates"];
   assistantConversationRunner: AssistantConversationRunner;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<TuiChatScreenInstance> {
   const originalConsole = globalThis.console;
+  const consoleMode = process.env.BULI_CONSOLE_LOG_FILE?.trim() ? "disabled" : "console-overlay";
+  input.diagnosticLogger?.({
+    subsystem: "tui",
+    eventName: "terminal_renderer_create_requested",
+    fields: {
+      screenMode: "alternate-screen",
+      consoleMode,
+      useMouse: true,
+      enableMouseMovement: true,
+    },
+  });
   const cliRenderer = await createCliRenderer({
     screenMode: "alternate-screen",
     useMouse: true,
     enableMouseMovement: true,
-    consoleMode: process.env.BULI_CONSOLE_LOG_FILE?.trim() ? "disabled" : "console-overlay",
+    consoleMode,
   });
   restoreConsoleTimeStampAfterOpentuiActivation({ originalConsole });
   const root = createRoot(cliRenderer);
+  input.diagnosticLogger?.({
+    subsystem: "tui",
+    eventName: "terminal_renderer_created",
+    fields: {
+      consoleMode,
+    },
+  });
   root.render(
     React.createElement(ChatScreen, {
       assistantConversationRunner: input.assistantConversationRunner,
       loadAvailableAssistantModels: input.loadAvailableAssistantModels,
       loadPromptContextCandidates: input.loadPromptContextCandidates,
       selectedModelId: input.selectedModelId,
+      ...(input.selectedModelDefaultReasoningEffort !== undefined
+        ? { selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort }
+        : {}),
       ...(input.selectedReasoningEffort !== undefined
         ? { selectedReasoningEffort: input.selectedReasoningEffort }
         : {}),
+      ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
     }),
   );
+  input.diagnosticLogger?.({
+    subsystem: "tui",
+    eventName: "chat_screen_root_rendered",
+    fields: {
+      selectedModelId: input.selectedModelId,
+      selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort ?? null,
+      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
+    },
+  });
 
   return {
     waitUntilExit(): Promise<void> {
@@ -52,11 +86,14 @@ export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunn
 export { RenderAssistantResponseTree } from "./richText/renderAssistantResponseTree.tsx";
 export type { RenderAssistantResponseTreeProps } from "./richText/renderAssistantResponseTree.tsx";
 export { ConversationMessageList } from "./components/ConversationMessageList.tsx";
+export { CommandHelpModal } from "./components/CommandHelpModal.tsx";
 export { InputPanel } from "./components/InputPanel.tsx";
 export { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
 export { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";
 export { PromptDraftText } from "./components/PromptDraftText.tsx";
 export { ReasoningCollapsedChip } from "./components/ReasoningCollapsedChip.tsx";
-export { ReasoningStreamBlock } from "./components/ReasoningStreamBlock.tsx";
+export { SlashCommandSelectionPane } from "./components/SlashCommandSelectionPane.tsx";
+export { ThinkingStatusLine } from "./components/ThinkingStatusLine.tsx";
 export { TopBar } from "./components/TopBar.tsx";
 export { UserPromptBlock } from "./components/UserPromptBlock.tsx";
+export { buildChatSlashCommands } from "./slashCommands.ts";

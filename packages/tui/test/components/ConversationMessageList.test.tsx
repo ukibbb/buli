@@ -4,6 +4,32 @@ import { testRender } from "../testRenderWithCleanup.ts";
 import { ConversationMessageList } from "../../src/components/ConversationMessageList.tsx";
 
 describe("ConversationMessageList", () => {
+  test("renders Thinking for an empty streaming assistant message", async () => {
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: Date.now() - 1000,
+        partIds: [],
+      },
+    ];
+
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        conversationMessages={conversationMessages}
+        isReasoningSummaryVisible={true}
+        resolveConversationMessageParts={() => []}
+        conversationMessageScrollBoxRef={{ current: null }}
+        onConversationMessageWheelScroll={() => {}}
+      />,
+      { width: 80, height: 8 },
+    );
+
+    await renderOnce();
+    expect(captureCharFrame()).toContain("Thinking");
+  });
+
   test("renders user, reasoning, assistant text, tool call, and turn summary parts", async () => {
     const conversationMessages: ConversationMessage[] = [
       {
@@ -28,7 +54,7 @@ describe("ConversationMessageList", () => {
           id: "reasoning-1",
           partKind: "assistant_reasoning",
           partStatus: "completed",
-          reasoningSummaryText: "Thinking",
+          reasoningSummaryText: "Thinking through the repo layout.",
           reasoningStartedAtMs: 2,
           reasoningDurationMs: 800,
           reasoningTokenCount: 12,
@@ -63,6 +89,7 @@ describe("ConversationMessageList", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={conversationMessages}
+        isReasoningSummaryVisible={true}
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         onConversationMessageWheelScroll={() => {}}
@@ -73,10 +100,53 @@ describe("ConversationMessageList", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("Inspect the repo");
+    expect(frame).toContain("Thinking");
+    expect(frame).toContain("Thinking through the repo layout.");
     expect(frame).toContain("Done");
     expect(frame).toContain("Read");
     expect(frame).toContain("src/index.ts");
     expect(frame).toContain("gpt-5.4");
+  });
+
+  test("hides_reasoning_summary_text_when_reasoning_summaries_are_not_visible", async () => {
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "completed",
+        createdAtMs: 2,
+        partIds: ["reasoning-1"],
+      },
+    ];
+    const conversationMessagePartsByMessageId: Record<string, ConversationMessagePart[]> = {
+      "assistant-1": [
+        {
+          id: "reasoning-1",
+          partKind: "assistant_reasoning",
+          partStatus: "completed",
+          reasoningSummaryText: "Hidden chain summary.",
+          reasoningStartedAtMs: 2,
+          reasoningDurationMs: 800,
+          reasoningTokenCount: 12,
+        },
+      ],
+    };
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        conversationMessages={conversationMessages}
+        isReasoningSummaryVisible={false}
+        resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
+        conversationMessageScrollBoxRef={{ current: null }}
+        onConversationMessageWheelScroll={() => {}}
+      />,
+      { width: 100, height: 8 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Thinking");
+    expect(frame).toContain("12 reasoning tok");
+    expect(frame).not.toContain("Hidden chain summary.");
   });
 
   test("forwards mouse wheel direction to the parent callback", async () => {
@@ -84,6 +154,7 @@ describe("ConversationMessageList", () => {
     const { mockMouse, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={[]}
+        isReasoningSummaryVisible={true}
         resolveConversationMessageParts={() => []}
         conversationMessageScrollBoxRef={{ current: null }}
         onConversationMessageWheelScroll={(direction) => {

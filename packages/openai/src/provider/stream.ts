@@ -1,4 +1,10 @@
-import type { ProviderStreamEvent, TokenUsage, ToolCallRequest } from "@buli/contracts";
+import type {
+  BuliDiagnosticLogFields,
+  BuliDiagnosticLogger,
+  ProviderStreamEvent,
+  TokenUsage,
+  ToolCallRequest,
+} from "@buli/contracts";
 import { z } from "zod";
 import { OpenAiUsageSchema, normalizeOpenAiUsage } from "./usage.ts";
 
@@ -87,6 +93,10 @@ export type OpenAiResponseStepTerminalState =
   | OpenAiResponseStepToolCallRequestedState
   | OpenAiResponseStepCompletedState
   | OpenAiResponseStepIncompleteState;
+
+export type OpenAiStreamParserOptions = {
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
+};
 
 type PendingFunctionCallState = {
   toolCallId: string;
@@ -208,11 +218,15 @@ function createProviderIncompleteEvent(input: {
 // has started (output_text.delta or response.completed). Between consecutive
 // reasoning summary parts we inject a paragraph separator so the UI can
 // render them as one entry.
-export async function* parseOpenAiStream(response: Response): AsyncGenerator<ProviderStreamEvent, OpenAiResponseStepTerminalState> {
+export async function* parseOpenAiStream(
+  response: Response,
+  options: OpenAiStreamParserOptions = {},
+): AsyncGenerator<ProviderStreamEvent, OpenAiResponseStepTerminalState> {
   if (!response.body) {
     throw new Error("OpenAI stream response body is missing");
   }
 
+  const streamStartedAtMs = Date.now();
   let finished = false;
   let reasoningStartedAtMs: number | undefined;
   let isReasoningSummaryInProgress = false;
@@ -221,6 +235,18 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
   let pendingToolCallTerminalState: PendingOpenAiResponseStepToolCallRequestedState | undefined;
   const pendingFunctionCallStateByItemId = new Map<string, PendingFunctionCallState>();
   const trackedOutputItemsByIndex = new Map<number, unknown>();
+  let sseFrameCount = 0;
+  let ignoredSseEventCount = 0;
+  let textDeltaEventCount = 0;
+  let textDeltaCharacterCount = 0;
+  let reasoningDeltaEventCount = 0;
+  let reasoningDeltaCharacterCount = 0;
+  let functionCallArgumentDeltaEventCount = 0;
+  let functionCallArgumentCharacterCount = 0;
+
+  logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.started", {
+    contentType: response.headers.get("content-type") ?? null,
+  });
 
   function listTrackedOutputItems(): unknown[] {
     return [...trackedOutputItemsByIndex.entries()]
@@ -339,6 +365,19 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       toolCallId: pendingFunctionCallState.toolCallId,
       toolCallRequest,
     };
+    logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.tool_call_ready", {
+      toolCallId: pendingFunctionCallState.toolCallId,
+      toolName: pendingFunctionCallState.toolName,
+      functionArgumentsLength: pendingFunctionCallState.argumentsText.length,
+      ...(toolCallRequest.toolName === "bash"
+        ? {
+            shellCommandLength: toolCallRequest.shellCommand.length,
+            commandDescriptionLength: toolCallRequest.commandDescription.length,
+            hasWorkingDirectoryPath: toolCallRequest.workingDirectoryPath !== undefined,
+            hasTimeoutMilliseconds: toolCallRequest.timeoutMilliseconds !== undefined,
+          }
+        : {}),
+    });
     return createProviderToolCallRequestedEvent(pendingFunctionCallState.toolCallId, toolCallRequest);
   }
 
@@ -356,17 +395,41 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       break;
     }
 
+    sseFrameCount += 1;
     const value = JSON.parse(data) as unknown;
     if (!isOpenAiChunkObject(value)) {
+      ignoredSseEventCount += 1;
+      logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+        reason: "not_object_with_type",
+        sseFrameCount,
+      });
       continue;
     }
+
+    logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_received", {
+      openAiEventType: value.type,
+      sseFrameCount,
+    });
 
     switch (value.type) {
       case "response.output_text.delta": {
         if (typeof value.item_id !== "string" || typeof value.delta !== "string") {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_output_text_delta",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
           continue;
         }
 
+        textDeltaEventCount += 1;
+        textDeltaCharacterCount += value.delta.length;
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.text_delta_received", {
+          textDeltaLength: value.delta.length,
+          textDeltaEventCount,
+          textDeltaCharacterCount,
+        });
         yield* emitPendingReasoningCompletedEvent();
         yield createProviderTextChunkEvent(value.delta);
         continue;
@@ -374,9 +437,22 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
       case "response.reasoning_summary_text.delta": {
         if (typeof value.item_id !== "string" || typeof value.delta !== "string") {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_reasoning_delta",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
           continue;
         }
 
+        reasoningDeltaEventCount += 1;
+        reasoningDeltaCharacterCount += value.delta.length;
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.reasoning_delta_received", {
+          reasoningDeltaLength: value.delta.length,
+          reasoningDeltaEventCount,
+          reasoningDeltaCharacterCount,
+        });
         if (!isReasoningSummaryInProgress) {
           reasoningStartedAtMs = performance.now();
           isReasoningSummaryInProgress = true;
@@ -392,6 +468,12 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
       case "response.reasoning_summary_text.done": {
         if (typeof value.item_id !== "string") {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_reasoning_done",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
           continue;
         }
 
@@ -401,9 +483,22 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
 
       case "response.function_call_arguments.delta": {
         if (typeof value.item_id !== "string" || typeof value.delta !== "string") {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_function_call_arguments_delta",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
           continue;
         }
 
+        functionCallArgumentDeltaEventCount += 1;
+        functionCallArgumentCharacterCount += value.delta.length;
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.function_call_arguments_delta_received", {
+          functionCallArgumentDeltaLength: value.delta.length,
+          functionCallArgumentDeltaEventCount,
+          functionCallArgumentCharacterCount,
+        });
         const pendingFunctionCallState = pendingFunctionCallStateByItemId.get(value.item_id);
         if (pendingFunctionCallState) {
           pendingFunctionCallState.argumentsText += value.delta;
@@ -414,10 +509,21 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       case "response.output_item.added": {
         const outputItemAdded = OutputItemAddedChunkSchema.safeParse(value);
         if (!outputItemAdded.success) {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_output_item_added",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
           continue;
         }
 
         trackedOutputItemsByIndex.set(outputItemAdded.data.output_index, outputItemAdded.data.item);
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.output_item_added", {
+          outputIndex: outputItemAdded.data.output_index,
+          outputItemType: outputItemAdded.data.item.type,
+          trackedOutputItemCount: trackedOutputItemsByIndex.size,
+        });
         if (outputItemAdded.data.item.type === "function_call") {
           const functionCallItem = outputItemAdded.data.item as {
             id?: string;
@@ -440,8 +546,19 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       case "response.function_call_arguments.done": {
         const functionCallArgumentsDone = FunctionCallArgumentsDoneChunkSchema.safeParse(value);
         if (!functionCallArgumentsDone.success) {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_function_call_arguments_done",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
           continue;
         }
+
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.function_call_arguments_completed", {
+          itemId: functionCallArgumentsDone.data.item_id,
+          functionArgumentsLength: functionCallArgumentsDone.data.arguments.length,
+        });
 
         const pendingFunctionCallState = pendingFunctionCallStateByItemId.get(functionCallArgumentsDone.data.item_id);
         if (pendingFunctionCallState) {
@@ -462,8 +579,19 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       case "response.output_item.done": {
         const outputItemDone = OutputItemDoneChunkSchema.safeParse(value);
         if (!outputItemDone.success) {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_output_item_done",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
           continue;
         }
+
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.output_item_completed", {
+          outputIndex: outputItemDone.data.output_index ?? null,
+          outputItemType: outputItemDone.data.item.type,
+        });
 
         if (outputItemDone.data.output_index !== undefined) {
           trackedOutputItemsByIndex.set(outputItemDone.data.output_index, outputItemDone.data.item);
@@ -501,6 +629,10 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
         const completedResponse = ResponseCompletedChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.terminal_observed", {
+          terminalKind: pendingToolCallTerminalState ? "tool_call_requested" : "completed",
+          ...summarizeTokenUsageForDiagnostics(normalizeOpenAiUsage(completedResponse.response.usage)),
+        });
         if (pendingToolCallTerminalState) {
           terminalState = {
             ...pendingToolCallTerminalState,
@@ -518,6 +650,11 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
         const incompleteResponse = ResponseIncompleteChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.terminal_observed", {
+          terminalKind: pendingToolCallTerminalState ? "tool_call_requested" : "incomplete",
+          incompleteReason: incompleteResponse.response.incomplete_details?.reason ?? "unknown",
+          ...summarizeTokenUsageForDiagnostics(normalizeOpenAiUsage(incompleteResponse.response.usage)),
+        });
         if (pendingToolCallTerminalState) {
           terminalState = {
             ...pendingToolCallTerminalState,
@@ -540,6 +677,12 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
       }
 
       default: {
+        ignoredSseEventCount += 1;
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+          reason: "unknown_event_type",
+          openAiEventType: value.type,
+          sseFrameCount,
+        });
         continue;
       }
     }
@@ -553,5 +696,42 @@ export async function* parseOpenAiStream(response: Response): AsyncGenerator<Pro
     throw new Error("OpenAI stream ended without a terminal step state");
   }
 
+  logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.finished", {
+    terminalKind: terminalState.terminalKind,
+    durationMs: Date.now() - streamStartedAtMs,
+    sseFrameCount,
+    ignoredSseEventCount,
+    textDeltaEventCount,
+    textDeltaCharacterCount,
+    reasoningDeltaEventCount,
+    reasoningDeltaCharacterCount,
+    functionCallArgumentDeltaEventCount,
+    functionCallArgumentCharacterCount,
+    trackedOutputItemCount: trackedOutputItemsByIndex.size,
+  });
+
   return terminalState;
+}
+
+function logOpenAiDiagnosticEvent(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  eventName: string,
+  fields?: BuliDiagnosticLogFields,
+): void {
+  diagnosticLogger?.({
+    subsystem: "openai",
+    eventName,
+    ...(fields ? { fields } : {}),
+  });
+}
+
+function summarizeTokenUsageForDiagnostics(tokenUsage: TokenUsage): BuliDiagnosticLogFields {
+  return {
+    totalTokens: tokenUsage.total ?? tokenUsage.input + tokenUsage.output + tokenUsage.reasoning,
+    inputTokens: tokenUsage.input,
+    outputTokens: tokenUsage.output,
+    reasoningTokens: tokenUsage.reasoning,
+    cacheReadTokens: tokenUsage.cache.read,
+    cacheWriteTokens: tokenUsage.cache.write,
+  };
 }

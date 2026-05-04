@@ -95,3 +95,107 @@ test("relayAssistantResponseRunnerEvents converts a thrown runner error into a s
     "assistant_message_failed",
   ]);
 });
+
+test("relayAssistantResponseRunnerEvents converts a start failure into a synthetic failed assistant turn and finishes", async () => {
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      throw new Error("turn already running");
+    },
+  };
+  const emittedEventBatches: AssistantResponseEvent[][] = [];
+  let startedTurnCount = 0;
+  let finishedTurnCount = 0;
+
+  await relayAssistantResponseRunnerEvents({
+    assistantConversationRunner,
+    conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
+    onConversationTurnStarted: () => {
+      startedTurnCount += 1;
+    },
+    onConversationTurnFinished: () => {
+      finishedTurnCount += 1;
+    },
+    onAssistantResponseEvents: (assistantResponseEvents) => {
+      emittedEventBatches.push([...assistantResponseEvents]);
+    },
+  });
+
+  expect(startedTurnCount).toBe(0);
+  expect(finishedTurnCount).toBe(1);
+  expect(emittedEventBatches.flat().map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_turn_started",
+    "assistant_message_failed",
+  ]);
+  expect(emittedEventBatches.flat().at(-1)).toMatchObject({
+    type: "assistant_message_failed",
+    errorText: "turn already running",
+  });
+});
+
+test("relayAssistantResponseRunnerEvents converts an empty stream into a synthetic failed assistant turn", async () => {
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      return {
+        async *streamAssistantResponseEvents() {
+          return;
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+      };
+    },
+  };
+  const emittedEventBatches: AssistantResponseEvent[][] = [];
+
+  await relayAssistantResponseRunnerEvents({
+    assistantConversationRunner,
+    conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
+    onConversationTurnStarted: () => {},
+    onConversationTurnFinished: () => {},
+    onAssistantResponseEvents: (assistantResponseEvents) => {
+      emittedEventBatches.push([...assistantResponseEvents]);
+    },
+  });
+
+  expect(emittedEventBatches.flat().map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_turn_started",
+    "assistant_message_failed",
+  ]);
+  expect(emittedEventBatches.flat().at(-1)).toMatchObject({
+    type: "assistant_message_failed",
+    errorText: "Assistant turn ended without a terminal event.",
+  });
+});
+
+test("relayAssistantResponseRunnerEvents fails an assistant turn that starts but never emits a terminal event", async () => {
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      return {
+        async *streamAssistantResponseEvents() {
+          yield { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 };
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+      };
+    },
+  };
+  const emittedEventBatches: AssistantResponseEvent[][] = [];
+
+  await relayAssistantResponseRunnerEvents({
+    assistantConversationRunner,
+    conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
+    onConversationTurnStarted: () => {},
+    onConversationTurnFinished: () => {},
+    onAssistantResponseEvents: (assistantResponseEvents) => {
+      emittedEventBatches.push([...assistantResponseEvents]);
+    },
+  });
+
+  expect(emittedEventBatches.flat()).toEqual([
+    { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 },
+    {
+      type: "assistant_message_failed",
+      messageId: "assistant-1",
+      errorText: "Assistant turn ended without a terminal event.",
+    },
+  ]);
+});

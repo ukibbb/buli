@@ -9,10 +9,10 @@ import { deriveOpenAiModelListEndpoint, parseAvailableAssistantModelsFromOpenAiR
 
 test("deriveOpenAiModelListEndpoint swaps the responses path for models", () => {
   expect(deriveOpenAiModelListEndpoint("https://chatgpt.com/backend-api/codex/responses")).toBe(
-    "https://chatgpt.com/backend-api/codex/models?client_version=0.115.0",
+    "https://chatgpt.com/backend-api/codex/models?client_version=0.128.0",
   );
   expect(deriveOpenAiModelListEndpoint("http://127.0.0.1:3000/api/codex/responses?foo=bar")).toBe(
-    "http://127.0.0.1:3000/api/codex/models?foo=bar&client_version=0.115.0",
+    "http://127.0.0.1:3000/api/codex/models?foo=bar&client_version=0.128.0",
   );
 });
 
@@ -133,7 +133,7 @@ test("OpenAiProvider.listAvailableAssistantModels sends auth headers and maps th
     ]);
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.url).toBe("/backend-api/codex/models?client_version=0.115.0");
+    expect(requests[0]?.url).toBe("/backend-api/codex/models?client_version=0.128.0");
     expect(requests[0]?.headers.get("authorization")).toBe("Bearer access-token");
     expect(requests[0]?.headers.get("chatgpt-account-id")).toBe("acct_123");
   } finally {

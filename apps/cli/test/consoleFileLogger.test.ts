@@ -27,7 +27,7 @@ test("installConsoleFileLogger leaves console methods untouched when no log file
   expect(recordedConsoleLines).toEqual(["log:visible"]);
 });
 
-test("installConsoleFileLogger writes console calls to the configured file without forwarding by default", async () => {
+test("installConsoleFileLogger writes console calls to the configured file only", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-console-logger-"));
   const logFilePath = join(directoryPath, "buli-console.log");
   const recordedConsoleLines: string[] = [];
@@ -54,7 +54,7 @@ test("installConsoleFileLogger writes console calls to the configured file witho
   expect(logText).toContain("[2026-04-28T12:34:56.000Z] [error] Error: boom");
 });
 
-test("installConsoleFileLogger can preserve existing file contents and forward to the original console", async () => {
+test("installConsoleFileLogger can preserve existing file contents", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-console-logger-"));
   const logFilePath = join(directoryPath, "buli-console.log");
   await writeFile(logFilePath, "previous\n", "utf8");
@@ -65,7 +65,6 @@ test("installConsoleFileLogger can preserve existing file contents and forward t
   const installation = installConsoleFileLogger({
     environment: {
       BULI_CONSOLE_LOG_FILE: logFilePath,
-      BULI_CONSOLE_LOG_FORWARD: "true",
     },
     consoleTarget,
     now: () => new Date("2026-04-28T12:34:56.000Z"),
@@ -75,7 +74,7 @@ test("installConsoleFileLogger can preserve existing file contents and forward t
   installation.restore();
 
   const logText = await readFile(logFilePath, "utf8");
-  expect(recordedConsoleLines).toEqual(["warn:still visible"]);
+  expect(recordedConsoleLines).toEqual([]);
   expect(logText.startsWith("previous\n")).toBe(true);
   expect(logText).toContain("[2026-04-28T12:34:56.000Z] [warn] still visible");
 });

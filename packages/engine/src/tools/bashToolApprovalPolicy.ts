@@ -1,5 +1,9 @@
 import type { BashToolCallRequest } from "@buli/contracts";
 
+export const BASH_TOOL_APPROVAL_MODES = ["risk_based", "trusted"] as const;
+export type BashToolApprovalMode = (typeof BASH_TOOL_APPROVAL_MODES)[number];
+export const DEFAULT_BASH_TOOL_APPROVAL_MODE: BashToolApprovalMode = "trusted";
+
 export type BashCommandRiskKind =
   | "ambiguous_shell_syntax"
   | "filesystem_change"
@@ -102,9 +106,21 @@ const SAFE_GITHUB_REPO_SUBCOMMAND_NAMES = new Set(["view"]);
 const SAFE_GITHUB_RUN_SUBCOMMAND_NAMES = new Set(["list", "view"]);
 const SAFE_GITHUB_RELEASE_SUBCOMMAND_NAMES = new Set(["list", "view"]);
 
+export function parseBashToolApprovalMode(rawBashToolApprovalMode: string): BashToolApprovalMode | undefined {
+  const normalizedBashToolApprovalMode = rawBashToolApprovalMode.trim().toLowerCase().replace(/-/g, "_");
+  return BASH_TOOL_APPROVAL_MODES.find(
+    (bashToolApprovalMode) => bashToolApprovalMode === normalizedBashToolApprovalMode,
+  );
+}
+
 export function classifyBashToolApprovalRequirement(
   bashToolCallRequest: BashToolCallRequest,
+  bashToolApprovalMode: BashToolApprovalMode = DEFAULT_BASH_TOOL_APPROVAL_MODE,
 ): BashToolApprovalDecision {
+  if (bashToolApprovalMode === "trusted") {
+    return { approvalPolicy: "auto_run" };
+  }
+
   const trimmedShellCommand = bashToolCallRequest.shellCommand.trim();
   if (trimmedShellCommand.length === 0) {
     return requiresUserApproval(

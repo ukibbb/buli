@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-// Renders the model / reasoning-effort selection pane. Arrow-key navigation
-// and selection are handled by the parent; this component is pure display.
 export type ModelAndReasoningSelectionPaneProps = {
   headingText: string;
   visibleChoices: string[];
@@ -13,26 +11,38 @@ export function ModelAndReasoningSelectionPane(
   props: ModelAndReasoningSelectionPaneProps,
 ): ReactNode {
   return (
-    <box flexDirection="column" gap={1}>
-      <text fg={chatScreenTheme.accentCyan}>
-        <b>{props.headingText}</b>
-      </text>
+    <box
+      borderStyle="rounded"
+      borderColor={chatScreenTheme.border}
+      backgroundColor={chatScreenTheme.surfaceOne}
+      flexDirection="column"
+      flexShrink={0}
+      marginX={2}
+      marginBottom={1}
+      paddingX={1}
+    >
+      <text fg={chatScreenTheme.textMuted}>{props.headingText}</text>
       {props.visibleChoices.map((visibleChoice, index) => {
-        const selectionMarker = index === props.highlightedChoiceIndex ? ">" : " ";
+        const isHighlightedChoice = index === props.highlightedChoiceIndex;
         return (
-          <text
-            fg={
-              index === props.highlightedChoiceIndex
-                ? chatScreenTheme.accentCyan
-                : chatScreenTheme.textPrimary
-            }
+          <box
             key={`${visibleChoice}-${index}`}
+            flexDirection="row"
+            gap={1}
+            width="100%"
           >
-            {`${selectionMarker} ${visibleChoice}`}
-          </text>
+            <text fg={isHighlightedChoice ? chatScreenTheme.accentGreen : chatScreenTheme.textDim}>
+              {isHighlightedChoice ? ">" : " "}
+            </text>
+            <text
+              fg={isHighlightedChoice ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+              wrapMode="none"
+            >
+              {visibleChoice}
+            </text>
+          </box>
         );
       })}
-      <text fg={chatScreenTheme.textMuted}>{"Enter select | Esc close | Up/Down move"}</text>
     </box>
   );
 }

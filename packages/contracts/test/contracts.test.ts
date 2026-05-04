@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   AssistantResponseEventSchema,
+  ConversationSessionEntrySchema,
+  ConversationSessionSnapshotSchema,
   AssistantToolCallConversationMessagePartSchema,
   ConversationMessagePartSchema,
   ConversationMessageSchema,
@@ -101,4 +103,84 @@ test("AssistantResponseEventSchema parses assistant_message_failed", () => {
 
 test("ConversationTurnStatusSchema parses waiting_for_tool_approval", () => {
   expect(ConversationTurnStatusSchema.parse("waiting_for_tool_approval")).toBe("waiting_for_tool_approval");
+});
+
+test("ConversationSessionEntrySchema parses completed assistant history entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Done.",
+    }),
+  ).toEqual({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Done.",
+  });
+});
+
+test("ConversationSessionEntrySchema parses incomplete assistant history entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "assistant_message",
+      assistantMessageStatus: "incomplete",
+      assistantMessageText: "Partial answer",
+      incompleteReason: "max_output_tokens",
+    }),
+  ).toEqual({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "incomplete",
+    assistantMessageText: "Partial answer",
+    incompleteReason: "max_output_tokens",
+  });
+});
+
+test("ConversationSessionEntrySchema parses failed assistant history entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "Partial unsafe answer",
+      failureExplanation: "Provider failed mid-turn",
+    }),
+  ).toEqual({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "failed",
+    assistantMessageText: "Partial unsafe answer",
+    failureExplanation: "Provider failed mid-turn",
+  });
+});
+
+test("ConversationSessionSnapshotSchema parses persisted conversation history", () => {
+  expect(
+    ConversationSessionSnapshotSchema.parse({
+      schemaVersion: 1,
+      conversationSessionEntries: [
+        {
+          entryKind: "user_prompt",
+          promptText: "Say hello",
+          modelFacingPromptText: "Say hello",
+        },
+        {
+          entryKind: "assistant_message",
+          assistantMessageStatus: "completed",
+          assistantMessageText: "Hello.",
+        },
+      ],
+    }),
+  ).toEqual({
+    schemaVersion: 1,
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Say hello",
+        modelFacingPromptText: "Say hello",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Hello.",
+      },
+    ],
+  });
 });

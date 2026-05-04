@@ -1,12 +1,91 @@
 import { expect, test } from "bun:test";
+import type { AvailableAssistantModel } from "@buli/contracts";
 import {
   applyAssistantResponseEventToChatSessionState,
+  confirmHighlightedModelSelection,
+  confirmHighlightedReasoningEffortChoice,
   createInitialChatSessionState,
+  cycleAssistantOperatingMode,
   insertTextIntoPromptDraftAtCursor,
   listOrderedConversationMessageParts,
   listOrderedConversationMessages,
+  selectAssistantOperatingMode,
+  showAvailableAssistantModelsForSelection,
+  showModelSelectionLoadingState,
   submitPromptDraft,
+  toggleReasoningSummaryVisibility,
 } from "../src/index.ts";
+
+test("createInitialChatSessionState starts in implementation mode", () => {
+  const chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+
+  expect(chatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+});
+
+test("createInitialChatSessionState keeps the selected model default reasoning effort", () => {
+  const chatSessionState = createInitialChatSessionState({
+    selectedModelId: "gpt-5.5",
+    selectedModelDefaultReasoningEffort: "xhigh",
+  });
+
+  expect(chatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
+});
+
+test("model selection keeps the selected model default when the model default choice is used", () => {
+  const availableAssistantModels = [
+    {
+      id: "gpt-5.5",
+      displayName: "GPT-5.5",
+      defaultReasoningEffort: "xhigh",
+      supportedReasoningEfforts: ["high", "xhigh"],
+    },
+  ] satisfies AvailableAssistantModel[];
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.5" });
+
+  chatSessionState = showModelSelectionLoadingState(chatSessionState);
+  chatSessionState = showAvailableAssistantModelsForSelection(chatSessionState, availableAssistantModels);
+  expect(chatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
+
+  chatSessionState = confirmHighlightedModelSelection(chatSessionState);
+  chatSessionState = confirmHighlightedReasoningEffortChoice(chatSessionState);
+
+  expect(chatSessionState.selectedModelId).toBe("gpt-5.5");
+  expect(chatSessionState.selectedReasoningEffort).toBeUndefined();
+  expect(chatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
+});
+
+test("cycleAssistantOperatingMode switches between plan and implementation", () => {
+  const implementationChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  const planChatSessionState = cycleAssistantOperatingMode(implementationChatSessionState);
+  const implementationAgainChatSessionState = cycleAssistantOperatingMode(planChatSessionState);
+
+  expect(planChatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(implementationAgainChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+});
+
+test("selectAssistantOperatingMode sets a specific mode", () => {
+  const chatSessionState = selectAssistantOperatingMode(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "plan",
+  );
+
+  expect(chatSessionState.selectedAssistantOperatingMode).toBe("plan");
+});
+
+test("createInitialChatSessionState shows reasoning summaries by default", () => {
+  const chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+
+  expect(chatSessionState.isReasoningSummaryVisible).toBe(true);
+});
+
+test("toggleReasoningSummaryVisibility flips reasoning summary display", () => {
+  const visibleChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  const hiddenChatSessionState = toggleReasoningSummaryVisibility(visibleChatSessionState);
+  const visibleAgainChatSessionState = toggleReasoningSummaryVisibility(hiddenChatSessionState);
+
+  expect(hiddenChatSessionState.isReasoningSummaryVisible).toBe(false);
+  expect(visibleAgainChatSessionState.isReasoningSummaryVisible).toBe(true);
+});
 
 test("submitPromptDraft appends a completed user message and enters streaming state", () => {
   const promptDraftSubmission = submitPromptDraft(
@@ -146,4 +225,93 @@ test("assistant_pending_tool_approval_requested stores dedicated approval state 
     pendingToolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
     riskExplanation: "This command is destructive.",
   });
+});
+
+test("assistant_pending_tool_approval_cleared clears matching approval state and returns to streaming", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_pending_tool_approval_requested",
+    approvalRequest: {
+      approvalId: "approval-1",
+      pendingToolCallId: "call-1",
+      pendingToolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
+      riskExplanation: "This command is destructive.",
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_pending_tool_approval_cleared",
+    approvalId: "approval-1",
+  });
+
+  expect(chatSessionState.conversationTurnStatus).toBe("streaming_assistant_response");
+  expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
+});
+
+test("assistant_message_failed clears pending approval and records a failed assistant message", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_pending_tool_approval_requested",
+    approvalRequest: {
+      approvalId: "approval-1",
+      pendingToolCallId: "call-1",
+      pendingToolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
+      riskExplanation: "This command is destructive.",
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_failed",
+    messageId: "assistant-1",
+    errorText: "provider failed",
+  });
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
+  expect(chatSessionState.conversationTurnStatus).toBe("assistant_response_failed");
+  expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
+  expect(assistantConversationMessage?.messageStatus).toBe("failed");
+  expect(
+    listOrderedConversationMessageParts(chatSessionState, "assistant-1").some(
+      (conversationMessagePart) =>
+        conversationMessagePart.partKind === "assistant_error_notice" &&
+        conversationMessagePart.errorText === "provider failed",
+    ),
+  ).toBe(true);
+});
+
+test("assistant_message_incomplete clears pending approval and returns to user input", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_pending_tool_approval_requested",
+    approvalRequest: {
+      approvalId: "approval-1",
+      pendingToolCallId: "call-1",
+      pendingToolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
+      riskExplanation: "This command is destructive.",
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_incomplete",
+    messageId: "assistant-1",
+    incompleteReason: "max_output_tokens",
+    usage: { total: 10, input: 5, output: 4, reasoning: 1, cache: { read: 0, write: 0 } },
+  });
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
+  expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
+  expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
+  expect(assistantConversationMessage?.messageStatus).toBe("incomplete");
 });

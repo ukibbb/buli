@@ -11,6 +11,7 @@ test("createOpenAiResponsesInputItems serializes replayed conversation messages 
       },
       {
         entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
         assistantMessageText: "Knock knock.",
       },
     ]),
@@ -22,6 +23,70 @@ test("createOpenAiResponsesInputItems serializes replayed conversation messages 
     {
       role: "assistant",
       content: "Knock knock.",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems serializes incomplete assistant turns as model context", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Continue until the limit",
+        modelFacingPromptText: "Continue until the limit",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "incomplete",
+        assistantMessageText: "Partial answer",
+        incompleteReason: "max_output_tokens",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Continue until the limit",
+    },
+    {
+      role: "assistant",
+      content: "Partial answer",
+    },
+    {
+      role: "user",
+      content: "Next prompt",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems skips failed assistant turns", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Failed prompt",
+        modelFacingPromptText: "Failed prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "failed",
+        assistantMessageText: "Partial unsafe answer",
+        failureExplanation: "Provider failed mid-turn",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Next prompt",
     },
   ]);
 });
@@ -54,6 +119,7 @@ test("createOpenAiResponsesInputItems replays stored OpenAI tool items before th
       },
       {
         entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
         assistantMessageText: "Done.",
         providerTurnReplay: {
           provider: "openai",
@@ -202,6 +268,7 @@ test("createOpenAiResponsesInputItems falls back to assistant transcript text fo
       },
       {
         entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
         assistantMessageText: "Done.",
       },
     ]),
@@ -218,6 +285,37 @@ test("createOpenAiResponsesInputItems falls back to assistant transcript text fo
     {
       role: "assistant",
       content: "Done.",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems ignores dangling legacy tool calls", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Run pwd",
+        modelFacingPromptText: "Run pwd",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_1",
+        toolCallRequest: {
+          toolName: "bash",
+          shellCommand: "pwd",
+          commandDescription: "Print working directory",
+        },
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Next prompt",
     },
   ]);
 });

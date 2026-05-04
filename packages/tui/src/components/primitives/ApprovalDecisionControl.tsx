@@ -11,14 +11,14 @@ export function ApprovalDecisionControl(props: ApprovalDecisionControlProps): Re
     <box flexDirection="row" flexShrink={0}>
       <ApprovalDecisionAction
         accentColor={chatScreenTheme.accentGreen}
-        keyboardShortcutLabel="y"
+        decisionLetterLabel="y"
         actionLabel="yes"
         onActivate={props.onApprove}
       />
       <box marginLeft={2}>
         <ApprovalDecisionAction
           accentColor={chatScreenTheme.accentRed}
-          keyboardShortcutLabel="n"
+          decisionLetterLabel="n"
           actionLabel="no"
           onActivate={props.onDeny}
         />
@@ -29,7 +29,7 @@ export function ApprovalDecisionControl(props: ApprovalDecisionControlProps): Re
 
 type ApprovalDecisionActionProps = {
   accentColor: string;
-  keyboardShortcutLabel: string;
+  decisionLetterLabel: string;
   actionLabel: string;
   onActivate: () => void;
 };
@@ -47,7 +47,7 @@ function ApprovalDecisionAction(props: ApprovalDecisionActionProps): ReactNode {
     >
       <text wrapMode="none">
         <span fg={chatScreenTheme.textDim}>{"[ "}</span>
-        <b fg={props.accentColor}>{props.keyboardShortcutLabel}</b>
+        <b fg={props.accentColor}>{props.decisionLetterLabel}</b>
         <span fg={chatScreenTheme.textDim}>{" ] "}</span>
         <span fg={labelColor}>{props.actionLabel}</span>
       </text>

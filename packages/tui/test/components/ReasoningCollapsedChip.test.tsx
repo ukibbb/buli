@@ -11,7 +11,7 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("thinking");
+    expect(frame).toContain("Thinking");
     expect(frame).toContain("2.5s");
     expect(frame).toContain("reasoning tokens pending");
   });
@@ -23,6 +23,7 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("Thinking");
     expect(frame).toContain("512 reasoning tok");
   });
 
@@ -33,6 +34,7 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("Thinking");
     expect(frame).toContain("3.2s");
     expect(frame).toContain("1248 reasoning tok");
     expect(chatScreenTheme.textMuted).toBe("#64748B");

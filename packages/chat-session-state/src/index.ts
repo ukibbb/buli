@@ -3,8 +3,11 @@ export {
   type ModelAndReasoningSelectionState,
   type PromptContextSelectionState,
   type ReasoningEffortChoice,
+  type SlashCommand,
+  type SlashCommandSelectionState,
   createInitialChatSessionState,
 } from "./chatSessionState.ts";
+export { cycleAssistantOperatingMode, selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 export {
   applyAssistantResponseEventToChatSessionState,
   applyAssistantResponseEventsToChatSessionState,
@@ -39,4 +42,12 @@ export {
   selectHighlightedPromptContextCandidate,
   showPromptContextCandidatesForSelection,
 } from "./promptContextSelectionReducer.ts";
-export { hideShortcutsHelpModal, showShortcutsHelpModal } from "./shortcutsModalReducer.ts";
+export {
+  hideSlashCommandSelection,
+  moveHighlightedSlashCommandSelectionDown,
+  moveHighlightedSlashCommandSelectionUp,
+  refreshSlashCommandSelectionForPromptDraft,
+  selectHighlightedSlashCommand,
+} from "./slashCommandSelectionReducer.ts";
+export { hideCommandHelpModal, showCommandHelpModal } from "./commandHelpModalReducer.ts";
+export { toggleReasoningSummaryVisibility } from "./reasoningSummaryVisibilityReducer.ts";

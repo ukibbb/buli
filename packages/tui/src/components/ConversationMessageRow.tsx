@@ -5,12 +5,16 @@ import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoti
 import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
 import { RateLimitNoticeBlock } from "./behavior/RateLimitNoticeBlock.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
+import { ThinkingStatusLine } from "./ThinkingStatusLine.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
 
-function ConversationMessagePartView(props: { conversationMessagePart: ConversationMessagePart }): ReactNode {
+function ConversationMessagePartView(props: {
+  conversationMessagePart: ConversationMessagePart;
+  isReasoningSummaryVisible: boolean;
+}): ReactNode {
   const { conversationMessagePart } = props;
   if (conversationMessagePart.partKind === "user_text") {
     return <UserPromptBlock promptText={conversationMessagePart.text} />;
@@ -19,7 +23,12 @@ function ConversationMessagePartView(props: { conversationMessagePart: Conversat
     return <AssistantTextPartView assistantTextConversationMessagePart={conversationMessagePart} />;
   }
   if (conversationMessagePart.partKind === "assistant_reasoning") {
-    return <ReasoningPartView assistantReasoningConversationMessagePart={conversationMessagePart} />;
+    return (
+      <ReasoningPartView
+        assistantReasoningConversationMessagePart={conversationMessagePart}
+        isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+      />
+    );
   }
   if (conversationMessagePart.partKind === "assistant_tool_call") {
     return <ToolCallPartView assistantToolCallConversationMessagePart={conversationMessagePart} />;
@@ -54,9 +63,18 @@ function ConversationMessagePartView(props: { conversationMessagePart: Conversat
 export function ConversationMessageRow(props: {
   conversationMessage: ConversationMessage;
   conversationMessageParts: readonly ConversationMessagePart[];
+  isReasoningSummaryVisible: boolean;
 }): ReactNode {
+  const shouldShowEmptyAssistantThinkingLine =
+    props.conversationMessage.role === "assistant" &&
+    props.conversationMessage.messageStatus === "streaming" &&
+    props.conversationMessageParts.length === 0;
+
   return (
     <box flexDirection="column" width="100%">
+      {shouldShowEmptyAssistantThinkingLine ? (
+        <ThinkingStatusLine thinkingStartedAtMs={props.conversationMessage.createdAtMs} />
+      ) : null}
       {props.conversationMessageParts.map((conversationMessagePart, index) => (
         <box
           flexDirection="column"
@@ -64,7 +82,10 @@ export function ConversationMessageRow(props: {
           marginTop={index === 0 ? 0 : 1}
           width="100%"
         >
-          <ConversationMessagePartView conversationMessagePart={conversationMessagePart} />
+          <ConversationMessagePartView
+            conversationMessagePart={conversationMessagePart}
+            isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+          />
         </box>
       ))}
     </box>

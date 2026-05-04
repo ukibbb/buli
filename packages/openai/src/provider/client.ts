@@ -1,4 +1,11 @@
-import type { AvailableAssistantModel, ConversationSessionEntry, ModelContextItem, ReasoningEffort } from "@buli/contracts";
+import type {
+  AvailableAssistantModel,
+  BuliDiagnosticLogFields,
+  BuliDiagnosticLogger,
+  ConversationSessionEntry,
+  ModelContextItem,
+  ReasoningEffort,
+} from "@buli/contracts";
 import { z } from "zod";
 import { OPENAI_CODEX_API_ENDPOINT } from "../auth/constants.ts";
 import { refreshStoredAuth } from "../auth/refresh.ts";
@@ -94,36 +101,65 @@ export class OpenAiProvider {
   readonly endpoint: string;
   readonly store: OpenAiAuthStore;
   readonly fetchImpl: typeof fetch;
+  readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
 
   constructor(input: {
     endpoint?: string;
     store?: OpenAiAuthStore;
     fetchImpl?: typeof fetch;
+    diagnosticLogger?: BuliDiagnosticLogger | undefined;
   } = {}) {
     this.endpoint = input.endpoint ?? OPENAI_CODEX_API_ENDPOINT;
     this.store = input.store ?? new OpenAiAuthStore();
     this.fetchImpl = input.fetchImpl ?? fetch;
+    this.diagnosticLogger = input.diagnosticLogger;
   }
 
   async listAvailableAssistantModels(): Promise<AvailableAssistantModel[]> {
+    const modelListRequestStartedAtMs = Date.now();
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.request_started", {
+      endpointPath: new URL(deriveOpenAiModelListEndpoint(this.endpoint)).pathname,
+    });
     const auth = await loadOpenAiAuth({
       store: this.store,
       fetchImpl: this.fetchImpl,
+    });
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "auth.loaded_for_model_list", {
+      hasAccountId: auth.accountId !== undefined,
+      expiresInMs: Math.max(0, auth.expiresAt - Date.now()),
     });
 
     const response = await this.fetchImpl(deriveOpenAiModelListEndpoint(this.endpoint), {
       method: "GET",
       headers: createRequestHeaders(auth, "application/json"),
     });
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.response_received", {
+      status: response.status,
+      requestId: getOpenAiRequestId(response.headers) ?? null,
+      contentType: response.headers.get("content-type") ?? null,
+      durationMs: Date.now() - modelListRequestStartedAtMs,
+    });
 
     if (!response.ok) {
       throw await createHttpError(response, "models");
     }
 
-    return parseAvailableAssistantModelsFromOpenAiResponse(await response.json());
+    const models: AvailableAssistantModel[] = parseAvailableAssistantModelsFromOpenAiResponse(await response.json());
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.parsed", {
+      availableModelCount: models.length,
+    });
+    return models
+
   }
 
   startConversationTurn(input: OpenAiConversationTurnRequest): OpenAiProviderConversationTurn {
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.created", {
+      selectedModelId: input.selectedModelId,
+      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
+      conversationSessionEntryCount: input.conversationSessionEntries.length,
+      modelContextItemCount: input.modelContextItems.length,
+      systemPromptLength: input.systemPromptText.length,
+    });
     return new OpenAiProviderConversationTurn({
       endpoint: this.endpoint,
       fetchImpl: this.fetchImpl,
@@ -132,9 +168,21 @@ export class OpenAiProvider {
           store: this.store,
           fetchImpl: this.fetchImpl,
         });
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "auth.loaded_for_stream", {
+          hasAccountId: auth.accountId !== undefined,
+          expiresInMs: Math.max(0, auth.expiresAt - Date.now()),
+        });
 
         const headers = createRequestHeaders(auth, "text/event-stream");
         headers.set("Content-Type", "application/json");
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "request_headers.created", {
+          accept: headers.get("accept") ?? null,
+          contentType: headers.get("content-type") ?? null,
+          originator: headers.get("originator") ?? null,
+          userAgent: headers.get("user-agent") ?? null,
+          hasAuthorizationHeader: headers.has("authorization"),
+          hasAccountHeader: headers.has("chatgpt-account-id"),
+        });
         return headers;
       },
       selectedModelId: input.selectedModelId,
@@ -142,6 +190,23 @@ export class OpenAiProvider {
       systemPromptText: input.systemPromptText,
       conversationSessionEntries: input.conversationSessionEntries,
       onStepRequestFailed: async (response) => createHttpError(response, "stream"),
+      diagnosticLogger: this.diagnosticLogger,
     });
   }
+}
+
+function logOpenAiDiagnosticEvent(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  eventName: string,
+  fields?: BuliDiagnosticLogFields,
+): void {
+  diagnosticLogger?.({
+    subsystem: "openai",
+    eventName,
+    ...(fields ? { fields } : {}),
+  });
+}
+
+function getOpenAiRequestId(headers: Headers): string | undefined {
+  return headers.get("x-request-id") ?? headers.get("request-id") ?? headers.get("openai-request-id") ?? undefined;
 }

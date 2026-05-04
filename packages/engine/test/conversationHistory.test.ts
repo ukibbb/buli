@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { ConversationSessionEntry, ModelContextItem } from "@buli/contracts";
 import { InMemoryConversationHistory } from "../src/index.ts";
 
-test("InMemoryConversationHistory incrementally keeps model-context items in sync with appended session entries", () => {
+test("InMemoryConversationHistory derives model-context items from completed session turns", () => {
   const conversationHistory = new InMemoryConversationHistory();
 
   conversationHistory.appendConversationSessionEntry({
@@ -29,6 +29,11 @@ test("InMemoryConversationHistory incrementally keeps model-context items in syn
     },
     toolResultText: "Working directory: /tmp/demo",
   });
+  conversationHistory.appendConversationSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Done.",
+  });
 
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
     { itemKind: "user_message", messageText: "Run pwd" },
@@ -46,10 +51,11 @@ test("InMemoryConversationHistory incrementally keeps model-context items in syn
       toolCallId: "call_1",
       toolResultText: "Working directory: /tmp/demo",
     },
+    { itemKind: "assistant_message", messageText: "Done." },
   ]);
 });
 
-test("InMemoryConversationHistory hydrates cached model-context items from initial session entries", () => {
+test("InMemoryConversationHistory derives model-context items from initial session entries", () => {
   const initialConversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
@@ -58,6 +64,7 @@ test("InMemoryConversationHistory hydrates cached model-context items from initi
     },
     {
       entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
       assistantMessageText: "First answer",
     },
   ];
@@ -67,5 +74,69 @@ test("InMemoryConversationHistory hydrates cached model-context items from initi
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
     { itemKind: "user_message", messageText: "First prompt" },
     { itemKind: "assistant_message", messageText: "First answer" },
+  ]);
+});
+
+test("InMemoryConversationHistory removes an accepted prompt from model context when the turn fails", () => {
+  const conversationHistory = new InMemoryConversationHistory();
+
+  conversationHistory.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "First prompt",
+    modelFacingPromptText: "First prompt",
+  });
+  expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
+    { itemKind: "user_message", messageText: "First prompt" },
+  ]);
+
+  conversationHistory.appendConversationSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "failed",
+    assistantMessageText: "Partial answer",
+    failureExplanation: "Provider failed mid-turn",
+  });
+
+  expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([]);
+});
+
+test("InMemoryConversationHistory notifies listeners with the full session entries after each append", () => {
+  const observedConversationSessionEntries: ConversationSessionEntry[][] = [];
+  const conversationHistory = new InMemoryConversationHistory({
+    onConversationSessionEntriesChanged: (conversationSessionEntries) => {
+      observedConversationSessionEntries.push([...conversationSessionEntries]);
+    },
+  });
+
+  conversationHistory.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Persist this prompt",
+    modelFacingPromptText: "Persist this prompt",
+  });
+  conversationHistory.appendConversationSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Persisted.",
+  });
+
+  expect(observedConversationSessionEntries).toEqual<ConversationSessionEntry[][]>([
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Persist this prompt",
+        modelFacingPromptText: "Persist this prompt",
+      },
+    ],
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Persist this prompt",
+        modelFacingPromptText: "Persist this prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Persisted.",
+      },
+    ],
   ]);
 });

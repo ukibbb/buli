@@ -3,13 +3,11 @@ import { dirname } from "node:path";
 import { inspect } from "node:util";
 
 const ENABLED_ENVIRONMENT_VALUES = new Set(["1", "true", "yes", "on"]);
-
 export type ConsoleFileLogLevel = "debug" | "error" | "info" | "log" | "warn";
 
 export type ConsoleFileLoggerEnvironment = Readonly<{
   [environmentVariableName: string]: string | undefined;
   BULI_CONSOLE_LOG_FILE?: string | undefined;
-  BULI_CONSOLE_LOG_FORWARD?: string | undefined;
   BULI_CONSOLE_LOG_RESET?: string | undefined;
 }>;
 
@@ -45,7 +43,6 @@ export function installConsoleFileLogger(options: ConsoleFileLoggerOptions = {})
 
   const consoleTarget = options.consoleTarget ?? console;
   const now = options.now ?? (() => new Date());
-  const shouldForwardToOriginalConsole = isEnabledEnvironmentValue(environment.BULI_CONSOLE_LOG_FORWARD);
   const originalConsoleMethods = captureOriginalConsoleMethods(consoleTarget);
 
   mkdirSync(dirname(requestedLogFilePath), { recursive: true });
@@ -65,9 +62,6 @@ export function installConsoleFileLogger(options: ConsoleFileLoggerOptions = {})
         "utf8",
       );
 
-      if (shouldForwardToOriginalConsole) {
-        originalConsoleMethods[consoleFileLogLevel](...consoleArguments);
-      }
     };
   }
 

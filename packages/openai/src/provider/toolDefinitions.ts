@@ -2,13 +2,13 @@ export function createBashToolDefinition() {
   return {
     type: "function",
     name: "bash",
-    description: "Run a shell command inside the current workspace and return stdout, stderr, and the exit code.",
+    description: "Run a command line inside the current workspace and return stdout, stderr, and the exit code. Provide the command directly; do not wrap it in bash -lc, sh -c, or another shell.",
     parameters: {
       type: "object",
       properties: {
         command: {
           type: "string",
-          description: "Shell command to run.",
+          description: "Command line to run directly. The app already executes it through the user's shell.",
         },
         description: {
           type: "string",

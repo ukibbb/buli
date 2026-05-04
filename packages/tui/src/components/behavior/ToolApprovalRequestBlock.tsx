@@ -7,7 +7,7 @@ import { glyphs } from "../glyphs.ts";
 // The pending tool call itself is already rendered as the latest card in the
 // transcript above this block — re-rendering it inside the approval surface
 // duplicates the same Bash/Edit/etc. card on screen. The approval bar's job is
-// to explain the risk and collect the y/n decision; the tool detail it refers
+// to explain the risk and collect a button decision; the tool detail it refers
 // to is the one immediately above it.
 export type ToolApprovalRequestBlockProps = {
   riskExplanation: string;

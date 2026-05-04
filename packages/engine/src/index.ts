@@ -1,5 +1,6 @@
 export { parseAssistantResponseIntoContentParts } from "./assistantContentPartParser.ts";
 export { InMemoryConversationHistory } from "./conversationHistory.ts";
+export type { ConversationSessionEntriesChangedListener } from "./conversationHistory.ts";
 export {
   projectConversationSessionEntriesToModelContextItems,
   projectConversationSessionEntryToModelContextItems,
@@ -21,6 +22,11 @@ export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-c
 export { AssistantConversationRuntime } from "./runtime.ts";
 export { buildBuliSystemPrompt } from "./systemPrompt.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
+export {
+  BASH_TOOL_APPROVAL_MODES,
+  DEFAULT_BASH_TOOL_APPROVAL_MODE,
+  parseBashToolApprovalMode,
+} from "./tools/bashToolApprovalPolicy.ts";
 export { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 export type {
   ParsedPromptContextReference,
@@ -30,6 +36,7 @@ export type {
   ActivePromptContextQuery,
 } from "./prompt-context/types.ts";
 export type { PromptContextQueryLoadStrategy } from "./prompt-context/listPromptContextCandidates.ts";
+export type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 export type {
   ActiveConversationTurn,
   AssistantConversationRunner,

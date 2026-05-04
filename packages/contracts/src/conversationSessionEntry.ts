@@ -11,13 +11,35 @@ export const UserPromptConversationSessionEntrySchema = z
   })
   .strict();
 
-export const AssistantMessageConversationSessionEntrySchema = z
+export const AssistantMessageConversationSessionEntryStatusSchema = z.enum(["completed", "incomplete", "failed"]);
+
+const AssistantMessageConversationSessionEntryBaseSchema = z
   .object({
     entryKind: z.literal("assistant_message"),
-    assistantMessageText: z.string(),
     providerTurnReplay: ProviderTurnReplaySchema.optional(),
+    assistantMessageText: z.string(),
   })
   .strict();
+
+export const CompletedAssistantMessageConversationSessionEntrySchema = AssistantMessageConversationSessionEntryBaseSchema.extend({
+  assistantMessageStatus: z.literal("completed"),
+});
+
+export const IncompleteAssistantMessageConversationSessionEntrySchema = AssistantMessageConversationSessionEntryBaseSchema.extend({
+  assistantMessageStatus: z.literal("incomplete"),
+  incompleteReason: z.string().min(1),
+});
+
+export const FailedAssistantMessageConversationSessionEntrySchema = AssistantMessageConversationSessionEntryBaseSchema.extend({
+  assistantMessageStatus: z.literal("failed"),
+  failureExplanation: z.string().min(1),
+});
+
+export const AssistantMessageConversationSessionEntrySchema = z.discriminatedUnion("assistantMessageStatus", [
+  CompletedAssistantMessageConversationSessionEntrySchema,
+  IncompleteAssistantMessageConversationSessionEntrySchema,
+  FailedAssistantMessageConversationSessionEntrySchema,
+]);
 
 export const ToolCallConversationSessionEntrySchema = z
   .object({
@@ -49,7 +71,7 @@ export const DeniedToolResultConversationSessionEntrySchema = ToolResultConversa
   denialExplanation: z.string().min(1),
 });
 
-export const ConversationSessionEntrySchema = z.discriminatedUnion("entryKind", [
+export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
@@ -58,10 +80,26 @@ export const ConversationSessionEntrySchema = z.discriminatedUnion("entryKind", 
   DeniedToolResultConversationSessionEntrySchema,
 ]);
 
+export const ConversationSessionSnapshotSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    conversationSessionEntries: z.array(ConversationSessionEntrySchema),
+  })
+  .strict();
+
 export type UserPromptConversationSessionEntry = z.infer<typeof UserPromptConversationSessionEntrySchema>;
+export type AssistantMessageConversationSessionEntryStatus = z.infer<typeof AssistantMessageConversationSessionEntryStatusSchema>;
+export type CompletedAssistantMessageConversationSessionEntry = z.infer<
+  typeof CompletedAssistantMessageConversationSessionEntrySchema
+>;
+export type IncompleteAssistantMessageConversationSessionEntry = z.infer<
+  typeof IncompleteAssistantMessageConversationSessionEntrySchema
+>;
+export type FailedAssistantMessageConversationSessionEntry = z.infer<typeof FailedAssistantMessageConversationSessionEntrySchema>;
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;
 export type CompletedToolResultConversationSessionEntry = z.infer<typeof CompletedToolResultConversationSessionEntrySchema>;
 export type FailedToolResultConversationSessionEntry = z.infer<typeof FailedToolResultConversationSessionEntrySchema>;
 export type DeniedToolResultConversationSessionEntry = z.infer<typeof DeniedToolResultConversationSessionEntrySchema>;
 export type ConversationSessionEntry = z.infer<typeof ConversationSessionEntrySchema>;
+export type ConversationSessionSnapshot = z.infer<typeof ConversationSessionSnapshotSchema>;

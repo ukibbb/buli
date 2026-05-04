@@ -1,4 +1,15 @@
-import type { ConversationSessionEntry, ModelContextItem } from "@buli/contracts";
+import type { ConversationSessionEntry, ModelContextItem, UserPromptConversationSessionEntry } from "@buli/contracts";
+
+type ToolCallConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "tool_call" }>;
+type ToolResultConversationSessionEntry = Extract<
+  ConversationSessionEntry,
+  { entryKind: "completed_tool_result" | "failed_tool_result" | "denied_tool_result" }
+>;
+
+type ConversationSessionTurn = {
+  userPromptEntry: UserPromptConversationSessionEntry;
+  entriesAfterUserPrompt: ConversationSessionEntry[];
+};
 
 export function projectConversationSessionEntryToModelContextItems(
   conversationSessionEntry: ConversationSessionEntry,
@@ -13,6 +24,10 @@ export function projectConversationSessionEntryToModelContextItems(
   }
 
   if (conversationSessionEntry.entryKind === "assistant_message") {
+    if (conversationSessionEntry.assistantMessageStatus === "failed") {
+      return [];
+    }
+
     return [
       {
         itemKind: "assistant_message",
@@ -21,33 +36,122 @@ export function projectConversationSessionEntryToModelContextItems(
     ];
   }
 
-  if (conversationSessionEntry.entryKind === "tool_call") {
-    return [
-      {
-        itemKind: "tool_call",
-        toolCallId: conversationSessionEntry.toolCallId,
-        toolCallRequest: conversationSessionEntry.toolCallRequest,
-      },
-    ];
-  }
-
-  return [
-    {
-      itemKind: "tool_result",
-      toolCallId: conversationSessionEntry.toolCallId,
-      toolResultText: conversationSessionEntry.toolResultText,
-    },
-  ];
+  return [];
 }
 
 export function projectConversationSessionEntriesToModelContextItems(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): ModelContextItem[] {
   const modelContextItems: ModelContextItem[] = [];
+  let pendingConversationSessionTurn: ConversationSessionTurn | undefined;
 
   for (const conversationSessionEntry of conversationSessionEntries) {
-    modelContextItems.push(...projectConversationSessionEntryToModelContextItems(conversationSessionEntry));
+    if (conversationSessionEntry.entryKind === "user_prompt") {
+      pendingConversationSessionTurn = {
+        userPromptEntry: conversationSessionEntry,
+        entriesAfterUserPrompt: [],
+      };
+      continue;
+    }
+
+    if (!pendingConversationSessionTurn) {
+      continue;
+    }
+
+    pendingConversationSessionTurn.entriesAfterUserPrompt.push(conversationSessionEntry);
+    if (conversationSessionEntry.entryKind === "assistant_message") {
+      modelContextItems.push(...projectConversationSessionTurnToModelContextItems(pendingConversationSessionTurn));
+      pendingConversationSessionTurn = undefined;
+    }
+  }
+
+  if (pendingConversationSessionTurn?.entriesAfterUserPrompt.length === 0) {
+    modelContextItems.push(...projectConversationSessionEntryToModelContextItems(pendingConversationSessionTurn.userPromptEntry));
   }
 
   return modelContextItems;
+}
+
+function projectConversationSessionTurnToModelContextItems(
+  conversationSessionTurn: ConversationSessionTurn,
+): ModelContextItem[] {
+  const terminalAssistantMessageEntry = conversationSessionTurn.entriesAfterUserPrompt.at(-1);
+  if (!terminalAssistantMessageEntry || terminalAssistantMessageEntry.entryKind !== "assistant_message") {
+    return [];
+  }
+
+  if (terminalAssistantMessageEntry.assistantMessageStatus === "failed") {
+    return [];
+  }
+
+  return [
+    ...projectConversationSessionEntryToModelContextItems(conversationSessionTurn.userPromptEntry),
+    ...projectPairedToolEntriesToModelContextItems(conversationSessionTurn.entriesAfterUserPrompt.slice(0, -1)),
+    ...projectConversationSessionEntryToModelContextItems(terminalAssistantMessageEntry),
+  ];
+}
+
+function projectPairedToolEntriesToModelContextItems(
+  conversationSessionEntries: readonly ConversationSessionEntry[],
+): ModelContextItem[] {
+  const modelContextItems: ModelContextItem[] = [];
+  const toolResultEntryByToolCallId = new Map<string, ToolResultConversationSessionEntry>();
+  const projectedToolCallIds = new Set<string>();
+
+  for (const conversationSessionEntry of conversationSessionEntries) {
+    if (!isToolResultConversationSessionEntry(conversationSessionEntry) || toolResultEntryByToolCallId.has(conversationSessionEntry.toolCallId)) {
+      continue;
+    }
+
+    toolResultEntryByToolCallId.set(conversationSessionEntry.toolCallId, conversationSessionEntry);
+  }
+
+  for (const conversationSessionEntry of conversationSessionEntries) {
+    if (conversationSessionEntry.entryKind !== "tool_call" || projectedToolCallIds.has(conversationSessionEntry.toolCallId)) {
+      continue;
+    }
+
+    const toolResultEntry = toolResultEntryByToolCallId.get(conversationSessionEntry.toolCallId);
+    if (!toolResultEntry) {
+      continue;
+    }
+
+    modelContextItems.push(
+      projectToolCallConversationSessionEntryToModelContextItem(conversationSessionEntry),
+      projectToolResultConversationSessionEntryToModelContextItem(toolResultEntry),
+    );
+    projectedToolCallIds.add(conversationSessionEntry.toolCallId);
+  }
+
+  return modelContextItems;
+}
+
+function projectToolCallConversationSessionEntryToModelContextItem(
+  conversationSessionEntry: ToolCallConversationSessionEntry,
+): ModelContextItem {
+  return {
+    itemKind: "tool_call",
+    toolCallId: conversationSessionEntry.toolCallId,
+    toolCallRequest: conversationSessionEntry.toolCallRequest,
+  };
+}
+
+function projectToolResultConversationSessionEntryToModelContextItem(
+  conversationSessionEntry: ToolResultConversationSessionEntry,
+): ModelContextItem {
+  return {
+    itemKind: "tool_result",
+    toolCallId: conversationSessionEntry.toolCallId,
+    toolResultText: conversationSessionEntry.toolResultText,
+  };
+}
+
+function isToolResultConversationSessionEntry(
+  conversationSessionEntry: ConversationSessionEntry,
+): conversationSessionEntry is ToolResultConversationSessionEntry {
+  return (
+    conversationSessionEntry.entryKind === "completed_tool_result" ||
+    conversationSessionEntry.entryKind === "failed_tool_result" ||
+    conversationSessionEntry.entryKind === "denied_tool_result"
+  );
 }

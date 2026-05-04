@@ -17,6 +17,7 @@ export type MinimumHeightPromptStripProps = {
   promptDraftCursorOffset: number;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
+  accentColor: string;
   assistantResponseStatus: ConversationTurnStatus;
 };
 
@@ -44,7 +45,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
       gap={1}
       flexShrink={0}
     >
-      <text fg={chatScreenTheme.accentGreen}>
+      <text fg={props.accentColor}>
         <b>{">"}</b>
       </text>
       <box flexGrow={1}>

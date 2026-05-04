@@ -52,9 +52,14 @@ export function showAvailableAssistantModelsForSelection(
     availableModels.findIndex((availableModel) => availableModel.id === chatSessionState.selectedModelId),
     0,
   );
+  const selectedAvailableModel = availableModels.find(
+    (availableModel) => availableModel.id === chatSessionState.selectedModelId,
+  );
 
   return {
     ...chatSessionState,
+    selectedModelDefaultReasoningEffort:
+      selectedAvailableModel?.defaultReasoningEffort ?? chatSessionState.selectedModelDefaultReasoningEffort,
     modelAndReasoningSelectionState: {
       step: "showing_available_models",
       availableModels,
@@ -135,6 +140,7 @@ export function confirmHighlightedModelSelection(chatSessionState: ChatSessionSt
     return {
       ...chatSessionState,
       selectedModelId: selectedModel.id,
+      selectedModelDefaultReasoningEffort: selectedModel.defaultReasoningEffort,
       selectedReasoningEffort: undefined,
       modelAndReasoningSelectionState: { step: "hidden" },
     };
@@ -213,6 +219,8 @@ export function confirmHighlightedReasoningEffortChoice(chatSessionState: ChatSe
   return {
     ...chatSessionState,
     selectedModelId: chatSessionState.modelAndReasoningSelectionState.selectedModel.id,
+    selectedModelDefaultReasoningEffort:
+      chatSessionState.modelAndReasoningSelectionState.selectedModel.defaultReasoningEffort,
     selectedReasoningEffort: selectedReasoningEffortChoice.reasoningEffort,
     modelAndReasoningSelectionState: { step: "hidden" },
   };

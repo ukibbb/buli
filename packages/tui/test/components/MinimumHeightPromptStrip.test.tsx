@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { MinimumHeightPromptStrip } from "../../src/components/MinimumHeightPromptStrip.tsx";
 
@@ -9,6 +10,7 @@ describe("MinimumHeightPromptStrip", () => {
         promptDraft="hello world"
         promptDraftCursorOffset={11}
         isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
       />,
       { width: 40, height: 6 },
@@ -25,6 +27,7 @@ describe("MinimumHeightPromptStrip", () => {
         promptDraft="anything"
         promptDraftCursorOffset={8}
         isPromptInputDisabled={true}
+        accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="streaming_assistant_response"
       />,
       { width: 40, height: 6 },
@@ -41,6 +44,7 @@ describe("MinimumHeightPromptStrip", () => {
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
       />,
       { width: 40, height: 6 },

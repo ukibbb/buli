@@ -5,6 +5,7 @@ import { ConversationMessageRow } from "./ConversationMessageRow.tsx";
 
 export type ConversationMessageListProps = {
   conversationMessages: readonly ConversationMessage[];
+  isReasoningSummaryVisible: boolean;
   resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   onConversationMessageWheelScroll: (direction: "up" | "down") => void;
@@ -42,6 +43,7 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
             <MemoizedConversationMessageRow
               conversationMessage={conversationMessage}
               conversationMessageParts={props.resolveConversationMessageParts(conversationMessage.id)}
+              isReasoningSummaryVisible={props.isReasoningSummaryVisible}
             />
           </box>
         ))}

@@ -9,18 +9,13 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Pen frame HOeet. Owns three stacked rows: a header strip with mode + model
 // chips, a body with the prompt draft and caret, and a footer that shows the
-// persistent idle shortcuts block when idle, the working indicator
-// while streaming, or a contextual override message (e.g. selection open)
-// when a modal/selection owns keyboard focus.
+// working indicator while streaming, a contextual override message when one is
+// supplied, or only the context meter when idle.
 //
-// promptInputHintOverride is undefined in the default idle state so the
-// footer can render the coloured `[ ? ] help · shortcuts` glyphs plus the
-// always-visible caret/transcript hints instead of a plain monochrome string.
-//
-// Exported row count = 2 (rounded border) + 1 (header) + 3 (body w/ paddingY)
-// + 1 (footer). It is the source of truth for ChatScreen's responsive
-// budgeting math — keep it in sync with the rendered output below.
-export const INPUT_PANEL_NATURAL_ROW_COUNT = 7;
+// Exported row count = 2 (rounded border) + 1 (header) + 1 (body) + 1 (footer).
+// It is the source of truth for ChatScreen's responsive budgeting math — keep
+// it in sync with the rendered output below.
+export const INPUT_PANEL_NATURAL_ROW_COUNT = 5;
 
 export type InputPanelProps = {
   promptDraft: string;
@@ -28,6 +23,7 @@ export type InputPanelProps = {
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   promptInputHintOverride?: string;
+  accentColor: string;
   modeLabel: string;
   modelIdentifier: string;
   reasoningEffortLabel: string;
@@ -57,21 +53,22 @@ export function InputPanel(props: InputPanelProps): ReactNode {
   return (
     <box
       borderStyle="rounded"
-      borderColor={chatScreenTheme.accentGreen}
+      borderColor={props.accentColor}
       flexDirection="column"
       backgroundColor={chatScreenTheme.bg}
       flexShrink={0}
+      marginX={2}
     >
-      <box flexDirection="row" justifyContent="space-between" paddingX={2}>
-        <text fg={chatScreenTheme.accentGreen}>
+      <box flexDirection="row" justifyContent="space-between" paddingX={1}>
+        <text fg={props.accentColor}>
           {`[ ${glyphs.statusDot} ${props.modeLabel} ]`}
         </text>
         <text fg={chatScreenTheme.textMuted}>
           {`[ ${props.modelIdentifier} · ${props.reasoningEffortLabel} ]`}
         </text>
       </box>
-      <box flexDirection="row" paddingX={2} paddingY={1} gap={1}>
-        <text fg={chatScreenTheme.accentGreen}>
+      <box flexDirection="row" paddingX={1} gap={1}>
+        <text fg={props.accentColor}>
           <b>{">"}</b>
         </text>
         <box flexGrow={1}>
@@ -88,7 +85,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         backgroundColor={chatScreenTheme.bg}
         flexDirection="row"
         justifyContent="space-between"
-        paddingX={2}
+        paddingX={1}
       >
         {isStreamingResponse ? (
           <box flexDirection="row" gap={1}>
@@ -97,18 +94,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
           </box>
         ) : props.promptInputHintOverride !== undefined ? (
           <text fg={chatScreenTheme.textMuted}>{props.promptInputHintOverride}</text>
-        ) : (
-          <text>
-            <span fg={chatScreenTheme.textDim}>{"[ "}</span>
-            <b fg={chatScreenTheme.accentCyan}>{"?"}</b>
-            <span fg={chatScreenTheme.textDim}>{" ] "}</span>
-            <span fg={chatScreenTheme.textMuted}>{"help · shortcuts · "}</span>
-            <span fg={chatScreenTheme.textDim}>{"[ ← → ] "}</span>
-            <span fg={chatScreenTheme.textMuted}>{"caret · "}</span>
-            <span fg={chatScreenTheme.textDim}>{"[ ↑ ↓ ] "}</span>
-            <span fg={chatScreenTheme.textMuted}>{"transcript"}</span>
-          </text>
-        )}
+        ) : <text />}
         <ContextWindowMeter
           totalTokensUsed={props.totalContextTokensUsed}
           contextWindowTokenCapacity={props.contextWindowTokenCapacity}

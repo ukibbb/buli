@@ -2,8 +2,12 @@
 // this map the UI falls back to showing raw token counts instead of a
 // percentage, rather than pretending a capacity it doesn't know.
 const MODEL_CONTEXT_WINDOW_TOKEN_CAPACITIES: Record<string, number> = {
-  "gpt-5.4": 256_000,
-  "gpt-5.4-mini": 128_000,
+  "gpt-5.5": 400_000,
+  "gpt-5.5-pro": 400_000,
+  "gpt-5.4": 1_050_000,
+  "gpt-5.4-pro": 1_050_000,
+  "gpt-5.4-mini": 400_000,
+  "gpt-5.4-nano": 400_000,
   "gpt-5": 256_000,
   "gpt-4.1": 1_000_000,
   "gpt-4.1-mini": 128_000,

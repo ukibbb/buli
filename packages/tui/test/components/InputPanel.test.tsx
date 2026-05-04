@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { InputPanel } from "../../src/components/InputPanel.tsx";
 
@@ -13,6 +14,7 @@ describe("InputPanel", () => {
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
         modeLabel="chat"
         modelIdentifier="claude-3-5-sonnet"
         reasoningEffortLabel="none"
@@ -28,12 +30,13 @@ describe("InputPanel", () => {
     expect(frame).toContain("claude-3-5-sonnet");
   });
 
-  test("renders_persistent_help_hint_when_idle", async () => {
+  test("renders_prompt_draft_without_shortcut_hints_when_idle", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
         promptDraft="hello world"
         promptDraftCursorOffset={11}
         isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
         modeLabel="chat"
         modelIdentifier="claude-3-5-haiku"
         reasoningEffortLabel="low"
@@ -45,10 +48,10 @@ describe("InputPanel", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("help · shortcuts");
-    expect(frame).toContain("caret");
-    expect(frame).toContain("transcript");
     expect(frame).toContain("hello world");
+    expect(frame).not.toContain("help · shortcuts");
+    expect(frame).not.toContain("caret");
+    expect(frame).not.toContain("transcript");
   });
 
   test("renders_override_hint_when_provided", async () => {
@@ -58,6 +61,7 @@ describe("InputPanel", () => {
         promptDraftCursorOffset={0}
         isPromptInputDisabled={true}
         promptInputHintOverride="Selection is open. Press Esc to close it."
+        accentColor={chatScreenTheme.accentGreen}
         modeLabel="chat"
         modelIdentifier="claude-3-5-haiku"
         reasoningEffortLabel="low"
@@ -78,6 +82,7 @@ describe("InputPanel", () => {
         promptDraftCursorOffset={0}
         isPromptInputDisabled={true}
         promptInputHintOverride=""
+        accentColor={chatScreenTheme.accentGreen}
         modeLabel="chat"
         modelIdentifier="claude-3-5-haiku"
         reasoningEffortLabel="low"
@@ -101,6 +106,7 @@ describe("InputPanel", () => {
         promptDraft="@/Users/lukasz/Desktop/Projekty/buli/.bun/install/cache/@babel/helper-annotate-as-pure@7.27.3@@@1/README.md"
         promptDraftCursorOffset={107}
         isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
         modeLabel="chat"
         modelIdentifier="gpt-5.4"
         reasoningEffortLabel="default"
@@ -122,6 +128,7 @@ describe("InputPanel", () => {
         promptDraft="hello"
         promptDraftCursorOffset={2}
         isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
         modeLabel="chat"
         modelIdentifier="gpt-5.4"
         reasoningEffortLabel="default"

@@ -1,6 +1,8 @@
 import { resolve, sep } from "node:path";
 import type {
   BashToolCallRequest,
+  BuliDiagnosticLogFields,
+  BuliDiagnosticLogger,
   ToolCallBashDetail,
   ToolCallBashOutputLine,
 } from "@buli/contracts";
@@ -41,6 +43,7 @@ export async function runApprovedBashToolCall(input: {
   bashToolCallRequest: BashToolCallRequest;
   workspaceRootPath: string;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<BashToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
   const workingDirectoryPath = resolveBashWorkingDirectoryPath({
@@ -50,6 +53,12 @@ export async function runApprovedBashToolCall(input: {
   const timeoutMilliseconds = input.bashToolCallRequest.timeoutMilliseconds ?? DEFAULT_BASH_TIMEOUT_MILLISECONDS;
   const startedToolCallDetail = createStartedBashToolCallDetail({
     ...input.bashToolCallRequest,
+    workingDirectoryPath,
+    timeoutMilliseconds,
+  });
+  logEngineDiagnosticEvent(input.diagnosticLogger, "bash_tool.execution_started", {
+    shellCommandLength: input.bashToolCallRequest.shellCommand.length,
+    commandDescriptionLength: input.bashToolCallRequest.commandDescription.length,
     workingDirectoryPath,
     timeoutMilliseconds,
   });
@@ -70,6 +79,16 @@ export async function runApprovedBashToolCall(input: {
       exitCode: workspaceShellCommandExecutionResult.exitCode,
       outputLines,
     };
+    const durationMilliseconds = Date.now() - startedAtMilliseconds;
+    logEngineDiagnosticEvent(input.diagnosticLogger, "bash_tool.execution_completed", {
+      workingDirectoryPath,
+      timeoutMilliseconds,
+      durationMilliseconds,
+      exitCode: workspaceShellCommandExecutionResult.exitCode,
+      stdoutLength: workspaceShellCommandExecutionResult.stdoutText.length,
+      stderrLength: workspaceShellCommandExecutionResult.stderrText.length,
+      renderedOutputLineCount: outputLines.length,
+    });
     return {
       outcomeKind: "completed",
       toolCallDetail,
@@ -80,18 +99,37 @@ export async function runApprovedBashToolCall(input: {
         stdoutText: workspaceShellCommandExecutionResult.stdoutText,
         stderrText: workspaceShellCommandExecutionResult.stderrText,
       }),
-      durationMilliseconds: Date.now() - startedAtMilliseconds,
+      durationMilliseconds,
     };
   } catch (error) {
     const failureExplanation = error instanceof Error ? error.message : String(error);
+    const durationMilliseconds = Date.now() - startedAtMilliseconds;
+    logEngineDiagnosticEvent(input.diagnosticLogger, "bash_tool.execution_failed", {
+      workingDirectoryPath,
+      timeoutMilliseconds,
+      durationMilliseconds,
+      failureExplanation,
+    });
     return {
       outcomeKind: "failed",
       toolCallDetail: startedToolCallDetail,
       failureExplanation,
       toolResultText: `Command execution failed before completion: ${failureExplanation}`,
-      durationMilliseconds: Date.now() - startedAtMilliseconds,
+      durationMilliseconds,
     };
   }
+}
+
+function logEngineDiagnosticEvent(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  eventName: string,
+  fields?: BuliDiagnosticLogFields,
+): void {
+  diagnosticLogger?.({
+    subsystem: "engine",
+    eventName,
+    ...(fields ? { fields } : {}),
+  });
 }
 
 function resolveBashWorkingDirectoryPath(input: {

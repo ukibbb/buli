@@ -10,10 +10,3 @@ export type {
   TerminalSizeForChatScreen,
   TerminalSizeTierForChatScreen,
 } from "./terminalSizeTierForChatScreen.ts";
-export {
-  planShortcutsModalRowBudget,
-} from "./shortcutsModalRowBudgetPlan.ts";
-export type {
-  ShortcutsModalRowBudgetInput,
-  ShortcutsModalRowBudgetPlan,
-} from "./shortcutsModalRowBudgetPlan.ts";

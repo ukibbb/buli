@@ -43,46 +43,72 @@ type ToolResultConversationSessionEntry = Extract<
   ConversationSessionEntry,
   { entryKind: "completed_tool_result" | "failed_tool_result" | "denied_tool_result" }
 >;
+type UserPromptConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>;
+
+type ConversationSessionTurn = {
+  userPromptEntry: UserPromptConversationSessionEntry;
+  entriesAfterUserPrompt: ConversationSessionEntry[];
+};
 
 export function createOpenAiResponsesInputItems(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): OpenAiConversationInputItem[] {
   const openAiInputItems: OpenAiConversationInputItem[] = [];
-  let pendingLegacyToolTranscriptSegments: string[] = [];
-
-  function flushPendingLegacyToolTranscript(): void {
-    if (pendingLegacyToolTranscriptSegments.length === 0) {
-      return;
-    }
-
-    openAiInputItems.push(createMessageInputItem("assistant", pendingLegacyToolTranscriptSegments.join("\n\n")));
-    pendingLegacyToolTranscriptSegments = [];
-  }
+  let pendingConversationSessionTurn: ConversationSessionTurn | undefined;
 
   for (const conversationSessionEntry of conversationSessionEntries) {
     if (conversationSessionEntry.entryKind === "user_prompt") {
-      flushPendingLegacyToolTranscript();
-      openAiInputItems.push(createMessageInputItem("user", conversationSessionEntry.modelFacingPromptText));
+      pendingConversationSessionTurn = {
+        userPromptEntry: conversationSessionEntry,
+        entriesAfterUserPrompt: [],
+      };
       continue;
     }
 
+    if (!pendingConversationSessionTurn) {
+      continue;
+    }
+
+    pendingConversationSessionTurn.entriesAfterUserPrompt.push(conversationSessionEntry);
     if (conversationSessionEntry.entryKind === "assistant_message") {
-      if (isOpenAiProviderTurnReplay(conversationSessionEntry.providerTurnReplay)) {
-        pendingLegacyToolTranscriptSegments = [];
-        openAiInputItems.push(...conversationSessionEntry.providerTurnReplay.inputItems);
-      } else {
-        flushPendingLegacyToolTranscript();
-      }
-
-      openAiInputItems.push(createMessageInputItem("assistant", conversationSessionEntry.assistantMessageText));
-      continue;
+      appendOpenAiInputItemsForConversationSessionTurn(openAiInputItems, pendingConversationSessionTurn);
+      pendingConversationSessionTurn = undefined;
     }
-
-    pendingLegacyToolTranscriptSegments.push(createLegacyToolTranscriptSegment(conversationSessionEntry));
   }
 
-  flushPendingLegacyToolTranscript();
+  if (pendingConversationSessionTurn?.entriesAfterUserPrompt.length === 0) {
+    openAiInputItems.push(createMessageInputItem("user", pendingConversationSessionTurn.userPromptEntry.modelFacingPromptText));
+  }
+
   return openAiInputItems;
+}
+
+function appendOpenAiInputItemsForConversationSessionTurn(
+  openAiInputItems: OpenAiConversationInputItem[],
+  conversationSessionTurn: ConversationSessionTurn,
+): void {
+  const terminalAssistantMessageEntry = conversationSessionTurn.entriesAfterUserPrompt.at(-1);
+  if (!terminalAssistantMessageEntry || terminalAssistantMessageEntry.entryKind !== "assistant_message") {
+    return;
+  }
+
+  if (terminalAssistantMessageEntry.assistantMessageStatus === "failed") {
+    return;
+  }
+
+  openAiInputItems.push(createMessageInputItem("user", conversationSessionTurn.userPromptEntry.modelFacingPromptText));
+  if (isOpenAiProviderTurnReplay(terminalAssistantMessageEntry.providerTurnReplay)) {
+    openAiInputItems.push(...terminalAssistantMessageEntry.providerTurnReplay.inputItems);
+  } else {
+    const legacyToolTranscriptSegments = createPairedLegacyToolTranscriptSegments(
+      conversationSessionTurn.entriesAfterUserPrompt.slice(0, -1),
+    );
+    if (legacyToolTranscriptSegments.length > 0) {
+      openAiInputItems.push(createMessageInputItem("assistant", legacyToolTranscriptSegments.join("\n\n")));
+    }
+  }
+
+  openAiInputItems.push(createMessageInputItem("assistant", terminalAssistantMessageEntry.assistantMessageText));
 }
 
 export function createFunctionCallOutputInputItem(
@@ -243,6 +269,41 @@ function createFunctionCallInputItemFromResponseOutputItem(
   };
 }
 
+function createPairedLegacyToolTranscriptSegments(
+  conversationSessionEntries: readonly ConversationSessionEntry[],
+): string[] {
+  const legacyToolTranscriptSegments: string[] = [];
+  const toolResultEntryByToolCallId = new Map<string, ToolResultConversationSessionEntry>();
+  const projectedToolCallIds = new Set<string>();
+
+  for (const conversationSessionEntry of conversationSessionEntries) {
+    if (!isToolResultConversationSessionEntry(conversationSessionEntry) || toolResultEntryByToolCallId.has(conversationSessionEntry.toolCallId)) {
+      continue;
+    }
+
+    toolResultEntryByToolCallId.set(conversationSessionEntry.toolCallId, conversationSessionEntry);
+  }
+
+  for (const conversationSessionEntry of conversationSessionEntries) {
+    if (conversationSessionEntry.entryKind !== "tool_call" || projectedToolCallIds.has(conversationSessionEntry.toolCallId)) {
+      continue;
+    }
+
+    const toolResultEntry = toolResultEntryByToolCallId.get(conversationSessionEntry.toolCallId);
+    if (!toolResultEntry) {
+      continue;
+    }
+
+    legacyToolTranscriptSegments.push(
+      createLegacyToolTranscriptSegment(conversationSessionEntry),
+      createLegacyToolTranscriptSegment(toolResultEntry),
+    );
+    projectedToolCallIds.add(conversationSessionEntry.toolCallId);
+  }
+
+  return legacyToolTranscriptSegments;
+}
+
 function createLegacyToolTranscriptSegment(conversationSessionEntry: ToolCallConversationSessionEntry | ToolResultConversationSessionEntry): string {
   if (conversationSessionEntry.entryKind === "tool_call") {
     return createLegacyToolCallTranscriptSegment(conversationSessionEntry);
@@ -276,4 +337,14 @@ function createLegacyToolResultTranscriptSegment(conversationSessionEntry: ToolR
         : "assistant tool denial";
 
   return [`[${toolResultLabel} ${conversationSessionEntry.toolCallId}]`, conversationSessionEntry.toolResultText].join("\n");
+}
+
+function isToolResultConversationSessionEntry(
+  conversationSessionEntry: ConversationSessionEntry,
+): conversationSessionEntry is ToolResultConversationSessionEntry {
+  return (
+    conversationSessionEntry.entryKind === "completed_tool_result" ||
+    conversationSessionEntry.entryKind === "failed_tool_result" ||
+    conversationSessionEntry.entryKind === "denied_tool_result"
+  );
 }

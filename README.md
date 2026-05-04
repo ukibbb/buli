@@ -17,17 +17,18 @@ V1 currently includes:
   - `TopBar`
   - `ConversationMessageList`
   - `UserPromptBlock`
-  - `ReasoningStreamBlock`
+  - `ThinkingStatusLine`
   - `ReasoningCollapsedChip`
   - `ModelAndReasoningSelectionPane`
+  - `SlashCommandSelectionPane`
   - `InputPanel`
-  - `ShortcutsModal`
+  - `CommandHelpModal`
 - provider-backed available model discovery
 - model selection and reasoning-effort selection
 - streaming reasoning-summary display
 - engine-owned in-memory conversation history across turns during one session
 - first local `bash` tool wired through the engine and OpenAI Responses function-calling loop
-- explicit tool approval flow: `y` approves the pending bash command, `n` denies it
+- explicit tool approval flow with visible approve and deny buttons for pending bash commands
 - HERO 1 visual design translated to terminal constraints
 - typed message and content-part contracts in `@buli/contracts`
 - shared design tokens in `@buli/assistant-design-tokens`
@@ -71,7 +72,7 @@ Then use the command normally from any directory:
 buli login
 buli models
 buli
-buli --model gpt-5.4 --reasoning high
+buli --model gpt-5.5 --reasoning high
 ```
 
 We use the source runner as the primary development workflow because every `buli` invocation runs the latest repo code without waiting for a rebuild.
@@ -90,7 +91,7 @@ We use the source runner as the primary development workflow because every `buli
 bun install
 bun run login
 bun run start:cli
-bun run start:cli -- --model gpt-5.4 --reasoning high
+bun run start:cli -- --model gpt-5.5 --reasoning high
 ```
 
 ## What You Can Do Today
@@ -101,15 +102,15 @@ After logging in, you can:
 - type a prompt draft
 - submit the prompt draft and see your message appear immediately
 - watch the assistant response stream into one assistant message that grows part by part
-- see the model's reasoning summary stream live, then collapse into a compact chip once reasoning ends
+- see a live `Thinking` status, then collapse reasoning into a compact chip once reasoning ends
 - read the collapsed chip's elapsed reasoning time and final reasoning token count
-- press `?` on an empty prompt to open shortcuts help
-- press `Ctrl+L` to open model selection
+- type `/help` to open command help
+- type `/model` to open model selection
 - choose a model and, when supported, choose a reasoning effort
-- approve a pending `bash` command with `y` or deny it with `n`
+- approve or deny a pending `bash` command with the visible approval buttons
 - ask follow-up questions that depend on earlier replies and completed `bash` results inside the same fullscreen session
 - list available models with `buli models`
-- scroll the conversation transcript with `Up`, `Down`, `PageUp`, `PageDown`, `Home`, and `End`
+- scroll the conversation transcript with the mouse wheel
 - start the app with a preselected model using `--model`
 - start the app with a preselected reasoning effort using `--reasoning`
 
@@ -125,7 +126,7 @@ You can inspect and change models in three ways:
 
 Inside the fullscreen terminal UI:
 
-- press `Ctrl+L` to open model selection
+- type `/model` to open model selection
 - use the arrow keys to move the highlight
 - press `Enter` to confirm the highlighted choice
 - press `Esc` to close the selection flow

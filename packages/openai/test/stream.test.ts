@@ -521,11 +521,15 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
         {
           type: "function",
           name: "bash",
-          description: "Run a shell command inside the current workspace and return stdout, stderr, and the exit code.",
+          description:
+            "Run a command line inside the current workspace and return stdout, stderr, and the exit code. Provide the command directly; do not wrap it in bash -lc, sh -c, or another shell.",
           parameters: {
             type: "object",
             properties: {
-              command: { type: "string", description: "Shell command to run." },
+              command: {
+                type: "string",
+                description: "Command line to run directly. The app already executes it through the user's shell.",
+              },
               description: { type: "string", description: "Very short reason for running the command." },
               workdir: {
                 type: ["string", "null"],

@@ -1,4 +1,5 @@
 import type {
+  AssistantOperatingMode,
   AssistantResponseEvent,
   ConversationSessionEntry,
   ModelContextItem,
@@ -9,6 +10,7 @@ import type {
 
 export type ConversationTurnRequest = {
   userPromptText: string;
+  assistantOperatingMode?: AssistantOperatingMode;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
 };

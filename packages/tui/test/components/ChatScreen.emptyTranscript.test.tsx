@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { ReasoningEffort } from "@buli/contracts";
 import type { AssistantConversationRunner, PromptContextCandidate } from "@buli/engine";
 import { act } from "react";
 import { ChatScreen } from "../../src/ChatScreen.tsx";
@@ -26,11 +27,16 @@ type OpenTuiChatScreenHarness = {
 };
 
 async function renderChatScreen(input: {
+  selectedModelId?: string;
+  selectedModelDefaultReasoningEffort?: ReasoningEffort;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
 }): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
     <ChatScreen
-      selectedModelId="gpt-5.4"
+      selectedModelId={input.selectedModelId ?? "gpt-5.4"}
+      {...(input.selectedModelDefaultReasoningEffort
+        ? { selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort }
+        : {})}
       loadAvailableAssistantModels={noopAvailableModelsLoader}
       loadPromptContextCandidates={input.loadPromptContextCandidates}
       assistantConversationRunner={neverEmittingAssistantConversationRunner}
@@ -79,6 +85,18 @@ test("ChatScreen starts with an empty transcript before any real conversation ex
   expect(frame).toContain("implementation");
 });
 
+test("ChatScreen shows the selected model default reasoning effort when it is known", async () => {
+  const renderedChatScreen = await renderChatScreen({
+    selectedModelId: "gpt-5.5",
+    selectedModelDefaultReasoningEffort: "xhigh",
+    loadPromptContextCandidates: async () => [],
+  });
+
+  const frame = await renderedChatScreen.captureFrame();
+  expect(frame).toContain("gpt-5.5");
+  expect(frame).toContain("xhigh");
+});
+
 test("ChatScreen shows the submitted prompt after the first message is added", async () => {
   const renderedChatScreen = await renderChatScreen({
     loadPromptContextCandidates: async () => [],
@@ -87,5 +105,4 @@ test("ChatScreen shows the submitted prompt after the first message is added", a
   await renderedChatScreen.typeText("show me the live transcript");
   const frameAfterSubmit = await renderedChatScreen.pressEnter();
   expect(frameAfterSubmit).toContain("show me the live transcript");
-  expect(frameAfterSubmit).toContain("working");
 });

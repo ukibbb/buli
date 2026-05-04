@@ -1,4 +1,9 @@
 export {
+  AssistantOperatingModeSchema,
+  DEFAULT_ASSISTANT_OPERATING_MODE,
+} from "./assistantOperatingMode.ts";
+export type { AssistantOperatingMode } from "./assistantOperatingMode.ts";
+export {
   ConversationMessageRoleSchema,
   ConversationMessageSchema,
   ConversationMessageStatusSchema,
@@ -46,6 +51,15 @@ export type {
 } from "./conversationMessagePart.ts";
 export { ConversationTurnStatusSchema } from "./conversationTurnStatus.ts";
 export type { ConversationTurnStatus } from "./conversationTurnStatus.ts";
+export { noopBuliDiagnosticLogger } from "./diagnosticLog.ts";
+export type {
+  BuliDiagnosticLogEvent,
+  BuliDiagnosticLogFields,
+  BuliDiagnosticLogFieldValue,
+  BuliDiagnosticLogger,
+  BuliDiagnosticLogPrimitive,
+  BuliDiagnosticSubsystem,
+} from "./diagnosticLog.ts";
 export { PendingToolApprovalRequestSchema } from "./pendingToolApprovalRequest.ts";
 export type { PendingToolApprovalRequest } from "./pendingToolApprovalRequest.ts";
 export {
@@ -76,19 +90,29 @@ export type {
 } from "./assistantContentPart.ts";
 export {
   AssistantMessageConversationSessionEntrySchema,
+  AssistantMessageConversationSessionEntryStatusSchema,
+  CompletedAssistantMessageConversationSessionEntrySchema,
   CompletedToolResultConversationSessionEntrySchema,
   ConversationSessionEntrySchema,
+  ConversationSessionSnapshotSchema,
   DeniedToolResultConversationSessionEntrySchema,
+  FailedAssistantMessageConversationSessionEntrySchema,
   FailedToolResultConversationSessionEntrySchema,
+  IncompleteAssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
   UserPromptConversationSessionEntrySchema,
 } from "./conversationSessionEntry.ts";
 export type {
   AssistantMessageConversationSessionEntry,
+  AssistantMessageConversationSessionEntryStatus,
+  CompletedAssistantMessageConversationSessionEntry,
   CompletedToolResultConversationSessionEntry,
   ConversationSessionEntry,
+  ConversationSessionSnapshot,
   DeniedToolResultConversationSessionEntry,
+  FailedAssistantMessageConversationSessionEntry,
   FailedToolResultConversationSessionEntry,
+  IncompleteAssistantMessageConversationSessionEntry,
   ToolCallConversationSessionEntry,
   UserPromptConversationSessionEntry,
 } from "./conversationSessionEntry.ts";

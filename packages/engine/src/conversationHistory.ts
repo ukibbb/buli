@@ -1,21 +1,25 @@
 import type { ConversationSessionEntry, ModelContextItem } from "@buli/contracts";
-import {
-  projectConversationSessionEntriesToModelContextItems,
-  projectConversationSessionEntryToModelContextItems,
-} from "./conversationHistoryProjection.ts";
+import { projectConversationSessionEntriesToModelContextItems } from "./conversationHistoryProjection.ts";
+
+export type ConversationSessionEntriesChangedListener = (
+  conversationSessionEntries: readonly ConversationSessionEntry[],
+) => void;
 
 export class InMemoryConversationHistory {
   readonly conversationSessionEntries: ConversationSessionEntry[];
-  readonly modelContextItems: ModelContextItem[];
+  readonly onConversationSessionEntriesChanged: ConversationSessionEntriesChangedListener | undefined;
 
-  constructor(input?: { initialConversationSessionEntries?: readonly ConversationSessionEntry[] }) {
+  constructor(input?: {
+    initialConversationSessionEntries?: readonly ConversationSessionEntry[];
+    onConversationSessionEntriesChanged?: ConversationSessionEntriesChangedListener;
+  }) {
     this.conversationSessionEntries = [...(input?.initialConversationSessionEntries ?? [])];
-    this.modelContextItems = projectConversationSessionEntriesToModelContextItems(this.conversationSessionEntries);
+    this.onConversationSessionEntriesChanged = input?.onConversationSessionEntriesChanged;
   }
 
   appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void {
     this.conversationSessionEntries.push(conversationSessionEntry);
-    this.modelContextItems.push(...projectConversationSessionEntryToModelContextItems(conversationSessionEntry));
+    this.onConversationSessionEntriesChanged?.(this.listConversationSessionEntries());
   }
 
   listConversationSessionEntries(): readonly ConversationSessionEntry[] {
@@ -23,6 +27,6 @@ export class InMemoryConversationHistory {
   }
 
   listModelContextItems(): readonly ModelContextItem[] {
-    return [...this.modelContextItems];
+    return projectConversationSessionEntriesToModelContextItems(this.conversationSessionEntries);
   }
 }

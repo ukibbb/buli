@@ -1,4 +1,5 @@
 import type {
+  AssistantOperatingMode,
   AvailableAssistantModel,
   ConversationMessage,
   ConversationMessagePart,
@@ -7,6 +8,7 @@ import type {
   ReasoningEffort,
   TokenUsage,
 } from "@buli/contracts";
+import { DEFAULT_ASSISTANT_OPERATING_MODE } from "@buli/contracts";
 import type { PromptContextCandidate } from "@buli/engine";
 
 export type ReasoningEffortChoice = {
@@ -48,8 +50,27 @@ export type PromptContextSelectionState =
       highlightedPromptContextCandidateIndex: number;
     };
 
+export type SlashCommand = {
+  name: string;
+  value: string;
+  description: string;
+};
+
+export type SlashCommandSelectionState =
+  | {
+      step: "hidden";
+    }
+  | {
+      step: "showing_slash_commands";
+      slashCommandQueryText: string;
+      availableSlashCommands: readonly SlashCommand[];
+      highlightedSlashCommandIndex: number;
+    };
+
 export type ChatSessionState = {
+  selectedAssistantOperatingMode: AssistantOperatingMode;
   selectedModelId: string;
+  selectedModelDefaultReasoningEffort: ReasoningEffort | undefined;
   selectedReasoningEffort: ReasoningEffort | undefined;
   conversationTurnStatus: ConversationTurnStatus;
   promptDraft: string;
@@ -59,18 +80,24 @@ export type ChatSessionState = {
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   orderedConversationMessageIds: string[];
   pendingToolApprovalRequest: PendingToolApprovalRequest | undefined;
+  isReasoningSummaryVisible: boolean;
   promptContextSelectionState: PromptContextSelectionState;
+  slashCommandSelectionState: SlashCommandSelectionState;
   selectedPromptContextReferenceTexts: string[];
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
-  isShortcutsHelpModalVisible: boolean;
+  isCommandHelpModalVisible: boolean;
 };
 
 export function createInitialChatSessionState(input: {
+  selectedAssistantOperatingMode?: AssistantOperatingMode;
   selectedModelId: string;
+  selectedModelDefaultReasoningEffort?: ReasoningEffort;
   selectedReasoningEffort?: ReasoningEffort;
 }): ChatSessionState {
   return {
+    selectedAssistantOperatingMode: input.selectedAssistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE,
     selectedModelId: input.selectedModelId,
+    selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort,
     selectedReasoningEffort: input.selectedReasoningEffort,
     conversationTurnStatus: "waiting_for_user_input",
     promptDraft: "",
@@ -80,9 +107,11 @@ export function createInitialChatSessionState(input: {
     conversationMessagePartsById: {},
     orderedConversationMessageIds: [],
     pendingToolApprovalRequest: undefined,
+    isReasoningSummaryVisible: true,
     promptContextSelectionState: { step: "hidden" },
+    slashCommandSelectionState: { step: "hidden" },
     selectedPromptContextReferenceTexts: [],
     modelAndReasoningSelectionState: { step: "hidden" },
-    isShortcutsHelpModalVisible: false,
+    isCommandHelpModalVisible: false,
   };
 }
