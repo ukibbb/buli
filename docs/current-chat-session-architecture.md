@@ -20,11 +20,13 @@ Important files:
 
 - `packages/contracts/src/conversationMessage.ts`
 - `packages/contracts/src/conversationMessagePart.ts`
+- `packages/contracts/src/conversationSessionEntry.ts`
+- `packages/contracts/src/conversationSessionRecord.ts`
 - `packages/contracts/src/conversationTurnStatus.ts`
 - `packages/contracts/src/pendingToolApprovalRequest.ts`
 - `packages/contracts/src/events.ts`
 
-This package defines the canonical types for conversation messages, message parts, assistant-turn events, and pending tool approval.
+This package defines the canonical types for conversation messages, message parts, session entries, session records, assistant-turn events, and pending tool approval.
 
 ### `@buli/engine`
 
@@ -44,9 +46,11 @@ Important files:
 - `packages/chat-session-state/src/chatSessionSelectors.ts`
 - `packages/chat-session-state/src/promptDraftReducer.ts`
 - `packages/chat-session-state/src/promptContextSelectionReducer.ts`
+- `packages/chat-session-state/src/conversationTranscriptReducer.ts`
+- `packages/chat-session-state/src/sessionSelectionReducer.ts`
 - `packages/chat-session-state/src/modelAndReasoningSelectionReducer.ts`
 
-This package owns normalized conversation state, prompt editing, prompt-context picker state, model selection, reasoning-effort selection, and pending tool approval state.
+This package owns normalized conversation state, persisted transcript hydration, prompt editing, prompt-context picker state, session selection, model selection, reasoning-effort selection, and pending tool approval state.
 
 ### `@buli/tui`
 
@@ -94,6 +98,19 @@ Tool approval is not transcript content. The system keeps:
 
 That is why the approval prompt can render below the message list instead of as another transcript row.
 
+## Session Persistence
+
+`buli` stores canonical conversation-session entries in workspace-scoped JSONL files under `~/.buli/conversation-sessions`. The CLI loads the active session on startup, appends new user prompts, assistant messages, tool calls, and tool results as records, and lets the TUI hydrate the visible transcript from those entries.
+
+Current persistence supports:
+
+- startup resume for the active workspace session
+- `/sessions` selection across saved sessions
+- `/clear` creating a new persisted session
+- `/export-session` HTML transcript export
+
+It does not yet persist live React/runtime object state, pending approvals across process exit, selected model/reasoning settings per session, or branch UI.
+
 ## Why This Shape Works
 
 - the hot path updates smaller pieces of state
@@ -137,7 +154,7 @@ Current constraints:
 - `packages/tui/src/index.ts` mounts one OpenTUI root once per process
 - `packages/tui/src/ChatScreen.tsx` keeps active UI state in React hooks
 - `packages/openai/src/provider/turnSession.ts` snapshots one `systemPromptText` for the whole active provider turn
-- there is no session persistence yet
+- session persistence restores canonical transcript history, not live in-memory runtime objects during an active code reload
 - there is no reload command surface
 - there is no file-watcher-based restart path
 
@@ -210,7 +227,7 @@ Pros:
 Cons:
 
 - poor UX
-- current in-memory session state is lost because `buli` does not yet persist chat sessions
+- active turns, pending approvals, and UI-only state are lost; completed canonical session entries are restored on the next launch
 
 Recommended use:
 
@@ -273,7 +290,7 @@ Recommended use:
 The recommended order is:
 
 1. implement next-turn reload for repo instruction files
-2. add session persistence or at least explicit chat-session snapshot and hydrate support
+2. use the existing session persistence and hydrate support as the restore substrate
 3. implement a dev-only full process hot restart path for code changes
 4. defer true in-process HMR unless the simpler restart model proves insufficient
 
@@ -284,7 +301,8 @@ process, not the mounted TUI subtree.
 
 Reason:
 
-- `buli` does not yet have a reloadable resource or session runtime like `pi-mono`
+- `buli` does not yet have a reloadable resource runtime or hot-restart coordinator like `pi-mono`
+- current session persistence is append-only conversation history, not a live runtime snapshot
 - the running TUI, engine, and provider turn objects are created once and then hold live in-memory state
 - replacing only part of that graph would create stale references and unclear ownership
 
@@ -305,7 +323,7 @@ If instruction reload is implemented:
 
 If dev-only full process hot restart is implemented later:
 
-- `packages/chat-session-state/src/*` for snapshot and hydrate support
+- `packages/chat-session-state/src/*` for any extra UI snapshot state beyond existing transcript hydration
 - `packages/tui/src/ChatScreen.tsx`
 - `packages/tui/src/index.ts`
 - `apps/cli/src/commands/chat.ts`

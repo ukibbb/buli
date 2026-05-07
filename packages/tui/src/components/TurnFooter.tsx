@@ -45,17 +45,17 @@ function buildTurnMetadataText(props: TurnFooterProps, totalTokenCount: number |
   const metadataLabels: string[] = [];
 
   if (totalTokenCount !== undefined) {
-    metadataLabels.push(`${totalTokenCount} tok`);
+    metadataLabels.push(`${formatTokenCount(totalTokenCount)} tok`);
   }
 
   if (props.usage && props.usage.reasoning > 0) {
-    metadataLabels.push(`${props.usage.reasoning} reasoning tok`);
+    metadataLabels.push(`${formatTokenCount(props.usage.reasoning)} reasoning tok`);
   }
 
   metadataLabels.push(props.modelDisplayName);
 
   if (props.usage && props.usage.cache.read > 0) {
-    metadataLabels.push(`${props.usage.cache.read} cached`);
+    metadataLabels.push(`${formatTokenCount(props.usage.cache.read)} cached`);
   }
 
   return metadataLabels.join(" · ");
@@ -66,4 +66,13 @@ function formatTurnDurationMs(turnDurationMs: number): string {
     return `${turnDurationMs}ms`;
   }
   return `${(turnDurationMs / 1000).toFixed(1)}s`;
+}
+
+function formatTokenCount(tokenCount: number): string {
+  if (tokenCount < 1000) {
+    return String(tokenCount);
+  }
+
+  const tokenCountInThousands = tokenCount / 1000;
+  return `${Number.isInteger(tokenCountInThousands) ? tokenCountInThousands : tokenCountInThousands.toFixed(1)}k`;
 }

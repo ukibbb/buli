@@ -3,6 +3,7 @@ import type {
   AvailableAssistantModel,
   ConversationMessage,
   ConversationMessagePart,
+  ConversationSessionSummary,
   ConversationTurnStatus,
   PendingToolApprovalRequest,
   ReasoningEffort,
@@ -67,6 +68,24 @@ export type SlashCommandSelectionState =
       highlightedSlashCommandIndex: number;
     };
 
+export type ConversationSessionSelectionState =
+  | {
+      step: "hidden";
+    }
+  | {
+      step: "loading_conversation_sessions";
+    }
+  | {
+      step: "showing_session_loading_error";
+      errorMessage: string;
+    }
+  | {
+      step: "showing_conversation_sessions";
+      conversationSessions: readonly ConversationSessionSummary[];
+      highlightedConversationSessionIndex: number;
+      activeConversationSessionId: string | undefined;
+    };
+
 export type ChatSessionState = {
   selectedAssistantOperatingMode: AssistantOperatingMode;
   selectedModelId: string;
@@ -83,6 +102,7 @@ export type ChatSessionState = {
   isReasoningSummaryVisible: boolean;
   promptContextSelectionState: PromptContextSelectionState;
   slashCommandSelectionState: SlashCommandSelectionState;
+  conversationSessionSelectionState: ConversationSessionSelectionState;
   selectedPromptContextReferenceTexts: string[];
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
   isCommandHelpModalVisible: boolean;
@@ -110,6 +130,7 @@ export function createInitialChatSessionState(input: {
     isReasoningSummaryVisible: true,
     promptContextSelectionState: { step: "hidden" },
     slashCommandSelectionState: { step: "hidden" },
+    conversationSessionSelectionState: { step: "hidden" },
     selectedPromptContextReferenceTexts: [],
     modelAndReasoningSelectionState: { step: "hidden" },
     isCommandHelpModalVisible: false,

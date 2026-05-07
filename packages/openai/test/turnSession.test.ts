@@ -102,6 +102,7 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
     ],
   });
   expect(JSON.parse(requestBodies[1] ?? "{}")).toMatchObject({
+    reasoning: { summary: "auto" },
     input: [
       {
         role: "user",
@@ -131,6 +132,38 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
       },
     ],
     include: ["reasoning.encrypted_content"],
+  });
+});
+
+test("OpenAiProviderConversationTurn sends reasoning effort without summaries when reasoning is disabled", async () => {
+  const requestBodies: string[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "none",
+    promptCacheKey: "buli:test-session",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer quickly"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  const emittedEvents: ProviderStreamEvent[] = [];
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    emittedEvents.push(emittedEvent);
+  }
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual(["text_chunk", "completed"]);
+  expect(JSON.parse(requestBodies[0] ?? "{}")).toMatchObject({
+    prompt_cache_key: "buli:test-session",
+    reasoning: { effort: "none" },
   });
 });
 

@@ -21,6 +21,7 @@ export type ProviderConversationTurnRequest = {
   modelContextItems: readonly ModelContextItem[];
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  promptCacheKey?: string;
 };
 
 export type ProviderToolResultSubmission = {

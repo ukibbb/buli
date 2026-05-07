@@ -36,6 +36,106 @@ test("FileConversationSessionStore saves and loads conversation session entries"
   await expect(readFile(conversationSessionFilePath, "utf8")).resolves.toContain('"schemaVersion": 1');
 });
 
+test("FileConversationSessionStore appends JSONL session records with parent links", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: (() => {
+      let nextId = 0;
+      return () => {
+        nextId += 1;
+        return `entry-${nextId}`;
+      };
+    })(),
+    nowMs: (() => {
+      let nextTimestamp = 1000;
+      return () => {
+        nextTimestamp += 1;
+        return nextTimestamp;
+      };
+    })(),
+  });
+  const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
+
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Say hello",
+    modelFacingPromptText: "Say hello",
+  });
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Hello.",
+  });
+
+  const persistedJsonLines = (await readFile(activeConversationSession.filePath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as unknown);
+  expect(persistedJsonLines).toMatchObject([
+    { recordKind: "conversation_session", schemaVersion: 1, sessionId: "session-1" },
+    { recordKind: "conversation_entry", sessionEntryId: "entry-1", parentSessionEntryId: null },
+    { recordKind: "conversation_entry", sessionEntryId: "entry-2", parentSessionEntryId: "entry-1" },
+  ]);
+  expect(conversationSessionStore.loadConversationSessionEntries()).toEqual([
+    {
+      entryKind: "user_prompt",
+      promptText: "Say hello",
+      modelFacingPromptText: "Say hello",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Hello.",
+    },
+  ]);
+});
+
+test("FileConversationSessionStore imports a legacy snapshot into the active JSONL session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-"));
+  const legacyConversationSessionFilePath = join(directoryPath, "legacy-session.json");
+  const legacyConversationSessionStore = new FileConversationSessionStore({ filePath: legacyConversationSessionFilePath });
+  const legacyConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Legacy prompt",
+      modelFacingPromptText: "Legacy prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Legacy answer",
+    },
+  ];
+  legacyConversationSessionStore.saveConversationSessionEntries(legacyConversationSessionEntries);
+
+  const migratedConversationSessionStore = new FileConversationSessionStore({
+    filePath: legacyConversationSessionFilePath,
+    createSessionId: () => "migrated-session",
+    createSessionEntryId: (() => {
+      let nextId = 0;
+      return () => {
+        nextId += 1;
+        return `migrated-entry-${nextId}`;
+      };
+    })(),
+    nowMs: () => 2000,
+  });
+
+  expect(migratedConversationSessionStore.loadActiveConversationSession()).toMatchObject({
+    sessionId: "migrated-session",
+    conversationSessionEntries: legacyConversationSessionEntries,
+  });
+  expect(migratedConversationSessionStore.listConversationSessions()).toMatchObject([
+    {
+      sessionId: "migrated-session",
+      title: "Legacy prompt",
+      conversationSessionEntryCount: 2,
+    },
+  ]);
+});
+
 test("FileConversationSessionStore reloads history with safe model context after interrupted turns", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-"));
   const conversationSessionStore = new FileConversationSessionStore({ filePath: join(directoryPath, "session.json") });

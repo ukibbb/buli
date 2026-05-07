@@ -26,7 +26,10 @@ V1 currently includes:
 - provider-backed available model discovery
 - model selection and reasoning-effort selection
 - streaming reasoning-summary display
-- engine-owned in-memory conversation history across turns during one session
+- engine-owned conversation history across turns, persisted as workspace-scoped session records
+- startup resume for the active workspace session
+- `/sessions` switching across saved conversation sessions
+- `/export-session` HTML transcript export
 - first local `bash` tool wired through the engine and OpenAI Responses function-calling loop
 - explicit tool approval flow with visible approve and deny buttons for pending bash commands
 - HERO 1 visual design translated to terminal constraints
@@ -37,8 +40,8 @@ V1 currently includes:
 V1 intentionally does not include yet:
 
 - `read`, `write`, `edit`, or wider multi-tool support beyond `bash`
-- session persistence
 - session branching
+- raw event replay/debug export bundles
 - extension loading
 - process RPC
 
@@ -108,7 +111,10 @@ After logging in, you can:
 - type `/model` to open model selection
 - choose a model and, when supported, choose a reasoning effort
 - approve or deny a pending `bash` command with the visible approval buttons
-- ask follow-up questions that depend on earlier replies and completed `bash` results inside the same fullscreen session
+- ask follow-up questions that depend on earlier replies and completed `bash` results from the current persisted session
+- resume the active workspace session after restarting `buli`
+- switch saved sessions with `/sessions`
+- export the current session as HTML with `/export-session`
 - list available models with `buli models`
 - scroll the conversation transcript with the mouse wheel
 - start the app with a preselected model using `--model`
@@ -153,11 +159,11 @@ set -g focus-events on
 Current packages:
 
 - `apps/cli`
-  - composition root and CLI entrypoints
+  - composition root, CLI entrypoints, file-backed session store, and HTML session export
 - `packages/contracts`
-  - shared schemas for conversation messages, message parts, assistant turn events, model metadata, token usage, canonical history, typed tool requests, and typed assistant content parts
+  - shared schemas for conversation messages, message parts, assistant turn events, model metadata, token usage, canonical session history, session records, typed tool requests, and typed assistant content parts
 - `packages/chat-session-state`
-  - shared reducer, selectors, prompt editing state, prompt-context selection state, and model-selection state
+  - shared reducer, selectors, transcript hydration, prompt editing state, prompt-context selection state, session-selection state, and model-selection state
 - `packages/engine`
   - UI-agnostic conversation runner, in-memory history projection, approval flow, local `bash` execution, and assistant text-part building
 - `packages/openai`

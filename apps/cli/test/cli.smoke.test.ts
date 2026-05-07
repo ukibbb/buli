@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationSessionEntry, ReasoningEffort } from "@buli/contracts";
@@ -7,7 +7,11 @@ import { AssistantConversationRuntime } from "@buli/engine";
 import { OpenAiAuthStore } from "@buli/openai";
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
-import type { ConversationSessionStore } from "../src/conversationSessionStore.ts";
+import {
+  defaultConversationSessionFilePath,
+  FileConversationSessionStore,
+  type ConversationSessionStore,
+} from "../src/conversationSessionStore.ts";
 import { runListAvailableModels } from "../src/commands/models.ts";
 import { type InteractiveChatStartOptions, runCli } from "../src/main.ts";
 
@@ -178,7 +182,7 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
   expect(output).toBe("");
   expect(receivedSelection).toEqual({
     selectedModelId: "gpt-5.5",
-    selectedModelDefaultReasoningEffort: "xhigh",
+    selectedModelDefaultReasoningEffort: "medium",
   });
 });
 
@@ -200,12 +204,63 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   const savedConversationSessionEntries: ConversationSessionEntry[][] = [];
   const conversationSessionStore = {
     filePath: join(dir, "conversation-session.json"),
+    promptCacheKey: "buli:test-workspace",
+    loadActiveConversationSession: () => ({
+      sessionId: "session-a",
+      filePath: join(dir, "session-a.jsonl"),
+      conversationSessionEntries: initialConversationSessionEntries,
+    }),
     loadConversationSessionEntries: () => initialConversationSessionEntries,
+    appendConversationSessionEntry: (conversationSessionEntry) => {
+      savedConversationSessionEntries.push([...initialConversationSessionEntries, conversationSessionEntry]);
+    },
     saveConversationSessionEntries: (conversationSessionEntries) => {
       savedConversationSessionEntries.push([...conversationSessionEntries]);
     },
+    startNewConversationSession: () => ({
+      sessionId: "session-new",
+      filePath: join(dir, "session-new.jsonl"),
+      conversationSessionEntries: [],
+    }),
+    listConversationSessions: () => [
+      {
+        sessionId: "session-a",
+        title: "Previous prompt",
+        createdAtMs: 1000,
+        updatedAtMs: 2000,
+        conversationSessionEntryCount: 2,
+      },
+      {
+        sessionId: "session-b",
+        title: "Switched prompt",
+        createdAtMs: 3000,
+        updatedAtMs: 4000,
+        conversationSessionEntryCount: 1,
+      },
+    ],
+    switchActiveConversationSession: (sessionId) => ({
+      sessionId,
+      filePath: join(dir, `${sessionId}.jsonl`),
+      conversationSessionEntries: [
+        {
+          entryKind: "user_prompt",
+          promptText: "Switched prompt",
+          modelFacingPromptText: "Switched prompt",
+        },
+      ],
+    }),
   } satisfies ConversationSessionStore;
   let capturedConversationRuntime: AssistantConversationRuntime | undefined;
+  let capturedClearConversation: (() => void) | undefined;
+  let capturedSwitchConversationSession:
+    | ((conversationSessionId: string) =>
+      | Promise<{ conversationSessionId: string; conversationSessionEntries: readonly ConversationSessionEntry[] }>
+      | { conversationSessionId: string; conversationSessionEntries: readonly ConversationSessionEntry[] })
+    | undefined;
+  let capturedExportCurrentConversationSession:
+    | (() => Promise<{ exportFilePath: string; exportFileUrl: string }> | { exportFilePath: string; exportFileUrl: string })
+    | undefined;
+  const openedBrowserUrls: string[] = [];
   await store.saveOpenAi({
     provider: "openai",
     method: "oauth",
@@ -218,10 +273,19 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   const output = await runInteractiveChat({
     store,
     conversationSessionStore,
+    conversationSessionExportDirectoryPath: dir,
+    openBrowserUrl: async (url) => {
+      openedBrowserUrls.push(url);
+    },
     stdin: { isTTY: true },
     environment: {},
     renderChatScreen: async (renderInput) => {
       capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      capturedClearConversation = renderInput.onConversationCleared;
+      capturedSwitchConversationSession = renderInput.switchConversationSession;
+      capturedExportCurrentConversationSession = renderInput.exportCurrentConversationSession;
+      expect(renderInput.initialConversationSessionEntries).toEqual(initialConversationSessionEntries);
+      expect(renderInput.initialConversationSessionId).toBe("session-a");
       return { waitUntilExit: async () => {} };
     },
   });
@@ -245,6 +309,51 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       },
     ],
   ]);
+
+  const exportResult = await Promise.resolve(capturedExportCurrentConversationSession?.());
+  if (!exportResult) {
+    throw new Error("expected export callback");
+  }
+
+  expect(openedBrowserUrls).toEqual([exportResult.exportFileUrl]);
+  await expect(readFile(exportResult.exportFilePath, "utf8")).resolves.toContain("Previous prompt");
+  await expect(readFile(exportResult.exportFilePath, "utf8")).resolves.toContain("Previous answer");
+  await expect(readFile(exportResult.exportFilePath, "utf8")).resolves.toContain("Next prompt");
+
+  capturedClearConversation?.();
+  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual([]);
+
+  await expect(Promise.resolve(capturedSwitchConversationSession?.("session-b"))).resolves.toEqual({
+    conversationSessionId: "session-b",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Switched prompt",
+        modelFacingPromptText: "Switched prompt",
+      },
+    ],
+  });
+  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual([
+    {
+      entryKind: "user_prompt",
+      promptText: "Switched prompt",
+      modelFacingPromptText: "Switched prompt",
+    },
+  ]);
+});
+
+test("FileConversationSessionStore uses a workspace-scoped default path and prompt cache key", () => {
+  const workspaceRootPath = join(tmpdir(), "buli-workspace-a");
+  const otherWorkspaceRootPath = join(tmpdir(), "buli-workspace-b");
+
+  const sessionStore = new FileConversationSessionStore({ workspaceRootPath });
+  const otherSessionStore = new FileConversationSessionStore({ workspaceRootPath: otherWorkspaceRootPath });
+
+  expect(sessionStore.filePath).toContain("conversation-sessions");
+  expect(sessionStore.filePath).toBe(defaultConversationSessionFilePath({ workspaceRootPath }));
+  expect(sessionStore.filePath).not.toBe(otherSessionStore.filePath);
+  expect(sessionStore.promptCacheKey.startsWith("buli:")).toBe(true);
+  expect(sessionStore.promptCacheKey).not.toBe(otherSessionStore.promptCacheKey);
 });
 
 test("runListAvailableModels returns a clean message when auth is missing", async () => {

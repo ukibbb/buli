@@ -188,6 +188,50 @@ test("parseOpenAiStream emits reasoning_summary_completed before the first non-r
   ]);
 });
 
+test("parseOpenAiStream preserves streamed reasoning summary text for tool-call replay", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"encrypted-reasoning"}}\n\n',
+      'data: {"type":"response.reasoning_summary_part.added","item_id":"rs_1","summary_index":0}\n\n',
+      'data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","summary_index":0,"delta":"I should "}\n\n',
+      'data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","summary_index":0,"delta":"inspect first."}\n\n',
+      'data: {"type":"response.reasoning_summary_text.done","item_id":"rs_1","summary_index":0}\n\n',
+      'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"encrypted-reasoning"},{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents.map((parsedEvent) => parsedEvent.type)).toEqual([
+    "reasoning_summary_started",
+    "reasoning_summary_text_chunk",
+    "reasoning_summary_text_chunk",
+    "reasoning_summary_completed",
+    "tool_call_requested",
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_call_requested",
+    responseOutputItems: [
+      {
+        type: "reasoning",
+        id: "rs_1",
+        encrypted_content: "encrypted-reasoning",
+        summary: [{ type: "summary_text", text: "I should inspect first." }],
+      },
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+  });
+});
+
 test("parseOpenAiStream emits tool_call_requested only once when arguments.done and output_item.done both make the call ready", async () => {
   const response = new Response(
     [
@@ -547,6 +591,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
         },
       ],
       parallel_tool_calls: false,
+      reasoning: { summary: "auto" },
       stream: true,
     });
     expect(emittedEvents).toEqual([

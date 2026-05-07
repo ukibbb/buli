@@ -2,10 +2,12 @@ import { expect, test } from "bun:test";
 import type { AvailableAssistantModel } from "@buli/contracts";
 import {
   applyAssistantResponseEventToChatSessionState,
+  clearConversationTranscript,
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatSessionState,
   cycleAssistantOperatingMode,
+  hydrateConversationTranscriptFromSessionEntries,
   insertTextIntoPromptDraftAtCursor,
   listOrderedConversationMessageParts,
   listOrderedConversationMessages,
@@ -113,6 +115,83 @@ test("submitPromptDraft appends a completed user message and enters streaming st
       text: "Hello",
     },
   ]);
+});
+
+test("clearConversationTranscript clears visible conversation while preserving selections", () => {
+  let chatSessionState = createInitialChatSessionState({
+    selectedModelId: "gpt-5.5",
+    selectedModelDefaultReasoningEffort: "xhigh",
+    selectedReasoningEffort: "high",
+  });
+  chatSessionState = selectAssistantOperatingMode(chatSessionState, "plan");
+  chatSessionState = toggleReasoningSummaryVisibility(chatSessionState);
+  const promptDraftSubmission = submitPromptDraft(insertTextIntoPromptDraftAtCursor(chatSessionState, "Hello"));
+  if (!promptDraftSubmission.submittedPromptText) {
+    throw new Error("expected submitted prompt");
+  }
+
+  const clearedChatSessionState = clearConversationTranscript(promptDraftSubmission.nextChatSessionState);
+
+  expect(clearedChatSessionState.selectedModelId).toBe("gpt-5.5");
+  expect(clearedChatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
+  expect(clearedChatSessionState.selectedReasoningEffort).toBe("high");
+  expect(clearedChatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(clearedChatSessionState.isReasoningSummaryVisible).toBe(false);
+  expect(clearedChatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
+  expect(listOrderedConversationMessages(clearedChatSessionState)).toEqual([]);
+  expect(clearedChatSessionState.latestTokenUsage).toBeUndefined();
+});
+
+test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted messages", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Run pwd",
+        modelFacingPromptText: "Run pwd",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-1",
+        toolCallRequest: {
+          toolName: "bash",
+          shellCommand: "pwd",
+          commandDescription: "Print working directory",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call-1",
+        toolCallDetail: {
+          toolName: "bash",
+          commandLine: "pwd",
+          commandDescription: "Print working directory",
+        },
+        toolResultText: "/tmp/demo",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Done.",
+      },
+    ],
+  );
+
+  const conversationMessages = listOrderedConversationMessages(chatSessionState);
+  expect(conversationMessages.map((conversationMessage) => conversationMessage.role)).toEqual(["user", "assistant"]);
+  expect(listOrderedConversationMessageParts(chatSessionState, conversationMessages[0]!.id)).toEqual([
+    {
+      id: "persisted-entry-0-user-text",
+      partKind: "user_text",
+      text: "Run pwd",
+    },
+  ]);
+  expect(listOrderedConversationMessageParts(chatSessionState, conversationMessages[1]!.id).map((conversationMessagePart) => conversationMessagePart.partKind)).toEqual([
+    "assistant_tool_call",
+    "assistant_text",
+  ]);
+  expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
 });
 
 test("assistant_message_completed backfills turn summary usage and reasoning token count", () => {

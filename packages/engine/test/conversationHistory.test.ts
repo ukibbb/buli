@@ -140,3 +140,49 @@ test("InMemoryConversationHistory notifies listeners with the full session entri
     ],
   ]);
 });
+
+test("InMemoryConversationHistory notifies append listeners and can replace the active entries", () => {
+  const appendedConversationSessionEntries: ConversationSessionEntry[] = [];
+  const observedConversationSessionEntries: ConversationSessionEntry[][] = [];
+  const replacementConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Switched prompt",
+      modelFacingPromptText: "Switched prompt",
+    },
+  ];
+  const conversationHistory = new InMemoryConversationHistory({
+    onConversationSessionEntryAppended: (conversationSessionEntry) => {
+      appendedConversationSessionEntries.push(conversationSessionEntry);
+    },
+    onConversationSessionEntriesChanged: (conversationSessionEntries) => {
+      observedConversationSessionEntries.push([...conversationSessionEntries]);
+    },
+  });
+
+  conversationHistory.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "First prompt",
+    modelFacingPromptText: "First prompt",
+  });
+  conversationHistory.replaceConversationSessionEntries(replacementConversationSessionEntries);
+
+  expect(appendedConversationSessionEntries).toEqual<ConversationSessionEntry[]>([
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+  ]);
+  expect(observedConversationSessionEntries).toEqual<ConversationSessionEntry[][]>([
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "First prompt",
+        modelFacingPromptText: "First prompt",
+      },
+    ],
+    replacementConversationSessionEntries,
+  ]);
+  expect(conversationHistory.listConversationSessionEntries()).toEqual(replacementConversationSessionEntries);
+});

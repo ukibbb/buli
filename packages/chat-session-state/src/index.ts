@@ -1,6 +1,7 @@
 export {
   type ChatSessionState,
   type ModelAndReasoningSelectionState,
+  type ConversationSessionSelectionState,
   type PromptContextSelectionState,
   type ReasoningEffortChoice,
   type SlashCommand,
@@ -49,5 +50,18 @@ export {
   refreshSlashCommandSelectionForPromptDraft,
   selectHighlightedSlashCommand,
 } from "./slashCommandSelectionReducer.ts";
+export {
+  hideConversationSessionSelection,
+  moveHighlightedConversationSessionSelectionDown,
+  moveHighlightedConversationSessionSelectionUp,
+  selectHighlightedConversationSession,
+  showAvailableConversationSessionsForSelection,
+  showConversationSessionSelectionLoadingError,
+  showConversationSessionSelectionLoadingState,
+} from "./sessionSelectionReducer.ts";
 export { hideCommandHelpModal, showCommandHelpModal } from "./commandHelpModalReducer.ts";
 export { toggleReasoningSummaryVisibility } from "./reasoningSummaryVisibilityReducer.ts";
+export {
+  clearConversationTranscript,
+  hydrateConversationTranscriptFromSessionEntries,
+} from "./conversationTranscriptReducer.ts";

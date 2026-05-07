@@ -30,6 +30,7 @@ export type OpenAiConversationTurnRequest = {
   modelContextItems: readonly ModelContextItem[];
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  promptCacheKey?: string;
 };
 
 async function createHttpError(response: Response, operation: "models" | "stream"): Promise<Error> {
@@ -187,6 +188,7 @@ export class OpenAiProvider {
       },
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
       systemPromptText: input.systemPromptText,
       conversationSessionEntries: input.conversationSessionEntries,
       onStepRequestFailed: async (response) => createHttpError(response, "stream"),

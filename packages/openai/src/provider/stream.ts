@@ -17,12 +17,20 @@ const TextDeltaChunkSchema = z.object({
 const ReasoningDeltaChunkSchema = z.object({
   type: z.literal("response.reasoning_summary_text.delta"),
   item_id: z.string(),
+  summary_index: z.number().int().nonnegative().optional(),
   delta: z.string(),
 });
 
 const ReasoningDoneChunkSchema = z.object({
   type: z.literal("response.reasoning_summary_text.done"),
   item_id: z.string(),
+  summary_index: z.number().int().nonnegative().optional(),
+});
+
+const ReasoningSummaryPartAddedChunkSchema = z.object({
+  type: z.literal("response.reasoning_summary_part.added"),
+  item_id: z.string(),
+  summary_index: z.number().int().nonnegative(),
 });
 
 const FunctionCallArgumentsDeltaChunkSchema = z.object({
@@ -173,6 +181,24 @@ function isOpenAiChunkObject(value: unknown): value is OpenAiChunkObject {
   return typeof value === "object" && value !== null && !Array.isArray(value) && typeof (value as { type?: unknown }).type === "string";
 }
 
+function isOpenAiReasoningSummaryTextPart(value: unknown): value is { type: "summary_text"; text: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { type?: unknown }).type === "summary_text" &&
+    typeof (value as { text?: unknown }).text === "string"
+  );
+}
+
+function listOpenAiReasoningSummaryTextParts(value: unknown): Array<{ type: "summary_text"; text: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((summaryPart) => isOpenAiReasoningSummaryTextPart(summaryPart) ? [summaryPart] : []);
+}
+
 function createProviderTextChunkEvent(text: string): ProviderStreamEvent {
   return { type: "text_chunk", text };
 }
@@ -241,6 +267,7 @@ export async function* parseOpenAiStream(
   let textDeltaCharacterCount = 0;
   let reasoningDeltaEventCount = 0;
   let reasoningDeltaCharacterCount = 0;
+  let lastReasoningSummaryPartKey: string | undefined;
   let functionCallArgumentDeltaEventCount = 0;
   let functionCallArgumentCharacterCount = 0;
 
@@ -268,6 +295,65 @@ export async function* parseOpenAiStream(
     }
 
     return false;
+  }
+
+  function updateTrackedReasoningSummaryTextByItemId(input: {
+    itemId: string;
+    summaryIndex: number;
+    createNextSummaryText: (currentSummaryText: string) => string;
+  }): void {
+    updateTrackedOutputItemByItemId(input.itemId, (trackedOutputItem) => {
+      if (trackedOutputItem.type !== "reasoning") {
+        return trackedOutputItem;
+      }
+
+      const summaryParts = Array.isArray(trackedOutputItem.summary) ? [...trackedOutputItem.summary] : [];
+      const currentSummaryPart = summaryParts[input.summaryIndex];
+      const currentSummaryText = isOpenAiReasoningSummaryTextPart(currentSummaryPart) ? currentSummaryPart.text : "";
+      summaryParts[input.summaryIndex] = {
+        type: "summary_text",
+        text: input.createNextSummaryText(currentSummaryText),
+      };
+      return {
+        ...trackedOutputItem,
+        summary: summaryParts,
+      };
+    });
+  }
+
+  function mergeTrackedAndResponseOutputItem(input: {
+    trackedOutputItem: OpenAiChunkObject;
+    responseOutputItem: OpenAiChunkObject;
+  }): unknown {
+    if (input.trackedOutputItem.type === "function_call") {
+      const trackedArguments = typeof input.trackedOutputItem.arguments === "string"
+        ? input.trackedOutputItem.arguments
+        : undefined;
+      const responseArguments = typeof input.responseOutputItem.arguments === "string"
+        ? input.responseOutputItem.arguments
+        : undefined;
+      const mostCompleteArguments = trackedArguments && trackedArguments.length > 0
+        ? trackedArguments
+        : responseArguments ?? trackedArguments;
+
+      return {
+        ...input.responseOutputItem,
+        ...input.trackedOutputItem,
+        ...(mostCompleteArguments !== undefined ? { arguments: mostCompleteArguments } : {}),
+      };
+    }
+
+    if (input.trackedOutputItem.type !== "reasoning") {
+      return { ...input.trackedOutputItem, ...input.responseOutputItem };
+    }
+
+    const trackedSummaryParts = listOpenAiReasoningSummaryTextParts(input.trackedOutputItem.summary);
+    const responseSummaryParts = listOpenAiReasoningSummaryTextParts(input.responseOutputItem.summary);
+    return {
+      ...input.trackedOutputItem,
+      ...input.responseOutputItem,
+      summary: responseSummaryParts.length > 0 ? responseSummaryParts : trackedSummaryParts,
+    };
   }
 
   // Tool-call continuation needs a replay-safe item list even when the terminal
@@ -307,9 +393,7 @@ export async function* parseOpenAiStream(
 
       consumedResponseOutputItemIds.add(trackedOutputItem.id);
       mergedOutputItems.push(
-        trackedOutputItem.type === "function_call"
-          ? { ...responseOutputItem, ...trackedOutputItem }
-          : { ...trackedOutputItem, ...responseOutputItem },
+        mergeTrackedAndResponseOutputItem({ trackedOutputItem, responseOutputItem }),
       );
     }
 
@@ -387,6 +471,7 @@ export async function* parseOpenAiStream(
       reasoningStartedAtMs = undefined;
       isReasoningSummaryInProgress = false;
       reasoningPartSeparatorPending = false;
+      lastReasoningSummaryPartKey = undefined;
     }
   }
 
@@ -446,9 +531,19 @@ export async function* parseOpenAiStream(
           continue;
         }
 
+        const summaryIndex = typeof value.summary_index === "number" && Number.isInteger(value.summary_index)
+          ? value.summary_index
+          : 0;
+        updateTrackedReasoningSummaryTextByItemId({
+          itemId: value.item_id,
+          summaryIndex,
+          createNextSummaryText: (currentSummaryText) => `${currentSummaryText}${value.delta}`,
+        });
         reasoningDeltaEventCount += 1;
         reasoningDeltaCharacterCount += value.delta.length;
         logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.reasoning_delta_received", {
+          itemId: value.item_id,
+          summaryIndex,
           reasoningDeltaLength: value.delta.length,
           reasoningDeltaEventCount,
           reasoningDeltaCharacterCount,
@@ -458,10 +553,12 @@ export async function* parseOpenAiStream(
           isReasoningSummaryInProgress = true;
           yield createProviderReasoningSummaryStartedEvent();
         }
-        if (reasoningPartSeparatorPending) {
+        const reasoningSummaryPartKey = `${value.item_id}:${summaryIndex}`;
+        if (reasoningPartSeparatorPending || (lastReasoningSummaryPartKey && lastReasoningSummaryPartKey !== reasoningSummaryPartKey)) {
           yield createProviderReasoningSummaryTextChunkEvent("\n\n");
           reasoningPartSeparatorPending = false;
         }
+        lastReasoningSummaryPartKey = reasoningSummaryPartKey;
         yield createProviderReasoningSummaryTextChunkEvent(value.delta);
         continue;
       }
@@ -478,6 +575,30 @@ export async function* parseOpenAiStream(
         }
 
         reasoningPartSeparatorPending = true;
+        continue;
+      }
+
+      case "response.reasoning_summary_part.added": {
+        const reasoningSummaryPartAdded = ReasoningSummaryPartAddedChunkSchema.safeParse(value);
+        if (!reasoningSummaryPartAdded.success) {
+          ignoredSseEventCount += 1;
+          logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
+            reason: "malformed_reasoning_summary_part_added",
+            openAiEventType: value.type,
+            sseFrameCount,
+          });
+          continue;
+        }
+
+        updateTrackedReasoningSummaryTextByItemId({
+          itemId: reasoningSummaryPartAdded.data.item_id,
+          summaryIndex: reasoningSummaryPartAdded.data.summary_index,
+          createNextSummaryText: (currentSummaryText) => currentSummaryText,
+        });
+        logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.reasoning_summary_part_added", {
+          itemId: reasoningSummaryPartAdded.data.item_id,
+          summaryIndex: reasoningSummaryPartAdded.data.summary_index,
+        });
         continue;
       }
 
@@ -570,6 +691,7 @@ export async function* parseOpenAiStream(
           );
           const requestedToolCallEvent = emitRequestedToolCallIfReady(functionCallArgumentsDone.data.item_id);
           if (requestedToolCallEvent) {
+            yield* emitPendingReasoningCompletedEvent();
             yield requestedToolCallEvent;
           }
         }
@@ -594,9 +716,25 @@ export async function* parseOpenAiStream(
         });
 
         if (outputItemDone.data.output_index !== undefined) {
-          trackedOutputItemsByIndex.set(outputItemDone.data.output_index, outputItemDone.data.item);
+          const trackedOutputItem = trackedOutputItemsByIndex.get(outputItemDone.data.output_index);
+          trackedOutputItemsByIndex.set(
+            outputItemDone.data.output_index,
+            isOpenAiChunkObject(trackedOutputItem) && trackedOutputItem.type === outputItemDone.data.item.type
+              ? mergeTrackedAndResponseOutputItem({
+                  trackedOutputItem,
+                  responseOutputItem: outputItemDone.data.item,
+                })
+              : outputItemDone.data.item,
+          );
         } else if (typeof outputItemDone.data.item.id === "string") {
-          updateTrackedOutputItemByItemId(outputItemDone.data.item.id, () => outputItemDone.data.item);
+          updateTrackedOutputItemByItemId(outputItemDone.data.item.id, (trackedOutputItem) =>
+            trackedOutputItem.type === outputItemDone.data.item.type
+              ? mergeTrackedAndResponseOutputItem({
+                  trackedOutputItem,
+                  responseOutputItem: outputItemDone.data.item,
+                })
+              : outputItemDone.data.item,
+          );
         }
         if (outputItemDone.data.item.type === "function_call") {
           const functionCallItem = outputItemDone.data.item as {
@@ -618,6 +756,7 @@ export async function* parseOpenAiStream(
             pendingFunctionCallStateByItemId.set(functionCallItem.id, pendingFunctionCallState);
             const requestedToolCallEvent = emitRequestedToolCallIfReady(functionCallItem.id);
             if (requestedToolCallEvent) {
+              yield* emitPendingReasoningCompletedEvent();
               yield requestedToolCallEvent;
             }
           }

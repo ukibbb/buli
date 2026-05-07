@@ -25,6 +25,11 @@ type OpenAiProviderToolResultSubmission = {
 
 type OpenAiTerminalUsageProviderEvent = Extract<ProviderStreamEvent, { type: "completed" | "incomplete" }>;
 
+type OpenAiReasoningRequest = {
+  effort?: ReasoningEffort;
+  summary?: "auto";
+};
+
 type HttpErrorDebugResponse = {
   status: number;
   headers: { get(name: string): string | null };
@@ -34,18 +39,21 @@ type HttpErrorDebugResponse = {
 function createHttpRequestBody(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  promptCacheKey?: string;
   systemPromptText: string;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 }) {
+  const reasoningRequest = createReasoningRequest(input);
   return {
     model: input.selectedModelId,
     instructions: input.systemPromptText,
     store: false,
+    ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
     input: input.openAiInputItems,
     tools: [createBashToolDefinition()],
     parallel_tool_calls: false,
     ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] } : {}),
-    ...(input.selectedReasoningEffort ? { reasoning: { effort: input.selectedReasoningEffort } } : {}),
+    ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
     stream: true,
   };
 }
@@ -79,6 +87,7 @@ export class OpenAiProviderConversationTurn {
   readonly loadRequestHeaders: () => Promise<Headers>;
   readonly selectedModelId: string;
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
+  readonly promptCacheKey: string | undefined;
   readonly systemPromptText: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
@@ -97,6 +106,7 @@ export class OpenAiProviderConversationTurn {
     loadRequestHeaders: () => Promise<Headers>;
     selectedModelId: string;
     selectedReasoningEffort?: ReasoningEffort;
+    promptCacheKey?: string;
     systemPromptText: string;
     conversationSessionEntries: readonly ConversationSessionEntry[];
     onStepRequestFailed: (response: Response) => Promise<Error>;
@@ -107,6 +117,7 @@ export class OpenAiProviderConversationTurn {
     this.loadRequestHeaders = input.loadRequestHeaders;
     this.selectedModelId = input.selectedModelId;
     this.selectedReasoningEffort = input.selectedReasoningEffort;
+    this.promptCacheKey = input.promptCacheKey;
     this.systemPromptText = input.systemPromptText;
     this.diagnosticLogger = input.diagnosticLogger;
     this.onStepRequestFailed = input.onStepRequestFailed;
@@ -166,6 +177,7 @@ export class OpenAiProviderConversationTurn {
       const requestBody = createHttpRequestBody({
         selectedModelId: this.selectedModelId,
         ...(this.selectedReasoningEffort ? { selectedReasoningEffort: this.selectedReasoningEffort } : {}),
+        ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
         systemPromptText: this.systemPromptText,
         openAiInputItems: this.openAiConversationInputItems,
       });
@@ -349,6 +361,10 @@ function shouldIncludeReasoningEncryptedContent(input: {
   selectedReasoningEffort?: ReasoningEffort;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 }): boolean {
+  if (input.selectedReasoningEffort === "none") {
+    return false;
+  }
+
   if (input.selectedReasoningEffort) {
     return true;
   }
@@ -357,7 +373,38 @@ function shouldIncludeReasoningEncryptedContent(input: {
     return true;
   }
 
-  return /gpt-5|codex/i.test(input.selectedModelId);
+  return isOpenAiReasoningModel(input.selectedModelId);
+}
+
+function createReasoningRequest(input: {
+  selectedModelId: string;
+  selectedReasoningEffort?: ReasoningEffort;
+}): OpenAiReasoningRequest | undefined {
+  if (input.selectedReasoningEffort === "none") {
+    return { effort: "none" };
+  }
+
+  const reasoningRequest: OpenAiReasoningRequest = {};
+  if (input.selectedReasoningEffort) {
+    reasoningRequest.effort = input.selectedReasoningEffort;
+  }
+  if (shouldRequestReasoningSummary(input.selectedModelId)) {
+    reasoningRequest.summary = "auto";
+  }
+
+  return reasoningRequest.effort || reasoningRequest.summary ? reasoningRequest : undefined;
+}
+
+function shouldRequestReasoningSummary(selectedModelId: string): boolean {
+  return isOpenAiReasoningModel(selectedModelId);
+}
+
+function isOpenAiReasoningModel(selectedModelId: string): boolean {
+  const normalizedSelectedModelId = selectedModelId.toLowerCase();
+  return (
+    (normalizedSelectedModelId.includes("gpt-5") || normalizedSelectedModelId.includes("codex")) &&
+    !normalizedSelectedModelId.includes("chat")
+  );
 }
 
 function isMatchingFunctionCallReplayItem(toolCallId: string) {
@@ -390,7 +437,9 @@ function summarizeOpenAiResponsesRequestForDiagnostics(input: {
     responseStepIndex: input.responseStepIndex,
     model: input.requestBody.model,
     reasoningEffort: input.requestBody.reasoning?.effort ?? null,
+    reasoningSummary: input.requestBody.reasoning?.summary ?? null,
     includesReasoningEncryptedContent: input.requestBody.include?.includes("reasoning.encrypted_content") ?? false,
+    hasPromptCacheKey: input.requestBody.prompt_cache_key !== undefined,
     toolDefinitionCount: input.requestBody.tools.length,
     toolNames: input.requestBody.tools.map((toolDefinition) => toolDefinition.name),
     parallelToolCalls: input.requestBody.parallel_tool_calls,

@@ -64,6 +64,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly conversationHistory: InMemoryConversationHistory;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
+  readonly promptCacheKey: string | undefined;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
 
   constructor(input: {
@@ -75,6 +76,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     conversationHistory?: InMemoryConversationHistory;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode?: BashToolApprovalMode;
+    promptCacheKey?: string | undefined;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.workspaceRootPath = input.workspaceRootPath;
@@ -85,6 +87,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.conversationHistory = input.conversationHistory ?? new InMemoryConversationHistory();
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode ?? DEFAULT_BASH_TOOL_APPROVAL_MODE;
+    this.promptCacheKey = input.promptCacheKey;
   }
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
@@ -119,6 +122,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
       diagnosticLogger: this.diagnosticLogger,
       bashToolApprovalMode: this.bashToolApprovalMode,
+      promptCacheKey: this.promptCacheKey,
       onConversationTurnFinished: () => {
         if (this.currentPendingConversationTurn === runtimeConversationTurn) {
           this.currentPendingConversationTurn = undefined;
@@ -142,6 +146,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
+  readonly promptCacheKey: string | undefined;
   readonly onConversationTurnFinished: () => void;
   currentPendingToolApprovalState: PendingToolApprovalState | undefined;
   hasStartedStreamingAssistantResponseEvents = false;
@@ -158,6 +163,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode: BashToolApprovalMode;
+    promptCacheKey?: string | undefined;
     onConversationTurnFinished: () => void;
   }) {
     this.conversationTurnInput = input.conversationTurnInput;
@@ -170,6 +176,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.workspaceShellCommandExecutor = input.workspaceShellCommandExecutor;
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode;
+    this.promptCacheKey = input.promptCacheKey;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
   }
 
@@ -305,6 +312,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         ...(this.conversationTurnInput.selectedReasoningEffort
           ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
           : {}),
+        ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.started", {
         selectedModelId: this.conversationTurnInput.selectedModelId,

@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import type { AssistantResponseEvent, AvailableAssistantModel } from "@buli/contracts";
+import type {
+  AssistantResponseEvent,
+  AvailableAssistantModel,
+  ConversationSessionEntry,
+  ConversationSessionSummary,
+} from "@buli/contracts";
 import type { AssistantConversationRunner, PromptContextCandidate } from "@buli/engine";
 import { act } from "react";
 import { ChatScreen } from "../src/ChatScreen.tsx";
@@ -65,6 +70,7 @@ const reasoningSummaryAssistantConversationRunner: AssistantConversationRunner =
 
 type OpenTuiChatScreenHarness = {
   captureFrame(): Promise<string>;
+  pressArrowDown(): Promise<string>;
   pressCtrlL(): Promise<string>;
   pressEnter(): Promise<string>;
   typeText(text: string): Promise<string>;
@@ -75,6 +81,15 @@ async function renderChatScreen(input: {
   loadAvailableAssistantModels?: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates?: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   assistantConversationRunner?: AssistantConversationRunner;
+  initialConversationSessionEntries?: readonly ConversationSessionEntry[];
+  initialConversationSessionId?: string;
+  loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]>;
+  switchConversationSession?: (conversationSessionId: string) => Promise<{
+    conversationSessionId: string;
+    conversationSessionEntries: readonly ConversationSessionEntry[];
+  }>;
+  exportCurrentConversationSession?: () => Promise<{ exportFilePath: string; exportFileUrl: string }>;
+  onConversationCleared?: () => void;
 } = {}): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
     <ChatScreen
@@ -82,6 +97,12 @@ async function renderChatScreen(input: {
       loadAvailableAssistantModels={input.loadAvailableAssistantModels ?? (async () => [])}
       loadPromptContextCandidates={input.loadPromptContextCandidates ?? (async () => [])}
       assistantConversationRunner={input.assistantConversationRunner ?? neverEmittingAssistantConversationRunner}
+      {...(input.initialConversationSessionEntries ? { initialConversationSessionEntries: input.initialConversationSessionEntries } : {})}
+      {...(input.initialConversationSessionId ? { initialConversationSessionId: input.initialConversationSessionId } : {})}
+      {...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {})}
+      {...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {})}
+      {...(input.exportCurrentConversationSession ? { exportCurrentConversationSession: input.exportCurrentConversationSession } : {})}
+      {...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {})}
     />,
     { width: 120, height: 28 },
   );
@@ -95,6 +116,12 @@ async function renderChatScreen(input: {
 
   return {
     async captureFrame(): Promise<string> {
+      return captureFrame();
+    },
+    async pressArrowDown(): Promise<string> {
+      await act(async () => {
+        renderedChatScreen.mockInput.pressKey("ARROW_DOWN");
+      });
       return captureFrame();
     },
     async pressCtrlL(): Promise<string> {
@@ -135,10 +162,100 @@ test("ChatScreen shows user-facing slash commands after typing a bare slash", as
   expect(frame).toContain("Commands");
   expect(frame).toContain("/help");
   expect(frame).toContain("/model");
+  expect(frame).toContain("/clear");
+  expect(frame).toContain("/sessions");
+  expect(frame).toContain("/export-session");
   expect(frame).toContain("/thinking");
-  expect(frame).toContain("Hide thinking");
+  expect(frame).toContain("Hide reasoning summaries");
   expect(frame).not.toContain("/scroll-up");
   expect(frame).not.toContain("/bottom");
+});
+
+test("ChatScreen exports the current session through slash command", async () => {
+  let exportCount = 0;
+  const renderedChatScreen = await renderChatScreen({
+    exportCurrentConversationSession: async () => {
+      exportCount += 1;
+      return {
+        exportFilePath: "/tmp/buli-session.html",
+        exportFileUrl: "file:///tmp/buli-session.html",
+      };
+    },
+  });
+
+  await renderedChatScreen.typeText("/export-session");
+  await renderedChatScreen.pressEnter();
+  const exportedFrame = await renderedChatScreen.waitForAssistantEvents();
+
+  expect(exportCount).toBe(1);
+  expect(exportedFrame).not.toContain("Exported session");
+  expect(exportedFrame).not.toContain("/tmp/buli-session.html");
+});
+
+test("ChatScreen hydrates the initial session and switches sessions through slash command", async () => {
+  const renderedChatScreen = await renderChatScreen({
+    initialConversationSessionId: "session-a",
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Previous prompt",
+        modelFacingPromptText: "Previous prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Previous answer",
+      },
+    ],
+    loadConversationSessions: async () => [
+      {
+        sessionId: "session-a",
+        title: "Previous prompt",
+        createdAtMs: 1000,
+        updatedAtMs: 2000,
+        conversationSessionEntryCount: 2,
+      },
+      {
+        sessionId: "session-b",
+        title: "Switched prompt",
+        createdAtMs: 3000,
+        updatedAtMs: 4000,
+        conversationSessionEntryCount: 2,
+      },
+    ],
+    switchConversationSession: async (conversationSessionId) => ({
+      conversationSessionId,
+      conversationSessionEntries: [
+        {
+          entryKind: "user_prompt",
+          promptText: "Switched prompt",
+          modelFacingPromptText: "Switched prompt",
+        },
+        {
+          entryKind: "assistant_message",
+          assistantMessageStatus: "completed",
+          assistantMessageText: "Switched answer",
+        },
+      ],
+    }),
+  });
+
+  const initialFrame = await renderedChatScreen.captureFrame();
+  expect(initialFrame).toContain("Previous prompt");
+  expect(initialFrame).toContain("Previous answer");
+
+  await renderedChatScreen.typeText("/sessions");
+  const sessionListFrame = await renderedChatScreen.pressEnter();
+  expect(sessionListFrame).toContain("Sessions");
+  expect(sessionListFrame).toContain("Previous prompt");
+  expect(sessionListFrame).toContain("Switched prompt");
+
+  await renderedChatScreen.pressArrowDown();
+  const switchedFrame = await renderedChatScreen.pressEnter();
+
+  expect(switchedFrame).toContain("Switched prompt");
+  expect(switchedFrame).toContain("Switched answer");
+  expect(switchedFrame).not.toContain("Previous answer");
 });
 
 test("ChatScreen opens command help through slash command instead of question mark shortcut", async () => {
@@ -150,8 +267,9 @@ test("ChatScreen opens command help through slash command instead of question ma
   expect(helpFrame).toContain("help · commands");
   expect(helpFrame).toContain("/help");
   expect(helpFrame).toContain("/model");
+  expect(helpFrame).toContain("/clear");
   expect(helpFrame).toContain("/thinking");
-  expect(helpFrame).toContain("Hide thinking");
+  expect(helpFrame).toContain("Hide reasoning summaries");
 
   const renderedQuestionMarkScreen = await renderChatScreen();
   const questionMarkFrame = await renderedQuestionMarkScreen.typeText("?");
@@ -229,5 +347,27 @@ test("ChatScreen toggles reasoning summary visibility through thinking slash com
 
   const slashMenuFrame = await renderedChatScreen.typeText("/");
   expect(slashMenuFrame).toContain("/thinking");
-  expect(slashMenuFrame).toContain("Show thinking");
+  expect(slashMenuFrame).toContain("Show reasoning summaries");
+});
+
+test("ChatScreen clears transcript and persisted history through clear slash command", async () => {
+  let clearCount = 0;
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: reasoningSummaryAssistantConversationRunner,
+    onConversationCleared: () => {
+      clearCount += 1;
+    },
+  });
+
+  await renderedChatScreen.typeText("Answer with reasoning");
+  await renderedChatScreen.pressEnter();
+  const visibleReasoningFrame = await renderedChatScreen.waitForAssistantEvents();
+  expect(visibleReasoningFrame).toContain("I inspected the available context before answering.");
+
+  await renderedChatScreen.typeText("/clear");
+  const clearedFrame = await renderedChatScreen.pressEnter();
+
+  expect(clearCount).toBe(1);
+  expect(clearedFrame).not.toContain("Answer with reasoning");
+  expect(clearedFrame).not.toContain("I inspected the available context before answering.");
 });

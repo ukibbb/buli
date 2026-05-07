@@ -6,7 +6,7 @@ import type { AssistantConversationRunner } from "@buli/engine";
 import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
 export { ChatScreen } from "./ChatScreen.tsx";
-export type { ChatScreenProps } from "./ChatScreen.tsx";
+export type { ChatScreenProps, ConversationSessionExportResult, ConversationSessionSwitchResult } from "./ChatScreen.tsx";
 
 export type TuiChatScreenInstance = {
   waitUntilExit(): Promise<void>;
@@ -16,9 +16,15 @@ export async function renderChatScreenInTerminal(input: {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
+  initialConversationSessionId?: ChatScreenProps["initialConversationSessionId"];
+  initialConversationSessionEntries?: ChatScreenProps["initialConversationSessionEntries"];
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
   loadPromptContextCandidates: ChatScreenProps["loadPromptContextCandidates"];
+  loadConversationSessions?: ChatScreenProps["loadConversationSessions"];
+  switchConversationSession?: ChatScreenProps["switchConversationSession"];
+  exportCurrentConversationSession?: ChatScreenProps["exportCurrentConversationSession"];
   assistantConversationRunner: AssistantConversationRunner;
+  onConversationCleared?: ChatScreenProps["onConversationCleared"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<TuiChatScreenInstance> {
   const originalConsole = globalThis.console;
@@ -53,7 +59,19 @@ export async function renderChatScreenInTerminal(input: {
       assistantConversationRunner: input.assistantConversationRunner,
       loadAvailableAssistantModels: input.loadAvailableAssistantModels,
       loadPromptContextCandidates: input.loadPromptContextCandidates,
+      ...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {}),
+      ...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {}),
+      ...(input.exportCurrentConversationSession
+        ? { exportCurrentConversationSession: input.exportCurrentConversationSession }
+        : {}),
+      ...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {}),
       selectedModelId: input.selectedModelId,
+      ...(input.initialConversationSessionId !== undefined
+        ? { initialConversationSessionId: input.initialConversationSessionId }
+        : {}),
+      ...(input.initialConversationSessionEntries !== undefined
+        ? { initialConversationSessionEntries: input.initialConversationSessionEntries }
+        : {}),
       ...(input.selectedModelDefaultReasoningEffort !== undefined
         ? { selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort }
         : {}),
@@ -87,6 +105,7 @@ export { RenderAssistantResponseTree } from "./richText/renderAssistantResponseT
 export type { RenderAssistantResponseTreeProps } from "./richText/renderAssistantResponseTree.tsx";
 export { ConversationMessageList } from "./components/ConversationMessageList.tsx";
 export { CommandHelpModal } from "./components/CommandHelpModal.tsx";
+export { ConversationSessionSelectionPane } from "./components/ConversationSessionSelectionPane.tsx";
 export { InputPanel } from "./components/InputPanel.tsx";
 export { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
 export { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";

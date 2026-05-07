@@ -23,7 +23,7 @@ The monorepo structure is well chosen:
 - `packages/assistant-design-tokens` keeps design decisions reusable.
 - `packages/chat-session-fixtures` provides canonical conversation scenarios for tests.
 
-This separation is a good foundation for future persistence, additional tools, alternate providers, or alternate interfaces.
+This separation is a good foundation for future persistence hardening, additional tools, alternate providers, or alternate interfaces.
 
 ### Good test coverage for the current stage
 
@@ -58,7 +58,7 @@ The bash approval flow is a strong sign. A local coding agent needs careful boun
 
 ### Scope is honest
 
-The README clearly says what V1 includes and intentionally does not include yet. That is healthy. The project is not pretending to already support durable sessions, branching, extension loading, process RPC, or a wide tool ecosystem before the core loop is complete.
+The README clearly says what V1 includes and intentionally does not include yet. That is healthy. The project is not pretending to already support branching, extension loading, process RPC, raw replay/debug exports, or a wide tool ecosystem before the core loop is complete.
 
 ## Main Risks
 
@@ -99,11 +99,11 @@ The current bash approval classifier is useful, but shell safety is inherently d
 
 For V1, approval-before-risky-command is enough. Long term, `bash` should remain an escape hatch, not the primary implementation mechanism.
 
-### No session persistence yet
+### Session persistence is still young
 
-The README already calls this out. Without persistence, Buli is a useful live coding assistant. With persistence, it can become a continuing local engineering companion.
+Buli now has workspace-scoped JSONL conversation sessions, an active-session pointer, startup resume, `/sessions` switching, and HTML transcript export. That changes the main risk from "missing persistence" to "persistence reliability."
 
-Session persistence is likely one of the highest-impact missing pieces.
+The remaining persistence risks are around corrupt or partial session files, concurrent processes in the same workspace, very large transcripts, active-turn interruption, and pending approvals that cannot be resumed after process exit.
 
 ### Dirty worktree increases risk
 
@@ -113,20 +113,20 @@ Since typecheck and tests pass, it would be wise to commit the current coherent 
 
 ## What Is Missing
 
-### 1. Durable session persistence
+### 1. Persistence hardening and session operations
 
-Buli currently keeps conversation history in memory during one fullscreen session. Missing pieces likely include:
+Buli now has a basic durable session layer. Missing pieces likely include:
 
-- persistent session ids
-- durable message/event history
+- corrupt JSONL recovery or quarantine
+- atomic or locked writes for concurrent `buli` processes
 - selected model and reasoning settings per session
-- tool call records
-- approval/denial records
-- timestamps
-- workspace path
-- session list/resume flow
+- explicit interrupted-turn recovery state
+- durable pending-approval handling or clear restart semantics
+- session rename, delete, and search flows
+- compaction or summarization for very large sessions
+- raw JSONL/session export from the UI
 
-A simple first version does not need branching. It only needs reliable save/resume.
+A simple first version of save/resume already exists. The next step is to make it boringly reliable.
 
 ### 2. Typed file tools
 
@@ -156,9 +156,10 @@ The approval UI already gives the project a good starting point.
 
 For an agent with streaming and tools, it is valuable to inspect what happened after the fact.
 
-Useful missing capabilities:
+HTML transcript export now exists. Useful missing capabilities remain:
 
-- export transcript
+- export raw JSONL/session data from the UI
+- export markdown or plain-text transcript
 - export raw event log
 - replay a session from events
 - inspect provider events versus Buli-normalized events
@@ -214,19 +215,20 @@ Make sure these paths are fully reliable:
 
 This is the heart of the product.
 
-### Priority 2: Add basic session persistence
+### Priority 2: Harden session persistence
 
-Add simple durable sessions before adding a large tool ecosystem.
+Basic durable sessions now exist. Harden them before adding a large tool ecosystem.
 
-A first version could store:
+The next version should address:
 
-- session metadata
-- conversation entries
-- model context items
-- assistant events or projected messages
-- tool calls and decisions
+- corrupt or partial session files
+- concurrent writers
+- active-turn interruption
+- pending approvals on restart
+- selected model and reasoning settings per session
+- long-session compaction
 
-SQLite is a good option if session listing/querying matters soon. JSONL is a good option if maximum simplicity and debuggability matter more.
+The current JSONL approach is a good simple baseline. SQLite can wait until richer querying, search, or branch management becomes necessary.
 
 ### Priority 3: Add typed file tools
 
@@ -236,7 +238,7 @@ These tools should be safer, typed, and easier to approve than arbitrary shell c
 
 ### Priority 4: Improve transcript/session export
 
-Add a way to export or inspect sessions. This will improve trust and make debugging much easier.
+HTML export exists. Add raw export, replay, and diagnostic bundles so sessions can be debugged without depending only on rendered transcript output.
 
 ### Priority 5: Keep TUI behavior thin
 
@@ -248,6 +250,6 @@ Continue moving domain behavior and state transitions into testable packages out
 
 The project already has the right instincts: typed contracts, package boundaries, provider isolation, explicit tool approval, fixture-driven tests, and careful terminal UX. Those choices make it much more likely to grow safely.
 
-The biggest danger is adding too many agent features before the core terminal conversation loop is completely stable. The strongest next move is to make the runtime/UI lifecycle dependable, then add persistence, then add safer typed tools.
+The biggest danger is adding too many agent features before the core terminal conversation loop and new persistence layer are completely stable. The strongest next move is to make the runtime/UI lifecycle dependable, harden persistence, then add safer typed tools.
 
 If the scope stays disciplined, Buli can become a genuinely useful local engineering assistant rather than another thin AI CLI wrapper.

@@ -102,6 +102,12 @@ export {
   ToolCallConversationSessionEntrySchema,
   UserPromptConversationSessionEntrySchema,
 } from "./conversationSessionEntry.ts";
+export {
+  ConversationSessionEntryRecordSchema,
+  ConversationSessionHeaderRecordSchema,
+  ConversationSessionJsonLineRecordSchema,
+  ConversationSessionSummarySchema,
+} from "./conversationSessionRecord.ts";
 export type {
   AssistantMessageConversationSessionEntry,
   AssistantMessageConversationSessionEntryStatus,
@@ -116,6 +122,12 @@ export type {
   ToolCallConversationSessionEntry,
   UserPromptConversationSessionEntry,
 } from "./conversationSessionEntry.ts";
+export type {
+  ConversationSessionEntryRecord,
+  ConversationSessionHeaderRecord,
+  ConversationSessionJsonLineRecord,
+  ConversationSessionSummary,
+} from "./conversationSessionRecord.ts";
 export {
   OpenAiReasoningReplayItemSchema,
   OpenAiReasoningSummaryReplayPartSchema,

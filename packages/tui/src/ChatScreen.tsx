@@ -4,6 +4,8 @@ import type {
   AvailableAssistantModel,
   BuliDiagnosticLogFields,
   BuliDiagnosticLogger,
+  ConversationSessionEntry,
+  ConversationSessionSummary,
   ReasoningEffort,
 } from "@buli/contracts";
 import {
@@ -15,6 +17,7 @@ import {
 } from "@buli/engine";
 import {
   applyAssistantResponseEventsToChatSessionState,
+  clearConversationTranscript,
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatSessionState,
@@ -23,9 +26,12 @@ import {
   hidePromptContextSelection,
   hideSlashCommandSelection,
   hideCommandHelpModal,
+  hideConversationSessionSelection,
   insertTextIntoPromptDraftAtCursor,
   listOrderedConversationMessageParts,
   listOrderedConversationMessages,
+  moveHighlightedConversationSessionSelectionDown,
+  moveHighlightedConversationSessionSelectionUp,
   moveHighlightedModelSelectionDown,
   moveHighlightedModelSelectionUp,
   moveHighlightedPromptContextCandidateDown,
@@ -40,10 +46,15 @@ import {
   refreshSlashCommandSelectionForPromptDraft,
   removePromptDraftCharacterAtCursor,
   removePromptDraftCharacterBeforeCursor,
+  hydrateConversationTranscriptFromSessionEntries,
   selectHighlightedPromptContextCandidate,
+  selectHighlightedConversationSession,
   selectHighlightedSlashCommand,
   selectAssistantOperatingMode,
+  showAvailableConversationSessionsForSelection,
   showAvailableAssistantModelsForSelection,
+  showConversationSessionSelectionLoadingError,
+  showConversationSessionSelectionLoadingState,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
   showPromptContextCandidatesForSelection,
@@ -66,6 +77,7 @@ import { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSe
 import { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";
 import { SlashCommandSelectionPane } from "./components/SlashCommandSelectionPane.tsx";
 import { CommandHelpModal } from "./components/CommandHelpModal.tsx";
+import { ConversationSessionSelectionPane } from "./components/ConversationSessionSelectionPane.tsx";
 import { TopBar, TOP_BAR_NATURAL_ROW_COUNT } from "./components/TopBar.tsx";
 import { ErrorBannerBlock } from "./components/behavior/ErrorBannerBlock.tsx";
 import { ToolApprovalRequestBlock } from "./components/behavior/ToolApprovalRequestBlock.tsx";
@@ -84,21 +96,43 @@ import { buildChatSlashCommands } from "./slashCommands.ts";
 const CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT = 1;
 const TRANSCRIPT_WHEEL_SCROLL_ROW_COUNT = 3;
 const FUZZY_PROMPT_CONTEXT_QUERY_DEBOUNCE_MS = 120;
+const PROMPT_INPUT_REGION_MAX_WIDTH_IN_CELLS = 100;
 
 export type ChatScreenProps = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort;
   selectedReasoningEffort?: ReasoningEffort;
+  initialConversationSessionId?: string;
+  initialConversationSessionEntries?: readonly ConversationSessionEntry[];
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
+  loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];
+  switchConversationSession?: (conversationSessionId: string) => Promise<ConversationSessionSwitchResult> | ConversationSessionSwitchResult;
+  exportCurrentConversationSession?: () => Promise<ConversationSessionExportResult> | ConversationSessionExportResult;
   assistantConversationRunner: AssistantConversationRunner;
+  onConversationCleared?: () => ConversationSessionSwitchResult | void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
+
+export type ConversationSessionSwitchResult = {
+  conversationSessionId: string;
+  conversationSessionEntries: readonly ConversationSessionEntry[];
+};
+
+export type ConversationSessionExportResult = {
+  exportFilePath: string;
+  exportFileUrl: string;
+};
+
+type ConversationSessionExportStatus =
+  | { step: "idle" }
+  | { step: "failed"; errorMessage: string };
 
 type ChatScreenInteractionScope =
   | "command_help_modal"
   | "model_selection"
   | "reasoning_effort_selection"
+  | "conversation_session_selection"
   | "slash_command_selection"
   | "prompt_context_selection"
   | "tool_approval"
@@ -115,6 +149,10 @@ function resolveChatScreenInteractionScope(chatSessionState: ChatSessionState): 
 
   if (chatSessionState.modelAndReasoningSelectionState.step !== "hidden") {
     return "model_selection";
+  }
+
+  if (chatSessionState.conversationSessionSelectionState.step !== "hidden") {
+    return "conversation_session_selection";
   }
 
   if (chatSessionState.slashCommandSelectionState.step !== "hidden") {
@@ -156,20 +194,30 @@ function logChatScreenDiagnosticEvent(
 }
 
 export function ChatScreen(props: ChatScreenProps) {
-  const { height: rows } = useTerminalDimensions();
+  const { height: rows, width: columns } = useTerminalDimensions();
   const terminalSizeTierForChatScreen = useTerminalSizeTierForChatScreen();
   const diagnosticLogger = props.diagnosticLogger;
-  const [chatSessionState, setChatSessionState] = useState(() =>
-    createInitialChatSessionState({
+  const [activeConversationSessionId, setActiveConversationSessionId] = useState<string | undefined>(
+    props.initialConversationSessionId,
+  );
+  const [conversationSessionExportStatus, setConversationSessionExportStatus] = useState<ConversationSessionExportStatus>({
+    step: "idle",
+  });
+  const [chatSessionState, setChatSessionState] = useState(() => {
+    const initialChatSessionState = createInitialChatSessionState({
       selectedModelId: props.selectedModelId,
       ...(props.selectedModelDefaultReasoningEffort
         ? { selectedModelDefaultReasoningEffort: props.selectedModelDefaultReasoningEffort }
         : {}),
       ...(props.selectedReasoningEffort ? { selectedReasoningEffort: props.selectedReasoningEffort } : {}),
-    }),
-  );
+    });
+    return props.initialConversationSessionEntries
+      ? hydrateConversationTranscriptFromSessionEntries(initialChatSessionState, props.initialConversationSessionEntries)
+      : initialChatSessionState;
+  });
 
   const latestChatSessionStateRef = useRef<ChatSessionState>(chatSessionState);
+  const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
   const latestActiveConversationTurnRef = useRef<ActiveConversationTurn | undefined>(undefined);
   const isPromptSubmissionInFlightRef = useRef(false);
   const submittedToolApprovalDecisionApprovalIdRef = useRef<string | undefined>(undefined);
@@ -179,6 +227,7 @@ export function ChatScreen(props: ChatScreenProps) {
   const conversationMessageScrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
 
   latestChatSessionStateRef.current = chatSessionState;
+  latestActiveConversationSessionIdRef.current = activeConversationSessionId;
 
   useEffect(() => {
     logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.mounted", {
@@ -367,6 +416,7 @@ export function ChatScreen(props: ChatScreenProps) {
       latestChatSessionState.isCommandHelpModalVisible ||
       latestChatSessionState.conversationTurnStatus !== "waiting_for_user_input" ||
       latestChatSessionState.modelAndReasoningSelectionState.step !== "hidden" ||
+      latestChatSessionState.conversationSessionSelectionState.step !== "hidden" ||
       latestChatSessionState.slashCommandSelectionState.step !== "hidden";
     if (shouldHidePromptContextSelection) {
       invalidatePendingPromptContextLoads();
@@ -462,6 +512,7 @@ export function ChatScreen(props: ChatScreenProps) {
     chatSessionState.promptDraftCursorOffset,
     chatSessionState.conversationTurnStatus,
     chatSessionState.modelAndReasoningSelectionState.step,
+    chatSessionState.conversationSessionSelectionState.step,
     chatSessionState.slashCommandSelectionState.step,
     chatSessionState.isCommandHelpModalVisible,
   ]);
@@ -472,6 +523,7 @@ export function ChatScreen(props: ChatScreenProps) {
         currentChatSessionState.isCommandHelpModalVisible ||
         currentChatSessionState.conversationTurnStatus !== "waiting_for_user_input" ||
         currentChatSessionState.modelAndReasoningSelectionState.step !== "hidden" ||
+        currentChatSessionState.conversationSessionSelectionState.step !== "hidden" ||
         currentChatSessionState.promptContextSelectionState.step !== "hidden";
 
       if (shouldHideSlashCommandSelection) {
@@ -491,6 +543,7 @@ export function ChatScreen(props: ChatScreenProps) {
     chatSessionState.promptDraftCursorOffset,
     chatSessionState.conversationTurnStatus,
     chatSessionState.modelAndReasoningSelectionState.step,
+    chatSessionState.conversationSessionSelectionState.step,
     chatSessionState.promptContextSelectionState.step,
     chatSessionState.isCommandHelpModalVisible,
     chatSessionState.isReasoningSummaryVisible,
@@ -526,10 +579,107 @@ export function ChatScreen(props: ChatScreenProps) {
     }
   });
 
+  const loadConversationSessionsForSelection = useEffectEvent(async () => {
+    if (!props.loadConversationSessions) {
+      setChatSessionState((currentChatSessionState) =>
+        showConversationSessionSelectionLoadingError(currentChatSessionState, "Session switching is unavailable."),
+      );
+      return;
+    }
+
+    setChatSessionState((currentChatSessionState) => showConversationSessionSelectionLoadingState(currentChatSessionState));
+    try {
+      const conversationSessions = await props.loadConversationSessions();
+      startTransition(() => {
+        setChatSessionState((currentChatSessionState) =>
+          showAvailableConversationSessionsForSelection(
+            currentChatSessionState,
+            conversationSessions,
+            latestActiveConversationSessionIdRef.current,
+          ),
+        );
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      startTransition(() => {
+        setChatSessionState((currentChatSessionState) =>
+          showConversationSessionSelectionLoadingError(currentChatSessionState, errorMessage),
+        );
+      });
+    }
+  });
+
+  const switchToConversationSession = useEffectEvent(async (conversationSessionId: string) => {
+    if (!props.switchConversationSession) {
+      setChatSessionState((currentChatSessionState) =>
+        showConversationSessionSelectionLoadingError(currentChatSessionState, "Session switching is unavailable."),
+      );
+      return;
+    }
+
+    try {
+      const switchedConversationSession = await props.switchConversationSession(conversationSessionId);
+      setActiveConversationSessionId(switchedConversationSession.conversationSessionId);
+      startTransition(() => {
+        setChatSessionState((currentChatSessionState) =>
+          hydrateConversationTranscriptFromSessionEntries(
+            currentChatSessionState,
+            switchedConversationSession.conversationSessionEntries,
+          ),
+        );
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      startTransition(() => {
+        setChatSessionState((currentChatSessionState) =>
+          showConversationSessionSelectionLoadingError(currentChatSessionState, errorMessage),
+        );
+      });
+    }
+  });
+
+  const exportCurrentConversationSession = useEffectEvent(async () => {
+    if (!props.exportCurrentConversationSession) {
+      setConversationSessionExportStatus({ step: "failed", errorMessage: "Session export is unavailable." });
+      return;
+    }
+
+    setConversationSessionExportStatus({ step: "idle" });
+    try {
+      await props.exportCurrentConversationSession();
+    } catch (error) {
+      setConversationSessionExportStatus({
+        step: "failed",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   const executeSlashCommand = useEffectEvent((slashCommandValue: string) => {
     switch (slashCommandValue) {
       case "help":
         setChatSessionState((currentChatSessionState) => showCommandHelpModal(currentChatSessionState));
+        return;
+      case "clear":
+        const clearedConversationSession = props.onConversationCleared?.();
+        if (clearedConversationSession) {
+          setActiveConversationSessionId(clearedConversationSession.conversationSessionId);
+          setChatSessionState((currentChatSessionState) =>
+            hydrateConversationTranscriptFromSessionEntries(
+              currentChatSessionState,
+              clearedConversationSession.conversationSessionEntries,
+            ),
+          );
+        } else {
+          setChatSessionState((currentChatSessionState) => clearConversationTranscript(currentChatSessionState));
+        }
+        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.conversation_cleared");
+        return;
+      case "sessions":
+        void loadConversationSessionsForSelection();
+        return;
+      case "export-session":
+        void exportCurrentConversationSession();
         return;
       case "plan":
         setChatSessionState((currentChatSessionState) => selectAssistantOperatingMode(currentChatSessionState, "plan"));
@@ -650,6 +800,47 @@ export function ChatScreen(props: ChatScreenProps) {
         });
         return nextChatSessionState;
       });
+      return;
+    }
+
+    if (interactionScope === "conversation_session_selection") {
+      if (keyEvent.name === "escape") {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        setChatSessionState((currentChatSessionState) => hideConversationSessionSelection(currentChatSessionState));
+        return;
+      }
+
+      if (latestChatSessionState.conversationSessionSelectionState.step !== "showing_conversation_sessions") {
+        return;
+      }
+
+      if (keyEvent.name === "up") {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        setChatSessionState((currentChatSessionState) => moveHighlightedConversationSessionSelectionUp(currentChatSessionState));
+        return;
+      }
+
+      if (keyEvent.name === "down") {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        setChatSessionState((currentChatSessionState) => moveHighlightedConversationSessionSelectionDown(currentChatSessionState));
+        return;
+      }
+
+      if (keyEvent.name === "return") {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        const conversationSessionSelection = selectHighlightedConversationSession(latestChatSessionState);
+        if (!conversationSessionSelection.selectedConversationSession) {
+          return;
+        }
+
+        setChatSessionState(conversationSessionSelection.nextChatSessionState);
+        void switchToConversationSession(conversationSessionSelection.selectedConversationSession.sessionId);
+      }
+
       return;
     }
 
@@ -986,7 +1177,8 @@ export function ChatScreen(props: ChatScreenProps) {
   const isPromptInputDisabled =
     chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
     chatSessionState.conversationTurnStatus === "waiting_for_tool_approval" ||
-    chatSessionState.modelAndReasoningSelectionState.step !== "hidden";
+    chatSessionState.modelAndReasoningSelectionState.step !== "hidden" ||
+    chatSessionState.conversationSessionSelectionState.step !== "hidden";
   const availableChatSlashCommands = buildChatSlashCommands({
     isReasoningSummaryVisible: chatSessionState.isReasoningSummaryVisible,
     selectedAssistantOperatingMode: chatSessionState.selectedAssistantOperatingMode,
@@ -1000,6 +1192,38 @@ export function ChatScreen(props: ChatScreenProps) {
       />
     ) : null;
 
+  const conversationSessionSelectionPane =
+    chatSessionState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
+      <box
+        borderStyle="rounded"
+        borderColor={chatScreenTheme.border}
+        backgroundColor={chatScreenTheme.surfaceOne}
+        flexDirection="column"
+        flexShrink={0}
+        marginX={2}
+        marginBottom={1}
+        paddingX={1}
+      >
+        <text fg={chatScreenTheme.textMuted}>Sessions</text>
+        <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
+      </box>
+    ) : chatSessionState.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
+      <box paddingX={2} marginBottom={1}>
+        <ErrorBannerBlock
+          titleText="Could not load sessions"
+          errorText={chatSessionState.conversationSessionSelectionState.errorMessage}
+        />
+      </box>
+    ) : chatSessionState.conversationSessionSelectionState.step === "showing_conversation_sessions" ? (
+      <ConversationSessionSelectionPane
+        conversationSessions={chatSessionState.conversationSessionSelectionState.conversationSessions}
+        highlightedConversationSessionIndex={
+          chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex
+        }
+        activeConversationSessionId={chatSessionState.conversationSessionSelectionState.activeConversationSessionId}
+      />
+    ) : null;
+
   const promptContextSelectionPane =
     chatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
       <PromptContextSelectionPane
@@ -1008,6 +1232,13 @@ export function ChatScreen(props: ChatScreenProps) {
           chatSessionState.promptContextSelectionState.highlightedPromptContextCandidateIndex
         }
       />
+    ) : null;
+
+  const conversationSessionExportStatusPane =
+    conversationSessionExportStatus.step === "failed" ? (
+      <box paddingX={2} marginBottom={1}>
+        <ErrorBannerBlock titleText="Could not export session" errorText={conversationSessionExportStatus.errorMessage} />
+      </box>
     ) : null;
 
   const homeDirectoryPath = os.homedir();
@@ -1028,6 +1259,7 @@ export function ChatScreen(props: ChatScreenProps) {
     terminalSizeTierForChatScreen === minimumTerminalSizeTier
       ? MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT
       : INPUT_PANEL_NATURAL_ROW_COUNT;
+  const promptInputRegionColumnCount = Math.min(columns, PROMPT_INPUT_REGION_MAX_WIDTH_IN_CELLS);
   const availableCommandHelpModalRowCount = Math.max(
     0,
     rows - TOP_BAR_NATURAL_ROW_COUNT - CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT - inputRegionRowCount,
@@ -1136,33 +1368,42 @@ export function ChatScreen(props: ChatScreenProps) {
             />
           </box>
         ) : null}
+        {conversationSessionExportStatusPane}
+        {conversationSessionSelectionPane}
         {slashCommandSelectionPane}
         {promptContextSelectionPane}
-        {terminalSizeTierForChatScreen === minimumTerminalSizeTier ? (
-          <MinimumHeightPromptStrip
-            promptDraft={chatSessionState.promptDraft}
-            promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
-            selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
-            isPromptInputDisabled={isPromptInputDisabled}
-            accentColor={inputPanelAccentColor}
-            assistantResponseStatus={chatSessionState.conversationTurnStatus}
-          />
-        ) : (
-          <InputPanel
-            promptDraft={chatSessionState.promptDraft}
-            promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
-            selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
-            isPromptInputDisabled={isPromptInputDisabled}
-            {...(promptInputHintOverride !== undefined ? { promptInputHintOverride } : {})}
-            accentColor={inputPanelAccentColor}
-            modeLabel={modeLabel}
-            modelIdentifier={chatSessionState.selectedModelId}
-            reasoningEffortLabel={reasoningEffortLabel}
-            assistantResponseStatus={chatSessionState.conversationTurnStatus}
-            totalContextTokensUsed={totalContextTokensUsed}
-            contextWindowTokenCapacity={contextWindowTokenCapacity}
-          />
-        )}
+        <box
+          alignSelf="center"
+          flexDirection="column"
+          flexShrink={0}
+          width={promptInputRegionColumnCount}
+        >
+          {terminalSizeTierForChatScreen === minimumTerminalSizeTier ? (
+            <MinimumHeightPromptStrip
+              promptDraft={chatSessionState.promptDraft}
+              promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
+              selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
+              isPromptInputDisabled={isPromptInputDisabled}
+              accentColor={inputPanelAccentColor}
+              assistantResponseStatus={chatSessionState.conversationTurnStatus}
+            />
+          ) : (
+            <InputPanel
+              promptDraft={chatSessionState.promptDraft}
+              promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
+              selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
+              isPromptInputDisabled={isPromptInputDisabled}
+              {...(promptInputHintOverride !== undefined ? { promptInputHintOverride } : {})}
+              accentColor={inputPanelAccentColor}
+              modeLabel={modeLabel}
+              modelIdentifier={chatSessionState.selectedModelId}
+              reasoningEffortLabel={reasoningEffortLabel}
+              assistantResponseStatus={chatSessionState.conversationTurnStatus}
+              totalContextTokensUsed={totalContextTokensUsed}
+              contextWindowTokenCapacity={contextWindowTokenCapacity}
+            />
+          )}
+        </box>
       </box>
     </box>
   );

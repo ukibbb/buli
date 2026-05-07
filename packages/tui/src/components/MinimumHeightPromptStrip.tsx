@@ -30,6 +30,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
         flexDirection="row"
         paddingX={1}
         flexShrink={0}
+        width="100%"
       >
         <text fg={chatScreenTheme.textMuted}>{"… working"}</text>
       </box>
@@ -44,6 +45,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
       paddingX={1}
       gap={1}
       flexShrink={0}
+      width="100%"
     >
       <text fg={props.accentColor}>
         <b>{">"}</b>

@@ -1,6 +1,9 @@
 export { parseAssistantResponseIntoContentParts } from "./assistantContentPartParser.ts";
 export { InMemoryConversationHistory } from "./conversationHistory.ts";
-export type { ConversationSessionEntriesChangedListener } from "./conversationHistory.ts";
+export type {
+  ConversationSessionEntriesChangedListener,
+  ConversationSessionEntryAppendedListener,
+} from "./conversationHistory.ts";
 export {
   projectConversationSessionEntriesToModelContextItems,
   projectConversationSessionEntryToModelContextItems,

@@ -11,12 +11,17 @@ import {
 } from "@buli/engine";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 import { renderChatScreenInTerminal } from "@buli/tui";
+import { openBrowserUrl, type BrowserUrlLauncher } from "../browserLauncher.ts";
 import { installConsoleFileLogger } from "../consoleFileLogger.ts";
+import {
+  defaultConversationSessionExportDirectoryPath,
+  writeConversationSessionHtmlExport,
+} from "../conversationSessionHtmlExport.ts";
 import { FileConversationSessionStore, type ConversationSessionStore } from "../conversationSessionStore.ts";
 import { createDiagnosticFileLogger } from "../diagnosticFileLogger.ts";
 
 const DEFAULT_MODEL_ID = "gpt-5.5";
-const DEFAULT_MODEL_DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
+const DEFAULT_MODEL_DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
 const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 
 type InteractiveChatRenderer = typeof renderChatScreenInTerminal;
@@ -32,6 +37,8 @@ export async function runInteractiveChat(input: {
   bashToolApprovalMode?: BashToolApprovalMode;
   store?: OpenAiAuthStore;
   conversationSessionStore?: ConversationSessionStore;
+  conversationSessionExportDirectoryPath?: string;
+  openBrowserUrl?: BrowserUrlLauncher;
   renderChatScreen?: InteractiveChatRenderer;
   stdin?: Pick<NodeJS.ReadStream, "isTTY">;
   environment?: InteractiveChatEnvironment;
@@ -74,12 +81,15 @@ export async function runInteractiveChat(input: {
     },
   });
   const conversationSessionStore = input.conversationSessionStore ?? new FileConversationSessionStore();
-  const initialConversationSessionEntries = conversationSessionStore.loadConversationSessionEntries();
+  const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
+  let activeConversationSessionId = activeConversationSession.sessionId;
+  const initialConversationSessionEntries = activeConversationSession.conversationSessionEntries;
   diagnosticLogger?.({
     subsystem: "cli",
     eventName: "conversation_session.loaded",
     fields: {
-      conversationSessionFilePath: conversationSessionStore.filePath ?? null,
+      conversationSessionFilePath: activeConversationSession.filePath,
+      conversationSessionId: activeConversationSession.sessionId,
       conversationSessionEntryCount: initialConversationSessionEntries.length,
     },
   });
@@ -96,13 +106,13 @@ export async function runInteractiveChat(input: {
   });
   const conversationHistory = new InMemoryConversationHistory({
     initialConversationSessionEntries,
-    onConversationSessionEntriesChanged: (conversationSessionEntries) => {
-      conversationSessionStore.saveConversationSessionEntries(conversationSessionEntries);
+    onConversationSessionEntryAppended: (conversationSessionEntry, conversationSessionEntries) => {
+      conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
       diagnosticLogger?.({
         subsystem: "cli",
         eventName: "conversation_session.saved",
         fields: {
-          conversationSessionFilePath: conversationSessionStore.filePath ?? null,
+          conversationSessionEntryKind: conversationSessionEntry.entryKind,
           conversationSessionEntryCount: conversationSessionEntries.length,
         },
       });
@@ -115,6 +125,7 @@ export async function runInteractiveChat(input: {
     promptContextStartingDirectoryPath,
     conversationHistory,
     bashToolApprovalMode,
+    ...(conversationSessionStore.promptCacheKey ? { promptCacheKey: conversationSessionStore.promptCacheKey } : {}),
     diagnosticLogger,
   });
   const renderArgs = {
@@ -122,6 +133,62 @@ export async function runInteractiveChat(input: {
     loadAvailableAssistantModels: () => provider.listAvailableAssistantModels(),
     loadPromptContextCandidates: (promptContextQueryText: string) =>
       promptContextCandidateCatalog.listPromptContextCandidates(promptContextQueryText),
+    loadConversationSessions: () => conversationSessionStore.listConversationSessions(),
+    switchConversationSession: async (conversationSessionId: string) => {
+      const switchedConversationSession = conversationSessionStore.switchActiveConversationSession(conversationSessionId);
+      activeConversationSessionId = switchedConversationSession.sessionId;
+      conversationHistory.replaceConversationSessionEntries(switchedConversationSession.conversationSessionEntries);
+      diagnosticLogger?.({
+        subsystem: "cli",
+        eventName: "conversation_session.switched",
+        fields: {
+          conversationSessionId: switchedConversationSession.sessionId,
+          conversationSessionFilePath: switchedConversationSession.filePath,
+          conversationSessionEntryCount: switchedConversationSession.conversationSessionEntries.length,
+        },
+      });
+      return {
+        conversationSessionId: switchedConversationSession.sessionId,
+        conversationSessionEntries: switchedConversationSession.conversationSessionEntries,
+      };
+    },
+    onConversationCleared: () => {
+      const newConversationSession = conversationSessionStore.startNewConversationSession();
+      activeConversationSessionId = newConversationSession.sessionId;
+      conversationHistory.replaceConversationSessionEntries(newConversationSession.conversationSessionEntries);
+      diagnosticLogger?.({
+        subsystem: "cli",
+        eventName: "conversation_session.created",
+        fields: {
+          conversationSessionId: newConversationSession.sessionId,
+          conversationSessionFilePath: newConversationSession.filePath,
+        },
+      });
+      return {
+        conversationSessionId: newConversationSession.sessionId,
+        conversationSessionEntries: newConversationSession.conversationSessionEntries,
+      };
+    },
+    exportCurrentConversationSession: async () => {
+      const exportResult = writeConversationSessionHtmlExport({
+        conversationSessionEntries: conversationHistory.listConversationSessionEntries(),
+        workspaceRootPath: process.cwd(),
+        conversationSessionId: activeConversationSessionId,
+        exportDirectoryPath: input.conversationSessionExportDirectoryPath ?? defaultConversationSessionExportDirectoryPath(),
+      });
+      await (input.openBrowserUrl ?? openBrowserUrl)(exportResult.exportFileUrl);
+      diagnosticLogger?.({
+        subsystem: "cli",
+        eventName: "conversation_session.exported",
+        fields: {
+          conversationSessionId: activeConversationSessionId,
+          exportFilePath: exportResult.exportFilePath,
+        },
+      });
+      return exportResult;
+    },
+    initialConversationSessionId: activeConversationSession.sessionId,
+    initialConversationSessionEntries,
     selectedModelId,
     ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
