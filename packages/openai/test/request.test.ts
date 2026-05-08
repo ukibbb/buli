@@ -91,6 +91,34 @@ test("createOpenAiResponsesInputItems skips failed assistant turns", () => {
   ]);
 });
 
+test("createOpenAiResponsesInputItems skips interrupted assistant turns", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Interrupted prompt",
+        modelFacingPromptText: "Interrupted prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "interrupted",
+        assistantMessageText: "Partial answer",
+        interruptionReason: "Interrupted by user.",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Next prompt",
+    },
+  ]);
+});
+
 test("createOpenAiResponsesInputItems replays stored OpenAI tool items before the assistant message", () => {
   expect(
     createOpenAiResponsesInputItems([
@@ -281,6 +309,102 @@ test("createOpenAiResponsesInputItems falls back to assistant transcript text fo
       role: "assistant",
       content:
         "[assistant tool call call_1]\nTool: bash\nCommand: pwd\nDescription: Print working directory\n\n[assistant tool result call_1]\nWorking directory: /tmp/demo",
+    },
+    {
+      role: "assistant",
+      content: "Done.",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems includes typed tools in legacy transcript fallback", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Inspect files",
+        modelFacingPromptText: "Inspect files",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+          offsetLineNumber: 2,
+          maximumLineCount: 5,
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_read",
+        toolCallDetail: {
+          toolName: "read",
+          readFilePath: "README.md",
+          readLineCount: 10,
+        },
+        toolResultText: "2: docs",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_glob",
+        toolCallRequest: {
+          toolName: "glob",
+          globPattern: "**/*.ts",
+          searchDirectoryPath: "packages",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_glob",
+        toolCallDetail: {
+          toolName: "glob",
+          globPattern: "**/*.ts",
+          matchedPathCount: 1,
+        },
+        toolResultText: "packages/contracts/src/index.ts",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_grep",
+        toolCallRequest: {
+          toolName: "grep",
+          regexPattern: "ToolCallRequest",
+          searchPath: "packages",
+          includeGlobPattern: "*.ts",
+        },
+      },
+      {
+        entryKind: "failed_tool_result",
+        toolCallId: "call_grep",
+        toolCallDetail: {
+          toolName: "grep",
+          searchPattern: "ToolCallRequest",
+        },
+        toolResultText: "Grep failed: invalid regex",
+        failureExplanation: "invalid regex",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Done.",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Inspect files",
+    },
+    {
+      role: "assistant",
+      content: [
+        "[assistant tool call call_read]\nTool: read\nPath: README.md\nOffset line: 2\nLine limit: 5",
+        "[assistant tool result call_read]\n2: docs",
+        "[assistant tool call call_glob]\nTool: glob\nPattern: **/*.ts\nDirectory: packages",
+        "[assistant tool result call_glob]\npackages/contracts/src/index.ts",
+        "[assistant tool call call_grep]\nTool: grep\nPattern: ToolCallRequest\nPath: packages\nInclude: *.ts",
+        "[assistant tool failure call_grep]\nGrep failed: invalid regex",
+      ].join("\n\n"),
     },
     {
       role: "assistant",

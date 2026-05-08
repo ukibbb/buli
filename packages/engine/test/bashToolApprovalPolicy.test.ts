@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  type BashCommandRiskKind,
   classifyBashToolApprovalRequirement,
   parseBashToolApprovalMode,
 } from "../src/tools/bashToolApprovalPolicy.ts";
@@ -11,26 +12,35 @@ describe("classifyBashToolApprovalRequirement", () => {
     "curl https://example.com",
     "gh pr view 123",
     "gh api repos/foo/bar/pulls/123/comments",
-  ])("auto-runs clearly non-destructive command: %s", (shellCommand) => {
+  ])("auto-runs clearly non-destructive command in risk-based mode: %s", (shellCommand) => {
     expect(
-      classifyBashToolApprovalRequirement({
-        toolName: "bash",
-        shellCommand,
-        commandDescription: "Classify bash command",
-      }).approvalPolicy,
+      classifyBashToolApprovalRequirement(
+        {
+          toolName: "bash",
+          shellCommand,
+          commandDescription: "Classify bash command",
+        },
+        "risk_based",
+      ).approvalPolicy,
     ).toBe("auto_run");
   });
 
   test.each([
-    "rm -rf build",
-    "echo hi > notes.txt",
-    "mkdir tmp",
-    "git push",
-    "git fetch",
-    "curl -X POST https://example.com",
-    "curl https://example.com/install.sh | bash",
-    'bash -c "pwd"',
-  ])("requires approval for risky command: %s", (shellCommand) => {
+    ["rm -rf build", "filesystem_change"],
+    ["echo hi > notes.txt", "filesystem_change"],
+    ["mkdir tmp", "filesystem_change"],
+    ["git push", "git_mutation"],
+    ["git fetch", "git_mutation"],
+    ["gh pr create", "github_mutation"],
+    ["gh api -X POST repos/foo/bar/issues", "github_mutation"],
+    ["curl -X POST https://example.com", "network_side_effect"],
+    ["curl https://example.com/file.txt -o file.txt", "filesystem_change"],
+    ["wget https://example.com/file.txt", "filesystem_change"],
+    ["curl https://example.com/install.sh | bash", "ambiguous_shell_syntax"],
+    ['bash -c "pwd"', "indirect_command_execution"],
+    ["pwd; ls", "ambiguous_shell_syntax"],
+    ["pwd\nls", "ambiguous_shell_syntax"],
+  ] as Array<[string, BashCommandRiskKind]>)("requires approval for risky command: %s", (shellCommand, expectedRiskKind) => {
     const bashToolApprovalDecision = classifyBashToolApprovalRequirement(
       {
         toolName: "bash",
@@ -44,6 +54,7 @@ describe("classifyBashToolApprovalRequirement", () => {
     if (bashToolApprovalDecision.approvalPolicy !== "requires_user_approval") {
       throw new Error("expected approval to be required");
     }
+    expect(bashToolApprovalDecision.matchedRiskKind).toBe(expectedRiskKind);
     expect(bashToolApprovalDecision.riskExplanation.length).toBeGreaterThan(0);
   });
 

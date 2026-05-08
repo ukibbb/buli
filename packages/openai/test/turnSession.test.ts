@@ -37,6 +37,23 @@ function createFetchImpl(queuedResponses: Response[], requestBodies: string[]): 
   return fetchImpl;
 }
 
+function createSignalRecordingFetchImpl(input: {
+  response: Response;
+  receivedAbortSignals: Array<AbortSignal | null | undefined>;
+}): typeof fetch {
+  const fetchImpl: typeof fetch = Object.assign(
+    async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      input.receivedAbortSignals.push(init?.signal);
+      return input.response;
+    },
+    {
+      preconnect: fetch.preconnect.bind(fetch),
+    },
+  );
+
+  return fetchImpl;
+}
+
 test("OpenAiProviderConversationTurn captures replay items for a completed tool turn", async () => {
   const requestBodies: string[] = [];
   const queuedResponses = [
@@ -133,6 +150,111 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
     ],
     include: ["reasoning.encrypted_content"],
   });
+});
+
+test("OpenAiProviderConversationTurn captures replay items for a completed typed read tool turn", async () => {
+  const requestBodies: string[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_read_1","name":"read","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"filePath\\":\\"README.md\\",\\"offset\\":null,\\"limit\\":null}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_read_1","name":"read","arguments":"{\\"filePath\\":\\"README.md\\",\\"offset\\":null,\\"limit\\":null}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ]),
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read README"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  const emittedEvents: ProviderStreamEvent[] = [];
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    emittedEvents.push(emittedEvent);
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: "<path>README.md</path>\n1: # buli",
+      });
+    }
+  }
+
+  expect(emittedEvents[0]).toEqual({
+    type: "tool_call_requested",
+    toolCallId: "call_read_1",
+    toolCallRequest: {
+      toolName: "read",
+      readTargetPath: "README.md",
+    },
+  });
+  expect(providerTurn.getProviderTurnReplay()).toEqual({
+    provider: "openai",
+    inputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_read_1",
+        name: "read",
+        arguments: '{"filePath":"README.md","offset":null,"limit":null}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_read_1",
+        output: "<path>README.md</path>\n1: # buli",
+      },
+    ],
+  });
+  expect(JSON.parse(requestBodies[1] ?? "{}")).toMatchObject({
+    input: [
+      { role: "user", content: "Read README" },
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_read_1",
+        name: "read",
+        arguments: '{"filePath":"README.md","offset":null,"limit":null}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_read_1",
+        output: "<path>README.md</path>\n1: # buli",
+      },
+    ],
+  });
+});
+
+test("OpenAiProviderConversationTurn passes the abort signal to response fetch", async () => {
+  const abortController = new AbortController();
+  const receivedAbortSignals: Array<AbortSignal | null | undefined> = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createSignalRecordingFetchImpl({
+      response: createOpenAiStepResponse([
+        'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}\n\n',
+      ]),
+      receivedAbortSignals,
+    }),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer"),
+    abortSignal: abortController.signal,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  for await (const _emittedEvent of providerTurn.streamProviderEvents()) {
+    // Consume the stream so the request is issued.
+  }
+
+  expect(receivedAbortSignals).toEqual([abortController.signal]);
 });
 
 test("OpenAiProviderConversationTurn sends reasoning effort without summaries when reasoning is disabled", async () => {

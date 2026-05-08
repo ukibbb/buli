@@ -8,29 +8,17 @@ export type ConversationMessageListProps = {
   isReasoningSummaryVisible: boolean;
   resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
-  onConversationMessageWheelScroll: (direction: "up" | "down") => void;
 };
 
 const MemoizedConversationMessageRow = memo(ConversationMessageRow);
 
 export function ConversationMessageList(props: ConversationMessageListProps): ReactNode {
   return (
-    <box
-      flexDirection="column"
-      flexGrow={1}
-      onMouseScroll={(mouseEvent) => {
-        const scrollDirection = mouseEvent.scroll?.direction;
-        if (scrollDirection !== "up" && scrollDirection !== "down") {
-          return;
-        }
-
-        mouseEvent.stopPropagation();
-        props.onConversationMessageWheelScroll(scrollDirection);
-      }}
-    >
+    <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
       <scrollbox
         flexDirection="column"
         flexGrow={1}
+        minHeight={0}
         ref={props.conversationMessageScrollBoxRef}
         scrollX={false}
         stickyScroll={true}

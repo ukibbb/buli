@@ -8,6 +8,7 @@ import type {
 } from "@buli/engine";
 import { act } from "react";
 import { ChatScreen } from "../src/ChatScreen.tsx";
+import { ActiveConversationTurnShutdownCoordinator } from "../src/activeConversationTurnShutdown.ts";
 import { testRender } from "./testRenderWithCleanup.ts";
 
 const noopAvailableModelsLoader = async () => [];
@@ -24,6 +25,7 @@ type OpenTuiChatScreenHarness = {
 
 async function renderChatScreen(input: {
   assistantConversationRunner: AssistantConversationRunner;
+  activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
 }): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
     <ChatScreen
@@ -31,6 +33,9 @@ async function renderChatScreen(input: {
       loadAvailableAssistantModels={noopAvailableModelsLoader}
       loadPromptContextCandidates={noopPromptContextCandidatesLoader}
       assistantConversationRunner={input.assistantConversationRunner}
+      {...(input.activeConversationTurnShutdownCoordinator
+        ? { activeConversationTurnShutdownCoordinator: input.activeConversationTurnShutdownCoordinator }
+        : {})}
     />,
     { width: 140, height: 34 },
   );
@@ -61,6 +66,12 @@ async function renderChatScreen(input: {
     },
     async pressKey(key: string): Promise<string> {
       await act(async () => {
+        if (key === "ESC" || key === "ESCAPE") {
+          renderedChatScreen.mockInput.pressEscape();
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          return;
+        }
+
         renderedChatScreen.mockInput.pressKey(key);
       });
       return captureFrame();
@@ -94,6 +105,7 @@ function createEmptyStreamAssistantConversationRunner(): AssistantConversationRu
         },
         async approvePendingToolCall() {},
         async denyPendingToolCall() {},
+        interrupt() {},
       };
     },
   };
@@ -108,6 +120,7 @@ function createThrowingStreamAssistantConversationRunner(): AssistantConversatio
         },
         async approvePendingToolCall() {},
         async denyPendingToolCall() {},
+        interrupt() {},
       };
     },
   };
@@ -128,6 +141,7 @@ function createCountingEmptyStreamAssistantConversationRunner(): {
           },
           async approvePendingToolCall() {},
           async denyPendingToolCall() {},
+          interrupt() {},
         };
       },
     },
@@ -150,6 +164,7 @@ function createRecordingEmptyStreamAssistantConversationRunner(): {
           },
           async approvePendingToolCall() {},
           async denyPendingToolCall() {},
+          interrupt() {},
         };
       },
     },
@@ -225,11 +240,113 @@ function createKeyboardApprovalAssistantConversationRunner(): {
             deniedDecisionCount += 1;
             resolveApprovalDecision?.("denied");
           },
+          interrupt() {},
         };
       },
     },
     getApprovedDecisionCount: () => approvedDecisionCount,
     getDeniedDecisionCount: () => deniedDecisionCount,
+  };
+}
+
+function createInterruptibleAssistantConversationRunner(): {
+  assistantConversationRunner: AssistantConversationRunner;
+  getInterruptCount: () => number;
+} {
+  let interruptCount = 0;
+  let resolveInterrupt: (() => void) | undefined;
+
+  return {
+    assistantConversationRunner: {
+      startConversationTurn(): ActiveConversationTurn {
+        const interruptedPromise = new Promise<void>((resolve) => {
+          resolveInterrupt = resolve;
+        });
+
+        return {
+          async *streamAssistantResponseEvents() {
+            yield { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 };
+            yield {
+              type: "assistant_message_part_added",
+              messageId: "assistant-1",
+              part: {
+                id: "assistant-text-1",
+                partKind: "assistant_text",
+                partStatus: "streaming",
+                rawMarkdownText: "Partial answer",
+                completedContentParts: [],
+                openContentPart: { kind: "streaming_markdown_text", text: "Partial answer" },
+              },
+            } satisfies AssistantResponseEvent;
+
+            await interruptedPromise;
+            yield {
+              type: "assistant_message_interrupted",
+              messageId: "assistant-1",
+              interruptionReason: "Interrupted by user.",
+            } satisfies AssistantResponseEvent;
+          },
+          async approvePendingToolCall() {},
+          async denyPendingToolCall() {},
+          interrupt() {
+            interruptCount += 1;
+            resolveInterrupt?.();
+          },
+        };
+      },
+    },
+    getInterruptCount: () => interruptCount,
+  };
+}
+
+function createManuallyReleasedInterruptibleAssistantConversationRunner(): {
+  assistantConversationRunner: AssistantConversationRunner;
+  getInterruptCount: () => number;
+  releaseInterruptedTurn: () => void;
+} {
+  let interruptCount = 0;
+  let resolveInterruptedTurn: (() => void) | undefined;
+
+  return {
+    assistantConversationRunner: {
+      startConversationTurn(): ActiveConversationTurn {
+        const interruptedPromise = new Promise<void>((resolve) => {
+          resolveInterruptedTurn = resolve;
+        });
+
+        return {
+          async *streamAssistantResponseEvents() {
+            yield { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 };
+            yield {
+              type: "assistant_message_part_added",
+              messageId: "assistant-1",
+              part: {
+                id: "assistant-text-1",
+                partKind: "assistant_text",
+                partStatus: "streaming",
+                rawMarkdownText: "Partial answer",
+                completedContentParts: [],
+                openContentPart: { kind: "streaming_markdown_text", text: "Partial answer" },
+              },
+            } satisfies AssistantResponseEvent;
+
+            await interruptedPromise;
+            yield {
+              type: "assistant_message_interrupted",
+              messageId: "assistant-1",
+              interruptionReason: "Interrupted by user.",
+            } satisfies AssistantResponseEvent;
+          },
+          async approvePendingToolCall() {},
+          async denyPendingToolCall() {},
+          interrupt() {
+            interruptCount += 1;
+          },
+        };
+      },
+    },
+    getInterruptCount: () => interruptCount,
+    releaseInterruptedTurn: () => resolveInterruptedTurn?.(),
   };
 }
 
@@ -286,6 +403,24 @@ test("ChatScreen re-enables prompt editing after a failed assistant stream", asy
 
   const editedFrame = await renderedChatScreen.typeText("next prompt");
   expect(editedFrame).toContain("next prompt");
+});
+
+test("ChatScreen keeps prompt controls available after a failed assistant stream", async () => {
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: createThrowingStreamAssistantConversationRunner(),
+  });
+
+  await renderedChatScreen.typeText("trigger failed stream");
+  await renderedChatScreen.pressEnter();
+  const failedFrame = await renderedChatScreen.waitForFrame(25);
+  expect(failedFrame).toContain("runner exploded");
+
+  const planModeFrame = await renderedChatScreen.pressKey("TAB");
+  expect(planModeFrame).toContain("plan");
+
+  const slashCommandFrame = await renderedChatScreen.typeText("/");
+  expect(slashCommandFrame).toContain("Commands");
+  expect(slashCommandFrame).toContain("/help");
 });
 
 test("ChatScreen ignores a same-tick duplicate Enter submission", async () => {
@@ -353,4 +488,72 @@ test("ChatScreen denies a pending tool call with the n keyboard shortcut", async
   expect(approvalRunner.getDeniedDecisionCount()).toBe(1);
   expect(completedFrame).toContain("Denied after keyboard.");
   expect(completedFrame).not.toContain("Approval needed");
+});
+
+test("ChatScreen requires double Escape to interrupt a running assistant turn", async () => {
+  const interruptibleRunner = createInterruptibleAssistantConversationRunner();
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: interruptibleRunner.assistantConversationRunner,
+  });
+
+  await renderedChatScreen.typeText("start long response");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.waitForFrame(25);
+
+  await renderedChatScreen.pressKey("ESCAPE");
+  const armedFrame = await renderedChatScreen.waitForFrame(40);
+  expect(interruptibleRunner.getInterruptCount()).toBe(0);
+  expect(armedFrame).toContain("esc again to stop");
+
+  await renderedChatScreen.pressKey("ESCAPE");
+  const interruptedFrame = await renderedChatScreen.waitForFrame(40);
+  expect(interruptibleRunner.getInterruptCount()).toBe(1);
+  expect(interruptedFrame).toContain("Interrupted by user.");
+  expect(interruptedFrame).not.toContain("esc again to stop");
+});
+
+test("ChatScreen ignores extra Escape presses after interrupt is requested", async () => {
+  const interruptibleRunner = createManuallyReleasedInterruptibleAssistantConversationRunner();
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: interruptibleRunner.assistantConversationRunner,
+  });
+
+  await renderedChatScreen.typeText("start long response");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.waitForFrame(25);
+
+  await renderedChatScreen.pressKey("ESCAPE");
+  await renderedChatScreen.waitForFrame(40);
+  await renderedChatScreen.pressKey("ESCAPE");
+  expect(interruptibleRunner.getInterruptCount()).toBe(1);
+
+  await renderedChatScreen.pressKey("ESCAPE");
+  await renderedChatScreen.waitForFrame(40);
+  await renderedChatScreen.pressKey("ESCAPE");
+  expect(interruptibleRunner.getInterruptCount()).toBe(1);
+
+  interruptibleRunner.releaseInterruptedTurn();
+  const interruptedFrame = await renderedChatScreen.waitForFrame(40);
+  expect(interruptedFrame).toContain("Interrupted by user.");
+});
+
+test("ChatScreen shutdown coordinator interrupts and waits for a running assistant turn", async () => {
+  const shutdownCoordinator = new ActiveConversationTurnShutdownCoordinator();
+  const interruptibleRunner = createInterruptibleAssistantConversationRunner();
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: interruptibleRunner.assistantConversationRunner,
+    activeConversationTurnShutdownCoordinator: shutdownCoordinator,
+  });
+
+  await renderedChatScreen.typeText("start long response");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.waitForFrame(25);
+
+  await act(async () => {
+    await shutdownCoordinator.interruptActiveConversationTurnAndWaitForSettlement();
+  });
+  const interruptedFrame = await renderedChatScreen.captureFrame();
+
+  expect(interruptibleRunner.getInterruptCount()).toBe(1);
+  expect(interruptedFrame).toContain("Interrupted by user.");
 });

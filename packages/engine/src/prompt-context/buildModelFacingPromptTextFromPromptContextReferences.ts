@@ -14,7 +14,9 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
   promptText: string;
   promptContextBrowseRootPath: string;
   promptContextStartingDirectoryPath?: string;
+  abortSignal?: AbortSignal;
 }): Promise<string> {
+  throwIfPromptContextExpansionAborted(input.abortSignal);
   const parsedPromptContextReferences = parsePromptContextReferencesFromPromptText(input.promptText);
   if (parsedPromptContextReferences.length === 0) {
     return input.promptText;
@@ -28,11 +30,14 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
       ? { promptContextStartingDirectoryPath: input.promptContextStartingDirectoryPath }
       : {}),
   });
+  throwIfPromptContextExpansionAborted(input.abortSignal);
 
   for (const parsedPromptContextReference of parsedPromptContextReferences) {
+    throwIfPromptContextExpansionAborted(input.abortSignal);
     const resolvedPromptContextReference = await resolvePromptContextReference({
       promptContextPathScope,
       parsedPromptContextReferenceDisplayPath: parsedPromptContextReference.displayPath,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
     });
     const dedupeKey = resolvedPromptContextReference.kind === "resolved"
       ? resolvedPromptContextReference.absolutePath
@@ -54,6 +59,7 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
         await buildPromptContextDirectorySnapshotText({
           absoluteDirectoryPath: resolvedPromptContextReference.absolutePath,
           displayPath: resolvedPromptContextReference.displayPath,
+          ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
         }),
       );
       continue;
@@ -63,6 +69,7 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
       await buildPromptContextFileSnapshotText({
         absoluteFilePath: resolvedPromptContextReference.absolutePath,
         displayPath: resolvedPromptContextReference.displayPath,
+        ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       }),
     );
   }
@@ -77,6 +84,7 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
 async function resolvePromptContextReference(input: {
   promptContextPathScope: PromptContextPathScope;
   parsedPromptContextReferenceDisplayPath: string;
+  abortSignal?: AbortSignal;
 }): Promise<
   | {
       kind: "resolved";
@@ -89,6 +97,7 @@ async function resolvePromptContextReference(input: {
       errorMessage: string;
     }
 > {
+  throwIfPromptContextExpansionAborted(input.abortSignal);
   const candidateAbsolutePath = resolvePromptContextPathFromReference({
     promptContextPathText: input.parsedPromptContextReferenceDisplayPath,
     promptContextPathScope: input.promptContextPathScope,
@@ -96,6 +105,7 @@ async function resolvePromptContextReference(input: {
 
   try {
     const candidateStats = await lstat(candidateAbsolutePath);
+    throwIfPromptContextExpansionAborted(input.abortSignal);
     if (candidateStats.isSymbolicLink()) {
       return {
         kind: "unresolved",
@@ -104,6 +114,7 @@ async function resolvePromptContextReference(input: {
     }
 
     const candidateRealPath = await realpath(candidateAbsolutePath);
+    throwIfPromptContextExpansionAborted(input.abortSignal);
     if (!isPathInsidePromptContextBrowseRoot(input.promptContextPathScope.promptContextBrowseRootPath, candidateRealPath)) {
       return {
         kind: "unresolved",
@@ -130,9 +141,16 @@ async function resolvePromptContextReference(input: {
       entryType: candidateStats.isDirectory() ? "directory" : "file",
     };
   } catch {
+    throwIfPromptContextExpansionAborted(input.abortSignal);
     return {
       kind: "unresolved",
       errorMessage: "The referenced path does not exist under the allowed prompt-context root.",
     };
+  }
+}
+
+function throwIfPromptContextExpansionAborted(abortSignal: AbortSignal | undefined): void {
+  if (abortSignal?.aborted) {
+    throw new Error("Prompt context expansion interrupted");
   }
 }

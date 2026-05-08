@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { OpenAiAuthStore } from "../src/auth/store.ts";
 import { OpenAiProvider } from "../src/provider/client.ts";
 import { parseOpenAiStream } from "../src/provider/stream.ts";
+import { createOpenAiToolDefinitions } from "../src/provider/toolDefinitions.ts";
 
 function buildResponseWithSseFixture(fixtureFileName: string): Response {
   const fixtureBytes = readFileSync(resolve(import.meta.dir, "fixtures", fixtureFileName));
@@ -346,6 +347,114 @@ test("parseOpenAiStream accepts nullable bash function arguments", async () => {
   ]);
 });
 
+test("parseOpenAiStream parses read, glob, and grep tool calls", async () => {
+  const toolCallCases = [
+    {
+      toolName: "read",
+      argumentsText: '{"filePath":"README.md","offset":2,"limit":5}',
+      expectedToolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+        offsetLineNumber: 2,
+        maximumLineCount: 5,
+      },
+    },
+    {
+      toolName: "glob",
+      argumentsText: '{"pattern":"**/*.ts","path":"packages"}',
+      expectedToolCallRequest: {
+        toolName: "glob",
+        globPattern: "**/*.ts",
+        searchDirectoryPath: "packages",
+      },
+    },
+    {
+      toolName: "grep",
+      argumentsText: '{"pattern":"ToolCallRequest","path":"packages","include":"*.ts"}',
+      expectedToolCallRequest: {
+        toolName: "grep",
+        regexPattern: "ToolCallRequest",
+        searchPath: "packages",
+        includeGlobPattern: "*.ts",
+      },
+    },
+  ] as const;
+
+  for (const toolCallCase of toolCallCases) {
+    const escapedArgumentsText = toolCallCase.argumentsText.replaceAll('"', '\\"');
+    const response = new Response(
+      [
+        `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"${toolCallCase.toolName}","arguments":""}}\n\n`,
+        `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"${escapedArgumentsText}"}\n\n`,
+        `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"${toolCallCase.toolName}","arguments":"${escapedArgumentsText}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
+      ].join(""),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+
+    expect(await collectParsedEvents(response)).toEqual([
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_1",
+        toolCallRequest: toolCallCase.expectedToolCallRequest,
+      },
+    ]);
+  }
+});
+
+test("createOpenAiToolDefinitions instructs inspection through typed tools", () => {
+  const openAiToolDefinitions = createOpenAiToolDefinitions();
+  const bashToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "bash");
+  const readToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "read");
+  const globToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "glob");
+  const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
+
+  expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
+  expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
+  expect(globToolDefinition?.description).toContain("Use this instead of bash for file discovery");
+  expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
+});
+
+test("parseOpenAiStream rejects malformed typed tool JSON arguments clearly", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{not-json"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"read","arguments":"{not-json"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow("OpenAI function call for read has malformed JSON arguments");
+});
+
+test("parseOpenAiStream rejects malformed typed tool argument fields clearly", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"filePath\\":\\"README.md\\",\\"offset\\":\\"2\\",\\"limit\\":null}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"read","arguments":"{\\"filePath\\":\\"README.md\\",\\"offset\\":\\"2\\",\\"limit\\":null}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow(
+    "OpenAI function call for read has invalid positive integer argument: offset",
+  );
+});
+
+test("parseOpenAiStream rejects unsupported tool names clearly", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"write","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"write","arguments":"{}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported tool requested by OpenAI: write");
+});
+
 test("parseOpenAiStream repairs tool-turn output when response.completed omits the function_call item", async () => {
   const response = new Response(
     [
@@ -550,7 +659,10 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.headers.get("authorization")).toBe("Bearer access-token");
     expect(requests[0]?.headers.get("chatgpt-account-id")).toBe("acct_123");
-    expect(JSON.parse(requests[0]?.body ?? "{}")).toEqual({
+    const requestBody = JSON.parse(requests[0]?.body ?? "{}") as {
+      tools?: Array<{ name?: string }>;
+    };
+    expect(requestBody).toMatchObject({
       model: "gpt-5.4",
       instructions: "You are buli.",
       store: false,
@@ -561,39 +673,11 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
           content: "Say hello",
         },
       ],
-      tools: [
-        {
-          type: "function",
-          name: "bash",
-          description:
-            "Run a command line inside the current workspace and return stdout, stderr, and the exit code. Provide the command directly; do not wrap it in bash -lc, sh -c, or another shell.",
-          parameters: {
-            type: "object",
-            properties: {
-              command: {
-                type: "string",
-                description: "Command line to run directly. The app already executes it through the user's shell.",
-              },
-              description: { type: "string", description: "Very short reason for running the command." },
-              workdir: {
-                type: ["string", "null"],
-                description: "Working directory inside the workspace, or null to use the workspace root.",
-              },
-              timeout: {
-                type: ["integer", "null"],
-                description: "Timeout in milliseconds, or null to use the default timeout.",
-              },
-            },
-            required: ["command", "description", "workdir", "timeout"],
-            additionalProperties: false,
-          },
-          strict: true,
-        },
-      ],
       parallel_tool_calls: false,
       reasoning: { summary: "auto" },
       stream: true,
     });
+    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["bash", "read", "glob", "grep"]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },
       {

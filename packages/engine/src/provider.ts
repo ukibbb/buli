@@ -22,6 +22,7 @@ export type ProviderConversationTurnRequest = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
+  abortSignal?: AbortSignal;
 };
 
 export type ProviderToolResultSubmission = {
@@ -43,6 +44,7 @@ export interface ActiveConversationTurn {
   streamAssistantResponseEvents(): AsyncIterable<AssistantResponseEvent>;
   approvePendingToolCall(approvalId: string): Promise<void>;
   denyPendingToolCall(approvalId: string): Promise<void>;
+  interrupt(): void;
 }
 
 export interface AssistantConversationRunner {

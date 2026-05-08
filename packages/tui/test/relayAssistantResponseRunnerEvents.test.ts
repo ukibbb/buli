@@ -29,6 +29,7 @@ test("relayAssistantResponseRunnerEvents forwards streamed assistant events in o
         },
         async approvePendingToolCall() {},
         async denyPendingToolCall() {},
+        interrupt() {},
       };
     },
   };
@@ -75,6 +76,7 @@ test("relayAssistantResponseRunnerEvents converts a thrown runner error into a s
         },
         async approvePendingToolCall() {},
         async denyPendingToolCall() {},
+        interrupt() {},
       };
     },
   };
@@ -93,6 +95,42 @@ test("relayAssistantResponseRunnerEvents converts a thrown runner error into a s
   expect(emittedEventBatches.flat().map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_turn_started",
     "assistant_message_failed",
+  ]);
+});
+
+test("relayAssistantResponseRunnerEvents treats interruption as a terminal assistant event", async () => {
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      return {
+        async *streamAssistantResponseEvents() {
+          yield { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 };
+          yield {
+            type: "assistant_message_interrupted",
+            messageId: "assistant-1",
+            interruptionReason: "Interrupted by user.",
+          };
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const emittedEventBatches: AssistantResponseEvent[][] = [];
+
+  await relayAssistantResponseRunnerEvents({
+    assistantConversationRunner,
+    conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
+    onConversationTurnStarted: () => {},
+    onConversationTurnFinished: () => {},
+    onAssistantResponseEvents: (assistantResponseEvents) => {
+      emittedEventBatches.push([...assistantResponseEvents]);
+    },
+  });
+
+  expect(emittedEventBatches.flat().map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_turn_started",
+    "assistant_message_interrupted",
   ]);
 });
 
@@ -141,6 +179,7 @@ test("relayAssistantResponseRunnerEvents converts an empty stream into a synthet
         },
         async approvePendingToolCall() {},
         async denyPendingToolCall() {},
+        interrupt() {},
       };
     },
   };
@@ -175,6 +214,7 @@ test("relayAssistantResponseRunnerEvents fails an assistant turn that starts but
         },
         async approvePendingToolCall() {},
         async denyPendingToolCall() {},
+        interrupt() {},
       };
     },
   };

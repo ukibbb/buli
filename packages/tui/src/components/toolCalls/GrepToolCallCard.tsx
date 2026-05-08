@@ -64,12 +64,20 @@ function buildGrepStatusLabel(props: GrepToolCallCardProps): string {
     return "searching…";
   }
   const matchCount = props.toolCallDetail.totalMatchCount;
+  const returnedMatchHitCount = props.toolCallDetail.returnedMatchHitCount;
   const fileCount = props.toolCallDetail.matchedFileCount;
+  const truncationLabel = props.toolCallDetail.wasTruncated || props.toolCallDetail.wasLongLineTruncated
+    ? " · truncated"
+    : "";
   if (matchCount !== undefined && fileCount !== undefined) {
-    return `${matchCount} matches · ${fileCount} files`;
+    if (returnedMatchHitCount !== undefined && returnedMatchHitCount !== matchCount) {
+      return `${returnedMatchHitCount} of ${matchCount} matches · truncated`;
+    }
+    const matchCountLabel = `${matchCount} matches`;
+    return `${matchCountLabel} · ${fileCount} ${fileCount === 1 ? "file" : "files"}${truncationLabel}`;
   }
   if (matchCount !== undefined) {
-    return `${matchCount} matches`;
+    return `${matchCount} matches${truncationLabel}`;
   }
   return "done";
 }

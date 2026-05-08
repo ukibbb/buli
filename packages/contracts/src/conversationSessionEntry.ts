@@ -11,7 +11,12 @@ export const UserPromptConversationSessionEntrySchema = z
   })
   .strict();
 
-export const AssistantMessageConversationSessionEntryStatusSchema = z.enum(["completed", "incomplete", "failed"]);
+export const AssistantMessageConversationSessionEntryStatusSchema = z.enum([
+  "completed",
+  "incomplete",
+  "failed",
+  "interrupted",
+]);
 
 const AssistantMessageConversationSessionEntryBaseSchema = z
   .object({
@@ -35,10 +40,16 @@ export const FailedAssistantMessageConversationSessionEntrySchema = AssistantMes
   failureExplanation: z.string().min(1),
 });
 
+export const InterruptedAssistantMessageConversationSessionEntrySchema = AssistantMessageConversationSessionEntryBaseSchema.extend({
+  assistantMessageStatus: z.literal("interrupted"),
+  interruptionReason: z.string().min(1),
+});
+
 export const AssistantMessageConversationSessionEntrySchema = z.discriminatedUnion("assistantMessageStatus", [
   CompletedAssistantMessageConversationSessionEntrySchema,
   IncompleteAssistantMessageConversationSessionEntrySchema,
   FailedAssistantMessageConversationSessionEntrySchema,
+  InterruptedAssistantMessageConversationSessionEntrySchema,
 ]);
 
 export const ToolCallConversationSessionEntrySchema = z
@@ -96,6 +107,9 @@ export type IncompleteAssistantMessageConversationSessionEntry = z.infer<
   typeof IncompleteAssistantMessageConversationSessionEntrySchema
 >;
 export type FailedAssistantMessageConversationSessionEntry = z.infer<typeof FailedAssistantMessageConversationSessionEntrySchema>;
+export type InterruptedAssistantMessageConversationSessionEntry = z.infer<
+  typeof InterruptedAssistantMessageConversationSessionEntrySchema
+>;
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;
 export type CompletedToolResultConversationSessionEntry = z.infer<typeof CompletedToolResultConversationSessionEntrySchema>;

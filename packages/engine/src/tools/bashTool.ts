@@ -44,6 +44,7 @@ export async function runApprovedBashToolCall(input: {
   workspaceRootPath: string;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  abortSignal?: AbortSignal;
 }): Promise<BashToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
   const workingDirectoryPath = resolveBashWorkingDirectoryPath({
@@ -68,6 +69,7 @@ export async function runApprovedBashToolCall(input: {
       shellCommand: input.bashToolCallRequest.shellCommand,
       workingDirectoryPath,
       timeoutMilliseconds,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
     });
     const outputLines = buildBashOutputLines({
       shellCommand: input.bashToolCallRequest.shellCommand,
@@ -102,6 +104,10 @@ export async function runApprovedBashToolCall(input: {
       durationMilliseconds,
     };
   } catch (error) {
+    if (input.abortSignal?.aborted) {
+      throw error;
+    }
+
     const failureExplanation = error instanceof Error ? error.message : String(error);
     const durationMilliseconds = Date.now() - startedAtMilliseconds;
     logEngineDiagnosticEvent(input.diagnosticLogger, "bash_tool.execution_failed", {

@@ -14,6 +14,7 @@ const neverEmittingAssistantConversationRunner: AssistantConversationRunner = {
       },
       async approvePendingToolCall() {},
       async denyPendingToolCall() {},
+      interrupt() {},
     };
   },
 };

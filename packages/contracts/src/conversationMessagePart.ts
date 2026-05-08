@@ -24,14 +24,15 @@ export const ConversationOpenAssistantTextPartSchema = z.discriminatedUnion("kin
   ConversationOpenFencedCodeBlockPartSchema,
 ]);
 
-export const AssistantTextPartStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed"]);
-export const AssistantReasoningPartStatusSchema = z.enum(["streaming", "completed"]);
+export const AssistantTextPartStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed", "interrupted"]);
+export const AssistantReasoningPartStatusSchema = z.enum(["streaming", "completed", "interrupted"]);
 export const AssistantToolCallPartStatusSchema = z.enum([
   "pending_approval",
   "running",
   "completed",
   "failed",
   "denied",
+  "interrupted",
 ]);
 
 export const UserTextConversationMessagePartSchema = z
@@ -115,6 +116,14 @@ export const AssistantErrorNoticeConversationMessagePartSchema = z
   })
   .strict();
 
+export const AssistantInterruptedNoticeConversationMessagePartSchema = z
+  .object({
+    id: z.string().min(1),
+    partKind: z.literal("assistant_interrupted_notice"),
+    interruptionReason: z.string().min(1),
+  })
+  .strict();
+
 export const AssistantTurnSummaryConversationMessagePartSchema = z
   .object({
     id: z.string().min(1),
@@ -134,6 +143,7 @@ export const ConversationMessagePartSchema = z.discriminatedUnion("partKind", [
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantErrorNoticeConversationMessagePartSchema,
+  AssistantInterruptedNoticeConversationMessagePartSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
 ]);
 
@@ -151,5 +161,6 @@ export type AssistantPlanProposalConversationMessagePart = z.infer<typeof Assist
 export type AssistantRateLimitNoticeConversationMessagePart = z.infer<typeof AssistantRateLimitNoticeConversationMessagePartSchema>;
 export type AssistantIncompleteNoticeConversationMessagePart = z.infer<typeof AssistantIncompleteNoticeConversationMessagePartSchema>;
 export type AssistantErrorNoticeConversationMessagePart = z.infer<typeof AssistantErrorNoticeConversationMessagePartSchema>;
+export type AssistantInterruptedNoticeConversationMessagePart = z.infer<typeof AssistantInterruptedNoticeConversationMessagePartSchema>;
 export type AssistantTurnSummaryConversationMessagePart = z.infer<typeof AssistantTurnSummaryConversationMessagePartSchema>;
 export type ConversationMessagePart = z.infer<typeof ConversationMessagePartSchema>;

@@ -24,7 +24,7 @@ export function NumberedList(props: NumberedListProps): ReactNode {
               </b>
             </text>
           </box>
-          <box flexShrink={1}>{itemContent}</box>
+          <box flexShrink={1} minWidth={0} overflow="hidden">{itemContent}</box>
         </box>
       ))}
     </box>

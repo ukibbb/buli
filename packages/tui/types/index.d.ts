@@ -35,6 +35,7 @@ export type ConversationSessionExportResult = {
 };
 
 export type TuiChatScreenInstance = {
+  destroy(): void;
   waitUntilExit(): Promise<void>;
 };
 

@@ -3,9 +3,9 @@ import {
   buildPromptContextQueryIdentity,
   doPromptContextQueriesMatch,
   shouldHideResolvedPromptContextCandidatesForQuery,
-} from "../src/promptContextQueryIdentity.ts";
+} from "../src/index.ts";
 
-test("buildPromptContextQueryIdentity keeps the query start offset and raw text", () => {
+test("buildPromptContextQueryIdentity_keeps_the_query_start_offset_and_raw_text", () => {
   expect(buildPromptContextQueryIdentity({
     startOffset: 12,
     endOffset: 16,
@@ -17,7 +17,7 @@ test("buildPromptContextQueryIdentity keeps the query start offset and raw text"
   });
 });
 
-test("doPromptContextQueriesMatch returns true only for the same query identity", () => {
+test("doPromptContextQueriesMatch_returns_true_only_for_the_same_query_identity", () => {
   const promptContextQueryIdentity = {
     promptContextQueryStartOffset: 7,
     promptContextRawQueryText: "apps/",
@@ -34,7 +34,7 @@ test("doPromptContextQueriesMatch returns true only for the same query identity"
   })).toBe(false);
 });
 
-test("shouldHideResolvedPromptContextCandidatesForQuery hides dismissed and stale query results", () => {
+test("shouldHideResolvedPromptContextCandidatesForQuery_hides_dismissed_and_stale_query_results", () => {
   const requestedPromptContextQueryIdentity = {
     promptContextQueryStartOffset: 4,
     promptContextRawQueryText: "pro",

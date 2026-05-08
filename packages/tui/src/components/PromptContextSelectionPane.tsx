@@ -63,7 +63,7 @@ export function PromptContextSelectionPane(props: PromptContextSelectionPaneProp
               <text fg={isHighlightedPromptContextCandidate ? chatScreenTheme.accentGreen : chatScreenTheme.textDim}>
                 {isHighlightedPromptContextCandidate ? ">" : " "}
               </text>
-              <box flexGrow={1}>
+              <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
                 <text
                   fg={isHighlightedPromptContextCandidate ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
                   wrapMode="none"

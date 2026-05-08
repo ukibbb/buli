@@ -34,12 +34,15 @@ export function ModelAndReasoningSelectionPane(
             <text fg={isHighlightedChoice ? chatScreenTheme.accentGreen : chatScreenTheme.textDim}>
               {isHighlightedChoice ? ">" : " "}
             </text>
-            <text
-              fg={isHighlightedChoice ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
-              wrapMode="none"
-            >
-              {visibleChoice}
-            </text>
+            <box flexShrink={1} minWidth={0} overflow="hidden">
+              <text
+                fg={isHighlightedChoice ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+                truncate={true}
+                wrapMode="none"
+              >
+                {visibleChoice}
+              </text>
+            </box>
           </box>
         );
       })}

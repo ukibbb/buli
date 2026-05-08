@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ConversationSessionEntry, ModelContextItem } from "@buli/contracts";
 import { InMemoryConversationHistory } from "@buli/engine";
 import { FileConversationSessionStore } from "../src/conversationSessionStore.ts";
@@ -88,6 +88,57 @@ test("FileConversationSessionStore appends JSONL session records with parent lin
       entryKind: "assistant_message",
       assistantMessageStatus: "completed",
       assistantMessageText: "Hello.",
+    },
+  ]);
+});
+
+test("FileConversationSessionStore appends entries from separate store instances into one active chain", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-shared-writers-"));
+  const legacyConversationSessionFilePath = join(directoryPath, "legacy-session.json");
+  const firstConversationSessionStore = new FileConversationSessionStore({
+    filePath: legacyConversationSessionFilePath,
+    createSessionId: () => "session-1",
+    createSessionEntryId: () => "entry-1",
+    nowMs: () => 1001,
+  });
+  const secondConversationSessionStore = new FileConversationSessionStore({
+    filePath: legacyConversationSessionFilePath,
+    createSessionId: () => "unused-session-id",
+    createSessionEntryId: () => "entry-2",
+    nowMs: () => 1002,
+  });
+
+  const activeConversationSession = firstConversationSessionStore.loadActiveConversationSession();
+  firstConversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "First prompt",
+    modelFacingPromptText: "First prompt",
+  });
+  secondConversationSessionStore.appendConversationSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Second answer",
+  });
+
+  const persistedJsonLines = (await readFile(activeConversationSession.filePath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as unknown);
+  expect(persistedJsonLines).toMatchObject([
+    { recordKind: "conversation_session", schemaVersion: 1, sessionId: "session-1" },
+    { recordKind: "conversation_entry", sessionEntryId: "entry-1", parentSessionEntryId: null },
+    { recordKind: "conversation_entry", sessionEntryId: "entry-2", parentSessionEntryId: "entry-1" },
+  ]);
+  expect(secondConversationSessionStore.loadConversationSessionEntries()).toEqual([
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Second answer",
     },
   ]);
 });
@@ -205,4 +256,118 @@ test("FileConversationSessionStore reloads history with safe model context after
     { itemKind: "assistant_message", messageText: "Incomplete answer" },
     { itemKind: "user_message", messageText: "Next prompt" },
   ]);
+});
+
+test("FileConversationSessionStore recovers valid records before a partial final JSONL line", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-partial-tail-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: (() => {
+      let nextEntryId = 0;
+      return () => {
+        nextEntryId += 1;
+        return `entry-${nextEntryId}`;
+      };
+    })(),
+    nowMs: () => Date.UTC(2026, 4, 7, 12, 30, 0),
+  });
+  const activeConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Say hello",
+    modelFacingPromptText: "Say hello",
+  });
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Hello.",
+  });
+  const validJsonlText = await readFile(activeConversationSession.filePath, "utf8");
+  await writeFile(
+    activeConversationSession.filePath,
+    `${validJsonlText}{"recordKind":"conversation_entry","sessionEntryId":"partial-tail"`,
+    "utf8",
+  );
+
+  expect(conversationSessionStore.loadConversationSessionEntries()).toEqual([
+    {
+      entryKind: "user_prompt",
+      promptText: "Say hello",
+      modelFacingPromptText: "Say hello",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Hello.",
+    },
+  ]);
+
+  const sessionFileNames = await readdir(dirname(activeConversationSession.filePath));
+  const corruptTailFileName = sessionFileNames.find((fileName) => fileName.includes(".corrupt-tail."));
+  expect(corruptTailFileName).toContain("2026-05-07T12-30-00-000Z.txt");
+  expect(await readFile(activeConversationSession.filePath, "utf8")).not.toContain("partial-tail");
+  expect(await readFile(join(dirname(activeConversationSession.filePath), corruptTailFileName ?? ""), "utf8")).toContain(
+    "partial-tail",
+  );
+});
+
+test("FileConversationSessionStore quarantines a corrupt middle JSONL suffix", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-corrupt-middle-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    nowMs: () => Date.UTC(2026, 4, 7, 12, 31, 0),
+  });
+  const activeConversationSession = conversationSessionStore.startNewConversationSession();
+  const headerRecordText = (await readFile(activeConversationSession.filePath, "utf8")).trim();
+  const validEntryRecord = {
+    recordKind: "conversation_entry" as const,
+    sessionEntryId: "entry-1",
+    parentSessionEntryId: null,
+    recordedAtMs: 1001,
+    conversationSessionEntry: {
+      entryKind: "user_prompt" as const,
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+  };
+  const validButQuarantinedEntryRecord = {
+    recordKind: "conversation_entry" as const,
+    sessionEntryId: "entry-2",
+    parentSessionEntryId: "entry-1",
+    recordedAtMs: 1002,
+    conversationSessionEntry: {
+      entryKind: "assistant_message" as const,
+      assistantMessageStatus: "completed" as const,
+      assistantMessageText: "This suffix should not load.",
+    },
+  };
+  await writeFile(
+    activeConversationSession.filePath,
+    [
+      headerRecordText,
+      JSON.stringify(validEntryRecord),
+      "{not-json",
+      JSON.stringify(validButQuarantinedEntryRecord),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  expect(conversationSessionStore.loadConversationSessionEntries()).toEqual([
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+  ]);
+
+  const sessionFileNames = await readdir(dirname(activeConversationSession.filePath));
+  const corruptTailFileName = sessionFileNames.find((fileName) => fileName.includes(".corrupt-tail."));
+  expect(corruptTailFileName).toContain("2026-05-07T12-31-00-000Z.txt");
+  const corruptTailText = await readFile(join(dirname(activeConversationSession.filePath), corruptTailFileName ?? ""), "utf8");
+  expect(corruptTailText).toContain("{not-json");
+  expect(corruptTailText).toContain("This suffix should not load.");
+  expect(await readFile(activeConversationSession.filePath, "utf8")).not.toContain("This suffix should not load.");
 });

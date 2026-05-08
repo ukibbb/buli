@@ -3,8 +3,8 @@
 // substitutions are greppable and inspectable. See terminal-rendering-limitations.md for
 // the full mapping table.
 //
-// Tool-call glyphs (fileText / grepSearch / editPencil / bashTerminal /
-// todoList / taskSpawn) substitute Lucide's file-text / search / pencil /
+// Tool-call glyphs (fileText / grepSearch / globSearch / editPencil / bashTerminal /
+// todoList / taskSpawn) substitute Lucide's file-text / search / files / pencil /
 // terminal / list-checks / split-square glyphs. They keep the "one-cell
 // monochrome symbol" aesthetic of the rest of the palette so the card
 // headers read as a row of glyphs, not a mix of icon fonts and emoji.
@@ -22,6 +22,7 @@ export const glyphs = {
   progressEmpty: "░",
   fileText: "≡",
   grepSearch: "⌕",
+  globSearch: "◇",
   editPencil: "✎",
   bashTerminal: ">_",
   todoList: "☷",

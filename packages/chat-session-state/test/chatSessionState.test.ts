@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { AvailableAssistantModel } from "@buli/contracts";
 import {
   applyAssistantResponseEventToChatSessionState,
+  applyChatSessionKeyboardInputToChatSessionState,
   clearConversationTranscript,
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
@@ -117,6 +118,49 @@ test("submitPromptDraft appends a completed user message and enters streaming st
   ]);
 });
 
+test("applyChatSessionKeyboardInputToChatSessionState inserts pasted text at the prompt cursor", () => {
+  const chatSessionState = insertTextIntoPromptDraftAtCursor(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "Hello ",
+  );
+
+  const keyboardInteraction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: {
+      keyName: undefined,
+      textInput: "pasted text",
+      isCtrlPressed: false,
+      isMetaPressed: false,
+    },
+    isPromptSubmissionInFlight: false,
+  });
+
+  expect(keyboardInteraction.shouldConsumeKeyboardInput).toBe(true);
+  expect(keyboardInteraction.nextChatSessionState.promptDraft).toBe("Hello pasted text");
+  expect(keyboardInteraction.nextChatSessionState.promptDraftCursorOffset).toBe("Hello pasted text".length);
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState moves the prompt cursor with Home and End", () => {
+  let chatSessionState = insertTextIntoPromptDraftAtCursor(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "Hello",
+  );
+
+  chatSessionState = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: { keyName: "home", textInput: undefined, isCtrlPressed: false, isMetaPressed: false },
+    isPromptSubmissionInFlight: false,
+  }).nextChatSessionState;
+  expect(chatSessionState.promptDraftCursorOffset).toBe(0);
+
+  chatSessionState = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: { keyName: "end", textInput: undefined, isCtrlPressed: false, isMetaPressed: false },
+    isPromptSubmissionInFlight: false,
+  }).nextChatSessionState;
+  expect(chatSessionState.promptDraftCursorOffset).toBe(5);
+});
+
 test("clearConversationTranscript clears visible conversation while preserving selections", () => {
   let chatSessionState = createInitialChatSessionState({
     selectedModelId: "gpt-5.5",
@@ -192,6 +236,69 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
     "assistant_text",
   ]);
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
+});
+
+test("hydrateConversationTranscriptFromSessionEntries creates read-only tool details from requests", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Inspect files",
+        modelFacingPromptText: "Inspect files",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-read",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-glob",
+        toolCallRequest: {
+          toolName: "glob",
+          globPattern: "**/*.ts",
+          searchDirectoryPath: "packages",
+        },
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-grep",
+        toolCallRequest: {
+          toolName: "grep",
+          regexPattern: "ToolCallRequest",
+        },
+      },
+    ],
+  );
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState).find(
+    (conversationMessage) => conversationMessage.role === "assistant",
+  );
+  if (!assistantConversationMessage) {
+    throw new Error("expected assistant message");
+  }
+
+  expect(listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id)).toMatchObject([
+    {
+      partKind: "assistant_tool_call",
+      toolCallDetail: { toolName: "read", readFilePath: "README.md" },
+    },
+    {
+      partKind: "assistant_tool_call",
+      toolCallDetail: { toolName: "glob", globPattern: "**/*.ts", searchDirectoryPath: "packages" },
+    },
+    {
+      partKind: "assistant_tool_call",
+      toolCallDetail: { toolName: "grep", searchPattern: "ToolCallRequest" },
+    },
+    {
+      partKind: "assistant_interrupted_notice",
+    },
+  ]);
 });
 
 test("assistant_message_completed backfills turn summary usage and reasoning token count", () => {
@@ -331,7 +438,7 @@ test("assistant_pending_tool_approval_cleared clears matching approval state and
   expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
 });
 
-test("assistant_message_failed clears pending approval and records a failed assistant message", () => {
+test("assistant_message_failed clears pending approval, records a failed assistant message, and returns to user input", () => {
   let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
     type: "assistant_turn_started",
@@ -354,7 +461,7 @@ test("assistant_message_failed clears pending approval and records a failed assi
   });
 
   const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
-  expect(chatSessionState.conversationTurnStatus).toBe("assistant_response_failed");
+  expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
   expect(assistantConversationMessage?.messageStatus).toBe("failed");
   expect(
@@ -364,6 +471,125 @@ test("assistant_message_failed clears pending approval and records a failed assi
         conversationMessagePart.errorText === "provider failed",
     ),
   ).toBe(true);
+});
+
+test("assistant_message_interrupted clears pending approval, marks open parts interrupted, and returns to user input", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Partial",
+      completedContentParts: [],
+      openContentPart: { kind: "streaming_markdown_text", text: "Partial" },
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "tool-1",
+      partKind: "assistant_tool_call",
+      toolCallId: "call-1",
+      toolCallStatus: "running",
+      toolCallStartedAtMs: 1,
+      toolCallDetail: { toolName: "bash", commandLine: "sleep 10" },
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_pending_tool_approval_requested",
+    approvalRequest: {
+      approvalId: "approval-1",
+      pendingToolCallId: "call-1",
+      pendingToolCallDetail: { toolName: "bash", commandLine: "sleep 10" },
+      riskExplanation: "This command waits.",
+    },
+  });
+
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_interrupted",
+    messageId: "assistant-1",
+    interruptionReason: "Interrupted by user.",
+  });
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
+  const interruptedParts = listOrderedConversationMessageParts(chatSessionState, "assistant-1");
+  const interruptedTextPart = interruptedParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_text");
+  const interruptedToolPart = interruptedParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call");
+  expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
+  expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
+  expect(assistantConversationMessage?.messageStatus).toBe("interrupted");
+  expect(interruptedTextPart).toMatchObject({ partStatus: "interrupted" });
+  expect(interruptedToolPart).toMatchObject({ toolCallStatus: "interrupted", errorText: "Interrupted by user." });
+  expect(interruptedParts.some(
+    (conversationMessagePart) =>
+      conversationMessagePart.partKind === "assistant_interrupted_notice" &&
+      conversationMessagePart.interruptionReason === "Interrupted by user.",
+  )).toBe(true);
+});
+
+test("hydrateConversationTranscriptFromSessionEntries marks dangling persisted tool calls as interrupted", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Run pwd",
+        modelFacingPromptText: "Run pwd",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-1",
+        toolCallRequest: {
+          toolName: "bash",
+          shellCommand: "pwd",
+          commandDescription: "Print working directory",
+        },
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ],
+  );
+
+  const conversationMessages = listOrderedConversationMessages(chatSessionState);
+  const interruptedAssistantConversationMessage = conversationMessages.find(
+    (conversationMessage) => conversationMessage.role === "assistant",
+  );
+  if (!interruptedAssistantConversationMessage) {
+    throw new Error("expected interrupted assistant message");
+  }
+
+  const interruptedAssistantMessageParts = listOrderedConversationMessageParts(
+    chatSessionState,
+    interruptedAssistantConversationMessage.id,
+  );
+  const interruptedToolCallPart = interruptedAssistantMessageParts.find(
+    (conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call",
+  );
+
+  if (!interruptedToolCallPart || interruptedToolCallPart.partKind !== "assistant_tool_call") {
+    throw new Error("expected interrupted tool call part");
+  }
+
+  expect(interruptedAssistantConversationMessage.messageStatus).toBe("interrupted");
+  expect(interruptedToolCallPart.toolCallStatus).toBe("interrupted");
+  expect(interruptedToolCallPart.errorText).toBe("Tool call was interrupted before a result was recorded.");
+  expect(interruptedAssistantMessageParts.some(
+    (conversationMessagePart) =>
+      conversationMessagePart.partKind === "assistant_interrupted_notice" &&
+      conversationMessagePart.interruptionReason === "Tool call was interrupted before a result was recorded.",
+  )).toBe(true);
 });
 
 test("assistant_message_incomplete clears pending approval and returns to user input", () => {

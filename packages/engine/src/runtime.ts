@@ -3,6 +3,7 @@ import {
   DEFAULT_ASSISTANT_OPERATING_MODE,
   AssistantMessageCompletedEventSchema,
   AssistantMessageFailedEventSchema,
+  AssistantMessageInterruptedEventSchema,
   AssistantMessageIncompleteEventSchema,
   AssistantMessagePartAddedEventSchema,
   AssistantMessagePartUpdatedEventSchema,
@@ -20,8 +21,12 @@ import {
   type BashToolCallRequest,
   type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
+  type GlobToolCallRequest,
+  type GrepToolCallRequest,
   type ProviderStreamEvent,
+  type ReadToolCallRequest,
   type TokenUsage,
+  type ToolCallDetail,
   type ToolCallRequest,
 } from "@buli/contracts";
 import {
@@ -46,14 +51,24 @@ import {
   type BashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
 import { runApprovedBashToolCall, createStartedBashToolCallDetail } from "./tools/bashTool.ts";
+import { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
+import { createStartedGrepToolCallDetail, runGrepToolCall } from "./tools/grepTool.ts";
+import { createStartedReadToolCallDetail, runReadToolCall } from "./tools/readTool.ts";
+import type { ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 import { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
+
+type AutoApprovedReadOnlyToolCallRequest = ReadToolCallRequest | GlobToolCallRequest | GrepToolCallRequest;
 
 type PendingToolApprovalState = {
   approvalId: string;
   toolCallId: string;
   toolCallRequest: ToolCallRequest;
-  resolveDecision: (decision: "approved" | "denied") => void;
+  resolveDecision: (decision: PendingToolApprovalDecision) => void;
 };
+
+type PendingToolApprovalDecision = "approved" | "denied" | "interrupted";
+
+const USER_INTERRUPTED_CONVERSATION_TURN_REASON = "Interrupted by user.";
 
 export class AssistantConversationRuntime implements AssistantConversationRunner {
   readonly conversationTurnProvider: ConversationTurnProvider;
@@ -148,9 +163,11 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly bashToolApprovalMode: BashToolApprovalMode;
   readonly promptCacheKey: string | undefined;
   readonly onConversationTurnFinished: () => void;
+  readonly abortController: AbortController;
   currentPendingToolApprovalState: PendingToolApprovalState | undefined;
   hasStartedStreamingAssistantResponseEvents = false;
   hasFinishedConversationTurn = false;
+  hasInterruptedConversationTurn = false;
 
   constructor(input: {
     conversationTurnInput: ConversationTurnRequest;
@@ -178,6 +195,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.bashToolApprovalMode = input.bashToolApprovalMode;
     this.promptCacheKey = input.promptCacheKey;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
+    this.abortController = new AbortController();
   }
 
   hasFinishedTurn(): boolean {
@@ -212,6 +230,21 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.currentPendingToolApprovalState = undefined;
   }
 
+  interrupt(): void {
+    if (this.hasFinishedConversationTurn || this.hasInterruptedConversationTurn) {
+      return;
+    }
+
+    this.hasInterruptedConversationTurn = true;
+    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.interrupt_requested", {
+      selectedModelId: this.conversationTurnInput.selectedModelId,
+      hasPendingToolApproval: this.currentPendingToolApprovalState !== undefined,
+    });
+    this.currentPendingToolApprovalState?.resolveDecision("interrupted");
+    this.currentPendingToolApprovalState = undefined;
+    this.abortController.abort();
+  }
+
   async *streamAssistantResponseEvents(): AsyncGenerator<AssistantResponseEvent> {
     if (this.hasStartedStreamingAssistantResponseEvents) {
       throw new Error("Conversation turn events can only be streamed once");
@@ -224,11 +257,12 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     let assistantTextMessagePartBuilderState = createInitialAssistantTextMessagePartBuilder(assistantTextPartId);
     let hasEmittedAssistantTextMessagePart = false;
     let currentReasoningPartId: string | undefined;
-    let currentReasoningSummaryText = "";
-    let currentReasoningStartedAtMs: number | undefined;
-    let providerConversationTurn: ProviderConversationTurn | undefined;
-    let hasAppendedUserPromptSessionEntry = false;
-    let hasAppendedTerminalAssistantSessionEntry = false;
+      let currentReasoningSummaryText = "";
+      let currentReasoningStartedAtMs: number | undefined;
+      let providerConversationTurn: ProviderConversationTurn | undefined;
+      let modelFacingPromptTextForAcceptedTurn: string | undefined;
+      let hasAppendedUserPromptSessionEntry = false;
+      let hasAppendedTerminalAssistantSessionEntry = false;
     const logAssistantResponseEventEmitted = (assistantResponseEvent: AssistantResponseEvent): AssistantResponseEvent => {
       logEngineDiagnosticEvent(this.diagnosticLogger, "assistant_response_event.emitted", {
         eventType: assistantResponseEvent.type,
@@ -236,9 +270,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       });
       return assistantResponseEvent;
     };
-    const appendTerminalAssistantMessageSessionEntry = (
-      assistantMessageConversationSessionEntry: AssistantMessageConversationSessionEntry,
-    ): void => {
+      const appendTerminalAssistantMessageSessionEntry = (
+        assistantMessageConversationSessionEntry: AssistantMessageConversationSessionEntry,
+      ): void => {
       if (hasAppendedTerminalAssistantSessionEntry) {
         return;
       }
@@ -255,10 +289,27 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
             : 0,
         conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
         modelContextItemCount: this.conversationHistory.listModelContextItems().length,
-      });
-    };
+        });
+      };
+      const appendUserPromptSessionEntry = (modelFacingPromptText: string): void => {
+        if (hasAppendedUserPromptSessionEntry) {
+          return;
+        }
 
-    try {
+        this.conversationHistory.appendConversationSessionEntry({
+          entryKind: "user_prompt",
+          promptText: this.conversationTurnInput.userPromptText,
+          modelFacingPromptText,
+        });
+        hasAppendedUserPromptSessionEntry = true;
+        logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+          entryKind: "user_prompt",
+          conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
+          modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+        });
+      };
+
+      try {
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.stream_started", {
         selectedModelId: this.conversationTurnInput.selectedModelId,
         selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort ?? null,
@@ -271,28 +322,21 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         startedAtMs: conversationTurnStartedAtMilliseconds,
       }));
 
-      const modelFacingPromptText = await buildModelFacingPromptTextFromPromptContextReferences({
+      this.throwIfConversationTurnInterrupted();
+      modelFacingPromptTextForAcceptedTurn = await buildModelFacingPromptTextFromPromptContextReferences({
         promptText: this.conversationTurnInput.userPromptText,
         promptContextBrowseRootPath: this.promptContextBrowseRootPath,
         promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
+        abortSignal: this.abortController.signal,
       });
+      this.throwIfConversationTurnInterrupted();
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.prompt_context_expanded", {
         userPromptLength: this.conversationTurnInput.userPromptText.length,
-        modelFacingPromptLength: modelFacingPromptText.length,
+        modelFacingPromptLength: modelFacingPromptTextForAcceptedTurn.length,
         promptContextBrowseRootPath: this.promptContextBrowseRootPath,
         promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
       });
-      this.conversationHistory.appendConversationSessionEntry({
-        entryKind: "user_prompt",
-        promptText: this.conversationTurnInput.userPromptText,
-        modelFacingPromptText,
-      });
-      hasAppendedUserPromptSessionEntry = true;
-      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
-        entryKind: "user_prompt",
-        conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-        modelContextItemCount: this.conversationHistory.listModelContextItems().length,
-      });
+      appendUserPromptSessionEntry(modelFacingPromptTextForAcceptedTurn);
 
       logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.start_requested", {
         selectedModelId: this.conversationTurnInput.selectedModelId,
@@ -313,12 +357,14 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
           : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
+        abortSignal: this.abortController.signal,
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.started", {
         selectedModelId: this.conversationTurnInput.selectedModelId,
       });
 
       for await (const providerStreamEvent of providerConversationTurn.streamProviderEvents()) {
+        this.throwIfConversationTurnInterrupted();
         logEngineDiagnosticEvent(this.diagnosticLogger, "provider_stream.event_received", {
           eventType: providerStreamEvent.type,
           ...summarizeProviderStreamEventForDiagnostics(providerStreamEvent),
@@ -520,6 +566,30 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         errorText: failureExplanation,
       }));
     } catch (error) {
+      if (this.hasInterruptedConversationTurn || this.abortController.signal.aborted) {
+        logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.interrupted", {
+          selectedModelId: this.conversationTurnInput.selectedModelId,
+          assistantMessageTextLength: assistantTextMessagePartBuilderState.rawMarkdownText.length,
+        });
+        if (!hasAppendedUserPromptSessionEntry) {
+          appendUserPromptSessionEntry(modelFacingPromptTextForAcceptedTurn ?? this.conversationTurnInput.userPromptText);
+        }
+        if (!hasAppendedTerminalAssistantSessionEntry) {
+          appendTerminalAssistantMessageSessionEntry({
+            entryKind: "assistant_message",
+            assistantMessageStatus: "interrupted",
+            assistantMessageText: assistantTextMessagePartBuilderState.rawMarkdownText,
+            interruptionReason: USER_INTERRUPTED_CONVERSATION_TURN_REASON,
+          });
+        }
+        yield logAssistantResponseEventEmitted(AssistantMessageInterruptedEventSchema.parse({
+          type: "assistant_message_interrupted",
+          messageId: assistantResponseMessageId,
+          interruptionReason: USER_INTERRUPTED_CONVERSATION_TURN_REASON,
+        }));
+        return;
+      }
+
       const errorText = error instanceof Error ? error.message : String(error);
       const failureExplanation = errorText.length > 0 ? errorText : "Unknown conversation turn failure";
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.failed", {
@@ -588,8 +658,14 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });
 
-    if (input.toolCallRequest.toolName !== "bash") {
-      throw new Error(`Unsupported tool requested: ${input.toolCallRequest.toolName}`);
+    if (isAutoApprovedReadOnlyToolCallRequest(input.toolCallRequest)) {
+      yield* this.handleAutoApprovedReadOnlyToolCall({
+        assistantResponseMessageId: input.assistantResponseMessageId,
+        providerConversationTurn: input.providerConversationTurn,
+        toolCallId: input.toolCallId,
+        toolCallRequest: input.toolCallRequest,
+      });
+      return;
     }
 
     const bashToolCallRequest: BashToolCallRequest = input.toolCallRequest;
@@ -694,6 +770,10 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         approvalId,
       }));
 
+      if (approvalDecision === "interrupted") {
+        this.throwIfConversationTurnInterrupted();
+      }
+
       if (approvalDecision === "denied") {
         const denialText = "The user denied this bash command, so it was not executed.";
         this.conversationHistory.appendConversationSessionEntry({
@@ -762,12 +842,15 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       }));
     }
 
+    this.throwIfConversationTurnInterrupted();
     const bashToolCallOutcome = await runApprovedBashToolCall({
       bashToolCallRequest,
       workspaceRootPath: this.workspaceRootPath,
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
       diagnosticLogger: this.diagnosticLogger,
+      abortSignal: this.abortController.signal,
     });
+    this.throwIfConversationTurnInterrupted();
 
     if (bashToolCallOutcome.outcomeKind === "completed") {
       this.conversationHistory.appendConversationSessionEntry({
@@ -848,17 +931,134 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     });
   }
 
+  private async *handleAutoApprovedReadOnlyToolCall(input: {
+    assistantResponseMessageId: string;
+    providerConversationTurn: ProviderConversationTurn;
+    toolCallId: string;
+    toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
+  }): AsyncGenerator<AssistantResponseEvent> {
+    const logAssistantResponseEventEmitted = (assistantResponseEvent: AssistantResponseEvent): AssistantResponseEvent => {
+      logEngineDiagnosticEvent(this.diagnosticLogger, "assistant_response_event.emitted", {
+        eventType: assistantResponseEvent.type,
+        ...summarizeAssistantResponseEventForDiagnostics(assistantResponseEvent),
+      });
+      return assistantResponseEvent;
+    };
+    const startedToolCallDetail = createStartedAutoApprovedReadOnlyToolCallDetail(input.toolCallRequest);
+    const toolCallPartId = randomUUID();
+    const toolCallStartedAtMs = Date.now();
+
+    yield logAssistantResponseEventEmitted(AssistantMessagePartAddedEventSchema.parse({
+      type: "assistant_message_part_added",
+      messageId: input.assistantResponseMessageId,
+      part: AssistantToolCallConversationMessagePartSchema.parse({
+        id: toolCallPartId,
+        partKind: "assistant_tool_call",
+        toolCallId: input.toolCallId,
+        toolCallStatus: "running",
+        toolCallStartedAtMs,
+        toolCallDetail: startedToolCallDetail,
+      }),
+    }));
+
+    this.throwIfConversationTurnInterrupted();
+    const toolCallOutcome = await runAutoApprovedReadOnlyToolCall({
+      toolCallRequest: input.toolCallRequest,
+      workspaceRootPath: this.workspaceRootPath,
+      ...(this.abortController.signal ? { abortSignal: this.abortController.signal } : {}),
+    });
+    this.throwIfConversationTurnInterrupted();
+
+    if (toolCallOutcome.outcomeKind === "completed") {
+      this.conversationHistory.appendConversationSessionEntry({
+        entryKind: "completed_tool_result",
+        toolCallId: input.toolCallId,
+        toolCallDetail: toolCallOutcome.toolCallDetail,
+        toolResultText: toolCallOutcome.toolResultText,
+      });
+      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+        entryKind: "completed_tool_result",
+        toolCallId: input.toolCallId,
+        toolResultTextLength: toolCallOutcome.toolResultText.length,
+        conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
+        modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      });
+      yield logAssistantResponseEventEmitted(AssistantMessagePartUpdatedEventSchema.parse({
+        type: "assistant_message_part_updated",
+        messageId: input.assistantResponseMessageId,
+        part: AssistantToolCallConversationMessagePartSchema.parse({
+          id: toolCallPartId,
+          partKind: "assistant_tool_call",
+          toolCallId: input.toolCallId,
+          toolCallStatus: "completed",
+          toolCallStartedAtMs,
+          toolCallDetail: toolCallOutcome.toolCallDetail,
+          durationMs: toolCallOutcome.durationMilliseconds,
+        }),
+      }));
+      logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.tool_result_submitted", {
+        toolCallId: input.toolCallId,
+        toolResultKind: "completed",
+        toolResultTextLength: toolCallOutcome.toolResultText.length,
+      });
+      await input.providerConversationTurn.submitToolResult({
+        toolCallId: input.toolCallId,
+        toolResultText: toolCallOutcome.toolResultText,
+      });
+      return;
+    }
+
+    this.conversationHistory.appendConversationSessionEntry({
+      entryKind: "failed_tool_result",
+      toolCallId: input.toolCallId,
+      toolCallDetail: toolCallOutcome.toolCallDetail,
+      toolResultText: toolCallOutcome.toolResultText,
+      failureExplanation: toolCallOutcome.failureExplanation,
+    });
+    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      entryKind: "failed_tool_result",
+      toolCallId: input.toolCallId,
+      toolResultTextLength: toolCallOutcome.toolResultText.length,
+      failureExplanation: toolCallOutcome.failureExplanation,
+      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
+      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+    });
+    yield logAssistantResponseEventEmitted(AssistantMessagePartUpdatedEventSchema.parse({
+      type: "assistant_message_part_updated",
+      messageId: input.assistantResponseMessageId,
+      part: AssistantToolCallConversationMessagePartSchema.parse({
+        id: toolCallPartId,
+        partKind: "assistant_tool_call",
+        toolCallId: input.toolCallId,
+        toolCallStatus: "failed",
+        toolCallStartedAtMs,
+        toolCallDetail: toolCallOutcome.toolCallDetail,
+        errorText: toolCallOutcome.failureExplanation,
+        durationMs: toolCallOutcome.durationMilliseconds,
+      }),
+    }));
+    logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.tool_result_submitted", {
+      toolCallId: input.toolCallId,
+      toolResultKind: "failed",
+      toolResultTextLength: toolCallOutcome.toolResultText.length,
+    });
+    await input.providerConversationTurn.submitToolResult({
+      toolCallId: input.toolCallId,
+      toolResultText: toolCallOutcome.toolResultText,
+    });
+  }
+
   private createPendingToolApproval(input: {
     toolCallId: string;
     toolCallRequest: ToolCallRequest;
-  }): { approvalId: string; approvalDecisionPromise: Promise<"approved" | "denied"> } {
+  }): { approvalId: string; approvalDecisionPromise: Promise<PendingToolApprovalDecision> } {
     const approvalId = randomUUID();
     logEngineDiagnosticEvent(this.diagnosticLogger, "tool_approval.request_created", {
       approvalId,
       toolCallId: input.toolCallId,
       toolName: input.toolCallRequest.toolName,
     });
-    const approvalDecisionPromise = new Promise<"approved" | "denied">((resolveDecision) => {
+    const approvalDecisionPromise = new Promise<PendingToolApprovalDecision>((resolveDecision) => {
       this.currentPendingToolApprovalState = {
         approvalId,
         toolCallId: input.toolCallId,
@@ -868,6 +1068,58 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     });
     return { approvalId, approvalDecisionPromise };
   }
+
+  private throwIfConversationTurnInterrupted(): void {
+    if (this.hasInterruptedConversationTurn || this.abortController.signal.aborted) {
+      throw new Error(USER_INTERRUPTED_CONVERSATION_TURN_REASON);
+    }
+  }
+}
+
+function isAutoApprovedReadOnlyToolCallRequest(
+  toolCallRequest: ToolCallRequest,
+): toolCallRequest is AutoApprovedReadOnlyToolCallRequest {
+  return toolCallRequest.toolName === "read" || toolCallRequest.toolName === "glob" || toolCallRequest.toolName === "grep";
+}
+
+function createStartedAutoApprovedReadOnlyToolCallDetail(
+  toolCallRequest: AutoApprovedReadOnlyToolCallRequest,
+): ToolCallDetail {
+  if (toolCallRequest.toolName === "read") {
+    return createStartedReadToolCallDetail(toolCallRequest);
+  }
+  if (toolCallRequest.toolName === "glob") {
+    return createStartedGlobToolCallDetail(toolCallRequest);
+  }
+
+  return createStartedGrepToolCallDetail(toolCallRequest);
+}
+
+function runAutoApprovedReadOnlyToolCall(input: {
+  toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
+  workspaceRootPath: string;
+  abortSignal?: AbortSignal;
+}): Promise<ToolCallOutcome> {
+  if (input.toolCallRequest.toolName === "read") {
+    return runReadToolCall({
+      readToolCallRequest: input.toolCallRequest,
+      workspaceRootPath: input.workspaceRootPath,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+    });
+  }
+  if (input.toolCallRequest.toolName === "glob") {
+    return runGlobToolCall({
+      globToolCallRequest: input.toolCallRequest,
+      workspaceRootPath: input.workspaceRootPath,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+    });
+  }
+
+  return runGrepToolCall({
+    grepToolCallRequest: input.toolCallRequest,
+    workspaceRootPath: input.workspaceRootPath,
+    ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+  });
 }
 
 function logEngineDiagnosticEvent(
@@ -1009,6 +1261,13 @@ function summarizeAssistantResponseEventForDiagnostics(
       messageId: assistantResponseEvent.messageId,
       incompleteReason: assistantResponseEvent.incompleteReason,
       ...summarizeTokenUsageForDiagnostics(assistantResponseEvent.usage),
+    };
+  }
+
+  if (assistantResponseEvent.type === "assistant_message_interrupted") {
+    return {
+      messageId: assistantResponseEvent.messageId,
+      interruptionReasonLength: assistantResponseEvent.interruptionReason.length,
     };
   }
 

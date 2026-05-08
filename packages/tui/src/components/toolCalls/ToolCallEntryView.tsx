@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ToolCallDetail } from "@buli/contracts";
 import { BashToolCallCard } from "./BashToolCallCard.tsx";
 import { EditToolCallCard } from "./EditToolCallCard.tsx";
+import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
 import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import { TaskToolCallCard } from "./TaskToolCallCard.tsx";
@@ -33,6 +34,16 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   if (toolCallDetail.toolName === "grep") {
     return (
       <GrepToolCallCard
+        renderState={props.renderState}
+        toolCallDetail={toolCallDetail}
+        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
+        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
+      />
+    );
+  }
+  if (toolCallDetail.toolName === "glob") {
+    return (
+      <GlobToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}

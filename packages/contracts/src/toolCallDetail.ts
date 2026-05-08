@@ -31,6 +31,7 @@ export const ToolCallReadPreviewLineSchema = z
   .object({
     lineNumber: z.number().int().positive(),
     lineText: z.string(),
+    wasLineTruncated: z.boolean().optional(),
     syntaxHighlightSpans: z.array(SyntaxHighlightSpanSchema).optional(),
   })
   .strict();
@@ -41,8 +42,11 @@ export const ToolCallReadDetailSchema = z
     toolName: z.literal("read"),
     readFilePath: z.string().min(1),
     readLineCount: z.number().int().nonnegative().optional(),
+    returnedLineCount: z.number().int().nonnegative().optional(),
     readByteCount: z.number().int().nonnegative().optional(),
     previewLines: z.array(ToolCallReadPreviewLineSchema).optional(),
+    wasLineCountTruncated: z.boolean().optional(),
+    wasLongLineTruncated: z.boolean().optional(),
   })
   .strict();
 export type ToolCallReadDetail = z.infer<typeof ToolCallReadDetailSchema>;
@@ -52,6 +56,7 @@ export const ToolCallGrepMatchSchema = z
     matchFilePath: z.string().min(1),
     matchLineNumber: z.number().int().positive(),
     matchSnippet: z.string(),
+    wasSnippetTruncated: z.boolean().optional(),
   })
   .strict();
 export type ToolCallGrepMatch = z.infer<typeof ToolCallGrepMatchSchema>;
@@ -62,10 +67,26 @@ export const ToolCallGrepDetailSchema = z
     searchPattern: z.string(),
     matchedFileCount: z.number().int().nonnegative().optional(),
     totalMatchCount: z.number().int().nonnegative().optional(),
+    returnedMatchHitCount: z.number().int().nonnegative().optional(),
     matchHits: z.array(ToolCallGrepMatchSchema).optional(),
+    wasTruncated: z.boolean().optional(),
+    wasLongLineTruncated: z.boolean().optional(),
   })
   .strict();
 export type ToolCallGrepDetail = z.infer<typeof ToolCallGrepDetailSchema>;
+
+export const ToolCallGlobDetailSchema = z
+  .object({
+    toolName: z.literal("glob"),
+    globPattern: z.string().min(1),
+    searchDirectoryPath: z.string().min(1).optional(),
+    matchedPathCount: z.number().int().nonnegative().optional(),
+    returnedPathCount: z.number().int().nonnegative().optional(),
+    matchedPaths: z.array(z.string().min(1)).optional(),
+    wasTruncated: z.boolean().optional(),
+  })
+  .strict();
+export type ToolCallGlobDetail = z.infer<typeof ToolCallGlobDetailSchema>;
 
 export const ToolCallEditDiffLineKindSchema = z.enum(["context", "addition", "removal"]);
 export type ToolCallEditDiffLineKind = z.infer<typeof ToolCallEditDiffLineKindSchema>;
@@ -146,6 +167,7 @@ export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
   ToolCallGrepDetailSchema,
+  ToolCallGlobDetailSchema,
   ToolCallEditDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallTodoWriteDetailSchema,

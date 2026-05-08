@@ -63,12 +63,19 @@ function buildReadStatusLabel(props: ReadToolCallCardProps): string {
     return "reading…";
   }
   const lineCount = props.toolCallDetail.readLineCount;
+  const returnedLineCount = props.toolCallDetail.returnedLineCount;
   const byteCount = props.toolCallDetail.readByteCount;
+  const truncationLabel = props.toolCallDetail.wasLineCountTruncated || props.toolCallDetail.wasLongLineTruncated
+    ? " · truncated"
+    : "";
+  if (lineCount !== undefined && returnedLineCount !== undefined && returnedLineCount !== lineCount) {
+    return `${returnedLineCount} of ${lineCount} lines${truncationLabel}`;
+  }
   if (lineCount !== undefined && byteCount !== undefined) {
-    return `${lineCount} lines · ${formatByteCount(byteCount)}`;
+    return `${lineCount} lines · ${formatByteCount(byteCount)}${truncationLabel}`;
   }
   if (lineCount !== undefined) {
-    return `${lineCount} lines`;
+    return `${lineCount} lines${truncationLabel}`;
   }
   return "read";
 }

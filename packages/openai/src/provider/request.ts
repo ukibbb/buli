@@ -92,7 +92,10 @@ function appendOpenAiInputItemsForConversationSessionTurn(
     return;
   }
 
-  if (terminalAssistantMessageEntry.assistantMessageStatus === "failed") {
+  if (
+    terminalAssistantMessageEntry.assistantMessageStatus === "failed" ||
+    terminalAssistantMessageEntry.assistantMessageStatus === "interrupted"
+  ) {
     return;
   }
 
@@ -322,10 +325,50 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
-  return [
-    `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
-    `Tool: ${conversationSessionEntry.toolCallRequest.toolName}`,
-  ].join("\n");
+  if (conversationSessionEntry.toolCallRequest.toolName === "read") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: read",
+      `Path: ${conversationSessionEntry.toolCallRequest.readTargetPath}`,
+      ...(conversationSessionEntry.toolCallRequest.offsetLineNumber !== undefined
+        ? [`Offset line: ${conversationSessionEntry.toolCallRequest.offsetLineNumber}`]
+        : []),
+      ...(conversationSessionEntry.toolCallRequest.maximumLineCount !== undefined
+        ? [`Line limit: ${conversationSessionEntry.toolCallRequest.maximumLineCount}`]
+        : []),
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "glob") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: glob",
+      `Pattern: ${conversationSessionEntry.toolCallRequest.globPattern}`,
+      ...(conversationSessionEntry.toolCallRequest.searchDirectoryPath !== undefined
+        ? [`Directory: ${conversationSessionEntry.toolCallRequest.searchDirectoryPath}`]
+        : []),
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "grep") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: grep",
+      `Pattern: ${conversationSessionEntry.toolCallRequest.regexPattern}`,
+      ...(conversationSessionEntry.toolCallRequest.searchPath !== undefined
+        ? [`Path: ${conversationSessionEntry.toolCallRequest.searchPath}`]
+        : []),
+      ...(conversationSessionEntry.toolCallRequest.includeGlobPattern !== undefined
+        ? [`Include: ${conversationSessionEntry.toolCallRequest.includeGlobPattern}`]
+        : []),
+    ].join("\n");
+  }
+
+  return assertUnhandledToolCallRequest(conversationSessionEntry.toolCallRequest);
+}
+
+function assertUnhandledToolCallRequest(toolCallRequest: never): never {
+  throw new Error(`Unhandled tool call request: ${JSON.stringify(toolCallRequest)}`);
 }
 
 function createLegacyToolResultTranscriptSegment(conversationSessionEntry: ToolResultConversationSessionEntry): string {

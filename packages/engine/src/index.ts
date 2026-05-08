@@ -23,8 +23,12 @@ export { parsePromptContextReferencesFromPromptText } from "./prompt-context/par
 export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./prompt-context/reconcileSelectedPromptContextReferenceTextsWithPromptDraft.ts";
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
+export { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
 export { buildBuliSystemPrompt } from "./systemPrompt.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
+export { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
+export { createStartedGrepToolCallDetail, runGrepToolCall } from "./tools/grepTool.ts";
+export { createStartedReadToolCallDetail, runReadToolCall } from "./tools/readTool.ts";
 export {
   BASH_TOOL_APPROVAL_MODES,
   DEFAULT_BASH_TOOL_APPROVAL_MODE,

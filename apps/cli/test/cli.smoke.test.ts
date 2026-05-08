@@ -175,7 +175,7 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
         selectedModelId: renderInput.selectedModelId,
         selectedModelDefaultReasoningEffort: renderInput.selectedModelDefaultReasoningEffort,
       };
-      return { waitUntilExit: async () => {} };
+      return { destroy: () => {}, waitUntilExit: async () => {} };
     },
   });
 
@@ -286,7 +286,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       capturedExportCurrentConversationSession = renderInput.exportCurrentConversationSession;
       expect(renderInput.initialConversationSessionEntries).toEqual(initialConversationSessionEntries);
       expect(renderInput.initialConversationSessionId).toBe("session-a");
-      return { waitUntilExit: async () => {} };
+      return { destroy: () => {}, waitUntilExit: async () => {} };
     },
   });
 

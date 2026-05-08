@@ -10,7 +10,7 @@ function resolveToolCallRenderState(toolCallStatus: AssistantToolCallConversatio
     return "completed";
   }
 
-  if (toolCallStatus === "failed" || toolCallStatus === "denied") {
+  if (toolCallStatus === "failed" || toolCallStatus === "denied" || toolCallStatus === "interrupted") {
     return "failed";
   }
 
@@ -28,6 +28,10 @@ export function ToolCallPartView(props: {
         ? { durationMs: props.assistantToolCallConversationMessagePart.durationMs }
         : {})}
       {...(props.assistantToolCallConversationMessagePart.toolCallStatus === "failed" &&
+      props.assistantToolCallConversationMessagePart.errorText
+        ? { errorText: props.assistantToolCallConversationMessagePart.errorText }
+        : {})}
+      {...(props.assistantToolCallConversationMessagePart.toolCallStatus === "interrupted" &&
       props.assistantToolCallConversationMessagePart.errorText
         ? { errorText: props.assistantToolCallConversationMessagePart.errorText }
         : {})}

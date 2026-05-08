@@ -15,7 +15,7 @@ import {
   type OpenAiConversationInputItem,
 } from "./request.ts";
 import { writeOpenAiDebugLog } from "./debugLog.ts";
-import { createBashToolDefinition } from "./toolDefinitions.ts";
+import { createOpenAiToolDefinitions } from "./toolDefinitions.ts";
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
 
 type OpenAiProviderToolResultSubmission = {
@@ -50,7 +50,7 @@ function createHttpRequestBody(input: {
     store: false,
     ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
     input: input.openAiInputItems,
-    tools: [createBashToolDefinition()],
+    tools: createOpenAiToolDefinitions(),
     parallel_tool_calls: false,
     ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] } : {}),
     ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
@@ -88,6 +88,7 @@ export class OpenAiProviderConversationTurn {
   readonly selectedModelId: string;
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
   readonly promptCacheKey: string | undefined;
+  readonly abortSignal: AbortSignal | undefined;
   readonly systemPromptText: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
@@ -107,6 +108,7 @@ export class OpenAiProviderConversationTurn {
     selectedModelId: string;
     selectedReasoningEffort?: ReasoningEffort;
     promptCacheKey?: string;
+    abortSignal?: AbortSignal;
     systemPromptText: string;
     conversationSessionEntries: readonly ConversationSessionEntry[];
     onStepRequestFailed: (response: Response) => Promise<Error>;
@@ -118,6 +120,7 @@ export class OpenAiProviderConversationTurn {
     this.selectedModelId = input.selectedModelId;
     this.selectedReasoningEffort = input.selectedReasoningEffort;
     this.promptCacheKey = input.promptCacheKey;
+    this.abortSignal = input.abortSignal;
     this.systemPromptText = input.systemPromptText;
     this.diagnosticLogger = input.diagnosticLogger;
     this.onStepRequestFailed = input.onStepRequestFailed;
@@ -192,6 +195,7 @@ export class OpenAiProviderConversationTurn {
         method: "POST",
         headers: await this.loadRequestHeaders(),
         body: JSON.stringify(requestBody),
+        ...(this.abortSignal ? { signal: this.abortSignal } : {}),
       });
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.response_received", {
         responseStepIndex,

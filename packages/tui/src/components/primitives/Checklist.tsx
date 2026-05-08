@@ -44,7 +44,7 @@ export function Checklist(props: ChecklistProps): ReactNode {
               </span>
             </text>
           </box>
-          <box flexShrink={1}>
+          <box flexShrink={1} minWidth={0} overflow="hidden">
             <text>
               {/* Completed items use TextAttributes.STRIKETHROUGH directly. */}
               {checklistItem.itemStatus === "completed" ? (

@@ -178,12 +178,38 @@ function renderConversationSessionTranscriptEntryShell(input: {
 }
 
 function renderToolCallRequestBlock(toolCallRequest: ToolCallRequest): string {
-  return `<div class="tool-block">
+  if (toolCallRequest.toolName === "bash") {
+    return `<div class="tool-block">
   <div class="tool-summary">
     <span class="tool-name">${escapeHtml(toolCallRequest.toolName)}</span>
     <span class="tool-purpose">${escapeHtml(toolCallRequest.commandDescription)}</span>
   </div>
   <pre class="tool-cmd">${escapeHtml(toolCallRequest.shellCommand)}</pre>
+</div>`;
+  }
+  if (toolCallRequest.toolName === "read") {
+    return `<div class="tool-block">
+  <div class="tool-summary"><span class="tool-name">read</span><span class="tool-purpose">${escapeHtml(toolCallRequest.readTargetPath)}</span></div>
+</div>`;
+  }
+  if (toolCallRequest.toolName === "glob") {
+    const directoryHtml = toolCallRequest.searchDirectoryPath
+      ? `<span class="tool-purpose">${escapeHtml(toolCallRequest.searchDirectoryPath)}</span>`
+      : "";
+    return `<div class="tool-block">
+  <div class="tool-summary"><span class="tool-name">glob</span>${directoryHtml}</div>
+  <pre class="tool-cmd">${escapeHtml(toolCallRequest.globPattern)}</pre>
+</div>`;
+  }
+
+  const grepPathHtml = toolCallRequest.searchPath
+    ? `<span class="tool-purpose">${escapeHtml(toolCallRequest.searchPath)}</span>`
+    : "";
+  return `<div class="tool-block">
+  <div class="tool-summary">
+    <span class="tool-name">grep</span>${grepPathHtml}
+  </div>
+  <pre class="tool-cmd">${escapeHtml(toolCallRequest.regexPattern)}</pre>
 </div>`;
 }
 
@@ -218,6 +244,21 @@ function renderToolDetailSummary(toolCallDetail: ToolCallDetail): string {
       ? `<span class="tool-purpose">${escapeHtml(toolCallDetail.commandDescription)}</span>`
       : "";
     return `<div class="tool-summary"><span class="tool-name">bash</span>${purposeHtml}</div>`;
+  }
+  if (toolCallDetail.toolName === "read") {
+    return `<div class="tool-summary"><span class="tool-name">read</span><span class="tool-purpose">${escapeHtml(toolCallDetail.readFilePath)}</span></div>`;
+  }
+  if (toolCallDetail.toolName === "glob") {
+    const countHtml = toolCallDetail.matchedPathCount === undefined
+      ? ""
+      : `<span class="tool-purpose">${toolCallDetail.matchedPathCount} paths</span>`;
+    return `<div class="tool-summary"><span class="tool-name">glob</span>${countHtml}</div>`;
+  }
+  if (toolCallDetail.toolName === "grep") {
+    const countHtml = toolCallDetail.totalMatchCount === undefined
+      ? ""
+      : `<span class="tool-purpose">${toolCallDetail.totalMatchCount} matches</span>`;
+    return `<div class="tool-summary"><span class="tool-name">grep</span>${countHtml}</div>`;
   }
   return `<div class="tool-summary"><span class="tool-name">${escapeHtml(toolCallDetail.toolName)}</span></div>`;
 }

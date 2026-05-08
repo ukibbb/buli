@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import { useKeyboard } from "@opentui/react";
-import type { KeyEvent } from "@opentui/core";
 import type { SlashCommand } from "@buli/chat-session-state";
 import {
   chatScreenTheme,
@@ -19,12 +17,6 @@ export type CommandHelpModalProps = {
 };
 
 export function CommandHelpModal(props: CommandHelpModalProps): ReactNode {
-  useKeyboard((e: KeyEvent) => {
-    if (e.name === "escape") {
-      props.onCloseRequested();
-    }
-  });
-
   const rendersComfortableChrome =
     props.terminalSizeTierForChatScreen === comfortableTerminalSizeTier;
   const nonCommandRowCount = rendersComfortableChrome ? 3 : 1;

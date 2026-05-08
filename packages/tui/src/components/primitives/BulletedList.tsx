@@ -18,7 +18,7 @@ export function BulletedList(props: BulletedListProps): ReactNode {
               <b fg={chatScreenTheme.accentCyan}>{">_"}</b>
             </text>
           </box>
-          <box flexShrink={1}>{itemContent}</box>
+          <box flexShrink={1} minWidth={0} overflow="hidden">{itemContent}</box>
         </box>
       ))}
     </box>

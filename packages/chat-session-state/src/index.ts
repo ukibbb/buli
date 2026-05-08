@@ -8,6 +8,33 @@ export {
   type SlashCommandSelectionState,
   createInitialChatSessionState,
 } from "./chatSessionState.ts";
+export {
+  type ChatSlashCommand,
+  type ChatSlashCommandValue,
+  buildChatSlashCommands,
+} from "./chatSlashCommands.ts";
+export {
+  type ChatSlashCommandApplication,
+  type ChatSlashCommandApplicationEffect,
+  applyChatSlashCommandToChatSessionState,
+} from "./chatSlashCommandApplication.ts";
+export { refreshChatSlashCommandSelectionForCurrentState } from "./chatSlashCommandSelectionRefresh.ts";
+export {
+  type PromptContextQueryIdentity,
+  buildPromptContextQueryIdentity,
+  doPromptContextQueriesMatch,
+  shouldHideResolvedPromptContextCandidatesForQuery,
+} from "./promptContextQueryIdentity.ts";
+export {
+  type ChatSessionInteractionScope,
+  type ChatSessionKeyboardEffect,
+  type ChatSessionKeyboardInput,
+  type ChatSessionKeyboardInteraction,
+  type ChatSessionKeyboardKeyName,
+  type PromptSubmissionRejectionReason,
+  applyChatSessionKeyboardInputToChatSessionState,
+  resolveChatSessionInteractionScope,
+} from "./chatSessionKeyboardInteraction.ts";
 export { cycleAssistantOperatingMode, selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 export {
   applyAssistantResponseEventToChatSessionState,
@@ -31,6 +58,8 @@ export {
   insertTextIntoPromptDraftAtCursor,
   movePromptDraftCursorLeft,
   movePromptDraftCursorRight,
+  movePromptDraftCursorToEnd,
+  movePromptDraftCursorToStart,
   removePromptDraftCharacterAtCursor,
   removePromptDraftCharacterBeforeCursor,
   submitPromptDraft,
@@ -43,6 +72,12 @@ export {
   selectHighlightedPromptContextCandidate,
   showPromptContextCandidatesForSelection,
 } from "./promptContextSelectionReducer.ts";
+export {
+  type PromptContextSelectionRefreshDecision,
+  decidePromptContextSelectionRefreshForCurrentDraft,
+  shouldClearDismissedPromptContextQueryForPromptDraft,
+  shouldHideLoadedPromptContextCandidatesForCurrentDraft,
+} from "./promptContextSelectionRefresh.ts";
 export {
   hideSlashCommandSelection,
   moveHighlightedSlashCommandSelectionDown,

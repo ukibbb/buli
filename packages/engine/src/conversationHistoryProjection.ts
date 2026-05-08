@@ -24,7 +24,7 @@ export function projectConversationSessionEntryToModelContextItems(
   }
 
   if (conversationSessionEntry.entryKind === "assistant_message") {
-    if (conversationSessionEntry.assistantMessageStatus === "failed") {
+    if (conversationSessionEntry.assistantMessageStatus === "failed" || conversationSessionEntry.assistantMessageStatus === "interrupted") {
       return [];
     }
 
@@ -80,7 +80,10 @@ function projectConversationSessionTurnToModelContextItems(
     return [];
   }
 
-  if (terminalAssistantMessageEntry.assistantMessageStatus === "failed") {
+  if (
+    terminalAssistantMessageEntry.assistantMessageStatus === "failed" ||
+    terminalAssistantMessageEntry.assistantMessageStatus === "interrupted"
+  ) {
     return [];
   }
 

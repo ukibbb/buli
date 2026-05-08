@@ -28,6 +28,7 @@ export type InputPanelProps = {
   modelIdentifier: string;
   reasoningEffortLabel: string;
   assistantResponseStatus: ConversationTurnStatus;
+  isActiveTurnInterruptConfirmationArmed?: boolean;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
 };
@@ -48,7 +49,13 @@ export function InputPanel(props: InputPanelProps): ReactNode {
 
   const isCursorVisible = frameIndex % 2 === 0;
   const cursorCharacter = !props.isPromptInputDisabled && isCursorVisible ? "█" : " ";
-  const isStreamingResponse = props.assistantResponseStatus === "streaming_assistant_response";
+  const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
+    props.assistantResponseStatus === "waiting_for_tool_approval";
+  const activeTurnStatusText = props.isActiveTurnInterruptConfirmationArmed
+    ? "esc again to stop"
+    : props.assistantResponseStatus === "waiting_for_tool_approval"
+    ? "approval needed · esc esc to stop"
+    : "working… esc esc to stop";
 
   return (
     <box
@@ -71,7 +78,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         <text fg={props.accentColor}>
           <b>{">"}</b>
         </text>
-        <box flexGrow={1}>
+        <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
           <PromptDraftText
             promptDraft={props.promptDraft}
             promptDraftCursorOffset={props.promptDraftCursorOffset}
@@ -87,13 +94,13 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         justifyContent="space-between"
         paddingX={1}
       >
-        {isStreamingResponse ? (
-          <box flexDirection="row" gap={1}>
+        {isAssistantTurnActive ? (
+          <box flexDirection="row" gap={1} minWidth={0} overflow="hidden">
             <SnakeAnimationIndicator />
-            <text fg={chatScreenTheme.textMuted}>{"working…"}</text>
+            <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">{activeTurnStatusText}</text>
           </box>
         ) : props.promptInputHintOverride !== undefined ? (
-          <text fg={chatScreenTheme.textMuted}>{props.promptInputHintOverride}</text>
+          <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">{props.promptInputHintOverride}</text>
         ) : <text />}
         <ContextWindowMeter
           totalTokensUsed={props.totalContextTokensUsed}

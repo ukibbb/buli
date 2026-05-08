@@ -19,11 +19,13 @@ export type MinimumHeightPromptStripProps = {
   isPromptInputDisabled: boolean;
   accentColor: string;
   assistantResponseStatus: ConversationTurnStatus;
+  isActiveTurnInterruptConfirmationArmed?: boolean;
 };
 
 export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): ReactNode {
-  const isStreamingResponse = props.assistantResponseStatus === "streaming_assistant_response";
-  if (isStreamingResponse) {
+  const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
+    props.assistantResponseStatus === "waiting_for_tool_approval";
+  if (isAssistantTurnActive) {
     return (
       <box
         backgroundColor={chatScreenTheme.surfaceOne}
@@ -32,7 +34,9 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
         flexShrink={0}
         width="100%"
       >
-        <text fg={chatScreenTheme.textMuted}>{"… working"}</text>
+        <text fg={chatScreenTheme.textMuted}>
+          {props.isActiveTurnInterruptConfirmationArmed ? "esc again to stop" : "… working · esc esc to stop"}
+        </text>
       </box>
     );
   }
@@ -50,7 +54,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
       <text fg={props.accentColor}>
         <b>{">"}</b>
       </text>
-      <box flexGrow={1}>
+      <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
         <PromptDraftText
           promptDraft={props.promptDraft}
           promptDraftCursorOffset={props.promptDraftCursorOffset}

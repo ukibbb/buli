@@ -1,17 +1,23 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
-  ConversationSessionJsonLineRecordSchema,
   ConversationSessionSnapshotSchema,
   type ConversationSessionEntry,
   type ConversationSessionEntryRecord,
   type ConversationSessionHeaderRecord,
-  type ConversationSessionJsonLineRecord,
   type ConversationSessionSnapshot,
   type ConversationSessionSummary,
 } from "@buli/contracts";
+import {
+  loadRecoverableConversationSessionFile,
+  type LoadedConversationSessionJsonlFile,
+} from "./conversationSessionJsonlFile.ts";
+import {
+  runWithExclusiveConversationSessionFileWriteLock,
+  writeConversationSessionTextFileAtomically,
+} from "./conversationSessionFileWrite.ts";
 
 export type ActiveConversationSession = {
   sessionId: string;
@@ -34,12 +40,6 @@ export type ConversationSessionStore = {
 type ConversationSessionIdFactory = () => string;
 type ConversationSessionEntryIdFactory = () => string;
 type ClockMilliseconds = () => number;
-
-type LoadedConversationSessionFile = {
-  filePath: string;
-  headerRecord: ConversationSessionHeaderRecord;
-  entryRecords: ConversationSessionEntryRecord[];
-};
 
 export function defaultConversationSessionFilePath(input: { workspaceRootPath?: string } = {}): string {
   const workspaceRootPath = resolve(input.workspaceRootPath ?? process.cwd());
@@ -68,6 +68,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   readonly sessionWorkspaceDirectoryPath: string;
   readonly sessionsDirectoryPath: string;
   readonly activeConversationSessionPointerFilePath: string;
+  readonly conversationSessionWriteLockFilePath: string;
   readonly createSessionId: ConversationSessionIdFactory;
   readonly createSessionEntryId: ConversationSessionEntryIdFactory;
   readonly nowMs: ClockMilliseconds;
@@ -89,6 +90,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     });
     this.sessionsDirectoryPath = join(this.sessionWorkspaceDirectoryPath, "sessions");
     this.activeConversationSessionPointerFilePath = join(this.sessionWorkspaceDirectoryPath, "active-session.json");
+    this.conversationSessionWriteLockFilePath = join(this.sessionWorkspaceDirectoryPath, "session-store.lock");
     this.promptCacheKey = `buli:${createWorkspaceSessionHash(workspaceRootPath)}`;
     this.createSessionId = input.createSessionId ?? randomUUID;
     this.createSessionEntryId = input.createSessionEntryId ?? (() => randomUUID().slice(0, 12));
@@ -96,6 +98,76 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   }
 
   loadActiveConversationSession(): ActiveConversationSession {
+    return this.runWithConversationSessionWriteLock(() => this.loadActiveConversationSessionWithoutLock());
+  }
+
+  loadConversationSessionEntries(): readonly ConversationSessionEntry[] {
+    return this.loadActiveConversationSession().conversationSessionEntries;
+  }
+
+  appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void {
+    this.runWithConversationSessionWriteLock(() => {
+      const activeConversationSession = this.loadActiveConversationSessionWithoutLock();
+      const activeConversationSessionFile = loadRecoverableConversationSessionFile({
+        filePath: activeConversationSession.filePath,
+        nowMs: this.nowMs,
+      });
+      const parentSessionEntryId = activeConversationSessionFile.entryRecords.at(-1)?.sessionEntryId ?? null;
+      const conversationSessionEntryRecord: ConversationSessionEntryRecord = {
+        recordKind: "conversation_entry",
+        sessionEntryId: this.createSessionEntryId(),
+        parentSessionEntryId,
+        recordedAtMs: this.nowMs(),
+        conversationSessionEntry,
+      };
+
+      appendFileSync(activeConversationSession.filePath, `${JSON.stringify(conversationSessionEntryRecord)}\n`, "utf8");
+    });
+  }
+
+  saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void {
+    this.runWithConversationSessionWriteLock(() => {
+      const persistedConversationSessionSnapshot: ConversationSessionSnapshot = ConversationSessionSnapshotSchema.parse({
+        schemaVersion: 1,
+        conversationSessionEntries,
+      });
+
+      writeConversationSessionTextFileAtomically({
+        filePath: this.filePath,
+        text: JSON.stringify(persistedConversationSessionSnapshot, null, 2) + "\n",
+      });
+    });
+  }
+
+  startNewConversationSession(): ActiveConversationSession {
+    return this.runWithConversationSessionWriteLock(() => this.startNewConversationSessionWithoutLock());
+  }
+
+  listConversationSessions(): readonly ConversationSessionSummary[] {
+    return this.runWithConversationSessionWriteLock(() =>
+      this.listConversationSessionsWithFilePaths().map((conversationSession) => conversationSession.summary),
+    );
+  }
+
+  switchActiveConversationSession(sessionId: string): ActiveConversationSession {
+    return this.runWithConversationSessionWriteLock(() => {
+      const conversationSessionFilePath = this.findConversationSessionFilePathById(sessionId);
+      if (!conversationSessionFilePath) {
+        throw new Error(`Conversation session not found: ${sessionId}`);
+      }
+
+      return this.loadActiveConversationSessionFromFile(conversationSessionFilePath);
+    });
+  }
+
+  private runWithConversationSessionWriteLock<T>(writeConversationSessionFiles: () => T): T {
+    return runWithExclusiveConversationSessionFileWriteLock(
+      { lockFilePath: this.conversationSessionWriteLockFilePath },
+      writeConversationSessionFiles,
+    );
+  }
+
+  private loadActiveConversationSessionWithoutLock(): ActiveConversationSession {
     this.ensureSessionDirectoriesExist();
 
     const activeSessionFilePath = this.findConversationSessionFilePathById(this.readActiveConversationSessionId());
@@ -115,39 +187,10 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       return this.loadActiveConversationSessionFromFile(mostRecentlyUpdatedSessionFilePath);
     }
 
-    return this.startNewConversationSession();
+    return this.startNewConversationSessionWithoutLock();
   }
 
-  loadConversationSessionEntries(): readonly ConversationSessionEntry[] {
-    return this.loadActiveConversationSession().conversationSessionEntries;
-  }
-
-  appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void {
-    const activeConversationSession = this.loadActiveConversationSession();
-    const activeConversationSessionFile = loadConversationSessionFile(activeConversationSession.filePath);
-    const parentSessionEntryId = activeConversationSessionFile.entryRecords.at(-1)?.sessionEntryId ?? null;
-    const conversationSessionEntryRecord: ConversationSessionEntryRecord = {
-      recordKind: "conversation_entry",
-      sessionEntryId: this.createSessionEntryId(),
-      parentSessionEntryId,
-      recordedAtMs: this.nowMs(),
-      conversationSessionEntry,
-    };
-
-    appendFileSync(activeConversationSession.filePath, `${JSON.stringify(conversationSessionEntryRecord)}\n`, "utf8");
-  }
-
-  saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void {
-    const persistedConversationSessionSnapshot: ConversationSessionSnapshot = ConversationSessionSnapshotSchema.parse({
-      schemaVersion: 1,
-      conversationSessionEntries,
-    });
-
-    mkdirSync(dirname(this.filePath), { recursive: true });
-    writeFileSync(this.filePath, JSON.stringify(persistedConversationSessionSnapshot, null, 2) + "\n", "utf8");
-  }
-
-  startNewConversationSession(): ActiveConversationSession {
+  private startNewConversationSessionWithoutLock(): ActiveConversationSession {
     this.ensureSessionDirectoriesExist();
     const sessionId = this.createSessionId();
     const createdAtMs = this.nowMs();
@@ -160,26 +203,13 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       createdAtMs,
     };
 
-    writeFileSync(sessionFilePath, `${JSON.stringify(headerRecord)}\n`, "utf8");
+    writeConversationSessionTextFileAtomically({ filePath: sessionFilePath, text: `${JSON.stringify(headerRecord)}\n` });
     this.writeActiveConversationSessionId(sessionId);
     return {
       sessionId,
       filePath: sessionFilePath,
       conversationSessionEntries: [],
     };
-  }
-
-  listConversationSessions(): readonly ConversationSessionSummary[] {
-    return this.listConversationSessionsWithFilePaths().map((conversationSession) => conversationSession.summary);
-  }
-
-  switchActiveConversationSession(sessionId: string): ActiveConversationSession {
-    const conversationSessionFilePath = this.findConversationSessionFilePathById(sessionId);
-    if (!conversationSessionFilePath) {
-      throw new Error(`Conversation session not found: ${sessionId}`);
-    }
-
-    return this.loadActiveConversationSessionFromFile(conversationSessionFilePath);
   }
 
   private ensureSessionDirectoriesExist(): void {
@@ -203,16 +233,14 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   }
 
   private writeActiveConversationSessionId(sessionId: string): void {
-    mkdirSync(dirname(this.activeConversationSessionPointerFilePath), { recursive: true });
-    writeFileSync(
-      this.activeConversationSessionPointerFilePath,
-      JSON.stringify({ activeConversationSessionId: sessionId }, null, 2) + "\n",
-      "utf8",
-    );
+    writeConversationSessionTextFileAtomically({
+      filePath: this.activeConversationSessionPointerFilePath,
+      text: JSON.stringify({ activeConversationSessionId: sessionId }, null, 2) + "\n",
+    });
   }
 
   private loadActiveConversationSessionFromFile(filePath: string): ActiveConversationSession {
-    const conversationSessionFile = loadConversationSessionFile(filePath);
+    const conversationSessionFile = loadRecoverableConversationSessionFile({ filePath, nowMs: this.nowMs });
     this.writeActiveConversationSessionId(conversationSessionFile.headerRecord.sessionId);
     return {
       sessionId: conversationSessionFile.headerRecord.sessionId,
@@ -261,11 +289,10 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       },
     );
 
-    writeFileSync(
-      sessionFilePath,
-      [headerRecord, ...conversationSessionEntryRecords].map((record) => JSON.stringify(record)).join("\n") + "\n",
-      "utf8",
-    );
+    writeConversationSessionTextFileAtomically({
+      filePath: sessionFilePath,
+      text: [headerRecord, ...conversationSessionEntryRecords].map((record) => JSON.stringify(record)).join("\n") + "\n",
+    });
     this.writeActiveConversationSessionId(sessionId);
     return {
       sessionId,
@@ -277,7 +304,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   private listConversationSessionsWithFilePaths(): readonly { filePath: string; summary: ConversationSessionSummary }[] {
     return this.listConversationSessionFiles()
       .map((filePath) => {
-        const conversationSessionFile = loadConversationSessionFile(filePath);
+        const conversationSessionFile = loadRecoverableConversationSessionFile({ filePath, nowMs: this.nowMs });
         return {
           filePath,
           summary: summarizeConversationSessionFile(conversationSessionFile),
@@ -298,7 +325,9 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       return undefined;
     }
 
-    return this.listConversationSessionFiles().find((filePath) => loadConversationSessionFile(filePath).headerRecord.sessionId === sessionId);
+    return this.listConversationSessionFiles().find(
+      (filePath) => loadRecoverableConversationSessionFile({ filePath, nowMs: this.nowMs }).headerRecord.sessionId === sessionId,
+    );
   }
 
   private createConversationSessionFilePath(input: { sessionId: string; createdAtMs: number }): string {
@@ -308,24 +337,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   }
 }
 
-function loadConversationSessionFile(filePath: string): LoadedConversationSessionFile {
-  const records = readFileSync(filePath, "utf8")
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => ConversationSessionJsonLineRecordSchema.parse(JSON.parse(line) as unknown));
-  const headerRecord = records[0];
-  if (!headerRecord || headerRecord.recordKind !== "conversation_session") {
-    throw new Error(`Conversation session file has no header: ${filePath}`);
-  }
-
-  return {
-    filePath,
-    headerRecord,
-    entryRecords: records.filter(isConversationSessionEntryRecord),
-  };
-}
-
-function summarizeConversationSessionFile(conversationSessionFile: LoadedConversationSessionFile): ConversationSessionSummary {
+function summarizeConversationSessionFile(conversationSessionFile: LoadedConversationSessionJsonlFile): ConversationSessionSummary {
   const activeConversationSessionEntryRecords = listActiveConversationSessionEntryRecords(conversationSessionFile.entryRecords);
   const firstUserPromptEntry = activeConversationSessionEntryRecords.find(
     (entryRecord) => entryRecord.conversationSessionEntry.entryKind === "user_prompt",
@@ -364,12 +376,6 @@ function listActiveConversationSessionEntryRecords(
   }
 
   return activeEntryRecords;
-}
-
-function isConversationSessionEntryRecord(
-  conversationSessionJsonLineRecord: ConversationSessionJsonLineRecord,
-): conversationSessionJsonLineRecord is ConversationSessionEntryRecord {
-  return conversationSessionJsonLineRecord.recordKind === "conversation_entry";
 }
 
 function createDefaultSessionWorkspaceDirectoryPath(input: {

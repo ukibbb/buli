@@ -65,7 +65,7 @@ export function ConversationSessionSelectionPane(props: ConversationSessionSelec
               <text fg={isHighlightedConversationSession ? chatScreenTheme.accentGreen : chatScreenTheme.textDim}>
                 {isHighlightedConversationSession ? ">" : " "}
               </text>
-              <box flexGrow={1}>
+              <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
                 <text
                   fg={isHighlightedConversationSession ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
                   wrapMode="none"

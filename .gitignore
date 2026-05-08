@@ -4,6 +4,7 @@ coverage/
 dist/
 *.tsbuildinfo
 .env
+buli-console.log
 
 docs/*
 !docs/

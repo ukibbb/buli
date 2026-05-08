@@ -5,10 +5,13 @@ import type { BuliDiagnosticLogger } from "@buli/contracts";
 import type { AssistantConversationRunner } from "@buli/engine";
 import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
+import { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 export { ChatScreen } from "./ChatScreen.tsx";
 export type { ChatScreenProps, ConversationSessionExportResult, ConversationSessionSwitchResult } from "./ChatScreen.tsx";
+export { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 
 export type TuiChatScreenInstance = {
+  destroy(): void;
   waitUntilExit(): Promise<void>;
 };
 
@@ -45,8 +48,12 @@ export async function renderChatScreenInTerminal(input: {
     enableMouseMovement: true,
     consoleMode,
   });
+  const rendererDestroyedPromise = new Promise<void>((resolve) => {
+    cliRenderer.once("destroy", () => resolve());
+  });
   restoreConsoleTimeStampAfterOpentuiActivation({ originalConsole });
   const root = createRoot(cliRenderer);
+  const activeConversationTurnShutdownCoordinator = new ActiveConversationTurnShutdownCoordinator();
   input.diagnosticLogger?.({
     subsystem: "tui",
     eventName: "terminal_renderer_created",
@@ -57,6 +64,7 @@ export async function renderChatScreenInTerminal(input: {
   root.render(
     React.createElement(ChatScreen, {
       assistantConversationRunner: input.assistantConversationRunner,
+      activeConversationTurnShutdownCoordinator,
       loadAvailableAssistantModels: input.loadAvailableAssistantModels,
       loadPromptContextCandidates: input.loadPromptContextCandidates,
       ...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {}),
@@ -92,10 +100,12 @@ export async function renderChatScreenInTerminal(input: {
   });
 
   return {
-    waitUntilExit(): Promise<void> {
-      return new Promise<void>((resolve) => {
-        cliRenderer.once("destroy", () => resolve());
-      });
+    destroy(): void {
+      cliRenderer.destroy();
+    },
+    async waitUntilExit(): Promise<void> {
+      await rendererDestroyedPromise;
+      await activeConversationTurnShutdownCoordinator.interruptActiveConversationTurnAndWaitForSettlement();
     },
   };
 }
@@ -115,4 +125,4 @@ export { SlashCommandSelectionPane } from "./components/SlashCommandSelectionPan
 export { ThinkingStatusLine } from "./components/ThinkingStatusLine.tsx";
 export { TopBar } from "./components/TopBar.tsx";
 export { UserPromptBlock } from "./components/UserPromptBlock.tsx";
-export { buildChatSlashCommands } from "./slashCommands.ts";
+export { buildChatSlashCommands } from "@buli/chat-session-state";

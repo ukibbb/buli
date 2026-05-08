@@ -26,6 +26,31 @@ describe("ReadToolCallCard", () => {
     expect(frame).toContain("import React");
   });
 
+  test("completed_shows_truncation_state", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ReadToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "read",
+          readFilePath: "long.txt",
+          readLineCount: 3,
+          returnedLineCount: 2,
+          wasLineCountTruncated: true,
+          wasLongLineTruncated: true,
+          previewLines: [
+            { lineNumber: 1, lineText: "x".repeat(20), wasLineTruncated: true },
+            { lineNumber: 2, lineText: "second" },
+          ],
+        }}
+      />,
+      { width: 100, height: 16 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("2 of 3 lines");
+    expect(frame).toContain("truncated");
+  });
+
   test("streaming_renders_bracketed_path_and_reading_status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReadToolCallCard

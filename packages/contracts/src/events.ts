@@ -71,6 +71,14 @@ export const AssistantMessageFailedEventSchema = z
   })
   .strict();
 
+export const AssistantMessageInterruptedEventSchema = z
+  .object({
+    type: z.literal("assistant_message_interrupted"),
+    messageId: z.string().min(1),
+    interruptionReason: z.string().min(1),
+  })
+  .strict();
+
 export const AssistantResponseEventSchema = z.discriminatedUnion("type", [
   AssistantTurnStartedEventSchema,
   AssistantMessagePartAddedEventSchema,
@@ -80,6 +88,7 @@ export const AssistantResponseEventSchema = z.discriminatedUnion("type", [
   AssistantMessageCompletedEventSchema,
   AssistantMessageIncompleteEventSchema,
   AssistantMessageFailedEventSchema,
+  AssistantMessageInterruptedEventSchema,
 ]);
 
 export type AssistantTurnStartedEvent = z.infer<typeof AssistantTurnStartedEventSchema>;
@@ -90,4 +99,5 @@ export type AssistantPendingToolApprovalClearedEvent = z.infer<typeof AssistantP
 export type AssistantMessageCompletedEvent = z.infer<typeof AssistantMessageCompletedEventSchema>;
 export type AssistantMessageIncompleteEvent = z.infer<typeof AssistantMessageIncompleteEventSchema>;
 export type AssistantMessageFailedEvent = z.infer<typeof AssistantMessageFailedEventSchema>;
+export type AssistantMessageInterruptedEvent = z.infer<typeof AssistantMessageInterruptedEventSchema>;
 export type AssistantResponseEvent = z.infer<typeof AssistantResponseEventSchema>;

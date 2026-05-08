@@ -28,6 +28,32 @@ test("uses file-by-file plans when they reduce implementation risk", () => {
   );
 });
 
+test("prefers typed workspace tools over bash for normal inspection", () => {
+  const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain("Use typed workspace tools for normal code inspection");
+  expect(systemPromptText).toContain("use read for known files and directories");
+  expect(systemPromptText).toContain("use glob for finding files by path pattern");
+  expect(systemPromptText).toContain("use grep for searching file contents");
+  expect(systemPromptText).toContain("Do not use bash for simple file reads, file discovery, or text search.");
+});
+
+test("keeps workspace read safety explicit", () => {
+  const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain("Do not read files outside the workspace unless the user explicitly asks and the tool policy allows it.");
+});
+
+test("plan mode points inspection toward typed read and search tools", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "plan",
+  });
+
+  expect(systemPromptText).toContain("Use read, glob, and grep for plan-mode inspection.");
+  expect(systemPromptText).toContain("Do not use bash for simple file reads, file discovery, or text search.");
+});
+
 test("requires simple explanations and strong challenge of risks", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 

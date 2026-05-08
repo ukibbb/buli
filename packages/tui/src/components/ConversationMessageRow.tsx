@@ -51,6 +51,9 @@ function ConversationMessagePartView(props: {
   if (conversationMessagePart.partKind === "assistant_error_notice") {
     return <ErrorBannerBlock errorText={conversationMessagePart.errorText} />;
   }
+  if (conversationMessagePart.partKind === "assistant_interrupted_notice") {
+    return <ErrorBannerBlock titleText="Interrupted" errorText={conversationMessagePart.interruptionReason} />;
+  }
   return (
     <TurnFooter
       modelDisplayName={conversationMessagePart.modelDisplayName}

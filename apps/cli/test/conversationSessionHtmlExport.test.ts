@@ -38,6 +38,24 @@ const conversationSessionEntries = [
     assistantMessageStatus: "completed",
     assistantMessageText: "# Done\n\nThe command returned `/tmp/project`.",
   },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-2",
+    toolCallRequest: {
+      toolName: "read",
+      readTargetPath: "README.md",
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-2",
+    toolCallDetail: {
+      toolName: "read",
+      readFilePath: "README.md",
+      readLineCount: 10,
+    },
+    toolResultText: "1: # Project",
+  },
 ] satisfies ConversationSessionEntry[];
 
 test("renderConversationSessionHtmlDocument renders escaped, styled current-session HTML", () => {
@@ -55,6 +73,7 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).not.toContain("<script>alert('x')</script>");
   expect(html).toContain("Tool · call");
   expect(html).toContain("pwd");
+  expect(html).toContain("README.md");
   expect(html).toContain("<h1>Done</h1>");
 });
 

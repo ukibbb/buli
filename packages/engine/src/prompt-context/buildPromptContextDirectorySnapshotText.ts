@@ -11,6 +11,7 @@ export async function buildPromptContextDirectorySnapshotText(input: {
   maximumDepth?: number;
   maximumEntryCount?: number;
   maximumCharacterCount?: number;
+  abortSignal?: AbortSignal;
 }): Promise<string> {
   const visibleDirectoryLines: string[] = [];
   const maximumDepth = input.maximumDepth ?? DEFAULT_MAXIMUM_PROMPT_CONTEXT_DIRECTORY_DEPTH;
@@ -20,12 +21,14 @@ export async function buildPromptContextDirectorySnapshotText(input: {
   let stoppedBecauseOfLimits = false;
 
   async function visitDirectory(absoluteDirectoryPath: string, depth: number): Promise<void> {
+    throwIfPromptContextExpansionAborted(input.abortSignal);
     if (stoppedBecauseOfLimits || depth > maximumDepth) {
       stoppedBecauseOfLimits = true;
       return;
     }
 
     const directoryEntries = await readdir(absoluteDirectoryPath, { withFileTypes: true });
+    throwIfPromptContextExpansionAborted(input.abortSignal);
     directoryEntries.sort((leftDirectoryEntry, rightDirectoryEntry) => {
       if (leftDirectoryEntry.isDirectory() !== rightDirectoryEntry.isDirectory()) {
         return leftDirectoryEntry.isDirectory() ? -1 : 1;
@@ -35,6 +38,7 @@ export async function buildPromptContextDirectorySnapshotText(input: {
     });
 
     for (const directoryEntry of directoryEntries) {
+      throwIfPromptContextExpansionAborted(input.abortSignal);
       if (stoppedBecauseOfLimits) {
         return;
       }
@@ -66,4 +70,10 @@ export async function buildPromptContextDirectorySnapshotText(input: {
   }
 
   return `<context_directory path="${input.displayPath}">\n${visibleDirectoryLines.join("\n")}\n</context_directory>`;
+}
+
+function throwIfPromptContextExpansionAborted(abortSignal: AbortSignal | undefined): void {
+  if (abortSignal?.aborted) {
+    throw new Error("Prompt context expansion interrupted");
+  }
 }

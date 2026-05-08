@@ -1,13 +1,14 @@
 import type {
   AssistantResponseEvent,
   AssistantToolCallConversationMessagePart,
+  ConversationMessageStatus,
   ConversationTurnStatus,
   PendingToolApprovalRequest,
 } from "@buli/contracts";
 
 export type ExpectedConversationMessageShape = {
   role: "user" | "assistant";
-  messageStatus: "streaming" | "completed" | "incomplete" | "failed";
+  messageStatus: ConversationMessageStatus;
   partKinds: readonly string[];
 };
 

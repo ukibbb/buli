@@ -80,6 +80,10 @@ function formatReasoningSummaryMetadata(
     return "streaming";
   }
 
+  if (assistantReasoningConversationMessagePart.partStatus === "interrupted") {
+    return "interrupted";
+  }
+
   return [
     `${((assistantReasoningConversationMessagePart.reasoningDurationMs ?? 0) / 1000).toFixed(1)}s`,
     assistantReasoningConversationMessagePart.reasoningTokenCount === undefined

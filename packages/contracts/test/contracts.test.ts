@@ -8,6 +8,7 @@ import {
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
   PendingToolApprovalRequestSchema,
+  ToolCallRequestSchema,
 } from "../src/index.ts";
 
 test("ConversationMessageSchema parses a completed user message", () => {
@@ -75,6 +76,46 @@ test("PendingToolApprovalRequestSchema parses the dedicated approval model", () 
   ).toBe("approval-1");
 });
 
+test("ToolCallRequestSchema parses read-only coding tool requests", () => {
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "read",
+      readTargetPath: "packages/contracts/src/index.ts",
+      offsetLineNumber: 3,
+      maximumLineCount: 20,
+    }),
+  ).toEqual({
+    toolName: "read",
+    readTargetPath: "packages/contracts/src/index.ts",
+    offsetLineNumber: 3,
+    maximumLineCount: 20,
+  });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "glob",
+      globPattern: "**/*.ts",
+      searchDirectoryPath: "packages/contracts",
+    }),
+  ).toEqual({
+    toolName: "glob",
+    globPattern: "**/*.ts",
+    searchDirectoryPath: "packages/contracts",
+  });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "grep",
+      regexPattern: "ToolCallRequestSchema",
+      searchPath: "packages/contracts",
+      includeGlobPattern: "*.ts",
+    }),
+  ).toEqual({
+    toolName: "grep",
+    regexPattern: "ToolCallRequestSchema",
+    searchPath: "packages/contracts",
+    includeGlobPattern: "*.ts",
+  });
+});
+
 test("AssistantResponseEventSchema parses assistant_message_part_added", () => {
   expect(
     AssistantResponseEventSchema.parse({
@@ -99,6 +140,16 @@ test("AssistantResponseEventSchema parses assistant_message_failed", () => {
       errorText: "Provider stream ended before completion",
     }).type,
   ).toBe("assistant_message_failed");
+});
+
+test("AssistantResponseEventSchema parses assistant_message_interrupted", () => {
+  expect(
+    AssistantResponseEventSchema.parse({
+      type: "assistant_message_interrupted",
+      messageId: "assistant-1",
+      interruptionReason: "Interrupted by user.",
+    }).type,
+  ).toBe("assistant_message_interrupted");
 });
 
 test("ConversationTurnStatusSchema parses waiting_for_tool_approval", () => {
@@ -148,6 +199,22 @@ test("ConversationSessionEntrySchema parses failed assistant history entries", (
     assistantMessageStatus: "failed",
     assistantMessageText: "Partial unsafe answer",
     failureExplanation: "Provider failed mid-turn",
+  });
+});
+
+test("ConversationSessionEntrySchema parses interrupted assistant history entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "assistant_message",
+      assistantMessageStatus: "interrupted",
+      assistantMessageText: "Partial answer",
+      interruptionReason: "Interrupted by user.",
+    }),
+  ).toEqual({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "interrupted",
+    assistantMessageText: "Partial answer",
+    interruptionReason: "Interrupted by user.",
   });
 });
 

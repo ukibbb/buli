@@ -40,6 +40,24 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("3 matches");
   });
 
+  test("dispatches_glob", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "glob",
+          globPattern: "**/*.ts",
+          matchedPathCount: 2,
+        }}
+      />,
+      { width: 80, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("**/*.ts");
+    expect(frame).toContain("2 paths");
+  });
+
   test("dispatches_edit", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView

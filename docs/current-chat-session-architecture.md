@@ -36,6 +36,7 @@ Important files:
 - `packages/engine/src/assistantTextMessagePartBuilder.ts`
 
 This package runs the assistant turn, projects streaming text into message-part updates, and emits the event stream consumed by the shared state layer.
+It also owns local tool execution for `read`, `glob`, `grep`, and `bash`, including workspace path safety, bash approval decisions, and model-facing tool result text.
 
 ### `@buli/chat-session-state`
 
@@ -46,22 +47,27 @@ Important files:
 - `packages/chat-session-state/src/chatSessionSelectors.ts`
 - `packages/chat-session-state/src/promptDraftReducer.ts`
 - `packages/chat-session-state/src/promptContextSelectionReducer.ts`
+- `packages/chat-session-state/src/promptContextSelectionRefresh.ts`
 - `packages/chat-session-state/src/conversationTranscriptReducer.ts`
 - `packages/chat-session-state/src/sessionSelectionReducer.ts`
 - `packages/chat-session-state/src/modelAndReasoningSelectionReducer.ts`
+- `packages/chat-session-state/src/chatSlashCommandApplication.ts`
+- `packages/chat-session-state/src/chatSlashCommandSelectionRefresh.ts`
 
-This package owns normalized conversation state, persisted transcript hydration, prompt editing, prompt-context picker state, session selection, model selection, reasoning-effort selection, and pending tool approval state.
+This package owns normalized conversation state, persisted transcript hydration, prompt editing, prompt-context picker state and refresh decisions, slash-command state decisions, session selection, model selection, reasoning-effort selection, and pending tool approval state.
 
 ### `@buli/tui`
 
 Important files:
 
 - `packages/tui/src/ChatScreen.tsx`
+- `packages/tui/src/behavior/chatScreenViewModel.ts`
+- `packages/tui/src/behavior/openTuiKeyboardInputAdapter.ts`
 - `packages/tui/src/components/ConversationMessageList.tsx`
 - `packages/tui/src/components/ConversationMessageRow.tsx`
 - `packages/tui/src/components/messageParts/*`
 
-This is the OpenTUI-backed renderer. It owns the fullscreen chat shell, follow-bottom transcript behavior through OpenTUI scrollbox mechanics, and the renderer-specific keyboard and viewport behavior.
+This is the OpenTUI-backed renderer. It owns the fullscreen chat shell, follow-bottom transcript behavior through OpenTUI scrollbox mechanics, renderer-specific keyboard normalization, viewport-derived render data, and visible component composition. Domain state transitions stay in `@buli/chat-session-state`.
 
 ## What A Streaming Turn Looks Like
 
@@ -91,7 +97,9 @@ Text, reasoning, tool state, and turn metadata are separate typed concepts.
 
 ## Tool Approval
 
-Tool approval is not transcript content. The system keeps:
+The read-only typed tools `read`, `glob`, and `grep` are auto-approved and restricted to the workspace path policy. `bash` remains available as an escape hatch and is classified through the current approval policy.
+
+Bash tool approval is not transcript content. The system keeps:
 
 - one tool-call part with status like `pending_approval`
 - one dedicated `pendingToolApprovalRequest` in shared session state
@@ -102,14 +110,19 @@ That is why the approval prompt can render below the message list instead of as 
 
 `buli` stores canonical conversation-session entries in workspace-scoped JSONL files under `~/.buli/conversation-sessions`. The CLI loads the active session on startup, appends new user prompts, assistant messages, tool calls, and tool results as records, and lets the TUI hydrate the visible transcript from those entries.
 
+Session loading is defensive: valid records before the first corrupt JSONL line are preserved, and the corrupt suffix is quarantined beside the original session file as `*.corrupt-tail.<timestamp>.txt`. A partial final line after a crash is treated as a recoverable corrupt tail. Corruption in the middle of the file stops loading at that point because later records may depend on ordered parent links.
+
 Current persistence supports:
 
 - startup resume for the active workspace session
 - `/sessions` selection across saved sessions
 - `/clear` creating a new persisted session
 - `/export-session` HTML transcript export
+- normal TUI shutdown interrupts any active assistant turn and waits for runtime settlement before returning
 
-It does not yet persist live React/runtime object state, pending approvals across process exit, selected model/reasoning settings per session, or branch UI.
+Pending approval UI state is not restored after restart. If shutdown or restart leaves a persisted tool call without a result, hydration marks that tool call as interrupted instead of showing a stale approval prompt.
+
+It does not yet persist live React/runtime object state, selected model/reasoning settings per session, or branch UI.
 
 ## Why This Shape Works
 

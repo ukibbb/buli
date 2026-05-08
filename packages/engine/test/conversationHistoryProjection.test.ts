@@ -30,6 +30,12 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       failureExplanation: "Provider failed mid-turn",
     },
     {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "interrupted",
+      assistantMessageText: "Interrupted partial answer",
+      interruptionReason: "Interrupted by user.",
+    },
+    {
       entryKind: "tool_call",
       toolCallId: "call_1",
       toolCallRequest: {
@@ -139,6 +145,87 @@ test("projectConversationSessionEntriesToModelContextItems projects completed an
   ]);
 });
 
+test("projectConversationSessionEntriesToModelContextItems includes paired typed tool calls and results", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Inspect files",
+      modelFacingPromptText: "Inspect files",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_read",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_read",
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: "README.md",
+        readLineCount: 10,
+      },
+      toolResultText: "1: # buli",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_glob",
+      toolCallRequest: {
+        toolName: "glob",
+        globPattern: "**/*.ts",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_glob",
+      toolCallDetail: {
+        toolName: "glob",
+        globPattern: "**/*.ts",
+        matchedPathCount: 2,
+        returnedPathCount: 2,
+      },
+      toolResultText: "src/index.ts",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_grep",
+      toolCallRequest: {
+        toolName: "grep",
+        regexPattern: "ToolCallRequest",
+      },
+    },
+    {
+      entryKind: "failed_tool_result",
+      toolCallId: "call_grep",
+      toolCallDetail: {
+        toolName: "grep",
+        searchPattern: "ToolCallRequest",
+      },
+      toolResultText: "Grep failed: invalid regex",
+      failureExplanation: "invalid regex",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Inspection complete.",
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    { itemKind: "user_message", messageText: "Inspect files" },
+    { itemKind: "tool_call", toolCallId: "call_read", toolCallRequest: { toolName: "read", readTargetPath: "README.md" } },
+    { itemKind: "tool_result", toolCallId: "call_read", toolResultText: "1: # buli" },
+    { itemKind: "tool_call", toolCallId: "call_glob", toolCallRequest: { toolName: "glob", globPattern: "**/*.ts" } },
+    { itemKind: "tool_result", toolCallId: "call_glob", toolResultText: "src/index.ts" },
+    { itemKind: "tool_call", toolCallId: "call_grep", toolCallRequest: { toolName: "grep", regexPattern: "ToolCallRequest" } },
+    { itemKind: "tool_result", toolCallId: "call_grep", toolResultText: "Grep failed: invalid regex" },
+    { itemKind: "assistant_message", messageText: "Inspection complete." },
+  ]);
+});
+
 test("projectConversationSessionEntriesToModelContextItems skips failed turns", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {
@@ -151,6 +238,31 @@ test("projectConversationSessionEntriesToModelContextItems skips failed turns", 
       assistantMessageStatus: "failed",
       assistantMessageText: "Partial unsafe answer",
       failureExplanation: "Provider failed mid-turn",
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Next prompt",
+      modelFacingPromptText: "Next prompt",
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    { itemKind: "user_message", messageText: "Next prompt" },
+  ]);
+});
+
+test("projectConversationSessionEntriesToModelContextItems skips interrupted turns", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Interrupted prompt",
+      modelFacingPromptText: "Interrupted prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "interrupted",
+      assistantMessageText: "Partial answer",
+      interruptionReason: "Interrupted by user.",
     },
     {
       entryKind: "user_prompt",

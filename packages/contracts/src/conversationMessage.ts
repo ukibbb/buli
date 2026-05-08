@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const ConversationMessageRoleSchema = z.enum(["user", "assistant"]);
-export const ConversationMessageStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed"]);
+export const ConversationMessageStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed", "interrupted"]);
 
 export const ConversationMessageSchema = z
   .object({

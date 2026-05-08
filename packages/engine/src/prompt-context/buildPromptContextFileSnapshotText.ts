@@ -6,8 +6,14 @@ export async function buildPromptContextFileSnapshotText(input: {
   absoluteFilePath: string;
   displayPath: string;
   maximumCharacterCount?: number;
+  abortSignal?: AbortSignal;
 }): Promise<string> {
-  const fileContents = await readFile(input.absoluteFilePath, "utf8");
+  throwIfPromptContextExpansionAborted(input.abortSignal);
+  const fileContents = await readFile(input.absoluteFilePath, {
+    encoding: "utf8",
+    ...(input.abortSignal ? { signal: input.abortSignal } : {}),
+  });
+  throwIfPromptContextExpansionAborted(input.abortSignal);
   const maximumCharacterCount = input.maximumCharacterCount ?? DEFAULT_MAXIMUM_PROMPT_CONTEXT_FILE_CHARACTER_COUNT;
   const wasTrimmed = fileContents.length > maximumCharacterCount;
   const visibleFileContents = wasTrimmed ? fileContents.slice(0, maximumCharacterCount) : fileContents;
@@ -16,4 +22,10 @@ export async function buildPromptContextFileSnapshotText(input: {
     : "";
 
   return `<context_file path="${input.displayPath}">\n${visibleFileContents}${truncationNotice}\n</context_file>`;
+}
+
+function throwIfPromptContextExpansionAborted(abortSignal: AbortSignal | undefined): void {
+  if (abortSignal?.aborted) {
+    throw new Error("Prompt context expansion interrupted");
+  }
 }

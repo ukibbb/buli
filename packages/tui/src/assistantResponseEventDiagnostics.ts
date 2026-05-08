@@ -65,6 +65,13 @@ export function summarizeAssistantResponseEventForDiagnostics(
     };
   }
 
+  if (assistantResponseEvent.type === "assistant_message_interrupted") {
+    return {
+      messageId: assistantResponseEvent.messageId,
+      interruptionReasonLength: assistantResponseEvent.interruptionReason.length,
+    };
+  }
+
   return {
     messageId: assistantResponseEvent.messageId,
     errorTextLength: assistantResponseEvent.errorText.length,
@@ -121,6 +128,12 @@ function summarizeConversationMessagePartStatusForDiagnostics(
   if (conversationMessagePart.partKind === "assistant_error_notice") {
     return {
       errorTextLength: conversationMessagePart.errorText.length,
+    };
+  }
+
+  if (conversationMessagePart.partKind === "assistant_interrupted_notice") {
+    return {
+      interruptionReasonLength: conversationMessagePart.interruptionReason.length,
     };
   }
 

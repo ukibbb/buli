@@ -13,6 +13,7 @@ const neverEmittingAssistantConversationRunner: AssistantConversationRunner = {
       },
       async approvePendingToolCall() {},
       async denyPendingToolCall() {},
+      interrupt() {},
     };
   },
 };
@@ -24,6 +25,7 @@ type OpenTuiChatScreenHarness = {
   pressArrowDown(): Promise<string>;
   pressArrowLeft(): Promise<string>;
   pressEnter(): Promise<string>;
+  pasteText(text: string): Promise<string>;
   typeText(text: string): Promise<string>;
   waitForFrame(delayMs: number): Promise<string>;
 };
@@ -70,6 +72,12 @@ async function renderChatScreen(input: {
       });
       return captureFrame();
     },
+    async pasteText(text: string): Promise<string> {
+      await act(async () => {
+        await renderedChatScreen.mockInput.pasteBracketedText(text);
+      });
+      return captureFrame();
+    },
     async typeText(text: string): Promise<string> {
       let frame = "";
       for (const character of text) {
@@ -101,6 +109,28 @@ test("ChatScreen inserts typed text at the caret instead of always appending at 
 
   const renderedFrameAfterInsert = await renderedChatScreen.typeText("x");
   expect(renderedFrameAfterInsert).toMatch(/helx.?lo/);
+});
+
+test("ChatScreen inserts bracketed paste text at the caret", async () => {
+  const renderedChatScreen = await renderChatScreen({
+    loadPromptContextCandidates: async () => [],
+  });
+
+  await renderedChatScreen.typeText("helo");
+  await renderedChatScreen.pressArrowLeft();
+
+  const renderedFrameAfterPaste = await renderedChatScreen.pasteText("l pasted");
+  expect(renderedFrameAfterPaste).toMatch(/hell pasted.?o/);
+});
+
+test("ChatScreen strips terminal control sequences from pasted text", async () => {
+  const renderedChatScreen = await renderChatScreen({
+    loadPromptContextCandidates: async () => [],
+  });
+
+  const renderedFrameAfterPaste = await renderedChatScreen.pasteText("\x1B[31mred\x1B[0m");
+  expect(renderedFrameAfterPaste).toContain("red");
+  expect(renderedFrameAfterPaste).not.toContain("[31m");
 });
 
 test("ChatScreen debounces fuzzy prompt-context queries before loading candidates", async () => {

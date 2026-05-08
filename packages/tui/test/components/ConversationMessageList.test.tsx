@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { ConversationMessageList } from "../../src/components/ConversationMessageList.tsx";
 
@@ -21,7 +22,6 @@ describe("ConversationMessageList", () => {
         isReasoningSummaryVisible={true}
         resolveConversationMessageParts={() => []}
         conversationMessageScrollBoxRef={{ current: null }}
-        onConversationMessageWheelScroll={() => {}}
       />,
       { width: 80, height: 8 },
     );
@@ -92,7 +92,6 @@ describe("ConversationMessageList", () => {
         isReasoningSummaryVisible={true}
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
-        onConversationMessageWheelScroll={() => {}}
       />,
       { width: 100, height: 24 },
     );
@@ -137,7 +136,6 @@ describe("ConversationMessageList", () => {
         isReasoningSummaryVisible={false}
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
-        onConversationMessageWheelScroll={() => {}}
       />,
       { width: 100, height: 8 },
     );
@@ -149,24 +147,32 @@ describe("ConversationMessageList", () => {
     expect(frame).not.toContain("Hidden chain summary.");
   });
 
-  test("forwards mouse wheel direction to the parent callback", async () => {
-    let scrolledDirection: "up" | "down" | undefined;
+  test("lets the OpenTUI scrollbox own mouse wheel scrolling", async () => {
+    const conversationMessageScrollBoxRef: { current: ScrollBoxRenderable | null } = { current: null };
     const { mockMouse, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={[]}
+        conversationMessages={Array.from({ length: 20 }, (_, index) => ({
+          id: `message-${index}`,
+          role: "user" as const,
+          messageStatus: "completed" as const,
+          createdAtMs: index,
+          partIds: [`part-${index}`],
+        }))}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={() => []}
-        conversationMessageScrollBoxRef={{ current: null }}
-        onConversationMessageWheelScroll={(direction) => {
-          scrolledDirection = direction;
-        }}
+        resolveConversationMessageParts={(messageId) => [{
+          id: `part-${messageId}`,
+          partKind: "user_text",
+          text: `Message ${messageId}`,
+        }]}
+        conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
       />,
       { width: 80, height: 20 },
     );
 
     await renderOnce();
+    conversationMessageScrollBoxRef.current?.scrollTo(0);
     await mockMouse.scroll(5, 2, "down");
     await renderOnce();
-    expect(scrolledDirection).toBe("down");
+    expect(conversationMessageScrollBoxRef.current?.scrollTop).toBeGreaterThan(0);
   });
 });

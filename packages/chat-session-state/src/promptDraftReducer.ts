@@ -66,6 +66,20 @@ export function movePromptDraftCursorRight(chatSessionState: ChatSessionState): 
   };
 }
 
+export function movePromptDraftCursorToStart(chatSessionState: ChatSessionState): ChatSessionState {
+  return {
+    ...chatSessionState,
+    promptDraftCursorOffset: 0,
+  };
+}
+
+export function movePromptDraftCursorToEnd(chatSessionState: ChatSessionState): ChatSessionState {
+  return {
+    ...chatSessionState,
+    promptDraftCursorOffset: chatSessionState.promptDraft.length,
+  };
+}
+
 export function removePromptDraftCharacterBeforeCursor(chatSessionState: ChatSessionState): ChatSessionState {
   if (chatSessionState.promptDraftCursorOffset === 0) {
     return chatSessionState;

@@ -30,7 +30,8 @@ V1 currently includes:
 - startup resume for the active workspace session
 - `/sessions` switching across saved conversation sessions
 - `/export-session` HTML transcript export
-- first local `bash` tool wired through the engine and OpenAI Responses function-calling loop
+- typed local inspection tools: `read`, `glob`, and `grep`
+- local `bash` tool wired through the engine and OpenAI Responses function-calling loop
 - explicit tool approval flow with visible approve and deny buttons for pending bash commands
 - HERO 1 visual design translated to terminal constraints
 - typed message and content-part contracts in `@buli/contracts`
@@ -39,7 +40,7 @@ V1 currently includes:
 
 V1 intentionally does not include yet:
 
-- `read`, `write`, `edit`, or wider multi-tool support beyond `bash`
+- write/edit tools beyond the current read-only `read`, `glob`, and `grep` tools
 - session branching
 - raw event replay/debug export bundles
 - extension loading
@@ -110,8 +111,9 @@ After logging in, you can:
 - type `/help` to open command help
 - type `/model` to open model selection
 - choose a model and, when supported, choose a reasoning effort
+- let the assistant inspect workspace files through typed `read`, `glob`, and `grep` tools instead of shelling out for normal file reads and search
 - approve or deny a pending `bash` command with the visible approval buttons
-- ask follow-up questions that depend on earlier replies and completed `bash` results from the current persisted session
+- ask follow-up questions that depend on earlier replies and completed tool results from the current persisted session
 - resume the active workspace session after restarting `buli`
 - switch saved sessions with `/sessions`
 - export the current session as HTML with `/export-session`
@@ -165,9 +167,9 @@ Current packages:
 - `packages/chat-session-state`
   - shared reducer, selectors, transcript hydration, prompt editing state, prompt-context selection state, session-selection state, and model-selection state
 - `packages/engine`
-  - UI-agnostic conversation runner, in-memory history projection, approval flow, local `bash` execution, and assistant text-part building
+  - UI-agnostic conversation runner, in-memory history projection, approval flow, local `read`/`glob`/`grep`/`bash` execution, and assistant text-part building
 - `packages/openai`
-  - OAuth, token refresh, Responses transport, available model discovery, function-call parsing, and same-turn continuation after tool output
+  - OAuth, token refresh, Responses transport, available model discovery, typed function-call parsing, and same-turn continuation after tool output
 - `packages/tui`
   - terminal chat screen rendering, message-part views, fullscreen integration, and OpenTUI-specific viewport behavior over the shared chat-session state
 - `packages/assistant-design-tokens`

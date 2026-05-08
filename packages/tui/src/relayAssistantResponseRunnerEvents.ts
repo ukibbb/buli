@@ -12,7 +12,8 @@ function isTerminalAssistantResponseEvent(assistantResponseEvent: AssistantRespo
   return (
     assistantResponseEvent.type === "assistant_message_completed" ||
     assistantResponseEvent.type === "assistant_message_incomplete" ||
-    assistantResponseEvent.type === "assistant_message_failed"
+    assistantResponseEvent.type === "assistant_message_failed" ||
+    assistantResponseEvent.type === "assistant_message_interrupted"
   );
 }
 

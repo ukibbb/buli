@@ -21,6 +21,8 @@ type HydratedConversationTranscript = {
   orderedConversationMessageIds: string[];
 };
 
+const INTERRUPTED_TOOL_CALL_ERROR_TEXT = "Tool call was interrupted before a result was recorded.";
+
 export function clearConversationTranscript(chatSessionState: ChatSessionState): ChatSessionState {
   return {
     ...chatSessionState,
@@ -97,9 +99,63 @@ function buildHydratedConversationTranscript(
     currentAssistantMessageId = assistantMessageId;
     return assistantMessageId;
   };
+  const markDanglingHydratedToolCallsAsInterrupted = (interruptedAtEntryIndex: number): void => {
+    if (!currentAssistantMessageId) {
+      return;
+    }
+
+    const currentAssistantConversationMessage = conversationMessagesById[currentAssistantMessageId];
+    if (!currentAssistantConversationMessage) {
+      return;
+    }
+
+    const interruptedToolCallPartIds = currentAssistantConversationMessage.partIds.filter((partId) => {
+      const conversationMessagePart = conversationMessagePartsById[partId];
+      return conversationMessagePart?.partKind === "assistant_tool_call" &&
+        (conversationMessagePart.toolCallStatus === "running" || conversationMessagePart.toolCallStatus === "pending_approval");
+    });
+
+    if (interruptedToolCallPartIds.length === 0) {
+      return;
+    }
+
+    conversationMessagesById[currentAssistantMessageId] = {
+      ...currentAssistantConversationMessage,
+      messageStatus: "interrupted",
+    };
+
+    for (const interruptedToolCallPartId of interruptedToolCallPartIds) {
+      const interruptedToolCallPart = conversationMessagePartsById[interruptedToolCallPartId];
+      if (!interruptedToolCallPart || interruptedToolCallPart.partKind !== "assistant_tool_call") {
+        continue;
+      }
+
+      conversationMessagePartsById[interruptedToolCallPartId] = {
+        ...interruptedToolCallPart,
+        toolCallStatus: "interrupted",
+        errorText: INTERRUPTED_TOOL_CALL_ERROR_TEXT,
+      };
+    }
+
+    const hasInterruptedToolCallNoticePart = currentAssistantConversationMessage.partIds.some((partId) => {
+      const conversationMessagePart = conversationMessagePartsById[partId];
+      return conversationMessagePart?.partKind === "assistant_interrupted_notice" &&
+        conversationMessagePart.interruptionReason === INTERRUPTED_TOOL_CALL_ERROR_TEXT;
+    });
+    if (hasInterruptedToolCallNoticePart) {
+      return;
+    }
+
+    appendConversationMessagePart(currentAssistantMessageId, {
+      id: `persisted-entry-${interruptedAtEntryIndex}-assistant-interrupted-tool-call`,
+      partKind: "assistant_interrupted_notice",
+      interruptionReason: INTERRUPTED_TOOL_CALL_ERROR_TEXT,
+    });
+  };
 
   conversationSessionEntries.forEach((conversationSessionEntry, entryIndex) => {
     if (conversationSessionEntry.entryKind === "user_prompt") {
+      markDanglingHydratedToolCallsAsInterrupted(entryIndex);
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
       const userMessageId = `persisted-entry-${entryIndex}-user`;
@@ -183,10 +239,21 @@ function buildHydratedConversationTranscript(
         });
       }
 
+      if (conversationSessionEntry.assistantMessageStatus === "interrupted") {
+        markDanglingHydratedToolCallsAsInterrupted(entryIndex);
+        appendConversationMessagePart(assistantMessageId, {
+          id: `persisted-entry-${entryIndex}-assistant-interrupted`,
+          partKind: "assistant_interrupted_notice",
+          interruptionReason: conversationSessionEntry.interruptionReason,
+        });
+      }
+
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
     }
   });
+
+  markDanglingHydratedToolCallsAsInterrupted(conversationSessionEntries.length);
 
   return {
     conversationMessagesById,
@@ -243,12 +310,32 @@ function upsertHydratedToolResultPart(input: {
 }
 
 function createToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): ToolCallDetail {
+  if (toolCallRequest.toolName === "bash") {
+    return {
+      toolName: "bash",
+      commandLine: toolCallRequest.shellCommand,
+      commandDescription: toolCallRequest.commandDescription,
+      ...(toolCallRequest.workingDirectoryPath ? { workingDirectoryPath: toolCallRequest.workingDirectoryPath } : {}),
+      ...(toolCallRequest.timeoutMilliseconds ? { timeoutMilliseconds: toolCallRequest.timeoutMilliseconds } : {}),
+    };
+  }
+  if (toolCallRequest.toolName === "read") {
+    return {
+      toolName: "read",
+      readFilePath: toolCallRequest.readTargetPath,
+    };
+  }
+  if (toolCallRequest.toolName === "glob") {
+    return {
+      toolName: "glob",
+      globPattern: toolCallRequest.globPattern,
+      ...(toolCallRequest.searchDirectoryPath ? { searchDirectoryPath: toolCallRequest.searchDirectoryPath } : {}),
+    };
+  }
+
   return {
-    toolName: "bash",
-    commandLine: toolCallRequest.shellCommand,
-    commandDescription: toolCallRequest.commandDescription,
-    ...(toolCallRequest.workingDirectoryPath ? { workingDirectoryPath: toolCallRequest.workingDirectoryPath } : {}),
-    ...(toolCallRequest.timeoutMilliseconds ? { timeoutMilliseconds: toolCallRequest.timeoutMilliseconds } : {}),
+    toolName: "grep",
+    searchPattern: toolCallRequest.regexPattern,
   };
 }
 

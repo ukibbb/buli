@@ -1,5 +1,5 @@
 import type { AssistantOperatingMode } from "@buli/contracts";
-import type { SlashCommand } from "@buli/chat-session-state";
+import type { SlashCommand } from "./chatSessionState.ts";
 
 export type ChatSlashCommandValue =
   | "clear"
@@ -11,10 +11,14 @@ export type ChatSlashCommandValue =
   | "sessions"
   | "thinking";
 
+export type ChatSlashCommand = SlashCommand & {
+  value: ChatSlashCommandValue;
+};
+
 export function buildChatSlashCommands(input: {
   isReasoningSummaryVisible: boolean;
   selectedAssistantOperatingMode: AssistantOperatingMode;
-}): readonly SlashCommand[] {
+}): readonly ChatSlashCommand[] {
   return [
     { name: "help", value: "help", description: "Show available commands" },
     { name: "model", value: "model", description: "Choose OpenAI model and reasoning effort" },
@@ -38,5 +42,5 @@ export function buildChatSlashCommands(input: {
       value: "thinking",
       description: input.isReasoningSummaryVisible ? "Hide reasoning summaries" : "Show reasoning summaries",
     },
-  ] as const satisfies readonly SlashCommand[];
+  ] as const satisfies readonly ChatSlashCommand[];
 }

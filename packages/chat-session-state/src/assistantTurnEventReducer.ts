@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type {
   AssistantResponseEvent,
+  AssistantReasoningConversationMessagePart,
   AssistantTextConversationMessagePart,
+  AssistantToolCallConversationMessagePart,
   ConversationMessage,
   ConversationMessagePart,
   PendingToolApprovalRequest,
@@ -161,6 +163,35 @@ function appendAssistantErrorNoticePartIfMissing(chatSessionState: ChatSessionSt
   });
 }
 
+function appendAssistantInterruptedNoticePartIfMissing(
+  chatSessionState: ChatSessionState,
+  messageId: string,
+  interruptionReason: string,
+): ChatSessionState {
+  const conversationMessage = chatSessionState.conversationMessagesById[messageId];
+  if (!conversationMessage) {
+    return chatSessionState;
+  }
+
+  const hasInterruptedNoticePart = conversationMessage.partIds.some((partId) => {
+    const conversationMessagePart = chatSessionState.conversationMessagePartsById[partId];
+    return conversationMessagePart?.partKind === "assistant_interrupted_notice";
+  });
+  if (hasInterruptedNoticePart) {
+    return chatSessionState;
+  }
+
+  return upsertConversationMessagePart({
+    chatSessionState,
+    messageId,
+    conversationMessagePart: {
+      id: `assistant-interrupted-${randomUUID()}`,
+      partKind: "assistant_interrupted_notice",
+      interruptionReason,
+    },
+  });
+}
+
 function updateAssistantTextPartStatusesForMessage(
   chatSessionState: ChatSessionState,
   messageId: string,
@@ -176,6 +207,51 @@ function updateAssistantTextPartStatusesForMessage(
             partStatus,
           }
         : conversationMessagePart,
+  });
+}
+
+function markInterruptedConversationMessageParts(input: {
+  chatSessionState: ChatSessionState;
+  messageId: string;
+  interruptedToolCallErrorText: string;
+}): ChatSessionState {
+  return updateConversationMessageParts({
+    chatSessionState: input.chatSessionState,
+    messageId: input.messageId,
+    updateConversationMessagePart: (conversationMessagePart) => {
+      if (conversationMessagePart.partKind === "assistant_text") {
+        return {
+          ...conversationMessagePart,
+          partStatus: "interrupted",
+        } satisfies AssistantTextConversationMessagePart;
+      }
+
+      if (conversationMessagePart.partKind === "assistant_reasoning") {
+        return conversationMessagePart.partStatus === "streaming"
+          ? {
+              ...conversationMessagePart,
+              partStatus: "interrupted",
+            } satisfies AssistantReasoningConversationMessagePart
+          : conversationMessagePart;
+      }
+
+      if (conversationMessagePart.partKind === "assistant_tool_call") {
+        if (
+          conversationMessagePart.toolCallStatus !== "running" &&
+          conversationMessagePart.toolCallStatus !== "pending_approval"
+        ) {
+          return conversationMessagePart;
+        }
+
+        return {
+          ...conversationMessagePart,
+          toolCallStatus: "interrupted",
+          errorText: input.interruptedToolCallErrorText,
+        } satisfies AssistantToolCallConversationMessagePart;
+      }
+
+      return conversationMessagePart;
+    },
   });
 }
 
@@ -365,7 +441,7 @@ export function applyAssistantResponseEventToChatSessionState(
         updateConversationMessage({
           chatSessionState: {
             ...chatSessionState,
-            conversationTurnStatus: "assistant_response_failed",
+            conversationTurnStatus: "waiting_for_user_input",
             pendingToolApprovalRequest: undefined,
           },
           messageId: assistantResponseEvent.messageId,
@@ -379,6 +455,29 @@ export function applyAssistantResponseEventToChatSessionState(
       ),
       assistantResponseEvent.messageId,
       assistantResponseEvent.errorText,
+    );
+  }
+
+  if (assistantResponseEvent.type === "assistant_message_interrupted") {
+    return appendAssistantInterruptedNoticePartIfMissing(
+      markInterruptedConversationMessageParts({
+        chatSessionState: updateConversationMessage({
+          chatSessionState: {
+            ...chatSessionState,
+            conversationTurnStatus: "waiting_for_user_input",
+            pendingToolApprovalRequest: undefined,
+          },
+          messageId: assistantResponseEvent.messageId,
+          updateConversationMessage: (conversationMessage) => ({
+            ...conversationMessage,
+            messageStatus: "interrupted",
+          }),
+        }),
+        messageId: assistantResponseEvent.messageId,
+        interruptedToolCallErrorText: assistantResponseEvent.interruptionReason,
+      }),
+      assistantResponseEvent.messageId,
+      assistantResponseEvent.interruptionReason,
     );
   }
 

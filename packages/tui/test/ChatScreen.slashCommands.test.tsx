@@ -18,6 +18,7 @@ const neverEmittingAssistantConversationRunner: AssistantConversationRunner = {
       },
       async approvePendingToolCall() {},
       async denyPendingToolCall() {},
+      interrupt() {},
     };
   },
 };
@@ -64,6 +65,7 @@ const reasoningSummaryAssistantConversationRunner: AssistantConversationRunner =
       },
       async approvePendingToolCall() {},
       async denyPendingToolCall() {},
+      interrupt() {},
     };
   },
 };
@@ -73,6 +75,7 @@ type OpenTuiChatScreenHarness = {
   pressArrowDown(): Promise<string>;
   pressCtrlL(): Promise<string>;
   pressEnter(): Promise<string>;
+  pressEscape(): Promise<string>;
   typeText(text: string): Promise<string>;
   waitForAssistantEvents(): Promise<string>;
 };
@@ -133,6 +136,13 @@ async function renderChatScreen(input: {
     async pressEnter(): Promise<string> {
       await act(async () => {
         renderedChatScreen.mockInput.pressKey("RETURN");
+      });
+      return captureFrame();
+    },
+    async pressEscape(): Promise<string> {
+      await act(async () => {
+        renderedChatScreen.mockInput.pressEscape();
+        await new Promise((resolve) => setTimeout(resolve, 25));
       });
       return captureFrame();
     },
@@ -275,6 +285,18 @@ test("ChatScreen opens command help through slash command instead of question ma
   const questionMarkFrame = await renderedQuestionMarkScreen.typeText("?");
   expect(questionMarkFrame).not.toContain("help · commands");
   expect(questionMarkFrame).toContain("?");
+});
+
+test("ChatScreen closes command help with Escape", async () => {
+  const renderedChatScreen = await renderChatScreen();
+
+  await renderedChatScreen.typeText("/help");
+  const helpFrame = await renderedChatScreen.pressEnter();
+  expect(helpFrame).toContain("help · commands");
+
+  const closedFrame = await renderedChatScreen.pressEscape();
+  expect(closedFrame).not.toContain("help · commands");
+  expect(closedFrame).toContain(">");
 });
 
 test("ChatScreen opens model picker through slash command instead of ctrl-l", async () => {

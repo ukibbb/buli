@@ -59,17 +59,19 @@ export function SlashCommandSelectionPane(props: SlashCommandSelectionPaneProps)
           const isHighlightedSlashCommand =
             firstVisibleSlashCommandIndex + index === props.highlightedSlashCommandIndex;
           return (
-            <box key={slashCommand.value} flexDirection="row" gap={1} width="100%">
-              <text fg={isHighlightedSlashCommand ? chatScreenTheme.accentGreen : chatScreenTheme.textDim}>
+            <box key={slashCommand.value} flexDirection="row" gap={0} width="100%">
+              <text fg={isHighlightedSlashCommand ? chatScreenTheme.accentGreen : chatScreenTheme.textDim} width={2}>
                 {isHighlightedSlashCommand ? ">" : " "}
               </text>
               <text
                 fg={isHighlightedSlashCommand ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+                flexShrink={0}
+                width={slashCommand.name.length + 1}
                 wrapMode="none"
               >
                 {`/${slashCommand.name}`}
               </text>
-              <box flexGrow={1}>
+              <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
                 <text fg={chatScreenTheme.textMuted} wrapMode="none" truncate={true}>
                   {slashCommand.description}
                 </text>

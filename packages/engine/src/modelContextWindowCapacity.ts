@@ -1,6 +1,6 @@
-// Known context-window capacities keyed by model id. When a model isn't in
-// this map the UI falls back to showing raw token counts instead of a
-// percentage, rather than pretending a capacity it doesn't know.
+// Known context-window capacities keyed by model id. When a model isn't in this
+// map the UI can show raw token counts instead of pretending a capacity it
+// doesn't know.
 const MODEL_CONTEXT_WINDOW_TOKEN_CAPACITIES: Record<string, number> = {
   "gpt-5.5": 400_000,
   "gpt-5.5-pro": 400_000,

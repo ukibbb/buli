@@ -16,6 +16,7 @@ export type {
 export {
   AssistantErrorNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
+  AssistantInterruptedNoticeConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
@@ -34,6 +35,7 @@ export {
 export type {
   AssistantErrorNoticeConversationMessagePart,
   AssistantIncompleteNoticeConversationMessagePart,
+  AssistantInterruptedNoticeConversationMessagePart,
   AssistantPlanProposalConversationMessagePart,
   AssistantRateLimitNoticeConversationMessagePart,
   AssistantReasoningConversationMessagePart,
@@ -99,6 +101,7 @@ export {
   FailedAssistantMessageConversationSessionEntrySchema,
   FailedToolResultConversationSessionEntrySchema,
   IncompleteAssistantMessageConversationSessionEntrySchema,
+  InterruptedAssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
   UserPromptConversationSessionEntrySchema,
 } from "./conversationSessionEntry.ts";
@@ -119,6 +122,7 @@ export type {
   FailedAssistantMessageConversationSessionEntry,
   FailedToolResultConversationSessionEntry,
   IncompleteAssistantMessageConversationSessionEntry,
+  InterruptedAssistantMessageConversationSessionEntry,
   ToolCallConversationSessionEntry,
   UserPromptConversationSessionEntry,
 } from "./conversationSessionEntry.ts";
@@ -150,6 +154,7 @@ export {
   AssistantResponseEventSchema,
   AssistantMessageCompletedEventSchema,
   AssistantMessageFailedEventSchema,
+  AssistantMessageInterruptedEventSchema,
   AssistantMessageIncompleteEventSchema,
   AssistantMessagePartAddedEventSchema,
   AssistantMessagePartUpdatedEventSchema,
@@ -161,6 +166,7 @@ export type {
   AssistantResponseEvent,
   AssistantMessageCompletedEvent,
   AssistantMessageFailedEvent,
+  AssistantMessageInterruptedEvent,
   AssistantMessageIncompleteEvent,
   AssistantMessagePartAddedEvent,
   AssistantMessagePartUpdatedEvent,
@@ -248,6 +254,7 @@ export {
   ToolCallEditDetailSchema,
   ToolCallEditDiffLineKindSchema,
   ToolCallEditDiffLineSchema,
+  ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallGrepMatchSchema,
   ToolCallReadDetailSchema,
@@ -267,6 +274,7 @@ export type {
   ToolCallEditDetail,
   ToolCallEditDiffLine,
   ToolCallEditDiffLineKind,
+  ToolCallGlobDetail,
   ToolCallGrepDetail,
   ToolCallGrepMatch,
   ToolCallReadDetail,
@@ -276,5 +284,17 @@ export type {
   ToolCallTodoItemStatus,
   ToolCallTodoWriteDetail,
 } from "./toolCallDetail.ts";
-export { BashToolCallRequestSchema, ToolCallRequestSchema } from "./toolCallRequest.ts";
-export type { BashToolCallRequest, ToolCallRequest } from "./toolCallRequest.ts";
+export {
+  BashToolCallRequestSchema,
+  GlobToolCallRequestSchema,
+  GrepToolCallRequestSchema,
+  ReadToolCallRequestSchema,
+  ToolCallRequestSchema,
+} from "./toolCallRequest.ts";
+export type {
+  BashToolCallRequest,
+  GlobToolCallRequest,
+  GrepToolCallRequest,
+  ReadToolCallRequest,
+  ToolCallRequest,
+} from "./toolCallRequest.ts";

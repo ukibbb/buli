@@ -25,7 +25,7 @@ describe("PromptContextSelectionPane", () => {
 
     await renderOnce();
 
-    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /install\/cache|helper-annotate|README\.md/)).toBe(1);
+    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /install\/cache|helper-annotate|README\.m|Users\/lukasz/)).toBe(1);
   });
 
   test("keeps_the_highlighted_candidate_visible_after_the_first_six_results", async () => {

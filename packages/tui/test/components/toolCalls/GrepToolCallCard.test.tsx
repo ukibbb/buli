@@ -47,6 +47,34 @@ describe("GrepToolCallCard", () => {
     expect(frame).toContain("/src/App.tsx");
   });
 
+  test("completed_shows_returned_and_total_match_hits_when_truncated", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <GrepToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "grep",
+          searchPattern: "match",
+          totalMatchCount: 105,
+          returnedMatchHitCount: 100,
+          matchedFileCount: 1,
+          wasTruncated: true,
+          matchHits: [
+            {
+              matchFilePath: "notes.txt",
+              matchLineNumber: 1,
+              matchSnippet: "match 1",
+            },
+          ],
+        }}
+      />,
+      { width: 140, height: 16 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("100 of 105 matches");
+    expect(frame).toContain("truncated");
+  });
+
   test("completed_shortens_long_search_patterns_in_narrow_cards", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GrepToolCallCard

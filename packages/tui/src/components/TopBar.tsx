@@ -25,7 +25,9 @@ export function TopBar(props: TopBarProps): ReactNode {
       flexShrink={0}
     >
       <text fg={chatScreenTheme.accentGreen}>{glyphs.statusDot}</text>
-      <text fg={chatScreenTheme.textSecondary}>{props.workingDirectoryPath}</text>
+      <box flexShrink={1} minWidth={0} overflow="hidden">
+        <text fg={chatScreenTheme.textSecondary} truncate={true} wrapMode="none">{props.workingDirectoryPath}</text>
+      </box>
     </box>
   );
 }
