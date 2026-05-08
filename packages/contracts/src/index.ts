@@ -252,8 +252,6 @@ export {
   ToolCallBashOutputLineSchema,
   ToolCallDetailSchema,
   ToolCallEditDetailSchema,
-  ToolCallEditDiffLineKindSchema,
-  ToolCallEditDiffLineSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallGrepMatchSchema,
@@ -263,6 +261,7 @@ export {
   ToolCallTodoItemSchema,
   ToolCallTodoItemStatusSchema,
   ToolCallTodoWriteDetailSchema,
+  UnifiedDiffTextSchema,
 } from "./toolCallDetail.ts";
 export type {
   SyntaxHighlightSpan,
@@ -272,8 +271,6 @@ export type {
   ToolCallBashOutputLineKind,
   ToolCallDetail,
   ToolCallEditDetail,
-  ToolCallEditDiffLine,
-  ToolCallEditDiffLineKind,
   ToolCallGlobDetail,
   ToolCallGrepDetail,
   ToolCallGrepMatch,
@@ -283,6 +280,7 @@ export type {
   ToolCallTodoItem,
   ToolCallTodoItemStatus,
   ToolCallTodoWriteDetail,
+  UnifiedDiffText,
 } from "./toolCallDetail.ts";
 export {
   BashToolCallRequestSchema,

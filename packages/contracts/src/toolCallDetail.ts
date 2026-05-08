@@ -88,17 +88,8 @@ export const ToolCallGlobDetailSchema = z
   .strict();
 export type ToolCallGlobDetail = z.infer<typeof ToolCallGlobDetailSchema>;
 
-export const ToolCallEditDiffLineKindSchema = z.enum(["context", "addition", "removal"]);
-export type ToolCallEditDiffLineKind = z.infer<typeof ToolCallEditDiffLineKindSchema>;
-
-export const ToolCallEditDiffLineSchema = z
-  .object({
-    lineNumber: z.number().int().positive().optional(),
-    lineKind: ToolCallEditDiffLineKindSchema,
-    lineText: z.string(),
-  })
-  .strict();
-export type ToolCallEditDiffLine = z.infer<typeof ToolCallEditDiffLineSchema>;
+export const UnifiedDiffTextSchema = z.string().min(1);
+export type UnifiedDiffText = z.infer<typeof UnifiedDiffTextSchema>;
 
 export const ToolCallEditDetailSchema = z
   .object({
@@ -106,7 +97,7 @@ export const ToolCallEditDetailSchema = z
     editedFilePath: z.string().min(1),
     addedLineCount: z.number().int().nonnegative().optional(),
     removedLineCount: z.number().int().nonnegative().optional(),
-    diffLines: z.array(ToolCallEditDiffLineSchema).optional(),
+    unifiedDiffText: UnifiedDiffTextSchema.optional(),
   })
   .strict();
 export type ToolCallEditDetail = z.infer<typeof ToolCallEditDetailSchema>;

@@ -78,9 +78,9 @@ function buildEditBodyContent(props: EditToolCallCardProps): ReactNode {
   if (props.renderState === "failed") {
     return undefined;
   }
-  const diffLines = props.toolCallDetail.diffLines;
-  if (!diffLines || diffLines.length === 0) {
+  const unifiedDiffText = props.toolCallDetail.unifiedDiffText;
+  if (!unifiedDiffText) {
     return undefined;
   }
-  return <DiffBlock diffLines={diffLines} />;
+  return <DiffBlock unifiedDiffText={unifiedDiffText} />;
 }

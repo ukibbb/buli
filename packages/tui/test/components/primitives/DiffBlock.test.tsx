@@ -2,15 +2,26 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { DiffBlock } from "../../../src/components/primitives/DiffBlock.tsx";
 
+function joinUnifiedDiffLines(unifiedDiffLines: readonly string[]): string {
+  return unifiedDiffLines.join("\n");
+}
+
 describe("DiffBlock", () => {
   test("renders_addition_removal_and_context_lines", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <DiffBlock
-        diffLines={[
-          { lineKind: "addition", lineNumber: 1, lineText: "added line" },
-          { lineKind: "removal", lineNumber: 2, lineText: "removed line" },
-          { lineKind: "context", lineNumber: 3, lineText: "context line" },
-        ]}
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/example.ts b/src/example.ts",
+            "--- a/src/example.ts",
+            "+++ b/src/example.ts",
+            "@@ -1,2 +1,2 @@",
+            " context line",
+            "-removed line",
+            "+added line",
+            "",
+          ])
+        }
       />,
       { width: 60, height: 15 },
     );
@@ -26,10 +37,17 @@ describe("DiffBlock", () => {
   test("keeps_line_number_sigil_and_code_on_one_row", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <DiffBlock
-        diffLines={[
-          { lineKind: "addition", lineNumber: 53, lineText: "import { ConversationMessageList } from './components/ConversationMessageList.tsx';" },
-          { lineKind: "removal", lineNumber: 702, lineText: "<LegacyTranscriptPlaceholder ... />" },
-        ]}
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/ChatScreen.tsx b/src/ChatScreen.tsx",
+            "--- a/src/ChatScreen.tsx",
+            "+++ b/src/ChatScreen.tsx",
+            "@@ -702,1 +53,1 @@",
+            "-<LegacyTranscriptPlaceholder ... />",
+            "+import { ConversationMessageList } from './components/ConversationMessageList.tsx';",
+            "",
+          ])
+        }
       />,
       { width: 96, height: 8 },
     );
@@ -49,13 +67,16 @@ describe("DiffBlock", () => {
   test("truncates_long_code_lines_instead_of_wrapping_them", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <DiffBlock
-        diffLines={[
-          {
-            lineKind: "addition",
-            lineNumber: 53,
-            lineText: "import ConversationMessageList from './components/ConversationMessageList.tsx';",
-          },
-        ]}
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/ChatScreen.tsx b/src/ChatScreen.tsx",
+            "--- a/src/ChatScreen.tsx",
+            "+++ b/src/ChatScreen.tsx",
+            "@@ -0,0 +53,1 @@",
+            "+import ConversationMessageList from './components/ConversationMessageList.tsx';",
+            "",
+          ])
+        }
       />,
       { width: 42, height: 5 },
     );

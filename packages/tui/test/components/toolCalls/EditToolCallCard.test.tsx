@@ -12,10 +12,15 @@ describe("EditToolCallCard", () => {
           editedFilePath: "/src/utils.ts",
           addedLineCount: 3,
           removedLineCount: 1,
-          diffLines: [
-            { lineNumber: 5, lineKind: "removal", lineText: "const old = 1;" },
-            { lineNumber: 5, lineKind: "addition", lineText: "const newer = 2;" },
-          ],
+          unifiedDiffText: [
+            "diff --git a/src/utils.ts b/src/utils.ts",
+            "--- a/src/utils.ts",
+            "+++ b/src/utils.ts",
+            "@@ -5,1 +5,1 @@",
+            "-const old = 1;",
+            "+const newer = 2;",
+            "",
+          ].join("\n"),
         }}
       />,
       { width: 80, height: 20 },

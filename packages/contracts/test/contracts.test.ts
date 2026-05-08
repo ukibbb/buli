@@ -65,6 +65,34 @@ test("AssistantToolCallConversationMessagePartSchema parses a denied tool call",
   ).toBe("denied");
 });
 
+test("AssistantToolCallConversationMessagePartSchema parses an edit tool call with unified diff text", () => {
+  const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
+    id: "tool-part-2",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-2",
+    toolCallStatus: "completed",
+    toolCallStartedAtMs: 1,
+    toolCallDetail: {
+      toolName: "edit",
+      editedFilePath: "src/config.ts",
+      unifiedDiffText: [
+        "diff --git a/src/config.ts b/src/config.ts",
+        "--- a/src/config.ts",
+        "+++ b/src/config.ts",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+    },
+  });
+
+  expect(parsedMessagePart.toolCallDetail).toMatchObject({
+    toolName: "edit",
+    unifiedDiffText: expect.stringContaining("@@ -1 +1 @@"),
+  });
+});
+
 test("PendingToolApprovalRequestSchema parses the dedicated approval model", () => {
   expect(
     PendingToolApprovalRequestSchema.parse({
