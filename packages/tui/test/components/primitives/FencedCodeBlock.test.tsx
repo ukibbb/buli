@@ -45,6 +45,24 @@ describe("FencedCodeBlock", () => {
     expect(frame).toContain("1");
   });
 
+  test("renders_plain_unnumbered_code_blocks_through_the_assistant_code_path", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <FencedCodeBlock
+        languageLabel="ts"
+        codeLines={[
+          { lineText: "const answer = 42;" },
+          { lineText: "console.log(answer);" },
+        ]}
+      />,
+      { width: 80, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("// ts");
+    expect(frame).toContain("const answer = 42;");
+    expect(frame).toContain("console.log(answer);");
+  });
+
   test("standalone_renders_language_label_and_code_lines", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <FencedCodeBlock
