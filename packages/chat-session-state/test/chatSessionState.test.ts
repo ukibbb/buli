@@ -515,8 +515,6 @@ test("assistant_message_interrupted clears pending approval, marks open parts in
       partKind: "assistant_text",
       partStatus: "streaming",
       rawMarkdownText: "Partial",
-      completedContentParts: [],
-      openContentPart: { kind: "streaming_markdown_text", text: "Partial" },
     },
   });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {

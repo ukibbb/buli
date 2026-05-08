@@ -1,28 +1,7 @@
 import { z } from "zod";
-import { AssistantContentPartSchema } from "./assistantContentPart.ts";
 import { PlanStepSchema } from "./planProposal.ts";
 import { TokenUsageSchema } from "./provider.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
-
-export const ConversationOpenMarkdownTextPartSchema = z
-  .object({
-    kind: z.literal("streaming_markdown_text"),
-    text: z.string(),
-  })
-  .strict();
-
-export const ConversationOpenFencedCodeBlockPartSchema = z
-  .object({
-    kind: z.literal("streaming_fenced_code_block"),
-    languageLabel: z.string().min(1).optional(),
-    codeLines: z.array(z.string()),
-  })
-  .strict();
-
-export const ConversationOpenAssistantTextPartSchema = z.discriminatedUnion("kind", [
-  ConversationOpenMarkdownTextPartSchema,
-  ConversationOpenFencedCodeBlockPartSchema,
-]);
 
 export const AssistantTextPartStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed", "interrupted"]);
 export const AssistantReasoningPartStatusSchema = z.enum(["streaming", "completed", "interrupted"]);
@@ -49,8 +28,6 @@ export const AssistantTextConversationMessagePartSchema = z
     partKind: z.literal("assistant_text"),
     partStatus: AssistantTextPartStatusSchema,
     rawMarkdownText: z.string(),
-    completedContentParts: z.array(AssistantContentPartSchema),
-    openContentPart: ConversationOpenAssistantTextPartSchema.optional(),
   })
   .strict();
 
@@ -147,9 +124,6 @@ export const ConversationMessagePartSchema = z.discriminatedUnion("partKind", [
   AssistantTurnSummaryConversationMessagePartSchema,
 ]);
 
-export type ConversationOpenMarkdownTextPart = z.infer<typeof ConversationOpenMarkdownTextPartSchema>;
-export type ConversationOpenFencedCodeBlockPart = z.infer<typeof ConversationOpenFencedCodeBlockPartSchema>;
-export type ConversationOpenAssistantTextPart = z.infer<typeof ConversationOpenAssistantTextPartSchema>;
 export type AssistantTextPartStatus = z.infer<typeof AssistantTextPartStatusSchema>;
 export type AssistantReasoningPartStatus = z.infer<typeof AssistantReasoningPartStatusSchema>;
 export type AssistantToolCallPartStatus = z.infer<typeof AssistantToolCallPartStatusSchema>;

@@ -19,6 +19,7 @@
         "@buli/engine": "workspace:*",
         "@buli/openai": "workspace:*",
         "@buli/tui": "workspace:*",
+        "marked": "^17.0.1",
         "open": "^10.2.0",
       },
     },

@@ -27,9 +27,6 @@ export {
   AssistantToolCallPartStatusSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
   ConversationMessagePartSchema,
-  ConversationOpenAssistantTextPartSchema,
-  ConversationOpenFencedCodeBlockPartSchema,
-  ConversationOpenMarkdownTextPartSchema,
   UserTextConversationMessagePartSchema,
 } from "./conversationMessagePart.ts";
 export type {
@@ -46,9 +43,6 @@ export type {
   AssistantToolCallPartStatus,
   AssistantTurnSummaryConversationMessagePart,
   ConversationMessagePart,
-  ConversationOpenAssistantTextPart,
-  ConversationOpenFencedCodeBlockPart,
-  ConversationOpenMarkdownTextPart,
   UserTextConversationMessagePart,
 } from "./conversationMessagePart.ts";
 export { ConversationTurnStatusSchema } from "./conversationTurnStatus.ts";
@@ -64,32 +58,8 @@ export type {
 } from "./diagnosticLog.ts";
 export { PendingToolApprovalRequestSchema } from "./pendingToolApprovalRequest.ts";
 export type { PendingToolApprovalRequest } from "./pendingToolApprovalRequest.ts";
-export {
-  AssistantContentPartSchema,
-  BulletedListContentPartSchema,
-  CalloutContentPartSchema,
-  CalloutSeveritySchema,
-  ChecklistContentPartSchema,
-  ChecklistItemSchema,
-  FencedCodeBlockContentPartSchema,
-  HeadingContentPartSchema,
-  HorizontalRuleContentPartSchema,
-  NumberedListContentPartSchema,
-  ParagraphContentPartSchema,
-} from "./assistantContentPart.ts";
-export type {
-  AssistantContentPart,
-  BulletedListContentPart,
-  CalloutContentPart,
-  CalloutSeverity,
-  ChecklistContentPart,
-  ChecklistItem,
-  FencedCodeBlockContentPart,
-  HeadingContentPart,
-  HorizontalRuleContentPart,
-  NumberedListContentPart,
-  ParagraphContentPart,
-} from "./assistantContentPart.ts";
+export { CalloutSeveritySchema, ChecklistItemSchema } from "./presentationPrimitives.ts";
+export type { CalloutSeverity, ChecklistItem } from "./presentationPrimitives.ts";
 export {
   AssistantMessageConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntryStatusSchema,
@@ -188,30 +158,6 @@ export type {
   ToolResultModelContextItem,
   UserMessageModelContextItem,
 } from "./modelContextItem.ts";
-export {
-  InlineBoldSpanSchema,
-  InlineCodeSpanSchema,
-  InlineHighlightSpanSchema,
-  InlineItalicSpanSchema,
-  InlineLinkSpanSchema,
-  InlinePlainSpanSchema,
-  InlineSpanSchema,
-  InlineStrikeSpanSchema,
-  InlineSubscriptSpanSchema,
-  InlineSuperscriptSpanSchema,
-} from "./inlineSpan.ts";
-export type {
-  InlineBoldSpan,
-  InlineCodeSpan,
-  InlineHighlightSpan,
-  InlineItalicSpan,
-  InlineLinkSpan,
-  InlinePlainSpan,
-  InlineSpan,
-  InlineStrikeSpan,
-  InlineSubscriptSpan,
-  InlineSuperscriptSpan,
-} from "./inlineSpan.ts";
 export { PlanStepSchema, PlanStepStatusSchema } from "./planProposal.ts";
 export type { PlanStep, PlanStepStatus } from "./planProposal.ts";
 export {

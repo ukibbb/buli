@@ -1,4 +1,3 @@
-export { parseAssistantResponseIntoContentParts } from "./assistantContentPartParser.ts";
 export { InMemoryConversationHistory } from "./conversationHistory.ts";
 export type {
   ConversationSessionEntriesChangedListener,

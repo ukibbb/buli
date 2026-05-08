@@ -219,11 +219,6 @@ function createKeyboardApprovalAssistantConversationRunner(): {
                 partKind: "assistant_text",
                 partStatus: "streaming",
                 rawMarkdownText: approvalDecision === "approved" ? "Approved after keyboard." : "Denied after keyboard.",
-                completedContentParts: [],
-                openContentPart: {
-                  kind: "streaming_markdown_text",
-                  text: approvalDecision === "approved" ? "Approved after keyboard." : "Denied after keyboard.",
-                },
               },
             } satisfies AssistantResponseEvent;
             yield {
@@ -274,8 +269,6 @@ function createInterruptibleAssistantConversationRunner(): {
                 partKind: "assistant_text",
                 partStatus: "streaming",
                 rawMarkdownText: "Partial answer",
-                completedContentParts: [],
-                openContentPart: { kind: "streaming_markdown_text", text: "Partial answer" },
               },
             } satisfies AssistantResponseEvent;
 
@@ -325,8 +318,6 @@ function createManuallyReleasedInterruptibleAssistantConversationRunner(): {
                 partKind: "assistant_text",
                 partStatus: "streaming",
                 rawMarkdownText: "Partial answer",
-                completedContentParts: [],
-                openContentPart: { kind: "streaming_markdown_text", text: "Partial answer" },
               },
             } satisfies AssistantResponseEvent;
 

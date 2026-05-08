@@ -12,8 +12,6 @@ export const incompleteReply: ChatSessionFixtureScenario = {
         partKind: "assistant_text",
         partStatus: "streaming",
         rawMarkdownText: "Partial answer",
-        completedContentParts: [],
-        openContentPart: { kind: "streaming_markdown_text", text: "Partial answer" },
       },
     },
     {

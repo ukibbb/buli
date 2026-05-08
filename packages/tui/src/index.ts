@@ -111,8 +111,6 @@ export async function renderChatScreenInTerminal(input: {
 }
 
 export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
-export { RenderAssistantResponseTree } from "./richText/renderAssistantResponseTree.tsx";
-export type { RenderAssistantResponseTreeProps } from "./richText/renderAssistantResponseTree.tsx";
 export { ConversationMessageList } from "./components/ConversationMessageList.tsx";
 export { CommandHelpModal } from "./components/CommandHelpModal.tsx";
 export { ConversationSessionSelectionPane } from "./components/ConversationSessionSelectionPane.tsx";

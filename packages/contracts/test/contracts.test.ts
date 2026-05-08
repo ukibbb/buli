@@ -36,11 +36,6 @@ test("ConversationMessagePartSchema parses an assistant text part with an open s
       partKind: "assistant_text",
       partStatus: "streaming",
       rawMarkdownText: "Hello",
-      completedContentParts: [],
-      openContentPart: {
-        kind: "streaming_markdown_text",
-        text: "Hello",
-      },
     }),
   ).toMatchObject({
     partKind: "assistant_text",

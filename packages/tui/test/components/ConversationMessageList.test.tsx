@@ -64,9 +64,6 @@ describe("ConversationMessageList", () => {
           partKind: "assistant_text",
           partStatus: "completed",
           rawMarkdownText: "# Done",
-          completedContentParts: [
-            { kind: "heading", headingLevel: 1, inlineSpans: [{ spanKind: "plain", spanText: "Done" }] },
-          ],
         },
         {
           id: "tool-1",

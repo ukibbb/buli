@@ -2,13 +2,51 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AssistantContentPart, ConversationSessionEntry, InlineSpan, ToolCallDetail, ToolCallRequest } from "@buli/contracts";
-import { parseAssistantResponseIntoContentParts } from "@buli/engine";
+import type { ConversationSessionEntry, ToolCallDetail, ToolCallRequest } from "@buli/contracts";
+import { marked, Renderer, type Tokens } from "marked";
 
 export type ConversationSessionHtmlExportResult = {
   exportFilePath: string;
   exportFileUrl: string;
 };
+
+class SafeAssistantMarkdownHtmlRenderer extends Renderer {
+  override html({ text }: Tokens.HTML | Tokens.Tag): string {
+    return escapeHtml(text);
+  }
+
+  override code({ text, lang }: Tokens.Code): string {
+    const languageAttribute = lang ? ` data-lang="${escapeHtmlAttribute(lang)}"` : "";
+    return `<pre${languageAttribute}><code>${escapeHtml(text)}</code></pre>`;
+  }
+
+  override link({ href, title, tokens }: Tokens.Link): string {
+    const linkTextHtml = this.parser.parseInline(tokens);
+    const safeHref = safeAssistantMarkdownHref(href);
+
+    if (!safeHref) {
+      return linkTextHtml;
+    }
+
+    const titleAttribute = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
+    return `<a href="${escapeHtmlAttribute(safeHref)}"${titleAttribute}>${linkTextHtml}</a>`;
+  }
+
+  override image({ href, text, title }: Tokens.Image): string {
+    const imageLabel = text.length > 0 ? text : href;
+    const imageText = `image: ${imageLabel}`;
+    const safeHref = safeAssistantMarkdownHref(href);
+
+    if (!safeHref) {
+      return `<span>${escapeHtml(imageText)}</span>`;
+    }
+
+    const titleAttribute = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
+    return `<a href="${escapeHtmlAttribute(safeHref)}"${titleAttribute}>${escapeHtml(imageText)}</a>`;
+  }
+}
+
+const assistantMarkdownHtmlRenderer = new SafeAssistantMarkdownHtmlRenderer();
 
 export function defaultConversationSessionExportDirectoryPath(): string {
   return join(homedir(), ".buli", "session-exports");
@@ -114,7 +152,7 @@ function renderConversationSessionTranscriptEntry(
 
   if (conversationSessionEntry.entryKind === "assistant_message") {
     const assistantTextHtml = conversationSessionEntry.assistantMessageText.length > 0
-      ? renderAssistantContentParts(parseAssistantResponseIntoContentParts(conversationSessionEntry.assistantMessageText))
+      ? renderAssistantMarkdownText(conversationSessionEntry.assistantMessageText)
       : '<p class="muted">No assistant text was recorded.</p>';
 
     const assistantStatusNoticeHtml =
@@ -263,87 +301,33 @@ function renderToolDetailSummary(toolCallDetail: ToolCallDetail): string {
   return `<div class="tool-summary"><span class="tool-name">${escapeHtml(toolCallDetail.toolName)}</span></div>`;
 }
 
-function renderAssistantContentParts(assistantContentParts: readonly AssistantContentPart[]): string {
-  return assistantContentParts.map(renderAssistantContentPart).join("\n");
+function renderAssistantMarkdownText(markdownText: string): string {
+  return marked(markdownText, {
+    async: false,
+    gfm: true,
+    renderer: assistantMarkdownHtmlRenderer,
+  });
 }
 
-function renderAssistantContentPart(assistantContentPart: AssistantContentPart): string {
-  if (assistantContentPart.kind === "paragraph") {
-    return `<p>${renderInlineSpans(assistantContentPart.inlineSpans)}</p>`;
+function safeAssistantMarkdownHref(href: string): string | null {
+  const trimmedHref = href.trim();
+
+  if (trimmedHref.length === 0 || /[\u0000-\u001f\u007f]/.test(trimmedHref)) {
+    return null;
   }
 
-  if (assistantContentPart.kind === "heading") {
-    const headingLevel = Math.min(Math.max(assistantContentPart.headingLevel, 1), 6);
-    return `<h${headingLevel}>${renderInlineSpans(assistantContentPart.inlineSpans)}</h${headingLevel}>`;
+  const hrefForSchemeCheck = trimmedHref.replace(/\s+/g, "");
+  if (hrefForSchemeCheck.startsWith("//")) {
+    return null;
   }
 
-  if (assistantContentPart.kind === "bulleted_list") {
-    return `<ul>${assistantContentPart.itemSpanArrays.map((itemSpans) => `<li>${renderInlineSpans(itemSpans)}</li>`).join("")}</ul>`;
+  const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(hrefForSchemeCheck);
+  if (!schemeMatch) {
+    return trimmedHref;
   }
 
-  if (assistantContentPart.kind === "numbered_list") {
-    return `<ol>${assistantContentPart.itemSpanArrays.map((itemSpans) => `<li>${renderInlineSpans(itemSpans)}</li>`).join("")}</ol>`;
-  }
-
-  if (assistantContentPart.kind === "checklist") {
-    return `<ul class="checklist">${assistantContentPart.items.map((item) => `<li data-status="${escapeHtml(item.itemStatus)}">${escapeHtml(item.itemTitle)}</li>`).join("")}</ul>`;
-  }
-
-  if (assistantContentPart.kind === "fenced_code_block") {
-    const languageAttribute = assistantContentPart.languageLabel
-      ? ` data-lang="${escapeHtmlAttribute(assistantContentPart.languageLabel)}"`
-      : "";
-    return `<pre${languageAttribute}><code>${escapeHtml(assistantContentPart.codeLines.join("\n"))}</code></pre>`;
-  }
-
-  if (assistantContentPart.kind === "callout") {
-    const calloutTitleHtml = assistantContentPart.titleText
-      ? `<strong>${escapeHtml(assistantContentPart.titleText)}</strong>`
-      : "";
-    return `<aside class="callout ${escapeHtml(assistantContentPart.severity)}">${calloutTitleHtml}<p>${renderInlineSpans(assistantContentPart.inlineSpans)}</p></aside>`;
-  }
-
-  return '<hr class="session-rule">';
-}
-
-function renderInlineSpans(inlineSpans: readonly InlineSpan[]): string {
-  return inlineSpans.map(renderInlineSpan).join("");
-}
-
-function renderInlineSpan(inlineSpan: InlineSpan): string {
-  if (inlineSpan.spanKind === "bold") {
-    return `<strong>${escapeHtml(inlineSpan.spanText)}</strong>`;
-  }
-
-  if (inlineSpan.spanKind === "italic") {
-    return `<em>${escapeHtml(inlineSpan.spanText)}</em>`;
-  }
-
-  if (inlineSpan.spanKind === "strike") {
-    return `<s>${escapeHtml(inlineSpan.spanText)}</s>`;
-  }
-
-  if (inlineSpan.spanKind === "code") {
-    return `<code>${escapeHtml(inlineSpan.spanText)}</code>`;
-  }
-
-  if (inlineSpan.spanKind === "link") {
-    return `<a href="${escapeHtmlAttribute(inlineSpan.hrefUrl)}">${escapeHtml(inlineSpan.spanText)}</a>`;
-  }
-
-  if (inlineSpan.spanKind === "highlight") {
-    return `<mark>${escapeHtml(inlineSpan.spanText)}</mark>`;
-  }
-
-  if (inlineSpan.spanKind === "subscript") {
-    return `<sub>${escapeHtml(inlineSpan.spanText)}</sub>`;
-  }
-
-  if (inlineSpan.spanKind === "superscript") {
-    return `<sup>${escapeHtml(inlineSpan.spanText)}</sup>`;
-  }
-
-  return escapeHtml(inlineSpan.spanText);
+  const scheme = schemeMatch[1]?.toLowerCase();
+  return scheme === "http" || scheme === "https" || scheme === "mailto" ? trimmedHref : null;
 }
 
 function renderConversationSessionExportStyles(): string {

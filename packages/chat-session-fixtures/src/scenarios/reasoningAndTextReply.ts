@@ -35,8 +35,6 @@ export const reasoningAndTextReply: ChatSessionFixtureScenario = {
         partKind: "assistant_text",
         partStatus: "streaming",
         rawMarkdownText: "Because.",
-        completedContentParts: [],
-        openContentPart: { kind: "streaming_markdown_text", text: "Because." },
       },
     },
     {

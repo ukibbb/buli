@@ -17,8 +17,6 @@ test("relayAssistantResponseRunnerEvents forwards streamed assistant events in o
               partKind: "assistant_text",
               partStatus: "streaming",
               rawMarkdownText: "hello",
-              completedContentParts: [],
-              openContentPart: { kind: "streaming_markdown_text", text: "hello" },
             },
           };
           yield {
@@ -55,8 +53,6 @@ test("relayAssistantResponseRunnerEvents forwards streamed assistant events in o
         partKind: "assistant_text",
         partStatus: "streaming",
         rawMarkdownText: "hello",
-        completedContentParts: [],
-        openContentPart: { kind: "streaming_markdown_text", text: "hello" },
       },
     },
     {

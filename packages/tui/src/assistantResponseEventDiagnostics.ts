@@ -85,8 +85,6 @@ function summarizeConversationMessagePartStatusForDiagnostics(
     return {
       partStatus: conversationMessagePart.partStatus,
       rawMarkdownTextLength: conversationMessagePart.rawMarkdownText.length,
-      completedContentPartCount: conversationMessagePart.completedContentParts.length,
-      openContentPartKind: conversationMessagePart.openContentPart?.kind ?? null,
     };
   }
 

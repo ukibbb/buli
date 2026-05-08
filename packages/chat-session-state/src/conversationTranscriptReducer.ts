@@ -7,7 +7,6 @@ import type {
   ToolCallDetail,
   ToolCallRequest,
 } from "@buli/contracts";
-import { parseAssistantResponseIntoContentParts } from "@buli/engine";
 import type { ChatSessionState } from "./chatSessionState.ts";
 
 type ToolResultConversationSessionEntry = Extract<
@@ -219,7 +218,6 @@ function buildHydratedConversationTranscript(
           partKind: "assistant_text",
           partStatus: conversationSessionEntry.assistantMessageStatus satisfies AssistantTextPartStatus,
           rawMarkdownText: conversationSessionEntry.assistantMessageText,
-          completedContentParts: [...parseAssistantResponseIntoContentParts(conversationSessionEntry.assistantMessageText)],
         });
       }
 

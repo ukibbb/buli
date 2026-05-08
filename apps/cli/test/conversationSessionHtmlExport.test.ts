@@ -36,7 +36,19 @@ const conversationSessionEntries = [
   {
     entryKind: "assistant_message",
     assistantMessageStatus: "completed",
-    assistantMessageText: "# Done\n\nThe command returned `/tmp/project`.",
+    assistantMessageText: [
+      "# Done",
+      "",
+      "The command returned `/tmp/project`.",
+      "",
+      "<script>alert('assistant')</script>",
+      "",
+      "[safe link](https://example.com) [unsafe link](javascript:alert('x'))",
+      "",
+      "```ts",
+      "const safe = true;",
+      "```",
+    ].join("\n"),
   },
   {
     entryKind: "tool_call",
@@ -75,6 +87,12 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("pwd");
   expect(html).toContain("README.md");
   expect(html).toContain("<h1>Done</h1>");
+  expect(html).toContain("&lt;script&gt;alert(&#39;assistant&#39;)&lt;/script&gt;");
+  expect(html).not.toContain("<script>alert('assistant')</script>");
+  expect(html).toContain('<a href="https://example.com">safe link</a>');
+  expect(html).toContain("unsafe link");
+  expect(html).not.toContain("javascript:alert");
+  expect(html).toContain('<pre data-lang="ts"><code>const safe = true;</code></pre>');
 });
 
 test("writeConversationSessionHtmlExport writes the exported session file", async () => {

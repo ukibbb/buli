@@ -12,8 +12,6 @@ export const simpleUserPromptAndAssistantParagraphReply: ChatSessionFixtureScena
         partKind: "assistant_text",
         partStatus: "streaming",
         rawMarkdownText: "Hello world",
-        completedContentParts: [],
-        openContentPart: { kind: "streaming_markdown_text", text: "Hello world" },
       },
     },
     {
@@ -34,9 +32,6 @@ export const simpleUserPromptAndAssistantParagraphReply: ChatSessionFixtureScena
         partKind: "assistant_text",
         partStatus: "completed",
         rawMarkdownText: "Hello world",
-        completedContentParts: [
-          { kind: "paragraph", inlineSpans: [{ spanKind: "plain", spanText: "Hello world" }] },
-        ],
       },
     },
     {
