@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import type { PromptContextCandidate } from "@buli/engine";
+import { SelectionPaneSelect } from "./SelectionPaneSelect.tsx";
 
 export type PromptContextSelectionPaneProps = {
   promptContextCandidates: readonly PromptContextCandidate[];
@@ -9,37 +10,7 @@ export type PromptContextSelectionPaneProps = {
 
 const MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT = 6;
 
-function selectVisiblePromptContextCandidateWindow(input: {
-  promptContextCandidates: readonly PromptContextCandidate[];
-  highlightedPromptContextCandidateIndex: number;
-}): {
-  firstVisiblePromptContextCandidateIndex: number;
-  visiblePromptContextCandidates: readonly PromptContextCandidate[];
-} {
-  const latestFirstVisiblePromptContextCandidateIndex = Math.max(
-    0,
-    input.promptContextCandidates.length - MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT,
-  );
-  const firstVisiblePromptContextCandidateIndex = Math.min(
-    Math.max(0, input.highlightedPromptContextCandidateIndex - (MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT - 1)),
-    latestFirstVisiblePromptContextCandidateIndex,
-  );
-
-  return {
-    firstVisiblePromptContextCandidateIndex,
-    visiblePromptContextCandidates: input.promptContextCandidates.slice(
-      firstVisiblePromptContextCandidateIndex,
-      firstVisiblePromptContextCandidateIndex + MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT,
-    ),
-  };
-}
-
 export function PromptContextSelectionPane(props: PromptContextSelectionPaneProps): ReactNode {
-  const { firstVisiblePromptContextCandidateIndex, visiblePromptContextCandidates } = selectVisiblePromptContextCandidateWindow({
-    promptContextCandidates: props.promptContextCandidates,
-    highlightedPromptContextCandidateIndex: props.highlightedPromptContextCandidateIndex,
-  });
-
   return (
     <box
       borderStyle="rounded"
@@ -52,29 +23,14 @@ export function PromptContextSelectionPane(props: PromptContextSelectionPaneProp
       paddingX={1}
     >
       <text fg={chatScreenTheme.textMuted}>Context</text>
-      {visiblePromptContextCandidates.length === 0 ? (
+      {props.promptContextCandidates.length === 0 ? (
         <text fg={chatScreenTheme.textSecondary}>No matching files or folders.</text>
       ) : (
-        visiblePromptContextCandidates.map((promptContextCandidate, index) => {
-          const isHighlightedPromptContextCandidate =
-            firstVisiblePromptContextCandidateIndex + index === props.highlightedPromptContextCandidateIndex;
-          return (
-            <box key={`${promptContextCandidate.kind}:${promptContextCandidate.displayPath}`} flexDirection="row" gap={1} width="100%">
-              <text fg={isHighlightedPromptContextCandidate ? chatScreenTheme.accentGreen : chatScreenTheme.textDim}>
-                {isHighlightedPromptContextCandidate ? ">" : " "}
-              </text>
-              <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
-                <text
-                  fg={isHighlightedPromptContextCandidate ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
-                  wrapMode="none"
-                  truncate={true}
-                >
-                  {promptContextCandidate.displayPath}
-                </text>
-              </box>
-            </box>
-          );
-        })
+        <SelectionPaneSelect
+          optionNames={props.promptContextCandidates.map((promptContextCandidate) => promptContextCandidate.displayPath)}
+          highlightedOptionIndex={props.highlightedPromptContextCandidateIndex}
+          maxVisibleOptionCount={MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT}
+        />
       )}
     </box>
   );

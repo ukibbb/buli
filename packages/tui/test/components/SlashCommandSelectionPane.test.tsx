@@ -39,6 +39,6 @@ describe("SlashCommandSelectionPane", () => {
 
     await renderOnce();
 
-    expect(captureCharFrame()).toContain("> /model");
+    expect(captureCharFrame()).toContain("\u25b6 /model");
   });
 });

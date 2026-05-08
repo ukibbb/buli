@@ -30,6 +30,6 @@ describe("ModelAndReasoningSelectionPane", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("> low");
+    expect(frame).toContain("\u25b6 low");
   });
 });
