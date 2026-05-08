@@ -24,7 +24,9 @@ type OpenTuiChatScreenHarness = {
   captureFrame(): Promise<string>;
   pressArrowDown(): Promise<string>;
   pressArrowLeft(): Promise<string>;
+  pressCtrlEnter(): Promise<string>;
   pressEnter(): Promise<string>;
+  pressShiftEnter(): Promise<string>;
   pasteText(text: string): Promise<string>;
   typeText(text: string): Promise<string>;
   waitForFrame(delayMs: number): Promise<string>;
@@ -32,13 +34,14 @@ type OpenTuiChatScreenHarness = {
 
 async function renderChatScreen(input: {
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
+  assistantConversationRunner?: AssistantConversationRunner;
 }): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
     <ChatScreen
       selectedModelId="gpt-5.4"
       loadAvailableAssistantModels={noopAvailableModelsLoader}
       loadPromptContextCandidates={input.loadPromptContextCandidates}
-      assistantConversationRunner={neverEmittingAssistantConversationRunner}
+      assistantConversationRunner={input.assistantConversationRunner ?? neverEmittingAssistantConversationRunner}
     />,
     { width: 120, height: 24 },
   );
@@ -68,7 +71,19 @@ async function renderChatScreen(input: {
     },
     async pressEnter(): Promise<string> {
       await act(async () => {
-        renderedChatScreen.mockInput.pressKey("RETURN");
+        renderedChatScreen.mockInput.pressEnter();
+      });
+      return captureFrame();
+    },
+    async pressCtrlEnter(): Promise<string> {
+      await act(async () => {
+        renderedChatScreen.mockInput.pressEnter({ ctrl: true });
+      });
+      return captureFrame();
+    },
+    async pressShiftEnter(): Promise<string> {
+      await act(async () => {
+        renderedChatScreen.mockInput.pressEnter({ shift: true });
       });
       return captureFrame();
     },
@@ -111,6 +126,32 @@ test("ChatScreen inserts typed text at the caret instead of always appending at 
   expect(renderedFrameAfterInsert).toMatch(/helx.?lo/);
 });
 
+test("ChatScreen inserts a newline with Shift Enter instead of submitting", async () => {
+  const renderedChatScreen = await renderChatScreen({
+    loadPromptContextCandidates: async () => [],
+  });
+
+  await renderedChatScreen.typeText("first line");
+  await renderedChatScreen.pressShiftEnter();
+  const renderedFrameAfterSecondLine = await renderedChatScreen.typeText("second line");
+
+  expect(renderedFrameAfterSecondLine).toContain("first line");
+  expect(renderedFrameAfterSecondLine).toContain("second line");
+});
+
+test("ChatScreen inserts a newline with Ctrl Enter instead of submitting", async () => {
+  const renderedChatScreen = await renderChatScreen({
+    loadPromptContextCandidates: async () => [],
+  });
+
+  await renderedChatScreen.typeText("first line");
+  await renderedChatScreen.pressCtrlEnter();
+  const renderedFrameAfterSecondLine = await renderedChatScreen.typeText("second line");
+
+  expect(renderedFrameAfterSecondLine).toContain("first line");
+  expect(renderedFrameAfterSecondLine).toContain("second line");
+});
+
 test("ChatScreen inserts bracketed paste text at the caret", async () => {
   const renderedChatScreen = await renderChatScreen({
     loadPromptContextCandidates: async () => [],
@@ -131,6 +172,32 @@ test("ChatScreen strips terminal control sequences from pasted text", async () =
   const renderedFrameAfterPaste = await renderedChatScreen.pasteText("\x1B[31mred\x1B[0m");
   expect(renderedFrameAfterPaste).toContain("red");
   expect(renderedFrameAfterPaste).not.toContain("[31m");
+});
+
+test("ChatScreen normalizes CRLF and CR paste line endings before submission", async () => {
+  const submittedPromptTexts: string[] = [];
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn(input) {
+      submittedPromptTexts.push(input.userPromptText);
+      return {
+        async *streamAssistantResponseEvents() {
+          return;
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const renderedChatScreen = await renderChatScreen({
+    loadPromptContextCandidates: async () => [],
+    assistantConversationRunner,
+  });
+
+  await renderedChatScreen.pasteText("first\r\nsecond\rthird");
+  await renderedChatScreen.pressEnter();
+
+  expect(submittedPromptTexts).toEqual(["first\nsecond\nthird"]);
 });
 
 test("ChatScreen debounces fuzzy prompt-context queries before loading candidates", async () => {

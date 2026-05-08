@@ -70,6 +70,7 @@ export type ChatSessionKeyboardInput = {
   keyName: ChatSessionKeyboardKeyName | undefined;
   textInput: string | undefined;
   isCtrlPressed: boolean;
+  isShiftPressed?: boolean;
   isMetaPressed: boolean;
 };
 

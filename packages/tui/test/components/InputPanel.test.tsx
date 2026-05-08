@@ -3,6 +3,9 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { InputPanel } from "../../src/components/InputPanel.tsx";
 
+const noopPromptDraftEdited = () => {};
+const noopPromptSubmitted = () => {};
+
 function countRenderedLinesMatchingPattern(renderedOutput: string, pattern: RegExp): number {
   return renderedOutput.split("\n").filter((renderedLine) => pattern.test(renderedLine)).length;
 }
@@ -21,6 +24,8 @@ describe("InputPanel", () => {
         assistantResponseStatus="waiting_for_user_input"
         totalContextTokensUsed={undefined}
         contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 80, height: 8 },
     );
@@ -43,6 +48,8 @@ describe("InputPanel", () => {
         assistantResponseStatus="waiting_for_user_input"
         totalContextTokensUsed={1000}
         contextWindowTokenCapacity={200000}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 80, height: 8 },
     );
@@ -68,6 +75,8 @@ describe("InputPanel", () => {
         assistantResponseStatus="waiting_for_user_input"
         totalContextTokensUsed={undefined}
         contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 80, height: 8 },
     );
@@ -89,6 +98,8 @@ describe("InputPanel", () => {
         assistantResponseStatus="waiting_for_user_input"
         totalContextTokensUsed={undefined}
         contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 80, height: 8 },
     );
@@ -100,7 +111,7 @@ describe("InputPanel", () => {
     expect(frame).not.toContain("Selection is open");
   });
 
-  test("keeps_a_long_prompt_draft_on_one_visual_row_at_narrow_widths", async () => {
+  test("wraps_a_long_prompt_draft_inside_the_textarea_rows_at_narrow_widths", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
         promptDraft="@/Users/lukasz/Desktop/Projekty/buli/.bun/install/cache/@babel/helper-annotate-as-pure@7.27.3@@@1/README.md"
@@ -113,16 +124,18 @@ describe("InputPanel", () => {
         assistantResponseStatus="waiting_for_user_input"
         totalContextTokensUsed={undefined}
         contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 58, height: 8 },
     );
 
     await renderOnce();
 
-    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /install\/cache|helper-annotate|README\.md/)).toBe(1);
+    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /install\/cache|helper-annotate|README\.md/)).toBeLessThanOrEqual(3);
   });
 
-  test("renders_the_cursor_at_the_current_prompt_draft_offset", async () => {
+  test("renders_the_prompt_draft_through_the_textarea", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
         promptDraft="hello"
@@ -135,12 +148,14 @@ describe("InputPanel", () => {
         assistantResponseStatus="waiting_for_user_input"
         totalContextTokensUsed={undefined}
         contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 80, height: 8 },
     );
 
     await renderOnce();
 
-    expect(captureCharFrame()).toContain("he█llo");
+    expect(captureCharFrame()).toContain("hello");
   });
 });

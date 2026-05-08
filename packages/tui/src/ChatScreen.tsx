@@ -25,6 +25,7 @@ import {
   listOrderedConversationMessageParts,
   refreshPromptContextCandidatesForSelection,
   refreshChatSlashCommandSelectionForCurrentState,
+  replacePromptDraftFromEditor,
   hydrateConversationTranscriptFromSessionEntries,
   showAvailableConversationSessionsForSelection,
   showAvailableAssistantModelsForSelection,
@@ -105,6 +106,60 @@ type OpenTuiConsumableInputEvent = Pick<KeyEvent, "preventDefault" | "stopPropag
 
 function normalizePromptPasteText(pastedText: string): string {
   return stripAnsiSequences(pastedText).replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+}
+
+function canPromptTextareaEditChatSessionState(chatSessionState: ChatSessionState): boolean {
+  return chatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
+    !chatSessionState.isCommandHelpModalVisible &&
+    chatSessionState.modelAndReasoningSelectionState.step === "hidden" &&
+    chatSessionState.conversationSessionSelectionState.step === "hidden";
+}
+
+function shouldPromptTextareaHandleKeyboardInput(input: {
+  chatSessionState: ChatSessionState;
+  chatSessionKeyboardInput: ChatSessionKeyboardInput;
+}): boolean {
+  if (!canPromptTextareaEditChatSessionState(input.chatSessionState)) {
+    return false;
+  }
+
+  if (
+    input.chatSessionKeyboardInput.keyName === "tab" ||
+    input.chatSessionKeyboardInput.keyName === "pageup" ||
+    input.chatSessionKeyboardInput.keyName === "pagedown"
+  ) {
+    return false;
+  }
+
+  if (
+    input.chatSessionState.slashCommandSelectionState.step !== "hidden" ||
+    input.chatSessionState.promptContextSelectionState.step !== "hidden"
+  ) {
+    return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
+      input.chatSessionKeyboardInput.keyName !== "up" &&
+      input.chatSessionKeyboardInput.keyName !== "down" &&
+      input.chatSessionKeyboardInput.keyName !== "return" &&
+      input.chatSessionKeyboardInput.keyName !== "escape";
+  }
+
+  return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
+    input.chatSessionKeyboardInput.keyName !== "escape";
+}
+
+function isPromptTextareaEditingKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {
+  if (chatSessionKeyboardInput.textInput !== undefined) {
+    return true;
+  }
+
+  return chatSessionKeyboardInput.keyName === "backspace" ||
+    chatSessionKeyboardInput.keyName === "delete" ||
+    chatSessionKeyboardInput.keyName === "down" ||
+    chatSessionKeyboardInput.keyName === "end" ||
+    chatSessionKeyboardInput.keyName === "home" ||
+    chatSessionKeyboardInput.keyName === "left" ||
+    chatSessionKeyboardInput.keyName === "return" ||
+    chatSessionKeyboardInput.keyName === "right" ||
+    chatSessionKeyboardInput.keyName === "up";
 }
 
 function logChatScreenDiagnosticEvent(
@@ -784,9 +839,20 @@ export function ChatScreen(props: ChatScreenProps) {
 
   const applyKeyboardInputToChatScreen = useEffectEvent((input: {
     chatSessionKeyboardInput: ChatSessionKeyboardInput;
-    inputEvent: OpenTuiConsumableInputEvent;
+    inputEvent?: OpenTuiConsumableInputEvent;
+    shouldRespectPromptTextareaOwnership?: boolean;
   }) => {
     const previousChatSessionState = latestChatSessionStateRef.current;
+    if (
+      input.shouldRespectPromptTextareaOwnership !== false &&
+      shouldPromptTextareaHandleKeyboardInput({
+        chatSessionState: previousChatSessionState,
+        chatSessionKeyboardInput: input.chatSessionKeyboardInput,
+      })
+    ) {
+      return;
+    }
+
     const keyboardInteraction = applyChatSessionKeyboardInputToChatSessionState({
       chatSessionState: previousChatSessionState,
       chatSessionKeyboardInput: input.chatSessionKeyboardInput,
@@ -794,8 +860,8 @@ export function ChatScreen(props: ChatScreenProps) {
     });
 
     if (keyboardInteraction.shouldConsumeKeyboardInput) {
-      input.inputEvent.preventDefault();
-      input.inputEvent.stopPropagation();
+      input.inputEvent?.preventDefault();
+      input.inputEvent?.stopPropagation();
     }
 
     if (keyboardInteraction.promptSubmissionRejectionReason) {
@@ -830,8 +896,43 @@ export function ChatScreen(props: ChatScreenProps) {
     }
   });
 
+  const applyPromptTextareaEditToChatScreen = useEffectEvent((input: {
+    promptDraft: string;
+    promptDraftCursorOffset: number;
+  }) => {
+    const previousChatSessionState = latestChatSessionStateRef.current;
+    const nextChatSessionState = replacePromptDraftFromEditor({
+      chatSessionState: previousChatSessionState,
+      promptDraft: input.promptDraft,
+      promptDraftCursorOffset: input.promptDraftCursorOffset,
+    });
+
+    if (nextChatSessionState === previousChatSessionState) {
+      return;
+    }
+
+    latestChatSessionStateRef.current = nextChatSessionState;
+    setChatSessionState(nextChatSessionState);
+  });
+
+  const submitPromptDraftFromPromptTextarea = useEffectEvent(() => {
+    applyKeyboardInputToChatScreen({
+      chatSessionKeyboardInput: {
+        keyName: "return",
+        textInput: undefined,
+        isCtrlPressed: false,
+        isMetaPressed: false,
+      },
+      shouldRespectPromptTextareaOwnership: false,
+    });
+  });
+
   useEffect(() => {
     const handlePaste = (pasteEvent: PasteEvent) => {
+      if (canPromptTextareaEditChatSessionState(latestChatSessionStateRef.current)) {
+        return;
+      }
+
       const pastedText = normalizePromptPasteText(decodePasteBytes(pasteEvent.bytes));
       if (pastedText.length === 0) {
         return;
@@ -1076,6 +1177,8 @@ export function ChatScreen(props: ChatScreenProps) {
               accentColor={inputPanelAccentColor}
               assistantResponseStatus={chatSessionState.conversationTurnStatus}
               isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
+              onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
+              onPromptSubmitted={submitPromptDraftFromPromptTextarea}
             />
           ) : (
             <InputPanel
@@ -1092,6 +1195,8 @@ export function ChatScreen(props: ChatScreenProps) {
               isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
               totalContextTokensUsed={totalContextTokensUsed}
               contextWindowTokenCapacity={contextWindowTokenCapacity}
+              onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
+              onPromptSubmitted={submitPromptDraftFromPromptTextarea}
             />
           )}
         </box>

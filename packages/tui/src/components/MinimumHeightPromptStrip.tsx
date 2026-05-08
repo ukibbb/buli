@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ConversationTurnStatus } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { PromptDraftText } from "./PromptDraftText.tsx";
+import { PromptTextarea, type PromptTextareaEdit } from "./PromptTextarea.tsx";
 
 // Single-row degraded replacement for InputPanel used at minimumTerminalSizeTier.
 // Drops every secondary element (mode chip, model chip, help footer, context
@@ -20,6 +21,8 @@ export type MinimumHeightPromptStripProps = {
   accentColor: string;
   assistantResponseStatus: ConversationTurnStatus;
   isActiveTurnInterruptConfirmationArmed?: boolean;
+  onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
+  onPromptSubmitted: () => void;
 };
 
 export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): ReactNode {
@@ -55,13 +58,24 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
         <b>{">"}</b>
       </text>
       <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
-        <PromptDraftText
-          promptDraft={props.promptDraft}
-          promptDraftCursorOffset={props.promptDraftCursorOffset}
-          selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
-          cursorCharacter={cursorCharacter}
-          shouldRenderPromptDraftOnSingleLine={true}
-        />
+        {props.isPromptInputDisabled ? (
+          <PromptDraftText
+            promptDraft={props.promptDraft}
+            promptDraftCursorOffset={props.promptDraftCursorOffset}
+            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+            cursorCharacter={cursorCharacter}
+            shouldRenderPromptDraftOnSingleLine={true}
+          />
+        ) : (
+          <PromptTextarea
+            promptDraft={props.promptDraft}
+            promptDraftCursorOffset={props.promptDraftCursorOffset}
+            isFocused={true}
+            rowCount={MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT}
+            onPromptDraftEdited={props.onPromptDraftEdited}
+            onPromptSubmitted={props.onPromptSubmitted}
+          />
+        )}
       </box>
     </box>
   );

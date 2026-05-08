@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import type { ConversationTurnStatus } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
 import { PromptDraftText } from "./PromptDraftText.tsx";
+import { PromptTextarea, PROMPT_TEXTAREA_ROW_COUNT, type PromptTextareaEdit } from "./PromptTextarea.tsx";
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Pen frame HOeet. Owns three stacked rows: a header strip with mode + model
@@ -12,10 +12,10 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 // working indicator while streaming, a contextual override message when one is
 // supplied, or only the context meter when idle.
 //
-// Exported row count = 2 (rounded border) + 1 (header) + 1 (body) + 1 (footer).
+// Exported row count = 2 (rounded border) + 1 (header) + textarea rows + 1 (footer).
 // It is the source of truth for ChatScreen's responsive budgeting math — keep
 // it in sync with the rendered output below.
-export const INPUT_PANEL_NATURAL_ROW_COUNT = 5;
+export const INPUT_PANEL_NATURAL_ROW_COUNT = 2 + 1 + PROMPT_TEXTAREA_ROW_COUNT + 1;
 
 export type InputPanelProps = {
   promptDraft: string;
@@ -31,24 +31,11 @@ export type InputPanelProps = {
   isActiveTurnInterruptConfirmationArmed?: boolean;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
+  onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
+  onPromptSubmitted: () => void;
 };
 
 export function InputPanel(props: InputPanelProps): ReactNode {
-  const [frameIndex, setFrameIndex] = useState(0);
-
-  useEffect(() => {
-    if (props.isPromptInputDisabled) {
-      return;
-    }
-
-    const id = setInterval(() => {
-      setFrameIndex((prev) => prev + 1);
-    }, 500);
-    return () => clearInterval(id);
-  }, [props.isPromptInputDisabled]);
-
-  const isCursorVisible = frameIndex % 2 === 0;
-  const cursorCharacter = !props.isPromptInputDisabled && isCursorVisible ? "█" : " ";
   const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
     props.assistantResponseStatus === "waiting_for_tool_approval";
   const activeTurnStatusText = props.isActiveTurnInterruptConfirmationArmed
@@ -74,18 +61,28 @@ export function InputPanel(props: InputPanelProps): ReactNode {
           {`[ ${props.modelIdentifier} · ${props.reasoningEffortLabel} ]`}
         </text>
       </box>
-      <box flexDirection="row" paddingX={1} gap={1}>
+      <box flexDirection="row" paddingX={1} gap={1} height={PROMPT_TEXTAREA_ROW_COUNT}>
         <text fg={props.accentColor}>
           <b>{">"}</b>
         </text>
         <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
-          <PromptDraftText
-            promptDraft={props.promptDraft}
-            promptDraftCursorOffset={props.promptDraftCursorOffset}
-            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
-            cursorCharacter={cursorCharacter}
-            shouldRenderPromptDraftOnSingleLine={true}
-          />
+          {props.isPromptInputDisabled ? (
+            <PromptDraftText
+              promptDraft={props.promptDraft}
+              promptDraftCursorOffset={props.promptDraftCursorOffset}
+              selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+              cursorCharacter=" "
+              shouldRenderPromptDraftOnSingleLine={false}
+            />
+          ) : (
+            <PromptTextarea
+              promptDraft={props.promptDraft}
+              promptDraftCursorOffset={props.promptDraftCursorOffset}
+              isFocused={true}
+              onPromptDraftEdited={props.onPromptDraftEdited}
+              onPromptSubmitted={props.onPromptSubmitted}
+            />
+          )}
         </box>
       </box>
       <box

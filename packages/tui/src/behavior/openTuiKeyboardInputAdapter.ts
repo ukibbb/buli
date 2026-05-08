@@ -4,6 +4,7 @@ export type OpenTuiKeyboardEventForChatSession = {
   name: string | undefined;
   sequence: string | undefined;
   ctrl: boolean | undefined;
+  shift?: boolean | undefined;
   meta: boolean | undefined;
 };
 
@@ -18,6 +19,7 @@ export function normalizeOpenTuiKeyEventForChatSession(
     keyName,
     textInput: keyName ? undefined : resolvePlainTextInput(openTuiKeyboardEvent.sequence),
     isCtrlPressed: openTuiKeyboardEvent.ctrl === true,
+    ...(openTuiKeyboardEvent.shift === true ? { isShiftPressed: true } : {}),
     isMetaPressed: openTuiKeyboardEvent.meta === true,
   };
 }

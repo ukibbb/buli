@@ -62,6 +62,7 @@ export {
   movePromptDraftCursorToStart,
   removePromptDraftCharacterAtCursor,
   removePromptDraftCharacterBeforeCursor,
+  replacePromptDraftFromEditor,
   submitPromptDraft,
 } from "./promptDraftReducer.ts";
 export {

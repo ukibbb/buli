@@ -12,6 +12,7 @@ import {
   insertTextIntoPromptDraftAtCursor,
   listOrderedConversationMessageParts,
   listOrderedConversationMessages,
+  replacePromptDraftFromEditor,
   selectAssistantOperatingMode,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingState,
@@ -116,6 +117,32 @@ test("submitPromptDraft appends a completed user message and enters streaming st
       text: "Hello",
     },
   ]);
+});
+
+test("replacePromptDraftFromEditor replaces text and clamps cursor offset", () => {
+  const chatSessionState = replacePromptDraftFromEditor({
+    chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    promptDraft: "line one\nline two",
+    promptDraftCursorOffset: 999,
+  });
+
+  expect(chatSessionState.promptDraft).toBe("line one\nline two");
+  expect(chatSessionState.promptDraftCursorOffset).toBe("line one\nline two".length);
+});
+
+test("replacePromptDraftFromEditor reconciles selected prompt-context references", () => {
+  const chatSessionState = replacePromptDraftFromEditor({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      promptDraft: "Read @README.md and @packages/tui/src/ChatScreen.tsx",
+      promptDraftCursorOffset: "Read @README.md and @packages/tui/src/ChatScreen.tsx".length,
+      selectedPromptContextReferenceTexts: ["@README.md", "@packages/tui/src/ChatScreen.tsx"],
+    },
+    promptDraft: "Read @README.md",
+    promptDraftCursorOffset: "Read @README.md".length,
+  });
+
+  expect(chatSessionState.selectedPromptContextReferenceTexts).toEqual(["@README.md"]);
 });
 
 test("applyChatSessionKeyboardInputToChatSessionState inserts pasted text at the prompt cursor", () => {

@@ -3,6 +3,9 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { MinimumHeightPromptStrip } from "../../src/components/MinimumHeightPromptStrip.tsx";
 
+const noopPromptDraftEdited = () => {};
+const noopPromptSubmitted = () => {};
+
 describe("MinimumHeightPromptStrip", () => {
   test("renders_prompt_caret_and_draft_text_when_idle", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
@@ -12,6 +15,8 @@ describe("MinimumHeightPromptStrip", () => {
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 40, height: 6 },
     );
@@ -29,6 +34,8 @@ describe("MinimumHeightPromptStrip", () => {
         isPromptInputDisabled={true}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="streaming_assistant_response"
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 40, height: 6 },
     );
@@ -46,6 +53,8 @@ describe("MinimumHeightPromptStrip", () => {
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
       />,
       { width: 40, height: 6 },
     );

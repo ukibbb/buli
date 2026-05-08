@@ -52,6 +52,26 @@ export function insertTextIntoPromptDraftAtCursor(chatSessionState: ChatSessionS
   });
 }
 
+export function replacePromptDraftFromEditor(input: {
+  chatSessionState: ChatSessionState;
+  promptDraft: string;
+  promptDraftCursorOffset: number;
+}): ChatSessionState {
+  const promptDraftCursorOffset = Math.max(0, Math.min(input.promptDraftCursorOffset, input.promptDraft.length));
+  if (
+    input.chatSessionState.promptDraft === input.promptDraft &&
+    input.chatSessionState.promptDraftCursorOffset === promptDraftCursorOffset
+  ) {
+    return input.chatSessionState;
+  }
+
+  return createPromptDraftEditedState({
+    chatSessionState: input.chatSessionState,
+    promptDraft: input.promptDraft,
+    promptDraftCursorOffset,
+  });
+}
+
 export function movePromptDraftCursorLeft(chatSessionState: ChatSessionState): ChatSessionState {
   return {
     ...chatSessionState,
