@@ -360,7 +360,26 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
         : []),
       ...(conversationSessionEntry.toolCallRequest.includeGlobPattern !== undefined
         ? [`Include: ${conversationSessionEntry.toolCallRequest.includeGlobPattern}`]
-        : []),
+      : []),
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "edit") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: edit",
+      `Path: ${conversationSessionEntry.toolCallRequest.editTargetPath}`,
+      `Old string length: ${conversationSessionEntry.toolCallRequest.oldString.length}`,
+      `New string length: ${conversationSessionEntry.toolCallRequest.newString.length}`,
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "write") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: write",
+      `Path: ${conversationSessionEntry.toolCallRequest.writeTargetPath}`,
+      `Content length: ${conversationSessionEntry.toolCallRequest.fileContent.length}`,
     ].join("\n");
   }
 

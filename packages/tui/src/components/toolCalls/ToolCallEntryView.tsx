@@ -7,6 +7,7 @@ import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import { TaskToolCallCard } from "./TaskToolCallCard.tsx";
 import { TodoWriteToolCallCard } from "./TodoWriteToolCallCard.tsx";
+import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
 
 // ToolCallEntryView dispatches an assistant tool-call part's ToolCallDetail to
 // the correct per-tool card. All cards accept the same renderState /
@@ -54,6 +55,16 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   if (toolCallDetail.toolName === "edit") {
     return (
       <EditToolCallCard
+        renderState={props.renderState}
+        toolCallDetail={toolCallDetail}
+        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
+        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
+      />
+    );
+  }
+  if (toolCallDetail.toolName === "write") {
+    return (
+      <WriteToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}

@@ -97,6 +97,7 @@ function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
   return (
     <FencedCodeBlock
       variant="embedded"
+      filePath={props.toolCallDetail.readFilePath}
       codeLines={previewLines.map((previewLine) => ({
         lineNumber: previewLine.lineNumber,
         lineText: previewLine.lineText,

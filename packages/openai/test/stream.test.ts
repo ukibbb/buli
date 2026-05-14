@@ -347,7 +347,7 @@ test("parseOpenAiStream accepts nullable bash function arguments", async () => {
   ]);
 });
 
-test("parseOpenAiStream parses read, glob, and grep tool calls", async () => {
+test("parseOpenAiStream parses typed coding tool calls", async () => {
   const toolCallCases = [
     {
       toolName: "read",
@@ -376,6 +376,25 @@ test("parseOpenAiStream parses read, glob, and grep tool calls", async () => {
         regexPattern: "ToolCallRequest",
         searchPath: "packages",
         includeGlobPattern: "*.ts",
+      },
+    },
+    {
+      toolName: "edit",
+      argumentsText: '{"filePath":"src/app.ts","oldString":"old","newString":""}',
+      expectedToolCallRequest: {
+        toolName: "edit",
+        editTargetPath: "src/app.ts",
+        oldString: "old",
+        newString: "",
+      },
+    },
+    {
+      toolName: "write",
+      argumentsText: '{"filePath":"src/generated.ts","content":""}',
+      expectedToolCallRequest: {
+        toolName: "write",
+        writeTargetPath: "src/generated.ts",
+        fileContent: "",
       },
     },
   ] as const;
@@ -407,11 +426,15 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const readToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "read");
   const globToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "glob");
   const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
+  const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
+  const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
   expect(globToolDefinition?.description).toContain("Use this instead of bash for file discovery");
   expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
+  expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
+  expect(writeToolDefinition?.description).toContain("requires approval before writing");
 });
 
 test("parseOpenAiStream rejects malformed typed tool JSON arguments clearly", async () => {
@@ -445,14 +468,14 @@ test("parseOpenAiStream rejects malformed typed tool argument fields clearly", a
 test("parseOpenAiStream rejects unsupported tool names clearly", async () => {
   const response = new Response(
     [
-      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"write","arguments":""}}\n\n',
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"task","arguments":""}}\n\n',
       'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{}"}\n\n',
-      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"write","arguments":"{}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"task","arguments":"{}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
     ].join(""),
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported tool requested by OpenAI: write");
+  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported tool requested by OpenAI: task");
 });
 
 test("parseOpenAiStream repairs tool-turn output when response.completed omits the function_call item", async () => {
@@ -677,7 +700,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       reasoning: { summary: "auto" },
       stream: true,
     });
-    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["bash", "read", "glob", "grep"]);
+    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["bash", "read", "glob", "grep", "edit", "write"]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },
       {

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelContextItem, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
@@ -1151,4 +1151,129 @@ test("AssistantConversationRuntime reuses prior user and assistant messages on t
     { itemKind: "assistant_message", messageText: "First answer" },
     { itemKind: "user_message", messageText: "Second prompt" },
   ]);
+});
+
+test("AssistantConversationRuntime requests approval before applying an edit tool call", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-edit-tool-"));
+  const notesPath = join(workspaceRootPath, "notes.txt");
+  await writeFile(notesPath, "alpha\nbeta\n", "utf8");
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_edit_1",
+        toolCallRequest: {
+          toolName: "edit",
+          editTargetPath: "notes.txt",
+          oldString: "beta",
+          newString: "delta",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Edit acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+  const activeConversationTurn = runtime.startConversationTurn({
+    userPromptText: "Edit notes",
+    selectedModelId: "gpt-5.4",
+  });
+  const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
+  const emittedAssistantEvents = [];
+
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  const approvalEventResult = await assistantEventIterator.next();
+  emittedAssistantEvents.push(approvalEventResult.value);
+  if (approvalEventResult.value?.type !== "assistant_pending_tool_approval_requested") {
+    throw new Error("expected assistant_pending_tool_approval_requested");
+  }
+
+  expect(approvalEventResult.value.approvalRequest.pendingToolCallDetail).toMatchObject({
+    toolName: "edit",
+    editedFilePath: "notes.txt",
+    unifiedDiffText: expect.stringContaining("+delta"),
+  });
+  await activeConversationTurn.approvePendingToolCall(approvalEventResult.value.approvalRequest.approvalId);
+
+  while (true) {
+    const nextAssistantEvent = await assistantEventIterator.next();
+    if (nextAssistantEvent.done) {
+      break;
+    }
+
+    emittedAssistantEvents.push(nextAssistantEvent.value);
+  }
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toContain("assistant_pending_tool_approval_requested");
+  expect(await readFile(notesPath, "utf8")).toBe("alpha\ndelta\n");
+  expect(providerTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_edit_1",
+      toolResultText: expect.stringContaining("Edited file: notes.txt"),
+    },
+  ]);
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
+    { entryKind: "user_prompt" },
+    { entryKind: "tool_call", toolCallId: "call_edit_1" },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_edit_1",
+      toolCallDetail: { toolName: "edit", editedFilePath: "notes.txt" },
+    },
+    { entryKind: "assistant_message", assistantMessageStatus: "completed" },
+  ]);
+});
+
+test("AssistantConversationRuntime denies write tool calls in plan mode", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-plan-write-tool-"));
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_write_1",
+        toolCallRequest: {
+          toolName: "write",
+          writeTargetPath: "generated.txt",
+          fileContent: "generated\n",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Write denied." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Plan write",
+      assistantOperatingMode: "plan",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).not.toContain(
+    "assistant_pending_tool_approval_requested",
+  );
+  expect(providerTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_write_1",
+      toolResultText: "Plan mode is read-only, so this write tool call was not applied.",
+    },
+  ]);
+  await expect(readFile(join(workspaceRootPath, "generated.txt"), "utf8")).rejects.toThrow();
 });

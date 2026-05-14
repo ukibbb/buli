@@ -1,12 +1,10 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import {
-  decodePasteBytes,
-  stripAnsiSequences,
   type KeyBinding,
-  type PasteEvent,
   type TextareaRenderable,
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { normalizeOpenTuiPasteEventText } from "../behavior/normalizeOpenTuiPasteEventText.ts";
 
 export const PROMPT_TEXTAREA_ROW_COUNT = 3;
 
@@ -26,19 +24,12 @@ export type PromptTextareaProps = {
 
 const promptTextareaKeyBindings: KeyBinding[] = [
   { name: "return", action: "submit" },
-  { name: "enter", action: "submit" },
   { name: "return", shift: true, action: "newline" },
-  { name: "enter", shift: true, action: "newline" },
   { name: "return", ctrl: true, action: "newline" },
-  { name: "enter", ctrl: true, action: "newline" },
 ];
 
 function clampPromptDraftCursorOffset(promptDraft: string, promptDraftCursorOffset: number): number {
   return Math.max(0, Math.min(promptDraftCursorOffset, promptDraft.length));
-}
-
-function normalizePromptTextareaPasteText(pasteEvent: PasteEvent): string {
-  return stripAnsiSequences(decodePasteBytes(pasteEvent.bytes)).replaceAll("\r\n", "\n").replaceAll("\r", "\n");
 }
 
 export function PromptTextarea(props: PromptTextareaProps): ReactNode {
@@ -99,7 +90,7 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       onContentChange={publishPromptTextareaEdit}
       onCursorChange={publishPromptTextareaEdit}
       onPaste={(pasteEvent) => {
-        const pastedText = normalizePromptTextareaPasteText(pasteEvent);
+        const pastedText = normalizeOpenTuiPasteEventText(pasteEvent);
         pasteEvent.preventDefault();
         if (pastedText.length > 0) {
           promptTextareaRef.current?.insertText(pastedText);

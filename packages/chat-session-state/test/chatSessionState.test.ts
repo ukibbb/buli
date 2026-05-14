@@ -265,7 +265,7 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
 });
 
-test("hydrateConversationTranscriptFromSessionEntries creates read-only tool details from requests", () => {
+test("hydrateConversationTranscriptFromSessionEntries creates tool details from requests", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     [
@@ -299,6 +299,25 @@ test("hydrateConversationTranscriptFromSessionEntries creates read-only tool det
           regexPattern: "ToolCallRequest",
         },
       },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-edit",
+        toolCallRequest: {
+          toolName: "edit",
+          editTargetPath: "README.md",
+          oldString: "old",
+          newString: "new",
+        },
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-write",
+        toolCallRequest: {
+          toolName: "write",
+          writeTargetPath: "generated.txt",
+          fileContent: "generated\n",
+        },
+      },
     ],
   );
 
@@ -321,6 +340,14 @@ test("hydrateConversationTranscriptFromSessionEntries creates read-only tool det
     {
       partKind: "assistant_tool_call",
       toolCallDetail: { toolName: "grep", searchPattern: "ToolCallRequest" },
+    },
+    {
+      partKind: "assistant_tool_call",
+      toolCallDetail: { toolName: "edit", editedFilePath: "README.md" },
+    },
+    {
+      partKind: "assistant_tool_call",
+      toolCallDetail: { toolName: "write", writtenFilePath: "generated.txt" },
     },
     {
       partKind: "assistant_interrupted_notice",

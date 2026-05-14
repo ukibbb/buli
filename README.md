@@ -1,8 +1,10 @@
 # buli
 
-`buli` is a local-first, terminal-only software engineering agent for one user: ukibbb.
+`buli` is a local-first, terminal-only learning-first software engineering partner for one user: ukibbb.
 
 The current app is a fullscreen terminal chat experience built on Bun, the OpenAI Responses API, and a single OpenTUI-backed renderer in `@buli/tui`.
+
+The product direction is not autonomous coding throughput. `buli` should help the user understand how systems work, why a change or design fits, which other options exist, and what tradeoffs matter. Code changes are an agreed apply step after that learning and design process.
 
 ## Current Status
 
@@ -30,9 +32,9 @@ V1 currently includes:
 - startup resume for the active workspace session
 - `/sessions` switching across saved conversation sessions
 - `/export-session` HTML transcript export
-- typed local inspection tools: `read`, `glob`, and `grep`
+- typed local workspace tools: `read`, `glob`, `grep`, `edit`, and `write`
 - local `bash` tool wired through the engine and OpenAI Responses function-calling loop
-- explicit tool approval flow with visible approve and deny buttons for pending bash commands
+- explicit tool approval flow with visible approve and deny buttons for pending bash commands and file mutations
 - HERO 1 visual design translated to terminal constraints
 - typed message and content-part contracts in `@buli/contracts`
 - shared design tokens in `@buli/assistant-design-tokens`
@@ -40,7 +42,7 @@ V1 currently includes:
 
 V1 intentionally does not include yet:
 
-- write/edit tools beyond the current read-only `read`, `glob`, and `grep` tools
+- patch-style multi-file mutation tools such as `apply_patch`
 - session branching
 - raw event replay/debug export bundles
 - extension loading
@@ -112,7 +114,10 @@ After logging in, you can:
 - type `/model` to open model selection
 - choose a model and, when supported, choose a reasoning effort
 - let the assistant inspect workspace files through typed `read`, `glob`, and `grep` tools instead of shelling out for normal file reads and search
-- approve or deny a pending `bash` command with the visible approval buttons
+- ask the assistant to explain how project code works under the hood before choosing a path
+- compare implementation options, tradeoffs, risks, and maintenance consequences before applying changes
+- let the assistant apply agreed file changes through typed `edit` and `write` tools with diff preview before approval
+- approve or deny a pending `bash`, `edit`, or `write` tool call with the visible approval buttons
 - ask follow-up questions that depend on earlier replies and completed tool results from the current persisted session
 - resume the active workspace session after restarting `buli`
 - switch saved sessions with `/sessions`
@@ -167,7 +172,7 @@ Current packages:
 - `packages/chat-session-state`
   - shared reducer, selectors, transcript hydration, prompt editing state, prompt-context selection state, session-selection state, and model-selection state
 - `packages/engine`
-  - UI-agnostic conversation runner, in-memory history projection, approval flow, local `read`/`glob`/`grep`/`bash` execution, and assistant text-part building
+  - UI-agnostic conversation runner, in-memory history projection, approval flow, local `read`/`glob`/`grep`/`edit`/`write`/`bash` execution, and assistant text-part building
 - `packages/openai`
   - OAuth, token refresh, Responses transport, available model discovery, typed function-call parsing, and same-turn continuation after tool output
 - `packages/tui`

@@ -7,16 +7,11 @@ import {
 } from "./testRenderRegistry.ts";
 
 type OpenTuiTestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
-type ReactGlobalWithActEnvironment = typeof globalThis & {
-  IS_REACT_ACT_ENVIRONMENT?: boolean;
-};
 
 export async function testRender(
   node: ReactNode,
   testRendererOptions: TestRendererOptions = {},
 ): Promise<OpenTuiTestSetup> {
-  setReactActEnvironment(true);
-
   const renderedTestSetup = await createTestRenderer({
     consoleMode: "disabled",
     ...testRendererOptions,
@@ -50,7 +45,6 @@ export async function testRender(
         });
       } finally {
         renderedTestSetup.renderer.destroy();
-        setReactActEnvironment(false);
       }
     };
 
@@ -58,11 +52,6 @@ export async function testRender(
     return renderedTestSetup;
   } catch (error) {
     renderedTestSetup.renderer.destroy();
-    setReactActEnvironment(false);
     throw error;
   }
-}
-
-function setReactActEnvironment(isReactActEnvironment: boolean): void {
-  (globalThis as ReactGlobalWithActEnvironment).IS_REACT_ACT_ENVIRONMENT = isReactActEnvironment;
 }

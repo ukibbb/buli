@@ -19,6 +19,7 @@ type OpenTuiChatScreenHarness = {
   pressEnter(): Promise<string>;
   pressEnterTwiceInOneAct(): Promise<string>;
   pressKey(key: string): Promise<string>;
+  pasteText(text: string): Promise<string>;
   typeText(text: string): Promise<string>;
   waitForFrame(delayMs: number): Promise<string>;
 };
@@ -73,6 +74,12 @@ async function renderChatScreen(input: {
         }
 
         renderedChatScreen.mockInput.pressKey(key);
+      });
+      return captureFrame();
+    },
+    async pasteText(text: string): Promise<string> {
+      await act(async () => {
+        await renderedChatScreen.mockInput.pasteBracketedText(text);
       });
       return captureFrame();
     },
@@ -479,6 +486,27 @@ test("ChatScreen denies a pending tool call with the n keyboard shortcut", async
   expect(approvalRunner.getDeniedDecisionCount()).toBe(1);
   expect(completedFrame).toContain("Denied after keyboard.");
   expect(completedFrame).not.toContain("Approval needed");
+});
+
+test("ChatScreen ignores pasted tool approval shortcut text", async () => {
+  const approvalRunner = createKeyboardApprovalAssistantConversationRunner();
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: approvalRunner.assistantConversationRunner,
+  });
+
+  await renderedChatScreen.typeText("request approval");
+  await renderedChatScreen.pressEnter();
+  const approvalFrame = await renderedChatScreen.waitForFrame(25);
+  expect(approvalFrame).toContain("Approval needed");
+
+  const pastedShortcutFrame = await renderedChatScreen.pasteText("y");
+  expect(approvalRunner.getApprovedDecisionCount()).toBe(0);
+  expect(approvalRunner.getDeniedDecisionCount()).toBe(0);
+  expect(pastedShortcutFrame).toContain("Approval needed");
+
+  await renderedChatScreen.pressKey("y");
+  await renderedChatScreen.waitForFrame(25);
+  expect(approvalRunner.getApprovedDecisionCount()).toBe(1);
 });
 
 test("ChatScreen requires double Escape to interrupt a running assistant turn", async () => {

@@ -158,7 +158,9 @@ async function renderChatScreen(input: {
       return frame;
     },
     async waitForAssistantEvents(): Promise<string> {
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
       return captureFrame();
     },
   };

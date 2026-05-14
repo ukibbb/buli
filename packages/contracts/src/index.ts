@@ -207,6 +207,7 @@ export {
   ToolCallTodoItemSchema,
   ToolCallTodoItemStatusSchema,
   ToolCallTodoWriteDetailSchema,
+  ToolCallWriteDetailSchema,
   UnifiedDiffTextSchema,
 } from "./toolCallDetail.ts";
 export type {
@@ -226,19 +227,24 @@ export type {
   ToolCallTodoItem,
   ToolCallTodoItemStatus,
   ToolCallTodoWriteDetail,
+  ToolCallWriteDetail,
   UnifiedDiffText,
 } from "./toolCallDetail.ts";
 export {
   BashToolCallRequestSchema,
+  EditToolCallRequestSchema,
   GlobToolCallRequestSchema,
   GrepToolCallRequestSchema,
   ReadToolCallRequestSchema,
   ToolCallRequestSchema,
+  WriteToolCallRequestSchema,
 } from "./toolCallRequest.ts";
 export type {
   BashToolCallRequest,
+  EditToolCallRequest,
   GlobToolCallRequest,
   GrepToolCallRequest,
   ReadToolCallRequest,
   ToolCallRequest,
+  WriteToolCallRequest,
 } from "./toolCallRequest.ts";

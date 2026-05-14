@@ -110,11 +110,65 @@ export function createGrepToolDefinition() {
   };
 }
 
+export function createEditToolDefinition() {
+  return {
+    type: "function",
+    name: "edit",
+    description: "Replace one exact text occurrence in an existing workspace file. Use this for targeted file changes after reading the relevant file. The app shows a diff and requires approval before applying the edit.",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "Path to the existing file to edit. Relative paths are resolved from the workspace root.",
+        },
+        oldString: {
+          type: "string",
+          description: "Exact text to replace. It must appear exactly once in the file.",
+        },
+        newString: {
+          type: "string",
+          description: "Replacement text. Use an empty string only when intentionally deleting oldString.",
+        },
+      },
+      required: ["filePath", "oldString", "newString"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+export function createWriteToolDefinition() {
+  return {
+    type: "function",
+    name: "write",
+    description: "Create or overwrite a workspace file with complete file content. Use this for new files or full-file rewrites. The app shows a diff and requires approval before writing.",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "Path to the file to create or overwrite. Relative paths are resolved from the workspace root.",
+        },
+        content: {
+          type: "string",
+          description: "Complete desired file content.",
+        },
+      },
+      required: ["filePath", "content"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
 export function createOpenAiToolDefinitions() {
   return [
     createBashToolDefinition(),
     createReadToolDefinition(),
     createGlobToolDefinition(),
     createGrepToolDefinition(),
+    createEditToolDefinition(),
+    createWriteToolDefinition(),
   ];
 }

@@ -88,6 +88,36 @@ test("AssistantToolCallConversationMessagePartSchema parses an edit tool call wi
   });
 });
 
+test("AssistantToolCallConversationMessagePartSchema parses a write tool call with unified diff text", () => {
+  const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
+    id: "tool-part-3",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-3",
+    toolCallStatus: "pending_approval",
+    toolCallStartedAtMs: 1,
+    toolCallDetail: {
+      toolName: "write",
+      writtenFilePath: "src/new-file.ts",
+      addedLineCount: 1,
+      removedLineCount: 0,
+      unifiedDiffText: [
+        "diff --git a/src/new-file.ts b/src/new-file.ts",
+        "--- /dev/null",
+        "+++ b/src/new-file.ts",
+        "@@ -0,0 +1 @@",
+        "+export const value = true;",
+        "",
+      ].join("\n"),
+    },
+  });
+
+  expect(parsedMessagePart.toolCallDetail).toMatchObject({
+    toolName: "write",
+    writtenFilePath: "src/new-file.ts",
+    addedLineCount: 1,
+  });
+});
+
 test("PendingToolApprovalRequestSchema parses the dedicated approval model", () => {
   expect(
     PendingToolApprovalRequestSchema.parse({
@@ -99,7 +129,7 @@ test("PendingToolApprovalRequestSchema parses the dedicated approval model", () 
   ).toBe("approval-1");
 });
 
-test("ToolCallRequestSchema parses read-only coding tool requests", () => {
+test("ToolCallRequestSchema parses typed coding tool requests", () => {
   expect(
     ToolCallRequestSchema.parse({
       toolName: "read",
@@ -136,6 +166,30 @@ test("ToolCallRequestSchema parses read-only coding tool requests", () => {
     regexPattern: "ToolCallRequestSchema",
     searchPath: "packages/contracts",
     includeGlobPattern: "*.ts",
+  });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "edit",
+      editTargetPath: "packages/contracts/src/index.ts",
+      oldString: "old",
+      newString: "",
+    }),
+  ).toEqual({
+    toolName: "edit",
+    editTargetPath: "packages/contracts/src/index.ts",
+    oldString: "old",
+    newString: "",
+  });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "write",
+      writeTargetPath: "packages/contracts/src/generated.ts",
+      fileContent: "",
+    }),
+  ).toEqual({
+    toolName: "write",
+    writeTargetPath: "packages/contracts/src/generated.ts",
+    fileContent: "",
   });
 });
 

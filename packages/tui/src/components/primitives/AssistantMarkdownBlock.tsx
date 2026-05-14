@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { CodeRenderable, RGBA, SyntaxStyle, type MarkdownOptions } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.ts";
 
 export type AssistantMarkdownBlockProps = {
   markdownText: string;
@@ -61,6 +62,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         widthMode: "full",
         wrapMode: "word",
       }}
+      treeSitterClient={openTuiSharedTreeSitterClient}
       width="100%"
     />
   );

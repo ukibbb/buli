@@ -102,6 +102,17 @@ export const ToolCallEditDetailSchema = z
   .strict();
 export type ToolCallEditDetail = z.infer<typeof ToolCallEditDetailSchema>;
 
+export const ToolCallWriteDetailSchema = z
+  .object({
+    toolName: z.literal("write"),
+    writtenFilePath: z.string().min(1),
+    addedLineCount: z.number().int().nonnegative().optional(),
+    removedLineCount: z.number().int().nonnegative().optional(),
+    unifiedDiffText: UnifiedDiffTextSchema.optional(),
+  })
+  .strict();
+export type ToolCallWriteDetail = z.infer<typeof ToolCallWriteDetailSchema>;
+
 export const ToolCallBashOutputLineKindSchema = z.enum(["prompt", "stdout", "stderr"]);
 export type ToolCallBashOutputLineKind = z.infer<typeof ToolCallBashOutputLineKindSchema>;
 
@@ -160,6 +171,7 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallGrepDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallEditDetailSchema,
+  ToolCallWriteDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallTodoWriteDetailSchema,
   ToolCallTaskDetailSchema,

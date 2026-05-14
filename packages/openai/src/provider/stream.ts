@@ -269,6 +269,19 @@ function readRequiredStringToolArgument(
   return argumentValue;
 }
 
+function readRequiredTextToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): string {
+  const argumentValue = parsedArguments[argumentName];
+  if (typeof argumentValue !== "string") {
+    throw new Error(`OpenAI function call for ${toolName} is missing required string argument: ${argumentName}`);
+  }
+
+  return argumentValue;
+}
+
 function readOptionalStringToolArgument(
   parsedArguments: JsonObjectRecord,
   argumentName: string,
@@ -519,6 +532,23 @@ export async function* parseOpenAiStream(
         regexPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "grep"),
         ...(searchPath !== undefined ? { searchPath } : {}),
         ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
+      };
+    }
+
+    if (toolCallState.toolName === "edit") {
+      return {
+        toolName: "edit",
+        editTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "edit"),
+        oldString: readRequiredStringToolArgument(parsedArguments, "oldString", "edit"),
+        newString: readRequiredTextToolArgument(parsedArguments, "newString", "edit"),
+      };
+    }
+
+    if (toolCallState.toolName === "write") {
+      return {
+        toolName: "write",
+        writeTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "write"),
+        fileContent: readRequiredTextToolArgument(parsedArguments, "content", "write"),
       };
     }
 

@@ -240,14 +240,28 @@ function renderToolCallRequestBlock(toolCallRequest: ToolCallRequest): string {
 </div>`;
   }
 
-  const grepPathHtml = toolCallRequest.searchPath
-    ? `<span class="tool-purpose">${escapeHtml(toolCallRequest.searchPath)}</span>`
-    : "";
-  return `<div class="tool-block">
+  if (toolCallRequest.toolName === "grep") {
+    const grepPathHtml = toolCallRequest.searchPath
+      ? `<span class="tool-purpose">${escapeHtml(toolCallRequest.searchPath)}</span>`
+      : "";
+    return `<div class="tool-block">
   <div class="tool-summary">
     <span class="tool-name">grep</span>${grepPathHtml}
   </div>
   <pre class="tool-cmd">${escapeHtml(toolCallRequest.regexPattern)}</pre>
+</div>`;
+  }
+
+  if (toolCallRequest.toolName === "edit") {
+    return `<div class="tool-block">
+  <div class="tool-summary"><span class="tool-name">edit</span><span class="tool-purpose">${escapeHtml(toolCallRequest.editTargetPath)}</span></div>
+  <pre class="tool-cmd">${escapeHtml(toolCallRequest.oldString)}</pre>
+</div>`;
+  }
+
+  return `<div class="tool-block">
+  <div class="tool-summary"><span class="tool-name">write</span><span class="tool-purpose">${escapeHtml(toolCallRequest.writeTargetPath)}</span></div>
+  <pre class="tool-cmd">${escapeHtml(toolCallRequest.fileContent)}</pre>
 </div>`;
 }
 
@@ -298,7 +312,26 @@ function renderToolDetailSummary(toolCallDetail: ToolCallDetail): string {
       : `<span class="tool-purpose">${toolCallDetail.totalMatchCount} matches</span>`;
     return `<div class="tool-summary"><span class="tool-name">grep</span>${countHtml}</div>`;
   }
+  if (toolCallDetail.toolName === "edit") {
+    const lineChangeHtml = renderToolDetailLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
+    return `<div class="tool-summary"><span class="tool-name">edit</span><span class="tool-purpose">${escapeHtml(toolCallDetail.editedFilePath)}</span>${lineChangeHtml}</div>`;
+  }
+  if (toolCallDetail.toolName === "write") {
+    const lineChangeHtml = renderToolDetailLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
+    return `<div class="tool-summary"><span class="tool-name">write</span><span class="tool-purpose">${escapeHtml(toolCallDetail.writtenFilePath)}</span>${lineChangeHtml}</div>`;
+  }
   return `<div class="tool-summary"><span class="tool-name">${escapeHtml(toolCallDetail.toolName)}</span></div>`;
+}
+
+function renderToolDetailLineChangeSummary(
+  addedLineCount: number | undefined,
+  removedLineCount: number | undefined,
+): string {
+  if (addedLineCount === undefined && removedLineCount === undefined) {
+    return "";
+  }
+
+  return `<span class="tool-purpose">+${addedLineCount ?? 0} -${removedLineCount ?? 0}</span>`;
 }
 
 function renderAssistantMarkdownText(markdownText: string): string {

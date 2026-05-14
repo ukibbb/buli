@@ -68,6 +68,47 @@ const conversationSessionEntries = [
     },
     toolResultText: "1: # Project",
   },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-3",
+    toolCallRequest: {
+      toolName: "edit",
+      editTargetPath: "src/app.ts",
+      oldString: "const title = \"old\";",
+      newString: "const title = \"new\";",
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-3",
+    toolCallDetail: {
+      toolName: "edit",
+      editedFilePath: "src/app.ts",
+      addedLineCount: 1,
+      removedLineCount: 1,
+    },
+    toolResultText: "Edited file: src/app.ts",
+  },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-4",
+    toolCallRequest: {
+      toolName: "write",
+      writeTargetPath: "notes/new-file.txt",
+      fileContent: "hello from write",
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-4",
+    toolCallDetail: {
+      toolName: "write",
+      writtenFilePath: "notes/new-file.txt",
+      addedLineCount: 1,
+      removedLineCount: 0,
+    },
+    toolResultText: "Wrote file: notes/new-file.txt",
+  },
 ] satisfies ConversationSessionEntry[];
 
 test("renderConversationSessionHtmlDocument renders escaped, styled current-session HTML", () => {
@@ -86,6 +127,10 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("Tool · call");
   expect(html).toContain("pwd");
   expect(html).toContain("README.md");
+  expect(html).toContain("src/app.ts");
+  expect(html).toContain("const title = &quot;old&quot;;");
+  expect(html).toContain("notes/new-file.txt");
+  expect(html).toContain("hello from write");
   expect(html).toContain("<h1>Done</h1>");
   expect(html).toContain("&lt;script&gt;alert(&#39;assistant&#39;)&lt;/script&gt;");
   expect(html).not.toContain("<script>alert('assistant')</script>");

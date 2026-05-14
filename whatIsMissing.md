@@ -1,6 +1,6 @@
 # What Is Missing / Current Backlog
 
-This file lists only unfinished work. Completed baseline features such as JSONL sessions, startup resume, corrupt-tail JSONL recovery, `/sessions`, HTML export, typed read/search tools, bash approval, provider interruption handling, graceful active-turn shutdown, incomplete responses, tool denial/failure handling, duplicate-turn prevention, failed-turn recovery, and interrupted dangling-tool hydration are intentionally omitted.
+This file lists only unfinished work. Completed baseline features such as JSONL sessions, startup resume, corrupt-tail JSONL recovery, `/sessions`, HTML export, typed read/search tools, typed edit/write tools, bash approval, provider interruption handling, graceful active-turn shutdown, incomplete responses, tool denial/failure handling, duplicate-turn prevention, failed-turn recovery, and interrupted dangling-tool hydration are intentionally omitted.
 
 ## 1. Persistence Hardening
 
@@ -10,14 +10,15 @@ The durable session layer exists, but it still needs reliability work around per
 - Add session rename, delete, and search flows.
 - Add compaction or summarization for very large sessions.
 
-## 2. Typed File Tools
+## 2. Patch And Richer File Tools
 
-The current read-only inspection surface has typed `read`, `glob`, and `grep` tools. The remaining safer capability is typed file modification with explicit contracts and approval semantics.
+The core workspace file surface has typed `read`, `glob`, `grep`, `edit`, and `write` tools. Remaining file-tool work should focus on broader multi-file changes and richer validation.
 
-- `write_file`
-- `edit_file`
+- `apply_patch` for multi-file add/update/delete/move patches
+- optional `multiedit` if exact single-replacement `edit` becomes too restrictive
+- formatter or diagnostics integration after approved file mutations
 
-Typed read/search tools should remain preferred over free-form shell commands for normal file inspection. Future typed write/edit tools should be preferred over ad-hoc shell redirection once they exist.
+Typed read/search/edit/write tools should remain preferred over free-form shell commands for normal workspace inspection and file mutation.
 
 ## 3. Stronger Tool Permission Model
 
@@ -72,9 +73,9 @@ Make session storage boringly reliable before expanding the tool ecosystem.
 
 - Per-session model and reasoning settings.
 
-### Priority 2: Typed File Tools
+### Priority 2: Patch And Diagnostics
 
-Add typed read/list/write/edit tools before relying more heavily on bash.
+Add `apply_patch` and post-mutation validation after the approved `edit`/`write` path is stable.
 
 ### Priority 3: Failure Recovery UX
 

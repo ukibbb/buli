@@ -10,12 +10,44 @@ export { ChatScreen } from "./ChatScreen.tsx";
 export type { ChatScreenProps, ConversationSessionExportResult, ConversationSessionSwitchResult } from "./ChatScreen.tsx";
 export { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 
+type EnvironmentVariableSnapshot = {
+  name: string;
+  value: string | undefined;
+};
+
+function restoreEnvironmentVariable(environmentVariableSnapshot: EnvironmentVariableSnapshot): void {
+  if (environmentVariableSnapshot.value === undefined) {
+    delete process.env[environmentVariableSnapshot.name];
+    return;
+  }
+
+  process.env[environmentVariableSnapshot.name] = environmentVariableSnapshot.value;
+}
+
+function disableOpenTuiConsoleCaptureWhileFileLoggingIsActive(isConsoleFileLoggerActive: boolean): () => void {
+  if (!isConsoleFileLoggerActive) {
+    return () => {};
+  }
+
+  const previousOpenTuiUseConsoleEnvironment = {
+    name: "OTUI_USE_CONSOLE",
+    value: process.env.OTUI_USE_CONSOLE,
+  } satisfies EnvironmentVariableSnapshot;
+  process.env.OTUI_USE_CONSOLE = "false";
+
+  return () => restoreEnvironmentVariable(previousOpenTuiUseConsoleEnvironment);
+}
+
+function formatUnknownErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export type TuiChatScreenInstance = {
   destroy(): void;
   waitUntilExit(): Promise<void>;
 };
 
-export async function renderChatScreenInTerminal(input: {
+export type RenderChatScreenInTerminalInput = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
@@ -29,31 +61,133 @@ export async function renderChatScreenInTerminal(input: {
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
-}): Promise<TuiChatScreenInstance> {
+};
+
+export type TerminalRendererCreateOptionsForChatScreen = {
+  screenMode: "alternate-screen";
+  useMouse: boolean;
+  enableMouseMovement: boolean;
+  consoleMode: "console-overlay" | "disabled";
+};
+
+export type TerminalRendererForChatScreenRuntime = {
+  readonly isDestroyed: boolean;
+  destroy(): void;
+  once(eventName: "destroy", listener: () => void): void;
+};
+
+export type ReactRootForChatScreenRuntime = {
+  render(node: React.ReactNode): void;
+  unmount(): void;
+};
+
+export type RenderChatScreenInTerminalRuntime<
+  TerminalRenderer extends TerminalRendererForChatScreenRuntime,
+> = {
+  createTerminalRenderer: (options: TerminalRendererCreateOptionsForChatScreen) => Promise<TerminalRenderer>;
+  createChatScreenRoot: (terminalRenderer: TerminalRenderer) => ReactRootForChatScreenRuntime;
+  createChatScreenElement: (chatScreenProps: ChatScreenProps) => React.ReactNode;
+};
+
+export async function renderChatScreenInTerminal(input: RenderChatScreenInTerminalInput): Promise<TuiChatScreenInstance> {
+  return renderChatScreenInTerminalWithRuntime(input, {
+    createTerminalRenderer: createCliRenderer,
+    createChatScreenRoot: createRoot,
+    createChatScreenElement: (chatScreenProps) => React.createElement(ChatScreen, chatScreenProps),
+  });
+}
+
+export async function renderChatScreenInTerminalWithRuntime<
+  TerminalRenderer extends TerminalRendererForChatScreenRuntime,
+>(
+  input: RenderChatScreenInTerminalInput,
+  runtime: RenderChatScreenInTerminalRuntime<TerminalRenderer>,
+): Promise<TuiChatScreenInstance> {
   const originalConsole = globalThis.console;
-  const consoleMode = process.env.BULI_CONSOLE_LOG_FILE?.trim() ? "disabled" : "console-overlay";
+  const isConsoleFileLoggerActive = Boolean(process.env.BULI_CONSOLE_LOG_FILE?.trim());
+  const consoleMode = isConsoleFileLoggerActive ? "disabled" : "console-overlay";
+  const restoreOpenTuiConsoleCaptureEnvironment = disableOpenTuiConsoleCaptureWhileFileLoggingIsActive(
+    isConsoleFileLoggerActive,
+  );
   input.diagnosticLogger?.({
     subsystem: "tui",
     eventName: "terminal_renderer_create_requested",
     fields: {
       screenMode: "alternate-screen",
       consoleMode,
+      openTuiUseConsole: process.env.OTUI_USE_CONSOLE ?? null,
       useMouse: true,
       enableMouseMovement: true,
     },
   });
-  const cliRenderer = await createCliRenderer({
-    screenMode: "alternate-screen",
-    useMouse: true,
-    enableMouseMovement: true,
-    consoleMode,
-  });
-  const rendererDestroyedPromise = new Promise<void>((resolve) => {
-    cliRenderer.once("destroy", () => resolve());
-  });
+  let cliRenderer: TerminalRenderer;
+  try {
+    cliRenderer = await runtime.createTerminalRenderer({
+      screenMode: "alternate-screen",
+      useMouse: true,
+      enableMouseMovement: true,
+      consoleMode,
+    });
+  } catch (error) {
+    restoreOpenTuiConsoleCaptureEnvironment();
+    throw error;
+  }
   restoreConsoleTimeStampAfterOpentuiActivation({ originalConsole });
-  const root = createRoot(cliRenderer);
+  const root = runtime.createChatScreenRoot(cliRenderer);
+  let hasReactRootBeenUnmounted = false;
+  let hasRendererShutdownBeenRequested = false;
+  let hasOpenTuiConsoleCaptureEnvironmentBeenRestored = false;
   const activeConversationTurnShutdownCoordinator = new ActiveConversationTurnShutdownCoordinator();
+  const restoreOpenTuiConsoleCaptureEnvironmentOnce = (): void => {
+    if (hasOpenTuiConsoleCaptureEnvironmentBeenRestored) {
+      return;
+    }
+
+    hasOpenTuiConsoleCaptureEnvironmentBeenRestored = true;
+    restoreOpenTuiConsoleCaptureEnvironment();
+  };
+  const unmountReactRootOnce = (): void => {
+    if (hasReactRootBeenUnmounted) {
+      return;
+    }
+
+    hasReactRootBeenUnmounted = true;
+    root.unmount();
+  };
+  const rendererDestroyedPromise = new Promise<void>((resolve) => {
+    cliRenderer.once("destroy", () => {
+      try {
+        unmountReactRootOnce();
+      } catch (error) {
+        input.diagnosticLogger?.({
+          subsystem: "tui",
+          eventName: "chat_screen_root_unmount_failed",
+          fields: {
+            errorMessage: formatUnknownErrorMessage(error),
+          },
+        });
+      } finally {
+        restoreOpenTuiConsoleCaptureEnvironmentOnce();
+        resolve();
+      }
+    });
+  });
+  const destroyRendererOnce = (): void => {
+    if (hasRendererShutdownBeenRequested) {
+      return;
+    }
+
+    hasRendererShutdownBeenRequested = true;
+    try {
+      unmountReactRootOnce();
+    } finally {
+      if (!cliRenderer.isDestroyed) {
+        cliRenderer.destroy();
+      } else {
+        restoreOpenTuiConsoleCaptureEnvironmentOnce();
+      }
+    }
+  };
   input.diagnosticLogger?.({
     subsystem: "tui",
     eventName: "terminal_renderer_created",
@@ -61,34 +195,39 @@ export async function renderChatScreenInTerminal(input: {
       consoleMode,
     },
   });
-  root.render(
-    React.createElement(ChatScreen, {
-      assistantConversationRunner: input.assistantConversationRunner,
-      activeConversationTurnShutdownCoordinator,
-      loadAvailableAssistantModels: input.loadAvailableAssistantModels,
-      loadPromptContextCandidates: input.loadPromptContextCandidates,
-      ...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {}),
-      ...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {}),
-      ...(input.exportCurrentConversationSession
-        ? { exportCurrentConversationSession: input.exportCurrentConversationSession }
-        : {}),
-      ...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {}),
-      selectedModelId: input.selectedModelId,
-      ...(input.initialConversationSessionId !== undefined
-        ? { initialConversationSessionId: input.initialConversationSessionId }
-        : {}),
-      ...(input.initialConversationSessionEntries !== undefined
-        ? { initialConversationSessionEntries: input.initialConversationSessionEntries }
-        : {}),
-      ...(input.selectedModelDefaultReasoningEffort !== undefined
-        ? { selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort }
-        : {}),
-      ...(input.selectedReasoningEffort !== undefined
-        ? { selectedReasoningEffort: input.selectedReasoningEffort }
-        : {}),
-      ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
-    }),
-  );
+  try {
+    root.render(
+      runtime.createChatScreenElement({
+        assistantConversationRunner: input.assistantConversationRunner,
+        activeConversationTurnShutdownCoordinator,
+        loadAvailableAssistantModels: input.loadAvailableAssistantModels,
+        loadPromptContextCandidates: input.loadPromptContextCandidates,
+        ...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {}),
+        ...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {}),
+        ...(input.exportCurrentConversationSession
+          ? { exportCurrentConversationSession: input.exportCurrentConversationSession }
+          : {}),
+        ...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {}),
+        selectedModelId: input.selectedModelId,
+        ...(input.initialConversationSessionId !== undefined
+          ? { initialConversationSessionId: input.initialConversationSessionId }
+          : {}),
+        ...(input.initialConversationSessionEntries !== undefined
+          ? { initialConversationSessionEntries: input.initialConversationSessionEntries }
+          : {}),
+        ...(input.selectedModelDefaultReasoningEffort !== undefined
+          ? { selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort }
+          : {}),
+        ...(input.selectedReasoningEffort !== undefined
+          ? { selectedReasoningEffort: input.selectedReasoningEffort }
+          : {}),
+        ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
+      }),
+    );
+  } catch (error) {
+    destroyRendererOnce();
+    throw error;
+  }
   input.diagnosticLogger?.({
     subsystem: "tui",
     eventName: "chat_screen_root_rendered",
@@ -101,7 +240,7 @@ export async function renderChatScreenInTerminal(input: {
 
   return {
     destroy(): void {
-      cliRenderer.destroy();
+      destroyRendererOnce();
     },
     async waitUntilExit(): Promise<void> {
       await rendererDestroyedPromise;

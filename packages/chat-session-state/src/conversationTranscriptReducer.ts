@@ -330,6 +330,18 @@ function createToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): Tool
       ...(toolCallRequest.searchDirectoryPath ? { searchDirectoryPath: toolCallRequest.searchDirectoryPath } : {}),
     };
   }
+  if (toolCallRequest.toolName === "edit") {
+    return {
+      toolName: "edit",
+      editedFilePath: toolCallRequest.editTargetPath,
+    };
+  }
+  if (toolCallRequest.toolName === "write") {
+    return {
+      toolName: "write",
+      writtenFilePath: toolCallRequest.writeTargetPath,
+    };
+  }
 
   return {
     toolName: "grep",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
-import { FencedCodeBlock } from "../../../src/components/primitives/FencedCodeBlock.tsx";
+import { FencedCodeBlock, resolveOpenTuiCodeFiletype } from "../../../src/components/primitives/FencedCodeBlock.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("FencedCodeBlock", () => {
@@ -108,5 +108,20 @@ describe("FencedCodeBlock", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("const path");
     expect(frame).not.toContain("ConversationMessageList.tsx");
+  });
+
+  test("normalizes_markdown_fence_info_strings_with_OpenTUI_filetype_resolution", () => {
+    expect(resolveOpenTuiCodeFiletype(undefined, "TSX title=Button.tsx")).toBe("typescriptreact");
+    expect(resolveOpenTuiCodeFiletype(undefined, ".jsx")).toBe("javascriptreact");
+    expect(resolveOpenTuiCodeFiletype(undefined, "Dockerfile")).toBe("dockerfile");
+  });
+
+  test("prefers_file_path_over_language_label_for_OpenTUI_filetype_resolution", () => {
+    expect(resolveOpenTuiCodeFiletype("packages/tui/src/index.ts", undefined)).toBe("typescript");
+    expect(resolveOpenTuiCodeFiletype("Dockerfile", undefined)).toBe("dockerfile");
+    // Falls back to the language label when the path produces no match.
+    expect(resolveOpenTuiCodeFiletype("path/with/no/extension", "ts")).toBe("typescript");
+    // Final fallback is the "text" filetype.
+    expect(resolveOpenTuiCodeFiletype(undefined, undefined)).toBe("text");
   });
 });

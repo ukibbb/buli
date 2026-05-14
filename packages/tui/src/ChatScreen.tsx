@@ -9,7 +9,6 @@ import type {
   ReasoningEffort,
 } from "@buli/contracts";
 import {
-  type ActiveConversationTurn,
   type AssistantConversationRunner,
   type PromptContextCandidate,
 } from "@buli/engine";
@@ -19,11 +18,8 @@ import {
   applyChatSlashCommandToChatSessionState,
   clearConversationTranscript,
   createInitialChatSessionState,
-  decidePromptContextSelectionRefreshForCurrentDraft,
-  hidePromptContextSelection,
   hideCommandHelpModal,
   listOrderedConversationMessageParts,
-  refreshPromptContextCandidatesForSelection,
   refreshChatSlashCommandSelectionForCurrentState,
   replacePromptDraftFromEditor,
   hydrateConversationTranscriptFromSessionEntries,
@@ -33,19 +29,15 @@ import {
   showConversationSessionSelectionLoadingState,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
-  showPromptContextCandidatesForSelection,
-  shouldClearDismissedPromptContextQueryForPromptDraft,
-  shouldHideLoadedPromptContextCandidatesForCurrentDraft,
   type ChatSessionKeyboardInput,
   type ChatSessionState,
   type ChatSessionKeyboardEffect,
   type ChatSlashCommandApplicationEffect,
-  type PromptContextQueryIdentity,
 } from "@buli/chat-session-state";
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { decodePasteBytes, stripAnsiSequences, type KeyEvent, type PasteEvent, type ScrollBoxRenderable } from "@opentui/core";
+import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/react";
+import { type KeyEvent, type PasteEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { chatScreenTheme, classifyTerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import { ConversationMessageList } from "./components/ConversationMessageList.tsx";
 import { InputPanel } from "./components/InputPanel.tsx";
 import { MinimumHeightPromptStrip } from "./components/MinimumHeightPromptStrip.tsx";
@@ -57,19 +49,17 @@ import { ConversationSessionSelectionPane } from "./components/ConversationSessi
 import { TopBar } from "./components/TopBar.tsx";
 import { ErrorBannerBlock } from "./components/behavior/ErrorBannerBlock.tsx";
 import { ToolApprovalRequestBlock } from "./components/behavior/ToolApprovalRequestBlock.tsx";
-import { useTerminalSizeTierForChatScreen } from "./components/behavior/useTerminalSizeTierForChatScreen.ts";
 import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 import { summarizeAssistantResponseEventsForDiagnostics } from "./assistantResponseEventDiagnostics.ts";
 import { buildChatScreenViewModel } from "./behavior/chatScreenViewModel.ts";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
 import {
   normalizeOpenTuiKeyEventForChatSession,
-  normalizeOpenTuiPasteTextForChatSession,
 } from "./behavior/openTuiKeyboardInputAdapter.ts";
+import { normalizeOpenTuiPasteEventText } from "./behavior/normalizeOpenTuiPasteEventText.ts";
+import { useChatScreenActiveTurnInterrupt } from "./behavior/useChatScreenActiveTurnInterrupt.ts";
+import { useChatScreenPromptContextSelectionRefresh } from "./behavior/useChatScreenPromptContextSelectionRefresh.ts";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
-
-const FUZZY_PROMPT_CONTEXT_QUERY_DEBOUNCE_MS = 120;
-const ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS = 5_000;
 
 export type ChatScreenProps = {
   selectedModelId: string;
@@ -103,10 +93,6 @@ type ConversationSessionExportStatus =
   | { step: "failed"; errorMessage: string };
 
 type OpenTuiConsumableInputEvent = Pick<KeyEvent, "preventDefault" | "stopPropagation">;
-
-function normalizePromptPasteText(pastedText: string): string {
-  return stripAnsiSequences(pastedText).replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-}
 
 function canPromptTextareaEditChatSessionState(chatSessionState: ChatSessionState): boolean {
   return chatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
@@ -175,9 +161,11 @@ function logChatScreenDiagnosticEvent(
 }
 
 export function ChatScreen(props: ChatScreenProps) {
-  const renderer = useRenderer();
   const { height: rows, width: columns } = useTerminalDimensions();
-  const terminalSizeTierForChatScreen = useTerminalSizeTierForChatScreen();
+  const terminalSizeTierForChatScreen = classifyTerminalSizeTierForChatScreen({
+    rowCount: rows,
+    columnCount: columns,
+  });
   const diagnosticLogger = props.diagnosticLogger;
   const [activeConversationSessionId, setActiveConversationSessionId] = useState<string | undefined>(
     props.initialConversationSessionId,
@@ -185,7 +173,6 @@ export function ChatScreen(props: ChatScreenProps) {
   const [conversationSessionExportStatus, setConversationSessionExportStatus] = useState<ConversationSessionExportStatus>({
     step: "idle",
   });
-  const [isActiveTurnInterruptConfirmationArmed, setIsActiveTurnInterruptConfirmationArmed] = useState(false);
   const [chatSessionState, setChatSessionState] = useState(() => {
     const initialChatSessionState = createInitialChatSessionState({
       selectedModelId: props.selectedModelId,
@@ -201,19 +188,30 @@ export function ChatScreen(props: ChatScreenProps) {
 
   const latestChatSessionStateRef = useRef<ChatSessionState>(chatSessionState);
   const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
-  const latestActiveConversationTurnRef = useRef<ActiveConversationTurn | undefined>(undefined);
-  const activeTurnInterruptConfirmationExpiresAtMsRef = useRef<number | undefined>(undefined);
-  const activeTurnInterruptConfirmationTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const hasActiveTurnInterruptBeenRequestedRef = useRef(false);
   const isPromptSubmissionInFlightRef = useRef(false);
   const submittedToolApprovalDecisionApprovalIdRef = useRef<string | undefined>(undefined);
-  const latestPromptContextLoadRequestSequenceRef = useRef(0);
-  const pendingPromptContextLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const dismissedPromptContextQueryRef = useRef<PromptContextQueryIdentity | undefined>(undefined);
   const conversationMessageScrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
 
   latestChatSessionStateRef.current = chatSessionState;
   latestActiveConversationSessionIdRef.current = activeConversationSessionId;
+
+  const {
+    isActiveTurnInterruptConfirmationArmed,
+    getActiveConversationTurn,
+    registerActiveConversationTurnStarted,
+    registerActiveConversationTurnFinished,
+    registerActiveConversationTurnSettlement,
+    requestActiveConversationTurnInterrupt,
+  } = useChatScreenActiveTurnInterrupt({
+    activeConversationTurnShutdownCoordinator: props.activeConversationTurnShutdownCoordinator,
+    diagnosticLogger,
+  });
+  const { dismissActivePromptContextQuery } = useChatScreenPromptContextSelectionRefresh({
+    chatSessionState,
+    setChatSessionState,
+    loadPromptContextCandidates: props.loadPromptContextCandidates,
+    diagnosticLogger,
+  });
 
   useEffect(() => {
     logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.mounted", {
@@ -228,17 +226,6 @@ export function ChatScreen(props: ChatScreenProps) {
       });
     };
   }, [diagnosticLogger, props.selectedModelDefaultReasoningEffort, props.selectedModelId, props.selectedReasoningEffort]);
-
-  useEffect(() => {
-    if (
-      shouldClearDismissedPromptContextQueryForPromptDraft({
-        chatSessionState,
-        dismissedPromptContextQueryIdentity: dismissedPromptContextQueryRef.current,
-      })
-    ) {
-      dismissedPromptContextQueryRef.current = undefined;
-    }
-  }, [chatSessionState.promptDraft, chatSessionState.promptDraftCursorOffset]);
 
   useEffect(() => {
     const pendingApprovalId = chatSessionState.pendingToolApprovalRequest?.approvalId;
@@ -280,66 +267,6 @@ export function ChatScreen(props: ChatScreenProps) {
     conversationMessageScrollBox.scrollBy(direction === "up" ? -1 : 1, "viewport");
   });
 
-  const clearActiveTurnInterruptConfirmation = (): void => {
-    activeTurnInterruptConfirmationExpiresAtMsRef.current = undefined;
-    if (activeTurnInterruptConfirmationTimeoutRef.current !== undefined) {
-      clearTimeout(activeTurnInterruptConfirmationTimeoutRef.current);
-      activeTurnInterruptConfirmationTimeoutRef.current = undefined;
-    }
-    setIsActiveTurnInterruptConfirmationArmed(false);
-  };
-
-  const armActiveTurnInterruptConfirmation = (armedAtMs: number): void => {
-    activeTurnInterruptConfirmationExpiresAtMsRef.current = armedAtMs + ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS;
-    if (activeTurnInterruptConfirmationTimeoutRef.current !== undefined) {
-      clearTimeout(activeTurnInterruptConfirmationTimeoutRef.current);
-    }
-    activeTurnInterruptConfirmationTimeoutRef.current = setTimeout(() => {
-      activeTurnInterruptConfirmationExpiresAtMsRef.current = undefined;
-      activeTurnInterruptConfirmationTimeoutRef.current = undefined;
-      setIsActiveTurnInterruptConfirmationArmed(false);
-    }, ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS);
-    setIsActiveTurnInterruptConfirmationArmed(true);
-  };
-
-  const requestActiveConversationTurnInterrupt = useEffectEvent(() => {
-    const activeConversationTurn = latestActiveConversationTurnRef.current;
-    if (!activeConversationTurn) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.active_turn_interrupt_ignored", {
-        reason: "no_active_turn",
-      });
-      return;
-    }
-
-    if (hasActiveTurnInterruptBeenRequestedRef.current) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.active_turn_interrupt_ignored", {
-        reason: "interrupt_already_requested",
-      });
-      return;
-    }
-
-    const now = Date.now();
-    const confirmationExpiresAtMs = activeTurnInterruptConfirmationExpiresAtMsRef.current;
-    if (confirmationExpiresAtMs !== undefined && now <= confirmationExpiresAtMs) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.active_turn_interrupt_confirmed", {
-        confirmationWindowMs: ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS,
-      });
-      hasActiveTurnInterruptBeenRequestedRef.current = true;
-      if (props.activeConversationTurnShutdownCoordinator) {
-        props.activeConversationTurnShutdownCoordinator.interruptActiveConversationTurn();
-      } else {
-        activeConversationTurn.interrupt();
-      }
-      clearActiveTurnInterruptConfirmation();
-      return;
-    }
-
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.active_turn_interrupt_armed", {
-      confirmationWindowMs: ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS,
-    });
-    armActiveTurnInterruptConfirmation(now);
-  });
-
   const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (submittedPromptText: string) => {
     const conversationTurnRequest = {
       userPromptText: submittedPromptText,
@@ -362,184 +289,25 @@ export function ChatScreen(props: ChatScreenProps) {
         assistantConversationRunner: props.assistantConversationRunner,
         conversationTurnRequest,
         onConversationTurnStarted: (activeConversationTurn) => {
-          latestActiveConversationTurnRef.current = activeConversationTurn;
-          hasActiveTurnInterruptBeenRequestedRef.current = false;
-          props.activeConversationTurnShutdownCoordinator?.registerActiveConversationTurn(activeConversationTurn);
-          logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.active_turn_set", {
+          registerActiveConversationTurnStarted({
+            activeConversationTurn,
             selectedModelId: conversationTurnRequest.selectedModelId,
           });
         },
         onConversationTurnFinished: () => {
-          const activeConversationTurn = latestActiveConversationTurnRef.current;
-          if (activeConversationTurn) {
-            props.activeConversationTurnShutdownCoordinator?.clearActiveConversationTurn(activeConversationTurn);
-          }
-          latestActiveConversationTurnRef.current = undefined;
-          hasActiveTurnInterruptBeenRequestedRef.current = false;
-          clearActiveTurnInterruptConfirmation();
-          logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.active_turn_cleared", {
+          registerActiveConversationTurnFinished({
             selectedModelId: conversationTurnRequest.selectedModelId,
           });
         },
         onAssistantResponseEvents: applyIncomingAssistantResponseEventsToChatScreen,
         diagnosticLogger,
       });
-      props.activeConversationTurnShutdownCoordinator?.registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
+      registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
       await assistantResponseRelayPromise;
     } finally {
       isPromptSubmissionInFlightRef.current = false;
     }
   });
-
-  const invalidatePendingPromptContextLoads = useEffectEvent(() => {
-    latestPromptContextLoadRequestSequenceRef.current += 1;
-    if (pendingPromptContextLoadTimeoutRef.current !== undefined) {
-      clearTimeout(pendingPromptContextLoadTimeoutRef.current);
-      pendingPromptContextLoadTimeoutRef.current = undefined;
-    }
-  });
-
-  const loadPromptContextCandidatesForQuery = useEffectEvent(
-    async (input: {
-      requestSequence: number;
-      promptContextQueryIdentity: PromptContextQueryIdentity;
-      promptContextQueryText: string;
-    }) => {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_context_load_started", {
-        requestSequence: input.requestSequence,
-        promptContextQueryLength: input.promptContextQueryText.length,
-      });
-      const promptContextCandidates = await props.loadPromptContextCandidates(input.promptContextQueryText);
-      if (input.requestSequence !== latestPromptContextLoadRequestSequenceRef.current) {
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_context_load_discarded", {
-          requestSequence: input.requestSequence,
-          activeRequestSequence: latestPromptContextLoadRequestSequenceRef.current,
-          promptContextCandidateCount: promptContextCandidates.length,
-        });
-        return;
-      }
-
-      if (
-        shouldHideLoadedPromptContextCandidatesForCurrentDraft({
-          chatSessionState: latestChatSessionStateRef.current,
-          dismissedPromptContextQueryIdentity: dismissedPromptContextQueryRef.current,
-          requestedPromptContextQueryIdentity: input.promptContextQueryIdentity,
-        })
-      ) {
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_context_load_hidden_after_resolution", {
-          requestSequence: input.requestSequence,
-          promptContextCandidateCount: promptContextCandidates.length,
-        });
-        return;
-      }
-
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_context_load_completed", {
-        requestSequence: input.requestSequence,
-        promptContextQueryLength: input.promptContextQueryText.length,
-        promptContextCandidateCount: promptContextCandidates.length,
-      });
-
-      setChatSessionState((currentChatSessionState) =>
-        currentChatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates" &&
-          currentChatSessionState.promptContextSelectionState.promptContextQueryText === input.promptContextQueryText
-          ? refreshPromptContextCandidatesForSelection(
-            currentChatSessionState,
-            input.promptContextQueryText,
-            promptContextCandidates,
-          )
-          : showPromptContextCandidatesForSelection(
-            currentChatSessionState,
-            input.promptContextQueryText,
-            promptContextCandidates,
-          ),
-      );
-    },
-  );
-
-  const refreshPromptContextSelectionForCurrentDraft = useEffectEvent(async () => {
-    const latestChatSessionState = latestChatSessionStateRef.current;
-    const promptContextSelectionRefreshDecision = decidePromptContextSelectionRefreshForCurrentDraft({
-      chatSessionState: latestChatSessionState,
-      dismissedPromptContextQueryIdentity: dismissedPromptContextQueryRef.current,
-    });
-
-    if (promptContextSelectionRefreshDecision.decisionType === "hide_prompt_context_selection") {
-      invalidatePendingPromptContextLoads();
-      if (
-        latestChatSessionState.promptContextSelectionState.step !== "hidden" ||
-        promptContextSelectionRefreshDecision.reason === "query_dismissed"
-      ) {
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_context_selection_hidden", {
-          reason: promptContextSelectionRefreshDecision.reason,
-          conversationTurnStatus: latestChatSessionState.conversationTurnStatus,
-          modelSelectionStep: latestChatSessionState.modelAndReasoningSelectionState.step,
-          promptContextQueryLength: promptContextSelectionRefreshDecision.promptContextQueryLength ?? null,
-        });
-      }
-      setChatSessionState((currentChatSessionState) => hidePromptContextSelection(currentChatSessionState));
-      return;
-    }
-
-    if (promptContextSelectionRefreshDecision.decisionType === "keep_current_prompt_context_selection") {
-      return;
-    }
-
-    invalidatePendingPromptContextLoads();
-    const requestSequence = latestPromptContextLoadRequestSequenceRef.current;
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_context_load_scheduled", {
-      requestSequence,
-      promptContextQueryLength: promptContextSelectionRefreshDecision.promptContextQueryText.length,
-      promptContextQueryLoadStrategy: promptContextSelectionRefreshDecision.promptContextQueryLoadStrategy,
-    });
-
-    if (promptContextSelectionRefreshDecision.promptContextQueryLoadStrategy === "fuzzy_query") {
-      pendingPromptContextLoadTimeoutRef.current = setTimeout(() => {
-        pendingPromptContextLoadTimeoutRef.current = undefined;
-        void loadPromptContextCandidatesForQuery({
-          requestSequence,
-          promptContextQueryIdentity: promptContextSelectionRefreshDecision.promptContextQueryIdentity,
-          promptContextQueryText: promptContextSelectionRefreshDecision.promptContextQueryText,
-        });
-      }, FUZZY_PROMPT_CONTEXT_QUERY_DEBOUNCE_MS);
-      return;
-    }
-
-    void loadPromptContextCandidatesForQuery({
-      requestSequence,
-      promptContextQueryIdentity: promptContextSelectionRefreshDecision.promptContextQueryIdentity,
-      promptContextQueryText: promptContextSelectionRefreshDecision.promptContextQueryText,
-    });
-  });
-
-  useEffect(
-    () => () => {
-      if (pendingPromptContextLoadTimeoutRef.current !== undefined) {
-        clearTimeout(pendingPromptContextLoadTimeoutRef.current);
-      }
-    },
-    [],
-  );
-
-  useEffect(
-    () => () => {
-      if (activeTurnInterruptConfirmationTimeoutRef.current !== undefined) {
-        clearTimeout(activeTurnInterruptConfirmationTimeoutRef.current);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    void refreshPromptContextSelectionForCurrentDraft();
-  }, [
-    chatSessionState.promptDraft,
-    chatSessionState.promptDraftCursorOffset,
-    chatSessionState.conversationTurnStatus,
-    chatSessionState.modelAndReasoningSelectionState.step,
-    chatSessionState.conversationSessionSelectionState.step,
-    chatSessionState.slashCommandSelectionState.step,
-    chatSessionState.isCommandHelpModalVisible,
-  ]);
 
   useEffect(() => {
     setChatSessionState((currentChatSessionState) =>
@@ -744,7 +512,7 @@ export function ChatScreen(props: ChatScreenProps) {
       return;
     }
 
-    const activeConversationTurn = latestActiveConversationTurnRef.current;
+    const activeConversationTurn = getActiveConversationTurn();
     if (!activeConversationTurn) {
       logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.tool_approval_decision_ignored", {
         approvalId: pendingToolApprovalRequest.approvalId,
@@ -804,7 +572,7 @@ export function ChatScreen(props: ChatScreenProps) {
               input.previousChatSessionState.promptContextSelectionState.promptContextCandidates.length,
           });
         }
-        dismissedPromptContextQueryRef.current = input.chatSessionKeyboardEffect.dismissedPromptContextQueryIdentity;
+        dismissActivePromptContextQuery(input.chatSessionKeyboardEffect.dismissedPromptContextQueryIdentity);
         return;
       case "execute_selected_slash_command":
         logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.slash_command_selected", {
@@ -927,28 +695,26 @@ export function ChatScreen(props: ChatScreenProps) {
     });
   });
 
-  useEffect(() => {
-    const handlePaste = (pasteEvent: PasteEvent) => {
-      if (canPromptTextareaEditChatSessionState(latestChatSessionStateRef.current)) {
-        return;
-      }
+  const handlePasteOutsidePromptTextarea = useEffectEvent((pasteEvent: PasteEvent) => {
+    if (canPromptTextareaEditChatSessionState(latestChatSessionStateRef.current)) {
+      return;
+    }
 
-      const pastedText = normalizePromptPasteText(decodePasteBytes(pasteEvent.bytes));
-      if (pastedText.length === 0) {
-        return;
-      }
+    pasteEvent.preventDefault();
+    pasteEvent.stopPropagation();
 
-      applyKeyboardInputToChatScreen({
-        chatSessionKeyboardInput: normalizeOpenTuiPasteTextForChatSession(pastedText),
-        inputEvent: pasteEvent,
-      });
-    };
+    const pastedText = normalizeOpenTuiPasteEventText(pasteEvent);
+    if (pastedText.length === 0) {
+      return;
+    }
 
-    renderer.keyInput.on("paste", handlePaste);
-    return () => {
-      renderer.keyInput.off("paste", handlePaste);
-    };
-  }, [renderer]);
+    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.paste_ignored", {
+      conversationTurnStatus: latestChatSessionStateRef.current.conversationTurnStatus,
+      pastedTextLength: pastedText.length,
+    });
+  });
+
+  usePaste(handlePasteOutsidePromptTextarea);
 
   useKeyboard((keyEvent: KeyEvent) => {
     applyKeyboardInputToChatScreen({

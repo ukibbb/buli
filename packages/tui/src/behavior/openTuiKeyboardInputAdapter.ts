@@ -24,15 +24,6 @@ export function normalizeOpenTuiKeyEventForChatSession(
   };
 }
 
-export function normalizeOpenTuiPasteTextForChatSession(pastedText: string): ChatSessionKeyboardInput {
-  return {
-    keyName: undefined,
-    textInput: pastedText.length > 0 ? pastedText : undefined,
-    isCtrlPressed: false,
-    isMetaPressed: false,
-  };
-}
-
 function mapOpenTuiKeyNameToChatSessionKeyboardKeyName(
   openTuiKeyName: string | undefined,
   keySequence: string | undefined,

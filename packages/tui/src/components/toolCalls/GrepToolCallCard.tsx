@@ -112,6 +112,7 @@ function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
           />
           <FencedCodeBlock
             variant="embedded"
+            filePath={matchHit.matchFilePath}
             codeLines={[
               { lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet },
             ]}

@@ -16,8 +16,8 @@
     "@buli/chat-session-state": "workspace:*",
     "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
-    "@opentui/core": "0.1.97",
-    "@opentui/react": "0.1.97",
+    "@opentui/core": "0.2.5",
+    "@opentui/react": "0.2.5",
     "react": "^19.2.0"
   },
   "devDependencies": {
