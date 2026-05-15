@@ -1,6 +1,5 @@
 import os from "node:os";
 import type {
-  AssistantResponseEvent,
   AvailableAssistantModel,
   BuliDiagnosticLogFields,
   BuliDiagnosticLogger,
@@ -19,9 +18,7 @@ import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import {
   appendPromptImageAttachmentToDraft,
   applyChatSessionKeyboardInputToChatSessionState,
-  applyAssistantResponseEventsToChatSessionState,
   applyChatSlashCommandToChatSessionState,
-  clearConversationTranscript,
   createInitialChatSessionState,
   hideCommandHelpModal,
   listOrderedConversationMessageParts,
@@ -29,10 +26,7 @@ import {
   removeLastPromptImageAttachmentFromDraft,
   replacePromptDraftFromEditor,
   hydrateConversationTranscriptFromSessionEntries,
-  showAvailableConversationSessionsForSelection,
   showAvailableAssistantModelsForSelection,
-  showConversationSessionSelectionLoadingError,
-  showConversationSessionSelectionLoadingState,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,
   type ChatSessionKeyboardInput,
@@ -44,11 +38,9 @@ import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/react";
 import { type KeyEvent, type PasteEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 import { chatScreenTheme, classifyTerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
-import { ChatScreenInputArea, type ConversationSessionCompactionStatus, type ConversationSessionExportStatus } from "./components/ChatScreenInputArea.tsx";
+import { ChatScreenInputArea } from "./components/ChatScreenInputArea.tsx";
 import { ChatScreenMainArea } from "./components/ChatScreenMainArea.tsx";
 import { TopBar } from "./components/TopBar.tsx";
-import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
-import { summarizeAssistantResponseEventsForDiagnostics } from "./assistantResponseEventDiagnostics.ts";
 import { buildChatScreenViewModel } from "./behavior/chatScreenViewModel.ts";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
 import {
@@ -57,6 +49,14 @@ import {
 import { normalizeOpenTuiPasteEventText } from "./behavior/normalizeOpenTuiPasteEventText.ts";
 import { readNativeClipboardImageAttachment } from "./clipboard/readNativeClipboardImageAttachment.ts";
 import { useChatScreenActiveTurnInterrupt } from "./behavior/useChatScreenActiveTurnInterrupt.ts";
+import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./behavior/chatScreenConversationSessionStatus.ts";
+import { useChatScreenAssistantTurnActions } from "./behavior/useChatScreenAssistantTurnActions.ts";
+import {
+  useChatScreenConversationSessionActions,
+  type ConversationSessionCompactionResult,
+  type ConversationSessionExportResult,
+  type ConversationSessionSwitchResult,
+} from "./behavior/useChatScreenConversationSessionActions.ts";
 import { useChatScreenPromptContextSelectionRefresh } from "./behavior/useChatScreenPromptContextSelectionRefresh.ts";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 
@@ -84,19 +84,11 @@ export type ChatScreenProps = {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
-export type ConversationSessionSwitchResult = {
-  conversationSessionId: string;
-  conversationSessionEntries: readonly ConversationSessionEntry[];
-};
-
-export type ConversationSessionExportResult = {
-  exportFilePath: string;
-  exportFileUrl: string;
-};
-
-export type ConversationSessionCompactionResult = {
-  conversationSessionEntries: readonly ConversationSessionEntry[];
-};
+export type {
+  ConversationSessionCompactionResult,
+  ConversationSessionExportResult,
+  ConversationSessionSwitchResult,
+} from "./behavior/useChatScreenConversationSessionActions.ts";
 
 type OpenTuiConsumableInputEvent = Pick<KeyEvent, "preventDefault" | "stopPropagation">;
 
@@ -222,6 +214,47 @@ export function ChatScreen(props: ChatScreenProps) {
     loadPromptContextCandidates: props.loadPromptContextCandidates,
     diagnosticLogger,
   });
+  const {
+    loadConversationSessionsForSelection,
+    switchToConversationSession,
+    exportCurrentConversationSession,
+    compactCurrentConversationSession,
+    autoCompactCurrentConversationSessionAfterAssistantTurn,
+    clearCurrentConversationSession,
+  } = useChatScreenConversationSessionActions({
+    loadConversationSessions: props.loadConversationSessions,
+    switchConversationSession: props.switchConversationSession,
+    exportCurrentConversationSession: props.exportCurrentConversationSession,
+    compactCurrentConversationSession: props.compactCurrentConversationSession,
+    autoCompactCurrentConversationSession: props.autoCompactCurrentConversationSession,
+    onConversationCleared: props.onConversationCleared,
+    latestChatSessionStateRef,
+    latestActiveConversationSessionIdRef,
+    isPromptSubmissionInFlightRef,
+    isConversationCompactionInFlightRef,
+    setChatSessionState,
+    setActiveConversationSessionId,
+    setConversationSessionExportStatus,
+    setConversationSessionCompactionStatus,
+    diagnosticLogger,
+  });
+  const {
+    streamAssistantResponseForSubmittedPrompt,
+    submitPendingToolApprovalDecision,
+  } = useChatScreenAssistantTurnActions({
+    chatSessionState,
+    assistantConversationRunner: props.assistantConversationRunner,
+    latestChatSessionStateRef,
+    isPromptSubmissionInFlightRef,
+    submittedToolApprovalDecisionApprovalIdRef,
+    setChatSessionState,
+    getActiveConversationTurn,
+    registerActiveConversationTurnStarted,
+    registerActiveConversationTurnFinished,
+    registerActiveConversationTurnSettlement,
+    autoCompactCurrentConversationSessionAfterAssistantTurn,
+    diagnosticLogger,
+  });
 
   useEffect(() => {
     logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.mounted", {
@@ -236,28 +269,6 @@ export function ChatScreen(props: ChatScreenProps) {
       });
     };
   }, [diagnosticLogger, props.selectedModelDefaultReasoningEffort, props.selectedModelId, props.selectedReasoningEffort]);
-
-  useEffect(() => {
-    const pendingApprovalId = chatSessionState.pendingToolApprovalRequest?.approvalId;
-    if (!pendingApprovalId || submittedToolApprovalDecisionApprovalIdRef.current !== pendingApprovalId) {
-      submittedToolApprovalDecisionApprovalIdRef.current = undefined;
-    }
-  }, [chatSessionState.pendingToolApprovalRequest?.approvalId]);
-
-  const applyIncomingAssistantResponseEventsToChatScreen = useEffectEvent((assistantResponseEvents: readonly AssistantResponseEvent[]) => {
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.assistant_event_batch_applied", {
-      ...summarizeAssistantResponseEventsForDiagnostics(assistantResponseEvents),
-      previousConversationTurnStatus: latestChatSessionStateRef.current.conversationTurnStatus,
-    });
-    const nextChatSessionState = applyAssistantResponseEventsToChatSessionState(
-      latestChatSessionStateRef.current,
-      assistantResponseEvents,
-    );
-    latestChatSessionStateRef.current = nextChatSessionState;
-    startTransition(() => {
-      setChatSessionState(nextChatSessionState);
-    });
-  });
 
   const scrollConversationMessagesToBottom = useEffectEvent(() => {
     const conversationMessageScrollBox = conversationMessageScrollBoxRef.current;
@@ -275,109 +286,6 @@ export function ChatScreen(props: ChatScreenProps) {
     }
 
     conversationMessageScrollBox.scrollBy(direction === "up" ? -1 : 1, "viewport");
-  });
-
-  const hydrateConversationSessionEntriesIntoChatScreen = useEffectEvent(
-    (conversationSessionEntries: readonly ConversationSessionEntry[]) => {
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) => {
-          const nextChatSessionState = hydrateConversationTranscriptFromSessionEntries(
-            currentChatSessionState,
-            conversationSessionEntries,
-          );
-          latestChatSessionStateRef.current = nextChatSessionState;
-          return nextChatSessionState;
-        });
-      });
-    },
-  );
-
-  const autoCompactCurrentConversationSessionAfterAssistantTurn = useEffectEvent(async () => {
-    if (!props.autoCompactCurrentConversationSession) {
-      return;
-    }
-
-    const latestTokenUsage = latestChatSessionStateRef.current.latestTokenUsage;
-    if (!latestTokenUsage || isConversationCompactionInFlightRef.current) {
-      return;
-    }
-
-    isConversationCompactionInFlightRef.current = true;
-    setConversationSessionCompactionStatus({ step: "compacting", source: "auto" });
-    try {
-      const autoCompactionRequest: ConversationAutoCompactionRequest = {
-        selectedModelId: latestChatSessionStateRef.current.selectedModelId,
-        ...(latestChatSessionStateRef.current.selectedReasoningEffort
-          ? { selectedReasoningEffort: latestChatSessionStateRef.current.selectedReasoningEffort }
-          : {}),
-        latestTokenUsage,
-      };
-      const autoCompactionResult = await props.autoCompactCurrentConversationSession(autoCompactionRequest);
-      if (autoCompactionResult.didCompact) {
-        hydrateConversationSessionEntriesIntoChatScreen(autoCompactionResult.conversationSessionEntries);
-      }
-      setConversationSessionCompactionStatus({ step: "idle" });
-    } catch (error) {
-      setConversationSessionCompactionStatus({
-        step: "failed",
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      isConversationCompactionInFlightRef.current = false;
-    }
-  });
-
-  const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (input: {
-    submittedPromptText: string;
-    submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
-  }) => {
-    const conversationTurnRequest = {
-      userPromptText: input.submittedPromptText,
-      ...(input.submittedPromptImageAttachments.length > 0
-        ? { userPromptImageAttachments: input.submittedPromptImageAttachments }
-        : {}),
-      assistantOperatingMode: latestChatSessionStateRef.current.selectedAssistantOperatingMode,
-      selectedModelId: latestChatSessionStateRef.current.selectedModelId,
-      ...(latestChatSessionStateRef.current.selectedReasoningEffort
-        ? { selectedReasoningEffort: latestChatSessionStateRef.current.selectedReasoningEffort }
-        : {}),
-    };
-
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.assistant_turn_request_created", {
-      selectedModelId: conversationTurnRequest.selectedModelId,
-      selectedReasoningEffort: conversationTurnRequest.selectedReasoningEffort ?? null,
-      assistantOperatingMode: conversationTurnRequest.assistantOperatingMode,
-      submittedPromptLength: input.submittedPromptText.length,
-      submittedPromptImageAttachmentCount: input.submittedPromptImageAttachments.length,
-    });
-
-    try {
-      const assistantResponseRelayPromise = relayAssistantResponseRunnerEvents({
-        assistantConversationRunner: props.assistantConversationRunner,
-        conversationTurnRequest,
-        onConversationTurnStarted: (activeConversationTurn) => {
-          registerActiveConversationTurnStarted({
-            activeConversationTurn,
-            selectedModelId: conversationTurnRequest.selectedModelId,
-          });
-        },
-        onConversationTurnFinished: () => {
-          registerActiveConversationTurnFinished({
-            selectedModelId: conversationTurnRequest.selectedModelId,
-          });
-        },
-        onAssistantResponseEvents: applyIncomingAssistantResponseEventsToChatScreen,
-        diagnosticLogger,
-      });
-      registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
-      await assistantResponseRelayPromise;
-      // Auto-compaction runs only after a stable terminal turn. That keeps the
-      // synchronous turn-start boundary intact while matching the threshold and
-      // checkpoint pattern we found in Codex/goose/pi-mono.
-      await autoCompactCurrentConversationSessionAfterAssistantTurn();
-    } finally {
-      isPromptSubmissionInFlightRef.current = false;
-    }
   });
 
   useEffect(() => {
@@ -425,117 +333,6 @@ export function ChatScreen(props: ChatScreenProps) {
     }
   });
 
-  const loadConversationSessionsForSelection = useEffectEvent(async () => {
-    if (!props.loadConversationSessions) {
-      setChatSessionState((currentChatSessionState) =>
-        showConversationSessionSelectionLoadingError(currentChatSessionState, "Session switching is unavailable."),
-      );
-      return;
-    }
-
-    setChatSessionState((currentChatSessionState) => showConversationSessionSelectionLoadingState(currentChatSessionState));
-    try {
-      const conversationSessions = await props.loadConversationSessions();
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) =>
-          showAvailableConversationSessionsForSelection(
-            currentChatSessionState,
-            conversationSessions,
-            latestActiveConversationSessionIdRef.current,
-          ),
-        );
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) =>
-          showConversationSessionSelectionLoadingError(currentChatSessionState, errorMessage),
-        );
-      });
-    }
-  });
-
-  const switchToConversationSession = useEffectEvent(async (conversationSessionId: string) => {
-    if (!props.switchConversationSession) {
-      setChatSessionState((currentChatSessionState) =>
-        showConversationSessionSelectionLoadingError(currentChatSessionState, "Session switching is unavailable."),
-      );
-      return;
-    }
-
-    try {
-      const switchedConversationSession = await props.switchConversationSession(conversationSessionId);
-      setActiveConversationSessionId(switchedConversationSession.conversationSessionId);
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) =>
-          hydrateConversationTranscriptFromSessionEntries(
-            currentChatSessionState,
-            switchedConversationSession.conversationSessionEntries,
-          ),
-        );
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) =>
-          showConversationSessionSelectionLoadingError(currentChatSessionState, errorMessage),
-        );
-      });
-    }
-  });
-
-  const exportCurrentConversationSession = useEffectEvent(async () => {
-    if (!props.exportCurrentConversationSession) {
-      setConversationSessionExportStatus({ step: "failed", errorMessage: "Session export is unavailable." });
-      return;
-    }
-
-    setConversationSessionExportStatus({ step: "idle" });
-    try {
-      await props.exportCurrentConversationSession();
-    } catch (error) {
-      setConversationSessionExportStatus({
-        step: "failed",
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
-
-  const compactCurrentConversationSession = useEffectEvent(async () => {
-    if (!props.compactCurrentConversationSession) {
-      setConversationSessionCompactionStatus({ step: "failed", errorMessage: "Session compaction is unavailable." });
-      return;
-    }
-
-    if (isConversationCompactionInFlightRef.current) {
-      setConversationSessionCompactionStatus({ step: "failed", errorMessage: "Session compaction is already running." });
-      return;
-    }
-
-    isConversationCompactionInFlightRef.current = true;
-    const wasPromptSubmissionInFlight = isPromptSubmissionInFlightRef.current;
-    isPromptSubmissionInFlightRef.current = true;
-    setConversationSessionCompactionStatus({ step: "compacting", source: "manual" });
-    try {
-      const compactedConversationSession = await props.compactCurrentConversationSession({
-        selectedModelId: latestChatSessionStateRef.current.selectedModelId,
-        ...(latestChatSessionStateRef.current.selectedReasoningEffort
-          ? { selectedReasoningEffort: latestChatSessionStateRef.current.selectedReasoningEffort }
-          : {}),
-      });
-      hydrateConversationSessionEntriesIntoChatScreen(compactedConversationSession.conversationSessionEntries);
-      setConversationSessionCompactionStatus({ step: "idle" });
-    } catch (error) {
-      setConversationSessionCompactionStatus({
-        step: "failed",
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      isConversationCompactionInFlightRef.current = false;
-      isPromptSubmissionInFlightRef.current = wasPromptSubmissionInFlight;
-    }
-  });
-
   const applyChatSlashCommandApplicationEffectToChatScreen = useEffectEvent(
     (chatSlashCommandApplicationEffect: ChatSlashCommandApplicationEffect | undefined) => {
       if (!chatSlashCommandApplicationEffect) {
@@ -543,19 +340,7 @@ export function ChatScreen(props: ChatScreenProps) {
       }
 
       if (chatSlashCommandApplicationEffect.effectType === "clear_current_conversation_session") {
-        const clearedConversationSession = props.onConversationCleared?.();
-        if (clearedConversationSession) {
-          setActiveConversationSessionId(clearedConversationSession.conversationSessionId);
-          setChatSessionState((currentChatSessionState) =>
-            hydrateConversationTranscriptFromSessionEntries(
-              currentChatSessionState,
-              clearedConversationSession.conversationSessionEntries,
-            ),
-          );
-        } else {
-          setChatSessionState((currentChatSessionState) => clearConversationTranscript(currentChatSessionState));
-        }
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.conversation_cleared");
+        clearCurrentConversationSession();
         return;
       }
 
@@ -596,75 +381,6 @@ export function ChatScreen(props: ChatScreenProps) {
     latestChatSessionStateRef.current = chatSlashCommandApplication.nextChatSessionState;
     setChatSessionState(chatSlashCommandApplication.nextChatSessionState);
     applyChatSlashCommandApplicationEffectToChatScreen(chatSlashCommandApplication.chatSlashCommandApplicationEffect);
-  });
-
-  const submitPendingToolApprovalDecision = useEffectEvent((input: {
-    decision: "approved" | "denied";
-    source: "button" | "keyboard";
-  }) => {
-    const pendingToolApprovalRequest = latestChatSessionStateRef.current.pendingToolApprovalRequest;
-    if (!pendingToolApprovalRequest) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.tool_approval_decision_ignored", {
-        decision: input.decision,
-        source: input.source,
-        reason: "no_pending_approval",
-      });
-      return;
-    }
-
-    if (submittedToolApprovalDecisionApprovalIdRef.current === pendingToolApprovalRequest.approvalId) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.tool_approval_decision_ignored", {
-        approvalId: pendingToolApprovalRequest.approvalId,
-        pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-        decision: input.decision,
-        source: input.source,
-        reason: "decision_already_submitted",
-      });
-      return;
-    }
-
-    const activeConversationTurn = getActiveConversationTurn();
-    if (!activeConversationTurn) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.tool_approval_decision_ignored", {
-        approvalId: pendingToolApprovalRequest.approvalId,
-        pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-        decision: input.decision,
-        source: input.source,
-        reason: "no_active_turn",
-      });
-      return;
-    }
-
-    submittedToolApprovalDecisionApprovalIdRef.current = pendingToolApprovalRequest.approvalId;
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.tool_approval_decision_submitted", {
-      approvalId: pendingToolApprovalRequest.approvalId,
-      pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-      decision: input.decision,
-      source: input.source,
-    });
-
-    const resetApprovalDecisionGuardAfterFailure = (error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.tool_approval_decision_failed", {
-        approvalId: pendingToolApprovalRequest.approvalId,
-        pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-        decision: input.decision,
-        source: input.source,
-        errorMessage,
-      });
-      if (latestChatSessionStateRef.current.pendingToolApprovalRequest?.approvalId === pendingToolApprovalRequest.approvalId) {
-        submittedToolApprovalDecisionApprovalIdRef.current = undefined;
-      }
-    };
-
-    try {
-      const approvalDecisionPromise = input.decision === "approved"
-        ? activeConversationTurn.approvePendingToolCall(pendingToolApprovalRequest.approvalId)
-        : activeConversationTurn.denyPendingToolCall(pendingToolApprovalRequest.approvalId);
-      void approvalDecisionPromise.catch(resetApprovalDecisionGuardAfterFailure);
-    } catch (error) {
-      resetApprovalDecisionGuardAfterFailure(error);
-    }
   });
 
   const applyChatSessionKeyboardEffectToChatScreen = useEffectEvent((input: {

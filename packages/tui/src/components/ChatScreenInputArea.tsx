@@ -9,15 +9,7 @@ import type { PromptTextareaEdit } from "./PromptTextarea.tsx";
 import { SlashCommandSelectionPane } from "./SlashCommandSelectionPane.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.tsx";
-
-export type ConversationSessionExportStatus =
-  | { step: "idle" }
-  | { step: "failed"; errorMessage: string };
-
-export type ConversationSessionCompactionStatus =
-  | { step: "idle" }
-  | { step: "compacting"; source: "manual" | "auto" }
-  | { step: "failed"; errorMessage: string };
+import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "../behavior/chatScreenConversationSessionStatus.ts";
 
 export type ChatScreenInputAreaProps = {
   chatSessionState: ChatSessionState;
