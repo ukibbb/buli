@@ -22,6 +22,59 @@ import type { ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 
 export type AutoApprovedReadOnlyToolCallRequest = ReadToolCallRequest | GlobToolCallRequest | GrepToolCallRequest;
 
+type AutoApprovedReadOnlyToolName = AutoApprovedReadOnlyToolCallRequest["toolName"];
+type AutoApprovedReadOnlyToolCallRequestByName<ToolName extends AutoApprovedReadOnlyToolName> = Extract<
+  AutoApprovedReadOnlyToolCallRequest,
+  { toolName: ToolName }
+>;
+
+type AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName extends AutoApprovedReadOnlyToolName> = {
+  toolCallRequest: AutoApprovedReadOnlyToolCallRequestByName<ToolName>;
+  workspaceRootPath: string;
+  projectInstructionTracker?: ProjectInstructionTracker;
+  abortSignal: AbortSignal;
+};
+
+type AutoApprovedReadOnlyToolCallExecutor<ToolName extends AutoApprovedReadOnlyToolName> = {
+  createStartedToolCallDetail(
+    toolCallRequest: AutoApprovedReadOnlyToolCallRequestByName<ToolName>,
+  ): ToolCallDetail;
+  runToolCall(input: AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName>): Promise<ToolCallOutcome>;
+};
+
+const autoApprovedReadOnlyToolCallExecutorByName: {
+  readonly [ToolName in AutoApprovedReadOnlyToolName]: AutoApprovedReadOnlyToolCallExecutor<ToolName>;
+} = {
+  read: {
+    createStartedToolCallDetail: createStartedReadToolCallDetail,
+    runToolCall: (input) =>
+      runReadToolCall({
+        readToolCallRequest: input.toolCallRequest,
+        workspaceRootPath: input.workspaceRootPath,
+        ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
+        abortSignal: input.abortSignal,
+      }),
+  },
+  glob: {
+    createStartedToolCallDetail: createStartedGlobToolCallDetail,
+    runToolCall: (input) =>
+      runGlobToolCall({
+        globToolCallRequest: input.toolCallRequest,
+        workspaceRootPath: input.workspaceRootPath,
+        abortSignal: input.abortSignal,
+      }),
+  },
+  grep: {
+    createStartedToolCallDetail: createStartedGrepToolCallDetail,
+    runToolCall: (input) =>
+      runGrepToolCall({
+        grepToolCallRequest: input.toolCallRequest,
+        workspaceRootPath: input.workspaceRootPath,
+        abortSignal: input.abortSignal,
+      }),
+  },
+};
+
 export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
@@ -135,14 +188,8 @@ export function isAutoApprovedReadOnlyToolCallRequest(
 function createStartedAutoApprovedReadOnlyToolCallDetail(
   toolCallRequest: AutoApprovedReadOnlyToolCallRequest,
 ): ToolCallDetail {
-  if (toolCallRequest.toolName === "read") {
-    return createStartedReadToolCallDetail(toolCallRequest);
-  }
-  if (toolCallRequest.toolName === "glob") {
-    return createStartedGlobToolCallDetail(toolCallRequest);
-  }
-
-  return createStartedGrepToolCallDetail(toolCallRequest);
+  const readOnlyToolCallExecutor = resolveAutoApprovedReadOnlyToolCallExecutor(toolCallRequest);
+  return readOnlyToolCallExecutor.createStartedToolCallDetail(toolCallRequest);
 }
 
 function runAutoApprovedReadOnlyToolCall(input: {
@@ -151,27 +198,14 @@ function runAutoApprovedReadOnlyToolCall(input: {
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
 }): Promise<ToolCallOutcome> {
-  if (input.toolCallRequest.toolName === "read") {
-    return runReadToolCall({
-      readToolCallRequest: input.toolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
-      abortSignal: input.abortSignal,
-    });
-  }
-  if (input.toolCallRequest.toolName === "glob") {
-    return runGlobToolCall({
-      globToolCallRequest: input.toolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      abortSignal: input.abortSignal,
-    });
-  }
+  const readOnlyToolCallExecutor = resolveAutoApprovedReadOnlyToolCallExecutor(input.toolCallRequest);
+  return readOnlyToolCallExecutor.runToolCall(input);
+}
 
-  return runGrepToolCall({
-    grepToolCallRequest: input.toolCallRequest,
-    workspaceRootPath: input.workspaceRootPath,
-    abortSignal: input.abortSignal,
-  });
+function resolveAutoApprovedReadOnlyToolCallExecutor<ToolName extends AutoApprovedReadOnlyToolName>(
+  toolCallRequest: AutoApprovedReadOnlyToolCallRequestByName<ToolName>,
+): AutoApprovedReadOnlyToolCallExecutor<ToolName> {
+  return autoApprovedReadOnlyToolCallExecutorByName[toolCallRequest.toolName];
 }
 
 function logAssistantResponseEventEmitted(

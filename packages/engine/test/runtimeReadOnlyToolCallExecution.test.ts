@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantResponseEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
@@ -125,6 +125,70 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
     toolCallId: "call_read_1",
     toolCallDetail: { toolName: "read", readFilePath: "notes.txt" },
     toolResultText: expect.stringContaining("2: beta"),
+  });
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and submits completed glob results", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-glob-"));
+  await mkdir(join(workspaceRootPath, "src"));
+  await writeFile(join(workspaceRootPath, "src", "app.ts"), "export const app = true;\n", "utf8");
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Find TypeScript files",
+        modelFacingPromptText: "Find TypeScript files",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_glob_1",
+        toolCallRequest: {
+          toolName: "glob",
+          globPattern: "**/*.ts",
+        },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  const assistantResponseEvents = await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    providerConversationTurn,
+    toolCallId: "call_glob_1",
+    toolCallRequest: {
+      toolName: "glob",
+      globPattern: "**/*.ts",
+    },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_message_part_added",
+    "assistant_message_part_updated",
+  ]);
+  expect(assistantResponseEvents[1]).toMatchObject({
+    type: "assistant_message_part_updated",
+    part: {
+      partKind: "assistant_tool_call",
+      toolCallStatus: "completed",
+      toolCallDetail: { toolName: "glob", globPattern: "**/*.ts" },
+    },
+  });
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_glob_1",
+      toolResultText: expect.stringContaining("src/app.ts"),
+    },
+  ]);
+  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolCallId: "call_glob_1",
+    toolCallDetail: { toolName: "glob", globPattern: "**/*.ts" },
+    toolResultText: expect.stringContaining("src/app.ts"),
   });
 });
 
