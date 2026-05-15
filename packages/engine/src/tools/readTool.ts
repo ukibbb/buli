@@ -1,5 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { ReadToolCallRequest, ToolCallReadDetail, ToolCallReadPreviewLine } from "@buli/contracts";
+import {
+  buildProjectInstructionUpdateText,
+  type ProjectInstructionTracker,
+} from "../projectInstructions.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 
@@ -24,6 +29,7 @@ export function createStartedReadToolCallDetail(readToolCallRequest: ReadToolCal
 export async function runReadToolCall(input: {
   readToolCallRequest: ReadToolCallRequest;
   workspaceRootPath: string;
+  projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal?: AbortSignal;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
@@ -65,16 +71,26 @@ export async function runReadToolCall(input: {
         wasLineCountTruncated,
       };
 
+      const projectInstructionUpdateText = await discoverProjectInstructionUpdateText({
+        projectInstructionTracker: input.projectInstructionTracker,
+        targetDirectoryPath: resolvedReadPath.absolutePath,
+        excludedAbsolutePath: resolvedReadPath.absolutePath,
+        abortSignal: input.abortSignal,
+      });
+
       return {
         outcomeKind: "completed",
         toolCallDetail,
-        toolResultText: buildDirectoryReadToolResultText({
-          displayPath: resolvedReadPath.displayPath,
-          entryNames: sortedEntryNames,
-          visibleEntryNames,
-          offsetLineNumber,
-          wasLineCountTruncated,
-        }),
+        toolResultText: appendProjectInstructionUpdateText(
+          buildDirectoryReadToolResultText({
+            displayPath: resolvedReadPath.displayPath,
+            entryNames: sortedEntryNames,
+            visibleEntryNames,
+            offsetLineNumber,
+            wasLineCountTruncated,
+          }),
+          projectInstructionUpdateText,
+        ),
         durationMilliseconds: Date.now() - startedAtMilliseconds,
       };
     }
@@ -112,17 +128,27 @@ export async function runReadToolCall(input: {
       wasLongLineTruncated,
     };
 
+    const projectInstructionUpdateText = await discoverProjectInstructionUpdateText({
+      projectInstructionTracker: input.projectInstructionTracker,
+      targetDirectoryPath: dirname(resolvedReadPath.absolutePath),
+      excludedAbsolutePath: resolvedReadPath.absolutePath,
+      abortSignal: input.abortSignal,
+    });
+
     return {
       outcomeKind: "completed",
       toolCallDetail,
-      toolResultText: buildFileReadToolResultText({
-        displayPath: resolvedReadPath.displayPath,
-        fileLines,
-        visibleFileLines: visibleFileLineTexts,
-        offsetLineNumber,
-        wasLineCountTruncated,
-        wasLongLineTruncated,
-      }),
+      toolResultText: appendProjectInstructionUpdateText(
+        buildFileReadToolResultText({
+          displayPath: resolvedReadPath.displayPath,
+          fileLines,
+          visibleFileLines: visibleFileLineTexts,
+          offsetLineNumber,
+          wasLineCountTruncated,
+          wasLongLineTruncated,
+        }),
+        projectInstructionUpdateText,
+      ),
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   } catch (error) {
@@ -139,6 +165,29 @@ export async function runReadToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+async function discoverProjectInstructionUpdateText(input: {
+  projectInstructionTracker: ProjectInstructionTracker | undefined;
+  targetDirectoryPath: string;
+  excludedAbsolutePath: string;
+  abortSignal: AbortSignal | undefined;
+}): Promise<string | undefined> {
+  if (!input.projectInstructionTracker) {
+    return undefined;
+  }
+
+  return buildProjectInstructionUpdateText(
+    await input.projectInstructionTracker.discoverNewProjectInstructionsForDirectory({
+      targetDirectoryPath: input.targetDirectoryPath,
+      excludedAbsolutePath: input.excludedAbsolutePath,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+    }),
+  );
+}
+
+function appendProjectInstructionUpdateText(toolResultText: string, projectInstructionUpdateText: string | undefined): string {
+  return projectInstructionUpdateText ? `${toolResultText}\n\n${projectInstructionUpdateText}` : toolResultText;
 }
 
 function buildDirectoryReadToolResultText(input: {

@@ -7,7 +7,7 @@ import type {
 import {
   extractActivePromptContextQueryFromPromptDraft,
   reconcileSelectedPromptContextReferenceTextsWithPromptDraft,
-} from "@buli/engine";
+} from "@buli/prompt-context-core";
 import type { ChatSessionState } from "./chatSessionState.ts";
 
 function createPromptDraftEditedState(input: {

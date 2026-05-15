@@ -331,6 +331,27 @@ test("ConversationSessionEntrySchema parses a user prompt with image attachments
   });
 });
 
+test("ConversationSessionEntrySchema parses project instruction snapshots on user prompts", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "user_prompt",
+      promptText: "Explain the runtime",
+      modelFacingPromptText: "Explain the runtime",
+      projectInstructionSnapshots: [
+        {
+          fileName: "AGENTS.md",
+          displayPath: "AGENTS.md",
+          instructionText: "- Prefer integration tests.",
+          contentHash: "abc123",
+        },
+      ],
+    }),
+  ).toMatchObject({
+    entryKind: "user_prompt",
+    projectInstructionSnapshots: [{ displayPath: "AGENTS.md" }],
+  });
+});
+
 test("ConversationSessionEntrySchema parses a conversation compaction summary", () => {
   expect(
     ConversationSessionEntrySchema.parse({

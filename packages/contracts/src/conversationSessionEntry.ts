@@ -4,12 +4,24 @@ import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 
+export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
+
+export const ProjectInstructionSnapshotSchema = z
+  .object({
+    fileName: ProjectInstructionFileNameSchema,
+    displayPath: z.string().min(1),
+    instructionText: z.string(),
+    contentHash: z.string().min(1),
+  })
+  .strict();
+
 export const UserPromptConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("user_prompt"),
     promptText: z.string(),
     modelFacingPromptText: z.string(),
     imageAttachments: z.array(UserPromptImageAttachmentSchema).optional(),
+    projectInstructionSnapshots: z.array(ProjectInstructionSnapshotSchema).optional(),
   })
   .strict();
 
@@ -110,6 +122,8 @@ export const ConversationSessionSnapshotSchema = z
   .strict();
 
 export type UserPromptConversationSessionEntry = z.infer<typeof UserPromptConversationSessionEntrySchema>;
+export type ProjectInstructionFileName = z.infer<typeof ProjectInstructionFileNameSchema>;
+export type ProjectInstructionSnapshot = z.infer<typeof ProjectInstructionSnapshotSchema>;
 export type AssistantMessageConversationSessionEntryStatus = z.infer<typeof AssistantMessageConversationSessionEntryStatusSchema>;
 export type CompletedAssistantMessageConversationSessionEntry = z.infer<
   typeof CompletedAssistantMessageConversationSessionEntrySchema

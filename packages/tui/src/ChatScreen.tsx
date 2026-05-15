@@ -11,9 +11,11 @@ import type {
 } from "@buli/contracts";
 import {
   type AssistantConversationRunner,
+  type ConversationAutoCompactionRequest,
+  type ConversationAutoCompactionResult,
   type ConversationCompactionRequest,
-  type PromptContextCandidate,
 } from "@buli/engine";
+import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import {
   appendPromptImageAttachmentToDraft,
   applyChatSessionKeyboardInputToChatSessionState,
@@ -80,6 +82,9 @@ export type ChatScreenProps = {
   compactCurrentConversationSession?: (
     input: ConversationCompactionRequest,
   ) => Promise<ConversationSessionCompactionResult> | ConversationSessionCompactionResult;
+  autoCompactCurrentConversationSession?: (
+    input: ConversationAutoCompactionRequest,
+  ) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult;
   readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: () => ConversationSessionSwitchResult | void;
@@ -107,6 +112,7 @@ type ConversationSessionExportStatus =
 
 type ConversationSessionCompactionStatus =
   | { step: "idle" }
+  | { step: "compacting"; source: "manual" | "auto" }
   | { step: "failed"; errorMessage: string };
 
 type OpenTuiConsumableInputEvent = Pick<KeyEvent, "preventDefault" | "stopPropagation">;
@@ -209,6 +215,7 @@ export function ChatScreen(props: ChatScreenProps) {
   const latestChatSessionStateRef = useRef<ChatSessionState>(chatSessionState);
   const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
   const isPromptSubmissionInFlightRef = useRef(false);
+  const isConversationCompactionInFlightRef = useRef(false);
   const submittedToolApprovalDecisionApprovalIdRef = useRef<string | undefined>(undefined);
   const conversationMessageScrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
 
@@ -287,6 +294,56 @@ export function ChatScreen(props: ChatScreenProps) {
     conversationMessageScrollBox.scrollBy(direction === "up" ? -1 : 1, "viewport");
   });
 
+  const hydrateConversationSessionEntriesIntoChatScreen = useEffectEvent(
+    (conversationSessionEntries: readonly ConversationSessionEntry[]) => {
+      startTransition(() => {
+        setChatSessionState((currentChatSessionState) => {
+          const nextChatSessionState = hydrateConversationTranscriptFromSessionEntries(
+            currentChatSessionState,
+            conversationSessionEntries,
+          );
+          latestChatSessionStateRef.current = nextChatSessionState;
+          return nextChatSessionState;
+        });
+      });
+    },
+  );
+
+  const autoCompactCurrentConversationSessionAfterAssistantTurn = useEffectEvent(async () => {
+    if (!props.autoCompactCurrentConversationSession) {
+      return;
+    }
+
+    const latestTokenUsage = latestChatSessionStateRef.current.latestTokenUsage;
+    if (!latestTokenUsage || isConversationCompactionInFlightRef.current) {
+      return;
+    }
+
+    isConversationCompactionInFlightRef.current = true;
+    setConversationSessionCompactionStatus({ step: "compacting", source: "auto" });
+    try {
+      const autoCompactionRequest: ConversationAutoCompactionRequest = {
+        selectedModelId: latestChatSessionStateRef.current.selectedModelId,
+        ...(latestChatSessionStateRef.current.selectedReasoningEffort
+          ? { selectedReasoningEffort: latestChatSessionStateRef.current.selectedReasoningEffort }
+          : {}),
+        latestTokenUsage,
+      };
+      const autoCompactionResult = await props.autoCompactCurrentConversationSession(autoCompactionRequest);
+      if (autoCompactionResult.didCompact) {
+        hydrateConversationSessionEntriesIntoChatScreen(autoCompactionResult.conversationSessionEntries);
+      }
+      setConversationSessionCompactionStatus({ step: "idle" });
+    } catch (error) {
+      setConversationSessionCompactionStatus({
+        step: "failed",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      isConversationCompactionInFlightRef.current = false;
+    }
+  });
+
   const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (input: {
     submittedPromptText: string;
     submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
@@ -331,6 +388,10 @@ export function ChatScreen(props: ChatScreenProps) {
       });
       registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
       await assistantResponseRelayPromise;
+      // Auto-compaction runs only after a stable terminal turn. That keeps the
+      // synchronous turn-start boundary intact while matching the threshold and
+      // checkpoint pattern we found in Codex/goose/pi-mono.
+      await autoCompactCurrentConversationSessionAfterAssistantTurn();
     } finally {
       isPromptSubmissionInFlightRef.current = false;
     }
@@ -463,7 +524,15 @@ export function ChatScreen(props: ChatScreenProps) {
       return;
     }
 
-    setConversationSessionCompactionStatus({ step: "idle" });
+    if (isConversationCompactionInFlightRef.current) {
+      setConversationSessionCompactionStatus({ step: "failed", errorMessage: "Session compaction is already running." });
+      return;
+    }
+
+    isConversationCompactionInFlightRef.current = true;
+    const wasPromptSubmissionInFlight = isPromptSubmissionInFlightRef.current;
+    isPromptSubmissionInFlightRef.current = true;
+    setConversationSessionCompactionStatus({ step: "compacting", source: "manual" });
     try {
       const compactedConversationSession = await props.compactCurrentConversationSession({
         selectedModelId: latestChatSessionStateRef.current.selectedModelId,
@@ -471,21 +540,16 @@ export function ChatScreen(props: ChatScreenProps) {
           ? { selectedReasoningEffort: latestChatSessionStateRef.current.selectedReasoningEffort }
           : {}),
       });
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) => {
-          const nextChatSessionState = hydrateConversationTranscriptFromSessionEntries(
-            currentChatSessionState,
-            compactedConversationSession.conversationSessionEntries,
-          );
-          latestChatSessionStateRef.current = nextChatSessionState;
-          return nextChatSessionState;
-        });
-      });
+      hydrateConversationSessionEntriesIntoChatScreen(compactedConversationSession.conversationSessionEntries);
+      setConversationSessionCompactionStatus({ step: "idle" });
     } catch (error) {
       setConversationSessionCompactionStatus({
         step: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      isConversationCompactionInFlightRef.current = false;
+      isPromptSubmissionInFlightRef.current = wasPromptSubmissionInFlight;
     }
   });
 
@@ -952,6 +1016,12 @@ export function ChatScreen(props: ChatScreenProps) {
     conversationSessionCompactionStatus.step === "failed" ? (
       <box paddingX={2} marginBottom={1}>
         <ErrorBannerBlock titleText="Could not compact session" errorText={conversationSessionCompactionStatus.errorMessage} />
+      </box>
+    ) : conversationSessionCompactionStatus.step === "compacting" ? (
+      <box paddingX={2} marginBottom={1}>
+        <text fg={chatScreenTheme.textMuted}>
+          {conversationSessionCompactionStatus.source === "auto" ? "Auto-compacting context…" : "Compacting session…"}
+        </text>
       </box>
     ) : null;
 

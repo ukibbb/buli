@@ -2,7 +2,7 @@ import {
   determinePromptContextQueryLoadStrategy,
   extractActivePromptContextQueryFromPromptDraft,
   type PromptContextQueryLoadStrategy,
-} from "@buli/engine";
+} from "@buli/prompt-context-core";
 import type { ChatSessionState } from "./chatSessionState.ts";
 import {
   buildPromptContextQueryIdentity,

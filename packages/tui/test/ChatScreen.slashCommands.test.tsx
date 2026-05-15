@@ -5,7 +5,13 @@ import type {
   ConversationSessionEntry,
   ConversationSessionSummary,
 } from "@buli/contracts";
-import type { AssistantConversationRunner, PromptContextCandidate } from "@buli/engine";
+import type {
+  AssistantConversationRunner,
+  ConversationAutoCompactionDecision,
+  ConversationAutoCompactionRequest,
+  ConversationAutoCompactionResult,
+  PromptContextCandidate,
+} from "@buli/engine";
 import { act } from "react";
 import { ChatScreen } from "../src/ChatScreen.tsx";
 import { testRender } from "./testRenderWithCleanup.ts";
@@ -93,6 +99,9 @@ async function renderChatScreen(input: {
   }>;
   exportCurrentConversationSession?: () => Promise<{ exportFilePath: string; exportFileUrl: string }>;
   compactCurrentConversationSession?: () => Promise<{ conversationSessionEntries: readonly ConversationSessionEntry[] }>;
+  autoCompactCurrentConversationSession?: (
+    input: ConversationAutoCompactionRequest,
+  ) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult;
   onConversationCleared?: () => void;
 } = {}): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
@@ -107,6 +116,9 @@ async function renderChatScreen(input: {
       {...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {})}
       {...(input.exportCurrentConversationSession ? { exportCurrentConversationSession: input.exportCurrentConversationSession } : {})}
       {...(input.compactCurrentConversationSession ? { compactCurrentConversationSession: input.compactCurrentConversationSession } : {})}
+      {...(input.autoCompactCurrentConversationSession
+        ? { autoCompactCurrentConversationSession: input.autoCompactCurrentConversationSession }
+        : {})}
       {...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {})}
     />,
     { width: 120, height: 28 },
@@ -268,6 +280,94 @@ test("ChatScreen compacts the current session through slash command", async () =
   expect(compactCount).toBe(1);
   expect(compactedFrame).toContain("Context compacted");
   expect(compactedFrame).toContain("continue the manual compaction implementation");
+});
+
+test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
+  const terminalUsage = {
+    total: 800_000,
+    input: 790_000,
+    output: 10_000,
+    reasoning: 0,
+    cache: { read: 0, write: 0 },
+  };
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      return {
+        async *streamAssistantResponseEvents() {
+          yield { type: "assistant_turn_started", messageId: "assistant-auto-compact-1", startedAtMs: 1 };
+          yield {
+            type: "assistant_message_part_added",
+            messageId: "assistant-auto-compact-1",
+            part: {
+              id: "assistant-auto-compact-text-1",
+              partKind: "assistant_text",
+              partStatus: "completed",
+              rawMarkdownText: "Large answer before compaction.",
+            },
+          };
+          yield {
+            type: "assistant_message_completed",
+            messageId: "assistant-auto-compact-1",
+            usage: terminalUsage,
+          };
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const autoCompactionRequests: ConversationAutoCompactionRequest[] = [];
+  const autoCompactionDecision = {
+    shouldCompact: true,
+    reason: "context_usage_threshold_reached",
+    selectedModelId: "gpt-5.4",
+    thresholdRatio: 0.75,
+    contextTokensUsed: 800_000,
+    contextUsageRatio: 800_000 / 1_050_000,
+    contextWindowTokenCapacity: 1_050_000,
+    sessionEntryCountAfterLatestCompactionSummary: 2,
+  } satisfies ConversationAutoCompactionDecision;
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner,
+    autoCompactCurrentConversationSession: (autoCompactionRequest) => {
+      autoCompactionRequests.push(autoCompactionRequest);
+      return {
+        didCompact: true,
+        decision: autoCompactionDecision,
+        conversationSessionEntries: [
+          {
+            entryKind: "user_prompt",
+            promptText: "Trigger auto compaction",
+            modelFacingPromptText: "Trigger auto compaction",
+          },
+          {
+            entryKind: "assistant_message",
+            assistantMessageStatus: "completed",
+            assistantMessageText: "Large answer before compaction.",
+          },
+          {
+            entryKind: "conversation_compaction_summary",
+            summaryText: "Goal: continue after automatic compaction.",
+            compactedEntryCount: 2,
+          },
+        ],
+      };
+    },
+  });
+
+  await renderedChatScreen.typeText("Trigger auto compaction");
+  await renderedChatScreen.pressEnter();
+  const compactedFrame = await renderedChatScreen.waitForAssistantEvents();
+
+  expect(autoCompactionRequests).toEqual<ConversationAutoCompactionRequest[]>([
+    {
+      selectedModelId: "gpt-5.4",
+      latestTokenUsage: terminalUsage,
+    },
+  ]);
+  expect(compactedFrame).toContain("Context compacted");
+  expect(compactedFrame).toContain("continue after automatic compaction");
 });
 
 test("ChatScreen hydrates the initial session and switches sessions through slash command", async () => {

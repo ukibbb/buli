@@ -4,10 +4,14 @@ import type { ReasoningEffort } from "@buli/contracts";
 import {
   AssistantConversationRuntime,
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
+  DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO,
   InMemoryConversationHistory,
   PromptContextCandidateCatalog,
+  decideConversationAutoCompaction,
   parseBashToolApprovalMode,
   type BashToolApprovalMode,
+  type ConversationAutoCompactionRequest,
+  type ConversationAutoCompactionResult,
   type ConversationCompactionRequest,
 } from "@buli/engine";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
@@ -24,13 +28,19 @@ import { createDiagnosticFileLogger } from "../diagnosticFileLogger.ts";
 const DEFAULT_MODEL_ID = "gpt-5.5";
 const DEFAULT_MODEL_DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
 const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
+const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
 
 type InteractiveChatRenderer = typeof renderChatScreenInTerminal;
 
 type InteractiveChatEnvironment = Readonly<{
   [environmentVariableName: string]: string | undefined;
   BULI_BASH_APPROVAL_MODE?: string | undefined;
+  BULI_AUTO_COMPACT_THRESHOLD?: string | undefined;
 }>;
+
+type AutoCompactionThresholdResolution =
+  | { status: "resolved"; thresholdRatio: number }
+  | { status: "invalid" };
 
 export async function runInteractiveChat(input: {
   selectedModelId?: string;
@@ -44,13 +54,19 @@ export async function runInteractiveChat(input: {
   stdin?: Pick<NodeJS.ReadStream, "isTTY">;
   environment?: InteractiveChatEnvironment;
 } = {}): Promise<string> {
+  const environment = input.environment ?? process.env;
   const bashToolApprovalMode = resolveInteractiveChatBashToolApprovalMode({
     requestedBashToolApprovalMode: input.bashToolApprovalMode,
-    environment: input.environment ?? process.env,
+    environment,
   });
   if (!bashToolApprovalMode) {
     return INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE;
   }
+  const autoCompactionThresholdResolution = resolveConversationAutoCompactionThresholdRatio({ environment });
+  if (autoCompactionThresholdResolution.status === "invalid") {
+    return INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE;
+  }
+  const autoCompactionThresholdRatio = autoCompactionThresholdResolution.thresholdRatio;
   const selectedModelId = input.selectedModelId ?? DEFAULT_MODEL_ID;
   const selectedModelDefaultReasoningEffort = lookupKnownModelDefaultReasoningEffort(selectedModelId);
 
@@ -201,6 +217,61 @@ export async function runInteractiveChat(input: {
       });
       return { conversationSessionEntries };
     },
+    autoCompactCurrentConversationSession: async (
+      autoCompactionRequest: ConversationAutoCompactionRequest,
+    ): Promise<ConversationAutoCompactionResult> => {
+      // CLI owns user configuration and persistence, while the engine owns the
+      // pure decision. This keeps auto-compaction on the same append-only
+      // runtime path as manual /compact instead of creating a second history
+      // mutation path.
+      const autoCompactionDecision = decideConversationAutoCompaction({
+        ...autoCompactionRequest,
+        conversationSessionEntries: conversationHistory.listConversationSessionEntries(),
+        thresholdRatio: autoCompactionThresholdRatio,
+      });
+      diagnosticLogger?.({
+        subsystem: "cli",
+        eventName: "conversation_session.auto_compaction_decided",
+        fields: {
+          conversationSessionId: activeConversationSessionId,
+          shouldCompact: autoCompactionDecision.shouldCompact,
+          reason: autoCompactionDecision.reason,
+          selectedModelId: autoCompactionDecision.selectedModelId,
+          contextTokensUsed: autoCompactionDecision.contextTokensUsed,
+          contextWindowTokenCapacity: autoCompactionDecision.contextWindowTokenCapacity ?? null,
+          contextUsageRatio: autoCompactionDecision.contextUsageRatio ?? null,
+          thresholdRatio: autoCompactionDecision.thresholdRatio,
+          sessionEntryCountAfterLatestCompactionSummary:
+            autoCompactionDecision.sessionEntryCountAfterLatestCompactionSummary,
+        },
+      });
+      if (!autoCompactionDecision.shouldCompact) {
+        return { didCompact: false, decision: autoCompactionDecision };
+      }
+
+      await assistantConversationRunner.compactConversationSession({
+        selectedModelId: autoCompactionRequest.selectedModelId,
+        ...(autoCompactionRequest.selectedReasoningEffort
+          ? { selectedReasoningEffort: autoCompactionRequest.selectedReasoningEffort }
+          : {}),
+      });
+      const conversationSessionEntries = conversationHistory.listConversationSessionEntries();
+      diagnosticLogger?.({
+        subsystem: "cli",
+        eventName: "conversation_session.auto_compacted",
+        fields: {
+          conversationSessionId: activeConversationSessionId,
+          conversationSessionEntryCount: conversationSessionEntries.length,
+          contextTokensUsed: autoCompactionDecision.contextTokensUsed,
+          thresholdRatio: autoCompactionDecision.thresholdRatio,
+        },
+      });
+      return {
+        didCompact: true,
+        decision: autoCompactionDecision,
+        conversationSessionEntries,
+      };
+    },
     initialConversationSessionId: activeConversationSession.sessionId,
     initialConversationSessionEntries,
     selectedModelId,
@@ -245,6 +316,22 @@ function resolveInteractiveChatBashToolApprovalMode(input: {
   }
 
   return parseBashToolApprovalMode(environmentBashToolApprovalMode);
+}
+
+function resolveConversationAutoCompactionThresholdRatio(input: {
+  environment: InteractiveChatEnvironment;
+}): AutoCompactionThresholdResolution {
+  const environmentThresholdRatio = input.environment.BULI_AUTO_COMPACT_THRESHOLD?.trim();
+  if (!environmentThresholdRatio) {
+    return { status: "resolved", thresholdRatio: DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO };
+  }
+
+  const thresholdRatio = Number(environmentThresholdRatio);
+  if (!Number.isFinite(thresholdRatio) || thresholdRatio < 0 || thresholdRatio > 1) {
+    return { status: "invalid" };
+  }
+
+  return { status: "resolved", thresholdRatio };
 }
 
 function resolvePromptContextStartingDirectoryPath(input: {

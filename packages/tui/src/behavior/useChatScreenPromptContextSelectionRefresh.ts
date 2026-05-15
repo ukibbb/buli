@@ -9,7 +9,7 @@ import {
   type ChatSessionState,
   type PromptContextQueryIdentity,
 } from "@buli/chat-session-state";
-import type { PromptContextCandidate } from "@buli/engine";
+import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import { useEffect, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
 
 const FUZZY_PROMPT_CONTEXT_QUERY_DEBOUNCE_MS = 120;

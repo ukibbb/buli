@@ -3,7 +3,6 @@ import type {
   BuliDiagnosticLogFields,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
-  ModelContextItem,
   ProviderAvailableToolName,
   ReasoningEffort,
 } from "@buli/contracts";
@@ -28,7 +27,6 @@ const OpenAiErrorResponseBodySchema = z
 export type OpenAiConversationTurnRequest = {
   systemPromptText: string;
   conversationSessionEntries: readonly ConversationSessionEntry[];
-  modelContextItems: readonly ModelContextItem[];
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
@@ -161,7 +159,6 @@ export class OpenAiProvider {
       selectedModelId: input.selectedModelId,
       selectedReasoningEffort: input.selectedReasoningEffort ?? null,
       conversationSessionEntryCount: input.conversationSessionEntries.length,
-      modelContextItemCount: input.modelContextItems.length,
       systemPromptLength: input.systemPromptText.length,
     });
     return new OpenAiProviderConversationTurn({

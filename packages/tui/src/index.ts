@@ -64,6 +64,7 @@ export type RenderChatScreenInTerminalInput = {
   switchConversationSession?: ChatScreenProps["switchConversationSession"];
   exportCurrentConversationSession?: ChatScreenProps["exportCurrentConversationSession"];
   compactCurrentConversationSession?: ChatScreenProps["compactCurrentConversationSession"];
+  autoCompactCurrentConversationSession?: ChatScreenProps["autoCompactCurrentConversationSession"];
   readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
@@ -216,6 +217,9 @@ export async function renderChatScreenInTerminalWithRuntime<
           : {}),
         ...(input.compactCurrentConversationSession
           ? { compactCurrentConversationSession: input.compactCurrentConversationSession }
+          : {}),
+        ...(input.autoCompactCurrentConversationSession
+          ? { autoCompactCurrentConversationSession: input.autoCompactCurrentConversationSession }
           : {}),
         ...(input.readClipboardImageAttachment
           ? { readClipboardImageAttachment: input.readClipboardImageAttachment }

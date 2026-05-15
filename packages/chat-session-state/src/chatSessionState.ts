@@ -11,7 +11,7 @@ import type {
   UserPromptImageAttachment,
 } from "@buli/contracts";
 import { DEFAULT_ASSISTANT_OPERATING_MODE } from "@buli/contracts";
-import type { PromptContextCandidate } from "@buli/engine";
+import type { PromptContextCandidate } from "@buli/prompt-context-core";
 
 export type ReasoningEffortChoice = {
   displayLabel: string;

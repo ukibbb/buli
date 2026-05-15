@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runGlobToolCall, runGrepToolCall, runReadToolCall } from "../src/index.ts";
+import { ProjectInstructionTracker, runGlobToolCall, runGrepToolCall, runReadToolCall } from "../src/index.ts";
 
 test("runReadToolCall reads a workspace file with line offsets", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-"));
@@ -88,6 +88,31 @@ test("runReadToolCall reports line count and long-line truncation", async () => 
   });
   expect(readToolCallOutcome.toolResultText).toContain("Use offset=3 to continue");
   expect(readToolCallOutcome.toolResultText).toContain("Long lines were truncated to 2000 characters");
+});
+
+test("runReadToolCall appends newly discovered nested project instructions", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-instructions-"));
+  await mkdir(join(workspaceRootPath, "src"));
+  await writeFile(join(workspaceRootPath, "AGENTS.md"), "- Root convention.\n", "utf8");
+  await writeFile(join(workspaceRootPath, "src", "AGENTS.md"), "- Source convention.\n", "utf8");
+  await writeFile(join(workspaceRootPath, "src", "module.ts"), "export const moduleValue = true;\n", "utf8");
+  const projectInstructionTracker = new ProjectInstructionTracker({ workspaceRootPath });
+  await projectInstructionTracker.loadProjectInstructionsForDirectory({ targetDirectoryPath: workspaceRootPath });
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    projectInstructionTracker,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "src/module.ts",
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("completed");
+  expect(readToolCallOutcome.toolResultText).toContain("<project_instruction_update>");
+  expect(readToolCallOutcome.toolResultText).toContain("Instructions from: src/AGENTS.md");
+  expect(readToolCallOutcome.toolResultText).toContain("- Source convention.");
+  expect(readToolCallOutcome.toolResultText).not.toContain("- Root convention.");
 });
 
 test("runGlobToolCall finds files by glob pattern", async () => {

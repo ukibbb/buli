@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
@@ -15,6 +15,7 @@ import {
   type LoadedConversationSessionJsonlFile,
 } from "./conversationSessionJsonlFile.ts";
 import {
+  appendConversationSessionTextFileLineAtomically,
   runWithExclusiveConversationSessionFileWriteLock,
   writeConversationSessionTextFileAtomically,
 } from "./conversationSessionFileWrite.ts";
@@ -121,7 +122,10 @@ export class FileConversationSessionStore implements ConversationSessionStore {
         conversationSessionEntry,
       };
 
-      appendFileSync(activeConversationSession.filePath, `${JSON.stringify(conversationSessionEntryRecord)}\n`, "utf8");
+      appendConversationSessionTextFileLineAtomically({
+        filePath: activeConversationSession.filePath,
+        lineText: JSON.stringify(conversationSessionEntryRecord),
+      });
     });
   }
 

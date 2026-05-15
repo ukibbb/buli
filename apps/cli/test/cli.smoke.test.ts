@@ -3,7 +3,12 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationSessionEntry, ReasoningEffort } from "@buli/contracts";
-import { AssistantConversationRuntime, type ConversationCompactionRequest } from "@buli/engine";
+import {
+  AssistantConversationRuntime,
+  type ConversationAutoCompactionRequest,
+  type ConversationAutoCompactionResult,
+  type ConversationCompactionRequest,
+} from "@buli/engine";
 import { OpenAiAuthStore } from "@buli/openai";
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
@@ -149,6 +154,15 @@ test("runInteractiveChat returns a clean message when bash approval environment 
   );
 });
 
+test("runInteractiveChat returns a clean message when auto-compaction threshold environment is invalid", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await expect(runInteractiveChat({ store, environment: { BULI_AUTO_COMPACT_THRESHOLD: "wrong" } })).resolves.toBe(
+    "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.",
+  );
+});
+
 test("runInteractiveChat passes the known default model reasoning effort to the renderer", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
@@ -265,6 +279,9 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       conversationSessionEntries: readonly ConversationSessionEntry[];
     })
     | undefined;
+  let capturedAutoCompactCurrentConversationSession:
+    | ((input: ConversationAutoCompactionRequest) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult)
+    | undefined;
   const openedBrowserUrls: string[] = [];
   await store.saveOpenAi({
     provider: "openai",
@@ -290,6 +307,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       capturedSwitchConversationSession = renderInput.switchConversationSession;
       capturedExportCurrentConversationSession = renderInput.exportCurrentConversationSession;
       capturedCompactCurrentConversationSession = renderInput.compactCurrentConversationSession;
+      capturedAutoCompactCurrentConversationSession = renderInput.autoCompactCurrentConversationSession;
       expect(renderInput.initialConversationSessionEntries).toEqual(initialConversationSessionEntries);
       expect(renderInput.initialConversationSessionId).toBe("session-a");
       return { destroy: () => {}, waitUntilExit: async () => {} };
@@ -299,6 +317,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   expect(output).toBe("");
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
   expect(capturedCompactCurrentConversationSession).toBeDefined();
+  expect(capturedAutoCompactCurrentConversationSession).toBeDefined();
 
   capturedConversationRuntime?.conversationHistory.appendConversationSessionEntry({
     entryKind: "user_prompt",
@@ -316,6 +335,56 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       },
     ],
   ]);
+
+  if (!capturedConversationRuntime || !capturedAutoCompactCurrentConversationSession) {
+    throw new Error("expected captured runtime and auto-compaction callback");
+  }
+  const conversationRuntime = capturedConversationRuntime;
+  const autoCompactCurrentConversationSession = capturedAutoCompactCurrentConversationSession;
+
+  const skippedAutoCompactionResult = await Promise.resolve(
+    autoCompactCurrentConversationSession({
+      selectedModelId: "gpt-5.5",
+      latestTokenUsage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    }),
+  );
+  expect(skippedAutoCompactionResult).toMatchObject({
+    didCompact: false,
+    decision: {
+      shouldCompact: false,
+      reason: "context_usage_below_threshold",
+    },
+  });
+
+  conversationRuntime.compactConversationSession = async (compactionRequest: ConversationCompactionRequest) => {
+    expect(compactionRequest).toEqual({ selectedModelId: "gpt-5.5" });
+    const compactedEntryCount = conversationRuntime.conversationHistory.listConversationSessionEntries().length;
+    conversationRuntime.conversationHistory.appendConversationSessionEntry({
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue after automatic compaction.",
+      compactedEntryCount,
+    });
+    return {
+      summaryText: "Goal: continue after automatic compaction.",
+      compactedEntryCount,
+    };
+  };
+  const completedAutoCompactionResult = await Promise.resolve(
+    autoCompactCurrentConversationSession({
+      selectedModelId: "gpt-5.5",
+      latestTokenUsage: { total: 300_000, input: 300_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    }),
+  );
+  if (!completedAutoCompactionResult.didCompact) {
+    throw new Error("expected auto-compaction to run");
+  }
+
+  expect(completedAutoCompactionResult.decision.reason).toBe("context_usage_threshold_reached");
+  expect(completedAutoCompactionResult.conversationSessionEntries).toContainEqual({
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: continue after automatic compaction.",
+    compactedEntryCount: 3,
+  });
 
   const exportResult = await Promise.resolve(capturedExportCurrentConversationSession?.());
   if (!exportResult) {

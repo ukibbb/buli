@@ -10,6 +10,8 @@ import type {
 import type {
   ActiveConversationTurn,
   AssistantConversationRunner,
+  ConversationAutoCompactionRequest,
+  ConversationAutoCompactionResult,
   ConversationCompactionRequest,
   ConversationTurnRequest,
   PromptContextCandidate,
@@ -29,6 +31,9 @@ export type ChatScreenProps = {
   compactCurrentConversationSession?: (
     input: ConversationCompactionRequest,
   ) => Promise<ConversationSessionCompactionResult> | ConversationSessionCompactionResult;
+  autoCompactCurrentConversationSession?: (
+    input: ConversationAutoCompactionRequest,
+  ) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult;
   readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: () => ConversationSessionSwitchResult | void;
@@ -66,6 +71,7 @@ export declare function renderChatScreenInTerminal(input: {
   switchConversationSession?: ChatScreenProps["switchConversationSession"];
   exportCurrentConversationSession?: ChatScreenProps["exportCurrentConversationSession"];
   compactCurrentConversationSession?: ChatScreenProps["compactCurrentConversationSession"];
+  autoCompactCurrentConversationSession?: ChatScreenProps["autoCompactCurrentConversationSession"];
   readClipboardImageAttachment?: ChatScreenProps["readClipboardImageAttachment"];
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: ChatScreenProps["onConversationCleared"];

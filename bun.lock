@@ -36,7 +36,7 @@
       "name": "@buli/chat-session-state",
       "dependencies": {
         "@buli/contracts": "workspace:*",
-        "@buli/engine": "workspace:*",
+        "@buli/prompt-context-core": "workspace:*",
       },
       "devDependencies": {
         "@buli/chat-session-fixtures": "workspace:*",
@@ -52,6 +52,7 @@
       "name": "@buli/engine",
       "dependencies": {
         "@buli/contracts": "workspace:*",
+        "@buli/prompt-context-core": "workspace:*",
       },
     },
     "packages/openai": {
@@ -62,6 +63,9 @@
         "zod": "^3.24.2",
       },
     },
+    "packages/prompt-context-core": {
+      "name": "@buli/prompt-context-core",
+    },
     "packages/tui": {
       "name": "@buli/tui",
       "dependencies": {
@@ -69,6 +73,7 @@
         "@buli/chat-session-state": "workspace:*",
         "@buli/contracts": "workspace:*",
         "@buli/engine": "workspace:*",
+        "@buli/prompt-context-core": "workspace:*",
         "@opentui/core": "0.2.5",
         "@opentui/react": "0.2.5",
         "react": "^19.2.0",
@@ -95,6 +100,8 @@
     "@buli/engine": ["@buli/engine@workspace:packages/engine"],
 
     "@buli/openai": ["@buli/openai@workspace:packages/openai"],
+
+    "@buli/prompt-context-core": ["@buli/prompt-context-core@workspace:packages/prompt-context-core"],
 
     "@buli/tui": ["@buli/tui@workspace:packages/tui"],
 

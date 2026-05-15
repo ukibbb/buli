@@ -8,7 +8,6 @@ import {
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
   type ConversationSessionEntry,
-  type ModelContextItem,
   type ProviderAvailableToolName,
   type ProviderStreamEvent,
   type ToolCallRequest,
@@ -43,6 +42,7 @@ import {
 } from "./runtimeToolCallExecution.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
+import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
 
 type PendingToolApprovalState = {
   approvalId: string;
@@ -52,6 +52,7 @@ type PendingToolApprovalState = {
 };
 
 const USER_INTERRUPTED_CONVERSATION_TURN_REASON = "Interrupted by user.";
+const PLAN_MODE_AVAILABLE_TOOL_NAMES = ["read", "glob", "grep", "explore"] as const satisfies readonly ProviderAvailableToolName[];
 const CONVERSATION_COMPACTION_PROMPT_TEXT = [
   "Create a compact continuation summary for the next assistant turn.",
   "Preserve only information needed to continue the current session correctly.",
@@ -73,6 +74,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly canSpawnExplorer: boolean;
+  readonly projectInstructionTracker: ProjectInstructionTracker;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
   isCompactingConversationSession = false;
 
@@ -88,6 +90,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     canSpawnExplorer?: boolean;
+    projectInstructionTracker?: ProjectInstructionTracker;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.workspaceRootPath = input.workspaceRootPath;
@@ -101,6 +104,9 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
     this.canSpawnExplorer = input.canSpawnExplorer ?? true;
+    this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
+      workspaceRootPath: input.workspaceRootPath,
+    });
   }
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
@@ -144,6 +150,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       promptCacheKey: this.promptCacheKey,
       availableToolNames: this.availableToolNames,
       canSpawnExplorer: this.canSpawnExplorer,
+      projectInstructionTracker: this.projectInstructionTracker,
       onConversationTurnFinished: () => {
         if (this.currentPendingConversationTurn === runtimeConversationTurn) {
           this.currentPendingConversationTurn = undefined;
@@ -182,7 +189,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
         systemPromptText: buildConversationCompactionSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
         conversationSessionEntries: [...conversationSessionEntriesBeforeCompaction, compactionPromptEntry],
-        modelContextItems: [...this.conversationHistory.listModelContextItems(), createConversationCompactionPromptModelContextItem()],
         selectedModelId: input.selectedModelId,
         ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
@@ -235,13 +241,6 @@ function createConversationCompactionPromptSessionEntry(): ConversationSessionEn
     entryKind: "user_prompt",
     promptText: CONVERSATION_COMPACTION_PROMPT_TEXT,
     modelFacingPromptText: CONVERSATION_COMPACTION_PROMPT_TEXT,
-  };
-}
-
-function createConversationCompactionPromptModelContextItem(): ModelContextItem {
-  return {
-    itemKind: "user_message",
-    messageText: CONVERSATION_COMPACTION_PROMPT_TEXT,
   };
 }
 
@@ -312,6 +311,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly canSpawnExplorer: boolean;
+  readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly onConversationTurnFinished: () => void;
   readonly abortController: AbortController;
   currentPendingToolApprovalState: PendingToolApprovalState | undefined;
@@ -333,6 +333,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     canSpawnExplorer: boolean;
+    projectInstructionTracker: ProjectInstructionTracker;
     onConversationTurnFinished: () => void;
   }) {
     this.conversationTurnInput = input.conversationTurnInput;
@@ -348,6 +349,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
     this.canSpawnExplorer = input.canSpawnExplorer;
+    this.projectInstructionTracker = input.projectInstructionTracker;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
     this.abortController = new AbortController();
   }
@@ -424,6 +426,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     });
     let providerConversationTurn: ProviderConversationTurn | undefined;
     let modelFacingPromptTextForAcceptedTurn: string | undefined;
+    let projectInstructionSnapshotsForAcceptedTurn = [] as ReturnType<typeof toProjectInstructionSnapshots>;
     const logAssistantResponseEventEmitted = (assistantResponseEvent: AssistantResponseEvent): AssistantResponseEvent => {
       logEngineDiagnosticEvent(this.diagnosticLogger, "assistant_response_event.emitted", {
         eventType: assistantResponseEvent.type,
@@ -460,7 +463,17 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         promptContextBrowseRootPath: this.promptContextBrowseRootPath,
         promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
       });
-      conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(modelFacingPromptTextForAcceptedTurn);
+      projectInstructionSnapshotsForAcceptedTurn = toProjectInstructionSnapshots(
+        await this.projectInstructionTracker.loadProjectInstructionsForDirectory({
+          targetDirectoryPath: this.workspaceRootPath,
+          abortSignal: this.abortController.signal,
+        }),
+      );
+      this.throwIfConversationTurnInterrupted();
+      conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(
+        modelFacingPromptTextForAcceptedTurn,
+        projectInstructionSnapshotsForAcceptedTurn,
+      );
 
       logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.start_requested", {
         selectedModelId: this.conversationTurnInput.selectedModelId,
@@ -473,15 +486,18 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         systemPromptText: buildBuliSystemPrompt({
           workspaceRootPath: this.workspaceRootPath,
           assistantOperatingMode: this.assistantOperatingMode,
+          projectInstructionSnapshots: projectInstructionSnapshotsForAcceptedTurn,
         }),
         conversationSessionEntries: this.conversationHistory.listConversationSessionEntries(),
-        modelContextItems: this.conversationHistory.listModelContextItems(),
         selectedModelId: this.conversationTurnInput.selectedModelId,
         ...(this.conversationTurnInput.selectedReasoningEffort
           ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
           : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
-        ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
+        ...resolveAvailableToolNamesForTurn({
+          assistantOperatingMode: this.assistantOperatingMode,
+          availableToolNames: this.availableToolNames,
+        }),
         abortSignal: this.abortController.signal,
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.started", {
@@ -523,6 +539,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
             assistantOperatingMode: this.assistantOperatingMode,
             bashToolApprovalMode: this.bashToolApprovalMode,
             workspaceRootPath: this.workspaceRootPath,
+            projectInstructionTracker: this.projectInstructionTracker,
             promptContextBrowseRootPath: this.promptContextBrowseRootPath,
             promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
             workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
@@ -575,6 +592,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         if (!conversationTurnSessionRecorder.hasAppendedAcceptedUserPromptSessionEntry()) {
           conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(
             modelFacingPromptTextForAcceptedTurn ?? this.conversationTurnInput.userPromptText,
+            projectInstructionSnapshotsForAcceptedTurn,
           );
         }
         if (!conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()) {
@@ -648,4 +666,17 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       throw new Error(USER_INTERRUPTED_CONVERSATION_TURN_REASON);
     }
   }
+}
+
+function resolveAvailableToolNamesForTurn(input: {
+  assistantOperatingMode: AssistantOperatingMode;
+  availableToolNames: readonly ProviderAvailableToolName[] | undefined;
+}): { availableToolNames?: readonly ProviderAvailableToolName[] } {
+  if (input.availableToolNames) {
+    return { availableToolNames: input.availableToolNames };
+  }
+  if (input.assistantOperatingMode === "plan") {
+    return { availableToolNames: PLAN_MODE_AVAILABLE_TOOL_NAMES };
+  }
+  return {};
 }

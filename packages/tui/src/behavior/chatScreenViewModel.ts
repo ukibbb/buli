@@ -5,7 +5,7 @@ import {
   type ChatSessionState,
   type ChatSlashCommand,
 } from "@buli/chat-session-state";
-import { lookupContextWindowTokenCapacityForModel } from "@buli/engine";
+import { calculateContextTokensUsedFromTokenUsage, lookupContextWindowTokenCapacityForModel } from "@buli/engine";
 import {
   chatScreenTheme,
   minimumTerminalSizeTier,
@@ -53,13 +53,9 @@ export function buildChatScreenViewModel(input: {
     input.terminalSizeTierForChatScreen === minimumTerminalSizeTier
       ? MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT
       : INPUT_PANEL_NATURAL_ROW_COUNT;
-  const totalContextTokensUsed =
-    input.chatSessionState.latestTokenUsage?.total ??
-    (input.chatSessionState.latestTokenUsage
-      ? input.chatSessionState.latestTokenUsage.input +
-        input.chatSessionState.latestTokenUsage.output +
-        input.chatSessionState.latestTokenUsage.reasoning
-      : undefined);
+  const totalContextTokensUsed = input.chatSessionState.latestTokenUsage
+    ? calculateContextTokensUsedFromTokenUsage(input.chatSessionState.latestTokenUsage)
+    : undefined;
   const orderedConversationMessages = listOrderedConversationMessages(input.chatSessionState);
 
   return {

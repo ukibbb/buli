@@ -2,7 +2,6 @@ import type {
   AssistantOperatingMode,
   AssistantResponseEvent,
   ConversationSessionEntry,
-  ModelContextItem,
   ProviderAvailableToolName,
   ProviderStreamEvent,
   ProviderTurnReplay,
@@ -36,7 +35,6 @@ export interface ConversationCompactionRunner {
 export type ProviderConversationTurnRequest = {
   systemPromptText: string;
   conversationSessionEntries: readonly ConversationSessionEntry[];
-  modelContextItems: readonly ModelContextItem[];
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;

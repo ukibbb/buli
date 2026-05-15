@@ -188,7 +188,9 @@ test("AssistantConversationRuntime emits a message-part turn for streamed text",
   );
 
   expect(provider.startedTurnRequests).toHaveLength(1);
-  expect(provider.startedTurnRequests[0]?.modelContextItems).toEqual([{ itemKind: "user_message", messageText: "Say hello" }]);
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toMatchObject([
+    { entryKind: "user_prompt", modelFacingPromptText: "Say hello" },
+  ]);
   expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_turn_started",
     "assistant_message_part_added",
@@ -223,6 +225,45 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Plan Mode - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("READ-ONLY phase");
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "explore"]);
+});
+
+test("AssistantConversationRuntime injects project instructions into prompt and session audit", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-project-instructions-"));
+  await writeFile(join(workspaceRootPath, "AGENTS.md"), "- Prefer real behavior tests.\n", "utf8");
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Explained." },
+      { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explain the runtime",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Project instructions:");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Instructions from: AGENTS.md");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("- Prefer real behavior tests.");
+  expect(runtime.conversationHistory.listConversationSessionEntries()[0]).toMatchObject({
+    entryKind: "user_prompt",
+    projectInstructionSnapshots: [
+      {
+        fileName: "AGENTS.md",
+        displayPath: "AGENTS.md",
+        instructionText: "- Prefer real behavior tests.\n",
+      },
+    ],
+  });
 });
 
 test("AssistantConversationRuntime blocks mutating bash tool calls in plan mode", async () => {
@@ -324,8 +365,10 @@ test("AssistantConversationRuntime emits failure and releases the active turn wh
   expect(recoveredAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toContain(
     "assistant_message_completed",
   );
-  expect(provider.startedTurnRequests[1]?.modelContextItems).toEqual<ModelContextItem[]>([
-    { itemKind: "user_message", messageText: "Second prompt" },
+  expect(provider.startedTurnRequests[1]?.conversationSessionEntries).toMatchObject([
+    { entryKind: "user_prompt", modelFacingPromptText: "First prompt" },
+    { entryKind: "assistant_message", assistantMessageStatus: "failed" },
+    { entryKind: "user_prompt", modelFacingPromptText: "Second prompt" },
   ]);
   expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
     {
@@ -436,10 +479,10 @@ test("AssistantConversationRuntime emits incomplete as a terminal turn and relea
   expect(recoveredAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toContain(
     "assistant_message_completed",
   );
-  expect(provider.startedTurnRequests[1]?.modelContextItems).toEqual<ModelContextItem[]>([
-    { itemKind: "user_message", messageText: "Try incomplete stream" },
-    { itemKind: "assistant_message", messageText: "Partial" },
-    { itemKind: "user_message", messageText: "Next prompt" },
+  expect(provider.startedTurnRequests[1]?.conversationSessionEntries).toMatchObject([
+    { entryKind: "user_prompt", modelFacingPromptText: "Try incomplete stream" },
+    { entryKind: "assistant_message", assistantMessageStatus: "incomplete", assistantMessageText: "Partial" },
+    { entryKind: "user_prompt", modelFacingPromptText: "Next prompt" },
   ]);
   expect(runtime.conversationHistory.listConversationSessionEntries().slice(0, 2)).toMatchObject([
     {
@@ -1146,10 +1189,10 @@ test("AssistantConversationRuntime reuses prior user and assistant messages on t
     }),
   );
 
-  expect(provider.startedTurnRequests[1]?.modelContextItems).toEqual<ModelContextItem[]>([
-    { itemKind: "user_message", messageText: "First prompt" },
-    { itemKind: "assistant_message", messageText: "First answer" },
-    { itemKind: "user_message", messageText: "Second prompt" },
+  expect(provider.startedTurnRequests[1]?.conversationSessionEntries).toMatchObject([
+    { entryKind: "user_prompt", modelFacingPromptText: "First prompt" },
+    { entryKind: "assistant_message", assistantMessageStatus: "completed", assistantMessageText: "First answer" },
+    { entryKind: "user_prompt", modelFacingPromptText: "Second prompt" },
   ]);
 });
 

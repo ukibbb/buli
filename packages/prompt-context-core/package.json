@@ -1,5 +1,5 @@
 {
-  "name": "@buli/engine",
+  "name": "@buli/prompt-context-core",
   "private": true,
   "type": "module",
   "engines": {
@@ -7,10 +7,6 @@
   },
   "exports": {
     ".": "./src/index.ts"
-  },
-  "dependencies": {
-    "@buli/contracts": "workspace:*",
-    "@buli/prompt-context-core": "workspace:*"
   },
   "scripts": {
     "test": "bun test",

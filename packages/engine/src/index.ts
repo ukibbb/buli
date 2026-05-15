@@ -22,7 +22,21 @@ export { parsePromptContextReferencesFromPromptText } from "./prompt-context/par
 export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./prompt-context/reconcileSelectedPromptContextReferenceTextsWithPromptDraft.ts";
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
+export {
+  DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO,
+  DEFAULT_MINIMUM_SESSION_ENTRY_COUNT_AFTER_LATEST_COMPACTION_SUMMARY,
+  calculateContextTokensUsedFromTokenUsage,
+  decideConversationAutoCompaction,
+} from "./conversationAutoCompactionPolicy.ts";
 export { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
+export {
+  buildProjectInstructionPromptBlock,
+  buildProjectInstructionUpdateText,
+  discoverProjectInstructionFiles,
+  PROJECT_INSTRUCTION_FILE_NAMES,
+  ProjectInstructionTracker,
+  toProjectInstructionSnapshots,
+} from "./projectInstructions.ts";
 export { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "./systemPrompt.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
 export { createStartedEditToolCallDetail, prepareEditToolCall, runPreparedEditToolCall } from "./tools/editTool.ts";
@@ -44,6 +58,7 @@ export type {
   ActivePromptContextQuery,
 } from "./prompt-context/types.ts";
 export type { PromptContextQueryLoadStrategy } from "./prompt-context/listPromptContextCandidates.ts";
+export type { ProjectInstructionFile } from "./projectInstructions.ts";
 export type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 export type {
   ActiveConversationTurn,
@@ -57,3 +72,10 @@ export type {
   ProviderConversationTurnRequest,
   ProviderToolResultSubmission,
 } from "./provider.ts";
+export type {
+  ConversationAutoCompactionDecision,
+  ConversationAutoCompactionDecisionReason,
+  ConversationAutoCompactionPolicyInput,
+  ConversationAutoCompactionRequest,
+  ConversationAutoCompactionResult,
+} from "./conversationAutoCompactionPolicy.ts";

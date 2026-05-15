@@ -1,4 +1,4 @@
-import type { ActivePromptContextQuery } from "@buli/engine";
+import type { ActivePromptContextQuery } from "@buli/prompt-context-core";
 
 export type PromptContextQueryIdentity = {
   promptContextQueryStartOffset: number;

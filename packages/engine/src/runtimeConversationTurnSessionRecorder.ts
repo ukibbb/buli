@@ -1,6 +1,7 @@
 import type {
   AssistantMessageConversationSessionEntry,
   BuliDiagnosticLogger,
+  ProjectInstructionSnapshot,
   UserPromptImageAttachment,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
@@ -34,7 +35,10 @@ export class RuntimeConversationTurnSessionRecorder {
     return this.hasRecordedTerminalAssistantMessageSessionEntry;
   }
 
-  appendAcceptedUserPromptSessionEntry(modelFacingPromptText: string): void {
+  appendAcceptedUserPromptSessionEntry(
+    modelFacingPromptText: string,
+    projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[],
+  ): void {
     if (this.hasRecordedAcceptedUserPromptSessionEntry) {
       return;
     }
@@ -44,6 +48,9 @@ export class RuntimeConversationTurnSessionRecorder {
       promptText: this.userPromptText,
       modelFacingPromptText,
       ...(this.userPromptImageAttachments.length > 0 ? { imageAttachments: [...this.userPromptImageAttachments] } : {}),
+      ...(projectInstructionSnapshots && projectInstructionSnapshots.length > 0
+        ? { projectInstructionSnapshots: [...projectInstructionSnapshots] }
+        : {}),
     });
     this.hasRecordedAcceptedUserPromptSessionEntry = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {

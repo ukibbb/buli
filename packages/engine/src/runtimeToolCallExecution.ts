@@ -7,6 +7,7 @@ import {
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
+import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { streamAssistantResponseEventsForBashToolCall } from "./runtimeBashToolCallExecution.ts";
 import {
@@ -47,6 +48,7 @@ export type StreamAssistantResponseEventsForRequestedToolCallInput = {
   assistantOperatingMode: AssistantOperatingMode;
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
+  projectInstructionTracker: ProjectInstructionTracker;
   promptContextBrowseRootPath: string;
   promptContextStartingDirectoryPath: string;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
@@ -98,6 +100,7 @@ export async function* streamAssistantResponseEventsForRequestedToolCall(
       toolCallId: input.toolCallId,
       toolCallRequest: input.toolCallRequest,
       workspaceRootPath: input.workspaceRootPath,
+      projectInstructionTracker: input.projectInstructionTracker,
       toolResultSessionRecorder,
       abortSignal: input.abortSignal,
       throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
@@ -116,6 +119,7 @@ export async function* streamAssistantResponseEventsForRequestedToolCall(
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       workspaceRootPath: input.workspaceRootPath,
+      projectInstructionTracker: input.projectInstructionTracker,
       toolResultSessionRecorder,
       abortSignal: input.abortSignal,
       canSpawnExplorer: input.canSpawnExplorer,

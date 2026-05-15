@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, mkdirSync, openSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 const defaultConversationSessionWriteLockWaitTimeoutMs = 5_000;
@@ -58,6 +58,19 @@ export function writeConversationSessionTextFileAtomically(input: { filePath: st
       rmSync(temporaryFilePath, { force: true });
     }
   }
+}
+
+export function appendConversationSessionTextFileLineAtomically(input: { filePath: string; lineText: string }): void {
+  if (/[\r\n]/u.test(input.lineText)) {
+    throw new Error("Conversation session append text must be a single line.");
+  }
+
+  const existingText = existsSync(input.filePath) ? readFileSync(input.filePath, "utf8") : "";
+  const existingTextWithLineBoundary = existingText.length === 0 || existingText.endsWith("\n") ? existingText : `${existingText}\n`;
+  writeConversationSessionTextFileAtomically({
+    filePath: input.filePath,
+    text: `${existingTextWithLineBoundary}${input.lineText}\n`,
+  });
 }
 
 function acquireConversationSessionWriteLock(input: {

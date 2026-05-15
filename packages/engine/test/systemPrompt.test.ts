@@ -29,8 +29,30 @@ test("uses file-by-file apply plans for non-trivial work", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
   expect(systemPromptText).toContain(
+    "For non-trivial work, inspect all directly relevant files before explaining mechanics, comparing options, or proposing an apply plan.",
+  );
+  expect(systemPromptText).toContain(
     "For non-trivial work, produce a detailed file-by-file apply plan before editing files.",
   );
+});
+
+test("includes project instructions below buli's learning-first behavior", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    projectInstructionSnapshots: [
+      {
+        fileName: "AGENTS.md",
+        displayPath: "AGENTS.md",
+        instructionText: "- Prefer integration tests.",
+        contentHash: "abc123",
+      },
+    ],
+  });
+
+  expect(systemPromptText).toContain("Project instructions:");
+  expect(systemPromptText).toContain("keeping Buli's learning-first agreement-before-apply behavior higher priority");
+  expect(systemPromptText).toContain("Instructions from: AGENTS.md");
+  expect(systemPromptText).toContain("- Prefer integration tests.");
 });
 
 test("prefers typed workspace tools over bash for normal inspection", () => {
@@ -184,6 +206,7 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
 
   expect(systemPromptText).toContain("Buli Explorer");
   expect(systemPromptText).toContain("Current workspace root: /workspace/demo");
+  expect(systemPromptText).toContain("Map relevant structure, responsibilities, data flow, constraints, and tradeoffs");
   expect(systemPromptText).toContain("Use only read, glob, and grep.");
   expect(systemPromptText).toContain("Do not modify files, run shell commands");
   expect(systemPromptText).toContain("Return a concise report for the parent assistant.");

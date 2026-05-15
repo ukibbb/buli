@@ -83,6 +83,8 @@ export {
   FailedToolResultConversationSessionEntrySchema,
   IncompleteAssistantMessageConversationSessionEntrySchema,
   InterruptedAssistantMessageConversationSessionEntrySchema,
+  ProjectInstructionFileNameSchema,
+  ProjectInstructionSnapshotSchema,
   ToolCallConversationSessionEntrySchema,
   UserPromptConversationSessionEntrySchema,
 } from "./conversationSessionEntry.ts";
@@ -105,6 +107,8 @@ export type {
   FailedToolResultConversationSessionEntry,
   IncompleteAssistantMessageConversationSessionEntry,
   InterruptedAssistantMessageConversationSessionEntry,
+  ProjectInstructionFileName,
+  ProjectInstructionSnapshot,
   ToolCallConversationSessionEntry,
   UserPromptConversationSessionEntry,
 } from "./conversationSessionEntry.ts";

@@ -1,4 +1,4 @@
-import { extractActivePromptContextQueryFromPromptDraft } from "@buli/engine";
+import { extractActivePromptContextQueryFromPromptDraft } from "@buli/prompt-context-core";
 import type { UserPromptImageAttachment } from "@buli/contracts";
 import type { ChatSessionState, SlashCommand } from "./chatSessionState.ts";
 import { cycleAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";

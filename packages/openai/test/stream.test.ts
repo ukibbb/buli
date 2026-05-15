@@ -26,7 +26,6 @@ function createConversationTurnRequest(input: { messageText: string }) {
         modelFacingPromptText: input.messageText,
       },
     ],
-    modelContextItems: [{ itemKind: "user_message" as const, messageText: input.messageText }],
     selectedModelId: "gpt-5.4",
   };
 }
@@ -789,7 +788,6 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
           modelFacingPromptText: "Think harder",
         },
       ],
-      modelContextItems: [{ itemKind: "user_message", messageText: "Think harder" }],
       selectedModelId: "gpt-5.4",
       selectedReasoningEffort: "high",
     });

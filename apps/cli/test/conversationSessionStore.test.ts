@@ -143,6 +143,34 @@ test("FileConversationSessionStore appends entries from separate store instances
   ]);
 });
 
+test("FileConversationSessionStore appends after a valid JSONL session without a trailing newline", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-missing-final-newline-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: () => "entry-1",
+    nowMs: () => 1001,
+  });
+  const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
+  const headerRecordText = (await readFile(activeConversationSession.filePath, "utf8")).trimEnd();
+  await writeFile(activeConversationSession.filePath, headerRecordText, "utf8");
+
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "First prompt",
+    modelFacingPromptText: "First prompt",
+  });
+
+  expect(conversationSessionStore.loadConversationSessionEntries()).toEqual([
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+  ]);
+  expect((await readFile(activeConversationSession.filePath, "utf8")).trim().split("\n")).toHaveLength(2);
+});
+
 test("FileConversationSessionStore imports a legacy snapshot into the active JSONL session", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-"));
   const legacyConversationSessionFilePath = join(directoryPath, "legacy-session.json");

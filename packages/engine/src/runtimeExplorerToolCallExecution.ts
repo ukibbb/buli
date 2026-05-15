@@ -16,6 +16,7 @@ import {
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
+import { toProjectInstructionSnapshots, type ProjectInstructionTracker } from "./projectInstructions.ts";
 import {
   isAutoApprovedReadOnlyToolCallRequest,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
@@ -44,6 +45,7 @@ export type StreamAssistantResponseEventsForExploreToolCallInput = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   workspaceRootPath: string;
+  projectInstructionTracker: ProjectInstructionTracker;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   canSpawnExplorer: boolean;
@@ -114,6 +116,7 @@ export async function* streamAssistantResponseEventsForExploreToolCall(
     selectedModelId: input.selectedModelId,
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
     workspaceRootPath: input.workspaceRootPath,
+    projectInstructionTracker: input.projectInstructionTracker,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,
@@ -198,6 +201,7 @@ async function runExplorerConversation(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   workspaceRootPath: string;
+  projectInstructionTracker: ProjectInstructionTracker;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -219,9 +223,11 @@ async function runExplorerConversation(input: {
   try {
     explorerConversationSessionRecorder.appendAcceptedUserPromptSessionEntry(explorerPromptText);
     const explorerProviderConversationTurn = input.conversationTurnProvider.startConversationTurn({
-      systemPromptText: buildBuliExplorerSystemPrompt({ workspaceRootPath: input.workspaceRootPath }),
+      systemPromptText: buildBuliExplorerSystemPrompt({
+        workspaceRootPath: input.workspaceRootPath,
+        projectInstructionSnapshots: toProjectInstructionSnapshots(input.projectInstructionTracker.listProjectInstructionFiles()),
+      }),
       conversationSessionEntries: explorerConversationHistory.listConversationSessionEntries(),
-      modelContextItems: explorerConversationHistory.listModelContextItems(),
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       availableToolNames: EXPLORER_AVAILABLE_TOOL_NAMES,
@@ -243,6 +249,7 @@ async function runExplorerConversation(input: {
           explorerConversationHistory,
           explorerToolResultSessionRecorder,
           workspaceRootPath: input.workspaceRootPath,
+          projectInstructionTracker: input.projectInstructionTracker,
           abortSignal: input.abortSignal,
           throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
           diagnosticLogger: input.diagnosticLogger,
@@ -342,6 +349,7 @@ async function executeExplorerChildToolCall(input: {
   explorerConversationHistory: InMemoryConversationHistory;
   explorerToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   workspaceRootPath: string;
+  projectInstructionTracker: ProjectInstructionTracker;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -359,6 +367,7 @@ async function executeExplorerChildToolCall(input: {
       toolCallId: input.providerStreamEvent.toolCallId,
       toolCallRequest: input.providerStreamEvent.toolCallRequest,
       workspaceRootPath: input.workspaceRootPath,
+      projectInstructionTracker: input.projectInstructionTracker,
       toolResultSessionRecorder: input.explorerToolResultSessionRecorder,
       abortSignal: input.abortSignal,
       throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,

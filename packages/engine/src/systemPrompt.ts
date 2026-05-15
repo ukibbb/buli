@@ -1,4 +1,5 @@
-import { DEFAULT_ASSISTANT_OPERATING_MODE, type AssistantOperatingMode } from "@buli/contracts";
+import { DEFAULT_ASSISTANT_OPERATING_MODE, type AssistantOperatingMode, type ProjectInstructionSnapshot } from "@buli/contracts";
+import { buildProjectInstructionPromptBlock } from "./projectInstructions.ts";
 
 const PLAN_MODE_SYSTEM_REMINDER = `<system-reminder>
 # Plan Mode - System Reminder
@@ -31,8 +32,10 @@ The user indicated that they do not want you to execute yet -- you MUST NOT make
 export function buildBuliSystemPrompt(input: {
   workspaceRootPath: string;
   assistantOperatingMode?: AssistantOperatingMode;
+  projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
 }): string {
   const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
+  const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
   return [
     [
       "Identity:",
@@ -41,10 +44,12 @@ export function buildBuliSystemPrompt(input: {
       `Current workspace root: ${input.workspaceRootPath}`,
     ].join("\n"),
     ...(assistantOperatingMode === "plan" ? [PLAN_MODE_SYSTEM_REMINDER] : []),
+    ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
     [
       "Default workflow:",
       "- Start by understanding what Lukasz wants to learn, decide, or improve; do not assume code must change.",
       "- Use read-only exploration when it helps explain how the current system works under the hood.",
+      "- For non-trivial work, inspect all directly relevant files before explaining mechanics, comparing options, or proposing an apply plan.",
       "- Before recommending a path, explain the relevant mechanics, constraints, and why they matter.",
       "- Show meaningful options and tradeoffs before narrowing to a recommendation.",
       "- Treat code changes as applying an agreed decision; do not mutate files or external state until Lukasz explicitly approves applying the agreed change.",
@@ -119,16 +124,20 @@ export function buildBuliSystemPrompt(input: {
 
 export function buildBuliExplorerSystemPrompt(input: {
   workspaceRootPath: string;
+  projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
 }): string {
+  const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
   return [
     [
       "Identity:",
       "You are Buli Explorer, a read-only codebase exploration subagent working for the parent assistant.",
       `Current workspace root: ${input.workspaceRootPath}`,
     ].join("\n"),
+    ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
     [
       "Scope:",
       "- Inspect the codebase to answer the exploration prompt accurately.",
+      "- Map relevant structure, responsibilities, data flow, constraints, and tradeoffs instead of only listing files.",
       "- Use only read, glob, and grep.",
       "- Do not modify files, run shell commands, request approvals, spawn other agents, or ask the user questions.",
       "- If the prompt is too broad, explore the most relevant structure and state clear limits.",

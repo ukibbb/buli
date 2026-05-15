@@ -12,6 +12,7 @@ import {
   type ToolCallRequest,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
+import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
@@ -27,6 +28,7 @@ export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = 
   toolCallId: string;
   toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
   workspaceRootPath: string;
+  projectInstructionTracker?: ProjectInstructionTracker;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
@@ -57,6 +59,7 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
   const toolCallOutcome = await runAutoApprovedReadOnlyToolCall({
     toolCallRequest: input.toolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
+    ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
     abortSignal: input.abortSignal,
   });
   input.throwIfConversationTurnInterrupted();
@@ -145,12 +148,14 @@ function createStartedAutoApprovedReadOnlyToolCallDetail(
 function runAutoApprovedReadOnlyToolCall(input: {
   toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
   workspaceRootPath: string;
+  projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
 }): Promise<ToolCallOutcome> {
   if (input.toolCallRequest.toolName === "read") {
     return runReadToolCall({
       readToolCallRequest: input.toolCallRequest,
       workspaceRootPath: input.workspaceRootPath,
+      ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
       abortSignal: input.abortSignal,
     });
   }

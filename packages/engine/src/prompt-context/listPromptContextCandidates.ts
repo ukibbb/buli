@@ -1,5 +1,8 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { PromptContextCandidate } from "@buli/prompt-context-core";
+export { determinePromptContextQueryLoadStrategy } from "@buli/prompt-context-core";
+export type { PromptContextQueryLoadStrategy } from "@buli/prompt-context-core";
 import { buildPromptContextReferenceTextFromDisplayPath } from "./buildPromptContextReferenceTextFromDisplayPath.ts";
 import {
   buildPromptContextDisplayPathFromAbsolutePath,
@@ -8,21 +11,9 @@ import {
   resolvePromptContextPathScope,
   type PromptContextPathScope,
 } from "./promptContextPathScope.ts";
-import type { PromptContextCandidate } from "./types.ts";
 
 export const DEFAULT_MAXIMUM_PROMPT_CONTEXT_CANDIDATE_COUNT = 50;
 export const DEFAULT_MAXIMUM_PROMPT_CONTEXT_SEARCH_ENTRY_COUNT = 2_000;
-
-export type PromptContextQueryLoadStrategy = "browse_current_directory" | "path_query" | "fuzzy_query";
-
-export function determinePromptContextQueryLoadStrategy(promptContextQueryText: string): PromptContextQueryLoadStrategy {
-  const normalizedPromptContextQueryText = normalizePromptContextQueryText(promptContextQueryText);
-  if (normalizedPromptContextQueryText.length === 0) {
-    return "browse_current_directory";
-  }
-
-  return parsePromptContextPathQuery(normalizedPromptContextQueryText) ? "path_query" : "fuzzy_query";
-}
 
 export async function listPromptContextCandidates(input: {
   promptContextBrowseRootPath: string;

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@buli/contracts": "workspace:*",
-    "@buli/engine": "workspace:*"
+    "@buli/prompt-context-core": "workspace:*"
   },
   "devDependencies": {
     "@buli/chat-session-fixtures": "workspace:*"
