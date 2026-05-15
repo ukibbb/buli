@@ -26,24 +26,21 @@ test("applyChatSlashCommandToChatSessionState returns a model-load effect for th
   } satisfies ChatSlashCommandApplicationEffect);
 });
 
-test("applyChatSlashCommandToChatSessionState switches assistant mode inside shared state", () => {
-  const planApplication = applyChatSlashCommandToChatSessionState(
-    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-    "plan",
-  );
-  const implementationApplication = applyChatSlashCommandToChatSessionState(
-    planApplication.nextChatSessionState,
-    "implementation",
-  );
-  const understandApplication = applyChatSlashCommandToChatSessionState(
-    implementationApplication.nextChatSessionState,
-    "understand",
-  );
+test("applyChatSlashCommandToChatSessionState ignores removed mode command strings", () => {
+  const initialChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
 
-  expect(planApplication.nextChatSessionState.selectedAssistantOperatingMode).toBe("plan");
-  expect(planApplication.chatSlashCommandApplicationEffect).toBeUndefined();
-  expect(implementationApplication.nextChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
-  expect(understandApplication.nextChatSessionState.selectedAssistantOperatingMode).toBe("understand");
+  expect(applyChatSlashCommandToChatSessionState(initialChatSessionState, "plan")).toEqual({
+    nextChatSessionState: initialChatSessionState,
+    chatSlashCommandApplicationEffect: undefined,
+  });
+  expect(applyChatSlashCommandToChatSessionState(initialChatSessionState, "implementation")).toEqual({
+    nextChatSessionState: initialChatSessionState,
+    chatSlashCommandApplicationEffect: undefined,
+  });
+  expect(applyChatSlashCommandToChatSessionState(initialChatSessionState, "understand")).toEqual({
+    nextChatSessionState: initialChatSessionState,
+    chatSlashCommandApplicationEffect: undefined,
+  });
 });
 
 test("applyChatSlashCommandToChatSessionState toggles reasoning summaries and reports the next visibility", () => {

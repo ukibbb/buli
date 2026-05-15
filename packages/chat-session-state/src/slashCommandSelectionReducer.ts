@@ -89,6 +89,10 @@ export function refreshSlashCommandSelectionForPromptDraft(
   }
 
   const availableSlashCommands = listMatchingSlashCommands(slashCommandQueryText, slashCommands);
+  if (availableSlashCommands.length === 0) {
+    return hideSlashCommandSelection(chatSessionState);
+  }
+
   const highlightedSlashCommandIndex = resolveHighlightedSlashCommandIndex({
     chatSessionState,
     availableSlashCommands,

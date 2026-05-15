@@ -43,7 +43,7 @@ import {
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
 import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
-import { isReadOnlyAssistantOperatingMode, READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAMES } from "./assistantOperatingModePolicy.ts";
+import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 
 type PendingToolApprovalState = {
   approvalId: string;
@@ -413,6 +413,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
       conversationHistory: this.conversationHistory,
       userPromptText: this.conversationTurnInput.userPromptText,
+      assistantOperatingMode: this.assistantOperatingMode,
       ...(this.conversationTurnInput.userPromptImageAttachments
         ? { userPromptImageAttachments: this.conversationTurnInput.userPromptImageAttachments }
         : {}),
@@ -494,9 +495,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
           : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
-        ...resolveAvailableToolNamesForTurn({
+        ...resolveAvailableToolNamesForAssistantOperatingMode({
           assistantOperatingMode: this.assistantOperatingMode,
-          availableToolNames: this.availableToolNames,
+          requestedAvailableToolNames: this.availableToolNames,
         }),
         abortSignal: this.abortController.signal,
       });
@@ -666,17 +667,4 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       throw new Error(USER_INTERRUPTED_CONVERSATION_TURN_REASON);
     }
   }
-}
-
-function resolveAvailableToolNamesForTurn(input: {
-  assistantOperatingMode: AssistantOperatingMode;
-  availableToolNames: readonly ProviderAvailableToolName[] | undefined;
-}): { availableToolNames?: readonly ProviderAvailableToolName[] } {
-  if (input.availableToolNames) {
-    return { availableToolNames: input.availableToolNames };
-  }
-  if (isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)) {
-    return { availableToolNames: READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAMES };
-  }
-  return {};
 }

@@ -130,6 +130,9 @@ export async function runInteractiveChat(input: {
         eventName: "conversation_session.saved",
         fields: {
           conversationSessionEntryKind: conversationSessionEntry.entryKind,
+          assistantOperatingMode: conversationSessionEntry.entryKind === "user_prompt"
+            ? conversationSessionEntry.assistantOperatingMode ?? null
+            : null,
           conversationSessionEntryCount: conversationSessionEntries.length,
         },
       });

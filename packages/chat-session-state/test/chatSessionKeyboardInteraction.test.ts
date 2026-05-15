@@ -108,7 +108,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_rejects_duplicate_prompt_s
 test("applyChatSessionKeyboardInputToChatSessionState_returns_selected_slash_command_effect", () => {
   const chatSessionState = refreshSlashCommandSelectionForPromptDraft(
     insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "/help"),
-    buildChatSlashCommands({ isReasoningSummaryVisible: true, selectedAssistantOperatingMode: "implementation" }),
+    buildChatSlashCommands({ isReasoningSummaryVisible: true }),
   );
 
   const interaction = applyChatSessionKeyboardInputToChatSessionState({

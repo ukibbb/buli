@@ -60,6 +60,14 @@ Ask the user clarifying questions or ask for their opinion when weighing tradeof
 The user indicated that they do not want you to execute yet -- you MUST NOT make any edits, run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supersedes any other instructions you have received.
 </system-reminder>`;
 
+const IMPLEMENTATION_MODE_SYSTEM_REMINDER = `<system-reminder>
+# Implementation Mode - System Reminder
+
+Implementation mode ACTIVE - you may apply the agreed direction. Keep the work in the smallest correct slice, preserve the learning-first style, and explain important why/how as you go.
+
+Before editing non-trivial code, inspect the affected files and tests so the change is grounded in the current workspace. Use typed mutation tools for file changes, verify important behavior, and do not broaden scope beyond the agreed workflow.
+</system-reminder>`;
+
 export function buildBuliSystemPrompt(input: {
   workspaceRootPath: string;
   assistantOperatingMode?: AssistantOperatingMode;
@@ -76,6 +84,7 @@ export function buildBuliSystemPrompt(input: {
     ].join("\n"),
     ...(assistantOperatingMode === "understand" ? [UNDERSTAND_MODE_SYSTEM_REMINDER] : []),
     ...(assistantOperatingMode === "plan" ? [PLAN_MODE_SYSTEM_REMINDER] : []),
+    ...(assistantOperatingMode === "implementation" ? [IMPLEMENTATION_MODE_SYSTEM_REMINDER] : []),
     ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
     [
       "Default workflow:",

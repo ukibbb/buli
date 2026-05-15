@@ -212,6 +212,7 @@ async function runExplorerConversation(input: {
   const explorerConversationSessionRecorder = new RuntimeConversationTurnSessionRecorder({
     conversationHistory: explorerConversationHistory,
     userPromptText: explorerPromptText,
+    assistantOperatingMode: "understand",
     diagnosticLogger: input.diagnosticLogger,
   });
   const explorerToolResultSessionRecorder = new RuntimeToolResultSessionRecorder({

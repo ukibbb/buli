@@ -3,6 +3,7 @@ import { ProviderTurnReplaySchema } from "./providerTurnReplay.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
+import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
 
 export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
 
@@ -20,6 +21,7 @@ export const UserPromptConversationSessionEntrySchema = z
     entryKind: z.literal("user_prompt"),
     promptText: z.string(),
     modelFacingPromptText: z.string(),
+    assistantOperatingMode: AssistantOperatingModeSchema.optional(),
     imageAttachments: z.array(UserPromptImageAttachmentSchema).optional(),
     projectInstructionSnapshots: z.array(ProjectInstructionSnapshotSchema).optional(),
   })

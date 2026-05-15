@@ -189,7 +189,7 @@ test("AssistantConversationRuntime emits a message-part turn for streamed text",
 
   expect(provider.startedTurnRequests).toHaveLength(1);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toMatchObject([
-    { entryKind: "user_prompt", modelFacingPromptText: "Say hello" },
+    { entryKind: "user_prompt", modelFacingPromptText: "Say hello", assistantOperatingMode: "understand" },
   ]);
   expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_turn_started",
@@ -232,6 +232,10 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
     "delegate explore agents to construct a well-formed plan",
   );
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "explore"]);
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
+    entryKind: "user_prompt",
+    assistantOperatingMode: "plan",
+  });
 });
 
 test("AssistantConversationRuntime defaults to understand mode with read-only tools", async () => {
@@ -258,6 +262,31 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Mode - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand mode ACTIVE - you are in READ-ONLY phase");
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "explore"]);
+});
+
+test("AssistantConversationRuntime filters explicit tool overrides in read-only modes", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Filtered." },
+      { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    availableToolNames: ["bash", "read", "write", "grep", "explore"],
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Help me understand tool filtering",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "grep", "explore"]);
 });
 
 test("AssistantConversationRuntime denies file mutation tool calls in understand mode", async () => {

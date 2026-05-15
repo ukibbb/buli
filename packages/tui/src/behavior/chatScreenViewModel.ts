@@ -47,7 +47,6 @@ export function buildChatScreenViewModel(input: {
     input.chatSessionState.conversationSessionSelectionState.step !== "hidden";
   const availableChatSlashCommands = buildChatSlashCommands({
     isReasoningSummaryVisible: input.chatSessionState.isReasoningSummaryVisible,
-    selectedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
   });
   const inputRegionRowCount =
     input.terminalSizeTierForChatScreen === minimumTerminalSizeTier

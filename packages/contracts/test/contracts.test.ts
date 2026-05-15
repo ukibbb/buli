@@ -360,6 +360,22 @@ test("ConversationSessionEntrySchema parses project instruction snapshots on use
   });
 });
 
+test("ConversationSessionEntrySchema parses assistant operating mode on user prompts", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "user_prompt",
+      promptText: "Make an implementation plan",
+      modelFacingPromptText: "Make an implementation plan",
+      assistantOperatingMode: "plan",
+    }),
+  ).toEqual({
+    entryKind: "user_prompt",
+    promptText: "Make an implementation plan",
+    modelFacingPromptText: "Make an implementation plan",
+    assistantOperatingMode: "plan",
+  });
+});
+
 test("ConversationSessionEntrySchema parses a conversation compaction summary", () => {
   expect(
     ConversationSessionEntrySchema.parse({

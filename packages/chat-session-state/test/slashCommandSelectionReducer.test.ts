@@ -42,6 +42,15 @@ describe("slash command selection", () => {
     });
   });
 
+  test("hides_selection_when_no_commands_match_the_query", () => {
+    const chatSessionState = refreshSlashCommandSelectionForPromptDraft(
+      insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "/plan"),
+      slashCommands,
+    );
+
+    expect(chatSessionState.slashCommandSelectionState).toEqual({ step: "hidden" });
+  });
+
   test("hides_selection_after_the_command_token_is_completed_with_whitespace", () => {
     const chatSessionState = refreshSlashCommandSelectionForPromptDraft(
       insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "/model "),

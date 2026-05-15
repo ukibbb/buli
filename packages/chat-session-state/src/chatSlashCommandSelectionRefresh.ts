@@ -18,7 +18,6 @@ export function refreshChatSlashCommandSelectionForCurrentState(chatSessionState
     chatSessionState,
     buildChatSlashCommands({
       isReasoningSummaryVisible: chatSessionState.isReasoningSummaryVisible,
-      selectedAssistantOperatingMode: chatSessionState.selectedAssistantOperatingMode,
     }),
   );
 }

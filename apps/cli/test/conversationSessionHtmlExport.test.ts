@@ -13,6 +13,7 @@ const conversationSessionEntries = [
     entryKind: "user_prompt",
     promptText: "Render <script>alert('x')</script>",
     modelFacingPromptText: "Render <script>alert('x')</script>",
+    assistantOperatingMode: "understand",
     imageAttachments: [
       {
         attachmentId: "image-1",
@@ -154,6 +155,7 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("buli-session-export");
   expect(html).toContain("Session ");
   expect(html).toContain(">session-a<");
+  expect(html).toContain("Mode: Understand");
   expect(html).toContain("Render &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
   expect(html).toContain('src="data:image/png;base64,aGVsbG8="');
   expect(html).toContain("clipboard.png · image/png");
@@ -203,6 +205,24 @@ test("renderConversationSessionHtmlDocument renders image-only user prompts with
 
   expect(html).toContain('src="data:image/jpeg;base64,aW1hZ2U="');
   expect(html).not.toContain("No prompt text was recorded.");
+});
+
+test("renderConversationSessionHtmlDocument omits mode labels for legacy user prompts", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Legacy prompt",
+        modelFacingPromptText: "Legacy prompt",
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-legacy",
+  });
+
+  expect(html).toContain("Legacy prompt");
+  expect(html).not.toContain("Mode:");
 });
 
 test("writeConversationSessionHtmlExport writes the exported session file", async () => {

@@ -1,6 +1,5 @@
 import type { ChatSessionState } from "./chatSessionState.ts";
 import type { ChatSlashCommandValue } from "./chatSlashCommands.ts";
-import { selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 import { showCommandHelpModal } from "./commandHelpModalReducer.ts";
 import { toggleReasoningSummaryVisibility } from "./reasoningSummaryVisibilityReducer.ts";
 
@@ -52,24 +51,6 @@ export function applyChatSlashCommandToChatSessionState(
     return createChatSlashCommandApplication({
       nextChatSessionState: chatSessionState,
       chatSlashCommandApplicationEffect: { effectType: "export_current_conversation_session" },
-    });
-  }
-
-  if (slashCommandValue === "plan") {
-    return createChatSlashCommandApplication({
-      nextChatSessionState: selectAssistantOperatingMode(chatSessionState, "plan"),
-    });
-  }
-
-  if (slashCommandValue === "understand") {
-    return createChatSlashCommandApplication({
-      nextChatSessionState: selectAssistantOperatingMode(chatSessionState, "understand"),
-    });
-  }
-
-  if (slashCommandValue === "implementation") {
-    return createChatSlashCommandApplication({
-      nextChatSessionState: selectAssistantOperatingMode(chatSessionState, "implementation"),
     });
   }
 

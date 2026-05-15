@@ -1,4 +1,5 @@
 import type {
+  AssistantOperatingMode,
   AssistantMessageConversationSessionEntry,
   BuliDiagnosticLogger,
   ProjectInstructionSnapshot,
@@ -10,6 +11,7 @@ import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 export class RuntimeConversationTurnSessionRecorder {
   readonly conversationHistory: InMemoryConversationHistory;
   readonly userPromptText: string;
+  readonly assistantOperatingMode: AssistantOperatingMode;
   readonly userPromptImageAttachments: readonly UserPromptImageAttachment[];
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   private hasRecordedAcceptedUserPromptSessionEntry = false;
@@ -18,11 +20,13 @@ export class RuntimeConversationTurnSessionRecorder {
   constructor(input: {
     conversationHistory: InMemoryConversationHistory;
     userPromptText: string;
+    assistantOperatingMode: AssistantOperatingMode;
     userPromptImageAttachments?: readonly UserPromptImageAttachment[];
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.conversationHistory = input.conversationHistory;
     this.userPromptText = input.userPromptText;
+    this.assistantOperatingMode = input.assistantOperatingMode;
     this.userPromptImageAttachments = input.userPromptImageAttachments ?? [];
     this.diagnosticLogger = input.diagnosticLogger;
   }
@@ -47,6 +51,7 @@ export class RuntimeConversationTurnSessionRecorder {
       entryKind: "user_prompt",
       promptText: this.userPromptText,
       modelFacingPromptText,
+      assistantOperatingMode: this.assistantOperatingMode,
       ...(this.userPromptImageAttachments.length > 0 ? { imageAttachments: [...this.userPromptImageAttachments] } : {}),
       ...(projectInstructionSnapshots && projectInstructionSnapshots.length > 0
         ? { projectInstructionSnapshots: [...projectInstructionSnapshots] }

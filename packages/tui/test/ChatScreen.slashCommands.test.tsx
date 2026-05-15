@@ -201,10 +201,11 @@ test("ChatScreen shows user-facing slash commands after typing a bare slash", as
   expect(frame).toContain("/compact");
   expect(frame).toContain("/sessions");
   expect(frame).toContain("/export-session");
-  expect(frame).toContain("/understand");
-  expect(frame).toContain("Understand mode is active");
   expect(frame).toContain("/thinking");
   expect(frame).toContain("Hide reasoning summaries");
+  expect(frame).not.toContain("/understand");
+  expect(frame).not.toContain("/plan");
+  expect(frame).not.toContain("/implementation");
   expect(frame).not.toContain("/scroll-up");
   expect(frame).not.toContain("/bottom");
 
@@ -213,6 +214,30 @@ test("ChatScreen shows user-facing slash commands after typing a bare slash", as
   const helpCommandIndentationWidth = helpCommandRow.length - helpCommandRow.trimStart().length;
   const promptDraftIndentationWidth = promptDraftRow.length - promptDraftRow.trimStart().length;
   expect(helpCommandIndentationWidth).toBe(promptDraftIndentationWidth);
+});
+
+test("ChatScreen treats removed mode slash command text as a normal prompt", async () => {
+  const submittedPromptTexts: string[] = [];
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn(input) {
+      submittedPromptTexts.push(input.userPromptText);
+      return {
+        async *streamAssistantResponseEvents() {
+          return;
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const renderedChatScreen = await renderChatScreen({ assistantConversationRunner });
+
+  await renderedChatScreen.typeText("/plan");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.waitForAssistantEvents();
+
+  expect(submittedPromptTexts).toEqual(["/plan"]);
 });
 
 test("ChatScreen exports the current session through slash command", async () => {
@@ -449,9 +474,11 @@ test("ChatScreen opens command help through slash command instead of question ma
   expect(helpFrame).toContain("/model");
   expect(helpFrame).toContain("/clear");
   expect(helpFrame).toContain("/compact");
-  expect(helpFrame).toContain("/understand");
   expect(helpFrame).toContain("/thinking");
   expect(helpFrame).toContain("Hide reasoning summaries");
+  expect(helpFrame).not.toContain("/understand");
+  expect(helpFrame).not.toContain("/plan");
+  expect(helpFrame).not.toContain("/implementation");
 
   const renderedQuestionMarkScreen = await renderChatScreen();
   const questionMarkFrame = await renderedQuestionMarkScreen.typeText("?");

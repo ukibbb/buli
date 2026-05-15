@@ -129,6 +129,18 @@ test("plan mode points inspection toward typed read and search tools", () => {
   expect(systemPromptText).toContain("The goal is to present a well researched plan to the user");
 });
 
+test("implementation mode reminds the assistant to apply the agreed direction", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "implementation",
+  });
+
+  expect(systemPromptText).toContain("Implementation Mode - System Reminder");
+  expect(systemPromptText).toContain("Implementation mode ACTIVE - you may apply the agreed direction.");
+  expect(systemPromptText).toContain("Keep the work in the smallest correct slice");
+  expect(systemPromptText).toContain("verify important behavior");
+});
+
 test("requires simple explanations and strong challenge of risks", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 

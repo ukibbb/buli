@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ConversationSessionEntry, ToolCallDetail, ToolCallRequest } from "@buli/contracts";
+import type { AssistantOperatingMode, ConversationSessionEntry, ToolCallDetail, ToolCallRequest } from "@buli/contracts";
 import { marked, Renderer, type Tokens } from "marked";
 
 export type ConversationSessionHtmlExportResult = {
@@ -228,6 +228,9 @@ function renderConversationSessionTranscriptEntryShell(input: {
 
 function renderUserPromptBlock(conversationSessionEntry: Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>): string {
   const imageAttachments = conversationSessionEntry.imageAttachments ?? [];
+  const assistantOperatingModeHtml = conversationSessionEntry.assistantOperatingMode
+    ? `<p class="status-notice">Mode: ${escapeHtml(formatAssistantOperatingModeDisplayName(conversationSessionEntry.assistantOperatingMode))}</p>`
+    : "";
   const promptTextHtml = conversationSessionEntry.promptText.length > 0
     ? `<p>${escapeHtml(conversationSessionEntry.promptText)}</p>`
     : imageAttachments.length > 0
@@ -243,7 +246,15 @@ function renderUserPromptBlock(conversationSessionEntry: Extract<ConversationSes
     })
     .join("\n");
 
-  return `${promptTextHtml}${imageAttachmentsHtml}`;
+  return `${assistantOperatingModeHtml}${promptTextHtml}${imageAttachmentsHtml}`;
+}
+
+function formatAssistantOperatingModeDisplayName(assistantOperatingMode: AssistantOperatingMode): string {
+  return assistantOperatingMode === "understand"
+    ? "Understand"
+    : assistantOperatingMode === "plan"
+    ? "Plan"
+    : "Implementation";
 }
 
 function renderConversationCompactionSummaryBlock(
