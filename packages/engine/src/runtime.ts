@@ -43,6 +43,7 @@ import {
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
 import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
+import { isReadOnlyAssistantOperatingMode, READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAMES } from "./assistantOperatingModePolicy.ts";
 
 type PendingToolApprovalState = {
   approvalId: string;
@@ -52,7 +53,6 @@ type PendingToolApprovalState = {
 };
 
 const USER_INTERRUPTED_CONVERSATION_TURN_REASON = "Interrupted by user.";
-const PLAN_MODE_AVAILABLE_TOOL_NAMES = ["read", "glob", "grep", "explore"] as const satisfies readonly ProviderAvailableToolName[];
 const CONVERSATION_COMPACTION_PROMPT_TEXT = [
   "Create a compact continuation summary for the next assistant turn.",
   "Preserve only information needed to continue the current session correctly.",
@@ -675,8 +675,8 @@ function resolveAvailableToolNamesForTurn(input: {
   if (input.availableToolNames) {
     return { availableToolNames: input.availableToolNames };
   }
-  if (input.assistantOperatingMode === "plan") {
-    return { availableToolNames: PLAN_MODE_AVAILABLE_TOOL_NAMES };
+  if (isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)) {
+    return { availableToolNames: READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAMES };
   }
   return {};
 }

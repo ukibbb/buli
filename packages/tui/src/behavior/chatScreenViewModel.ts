@@ -1,4 +1,4 @@
-import type { ConversationMessage } from "@buli/contracts";
+import type { AssistantOperatingMode, ConversationMessage } from "@buli/contracts";
 import {
   buildChatSlashCommands,
   listOrderedConversationMessages,
@@ -22,7 +22,7 @@ export type ChatScreenViewModel = {
   isPromptInputDisabled: boolean;
   availableChatSlashCommands: readonly ChatSlashCommand[];
   modeLabel: string;
-  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"];
+  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   promptInputHintOverride: string | undefined;
   reasoningEffortLabel: string;
   inputRegionRowCount: number;
@@ -61,13 +61,11 @@ export function buildChatScreenViewModel(input: {
   return {
     isPromptInputDisabled,
     availableChatSlashCommands,
-    modeLabel: input.chatSessionState.selectedAssistantOperatingMode,
-    inputPanelAccentColor: input.chatSessionState.selectedAssistantOperatingMode === "plan"
-      ? chatScreenTheme.accentAmber
-      : chatScreenTheme.accentGreen,
-    promptInputHintOverride: input.chatSessionState.selectedAssistantOperatingMode === "plan"
-      ? "read-only planning mode · tab to implementation"
-      : undefined,
+    modeLabel: formatAssistantOperatingModeLabel(input.chatSessionState.selectedAssistantOperatingMode),
+    inputPanelAccentColor: resolveAssistantOperatingModeAccentColor(input.chatSessionState.selectedAssistantOperatingMode),
+    promptInputHintOverride: isPromptInputDisabled
+      ? undefined
+      : resolveAssistantOperatingModePromptHint(input.chatSessionState.selectedAssistantOperatingMode),
     reasoningEffortLabel:
       input.chatSessionState.selectedReasoningEffort ?? input.chatSessionState.selectedModelDefaultReasoningEffort ?? "default",
     inputRegionRowCount,
@@ -84,4 +82,30 @@ export function buildChatScreenViewModel(input: {
     ),
     shouldRenderMinimumHeightPromptStrip: input.terminalSizeTierForChatScreen === minimumTerminalSizeTier,
   };
+}
+
+function formatAssistantOperatingModeLabel(assistantOperatingMode: AssistantOperatingMode): string {
+  return assistantOperatingMode === "understand"
+    ? "Understand"
+    : assistantOperatingMode === "plan"
+    ? "Plan"
+    : "Implementation";
+}
+
+function resolveAssistantOperatingModeAccentColor(
+  assistantOperatingMode: AssistantOperatingMode,
+): ChatScreenViewModel["inputPanelAccentColor"] {
+  return assistantOperatingMode === "understand"
+    ? chatScreenTheme.accentPink
+    : assistantOperatingMode === "plan"
+    ? chatScreenTheme.accentAmber
+    : chatScreenTheme.accentGreen;
+}
+
+function resolveAssistantOperatingModePromptHint(assistantOperatingMode: AssistantOperatingMode): string | undefined {
+  return assistantOperatingMode === "understand"
+    ? "read-only understanding mode · tab to Plan"
+    : assistantOperatingMode === "plan"
+    ? "read-only planning mode · tab to Implementation"
+    : "implementation mode · tab to Understand";
 }

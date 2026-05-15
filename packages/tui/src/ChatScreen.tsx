@@ -16,38 +16,21 @@ import {
 } from "@buli/engine";
 import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import {
-  appendPromptImageAttachmentToDraft,
-  applyChatSessionKeyboardInputToChatSessionState,
-  applyChatSlashCommandToChatSessionState,
   createInitialChatSessionState,
   hideCommandHelpModal,
   listOrderedConversationMessageParts,
-  refreshChatSlashCommandSelectionForCurrentState,
-  removeLastPromptImageAttachmentFromDraft,
-  replacePromptDraftFromEditor,
   hydrateConversationTranscriptFromSessionEntries,
-  showAvailableAssistantModelsForSelection,
-  showModelSelectionLoadingError,
-  showModelSelectionLoadingState,
-  type ChatSessionKeyboardInput,
   type ChatSessionState,
-  type ChatSessionKeyboardEffect,
-  type ChatSlashCommandApplicationEffect,
 } from "@buli/chat-session-state";
-import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/react";
-import { type KeyEvent, type PasteEvent, type ScrollBoxRenderable } from "@opentui/core";
-import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useTerminalDimensions } from "@opentui/react";
+import { type ScrollBoxRenderable } from "@opentui/core";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { chatScreenTheme, classifyTerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import { ChatScreenInputArea } from "./components/ChatScreenInputArea.tsx";
 import { ChatScreenMainArea } from "./components/ChatScreenMainArea.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { buildChatScreenViewModel } from "./behavior/chatScreenViewModel.ts";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
-import {
-  normalizeOpenTuiKeyEventForChatSession,
-} from "./behavior/openTuiKeyboardInputAdapter.ts";
-import { normalizeOpenTuiPasteEventText } from "./behavior/normalizeOpenTuiPasteEventText.ts";
-import { readNativeClipboardImageAttachment } from "./clipboard/readNativeClipboardImageAttachment.ts";
 import { useChatScreenActiveTurnInterrupt } from "./behavior/useChatScreenActiveTurnInterrupt.ts";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./behavior/chatScreenConversationSessionStatus.ts";
 import { useChatScreenAssistantTurnActions } from "./behavior/useChatScreenAssistantTurnActions.ts";
@@ -57,6 +40,7 @@ import {
   type ConversationSessionExportResult,
   type ConversationSessionSwitchResult,
 } from "./behavior/useChatScreenConversationSessionActions.ts";
+import { useChatScreenKeyboardInputActions } from "./behavior/useChatScreenKeyboardInputActions.ts";
 import { useChatScreenPromptContextSelectionRefresh } from "./behavior/useChatScreenPromptContextSelectionRefresh.ts";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 
@@ -89,62 +73,6 @@ export type {
   ConversationSessionExportResult,
   ConversationSessionSwitchResult,
 } from "./behavior/useChatScreenConversationSessionActions.ts";
-
-type OpenTuiConsumableInputEvent = Pick<KeyEvent, "preventDefault" | "stopPropagation">;
-
-function canPromptTextareaEditChatSessionState(chatSessionState: ChatSessionState): boolean {
-  return chatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
-    !chatSessionState.isCommandHelpModalVisible &&
-    chatSessionState.modelAndReasoningSelectionState.step === "hidden" &&
-    chatSessionState.conversationSessionSelectionState.step === "hidden";
-}
-
-function shouldPromptTextareaHandleKeyboardInput(input: {
-  chatSessionState: ChatSessionState;
-  chatSessionKeyboardInput: ChatSessionKeyboardInput;
-}): boolean {
-  if (!canPromptTextareaEditChatSessionState(input.chatSessionState)) {
-    return false;
-  }
-
-  if (
-    input.chatSessionKeyboardInput.keyName === "tab" ||
-    input.chatSessionKeyboardInput.keyName === "pageup" ||
-    input.chatSessionKeyboardInput.keyName === "pagedown"
-  ) {
-    return false;
-  }
-
-  if (
-    input.chatSessionState.slashCommandSelectionState.step !== "hidden" ||
-    input.chatSessionState.promptContextSelectionState.step !== "hidden"
-  ) {
-    return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
-      input.chatSessionKeyboardInput.keyName !== "up" &&
-      input.chatSessionKeyboardInput.keyName !== "down" &&
-      input.chatSessionKeyboardInput.keyName !== "return" &&
-      input.chatSessionKeyboardInput.keyName !== "escape";
-  }
-
-  return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
-    input.chatSessionKeyboardInput.keyName !== "escape";
-}
-
-function isPromptTextareaEditingKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {
-  if (chatSessionKeyboardInput.textInput !== undefined) {
-    return true;
-  }
-
-  return chatSessionKeyboardInput.keyName === "backspace" ||
-    chatSessionKeyboardInput.keyName === "delete" ||
-    chatSessionKeyboardInput.keyName === "down" ||
-    chatSessionKeyboardInput.keyName === "end" ||
-    chatSessionKeyboardInput.keyName === "home" ||
-    chatSessionKeyboardInput.keyName === "left" ||
-    chatSessionKeyboardInput.keyName === "return" ||
-    chatSessionKeyboardInput.keyName === "right" ||
-    chatSessionKeyboardInput.keyName === "up";
-}
 
 function logChatScreenDiagnosticEvent(
   diagnosticLogger: BuliDiagnosticLogger | undefined,
@@ -288,319 +216,29 @@ export function ChatScreen(props: ChatScreenProps) {
     conversationMessageScrollBox.scrollBy(direction === "up" ? -1 : 1, "viewport");
   });
 
-  useEffect(() => {
-    setChatSessionState((currentChatSessionState) =>
-      refreshChatSlashCommandSelectionForCurrentState(currentChatSessionState)
-    );
-  }, [
-    chatSessionState.promptDraft,
-    chatSessionState.promptDraftCursorOffset,
-    chatSessionState.conversationTurnStatus,
-    chatSessionState.modelAndReasoningSelectionState.step,
-    chatSessionState.conversationSessionSelectionState.step,
-    chatSessionState.promptContextSelectionState.step,
-    chatSessionState.isCommandHelpModalVisible,
-    chatSessionState.isReasoningSummaryVisible,
-    chatSessionState.selectedAssistantOperatingMode,
-  ]);
-
-  const loadAvailableModelsForSelection = useEffectEvent(async () => {
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.model_selection_load_started", {
-      currentSelectedModelId: latestChatSessionStateRef.current.selectedModelId,
-    });
-    setChatSessionState((currentChatSessionState) => showModelSelectionLoadingState(currentChatSessionState));
-
-    try {
-      const availableAssistantModels = await props.loadAvailableAssistantModels();
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.model_selection_load_completed", {
-        availableModelCount: availableAssistantModels.length,
-      });
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) =>
-          showAvailableAssistantModelsForSelection(currentChatSessionState, availableAssistantModels),
-        );
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.model_selection_load_failed", {
-        errorMessage,
-      });
-      startTransition(() => {
-        setChatSessionState((currentChatSessionState) =>
-          showModelSelectionLoadingError(currentChatSessionState, errorMessage),
-        );
-      });
-    }
-  });
-
-  const applyChatSlashCommandApplicationEffectToChatScreen = useEffectEvent(
-    (chatSlashCommandApplicationEffect: ChatSlashCommandApplicationEffect | undefined) => {
-      if (!chatSlashCommandApplicationEffect) {
-        return;
-      }
-
-      if (chatSlashCommandApplicationEffect.effectType === "clear_current_conversation_session") {
-        clearCurrentConversationSession();
-        return;
-      }
-
-      if (chatSlashCommandApplicationEffect.effectType === "load_conversation_sessions") {
-        void loadConversationSessionsForSelection();
-        return;
-      }
-
-      if (chatSlashCommandApplicationEffect.effectType === "compact_current_conversation_session") {
-        void compactCurrentConversationSession();
-        return;
-      }
-
-      if (chatSlashCommandApplicationEffect.effectType === "export_current_conversation_session") {
-        void exportCurrentConversationSession();
-        return;
-      }
-
-      if (chatSlashCommandApplicationEffect.effectType === "load_available_assistant_models") {
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.model_selection_open_requested", {
-          source: "slash_command",
-        });
-        void loadAvailableModelsForSelection();
-        return;
-      }
-
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.reasoning_summary_visibility_toggled", {
-        isReasoningSummaryVisible: chatSlashCommandApplicationEffect.isReasoningSummaryVisible,
-      });
-    },
-  );
-
-  const executeSlashCommand = useEffectEvent((slashCommandValue: string) => {
-    const chatSlashCommandApplication = applyChatSlashCommandToChatSessionState(
-      latestChatSessionStateRef.current,
-      slashCommandValue,
-    );
-    latestChatSessionStateRef.current = chatSlashCommandApplication.nextChatSessionState;
-    setChatSessionState(chatSlashCommandApplication.nextChatSessionState);
-    applyChatSlashCommandApplicationEffectToChatScreen(chatSlashCommandApplication.chatSlashCommandApplicationEffect);
-  });
-
-  const applyChatSessionKeyboardEffectToChatScreen = useEffectEvent((input: {
-    chatSessionKeyboardEffect: ChatSessionKeyboardEffect;
-    previousChatSessionState: ChatSessionState;
-  }) => {
-    switch (input.chatSessionKeyboardEffect.effectType) {
-      case "active_conversation_turn_interrupt_key_pressed":
-        requestActiveConversationTurnInterrupt();
-        return;
-      case "dismiss_active_prompt_context_query":
-        if (input.previousChatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates") {
-          logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_context_selection_closed", {
-            reason: "keyboard_escape",
-            promptContextCandidateCount:
-              input.previousChatSessionState.promptContextSelectionState.promptContextCandidates.length,
-          });
-        }
-        dismissActivePromptContextQuery(input.chatSessionKeyboardEffect.dismissedPromptContextQueryIdentity);
-        return;
-      case "execute_selected_slash_command":
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.slash_command_selected", {
-          slashCommand: input.chatSessionKeyboardEffect.selectedSlashCommand.value,
-        });
-        executeSlashCommand(input.chatSessionKeyboardEffect.selectedSlashCommand.value);
-        return;
-      case "stream_assistant_response_for_submitted_prompt":
-        isPromptSubmissionInFlightRef.current = true;
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_submitted", {
-          submittedPromptLength: input.chatSessionKeyboardEffect.submittedPromptText.length,
-          submittedPromptImageAttachmentCount: input.chatSessionKeyboardEffect.submittedPromptImageAttachments.length,
-          selectedModelId: input.previousChatSessionState.selectedModelId,
-          selectedReasoningEffort: input.previousChatSessionState.selectedReasoningEffort ?? null,
-        });
-        scrollConversationMessagesToBottom();
-        void streamAssistantResponseForSubmittedPrompt({
-          submittedPromptText: input.chatSessionKeyboardEffect.submittedPromptText,
-          submittedPromptImageAttachments: input.chatSessionKeyboardEffect.submittedPromptImageAttachments,
-        });
-        return;
-      case "submit_pending_tool_approval_decision":
-        submitPendingToolApprovalDecision({
-          decision: input.chatSessionKeyboardEffect.decision,
-          source: input.chatSessionKeyboardEffect.source,
-        });
-        return;
-      case "scroll_conversation_messages_by_page":
-        scrollConversationMessagesByPage(input.chatSessionKeyboardEffect.direction);
-        return;
-      case "switch_to_selected_conversation_session":
-        void switchToConversationSession(input.chatSessionKeyboardEffect.conversationSessionId);
-        return;
-    }
-  });
-
-  const applyKeyboardInputToChatScreen = useEffectEvent((input: {
-    chatSessionKeyboardInput: ChatSessionKeyboardInput;
-    inputEvent?: OpenTuiConsumableInputEvent;
-    shouldRespectPromptTextareaOwnership?: boolean;
-  }) => {
-    const previousChatSessionState = latestChatSessionStateRef.current;
-    if (input.chatSessionKeyboardInput.keyName === "paste") {
-      input.inputEvent?.preventDefault();
-      input.inputEvent?.stopPropagation();
-      void pasteClipboardImageAttachmentIntoPrompt();
-      return;
-    }
-
-    if (
-      input.chatSessionKeyboardInput.keyName === "backspace" &&
-      previousChatSessionState.promptDraft.length === 0 &&
-      previousChatSessionState.pendingPromptImageAttachments.length > 0
-    ) {
-      input.inputEvent?.preventDefault();
-      input.inputEvent?.stopPropagation();
-      const nextChatSessionState = removeLastPromptImageAttachmentFromDraft(previousChatSessionState);
-      latestChatSessionStateRef.current = nextChatSessionState;
-      setChatSessionState(nextChatSessionState);
-      return;
-    }
-
-    if (
-      input.shouldRespectPromptTextareaOwnership !== false &&
-      shouldPromptTextareaHandleKeyboardInput({
-        chatSessionState: previousChatSessionState,
-        chatSessionKeyboardInput: input.chatSessionKeyboardInput,
-      })
-    ) {
-      return;
-    }
-
-    const keyboardInteraction = applyChatSessionKeyboardInputToChatSessionState({
-      chatSessionState: previousChatSessionState,
-      chatSessionKeyboardInput: input.chatSessionKeyboardInput,
-      isPromptSubmissionInFlight: isPromptSubmissionInFlightRef.current,
-    });
-
-    if (keyboardInteraction.shouldConsumeKeyboardInput) {
-      input.inputEvent?.preventDefault();
-      input.inputEvent?.stopPropagation();
-    }
-
-    if (keyboardInteraction.promptSubmissionRejectionReason) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_submission_ignored", {
-        promptDraftLength: previousChatSessionState.promptDraft.length,
-        conversationTurnStatus: previousChatSessionState.conversationTurnStatus,
-        promptContextSelectionStep: previousChatSessionState.promptContextSelectionState.step,
-        modelSelectionStep: previousChatSessionState.modelAndReasoningSelectionState.step,
-        reason: keyboardInteraction.promptSubmissionRejectionReason,
-      });
-    }
-
-    if (keyboardInteraction.nextChatSessionState !== previousChatSessionState) {
-      if (
-        previousChatSessionState.selectedAssistantOperatingMode !==
-          keyboardInteraction.nextChatSessionState.selectedAssistantOperatingMode
-      ) {
-        logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.assistant_operating_mode_cycled", {
-          selectedAssistantOperatingMode: keyboardInteraction.nextChatSessionState.selectedAssistantOperatingMode,
-        });
-      }
-
-      latestChatSessionStateRef.current = keyboardInteraction.nextChatSessionState;
-      setChatSessionState(keyboardInteraction.nextChatSessionState);
-    }
-
-    if (keyboardInteraction.chatSessionKeyboardEffect) {
-      applyChatSessionKeyboardEffectToChatScreen({
-        chatSessionKeyboardEffect: keyboardInteraction.chatSessionKeyboardEffect,
-        previousChatSessionState,
-      });
-    }
-  });
-
-  const applyPromptTextareaEditToChatScreen = useEffectEvent((input: {
-    promptDraft: string;
-    promptDraftCursorOffset: number;
-  }) => {
-    const previousChatSessionState = latestChatSessionStateRef.current;
-    const nextChatSessionState = replacePromptDraftFromEditor({
-      chatSessionState: previousChatSessionState,
-      promptDraft: input.promptDraft,
-      promptDraftCursorOffset: input.promptDraftCursorOffset,
-    });
-
-    if (nextChatSessionState === previousChatSessionState) {
-      return;
-    }
-
-    latestChatSessionStateRef.current = nextChatSessionState;
-    setChatSessionState(nextChatSessionState);
-  });
-
-  const submitPromptDraftFromPromptTextarea = useEffectEvent(() => {
-    applyKeyboardInputToChatScreen({
-      chatSessionKeyboardInput: {
-        keyName: "return",
-        textInput: undefined,
-        isCtrlPressed: false,
-        isMetaPressed: false,
-      },
-      shouldRespectPromptTextareaOwnership: false,
-    });
-  });
-
-  const pasteClipboardImageAttachmentIntoPrompt = useEffectEvent(async () => {
-    const previousChatSessionState = latestChatSessionStateRef.current;
-    if (!canPromptTextareaEditChatSessionState(previousChatSessionState)) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
-        conversationTurnStatus: previousChatSessionState.conversationTurnStatus,
-      });
-      return;
-    }
-
-    const readClipboardImageAttachment = props.readClipboardImageAttachment ?? readNativeClipboardImageAttachment;
-    const clipboardImageAttachment = await readClipboardImageAttachment().catch(() => undefined);
-    if (!clipboardImageAttachment) {
-      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.clipboard_image_paste_no_image");
-      return;
-    }
-
-    const nextChatSessionState = appendPromptImageAttachmentToDraft(
-      latestChatSessionStateRef.current,
-      clipboardImageAttachment,
-    );
-    latestChatSessionStateRef.current = nextChatSessionState;
-    setChatSessionState(nextChatSessionState);
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.clipboard_image_pasted", {
-      pendingPromptImageAttachmentCount: nextChatSessionState.pendingPromptImageAttachments.length,
-      mimeType: clipboardImageAttachment.mimeType,
-      dataUrlLength: clipboardImageAttachment.dataUrl.length,
-    });
-  });
-
-  const handlePasteOutsidePromptTextarea = useEffectEvent((pasteEvent: PasteEvent) => {
-    if (canPromptTextareaEditChatSessionState(latestChatSessionStateRef.current)) {
-      return;
-    }
-
-    pasteEvent.preventDefault();
-    pasteEvent.stopPropagation();
-
-    const pastedText = normalizeOpenTuiPasteEventText(pasteEvent);
-    if (pastedText.length === 0) {
-      return;
-    }
-
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.paste_ignored", {
-      conversationTurnStatus: latestChatSessionStateRef.current.conversationTurnStatus,
-      pastedTextLength: pastedText.length,
-    });
-  });
-
-  usePaste(handlePasteOutsidePromptTextarea);
-
-  useKeyboard((keyEvent: KeyEvent) => {
-    applyKeyboardInputToChatScreen({
-      chatSessionKeyboardInput: normalizeOpenTuiKeyEventForChatSession(keyEvent),
-      inputEvent: keyEvent,
-    });
+  const {
+    applyPromptTextareaEditToChatScreen,
+    submitPromptDraftFromPromptTextarea,
+    pasteClipboardImageAttachmentIntoPrompt,
+  } = useChatScreenKeyboardInputActions({
+    chatSessionState,
+    loadAvailableAssistantModels: props.loadAvailableAssistantModels,
+    readClipboardImageAttachment: props.readClipboardImageAttachment,
+    latestChatSessionStateRef,
+    isPromptSubmissionInFlightRef,
+    setChatSessionState,
+    requestActiveConversationTurnInterrupt,
+    dismissActivePromptContextQuery,
+    loadConversationSessionsForSelection,
+    switchToConversationSession,
+    exportCurrentConversationSession,
+    compactCurrentConversationSession,
+    clearCurrentConversationSession,
+    streamAssistantResponseForSubmittedPrompt,
+    submitPendingToolApprovalDecision,
+    scrollConversationMessagesToBottom,
+    scrollConversationMessagesByPage,
+    diagnosticLogger,
   });
 
   const homeDirectoryPath = os.homedir();

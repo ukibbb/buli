@@ -14,6 +14,7 @@ import {
   type WriteToolCallRequest,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
+import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
@@ -58,8 +59,8 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
 
-  if (input.assistantOperatingMode === "plan") {
-    const denialText = `Plan mode is read-only, so this ${input.fileMutationToolCallRequest.toolName} tool call was not applied.`;
+  if (isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)) {
+    const denialText = `${formatAssistantOperatingModeName(input.assistantOperatingMode)} is read-only, so this ${input.fileMutationToolCallRequest.toolName} tool call was not applied.`;
     input.toolResultSessionRecorder.appendDeniedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: startedToolCallDetail,

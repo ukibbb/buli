@@ -61,6 +61,12 @@ export function applyChatSlashCommandToChatSessionState(
     });
   }
 
+  if (slashCommandValue === "understand") {
+    return createChatSlashCommandApplication({
+      nextChatSessionState: selectAssistantOperatingMode(chatSessionState, "understand"),
+    });
+  }
+
   if (slashCommandValue === "implementation") {
     return createChatSlashCommandApplication({
       nextChatSessionState: selectAssistantOperatingMode(chatSessionState, "implementation"),

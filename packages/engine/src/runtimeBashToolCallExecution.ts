@@ -11,6 +11,7 @@ import {
   type BuliDiagnosticLogger,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
+import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
@@ -43,14 +44,14 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   const startedToolCallDetail = createStartedBashToolCallDetail(input.bashToolCallRequest);
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
-  const planModeBashToolDecision = input.assistantOperatingMode === "plan"
+  const readOnlyModeBashToolDecision = isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)
     ? classifyBashToolApprovalRequirement(input.bashToolCallRequest, "risk_based")
     : undefined;
 
-  if (planModeBashToolDecision?.approvalPolicy === "requires_user_approval") {
+  if (readOnlyModeBashToolDecision?.approvalPolicy === "requires_user_approval") {
     const denialText = [
-      "Plan mode is read-only, so this bash command was not executed.",
-      planModeBashToolDecision.riskExplanation,
+      `${formatAssistantOperatingModeName(input.assistantOperatingMode)} is read-only, so this bash command was not executed.`,
+      readOnlyModeBashToolDecision.riskExplanation,
     ].join(" ");
     input.toolResultSessionRecorder.appendDeniedToolResultSessionEntry({
       toolCallId: input.toolCallId,
@@ -58,10 +59,11 @@ export async function* streamAssistantResponseEventsForBashToolCall(
       toolResultText: denialText,
       denialExplanation: denialText,
     });
-    logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.plan_mode_blocked", {
+    logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.read_only_mode_blocked", {
       toolCallId: input.toolCallId,
-      matchedRiskKind: planModeBashToolDecision.matchedRiskKind,
-      riskExplanationLength: planModeBashToolDecision.riskExplanation.length,
+      assistantOperatingMode: input.assistantOperatingMode,
+      matchedRiskKind: readOnlyModeBashToolDecision.matchedRiskKind,
+      riskExplanationLength: readOnlyModeBashToolDecision.riskExplanation.length,
     });
     yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartAddedEventSchema.parse({
       type: "assistant_message_part_added",

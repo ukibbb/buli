@@ -10,6 +10,7 @@ export type ChatSlashCommandValue =
   | "model"
   | "plan"
   | "sessions"
+  | "understand"
   | "thinking";
 
 export type ChatSlashCommand = SlashCommand & {
@@ -27,6 +28,13 @@ export function buildChatSlashCommands(input: {
     { name: "compact", value: "compact", description: "Summarize old context for this session" },
     { name: "sessions", value: "sessions", description: "Switch saved conversation session" },
     { name: "export-session", value: "export-session", description: "Export current session as HTML" },
+    {
+      name: "understand",
+      value: "understand",
+      description: input.selectedAssistantOperatingMode === "understand"
+        ? "Understand mode is active"
+        : "Switch to read-only understand mode",
+    },
     {
       name: "plan",
       value: "plan",

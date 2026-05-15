@@ -18,6 +18,7 @@ describe("chatScreenTheme", () => {
       "accentAmber",
       "accentCyan",
       "accentRed",
+      "accentPink",
       "accentPrimary",
       "accentPrimaryMuted",
       "accentPurple",

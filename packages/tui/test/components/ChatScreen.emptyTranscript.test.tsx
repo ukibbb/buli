@@ -83,7 +83,7 @@ test("ChatScreen starts with an empty transcript before any real conversation ex
 
   const frame = await renderedChatScreen.captureFrame();
   expect(frame).toContain("gpt-5.4");
-  expect(frame).toContain("implementation");
+  expect(frame).toContain("Understand");
 });
 
 test("ChatScreen shows the selected model default reasoning effort when it is known", async () => {

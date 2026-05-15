@@ -29,7 +29,21 @@ test("uses file-by-file apply plans for non-trivial work", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
   expect(systemPromptText).toContain(
-    "For non-trivial work, inspect all directly relevant files before explaining mechanics, comparing options, or proposing an apply plan.",
+    "For any non-trivial workspace or codebase question, start with code research before teaching, recommending, or planning.",
+  );
+  expect(systemPromptText).toContain(
+    "Use glob and grep to find relevant files, symbols, tests, contracts, configs, and call sites.",
+  );
+  expect(systemPromptText).toContain("Use read to inspect the files that define the behavior.");
+  expect(systemPromptText).toContain(
+    "Use explore when the relevant area is broad, unfamiliar, or connected across multiple files.",
+  );
+  expect(systemPromptText).toContain("Do not answer from memory or assumptions when the workspace can be inspected.");
+  expect(systemPromptText).toContain(
+    "After research, explain the system in simple language: what happens, where it happens, why it matters, and what choices exist.",
+  );
+  expect(systemPromptText).toContain(
+    "Name the important files inspected and say what remains uncertain when that affects the answer.",
   );
   expect(systemPromptText).toContain(
     "For non-trivial work, produce a detailed file-by-file apply plan before editing files.",
@@ -83,14 +97,36 @@ test("keeps workspace read safety explicit", () => {
   expect(systemPromptText).toContain("Do not read files outside the workspace unless the user explicitly asks and the tool policy allows it.");
 });
 
+test("understand mode is read-only and explains before planning", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "understand",
+  });
+
+  expect(systemPromptText).toContain("Understand Mode - System Reminder");
+  expect(systemPromptText).toContain("Understand mode ACTIVE - you are in READ-ONLY phase");
+  expect(systemPromptText).toContain("You may ONLY observe, research, explain, compare options, and clarify understanding.");
+  expect(systemPromptText).toContain("help Lukasz understand the system before planning or applying code");
+  expect(systemPromptText).toContain("Do not rush to a plan.");
+});
+
 test("plan mode points inspection toward typed read and search tools", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "plan",
   });
 
-  expect(systemPromptText).toContain("Use read, glob, and grep for plan-mode inspection.");
-  expect(systemPromptText).toContain("Do not use bash for simple file reads, file discovery, or text search.");
+  expect(systemPromptText).toContain("ANY file edits, modifications, or system changes. Do NOT use sed, tee, echo, cat,");
+  expect(systemPromptText).toContain(
+    "or ANY other bash command to manipulate files - commands may ONLY read/inspect.",
+  );
+  expect(systemPromptText).toContain("delegate explore agents to construct a well-formed plan");
+  expect(systemPromptText).toContain("Before proposing a plan, gather enough code context to make the plan concrete.");
+  expect(systemPromptText).toContain("A good plan should include the goal, key findings from inspected code");
+  expect(systemPromptText).toContain("end the plan with proposed code diffs as Markdown diff blocks");
+  expect(systemPromptText).toContain("These diffs are proposals only.");
+  expect(systemPromptText).toContain("Only Implementation mode may write to files.");
+  expect(systemPromptText).toContain("The goal is to present a well researched plan to the user");
 });
 
 test("requires simple explanations and strong challenge of risks", () => {
@@ -99,6 +135,14 @@ test("requires simple explanations and strong challenge of risks", () => {
   expect(systemPromptText).toContain("Explain complex technical topics simply and clearly first.");
   expect(systemPromptText).toContain("Challenge weak assumptions.");
   expect(systemPromptText).toContain("Point out risks, dangers, and second-order effects clearly.");
+  expect(systemPromptText).toContain("Be concise: remove filler, repeated caveats, and long setup.");
+  expect(systemPromptText).toContain(
+    "Explain like the user is smart but tired: simple words, concrete examples, no unnecessary jargon.",
+  );
+  expect(systemPromptText).toContain(
+    "For complex topics, start with the plain version first, then add detail only where it helps the decision.",
+  );
+  expect(systemPromptText).toContain("Keep full technical accuracy; short does not mean vague.");
 });
 
 test("teaches what is being built, how it works, and why it matters", () => {
@@ -143,7 +187,9 @@ test("adapts working style to the user's task", () => {
   expect(systemPromptText).toContain(
     "Start by understanding what Lukasz wants to learn, decide, or improve; do not assume code must change.",
   );
-  expect(systemPromptText).toContain("Use read-only exploration when it helps explain how the current system works under the hood.");
+  expect(systemPromptText).toContain(
+    "For any non-trivial workspace or codebase question, start with code research before teaching, recommending, or planning.",
+  );
   expect(systemPromptText).toContain(
     "For codebase exploration, map the relevant structure, name important files, explain responsibilities, and summarize how the pieces fit together.",
   );
@@ -170,20 +216,30 @@ test("supports architecture, learning, review, and apply task styles", () => {
 });
 
 test("keeps task style independent from mutation posture", () => {
-  const implementationPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+  const implementationPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "implementation",
+  });
   const planPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "plan",
   });
+  const understandPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "understand",
+  });
 
   expect(implementationPromptText).toContain(
-    "Treat plan and implementation modes as mutation posture, not as the whole learning style.",
+    "Treat understand, plan, and implementation modes as workflow posture, not as the whole learning style.",
   );
   expect(implementationPromptText).toContain(
-    "The same learning style can happen in either posture: read-only codebase exploration, implementation-mode explanation while applying an agreed change, architecture brainstorming, or review.",
+    "The same learning style can happen in any posture: understand-mode codebase exploration, plan-mode plan refinement, implementation-mode explanation while applying an agreed change, architecture brainstorming, or review.",
   );
   expect(planPromptText).toContain(
-    "Treat plan and implementation modes as mutation posture, not as the whole learning style.",
+    "Treat understand, plan, and implementation modes as workflow posture, not as the whole learning style.",
+  );
+  expect(understandPromptText).toContain(
+    "Treat understand, plan, and implementation modes as workflow posture, not as the whole learning style.",
   );
 });
 

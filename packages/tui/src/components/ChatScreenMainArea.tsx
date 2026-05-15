@@ -10,7 +10,7 @@ import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 
 export type ChatScreenMainAreaProps = {
   chatSessionState: ChatSessionState;
-  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"];
+  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   availableCommandHelpModalRowCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
   availableChatSlashCommands: readonly ChatSlashCommand[];

@@ -35,10 +35,15 @@ test("applyChatSlashCommandToChatSessionState switches assistant mode inside sha
     planApplication.nextChatSessionState,
     "implementation",
   );
+  const understandApplication = applyChatSlashCommandToChatSessionState(
+    implementationApplication.nextChatSessionState,
+    "understand",
+  );
 
   expect(planApplication.nextChatSessionState.selectedAssistantOperatingMode).toBe("plan");
   expect(planApplication.chatSlashCommandApplicationEffect).toBeUndefined();
   expect(implementationApplication.nextChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+  expect(understandApplication.nextChatSessionState.selectedAssistantOperatingMode).toBe("understand");
 });
 
 test("applyChatSlashCommandToChatSessionState toggles reasoning summaries and reports the next visibility", () => {

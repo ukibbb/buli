@@ -31,6 +31,10 @@ test("buildChatSlashCommands_includes_manual_compaction", () => {
 });
 
 test("buildChatSlashCommands_describes_current_assistant_operating_mode", () => {
+  const understandModeSlashCommands = buildChatSlashCommands({
+    isReasoningSummaryVisible: true,
+    selectedAssistantOperatingMode: "understand",
+  });
   const planModeSlashCommands = buildChatSlashCommands({
     isReasoningSummaryVisible: true,
     selectedAssistantOperatingMode: "plan",
@@ -40,6 +44,9 @@ test("buildChatSlashCommands_describes_current_assistant_operating_mode", () => 
     selectedAssistantOperatingMode: "implementation",
   });
 
+  expect(understandModeSlashCommands.find((slashCommand) => slashCommand.value === "understand")?.description).toBe(
+    "Understand mode is active",
+  );
   expect(planModeSlashCommands.find((slashCommand) => slashCommand.value === "plan")?.description).toBe(
     "Plan mode is active",
   );

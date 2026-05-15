@@ -201,6 +201,8 @@ test("ChatScreen shows user-facing slash commands after typing a bare slash", as
   expect(frame).toContain("/compact");
   expect(frame).toContain("/sessions");
   expect(frame).toContain("/export-session");
+  expect(frame).toContain("/understand");
+  expect(frame).toContain("Understand mode is active");
   expect(frame).toContain("/thinking");
   expect(frame).toContain("Hide reasoning summaries");
   expect(frame).not.toContain("/scroll-up");
@@ -447,6 +449,7 @@ test("ChatScreen opens command help through slash command instead of question ma
   expect(helpFrame).toContain("/model");
   expect(helpFrame).toContain("/clear");
   expect(helpFrame).toContain("/compact");
+  expect(helpFrame).toContain("/understand");
   expect(helpFrame).toContain("/thinking");
   expect(helpFrame).toContain("Hide reasoning summaries");
 

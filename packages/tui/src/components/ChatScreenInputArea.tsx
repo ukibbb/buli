@@ -18,7 +18,7 @@ export type ChatScreenInputAreaProps = {
   shouldRenderMinimumHeightPromptStrip: boolean;
   isPromptInputDisabled: boolean;
   isActiveTurnInterruptConfirmationArmed: boolean;
-  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"];
+  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   promptInputHintOverride: string | undefined;
   modeLabel: string;
   reasoningEffortLabel: string;

@@ -225,7 +225,85 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Plan Mode - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("READ-ONLY phase");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "or ANY other bash command to manipulate files - commands may ONLY read/inspect.",
+  );
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "delegate explore agents to construct a well-formed plan",
+  );
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "explore"]);
+});
+
+test("AssistantConversationRuntime defaults to understand mode with read-only tools", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Understanding first." },
+      { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Help me understand this",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Mode - System Reminder");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand mode ACTIVE - you are in READ-ONLY phase");
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "explore"]);
+});
+
+test("AssistantConversationRuntime denies file mutation tool calls in understand mode", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-understand-write-tool-"));
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_write_1",
+        toolCallRequest: {
+          toolName: "write",
+          writeTargetPath: "generated.txt",
+          fileContent: "generated\n",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Write denied." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Understand before writing",
+      assistantOperatingMode: "understand",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).not.toContain(
+    "assistant_pending_tool_approval_requested",
+  );
+  expect(providerTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_write_1",
+      toolResultText: "Understand mode is read-only, so this write tool call was not applied.",
+    },
+  ]);
+  await expect(readFile(join(workspaceRootPath, "generated.txt"), "utf8")).rejects.toThrow();
 });
 
 test("AssistantConversationRuntime injects project instructions into prompt and session audit", async () => {
@@ -618,6 +696,7 @@ test("AssistantConversationRuntime interrupts a pending tool approval", async ()
   });
   const activeConversationTurn = runtime.startConversationTurn({
     userPromptText: "Try interrupted approval",
+    assistantOperatingMode: "implementation",
     selectedModelId: "gpt-5.4",
   });
   const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
@@ -699,6 +778,7 @@ test("AssistantConversationRuntime interrupts a running bash tool call", async (
   });
   const activeConversationTurn = runtime.startConversationTurn({
     userPromptText: "Try interrupted bash",
+    assistantOperatingMode: "implementation",
     selectedModelId: "gpt-5.4",
   });
   const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
@@ -755,6 +835,7 @@ test("AssistantConversationRuntime emits a dedicated pending approval event and 
   });
   const activeConversationTurn = runtime.startConversationTurn({
     userPromptText: "Try denied bash",
+    assistantOperatingMode: "implementation",
     selectedModelId: "gpt-5.4",
   });
   const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
@@ -839,6 +920,7 @@ test("AssistantConversationRuntime approves a pending bash tool call and continu
   });
   const activeConversationTurn = runtime.startConversationTurn({
     userPromptText: "Try approved bash",
+    assistantOperatingMode: "implementation",
     selectedModelId: "gpt-5.4",
   });
   const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
@@ -879,7 +961,7 @@ test("AssistantConversationRuntime approves a pending bash tool call and continu
   expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("approved");
 });
 
-test("AssistantConversationRuntime auto-runs bash tool calls by default", async () => {
+test("AssistantConversationRuntime auto-runs bash tool calls in implementation mode", async () => {
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
       {
@@ -921,6 +1003,7 @@ test("AssistantConversationRuntime auto-runs bash tool calls by default", async 
   const emittedAssistantEvents = await collectAssistantEvents(
     runtime.startConversationTurn({
       userPromptText: "Try trusted bash",
+      assistantOperatingMode: "implementation",
       selectedModelId: "gpt-5.4",
     }),
   );
@@ -1072,6 +1155,7 @@ test("AssistantConversationRuntime submits failed bash tool results back to the 
   const emittedAssistantEvents = await collectAssistantEvents(
     runtime.startConversationTurn({
       userPromptText: "Try failed bash",
+      assistantOperatingMode: "implementation",
       selectedModelId: "gpt-5.4",
     }),
   );
@@ -1124,6 +1208,7 @@ test("AssistantConversationRuntime marks the turn failed when tool result submis
   const emittedAssistantEvents = await collectAssistantEvents(
     runtime.startConversationTurn({
       userPromptText: "Try submission failure",
+      assistantOperatingMode: "implementation",
       selectedModelId: "gpt-5.4",
     }),
   );
@@ -1462,6 +1547,7 @@ test("AssistantConversationRuntime requests approval before applying an edit too
   });
   const activeConversationTurn = runtime.startConversationTurn({
     userPromptText: "Edit notes",
+    assistantOperatingMode: "implementation",
     selectedModelId: "gpt-5.4",
   });
   const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();

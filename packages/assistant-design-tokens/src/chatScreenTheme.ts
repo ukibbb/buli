@@ -21,6 +21,7 @@ export const chatScreenTheme = {
   accentAmber: "#F59E0B",
   accentCyan: "#22D3EE",
   accentRed: "#EF4444",
+  accentPink: "#EC4899",
   accentPrimary: "#6366F1",
   accentPrimaryMuted: "#818CF8",
   accentPurple: "#A855F7",

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { minimumTerminalSizeTier } from "@buli/assistant-design-tokens";
+import { chatScreenTheme, minimumTerminalSizeTier } from "@buli/assistant-design-tokens";
 import { createInitialChatSessionState, insertTextIntoPromptDraftAtCursor } from "@buli/chat-session-state";
 import { buildChatScreenViewModel } from "../src/behavior/chatScreenViewModel.ts";
 
@@ -31,8 +31,22 @@ test("buildChatScreenViewModel derives plan-mode input copy", () => {
     terminalSizeTierForChatScreen: "comfortable",
   });
 
-  expect(viewModel.modeLabel).toBe("plan");
-  expect(viewModel.promptInputHintOverride).toBe("read-only planning mode · tab to implementation");
+  expect(viewModel.modeLabel).toBe("Plan");
+  expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentAmber);
+  expect(viewModel.promptInputHintOverride).toBe("read-only planning mode · tab to Implementation");
+});
+
+test("buildChatScreenViewModel derives understand-mode pink input copy", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.modeLabel).toBe("Understand");
+  expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentPink);
+  expect(viewModel.promptInputHintOverride).toBe("read-only understanding mode · tab to Plan");
 });
 
 test("buildChatScreenViewModel derives context usage and minimum input branch", () => {

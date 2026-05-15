@@ -53,6 +53,25 @@ test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating
   expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
 });
 
+test("applyChatSessionKeyboardInputToChatSessionState_cycles_from_plan_to_implementation_with_tab", () => {
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "plan",
+    },
+    chatSessionKeyboardInput: {
+      keyName: "tab",
+      textInput: undefined,
+      isCtrlPressed: false,
+      isMetaPressed: false,
+    },
+    isPromptSubmissionInFlight: false,
+  });
+
+  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+  expect(interaction.shouldConsumeKeyboardInput).toBe(true);
+});
+
 test("applyChatSessionKeyboardInputToChatSessionState_returns_submit_effect_for_submitted_prompt", () => {
   const interaction = applyChatSessionKeyboardInputToChatSessionState({
     chatSessionState: insertTextIntoPromptDraftAtCursor(
@@ -248,7 +267,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_does_not_cycle_mode_while_
     isPromptSubmissionInFlight: false,
   });
 
-  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("understand");
   expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });

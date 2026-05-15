@@ -21,10 +21,10 @@ import {
   toggleReasoningSummaryVisibility,
 } from "../src/index.ts";
 
-test("createInitialChatSessionState starts in implementation mode", () => {
+test("createInitialChatSessionState starts in understand mode", () => {
   const chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
 
-  expect(chatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+  expect(chatSessionState.selectedAssistantOperatingMode).toBe("understand");
 });
 
 test("createInitialChatSessionState keeps the selected model default reasoning effort", () => {
@@ -59,13 +59,15 @@ test("model selection keeps the selected model default when the model default ch
   expect(chatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
 });
 
-test("cycleAssistantOperatingMode switches between plan and implementation", () => {
-  const implementationChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
-  const planChatSessionState = cycleAssistantOperatingMode(implementationChatSessionState);
+test("cycleAssistantOperatingMode switches from understand to plan to implementation", () => {
+  const understandChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  const planChatSessionState = cycleAssistantOperatingMode(understandChatSessionState);
   const implementationAgainChatSessionState = cycleAssistantOperatingMode(planChatSessionState);
+  const understandAgainChatSessionState = cycleAssistantOperatingMode(implementationAgainChatSessionState);
 
   expect(planChatSessionState.selectedAssistantOperatingMode).toBe("plan");
   expect(implementationAgainChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+  expect(understandAgainChatSessionState.selectedAssistantOperatingMode).toBe("understand");
 });
 
 test("selectAssistantOperatingMode sets a specific mode", () => {

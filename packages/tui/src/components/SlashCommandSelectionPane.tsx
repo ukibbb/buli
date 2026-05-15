@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { SlashCommand } from "@buli/chat-session-state";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
-const MAX_VISIBLE_SLASH_COMMAND_COUNT = 9;
+const MAX_VISIBLE_SLASH_COMMAND_COUNT = 10;
 const SLASH_COMMAND_COMMAND_COLUMN_WIDTH = 18;
 const SLASH_COMMAND_PANE_HORIZONTAL_MARGIN = 2;
 

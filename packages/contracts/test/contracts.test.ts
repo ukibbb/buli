@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  AssistantOperatingModeSchema,
   AssistantResponseEventSchema,
   ConversationSessionEntrySchema,
   ConversationSessionSnapshotSchema,
@@ -12,6 +13,13 @@ import {
   ToolCallRequestSchema,
   UserPromptImageAttachmentSchema,
 } from "../src/index.ts";
+
+test("AssistantOperatingModeSchema parses understand, plan, and implementation modes", () => {
+  expect(AssistantOperatingModeSchema.options).toEqual(["understand", "plan", "implementation"]);
+  expect(AssistantOperatingModeSchema.parse("understand")).toBe("understand");
+  expect(AssistantOperatingModeSchema.parse("plan")).toBe("plan");
+  expect(AssistantOperatingModeSchema.parse("implementation")).toBe("implementation");
+});
 
 test("ConversationMessageSchema parses a completed user message", () => {
   expect(
