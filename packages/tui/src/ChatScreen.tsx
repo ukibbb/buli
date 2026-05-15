@@ -44,17 +44,9 @@ import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/react";
 import { type KeyEvent, type PasteEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 import { chatScreenTheme, classifyTerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
-import { ConversationMessageList } from "./components/ConversationMessageList.tsx";
-import { InputPanel } from "./components/InputPanel.tsx";
-import { MinimumHeightPromptStrip } from "./components/MinimumHeightPromptStrip.tsx";
-import { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
-import { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";
-import { SlashCommandSelectionPane } from "./components/SlashCommandSelectionPane.tsx";
-import { CommandHelpModal } from "./components/CommandHelpModal.tsx";
-import { ConversationSessionSelectionPane } from "./components/ConversationSessionSelectionPane.tsx";
+import { ChatScreenInputArea, type ConversationSessionCompactionStatus, type ConversationSessionExportStatus } from "./components/ChatScreenInputArea.tsx";
+import { ChatScreenMainArea } from "./components/ChatScreenMainArea.tsx";
 import { TopBar } from "./components/TopBar.tsx";
-import { ErrorBannerBlock } from "./components/behavior/ErrorBannerBlock.tsx";
-import { ToolApprovalRequestBlock } from "./components/behavior/ToolApprovalRequestBlock.tsx";
 import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 import { summarizeAssistantResponseEventsForDiagnostics } from "./assistantResponseEventDiagnostics.ts";
 import { buildChatScreenViewModel } from "./behavior/chatScreenViewModel.ts";
@@ -105,15 +97,6 @@ export type ConversationSessionExportResult = {
 export type ConversationSessionCompactionResult = {
   conversationSessionEntries: readonly ConversationSessionEntry[];
 };
-
-type ConversationSessionExportStatus =
-  | { step: "idle" }
-  | { step: "failed"; errorMessage: string };
-
-type ConversationSessionCompactionStatus =
-  | { step: "idle" }
-  | { step: "compacting"; source: "manual" | "auto" }
-  | { step: "failed"; errorMessage: string };
 
 type OpenTuiConsumableInputEvent = Pick<KeyEvent, "preventDefault" | "stopPropagation">;
 
@@ -930,110 +913,6 @@ export function ChatScreen(props: ChatScreenProps) {
     terminalSizeTierForChatScreen,
   });
 
-  const modelAndReasoningSelectionPane =
-    chatSessionState.modelAndReasoningSelectionState.step === "loading_available_models" ? (
-      <box alignItems="center" flexGrow={1} justifyContent="center">
-        <text fg={chatScreenTheme.accentAmber}>Loading models...</text>
-      </box>
-    ) : chatSessionState.modelAndReasoningSelectionState.step === "showing_model_loading_error" ? (
-      <ErrorBannerBlock
-        titleText="Could not load models"
-        errorText={chatSessionState.modelAndReasoningSelectionState.errorMessage}
-      />
-    ) : chatSessionState.modelAndReasoningSelectionState.step === "showing_available_models" ? (
-      <ModelAndReasoningSelectionPane
-        visibleChoices={chatSessionState.modelAndReasoningSelectionState.availableModels.map(
-          (availableAssistantModel) => availableAssistantModel.displayName,
-        )}
-        highlightedChoiceIndex={chatSessionState.modelAndReasoningSelectionState.highlightedModelIndex}
-        headingText="Choose model"
-        accentColor={inputPanelAccentColor}
-      />
-    ) : chatSessionState.modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices" ? (
-      <ModelAndReasoningSelectionPane
-        visibleChoices={chatSessionState.modelAndReasoningSelectionState.availableReasoningEffortChoices.map(
-          (availableReasoningEffortChoice) => availableReasoningEffortChoice.displayLabel,
-        )}
-        highlightedChoiceIndex={
-          chatSessionState.modelAndReasoningSelectionState.highlightedReasoningEffortChoiceIndex
-        }
-        headingText={`Choose reasoning for ${chatSessionState.modelAndReasoningSelectionState.selectedModel.displayName}`}
-        accentColor={inputPanelAccentColor}
-      />
-    ) : null;
-
-  const conversationSessionSelectionPane =
-    chatSessionState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
-      <box
-        borderStyle="rounded"
-        borderColor={inputPanelAccentColor}
-        backgroundColor={chatScreenTheme.surfaceOne}
-        flexDirection="column"
-        flexShrink={0}
-        marginX={2}
-        paddingX={1}
-      >
-        <text fg={chatScreenTheme.textMuted}>Sessions</text>
-        <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
-      </box>
-    ) : chatSessionState.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
-      <box paddingX={2}>
-        <ErrorBannerBlock
-          titleText="Could not load sessions"
-          errorText={chatSessionState.conversationSessionSelectionState.errorMessage}
-        />
-      </box>
-    ) : chatSessionState.conversationSessionSelectionState.step === "showing_conversation_sessions" ? (
-      <ConversationSessionSelectionPane
-        conversationSessions={chatSessionState.conversationSessionSelectionState.conversationSessions}
-        highlightedConversationSessionIndex={
-          chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex
-        }
-        activeConversationSessionId={chatSessionState.conversationSessionSelectionState.activeConversationSessionId}
-        accentColor={inputPanelAccentColor}
-      />
-    ) : null;
-
-  const promptContextSelectionPane =
-    chatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
-      <PromptContextSelectionPane
-        promptContextCandidates={chatSessionState.promptContextSelectionState.promptContextCandidates}
-        highlightedPromptContextCandidateIndex={
-          chatSessionState.promptContextSelectionState.highlightedPromptContextCandidateIndex
-        }
-        accentColor={inputPanelAccentColor}
-      />
-    ) : null;
-
-  const conversationSessionExportStatusPane =
-    conversationSessionExportStatus.step === "failed" ? (
-      <box paddingX={2} marginBottom={1}>
-        <ErrorBannerBlock titleText="Could not export session" errorText={conversationSessionExportStatus.errorMessage} />
-      </box>
-    ) : null;
-
-  const conversationSessionCompactionStatusPane =
-    conversationSessionCompactionStatus.step === "failed" ? (
-      <box paddingX={2} marginBottom={1}>
-        <ErrorBannerBlock titleText="Could not compact session" errorText={conversationSessionCompactionStatus.errorMessage} />
-      </box>
-    ) : conversationSessionCompactionStatus.step === "compacting" ? (
-      <box paddingX={2} marginBottom={1}>
-        <text fg={chatScreenTheme.textMuted}>
-          {conversationSessionCompactionStatus.source === "auto" ? "Auto-compacting context…" : "Compacting session…"}
-        </text>
-      </box>
-    ) : null;
-
-  const slashCommandSelectionPane =
-    chatSessionState.slashCommandSelectionState.step === "showing_slash_commands" ? (
-      <SlashCommandSelectionPane
-        availableSlashCommands={chatSessionState.slashCommandSelectionState.availableSlashCommands}
-        highlightedSlashCommandIndex={chatSessionState.slashCommandSelectionState.highlightedSlashCommandIndex}
-        accentColor={inputPanelAccentColor}
-      />
-    ) : null;
-
   useEffect(() => {
     logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.render_snapshot", {
       rows,
@@ -1084,90 +963,43 @@ export function ChatScreen(props: ChatScreenProps) {
     <box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows}>
       <TopBar workingDirectoryPath={workingDirectoryPath} />
       <box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden" paddingX={2} paddingTop={1}>
-        {chatSessionState.isCommandHelpModalVisible ? (
-          <box alignItems="center" flexGrow={1} justifyContent="center">
-            <CommandHelpModal
-              onCloseRequested={() =>
-                setChatSessionState((currentChatSessionState) => hideCommandHelpModal(currentChatSessionState))
-              }
-              availableModalRowCount={availableCommandHelpModalRowCount}
-              terminalSizeTierForChatScreen={terminalSizeTierForChatScreen}
-              availableSlashCommands={availableChatSlashCommands}
-            />
-          </box>
-        ) : modelAndReasoningSelectionPane ? (
-          modelAndReasoningSelectionPane
-        ) : (
-          <ConversationMessageList
-            conversationMessages={orderedConversationMessages}
-            isReasoningSummaryVisible={chatSessionState.isReasoningSummaryVisible}
-            resolveConversationMessageParts={(messageId) =>
-              listOrderedConversationMessageParts(chatSessionState, messageId)
-            }
-            conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
-            horizontalRuleColor={inputPanelAccentColor}
-          />
-        )}
+        <ChatScreenMainArea
+          chatSessionState={chatSessionState}
+          inputPanelAccentColor={inputPanelAccentColor}
+          availableCommandHelpModalRowCount={availableCommandHelpModalRowCount}
+          terminalSizeTierForChatScreen={terminalSizeTierForChatScreen}
+          availableChatSlashCommands={availableChatSlashCommands}
+          orderedConversationMessages={orderedConversationMessages}
+          conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
+          resolveConversationMessageParts={(messageId) => listOrderedConversationMessageParts(chatSessionState, messageId)}
+          onCommandHelpCloseRequested={() =>
+            setChatSessionState((currentChatSessionState) => hideCommandHelpModal(currentChatSessionState))
+          }
+        />
       </box>
-      <box flexDirection="column" flexShrink={0}>
-        {chatSessionState.pendingToolApprovalRequest ? (
-          <box paddingX={2}>
-            <ToolApprovalRequestBlock
-              riskExplanation={chatSessionState.pendingToolApprovalRequest.riskExplanation}
-              onApprove={() => {
-                submitPendingToolApprovalDecision({ decision: "approved", source: "button" });
-              }}
-              onDeny={() => {
-                submitPendingToolApprovalDecision({ decision: "denied", source: "button" });
-              }}
-            />
-          </box>
-        ) : null}
-        {conversationSessionExportStatusPane}
-        {conversationSessionCompactionStatusPane}
-        {conversationSessionSelectionPane}
-        {slashCommandSelectionPane}
-        {promptContextSelectionPane}
-        <box flexDirection="column" flexShrink={0} width="100%">
-          {shouldRenderMinimumHeightPromptStrip ? (
-            <box paddingX={2} width="100%">
-              <MinimumHeightPromptStrip
-                promptDraft={chatSessionState.promptDraft}
-                promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
-                pendingPromptImageAttachments={chatSessionState.pendingPromptImageAttachments}
-                selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
-                isPromptInputDisabled={isPromptInputDisabled}
-                accentColor={inputPanelAccentColor}
-                assistantResponseStatus={chatSessionState.conversationTurnStatus}
-                isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
-                onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
-                onPromptSubmitted={submitPromptDraftFromPromptTextarea}
-                onNativeClipboardPasteRequested={pasteClipboardImageAttachmentIntoPrompt}
-              />
-            </box>
-          ) : (
-            <InputPanel
-              promptDraft={chatSessionState.promptDraft}
-              promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
-              pendingPromptImageAttachments={chatSessionState.pendingPromptImageAttachments}
-              selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
-              isPromptInputDisabled={isPromptInputDisabled}
-              {...(promptInputHintOverride !== undefined ? { promptInputHintOverride } : {})}
-              accentColor={inputPanelAccentColor}
-              modeLabel={modeLabel}
-              modelIdentifier={chatSessionState.selectedModelId}
-              reasoningEffortLabel={reasoningEffortLabel}
-              assistantResponseStatus={chatSessionState.conversationTurnStatus}
-              isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
-              totalContextTokensUsed={totalContextTokensUsed}
-              contextWindowTokenCapacity={contextWindowTokenCapacity}
-              onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
-              onPromptSubmitted={submitPromptDraftFromPromptTextarea}
-              onNativeClipboardPasteRequested={pasteClipboardImageAttachmentIntoPrompt}
-            />
-          )}
-        </box>
-      </box>
+      <ChatScreenInputArea
+        chatSessionState={chatSessionState}
+        conversationSessionExportStatus={conversationSessionExportStatus}
+        conversationSessionCompactionStatus={conversationSessionCompactionStatus}
+        shouldRenderMinimumHeightPromptStrip={shouldRenderMinimumHeightPromptStrip}
+        isPromptInputDisabled={isPromptInputDisabled}
+        isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
+        inputPanelAccentColor={inputPanelAccentColor}
+        promptInputHintOverride={promptInputHintOverride}
+        modeLabel={modeLabel}
+        reasoningEffortLabel={reasoningEffortLabel}
+        totalContextTokensUsed={totalContextTokensUsed}
+        contextWindowTokenCapacity={contextWindowTokenCapacity}
+        onPendingToolApprovalApproved={() => {
+          submitPendingToolApprovalDecision({ decision: "approved", source: "button" });
+        }}
+        onPendingToolApprovalDenied={() => {
+          submitPendingToolApprovalDecision({ decision: "denied", source: "button" });
+        }}
+        onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
+        onPromptSubmitted={submitPromptDraftFromPromptTextarea}
+        onNativeClipboardPasteRequested={pasteClipboardImageAttachmentIntoPrompt}
+      />
     </box>
   );
 }
