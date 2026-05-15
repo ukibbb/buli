@@ -26,7 +26,7 @@ import { FileConversationSessionStore, type ConversationSessionStore } from "../
 import { createDiagnosticFileLogger } from "../diagnosticFileLogger.ts";
 
 const DEFAULT_MODEL_ID = "gpt-5.5";
-const DEFAULT_MODEL_DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
+const DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
 const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
 
@@ -68,6 +68,7 @@ export async function runInteractiveChat(input: {
   }
   const autoCompactionThresholdRatio = autoCompactionThresholdResolution.thresholdRatio;
   const selectedModelId = input.selectedModelId ?? DEFAULT_MODEL_ID;
+  const selectedReasoningEffort = input.selectedReasoningEffort ?? DEFAULT_REASONING_EFFORT;
   const selectedModelDefaultReasoningEffort = lookupKnownModelDefaultReasoningEffort(selectedModelId);
 
   const store = input.store ?? new OpenAiAuthStore();
@@ -91,7 +92,7 @@ export async function runInteractiveChat(input: {
     fields: {
       selectedModelId,
       selectedModelDefaultReasoningEffort: selectedModelDefaultReasoningEffort ?? null,
-      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
+      selectedReasoningEffort,
       bashToolApprovalMode,
       workingDirectoryPath: process.cwd(),
       logFilePath: consoleFileLoggerInstallation.logFilePath ?? null,
@@ -279,7 +280,7 @@ export async function runInteractiveChat(input: {
     initialConversationSessionEntries,
     selectedModelId,
     ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
-    ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+    selectedReasoningEffort,
     ...(diagnosticLogger ? { diagnosticLogger } : {}),
   };
 
@@ -299,7 +300,7 @@ export async function runInteractiveChat(input: {
 
 function lookupKnownModelDefaultReasoningEffort(selectedModelId: string): ReasoningEffort | undefined {
   if (selectedModelId === DEFAULT_MODEL_ID) {
-    return DEFAULT_MODEL_DEFAULT_REASONING_EFFORT;
+    return DEFAULT_REASONING_EFFORT;
   }
 
   return undefined;

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import type { PromptContextCandidate } from "@buli/engine";
+import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
 import { SelectionPaneSelect } from "./SelectionPaneSelect.tsx";
 
 export type PromptContextSelectionPaneProps = {
@@ -13,16 +14,7 @@ const MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT = 6;
 
 export function PromptContextSelectionPane(props: PromptContextSelectionPaneProps): ReactNode {
   return (
-    <box
-      borderStyle="rounded"
-      borderColor={props.accentColor}
-      backgroundColor={chatScreenTheme.surfaceOne}
-      flexDirection="column"
-      flexShrink={0}
-      marginX={2}
-      paddingX={1}
-    >
-      <text fg={chatScreenTheme.textMuted}>Context</text>
+    <SelectionPaneFrame headingText="Context" accentColor={props.accentColor}>
       {props.promptContextCandidates.length === 0 ? (
         <text fg={chatScreenTheme.textSecondary}>No matching files or folders.</text>
       ) : (
@@ -32,6 +24,6 @@ export function PromptContextSelectionPane(props: PromptContextSelectionPaneProp
           maxVisibleOptionCount={MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT}
         />
       )}
-    </box>
+    </SelectionPaneFrame>
   );
 }

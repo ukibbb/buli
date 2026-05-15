@@ -169,6 +169,7 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
   let receivedSelection: {
     selectedModelId: string;
     selectedModelDefaultReasoningEffort: ReasoningEffort | undefined;
+    selectedReasoningEffort: ReasoningEffort | undefined;
   } | undefined;
 
   await store.saveOpenAi({
@@ -188,6 +189,7 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
       receivedSelection = {
         selectedModelId: renderInput.selectedModelId,
         selectedModelDefaultReasoningEffort: renderInput.selectedModelDefaultReasoningEffort,
+        selectedReasoningEffort: renderInput.selectedReasoningEffort,
       };
       return { destroy: () => {}, waitUntilExit: async () => {} };
     },
@@ -196,7 +198,8 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
   expect(output).toBe("");
   expect(receivedSelection).toEqual({
     selectedModelId: "gpt-5.5",
-    selectedModelDefaultReasoningEffort: "medium",
+    selectedModelDefaultReasoningEffort: "xhigh",
+    selectedReasoningEffort: "xhigh",
   });
 });
 

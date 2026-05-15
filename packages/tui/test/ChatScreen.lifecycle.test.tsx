@@ -417,7 +417,7 @@ test("ChatScreen keeps prompt controls available after a failed assistant stream
   expect(planModeFrame).toContain("Plan");
 
   const slashCommandFrame = await renderedChatScreen.typeText("/");
-  expect(slashCommandFrame).not.toContain("Commands");
+  expect(slashCommandFrame).toContain("Commands");
   expect(slashCommandFrame).toContain("/help");
 });
 

@@ -194,7 +194,7 @@ test("ChatScreen shows user-facing slash commands after typing a bare slash", as
 
   const frame = await renderedChatScreen.typeText("/");
 
-  expect(frame).not.toContain("Commands");
+  expect(frame).toContain("Commands");
   expect(frame).toContain("/help");
   expect(frame).toContain("/model");
   expect(frame).toContain("/clear");

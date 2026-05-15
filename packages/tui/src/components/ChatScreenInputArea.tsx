@@ -6,6 +6,7 @@ import { InputPanel } from "./InputPanel.tsx";
 import { MinimumHeightPromptStrip } from "./MinimumHeightPromptStrip.tsx";
 import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
 import type { PromptTextareaEdit } from "./PromptTextarea.tsx";
+import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
 import { SlashCommandSelectionPane } from "./SlashCommandSelectionPane.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.tsx";
@@ -117,18 +118,9 @@ function renderConversationSessionCompactionStatusPane(
 
 function renderConversationSessionSelectionPane(props: ChatScreenInputAreaProps): ReactNode {
   return props.chatSessionState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
-    <box
-      borderStyle="rounded"
-      borderColor={props.inputPanelAccentColor}
-      backgroundColor={chatScreenTheme.surfaceOne}
-      flexDirection="column"
-      flexShrink={0}
-      marginX={2}
-      paddingX={1}
-    >
-      <text fg={chatScreenTheme.textMuted}>Sessions</text>
+    <SelectionPaneFrame headingText="Sessions" accentColor={props.inputPanelAccentColor}>
       <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
-    </box>
+    </SelectionPaneFrame>
   ) : props.chatSessionState.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
     <box paddingX={2}>
       <ErrorBannerBlock

@@ -28,7 +28,7 @@ describe("SlashCommandSelectionPane", () => {
     await renderOnce();
 
     const frame = captureCharFrame();
-    expect(frame).not.toContain("Commands");
+    expect(frame).toContain("Commands");
     expect(frame).toContain("/help");
     expect(frame).toContain("Show available commands");
     expect(frame).toContain("/model");
@@ -41,7 +41,7 @@ describe("SlashCommandSelectionPane", () => {
     );
   });
 
-  test("renders_highlighted_command_without_selection_marker", async () => {
+  test("renders_highlighted_command_with_selection_marker", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <SlashCommandSelectionPane
         availableSlashCommands={[
@@ -58,6 +58,6 @@ describe("SlashCommandSelectionPane", () => {
 
     const frame = captureCharFrame();
     expect(frame).toContain("/model");
-    expect(frame).not.toContain("\u25b6");
+    expect(frame).toContain("\u25b6 /model");
   });
 });

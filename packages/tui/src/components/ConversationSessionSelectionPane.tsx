@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { ConversationSessionSummary } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
 import { SelectionPaneSelect } from "./SelectionPaneSelect.tsx";
 
 const MAX_VISIBLE_CONVERSATION_SESSION_COUNT = 8;
@@ -14,16 +15,7 @@ export type ConversationSessionSelectionPaneProps = {
 
 export function ConversationSessionSelectionPane(props: ConversationSessionSelectionPaneProps): ReactNode {
   return (
-    <box
-      borderStyle="rounded"
-      borderColor={props.accentColor}
-      backgroundColor={chatScreenTheme.surfaceOne}
-      flexDirection="column"
-      flexShrink={0}
-      marginX={2}
-      paddingX={1}
-    >
-      <text fg={chatScreenTheme.textMuted}>Sessions</text>
+    <SelectionPaneFrame headingText="Sessions" accentColor={props.accentColor}>
       {props.conversationSessions.length === 0 ? (
         <text fg={chatScreenTheme.textSecondary}>No saved sessions.</text>
       ) : (
@@ -36,6 +28,6 @@ export function ConversationSessionSelectionPane(props: ConversationSessionSelec
           maxVisibleOptionCount={MAX_VISIBLE_CONVERSATION_SESSION_COUNT}
         />
       )}
-    </box>
+    </SelectionPaneFrame>
   );
 }
