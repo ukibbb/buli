@@ -37,6 +37,8 @@ export type {
   RuntimeToolApprovalDecision,
 } from "./runtimeToolApproval.ts";
 
+type RequestedToolName = ToolCallRequest["toolName"];
+
 export type StreamAssistantResponseEventsForRequestedToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
@@ -59,6 +61,110 @@ export type StreamAssistantResponseEventsForRequestedToolCallInput = {
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
+
+type RuntimeRequestedToolCallExecutorInput = StreamAssistantResponseEventsForRequestedToolCallInput & {
+  toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
+};
+
+type RuntimeRequestedToolCallExecutor = {
+  readonly supportedToolNames: readonly RequestedToolName[];
+  streamAssistantResponseEvents(input: RuntimeRequestedToolCallExecutorInput): AsyncGenerator<AssistantResponseEvent>;
+};
+
+const requestedToolCallExecutors: readonly RuntimeRequestedToolCallExecutor[] = [
+  {
+    supportedToolNames: ["read", "glob", "grep"],
+    async *streamAssistantResponseEvents(input) {
+      if (!isAutoApprovedReadOnlyToolCallRequest(input.toolCallRequest)) {
+        throw new Error(`Read-only tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
+      }
+
+      yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
+        assistantResponseMessageId: input.assistantResponseMessageId,
+        providerConversationTurn: input.providerConversationTurn,
+        toolCallId: input.toolCallId,
+        toolCallRequest: input.toolCallRequest,
+        workspaceRootPath: input.workspaceRootPath,
+        projectInstructionTracker: input.projectInstructionTracker,
+        toolResultSessionRecorder: input.toolResultSessionRecorder,
+        abortSignal: input.abortSignal,
+        throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+        diagnosticLogger: input.diagnosticLogger,
+      });
+    },
+  },
+  {
+    supportedToolNames: ["explore"],
+    async *streamAssistantResponseEvents(input) {
+      if (!isExploreToolCallRequest(input.toolCallRequest)) {
+        throw new Error(`Explorer tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
+      }
+
+      yield* streamAssistantResponseEventsForExploreToolCall({
+        assistantResponseMessageId: input.assistantResponseMessageId,
+        providerConversationTurn: input.providerConversationTurn,
+        conversationTurnProvider: input.conversationTurnProvider,
+        toolCallId: input.toolCallId,
+        exploreToolCallRequest: input.toolCallRequest,
+        selectedModelId: input.selectedModelId,
+        ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+        workspaceRootPath: input.workspaceRootPath,
+        projectInstructionTracker: input.projectInstructionTracker,
+        toolResultSessionRecorder: input.toolResultSessionRecorder,
+        abortSignal: input.abortSignal,
+        canSpawnExplorer: input.canSpawnExplorer,
+        throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+        diagnosticLogger: input.diagnosticLogger,
+      });
+    },
+  },
+  {
+    supportedToolNames: ["edit", "write"],
+    async *streamAssistantResponseEvents(input) {
+      if (!isFileMutationToolCallRequest(input.toolCallRequest)) {
+        throw new Error(`File mutation tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
+      }
+
+      yield* streamAssistantResponseEventsForFileMutationToolCall({
+        assistantResponseMessageId: input.assistantResponseMessageId,
+        providerConversationTurn: input.providerConversationTurn,
+        toolCallId: input.toolCallId,
+        fileMutationToolCallRequest: input.toolCallRequest,
+        assistantOperatingMode: input.assistantOperatingMode,
+        workspaceRootPath: input.workspaceRootPath,
+        toolResultSessionRecorder: input.toolResultSessionRecorder,
+        abortSignal: input.abortSignal,
+        createPendingToolApproval: input.createPendingToolApproval,
+        throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+        diagnosticLogger: input.diagnosticLogger,
+      });
+    },
+  },
+  {
+    supportedToolNames: ["bash"],
+    async *streamAssistantResponseEvents(input) {
+      if (input.toolCallRequest.toolName !== "bash") {
+        throw new Error(`Bash tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
+      }
+
+      yield* streamAssistantResponseEventsForBashToolCall({
+        assistantResponseMessageId: input.assistantResponseMessageId,
+        providerConversationTurn: input.providerConversationTurn,
+        toolCallId: input.toolCallId,
+        bashToolCallRequest: input.toolCallRequest,
+        assistantOperatingMode: input.assistantOperatingMode,
+        bashToolApprovalMode: input.bashToolApprovalMode,
+        workspaceRootPath: input.workspaceRootPath,
+        workspaceShellCommandExecutor: input.workspaceShellCommandExecutor,
+        toolResultSessionRecorder: input.toolResultSessionRecorder,
+        abortSignal: input.abortSignal,
+        createPendingToolApproval: input.createPendingToolApproval,
+        throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+        diagnosticLogger: input.diagnosticLogger,
+      });
+    },
+  },
+];
 
 export async function* streamAssistantResponseEventsForRequestedToolCall(
   input: StreamAssistantResponseEventsForRequestedToolCallInput,
@@ -93,72 +199,19 @@ export async function* streamAssistantResponseEventsForRequestedToolCall(
     modelContextItemCount: input.conversationHistory.listModelContextItems().length,
   });
 
-  if (isAutoApprovedReadOnlyToolCallRequest(input.toolCallRequest)) {
-    yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
-      assistantResponseMessageId: input.assistantResponseMessageId,
-      providerConversationTurn: input.providerConversationTurn,
-      toolCallId: input.toolCallId,
-      toolCallRequest: input.toolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      projectInstructionTracker: input.projectInstructionTracker,
-      toolResultSessionRecorder,
-      abortSignal: input.abortSignal,
-      throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
-      diagnosticLogger: input.diagnosticLogger,
-    });
-    return;
-  }
-
-  if (isExploreToolCallRequest(input.toolCallRequest)) {
-    yield* streamAssistantResponseEventsForExploreToolCall({
-      assistantResponseMessageId: input.assistantResponseMessageId,
-      providerConversationTurn: input.providerConversationTurn,
-      conversationTurnProvider: input.conversationTurnProvider,
-      toolCallId: input.toolCallId,
-      exploreToolCallRequest: input.toolCallRequest,
-      selectedModelId: input.selectedModelId,
-      ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
-      workspaceRootPath: input.workspaceRootPath,
-      projectInstructionTracker: input.projectInstructionTracker,
-      toolResultSessionRecorder,
-      abortSignal: input.abortSignal,
-      canSpawnExplorer: input.canSpawnExplorer,
-      throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
-      diagnosticLogger: input.diagnosticLogger,
-    });
-    return;
-  }
-
-  if (isFileMutationToolCallRequest(input.toolCallRequest)) {
-    yield* streamAssistantResponseEventsForFileMutationToolCall({
-      assistantResponseMessageId: input.assistantResponseMessageId,
-      providerConversationTurn: input.providerConversationTurn,
-      toolCallId: input.toolCallId,
-      fileMutationToolCallRequest: input.toolCallRequest,
-      assistantOperatingMode: input.assistantOperatingMode,
-      workspaceRootPath: input.workspaceRootPath,
-      toolResultSessionRecorder,
-      abortSignal: input.abortSignal,
-      createPendingToolApproval: input.createPendingToolApproval,
-      throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
-      diagnosticLogger: input.diagnosticLogger,
-    });
-    return;
-  }
-
-  yield* streamAssistantResponseEventsForBashToolCall({
-    assistantResponseMessageId: input.assistantResponseMessageId,
-    providerConversationTurn: input.providerConversationTurn,
-    toolCallId: input.toolCallId,
-    bashToolCallRequest: input.toolCallRequest,
-    assistantOperatingMode: input.assistantOperatingMode,
-    bashToolApprovalMode: input.bashToolApprovalMode,
-    workspaceRootPath: input.workspaceRootPath,
-    workspaceShellCommandExecutor: input.workspaceShellCommandExecutor,
+  yield* resolveRequestedToolCallExecutor(input.toolCallRequest).streamAssistantResponseEvents({
+    ...input,
     toolResultSessionRecorder,
-    abortSignal: input.abortSignal,
-    createPendingToolApproval: input.createPendingToolApproval,
-    throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
-    diagnosticLogger: input.diagnosticLogger,
   });
+}
+
+function resolveRequestedToolCallExecutor(toolCallRequest: ToolCallRequest): RuntimeRequestedToolCallExecutor {
+  const requestedToolCallExecutor = requestedToolCallExecutors.find((candidateToolCallExecutor) =>
+    candidateToolCallExecutor.supportedToolNames.includes(toolCallRequest.toolName)
+  );
+  if (!requestedToolCallExecutor) {
+    throw new Error(`Unsupported tool call request: ${toolCallRequest.toolName}`);
+  }
+
+  return requestedToolCallExecutor;
 }
