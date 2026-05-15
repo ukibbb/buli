@@ -28,6 +28,7 @@ export function clearConversationTranscript(chatSessionState: ChatSessionState):
     conversationTurnStatus: "waiting_for_user_input",
     promptDraft: "",
     promptDraftCursorOffset: 0,
+    pendingPromptImageAttachments: [],
     latestTokenUsage: undefined,
     conversationMessagesById: {},
     conversationMessagePartsById: {},
@@ -164,13 +165,43 @@ function buildHydratedConversationTranscript(
         role: "user",
         messageStatus: "completed",
         createdAtMs: entryIndex,
-        partIds: [userTextPartId],
+        partIds: [],
       });
-      conversationMessagePartsById[userTextPartId] = {
-        id: userTextPartId,
-        partKind: "user_text",
-        text: conversationSessionEntry.promptText,
-      };
+      if (conversationSessionEntry.promptText.length > 0) {
+        appendConversationMessagePart(userMessageId, {
+          id: userTextPartId,
+          partKind: "user_text",
+          text: conversationSessionEntry.promptText,
+        });
+      }
+      for (const [imageAttachmentIndex, imageAttachment] of (conversationSessionEntry.imageAttachments ?? []).entries()) {
+        appendConversationMessagePart(userMessageId, {
+          id: `persisted-entry-${entryIndex}-user-image-${imageAttachmentIndex}`,
+          partKind: "user_image_attachment",
+          attachment: imageAttachment,
+        });
+      }
+      return;
+    }
+
+    if (conversationSessionEntry.entryKind === "conversation_compaction_summary") {
+      markDanglingHydratedToolCallsAsInterrupted(entryIndex);
+      currentAssistantMessageId = undefined;
+      toolCallPartIdByToolCallId.clear();
+      const compactionMessageId = `persisted-entry-${entryIndex}-compaction`;
+      appendConversationMessage({
+        id: compactionMessageId,
+        role: "assistant",
+        messageStatus: "completed",
+        createdAtMs: entryIndex,
+        partIds: [],
+      });
+      appendConversationMessagePart(compactionMessageId, {
+        id: `persisted-entry-${entryIndex}-compaction-summary`,
+        partKind: "assistant_text",
+        partStatus: "completed",
+        rawMarkdownText: [`**Context compacted**`, "", conversationSessionEntry.summaryText].join("\n"),
+      });
       return;
     }
 
@@ -342,11 +373,25 @@ function createToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): Tool
       writtenFilePath: toolCallRequest.writeTargetPath,
     };
   }
+  if (toolCallRequest.toolName === "grep") {
+    return {
+      toolName: "grep",
+      searchPattern: toolCallRequest.regexPattern,
+    };
+  }
+  if (toolCallRequest.toolName === "explore") {
+    return {
+      toolName: "explore",
+      explorationDescription: toolCallRequest.explorationDescription,
+      explorationPrompt: toolCallRequest.explorationPrompt,
+    };
+  }
 
-  return {
-    toolName: "grep",
-    searchPattern: toolCallRequest.regexPattern,
-  };
+  return assertUnhandledToolCallRequest(toolCallRequest);
+}
+
+function assertUnhandledToolCallRequest(toolCallRequest: never): never {
+  throw new Error(`Unhandled tool call request: ${JSON.stringify(toolCallRequest)}`);
 }
 
 function mapToolResultEntryToToolCallStatus(

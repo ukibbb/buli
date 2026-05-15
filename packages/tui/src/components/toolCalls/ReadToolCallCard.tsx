@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ToolCallReadDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
@@ -9,6 +9,7 @@ import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
+import { ToolCallResultDisclosureControl } from "./ToolCallResultDisclosureControl.tsx";
 
 export type ReadToolCallCardProps = {
   toolCallDetail: ToolCallReadDetail;
@@ -18,6 +19,7 @@ export type ReadToolCallCardProps = {
 };
 
 export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
+  const [isReadPreviewExpanded, setIsReadPreviewExpanded] = useState(false);
   const accentColor =
     props.renderState === "failed"
       ? chatScreenTheme.accentRed
@@ -50,7 +52,13 @@ export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
           statusLabel={buildReadStatusLabel(props)}
         />
       }
-      bodyContent={buildReadBodyContent(props)}
+      bodyContent={buildReadBodyContent({
+        isReadPreviewExpanded,
+        onReadPreviewExpansionToggle: () => {
+          setIsReadPreviewExpanded((currentReadPreviewExpanded) => !currentReadPreviewExpanded);
+        },
+        readToolCallCardProps: props,
+      })}
     />
   );
 }
@@ -80,7 +88,14 @@ function buildReadStatusLabel(props: ReadToolCallCardProps): string {
   return "read";
 }
 
-function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
+type ReadBodyContentInput = {
+  readToolCallCardProps: ReadToolCallCardProps;
+  isReadPreviewExpanded: boolean;
+  onReadPreviewExpansionToggle: () => void;
+};
+
+function buildReadBodyContent(input: ReadBodyContentInput): ReactNode {
+  const props = input.readToolCallCardProps;
   if (props.renderState === "failed") {
     if (props.errorText !== undefined) {
       // Status header already carries errorText; suppress body to avoid duplicating it.
@@ -95,18 +110,71 @@ function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
     return undefined;
   }
   return (
-    <FencedCodeBlock
-      variant="embedded"
-      filePath={props.toolCallDetail.readFilePath}
-      codeLines={previewLines.map((previewLine) => ({
-        lineNumber: previewLine.lineNumber,
-        lineText: previewLine.lineText,
-        ...(previewLine.syntaxHighlightSpans
-          ? { syntaxHighlightSpans: previewLine.syntaxHighlightSpans }
-          : {}),
-      }))}
+    <box flexDirection="column" width="100%">
+      <ReadPreviewDisclosureControl
+        isReadPreviewExpanded={input.isReadPreviewExpanded}
+        onReadPreviewExpansionToggle={input.onReadPreviewExpansionToggle}
+        readPreviewSummaryText={buildReadPreviewSummaryText(props.toolCallDetail)}
+      />
+      {input.isReadPreviewExpanded ? (
+        <box marginTop={1} width="100%">
+          <FencedCodeBlock
+            variant="embedded"
+            filePath={props.toolCallDetail.readFilePath}
+            codeLines={previewLines.map((previewLine) => ({
+              lineNumber: previewLine.lineNumber,
+              lineText: previewLine.lineText,
+              ...(previewLine.syntaxHighlightSpans
+                ? { syntaxHighlightSpans: previewLine.syntaxHighlightSpans }
+                : {}),
+            }))}
+          />
+        </box>
+      ) : null}
+    </box>
+  );
+}
+
+function ReadPreviewDisclosureControl(props: {
+  readPreviewSummaryText: string;
+  isReadPreviewExpanded: boolean;
+  onReadPreviewExpansionToggle: () => void;
+}): ReactNode {
+  return (
+    <ToolCallResultDisclosureControl
+      isResultExpanded={props.isReadPreviewExpanded}
+      onResultExpansionToggle={props.onReadPreviewExpansionToggle}
+      resultSummaryText={props.readPreviewSummaryText}
     />
   );
+}
+
+function buildReadPreviewSummaryText(toolCallDetail: ToolCallReadDetail): string {
+  const previewLines = toolCallDetail.previewLines ?? [];
+  const firstReturnedLineNumber = previewLines.at(0)?.lineNumber;
+  const returnedLineCount = toolCallDetail.returnedLineCount ?? previewLines.length;
+  const totalReadLineCountText = toolCallDetail.readLineCount !== undefined ? ` of ${toolCallDetail.readLineCount}` : "";
+
+  return `Read ${buildReadLineRangeText({
+    firstReturnedLineNumber,
+    returnedLineCount,
+  })}${totalReadLineCountText} from ${toolCallDetail.readFilePath}`;
+}
+
+function buildReadLineRangeText(input: {
+  firstReturnedLineNumber: number | undefined;
+  returnedLineCount: number;
+}): string {
+  if (input.firstReturnedLineNumber === undefined || input.returnedLineCount <= 0) {
+    return "content";
+  }
+
+  const lastReturnedLineNumber = input.firstReturnedLineNumber + input.returnedLineCount - 1;
+  if (input.firstReturnedLineNumber === lastReturnedLineNumber) {
+    return `line ${input.firstReturnedLineNumber}`;
+  }
+
+  return `lines ${input.firstReturnedLineNumber}-${lastReturnedLineNumber}`;
 }
 
 function formatByteCount(byteCount: number): string {

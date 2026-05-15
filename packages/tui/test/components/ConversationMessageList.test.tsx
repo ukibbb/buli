@@ -22,6 +22,7 @@ describe("ConversationMessageList", () => {
         isReasoningSummaryVisible={true}
         resolveConversationMessageParts={() => []}
         conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
       />,
       { width: 80, height: 8 },
     );
@@ -89,6 +90,7 @@ describe("ConversationMessageList", () => {
         isReasoningSummaryVisible={true}
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
       />,
       { width: 100, height: 24 },
     );
@@ -133,6 +135,7 @@ describe("ConversationMessageList", () => {
         isReasoningSummaryVisible={false}
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
       />,
       { width: 100, height: 8 },
     );
@@ -162,6 +165,7 @@ describe("ConversationMessageList", () => {
           text: `Message ${messageId}`,
         }]}
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
+        horizontalRuleColor="#10B981"
       />,
       { width: 80, height: 20 },
     );

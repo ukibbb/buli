@@ -146,7 +146,7 @@ function renderConversationSessionTranscriptEntry(
       entryIndex,
       entryClassName: "user",
       roleLabel: "User",
-      bodyHtml: `<p>${escapeHtml(conversationSessionEntry.promptText)}</p>`,
+      bodyHtml: renderUserPromptBlock(conversationSessionEntry),
     });
   }
 
@@ -183,6 +183,17 @@ function renderConversationSessionTranscriptEntry(
     });
   }
 
+  if (conversationSessionEntry.entryKind === "conversation_compaction_summary") {
+    return renderConversationSessionTranscriptEntryShell({
+      entryAnchorId,
+      indexNumberLabel,
+      entryIndex,
+      entryClassName: "assistant compaction-summary",
+      roleLabel: "Compaction",
+      bodyHtml: renderConversationCompactionSummaryBlock(conversationSessionEntry),
+    });
+  }
+
   const isFailedToolResult = conversationSessionEntry.entryKind === "failed_tool_result";
   const isDeniedToolResult = conversationSessionEntry.entryKind === "denied_tool_result";
   const variantClassName = isFailedToolResult ? "failed" : isDeniedToolResult ? "denied" : "tool-result";
@@ -213,6 +224,35 @@ function renderConversationSessionTranscriptEntryShell(input: {
   </div>
   <div class="body">${input.bodyHtml}</div>
 </article>`;
+}
+
+function renderUserPromptBlock(conversationSessionEntry: Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>): string {
+  const imageAttachments = conversationSessionEntry.imageAttachments ?? [];
+  const promptTextHtml = conversationSessionEntry.promptText.length > 0
+    ? `<p>${escapeHtml(conversationSessionEntry.promptText)}</p>`
+    : imageAttachments.length > 0
+    ? ""
+    : '<p class="muted">No prompt text was recorded.</p>';
+  const imageAttachmentsHtml = imageAttachments
+    .map((imageAttachment, imageAttachmentIndex) => {
+      const imageLabel = imageAttachment.fileName ?? `image-${imageAttachmentIndex + 1}`;
+      return `<figure class="user-image-attachment" style="margin:16px 0 0;">
+  <img src="${escapeHtmlAttribute(imageAttachment.dataUrl)}" alt="${escapeHtmlAttribute(`Attached image: ${imageLabel}`)}" style="display:block;max-width:100%;height:auto;border:1px solid var(--rule);background:var(--paper-edge);">
+  <figcaption style="margin-top:6px;font:500 11px/1.4 var(--mono);color:var(--ink-soft);">${escapeHtml(imageLabel)} · ${escapeHtml(imageAttachment.mimeType)}</figcaption>
+</figure>`;
+    })
+    .join("\n");
+
+  return `${promptTextHtml}${imageAttachmentsHtml}`;
+}
+
+function renderConversationCompactionSummaryBlock(
+  conversationSessionEntry: Extract<ConversationSessionEntry, { entryKind: "conversation_compaction_summary" }>,
+): string {
+  return [
+    `<p class="status-notice">Context compacted from ${conversationSessionEntry.compactedEntryCount} entries.</p>`,
+    renderAssistantMarkdownText(conversationSessionEntry.summaryText),
+  ].join("\n");
 }
 
 function renderToolCallRequestBlock(toolCallRequest: ToolCallRequest): string {
@@ -259,9 +299,16 @@ function renderToolCallRequestBlock(toolCallRequest: ToolCallRequest): string {
 </div>`;
   }
 
-  return `<div class="tool-block">
+  if (toolCallRequest.toolName === "write") {
+    return `<div class="tool-block">
   <div class="tool-summary"><span class="tool-name">write</span><span class="tool-purpose">${escapeHtml(toolCallRequest.writeTargetPath)}</span></div>
   <pre class="tool-cmd">${escapeHtml(toolCallRequest.fileContent)}</pre>
+</div>`;
+  }
+
+  return `<div class="tool-block">
+  <div class="tool-summary"><span class="tool-name">explore</span><span class="tool-purpose">${escapeHtml(toolCallRequest.explorationDescription)}</span></div>
+  <pre class="tool-cmd">${escapeHtml(toolCallRequest.explorationPrompt)}</pre>
 </div>`;
 }
 
@@ -319,6 +366,9 @@ function renderToolDetailSummary(toolCallDetail: ToolCallDetail): string {
   if (toolCallDetail.toolName === "write") {
     const lineChangeHtml = renderToolDetailLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
     return `<div class="tool-summary"><span class="tool-name">write</span><span class="tool-purpose">${escapeHtml(toolCallDetail.writtenFilePath)}</span>${lineChangeHtml}</div>`;
+  }
+  if (toolCallDetail.toolName === "explore") {
+    return `<div class="tool-summary"><span class="tool-name">explore</span><span class="tool-purpose">${escapeHtml(toolCallDetail.explorationDescription)}</span></div>`;
   }
   return `<div class="tool-summary"><span class="tool-name">${escapeHtml(toolCallDetail.toolName)}</span></div>`;
 }

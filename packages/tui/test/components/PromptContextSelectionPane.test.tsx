@@ -19,6 +19,7 @@ describe("PromptContextSelectionPane", () => {
           },
         ]}
         highlightedPromptContextCandidateIndex={0}
+        accentColor="#00ff00"
       />,
       { width: 58, height: 6 },
     );
@@ -37,6 +38,7 @@ describe("PromptContextSelectionPane", () => {
           promptReferenceText: `@project/file-${index + 1}.ts`,
         }))}
         highlightedPromptContextCandidateIndex={6}
+        accentColor="#00ff00"
       />,
       { width: 80, height: 8 },
     );

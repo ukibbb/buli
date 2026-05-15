@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ConversationTurnStatus } from "@buli/contracts";
+import type { ConversationTurnStatus, UserPromptImageAttachment } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
@@ -20,6 +20,7 @@ export const INPUT_PANEL_NATURAL_ROW_COUNT = 2 + 1 + PROMPT_TEXTAREA_ROW_COUNT +
 export type InputPanelProps = {
   promptDraft: string;
   promptDraftCursorOffset: number;
+  pendingPromptImageAttachments?: readonly UserPromptImageAttachment[];
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   promptInputHintOverride?: string;
@@ -33,9 +34,11 @@ export type InputPanelProps = {
   contextWindowTokenCapacity: number | undefined;
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
+  onNativeClipboardPasteRequested?: () => void | Promise<void>;
 };
 
 export function InputPanel(props: InputPanelProps): ReactNode {
+  const pendingPromptImageAttachmentCount = props.pendingPromptImageAttachments?.length ?? 0;
   const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
     props.assistantResponseStatus === "waiting_for_tool_approval";
   const activeTurnStatusText = props.isActiveTurnInterruptConfirmationArmed
@@ -65,6 +68,11 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         <text fg={props.accentColor}>
           <b>{">"}</b>
         </text>
+        {props.pendingPromptImageAttachments?.map((attachment, attachmentIndex) => (
+          <text fg={chatScreenTheme.accentCyan} key={attachment.attachmentId}>
+            {`[Image ${attachmentIndex + 1}]`}
+          </text>
+        ))}
         <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
           {props.isPromptInputDisabled ? (
             <PromptDraftText
@@ -81,6 +89,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
               isFocused={true}
               onPromptDraftEdited={props.onPromptDraftEdited}
               onPromptSubmitted={props.onPromptSubmitted}
+              onNativeClipboardPasteRequested={props.onNativeClipboardPasteRequested}
             />
           )}
         </box>
@@ -96,6 +105,10 @@ export function InputPanel(props: InputPanelProps): ReactNode {
             <SnakeAnimationIndicator />
             <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">{activeTurnStatusText}</text>
           </box>
+        ) : pendingPromptImageAttachmentCount > 0 ? (
+          <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
+            {`${pendingPromptImageAttachmentCount} image${pendingPromptImageAttachmentCount === 1 ? "" : "s"} attached · backspace removes last`}
+          </text>
         ) : props.promptInputHintOverride !== undefined ? (
           <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">{props.promptInputHintOverride}</text>
         ) : <text />}

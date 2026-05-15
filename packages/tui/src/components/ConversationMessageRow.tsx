@@ -6,6 +6,7 @@ import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
 import { RateLimitNoticeBlock } from "./behavior/RateLimitNoticeBlock.tsx";
 import { TurnFooter } from "./TurnFooter.tsx";
 import { ThinkingStatusLine } from "./ThinkingStatusLine.tsx";
+import { UserImageAttachmentBlock } from "./UserImageAttachmentBlock.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
@@ -14,13 +15,22 @@ import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
 function ConversationMessagePartView(props: {
   conversationMessagePart: ConversationMessagePart;
   isReasoningSummaryVisible: boolean;
+  horizontalRuleColor: string;
 }): ReactNode {
   const { conversationMessagePart } = props;
   if (conversationMessagePart.partKind === "user_text") {
     return <UserPromptBlock promptText={conversationMessagePart.text} />;
   }
+  if (conversationMessagePart.partKind === "user_image_attachment") {
+    return <UserImageAttachmentBlock attachment={conversationMessagePart.attachment} />;
+  }
   if (conversationMessagePart.partKind === "assistant_text") {
-    return <AssistantTextPartView assistantTextConversationMessagePart={conversationMessagePart} />;
+    return (
+      <AssistantTextPartView
+        assistantTextConversationMessagePart={conversationMessagePart}
+        horizontalRuleColor={props.horizontalRuleColor}
+      />
+    );
   }
   if (conversationMessagePart.partKind === "assistant_reasoning") {
     return (
@@ -67,6 +77,7 @@ export function ConversationMessageRow(props: {
   conversationMessage: ConversationMessage;
   conversationMessageParts: readonly ConversationMessagePart[];
   isReasoningSummaryVisible: boolean;
+  horizontalRuleColor: string;
 }): ReactNode {
   const shouldShowEmptyAssistantThinkingLine =
     props.conversationMessage.role === "assistant" &&
@@ -88,6 +99,7 @@ export function ConversationMessageRow(props: {
           <ConversationMessagePartView
             conversationMessagePart={conversationMessagePart}
             isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+            horizontalRuleColor={props.horizontalRuleColor}
           />
         </box>
       ))}

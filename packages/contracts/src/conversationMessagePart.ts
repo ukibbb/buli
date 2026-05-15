@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PlanStepSchema } from "./planProposal.ts";
 import { TokenUsageSchema } from "./provider.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
+import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 
 export const AssistantTextPartStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed", "interrupted"]);
 export const AssistantReasoningPartStatusSchema = z.enum(["streaming", "completed", "interrupted"]);
@@ -19,6 +20,14 @@ export const UserTextConversationMessagePartSchema = z
     id: z.string().min(1),
     partKind: z.literal("user_text"),
     text: z.string(),
+  })
+  .strict();
+
+export const UserImageAttachmentConversationMessagePartSchema = z
+  .object({
+    id: z.string().min(1),
+    partKind: z.literal("user_image_attachment"),
+    attachment: UserPromptImageAttachmentSchema,
   })
   .strict();
 
@@ -113,6 +122,7 @@ export const AssistantTurnSummaryConversationMessagePartSchema = z
 
 export const ConversationMessagePartSchema = z.discriminatedUnion("partKind", [
   UserTextConversationMessagePartSchema,
+  UserImageAttachmentConversationMessagePartSchema,
   AssistantTextConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
@@ -138,3 +148,4 @@ export type AssistantErrorNoticeConversationMessagePart = z.infer<typeof Assista
 export type AssistantInterruptedNoticeConversationMessagePart = z.infer<typeof AssistantInterruptedNoticeConversationMessagePartSchema>;
 export type AssistantTurnSummaryConversationMessagePart = z.infer<typeof AssistantTurnSummaryConversationMessagePartSchema>;
 export type ConversationMessagePart = z.infer<typeof ConversationMessagePartSchema>;
+export type UserImageAttachmentConversationMessagePart = z.infer<typeof UserImageAttachmentConversationMessagePartSchema>;

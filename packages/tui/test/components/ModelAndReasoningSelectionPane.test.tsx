@@ -9,6 +9,7 @@ describe("ModelAndReasoningSelectionPane", () => {
         headingText="Select model"
         visibleChoices={["claude-3-5-sonnet", "claude-3-5-haiku"]}
         highlightedChoiceIndex={0}
+        accentColor="#00ff00"
       />,
       { width: 60, height: 10 },
     );
@@ -25,6 +26,7 @@ describe("ModelAndReasoningSelectionPane", () => {
         headingText="Select reasoning effort"
         visibleChoices={["none", "low", "high"]}
         highlightedChoiceIndex={1}
+        accentColor="#00ff00"
       />,
       { width: 60, height: 10 },
     );

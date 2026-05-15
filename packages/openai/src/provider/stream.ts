@@ -552,6 +552,14 @@ export async function* parseOpenAiStream(
       };
     }
 
+    if (toolCallState.toolName === "explore") {
+      return {
+        toolName: "explore",
+        explorationDescription: readRequiredStringToolArgument(parsedArguments, "description", "explore"),
+        explorationPrompt: readRequiredStringToolArgument(parsedArguments, "prompt", "explore"),
+      };
+    }
+
     throw new Error(`Unsupported tool requested by OpenAI: ${toolCallState.toolName}`);
   }
 

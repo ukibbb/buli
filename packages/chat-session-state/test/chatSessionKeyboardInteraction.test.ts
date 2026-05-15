@@ -67,6 +67,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_submit_effect_for_
   expect(interaction.chatSessionKeyboardEffect).toEqual({
     effectType: "stream_assistant_response_for_submitted_prompt",
     submittedPromptText: "Tell me what changed",
+    submittedPromptImageAttachments: [],
   });
 });
 

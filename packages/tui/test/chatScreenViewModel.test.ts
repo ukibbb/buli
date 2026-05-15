@@ -49,5 +49,5 @@ test("buildChatScreenViewModel derives context usage and minimum input branch", 
   expect(viewModel.totalContextTokensUsed).toBe(60);
   expect(viewModel.contextWindowTokenCapacity).toBe(1_050_000);
   expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(true);
-  expect(viewModel.promptInputRegionColumnCount).toBe(100);
+  expect(viewModel.inputRegionRowCount).toBe(1);
 });

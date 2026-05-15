@@ -8,6 +8,7 @@ import type {
   PendingToolApprovalRequest,
   ReasoningEffort,
   TokenUsage,
+  UserPromptImageAttachment,
 } from "@buli/contracts";
 import { DEFAULT_ASSISTANT_OPERATING_MODE } from "@buli/contracts";
 import type { PromptContextCandidate } from "@buli/engine";
@@ -94,6 +95,7 @@ export type ChatSessionState = {
   conversationTurnStatus: ConversationTurnStatus;
   promptDraft: string;
   promptDraftCursorOffset: number;
+  pendingPromptImageAttachments: UserPromptImageAttachment[];
   latestTokenUsage: TokenUsage | undefined;
   conversationMessagesById: Record<string, ConversationMessage>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
@@ -122,6 +124,7 @@ export function createInitialChatSessionState(input: {
     conversationTurnStatus: "waiting_for_user_input",
     promptDraft: "",
     promptDraftCursorOffset: 0,
+    pendingPromptImageAttachments: [],
     latestTokenUsage: undefined,
     conversationMessagesById: {},
     conversationMessagePartsById: {},

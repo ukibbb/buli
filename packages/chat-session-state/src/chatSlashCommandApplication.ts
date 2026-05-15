@@ -6,6 +6,7 @@ import { toggleReasoningSummaryVisibility } from "./reasoningSummaryVisibilityRe
 
 export type ChatSlashCommandApplicationEffect =
   | { effectType: "clear_current_conversation_session" }
+  | { effectType: "compact_current_conversation_session" }
   | { effectType: "export_current_conversation_session" }
   | { effectType: "load_available_assistant_models" }
   | { effectType: "load_conversation_sessions" }
@@ -30,6 +31,13 @@ export function applyChatSlashCommandToChatSessionState(
     return createChatSlashCommandApplication({
       nextChatSessionState: chatSessionState,
       chatSlashCommandApplicationEffect: { effectType: "clear_current_conversation_session" },
+    });
+  }
+
+  if (slashCommandValue === "compact") {
+    return createChatSlashCommandApplication({
+      nextChatSessionState: chatSessionState,
+      chatSlashCommandApplicationEffect: { effectType: "compact_current_conversation_session" },
     });
   }
 

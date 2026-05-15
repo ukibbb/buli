@@ -92,6 +92,7 @@ async function renderChatScreen(input: {
     conversationSessionEntries: readonly ConversationSessionEntry[];
   }>;
   exportCurrentConversationSession?: () => Promise<{ exportFilePath: string; exportFileUrl: string }>;
+  compactCurrentConversationSession?: () => Promise<{ conversationSessionEntries: readonly ConversationSessionEntry[] }>;
   onConversationCleared?: () => void;
 } = {}): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
@@ -105,6 +106,7 @@ async function renderChatScreen(input: {
       {...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {})}
       {...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {})}
       {...(input.exportCurrentConversationSession ? { exportCurrentConversationSession: input.exportCurrentConversationSession } : {})}
+      {...(input.compactCurrentConversationSession ? { compactCurrentConversationSession: input.compactCurrentConversationSession } : {})}
       {...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {})}
     />,
     { width: 120, height: 28 },
@@ -166,21 +168,37 @@ async function renderChatScreen(input: {
   };
 }
 
+function findRenderedRowContaining(renderedOutput: string, expectedText: string): string {
+  const renderedRow = renderedOutput.split("\n").find((row) => row.includes(expectedText));
+  if (!renderedRow) {
+    throw new Error(`expected rendered output to contain a row with ${expectedText}`);
+  }
+
+  return renderedRow;
+}
+
 test("ChatScreen shows user-facing slash commands after typing a bare slash", async () => {
   const renderedChatScreen = await renderChatScreen();
 
   const frame = await renderedChatScreen.typeText("/");
 
-  expect(frame).toContain("Commands");
+  expect(frame).not.toContain("Commands");
   expect(frame).toContain("/help");
   expect(frame).toContain("/model");
   expect(frame).toContain("/clear");
+  expect(frame).toContain("/compact");
   expect(frame).toContain("/sessions");
   expect(frame).toContain("/export-session");
   expect(frame).toContain("/thinking");
   expect(frame).toContain("Hide reasoning summaries");
   expect(frame).not.toContain("/scroll-up");
   expect(frame).not.toContain("/bottom");
+
+  const helpCommandRow = findRenderedRowContaining(frame, "/help");
+  const promptDraftRow = findRenderedRowContaining(frame, "> /");
+  const helpCommandIndentationWidth = helpCommandRow.length - helpCommandRow.trimStart().length;
+  const promptDraftIndentationWidth = promptDraftRow.length - promptDraftRow.trimStart().length;
+  expect(helpCommandIndentationWidth).toBe(promptDraftIndentationWidth);
 });
 
 test("ChatScreen exports the current session through slash command", async () => {
@@ -202,6 +220,54 @@ test("ChatScreen exports the current session through slash command", async () =>
   expect(exportCount).toBe(1);
   expect(exportedFrame).not.toContain("Exported session");
   expect(exportedFrame).not.toContain("/tmp/buli-session.html");
+});
+
+test("ChatScreen compacts the current session through slash command", async () => {
+  let compactCount = 0;
+  const renderedChatScreen = await renderChatScreen({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Previous prompt",
+        modelFacingPromptText: "Previous prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Previous answer",
+      },
+    ],
+    compactCurrentConversationSession: async () => {
+      compactCount += 1;
+      return {
+        conversationSessionEntries: [
+          {
+            entryKind: "user_prompt",
+            promptText: "Previous prompt",
+            modelFacingPromptText: "Previous prompt",
+          },
+          {
+            entryKind: "assistant_message",
+            assistantMessageStatus: "completed",
+            assistantMessageText: "Previous answer",
+          },
+          {
+            entryKind: "conversation_compaction_summary",
+            summaryText: "Goal: continue the manual compaction implementation.",
+            compactedEntryCount: 2,
+          },
+        ],
+      };
+    },
+  });
+
+  await renderedChatScreen.typeText("/compact");
+  await renderedChatScreen.pressEnter();
+  const compactedFrame = await renderedChatScreen.waitForAssistantEvents();
+
+  expect(compactCount).toBe(1);
+  expect(compactedFrame).toContain("Context compacted");
+  expect(compactedFrame).toContain("continue the manual compaction implementation");
 });
 
 test("ChatScreen hydrates the initial session and switches sessions through slash command", async () => {
@@ -280,6 +346,7 @@ test("ChatScreen opens command help through slash command instead of question ma
   expect(helpFrame).toContain("/help");
   expect(helpFrame).toContain("/model");
   expect(helpFrame).toContain("/clear");
+  expect(helpFrame).toContain("/compact");
   expect(helpFrame).toContain("/thinking");
   expect(helpFrame).toContain("Hide reasoning summaries");
 

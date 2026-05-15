@@ -19,6 +19,17 @@ test("buildChatSlashCommands_describes_current_reasoning_summary_visibility", ()
   );
 });
 
+test("buildChatSlashCommands_includes_manual_compaction", () => {
+  const slashCommands = buildChatSlashCommands({
+    isReasoningSummaryVisible: true,
+    selectedAssistantOperatingMode: "implementation",
+  });
+
+  expect(slashCommands.find((slashCommand) => slashCommand.value === "compact")?.description).toBe(
+    "Summarize old context for this session",
+  );
+});
+
 test("buildChatSlashCommands_describes_current_assistant_operating_mode", () => {
   const planModeSlashCommands = buildChatSlashCommands({
     isReasoningSummaryVisible: true,

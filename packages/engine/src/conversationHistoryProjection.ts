@@ -19,6 +19,9 @@ export function projectConversationSessionEntryToModelContextItems(
       {
         itemKind: "user_message",
         messageText: conversationSessionEntry.modelFacingPromptText,
+        ...(conversationSessionEntry.imageAttachments?.length
+          ? { imageAttachments: [...conversationSessionEntry.imageAttachments] }
+          : {}),
       },
     ];
   }
@@ -36,16 +39,34 @@ export function projectConversationSessionEntryToModelContextItems(
     ];
   }
 
+  if (conversationSessionEntry.entryKind === "conversation_compaction_summary") {
+    return [
+      {
+        itemKind: "compaction_summary",
+        summaryText: conversationSessionEntry.summaryText,
+      },
+    ];
+  }
+
   return [];
 }
 
 export function projectConversationSessionEntriesToModelContextItems(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): ModelContextItem[] {
+  const effectiveConversationSessionEntries = sliceConversationSessionEntriesFromLatestCompactionSummary(
+    conversationSessionEntries,
+  );
   const modelContextItems: ModelContextItem[] = [];
   let pendingConversationSessionTurn: ConversationSessionTurn | undefined;
 
-  for (const conversationSessionEntry of conversationSessionEntries) {
+  for (const conversationSessionEntry of effectiveConversationSessionEntries) {
+    if (conversationSessionEntry.entryKind === "conversation_compaction_summary") {
+      pendingConversationSessionTurn = undefined;
+      modelContextItems.push(...projectConversationSessionEntryToModelContextItems(conversationSessionEntry));
+      continue;
+    }
+
     if (conversationSessionEntry.entryKind === "user_prompt") {
       pendingConversationSessionTurn = {
         userPromptEntry: conversationSessionEntry,
@@ -70,6 +91,18 @@ export function projectConversationSessionEntriesToModelContextItems(
   }
 
   return modelContextItems;
+}
+
+function sliceConversationSessionEntriesFromLatestCompactionSummary(
+  conversationSessionEntries: readonly ConversationSessionEntry[],
+): readonly ConversationSessionEntry[] {
+  const latestCompactionSummaryEntryIndex = conversationSessionEntries.findLastIndex(
+    (conversationSessionEntry) => conversationSessionEntry.entryKind === "conversation_compaction_summary",
+  );
+
+  return latestCompactionSummaryEntryIndex === -1
+    ? conversationSessionEntries
+    : conversationSessionEntries.slice(latestCompactionSummaryEntryIndex);
 }
 
 function projectConversationSessionTurnToModelContextItems(

@@ -14,7 +14,7 @@ describe("BracketedTarget (opentui)", () => {
     expect(frame).toContain("[bun test]");
   });
 
-  test("middle-truncates long plain-text targets before the terminal wraps them", async () => {
+  test("clips long plain-text targets without rendering ellipses", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BracketedTarget
         accentColor={chatScreenTheme.accentGreen}
@@ -25,8 +25,9 @@ describe("BracketedTarget (opentui)", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("[");
-    expect(frame).toContain("…");
     expect(frame).toContain("]");
+    expect(frame).not.toContain("...");
+    expect(frame).not.toContain("…");
     expect(frame).not.toContain("ConversationMessageList.tsx");
   });
 

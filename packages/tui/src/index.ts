@@ -1,13 +1,18 @@
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import React from "react";
-import type { BuliDiagnosticLogger } from "@buli/contracts";
+import type { BuliDiagnosticLogger, UserPromptImageAttachment } from "@buli/contracts";
 import type { AssistantConversationRunner } from "@buli/engine";
 import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
 import { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 export { ChatScreen } from "./ChatScreen.tsx";
-export type { ChatScreenProps, ConversationSessionExportResult, ConversationSessionSwitchResult } from "./ChatScreen.tsx";
+export type {
+  ChatScreenProps,
+  ConversationSessionCompactionResult,
+  ConversationSessionExportResult,
+  ConversationSessionSwitchResult,
+} from "./ChatScreen.tsx";
 export { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 
 type EnvironmentVariableSnapshot = {
@@ -58,6 +63,8 @@ export type RenderChatScreenInTerminalInput = {
   loadConversationSessions?: ChatScreenProps["loadConversationSessions"];
   switchConversationSession?: ChatScreenProps["switchConversationSession"];
   exportCurrentConversationSession?: ChatScreenProps["exportCurrentConversationSession"];
+  compactCurrentConversationSession?: ChatScreenProps["compactCurrentConversationSession"];
+  readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -206,6 +213,12 @@ export async function renderChatScreenInTerminalWithRuntime<
         ...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {}),
         ...(input.exportCurrentConversationSession
           ? { exportCurrentConversationSession: input.exportCurrentConversationSession }
+          : {}),
+        ...(input.compactCurrentConversationSession
+          ? { compactCurrentConversationSession: input.compactCurrentConversationSession }
+          : {}),
+        ...(input.readClipboardImageAttachment
+          ? { readClipboardImageAttachment: input.readClipboardImageAttachment }
           : {}),
         ...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {}),
         selectedModelId: input.selectedModelId,

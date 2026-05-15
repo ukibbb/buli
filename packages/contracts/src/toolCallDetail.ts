@@ -166,6 +166,16 @@ export const ToolCallTaskDetailSchema = z
   .strict();
 export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 
+export const ToolCallExploreDetailSchema = z
+  .object({
+    toolName: z.literal("explore"),
+    explorationDescription: z.string().min(1),
+    explorationPrompt: z.string().optional(),
+    explorationResultSummary: z.string().optional(),
+  })
+  .strict();
+export type ToolCallExploreDetail = z.infer<typeof ToolCallExploreDetailSchema>;
+
 export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
   ToolCallGrepDetailSchema,
@@ -175,5 +185,6 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallBashDetailSchema,
   ToolCallTodoWriteDetailSchema,
   ToolCallTaskDetailSchema,
+  ToolCallExploreDetailSchema,
 ]);
 export type ToolCallDetail = z.infer<typeof ToolCallDetailSchema>;

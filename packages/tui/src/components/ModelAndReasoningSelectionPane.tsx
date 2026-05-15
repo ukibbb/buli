@@ -6,6 +6,7 @@ export type ModelAndReasoningSelectionPaneProps = {
   headingText: string;
   visibleChoices: string[];
   highlightedChoiceIndex: number;
+  accentColor: string;
 };
 
 export function ModelAndReasoningSelectionPane(
@@ -14,12 +15,11 @@ export function ModelAndReasoningSelectionPane(
   return (
     <box
       borderStyle="rounded"
-      borderColor={chatScreenTheme.border}
+      borderColor={props.accentColor}
       backgroundColor={chatScreenTheme.surfaceOne}
       flexDirection="column"
       flexShrink={0}
       marginX={2}
-      marginBottom={1}
       paddingX={1}
     >
       <text fg={chatScreenTheme.textMuted}>{props.headingText}</text>

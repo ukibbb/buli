@@ -53,6 +53,14 @@ export const WriteToolCallRequestSchema = z
   })
   .strict();
 
+export const ExploreToolCallRequestSchema = z
+  .object({
+    toolName: z.literal("explore"),
+    explorationDescription: z.string().min(1),
+    explorationPrompt: z.string().min(1),
+  })
+  .strict();
+
 export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   BashToolCallRequestSchema,
   ReadToolCallRequestSchema,
@@ -60,6 +68,7 @@ export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   GrepToolCallRequestSchema,
   EditToolCallRequestSchema,
   WriteToolCallRequestSchema,
+  ExploreToolCallRequestSchema,
 ]);
 
 export type BashToolCallRequest = z.infer<typeof BashToolCallRequestSchema>;
@@ -68,4 +77,5 @@ export type GlobToolCallRequest = z.infer<typeof GlobToolCallRequestSchema>;
 export type GrepToolCallRequest = z.infer<typeof GrepToolCallRequestSchema>;
 export type EditToolCallRequest = z.infer<typeof EditToolCallRequestSchema>;
 export type WriteToolCallRequest = z.infer<typeof WriteToolCallRequestSchema>;
+export type ExploreToolCallRequest = z.infer<typeof ExploreToolCallRequestSchema>;
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;

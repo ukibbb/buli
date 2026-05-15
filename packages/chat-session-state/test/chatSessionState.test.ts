@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AvailableAssistantModel } from "@buli/contracts";
 import {
+  appendPromptImageAttachmentToDraft,
   applyAssistantResponseEventToChatSessionState,
   applyChatSessionKeyboardInputToChatSessionState,
   clearConversationTranscript,
@@ -167,6 +168,79 @@ test("applyChatSessionKeyboardInputToChatSessionState inserts pasted text at the
   expect(keyboardInteraction.nextChatSessionState.promptDraftCursorOffset).toBe("Hello pasted text".length);
 });
 
+test("submitPromptDraft submits image attachments with the user message", () => {
+  const promptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+    fileName: "clipboard.png",
+  };
+  const chatSessionState = appendPromptImageAttachmentToDraft(
+    insertTextIntoPromptDraftAtCursor(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      "Describe this",
+    ),
+    promptImageAttachment,
+  );
+
+  const promptDraftSubmission = submitPromptDraft(chatSessionState);
+
+  expect(promptDraftSubmission.submittedPromptText).toBe("Describe this");
+  expect(promptDraftSubmission.submittedPromptImageAttachments).toEqual([promptImageAttachment]);
+  expect(promptDraftSubmission.nextChatSessionState.pendingPromptImageAttachments).toEqual([]);
+  const userMessage = listOrderedConversationMessages(promptDraftSubmission.nextChatSessionState)[0];
+  expect(userMessage?.partIds).toHaveLength(2);
+  expect(Object.values(promptDraftSubmission.nextChatSessionState.conversationMessagePartsById)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ partKind: "user_text", text: "Describe this" }),
+      expect.objectContaining({ partKind: "user_image_attachment", attachment: promptImageAttachment }),
+    ]),
+  );
+});
+
+test("submitPromptDraft allows image-only prompts", () => {
+  const promptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
+  const promptDraftSubmission = submitPromptDraft(
+    appendPromptImageAttachmentToDraft(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      promptImageAttachment,
+    ),
+  );
+
+  expect(promptDraftSubmission.submittedPromptText).toBe("");
+  expect(promptDraftSubmission.submittedPromptImageAttachments).toEqual([promptImageAttachment]);
+});
+
+test("hydrateConversationTranscriptFromSessionEntries restores user image attachments", () => {
+  const promptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Look at this",
+        modelFacingPromptText: "Look at this",
+        imageAttachments: [promptImageAttachment],
+      },
+    ],
+  );
+
+  expect(Object.values(chatSessionState.conversationMessagePartsById)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ partKind: "user_text", text: "Look at this" }),
+      expect.objectContaining({ partKind: "user_image_attachment", attachment: promptImageAttachment }),
+    ]),
+  );
+});
+
 test("applyChatSessionKeyboardInputToChatSessionState moves the prompt cursor with Home and End", () => {
   let chatSessionState = insertTextIntoPromptDraftAtCursor(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
@@ -318,6 +392,15 @@ test("hydrateConversationTranscriptFromSessionEntries creates tool details from 
           fileContent: "generated\n",
         },
       },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-explore",
+        toolCallRequest: {
+          toolName: "explore",
+          explorationDescription: "map runtime",
+          explorationPrompt: "Inspect runtime dispatch.",
+        },
+      },
     ],
   );
 
@@ -348,6 +431,14 @@ test("hydrateConversationTranscriptFromSessionEntries creates tool details from 
     {
       partKind: "assistant_tool_call",
       toolCallDetail: { toolName: "write", writtenFilePath: "generated.txt" },
+    },
+    {
+      partKind: "assistant_tool_call",
+      toolCallDetail: {
+        toolName: "explore",
+        explorationDescription: "map runtime",
+        explorationPrompt: "Inspect runtime dispatch.",
+      },
     },
     {
       partKind: "assistant_interrupted_notice",

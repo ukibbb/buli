@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { ConversationMessage, UserTextConversationMessagePart } from "@buli/contracts";
+import type {
+  ConversationMessage,
+  ConversationMessagePart,
+  UserPromptImageAttachment,
+} from "@buli/contracts";
 import {
   extractActivePromptContextQueryFromPromptDraft,
   reconcileSelectedPromptContextReferenceTextsWithPromptDraft,
@@ -25,8 +29,16 @@ function createPromptDraftEditedState(input: {
 function appendConversationMessage(input: {
   chatSessionState: ChatSessionState;
   conversationMessage: ConversationMessage;
-  conversationMessagePart: UserTextConversationMessagePart;
+  conversationMessageParts: readonly ConversationMessagePart[];
 }): ChatSessionState {
+  const appendedConversationMessagePartsById = input.conversationMessageParts.reduce<Record<string, ConversationMessagePart>>(
+    (conversationMessagePartsById, conversationMessagePart) => ({
+      ...conversationMessagePartsById,
+      [conversationMessagePart.id]: conversationMessagePart,
+    }),
+    {},
+  );
+
   return {
     ...input.chatSessionState,
     conversationMessagesById: {
@@ -35,9 +47,33 @@ function appendConversationMessage(input: {
     },
     conversationMessagePartsById: {
       ...input.chatSessionState.conversationMessagePartsById,
-      [input.conversationMessagePart.id]: input.conversationMessagePart,
+      ...appendedConversationMessagePartsById,
     },
     orderedConversationMessageIds: [...input.chatSessionState.orderedConversationMessageIds, input.conversationMessage.id],
+  };
+}
+
+export function appendPromptImageAttachmentToDraft(
+  chatSessionState: ChatSessionState,
+  pendingPromptImageAttachment: UserPromptImageAttachment,
+): ChatSessionState {
+  return {
+    ...chatSessionState,
+    pendingPromptImageAttachments: [
+      ...chatSessionState.pendingPromptImageAttachments,
+      pendingPromptImageAttachment,
+    ],
+  };
+}
+
+export function removeLastPromptImageAttachmentFromDraft(chatSessionState: ChatSessionState): ChatSessionState {
+  if (chatSessionState.pendingPromptImageAttachments.length === 0) {
+    return chatSessionState;
+  }
+
+  return {
+    ...chatSessionState,
+    pendingPromptImageAttachments: chatSessionState.pendingPromptImageAttachments.slice(0, -1),
   };
 }
 
@@ -131,41 +167,55 @@ export function removePromptDraftCharacterAtCursor(chatSessionState: ChatSession
 export function submitPromptDraft(chatSessionState: ChatSessionState): {
   nextChatSessionState: ChatSessionState;
   submittedPromptText: string | undefined;
+  submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
 } {
   const submittedPromptText = chatSessionState.promptDraft.trim();
+  const submittedPromptImageAttachments = [...chatSessionState.pendingPromptImageAttachments];
   if (
-    !submittedPromptText ||
+    (submittedPromptText.length === 0 && submittedPromptImageAttachments.length === 0) ||
     chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
     chatSessionState.conversationTurnStatus === "waiting_for_tool_approval" ||
     chatSessionState.promptContextSelectionState.step !== "hidden" ||
     chatSessionState.modelAndReasoningSelectionState.step !== "hidden"
   ) {
-    return { nextChatSessionState: chatSessionState, submittedPromptText: undefined };
+    return { nextChatSessionState: chatSessionState, submittedPromptText: undefined, submittedPromptImageAttachments: [] };
   }
 
   const userMessageId = `user-${randomUUID()}`;
-  const userTextPartId = `user-text-${randomUUID()}`;
+  const userTextConversationMessagePart = submittedPromptText.length > 0
+    ? {
+        id: `user-text-${randomUUID()}`,
+        partKind: "user_text" as const,
+        text: submittedPromptText,
+      }
+    : undefined;
+  const userImageAttachmentConversationMessageParts = submittedPromptImageAttachments.map((attachment) => ({
+    id: `user-image-${randomUUID()}`,
+    partKind: "user_image_attachment" as const,
+    attachment,
+  }));
+  const userConversationMessageParts = [
+    ...(userTextConversationMessagePart ? [userTextConversationMessagePart] : []),
+    ...userImageAttachmentConversationMessageParts,
+  ];
   const submittedAtMs = Date.now();
-  const userTextConversationMessagePart: UserTextConversationMessagePart = {
-    id: userTextPartId,
-    partKind: "user_text",
-    text: submittedPromptText,
-  };
   const userConversationMessage: ConversationMessage = {
     id: userMessageId,
     role: "user",
     messageStatus: "completed",
     createdAtMs: submittedAtMs,
-    partIds: [userTextPartId],
+    partIds: userConversationMessageParts.map((conversationMessagePart) => conversationMessagePart.id),
   };
 
   return {
     submittedPromptText,
+    submittedPromptImageAttachments,
     nextChatSessionState: appendConversationMessage({
       chatSessionState: {
         ...chatSessionState,
         promptDraft: "",
         promptDraftCursorOffset: 0,
+        pendingPromptImageAttachments: [],
         conversationTurnStatus: "streaming_assistant_response",
         latestTokenUsage: undefined,
         pendingToolApprovalRequest: undefined,
@@ -173,7 +223,7 @@ export function submitPromptDraft(chatSessionState: ChatSessionState): {
         selectedPromptContextReferenceTexts: [],
       },
       conversationMessage: userConversationMessage,
-      conversationMessagePart: userTextConversationMessagePart,
+      conversationMessageParts: userConversationMessageParts,
     }),
   };
 }

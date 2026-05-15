@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "../glyphs.ts";
-import { shortenTerminalTextWithMiddleEllipsis } from "../shortenTerminalTextWithMiddleEllipsis.ts";
 
 export type ToolCallHeaderLeftProps = {
   toolGlyph: string;
@@ -43,13 +42,12 @@ export function ToolCallHeaderRight(props: ToolCallHeaderRightProps): ReactNode 
       : props.statusKind === "error"
         ? glyphs.close
         : glyphs.statusDot;
-  const displayedStatusLabel = shortenTerminalTextWithMiddleEllipsis(props.statusLabel, 32);
 
   return (
     <box flexDirection="row" alignItems="center" flexShrink={1} justifyContent="flex-end" minWidth={0} overflow="hidden">
       <box flexShrink={1} minWidth={0} overflow="hidden">
-        <text truncate={true} wrapMode="none">
-          <b fg={props.statusColor}>{displayedStatusLabel}</b>
+        <text wrapMode="none" width="100%">
+          <b fg={props.statusColor}>{props.statusLabel}</b>
         </text>
       </box>
       <box flexShrink={0} marginLeft={1}>

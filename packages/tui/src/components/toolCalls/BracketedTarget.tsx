@@ -1,22 +1,11 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { shortenTerminalTextWithMiddleEllipsis } from "../shortenTerminalTextWithMiddleEllipsis.ts";
 
 export type BracketedTargetProps =
   | { accentColor: string; targetText: string; children?: never; maximumTargetTextCharacterCount?: number }
   | { accentColor: string; targetText?: never; children: ReactNode; maximumTargetTextCharacterCount?: number };
 
-const defaultMaximumTargetTextCharacterCount = 32;
-
 export function BracketedTarget(props: BracketedTargetProps): ReactNode {
-  const displayedTargetText =
-    props.targetText !== undefined
-      ? shortenTerminalTextWithMiddleEllipsis(
-          props.targetText,
-          props.maximumTargetTextCharacterCount ?? defaultMaximumTargetTextCharacterCount,
-        )
-      : undefined;
-
   return (
     <box flexDirection="row" alignItems="center" flexShrink={1} minWidth={0} overflow="hidden">
       <text>
@@ -28,8 +17,8 @@ export function BracketedTarget(props: BracketedTargetProps): ReactNode {
         </box>
       ) : (
         <box flexShrink={1} minWidth={0} overflow="hidden">
-          <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
-            {displayedTargetText}
+          <text fg={chatScreenTheme.textMuted} wrapMode="none" width="100%">
+            {props.targetText}
           </text>
         </box>
       )}

@@ -257,6 +257,33 @@ test("OpenAiProviderConversationTurn passes the abort signal to response fetch",
   expect(receivedAbortSignals).toEqual([abortController.signal]);
 });
 
+test("OpenAiProviderConversationTurn restricts tool definitions when availableToolNames is provided", async () => {
+  const requestBodies: string[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are Buli Explorer.",
+    conversationSessionEntries: createConversationSessionEntries("Explore runtime"),
+    availableToolNames: ["read", "glob", "grep"],
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  for await (const _emittedEvent of providerTurn.streamProviderEvents()) {
+    // Consume the stream so the request is issued.
+  }
+
+  const requestBody = JSON.parse(requestBodies[0] ?? "{}") as { tools?: Array<{ name?: string }> };
+  expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep"]);
+});
+
 test("OpenAiProviderConversationTurn sends reasoning effort without summaries when reasoning is disabled", async () => {
   const requestBodies: string[] = [];
   const queuedResponses = [

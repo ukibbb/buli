@@ -24,6 +24,7 @@ describe("ConversationSessionSelectionPane", () => {
         ]}
         highlightedConversationSessionIndex={1}
         activeConversationSessionId="session-2"
+        accentColor="#00ff00"
       />,
       { width: 80, height: 8 },
     );
@@ -48,6 +49,7 @@ describe("ConversationSessionSelectionPane", () => {
         }))}
         highlightedConversationSessionIndex={8}
         activeConversationSessionId="session-1"
+        accentColor="#00ff00"
       />,
       { width: 80, height: 10 },
     );

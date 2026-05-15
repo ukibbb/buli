@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildBuliSystemPrompt } from "../src/systemPrompt.ts";
+import { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "../src/systemPrompt.ts";
 
 test("describes buli as Lukasz Bulinski's learning-first software engineering partner", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
@@ -40,6 +40,8 @@ test("prefers typed workspace tools over bash for normal inspection", () => {
   expect(systemPromptText).toContain("use read for known files and directories");
   expect(systemPromptText).toContain("use glob for finding files by path pattern");
   expect(systemPromptText).toContain("use grep for searching file contents");
+  expect(systemPromptText).toContain("use explore for broad, multi-step codebase discovery");
+  expect(systemPromptText).toContain("Do not use explore for a simple single-file read");
   expect(systemPromptText).toContain("Do not use bash for simple file reads, file discovery, or text search.");
 });
 
@@ -175,4 +177,14 @@ test("documents truthful execution without requiring tool approval in prose", ()
     "Do not ask for permission solely because a tool or bash command is needed.",
   );
   expect(systemPromptText).not.toContain("require explicit user approval");
+});
+
+test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspection", () => {
+  const systemPromptText = buildBuliExplorerSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain("Buli Explorer");
+  expect(systemPromptText).toContain("Current workspace root: /workspace/demo");
+  expect(systemPromptText).toContain("Use only read, glob, and grep.");
+  expect(systemPromptText).toContain("Do not modify files, run shell commands");
+  expect(systemPromptText).toContain("Return a concise report for the parent assistant.");
 });

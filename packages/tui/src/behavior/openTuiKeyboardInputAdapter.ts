@@ -14,6 +14,7 @@ export function normalizeOpenTuiKeyEventForChatSession(
   const keyName = mapOpenTuiKeyNameToChatSessionKeyboardKeyName(
     openTuiKeyboardEvent.name,
     openTuiKeyboardEvent.sequence,
+    openTuiKeyboardEvent.ctrl === true,
   );
   return {
     keyName,
@@ -27,7 +28,13 @@ export function normalizeOpenTuiKeyEventForChatSession(
 function mapOpenTuiKeyNameToChatSessionKeyboardKeyName(
   openTuiKeyName: string | undefined,
   keySequence: string | undefined,
+  isCtrlPressed = false,
 ): ChatSessionKeyboardKeyName | undefined {
+  const normalizedOpenTuiKeyName = openTuiKeyName?.toLowerCase();
+  if (isCtrlPressed && (normalizedOpenTuiKeyName === "v" || keySequence === "\x16")) {
+    return "paste";
+  }
+
   if (keySequence === "\t") {
     return "tab";
   }
@@ -36,7 +43,6 @@ function mapOpenTuiKeyNameToChatSessionKeyboardKeyName(
     return "escape";
   }
 
-  const normalizedOpenTuiKeyName = openTuiKeyName?.toLowerCase();
   switch (normalizedOpenTuiKeyName) {
     case "backspace":
     case "delete":

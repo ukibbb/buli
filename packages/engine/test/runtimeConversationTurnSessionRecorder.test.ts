@@ -5,10 +5,16 @@ import { RuntimeConversationTurnSessionRecorder } from "../src/runtimeConversati
 
 test("RuntimeConversationTurnSessionRecorder records an accepted user prompt once", () => {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const imageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
   const conversationHistory = new InMemoryConversationHistory();
   const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
     conversationHistory,
     userPromptText: "Use @notes.txt in the answer",
+    userPromptImageAttachments: [imageAttachment],
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
 
@@ -21,6 +27,7 @@ test("RuntimeConversationTurnSessionRecorder records an accepted user prompt onc
       entryKind: "user_prompt",
       promptText: "Use @notes.txt in the answer",
       modelFacingPromptText: "Expanded prompt with notes",
+      imageAttachments: [imageAttachment],
     },
   ]);
   expect(diagnosticEvents).toEqual<BuliDiagnosticLogEvent[]>([

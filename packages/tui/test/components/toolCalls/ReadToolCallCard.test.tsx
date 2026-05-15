@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { ReadToolCallCard } from "../../../src/components/toolCalls/ReadToolCallCard.tsx";
 
 describe("ReadToolCallCard", () => {
-  test("completed_shows_file_path_and_line_count", async () => {
+  test("completed_starts_collapsed_with_read_range_summary", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReadToolCallCard
         renderState="completed"
@@ -23,7 +24,41 @@ describe("ReadToolCallCard", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("[/src/app.ts]");
     expect(frame).toContain("42 lines");
+    expect(frame).toContain("Read line 1 of 42 from /src/app.ts");
+    expect(frame).toContain("click to show content");
+    expect(frame).not.toContain("import React");
+  });
+
+  test("completed_expands_read_content_when_summary_is_clicked", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <ReadToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "read",
+          readFilePath: "/src/app.ts",
+          readLineCount: 42,
+          returnedLineCount: 2,
+          previewLines: [
+            { lineNumber: 2, lineText: "import React from 'react';" },
+            { lineNumber: 3, lineText: "export function App() {}" },
+          ],
+        }}
+      />,
+      { width: 90, height: 20 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("Read lines 2-3 of 42 from /src/app.ts");
+    expect(captureCharFrame()).not.toContain("import React");
+
+    await act(async () => {
+      await mockMouse.click(6, 3);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("click to hide content");
     expect(frame).toContain("import React");
+    expect(frame).toContain("export function App");
   });
 
   test("completed_shows_truncation_state", async () => {
@@ -86,7 +121,7 @@ describe("ReadToolCallCard", () => {
     expect(identityLine ?? "").toContain("packages/");
     expect(identityLine ?? "").not.toContain("ConversationMessageList.tsx");
     expect(frame.split("\n").filter((line) => line.includes("packages/"))).toHaveLength(1);
-    expect(frame).toContain("...");
+    expect(frame).not.toContain("...");
     expect(frame).toContain("reading");
   });
 

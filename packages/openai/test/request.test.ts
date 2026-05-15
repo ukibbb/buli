@@ -27,6 +27,33 @@ test("createOpenAiResponsesInputItems serializes replayed conversation messages 
   ]);
 });
 
+test("createOpenAiResponsesInputItems serializes user prompt image attachments as Responses image input", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "What is in this image?",
+        modelFacingPromptText: "What is in this image?",
+        imageAttachments: [
+          {
+            attachmentId: "image-1",
+            mimeType: "image/png",
+            dataUrl: "data:image/png;base64,aGVsbG8=",
+          },
+        ],
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text: "What is in this image?" },
+        { type: "input_image", image_url: "data:image/png;base64,aGVsbG8=" },
+      ],
+    },
+  ]);
+});
+
 test("createOpenAiResponsesInputItems serializes incomplete assistant turns as model context", () => {
   expect(
     createOpenAiResponsesInputItems([
@@ -112,6 +139,48 @@ test("createOpenAiResponsesInputItems skips interrupted assistant turns", () => 
       },
     ]),
   ).toEqual([
+    {
+      role: "user",
+      content: "Next prompt",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems starts at the latest compaction summary", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Old prompt",
+        modelFacingPromptText: "Old prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Old answer",
+      },
+      {
+        entryKind: "conversation_compaction_summary",
+        summaryText: "Goal: continue the compaction implementation.",
+        compactedEntryCount: 2,
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: [
+        "<conversation_compaction_summary>",
+        "The earlier conversation was compacted. Continue from this summary:",
+        "",
+        "Goal: continue the compaction implementation.",
+        "</conversation_compaction_summary>",
+      ].join("\n"),
+    },
     {
       role: "user",
       content: "Next prompt",
@@ -385,6 +454,25 @@ test("createOpenAiResponsesInputItems includes typed tools in legacy transcript 
         failureExplanation: "invalid regex",
       },
       {
+        entryKind: "tool_call",
+        toolCallId: "call_explore",
+        toolCallRequest: {
+          toolName: "explore",
+          explorationDescription: "map runtime",
+          explorationPrompt: "Inspect runtime and tool execution flow.",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_explore",
+        toolCallDetail: {
+          toolName: "explore",
+          explorationDescription: "map runtime",
+          explorationResultSummary: "runtime.ts dispatches requested tools through runtimeToolCallExecution.ts",
+        },
+        toolResultText: "runtime.ts dispatches requested tools through runtimeToolCallExecution.ts",
+      },
+      {
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
         assistantMessageText: "Done.",
@@ -404,6 +492,8 @@ test("createOpenAiResponsesInputItems includes typed tools in legacy transcript 
         "[assistant tool result call_glob]\npackages/contracts/src/index.ts",
         "[assistant tool call call_grep]\nTool: grep\nPattern: ToolCallRequest\nPath: packages\nInclude: *.ts",
         "[assistant tool failure call_grep]\nGrep failed: invalid regex",
+        "[assistant tool call call_explore]\nTool: explore\nDescription: map runtime\nPrompt: Inspect runtime and tool execution flow.",
+        "[assistant tool result call_explore]\nruntime.ts dispatches requested tools through runtimeToolCallExecution.ts",
       ].join("\n\n"),
     },
     {

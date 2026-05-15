@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ToolCallGlobDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FileReference } from "../primitives/FileReference.tsx";
@@ -9,6 +9,7 @@ import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
+import { ToolCallResultDisclosureControl } from "./ToolCallResultDisclosureControl.tsx";
 
 export type GlobToolCallCardProps = {
   toolCallDetail: ToolCallGlobDetail;
@@ -20,6 +21,7 @@ export type GlobToolCallCardProps = {
 const MAX_VISIBLE_GLOB_PATHS = 24;
 
 export function GlobToolCallCard(props: GlobToolCallCardProps): ReactNode {
+  const [isGlobResultExpanded, setIsGlobResultExpanded] = useState(false);
   const accentColor =
     props.renderState === "failed"
       ? chatScreenTheme.accentRed
@@ -52,7 +54,13 @@ export function GlobToolCallCard(props: GlobToolCallCardProps): ReactNode {
           statusLabel={buildGlobStatusLabel(props)}
         />
       }
-      bodyContent={buildGlobBodyContent(props)}
+      bodyContent={buildGlobBodyContent({
+        globToolCallCardProps: props,
+        isGlobResultExpanded,
+        onGlobResultExpansionToggle: () => {
+          setIsGlobResultExpanded((currentGlobResultExpanded) => !currentGlobResultExpanded);
+        },
+      })}
     />
   );
 }
@@ -75,7 +83,14 @@ function buildGlobStatusLabel(props: GlobToolCallCardProps): string {
   return "done";
 }
 
-function buildGlobBodyContent(props: GlobToolCallCardProps): ReactNode {
+type GlobBodyContentInput = {
+  globToolCallCardProps: GlobToolCallCardProps;
+  isGlobResultExpanded: boolean;
+  onGlobResultExpansionToggle: () => void;
+};
+
+function buildGlobBodyContent(input: GlobBodyContentInput): ReactNode {
+  const props = input.globToolCallCardProps;
   if (props.renderState === "failed") {
     if (props.errorText !== undefined) {
       return undefined;
@@ -87,12 +102,41 @@ function buildGlobBodyContent(props: GlobToolCallCardProps): ReactNode {
     return undefined;
   }
   return (
-    <box flexDirection="column" paddingX={1} width="100%">
-      {matchedPaths.map((matchedPath, index) => (
-        <box key={`glob-path-${index}`} width="100%">
-          <FileReference filePath={matchedPath} variant="inline" />
+    <box flexDirection="column" width="100%">
+      <ToolCallResultDisclosureControl
+        isResultExpanded={input.isGlobResultExpanded}
+        onResultExpansionToggle={input.onGlobResultExpansionToggle}
+        resultSummaryText={buildGlobResultSummaryText({
+          toolCallDetail: props.toolCallDetail,
+          visiblePathCount: matchedPaths.length,
+        })}
+      />
+      {input.isGlobResultExpanded ? (
+        <box flexDirection="column" marginTop={1} paddingX={1} width="100%">
+          {matchedPaths.map((matchedPath, index) => (
+            <box key={`glob-path-${index}`} width="100%">
+              <FileReference filePath={matchedPath} variant="inline" />
+            </box>
+          ))}
         </box>
-      ))}
+      ) : null}
     </box>
   );
+}
+
+function buildGlobResultSummaryText(input: {
+  toolCallDetail: ToolCallGlobDetail;
+  visiblePathCount: number;
+}): string {
+  const totalMatchedPathCount = input.toolCallDetail.matchedPathCount;
+  const visiblePathCountText = totalMatchedPathCount !== undefined && totalMatchedPathCount !== input.visiblePathCount
+    ? `${input.visiblePathCount} of ${totalMatchedPathCount}`
+    : String(input.visiblePathCount);
+  const pathCountForPlural = totalMatchedPathCount ?? input.visiblePathCount;
+  const pathCountLabel = pathCountForPlural === 1 ? "matched path" : "matched paths";
+  const searchDirectoryText = input.toolCallDetail.searchDirectoryPath
+    ? ` in ${input.toolCallDetail.searchDirectoryPath}`
+    : "";
+
+  return `${visiblePathCountText} ${pathCountLabel} for ${input.toolCallDetail.globPattern}${searchDirectoryText}`;
 }

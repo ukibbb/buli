@@ -49,6 +49,8 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     expect(identityLine ?? "").toContain("[");
     expect(identityLine ?? "").toContain("packages/");
     expect(frame.split("\n").filter((line) => line.includes("packages/"))).toHaveLength(1);
+    expect(frame).not.toContain("...");
+    expect(frame).not.toContain("…");
   });
 
   test("ToolCallHeaderLeft omits the target slot when no target content is provided", async () => {
@@ -81,7 +83,7 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     expect(frame).toContain("✓");
   });
 
-  test("ToolCallHeaderRight shortens long status labels to one terminal row", async () => {
+  test("ToolCallHeaderRight clips long status labels without rendering ellipses", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallHeaderRight
         statusColor={chatScreenTheme.accentRed}
@@ -92,7 +94,8 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("…");
+    expect(frame).not.toContain("...");
+    expect(frame).not.toContain("…");
     expect(frame).toContain("×");
     expect(frame).not.toContain("unsafe file path");
   });

@@ -30,7 +30,7 @@ describe("FileReference", () => {
     expect(captureCharFrame()).toContain("src/index.ts");
   });
 
-  test("inline_variant_truncates_long_paths_before_they_wrap", async () => {
+  test("inline_variant_clips_long_paths_without_rendering_ellipses", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <FileReference
         variant="inline"
@@ -41,7 +41,8 @@ describe("FileReference", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("...");
+    expect(frame).not.toContain("...");
+    expect(frame).not.toContain("…");
     expect(frame).not.toContain("ConversationMessageList.tsx");
   });
 });

@@ -6,11 +6,17 @@ import {
 } from "../src/index.ts";
 
 test("projectConversationSessionEntryToModelContextItems maps each session entry kind explicitly", () => {
+  const imageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
       promptText: "Inspect @notes.txt",
       modelFacingPromptText: "Inspect @notes.txt\n\nAttached prompt context...",
+      imageAttachments: [imageAttachment],
     },
     {
       entryKind: "assistant_message",
@@ -34,6 +40,11 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       assistantMessageStatus: "interrupted",
       assistantMessageText: "Interrupted partial answer",
       interruptionReason: "Interrupted by user.",
+    },
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue from compacted context.",
+      compactedEntryCount: 10,
     },
     {
       entryKind: "tool_call",
@@ -71,6 +82,7 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
     {
       itemKind: "user_message",
       messageText: "Inspect @notes.txt\n\nAttached prompt context...",
+      imageAttachments: [imageAttachment],
     },
     {
       itemKind: "assistant_message",
@@ -79,6 +91,10 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
     {
       itemKind: "assistant_message",
       messageText: "Partial answer",
+    },
+    {
+      itemKind: "compaction_summary",
+      summaryText: "Goal: continue from compacted context.",
     },
   ]);
 });
@@ -295,4 +311,37 @@ test("projectConversationSessionEntriesToModelContextItems skips open tool turns
   ];
 
   expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([]);
+});
+
+test("projectConversationSessionEntriesToModelContextItems starts at the latest compaction summary", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Old prompt",
+      modelFacingPromptText: "Old prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Old answer",
+    },
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue the compaction implementation.",
+      compactedEntryCount: 2,
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Next prompt",
+      modelFacingPromptText: "Next prompt",
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "compaction_summary",
+      summaryText: "Goal: continue the compaction implementation.",
+    },
+    { itemKind: "user_message", messageText: "Next prompt" },
+  ]);
 });

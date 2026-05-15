@@ -64,3 +64,12 @@ test("normalizeOpenTuiKeyEventForChatSession keeps plain character input", () =>
     isMetaPressed: false,
   });
 });
+
+test("normalizeOpenTuiKeyEventForChatSession maps Ctrl V to paste", () => {
+  expect(normalizeOpenTuiKeyEventForChatSession({ name: "v", sequence: "\x16", ctrl: true, meta: false })).toEqual({
+    keyName: "paste",
+    textInput: undefined,
+    isCtrlPressed: true,
+    isMetaPressed: false,
+  });
+});

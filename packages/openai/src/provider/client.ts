@@ -4,6 +4,7 @@ import type {
   BuliDiagnosticLogger,
   ConversationSessionEntry,
   ModelContextItem,
+  ProviderAvailableToolName,
   ReasoningEffort,
 } from "@buli/contracts";
 import { z } from "zod";
@@ -31,6 +32,7 @@ export type OpenAiConversationTurnRequest = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
+  availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
   abortSignal?: AbortSignal;
 };
 
@@ -190,6 +192,7 @@ export class OpenAiProvider {
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
+      ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       systemPromptText: input.systemPromptText,
       conversationSessionEntries: input.conversationSessionEntries,

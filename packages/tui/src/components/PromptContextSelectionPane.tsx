@@ -6,6 +6,7 @@ import { SelectionPaneSelect } from "./SelectionPaneSelect.tsx";
 export type PromptContextSelectionPaneProps = {
   promptContextCandidates: readonly PromptContextCandidate[];
   highlightedPromptContextCandidateIndex: number;
+  accentColor: string;
 };
 
 const MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT = 6;
@@ -14,12 +15,11 @@ export function PromptContextSelectionPane(props: PromptContextSelectionPaneProp
   return (
     <box
       borderStyle="rounded"
-      borderColor={chatScreenTheme.border}
+      borderColor={props.accentColor}
       backgroundColor={chatScreenTheme.surfaceOne}
       flexDirection="column"
       flexShrink={0}
       marginX={2}
-      marginBottom={1}
       paddingX={1}
     >
       <text fg={chatScreenTheme.textMuted}>Context</text>

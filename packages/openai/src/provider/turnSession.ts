@@ -4,6 +4,7 @@ import type {
   ConversationSessionEntry,
   OpenAiProviderTurnReplay,
   OpenAiProviderTurnReplayInputItem,
+  ProviderAvailableToolName,
   ProviderStreamEvent,
   ReasoningEffort,
   TokenUsage,
@@ -40,6 +41,7 @@ function createHttpRequestBody(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
+  availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
   systemPromptText: string;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 }) {
@@ -50,7 +52,7 @@ function createHttpRequestBody(input: {
     store: false,
     ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
     input: input.openAiInputItems,
-    tools: createOpenAiToolDefinitions(),
+    tools: createOpenAiToolDefinitions({ availableToolNames: input.availableToolNames }),
     parallel_tool_calls: false,
     ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] } : {}),
     ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
@@ -88,6 +90,7 @@ export class OpenAiProviderConversationTurn {
   readonly selectedModelId: string;
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
   readonly promptCacheKey: string | undefined;
+  readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly abortSignal: AbortSignal | undefined;
   readonly systemPromptText: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
@@ -108,6 +111,7 @@ export class OpenAiProviderConversationTurn {
     selectedModelId: string;
     selectedReasoningEffort?: ReasoningEffort;
     promptCacheKey?: string;
+    availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     abortSignal?: AbortSignal;
     systemPromptText: string;
     conversationSessionEntries: readonly ConversationSessionEntry[];
@@ -120,6 +124,7 @@ export class OpenAiProviderConversationTurn {
     this.selectedModelId = input.selectedModelId;
     this.selectedReasoningEffort = input.selectedReasoningEffort;
     this.promptCacheKey = input.promptCacheKey;
+    this.availableToolNames = input.availableToolNames;
     this.abortSignal = input.abortSignal;
     this.systemPromptText = input.systemPromptText;
     this.diagnosticLogger = input.diagnosticLogger;
@@ -181,6 +186,7 @@ export class OpenAiProviderConversationTurn {
         selectedModelId: this.selectedModelId,
         ...(this.selectedReasoningEffort ? { selectedReasoningEffort: this.selectedReasoningEffort } : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
+        ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
         systemPromptText: this.systemPromptText,
         openAiInputItems: this.openAiConversationInputItems,
       });
@@ -458,6 +464,7 @@ function summarizeOpenAiInputItemsForDiagnostics(
   let userMessageInputItemCount = 0;
   let assistantMessageInputItemCount = 0;
   let messageInputContentLength = 0;
+  let userMessageInputImageCount = 0;
   let reasoningInputItemCount = 0;
   let reasoningEncryptedContentItemCount = 0;
   let functionCallInputItemCount = 0;
@@ -471,7 +478,18 @@ function summarizeOpenAiInputItemsForDiagnostics(
       } else {
         assistantMessageInputItemCount += 1;
       }
-      messageInputContentLength += openAiInputItem.content.length;
+      if (typeof openAiInputItem.content === "string") {
+        messageInputContentLength += openAiInputItem.content.length;
+      } else {
+        messageInputContentLength += openAiInputItem.content.reduce((contentLength, contentPart) => {
+          if (contentPart.type === "input_text") {
+            return contentLength + contentPart.text.length;
+          }
+
+          return contentLength + contentPart.image_url.length;
+        }, 0);
+        userMessageInputImageCount += openAiInputItem.content.filter((contentPart) => contentPart.type === "input_image").length;
+      }
       continue;
     }
 
@@ -497,6 +515,7 @@ function summarizeOpenAiInputItemsForDiagnostics(
     userMessageInputItemCount,
     assistantMessageInputItemCount,
     messageInputContentLength,
+    userMessageInputImageCount,
     reasoningInputItemCount,
     reasoningEncryptedContentItemCount,
     functionCallInputItemCount,

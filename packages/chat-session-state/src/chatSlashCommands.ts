@@ -3,6 +3,7 @@ import type { SlashCommand } from "./chatSessionState.ts";
 
 export type ChatSlashCommandValue =
   | "clear"
+  | "compact"
   | "export-session"
   | "help"
   | "implementation"
@@ -23,6 +24,7 @@ export function buildChatSlashCommands(input: {
     { name: "help", value: "help", description: "Show available commands" },
     { name: "model", value: "model", description: "Choose OpenAI model and reasoning effort" },
     { name: "clear", value: "clear", description: "Clear conversation history" },
+    { name: "compact", value: "compact", description: "Summarize old context for this session" },
     { name: "sessions", value: "sessions", description: "Switch saved conversation session" },
     { name: "export-session", value: "export-session", description: "Export current session as HTML" },
     {

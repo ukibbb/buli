@@ -8,6 +8,7 @@ import {
   PromptContextCandidateCatalog,
   parseBashToolApprovalMode,
   type BashToolApprovalMode,
+  type ConversationCompactionRequest,
 } from "@buli/engine";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 import { renderChatScreenInTerminal } from "@buli/tui";
@@ -186,6 +187,19 @@ export async function runInteractiveChat(input: {
         },
       });
       return exportResult;
+    },
+    compactCurrentConversationSession: async (compactionRequest: ConversationCompactionRequest) => {
+      await assistantConversationRunner.compactConversationSession(compactionRequest);
+      const conversationSessionEntries = conversationHistory.listConversationSessionEntries();
+      diagnosticLogger?.({
+        subsystem: "cli",
+        eventName: "conversation_session.compacted",
+        fields: {
+          conversationSessionId: activeConversationSessionId,
+          conversationSessionEntryCount: conversationSessionEntries.length,
+        },
+      });
+      return { conversationSessionEntries };
     },
     initialConversationSessionId: activeConversationSession.sessionId,
     initialConversationSessionEntries,

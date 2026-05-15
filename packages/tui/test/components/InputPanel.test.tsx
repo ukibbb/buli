@@ -33,6 +33,7 @@ describe("InputPanel", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("chat");
     expect(frame).toContain("claude-3-5-sonnet");
+    expect(frame).not.toContain("Ask Buli");
   });
 
   test("renders_prompt_draft_without_shortcut_hints_when_idle", async () => {
@@ -111,7 +112,7 @@ describe("InputPanel", () => {
     expect(frame).not.toContain("Selection is open");
   });
 
-  test("wraps_a_long_prompt_draft_inside_the_textarea_rows_at_narrow_widths", async () => {
+  test("keeps_a_long_prompt_draft_inside_the_single_visible_textarea_row", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
         promptDraft="@/Users/lukasz/Desktop/Projekty/buli/.bun/install/cache/@babel/helper-annotate-as-pure@7.27.3@@@1/README.md"
@@ -132,7 +133,7 @@ describe("InputPanel", () => {
 
     await renderOnce();
 
-    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /install\/cache|helper-annotate|README\.md/)).toBeLessThanOrEqual(3);
+    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /install\/cache|helper-annotate|README\.md/)).toBeLessThanOrEqual(1);
   });
 
   test("renders_the_prompt_draft_through_the_textarea", async () => {

@@ -6,17 +6,14 @@ import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.t
 export type AssistantMarkdownBlockProps = {
   markdownText: string;
   isStreaming: boolean;
+  horizontalRuleColor: string;
 };
 
 const assistantMarkdownSyntaxStyle = SyntaxStyle.fromStyles({
   default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
   emphasis: { fg: RGBA.fromHex(chatScreenTheme.textPrimary), italic: true },
-  strong: { fg: RGBA.fromHex(chatScreenTheme.textPrimary), bold: true },
+  strong: { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
   link: { fg: RGBA.fromHex(chatScreenTheme.accentCyan), underline: true },
-  "markup.heading.1": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
-  "markup.heading.2": { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
-  "markup.heading.3": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.heading": { fg: RGBA.fromHex(chatScreenTheme.textPrimary), bold: true },
   "markup.list": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
   "markup.quote": { fg: RGBA.fromHex(chatScreenTheme.textSecondary), italic: true },
   "markup.raw": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
@@ -27,22 +24,86 @@ const assistantMarkdownSyntaxStyle = SyntaxStyle.fromStyles({
   type: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
 });
 
-const renderMarkdownNodeWithImmediatePlainTextFallback: NonNullable<MarkdownOptions["renderNode"]> = (
-  _token,
-  context,
-) => {
-  const defaultRenderable = context.defaultRender();
+const assistantMarkdownHeadingSyntaxStyleByDepth = {
+  1: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true } }),
+  2: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true } }),
+  3: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true } }),
+  fallback: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary), bold: true } }),
+} as const;
 
-  if (defaultRenderable instanceof CodeRenderable) {
-    // OpenTUI renders prose through an internal markdown CodeRenderable. Keep that
-    // default path, but avoid a blank first frame while Tree-sitter highlighting runs.
-    defaultRenderable.drawUnstyledText = true;
-  }
+const assistantMarkdownHorizontalRuleText = "─".repeat(300);
+const dashOnlyParagraphPattern = /^[-*_\s]{3,}$/;
 
-  return defaultRenderable;
-};
+type AssistantMarkdownToken = Parameters<NonNullable<MarkdownOptions["renderNode"]>>[0];
+type AssistantMarkdownHeadingToken = AssistantMarkdownToken & { type: "heading"; text: string; depth: number };
+type AssistantMarkdownParagraphToken = AssistantMarkdownToken & { type: "paragraph"; text: string };
+
+function isAssistantMarkdownHeadingToken(token: AssistantMarkdownToken): token is AssistantMarkdownHeadingToken {
+  return (
+    token.type === "heading" &&
+    "text" in token &&
+    typeof token.text === "string" &&
+    "depth" in token &&
+    typeof token.depth === "number"
+  );
+}
+
+function isAssistantMarkdownDashOnlyParagraphToken(
+  token: AssistantMarkdownToken,
+): token is AssistantMarkdownParagraphToken {
+  return (
+    token.type === "paragraph" &&
+    "text" in token &&
+    typeof token.text === "string" &&
+    dashOnlyParagraphPattern.test(token.text.trim())
+  );
+}
+
+function resolveAssistantMarkdownHeadingSyntaxStyle(depth: number): SyntaxStyle {
+  if (depth === 1) return assistantMarkdownHeadingSyntaxStyleByDepth[1];
+  if (depth === 2) return assistantMarkdownHeadingSyntaxStyleByDepth[2];
+  if (depth === 3) return assistantMarkdownHeadingSyntaxStyleByDepth[3];
+  return assistantMarkdownHeadingSyntaxStyleByDepth.fallback;
+}
 
 export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): ReactNode {
+  const horizontalRuleSyntaxStyle = SyntaxStyle.fromStyles({
+    default: { fg: RGBA.fromHex(props.horizontalRuleColor) },
+  });
+
+  const renderMarkdownNodeWithImmediatePlainTextFallback: NonNullable<MarkdownOptions["renderNode"]> = (
+    token,
+    context,
+  ) => {
+    const defaultRenderable = context.defaultRender();
+
+    if (defaultRenderable instanceof CodeRenderable) {
+      // OpenTUI renders prose through an internal markdown CodeRenderable. Keep that
+      // default path, but avoid a blank first frame while Tree-sitter highlighting runs.
+      defaultRenderable.drawUnstyledText = true;
+
+      if (isAssistantMarkdownHeadingToken(token)) {
+        // Leading newline gives breathing room before each heading, including after an HR.
+        defaultRenderable.content = `\n${token.text}`;
+        defaultRenderable.filetype = "text";
+        defaultRenderable.syntaxStyle = resolveAssistantMarkdownHeadingSyntaxStyle(token.depth);
+        return defaultRenderable;
+      }
+
+      if (token.type === "hr" || isAssistantMarkdownDashOnlyParagraphToken(token)) {
+        // Dash-only paragraphs slip through during streaming before the parser classifies
+        // them as `hr`. Render both the same way to avoid raw `---` leaking on screen.
+        defaultRenderable.content = assistantMarkdownHorizontalRuleText;
+        defaultRenderable.filetype = "text";
+        defaultRenderable.syntaxStyle = horizontalRuleSyntaxStyle;
+        defaultRenderable.wrapMode = "none";
+        return defaultRenderable;
+      }
+    }
+
+    return defaultRenderable;
+  };
+
   return (
     <markdown
       bg={chatScreenTheme.bg}
@@ -54,12 +115,15 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       streaming={props.isStreaming}
       syntaxStyle={assistantMarkdownSyntaxStyle}
       tableOptions={{
-        borderColor: chatScreenTheme.borderSubtle,
         borders: true,
-        cellPadding: 1,
+        borderColor: chatScreenTheme.borderSubtle,
+        borderStyle: "single",
+        cellPadding: 0,
+        columnFitter: "balanced",
         outerBorder: true,
         selectable: true,
-        widthMode: "full",
+        style: "grid",
+        widthMode: "content",
         wrapMode: "word",
       }}
       treeSitterClient={openTuiSharedTreeSitterClient}

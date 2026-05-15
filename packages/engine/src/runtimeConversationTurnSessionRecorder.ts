@@ -1,6 +1,7 @@
 import type {
   AssistantMessageConversationSessionEntry,
   BuliDiagnosticLogger,
+  UserPromptImageAttachment,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
@@ -8,6 +9,7 @@ import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 export class RuntimeConversationTurnSessionRecorder {
   readonly conversationHistory: InMemoryConversationHistory;
   readonly userPromptText: string;
+  readonly userPromptImageAttachments: readonly UserPromptImageAttachment[];
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   private hasRecordedAcceptedUserPromptSessionEntry = false;
   private hasRecordedTerminalAssistantMessageSessionEntry = false;
@@ -15,10 +17,12 @@ export class RuntimeConversationTurnSessionRecorder {
   constructor(input: {
     conversationHistory: InMemoryConversationHistory;
     userPromptText: string;
+    userPromptImageAttachments?: readonly UserPromptImageAttachment[];
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.conversationHistory = input.conversationHistory;
     this.userPromptText = input.userPromptText;
+    this.userPromptImageAttachments = input.userPromptImageAttachments ?? [];
     this.diagnosticLogger = input.diagnosticLogger;
   }
 
@@ -39,6 +43,7 @@ export class RuntimeConversationTurnSessionRecorder {
       entryKind: "user_prompt",
       promptText: this.userPromptText,
       modelFacingPromptText,
+      ...(this.userPromptImageAttachments.length > 0 ? { imageAttachments: [...this.userPromptImageAttachments] } : {}),
     });
     this.hasRecordedAcceptedUserPromptSessionEntry = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {

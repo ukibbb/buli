@@ -7,6 +7,10 @@ import {
   type AssistantOperatingMode,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
+  type ConversationSessionEntry,
+  type ModelContextItem,
+  type ProviderAvailableToolName,
+  type ProviderStreamEvent,
   type ToolCallRequest,
 } from "@buli/contracts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
@@ -14,6 +18,8 @@ import { buildBuliSystemPrompt } from "./systemPrompt.ts";
 import type {
   ActiveConversationTurn,
   AssistantConversationRunner,
+  ConversationCompactionRequest,
+  ConversationCompactionResult,
   ConversationTurnProvider,
   ConversationTurnRequest,
   ProviderConversationTurn,
@@ -46,6 +52,14 @@ type PendingToolApprovalState = {
 };
 
 const USER_INTERRUPTED_CONVERSATION_TURN_REASON = "Interrupted by user.";
+const CONVERSATION_COMPACTION_PROMPT_TEXT = [
+  "Create a compact continuation summary for the next assistant turn.",
+  "Preserve only information needed to continue the current session correctly.",
+  "Include the user's goal, constraints and preferences, completed work, in-progress work, blockers, key decisions, next steps, and critical technical context.",
+  "Preserve exact file paths, commands, errors, identifiers, and user-approved decisions when they matter.",
+  "Do not answer the user, do not ask questions, and do not introduce new plans beyond summarizing the current continuation state.",
+  "Return Markdown only.",
+].join("\n");
 
 export class AssistantConversationRuntime implements AssistantConversationRunner {
   readonly conversationTurnProvider: ConversationTurnProvider;
@@ -57,7 +71,10 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
   readonly promptCacheKey: string | undefined;
+  readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
+  readonly canSpawnExplorer: boolean;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
+  isCompactingConversationSession = false;
 
   constructor(input: {
     conversationTurnProvider: ConversationTurnProvider;
@@ -69,6 +86,8 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode?: BashToolApprovalMode;
     promptCacheKey?: string | undefined;
+    availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+    canSpawnExplorer?: boolean;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.workspaceRootPath = input.workspaceRootPath;
@@ -80,15 +99,22 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode ?? DEFAULT_BASH_TOOL_APPROVAL_MODE;
     this.promptCacheKey = input.promptCacheKey;
+    this.availableToolNames = input.availableToolNames;
+    this.canSpawnExplorer = input.canSpawnExplorer ?? true;
   }
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
     const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
+    if (this.isCompactingConversationSession) {
+      throw new Error("Cannot start a conversation turn while compaction is running.");
+    }
+
     if (this.currentPendingConversationTurn && !this.currentPendingConversationTurn.hasFinishedTurn()) {
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.rejected", {
         reason: "turn_already_running",
         selectedModelId: input.selectedModelId,
         userPromptLength: input.userPromptText.length,
+        userPromptImageAttachmentCount: input.userPromptImageAttachments?.length ?? 0,
       });
       throw new Error("A conversation turn is already running");
     }
@@ -97,6 +123,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       selectedModelId: input.selectedModelId,
       selectedReasoningEffort: input.selectedReasoningEffort ?? null,
       userPromptLength: input.userPromptText.length,
+      userPromptImageAttachmentCount: input.userPromptImageAttachments?.length ?? 0,
       conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
       bashToolApprovalMode: this.bashToolApprovalMode,
@@ -115,6 +142,8 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       diagnosticLogger: this.diagnosticLogger,
       bashToolApprovalMode: this.bashToolApprovalMode,
       promptCacheKey: this.promptCacheKey,
+      availableToolNames: this.availableToolNames,
+      canSpawnExplorer: this.canSpawnExplorer,
       onConversationTurnFinished: () => {
         if (this.currentPendingConversationTurn === runtimeConversationTurn) {
           this.currentPendingConversationTurn = undefined;
@@ -125,6 +154,148 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.currentPendingConversationTurn = runtimeConversationTurn;
     return runtimeConversationTurn;
   }
+
+  async compactConversationSession(input: ConversationCompactionRequest): Promise<ConversationCompactionResult> {
+    const conversationSessionEntriesBeforeCompaction = this.conversationHistory.listConversationSessionEntries();
+    if (conversationSessionEntriesBeforeCompaction.length === 0) {
+      throw new Error("Nothing to compact yet.");
+    }
+
+    if (this.currentPendingConversationTurn && !this.currentPendingConversationTurn.hasFinishedTurn()) {
+      throw new Error("Cannot compact while a conversation turn is running.");
+    }
+
+    if (this.isCompactingConversationSession) {
+      throw new Error("Conversation compaction is already running.");
+    }
+
+    this.isCompactingConversationSession = true;
+    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.started", {
+      selectedModelId: input.selectedModelId,
+      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
+      conversationSessionEntryCount: conversationSessionEntriesBeforeCompaction.length,
+      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+    });
+
+    try {
+      const compactionPromptEntry = createConversationCompactionPromptSessionEntry();
+      const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
+        systemPromptText: buildConversationCompactionSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
+        conversationSessionEntries: [...conversationSessionEntriesBeforeCompaction, compactionPromptEntry],
+        modelContextItems: [...this.conversationHistory.listModelContextItems(), createConversationCompactionPromptModelContextItem()],
+        selectedModelId: input.selectedModelId,
+        ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+        ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
+        availableToolNames: [],
+        ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      });
+      const summaryText = await collectConversationCompactionSummaryText({
+        providerConversationTurn,
+        diagnosticLogger: this.diagnosticLogger,
+      });
+      const compactionResult: ConversationCompactionResult = {
+        summaryText,
+        compactedEntryCount: conversationSessionEntriesBeforeCompaction.length,
+      };
+      this.conversationHistory.appendConversationSessionEntry({
+        entryKind: "conversation_compaction_summary",
+        summaryText: compactionResult.summaryText,
+        compactedEntryCount: compactionResult.compactedEntryCount,
+      });
+      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.completed", {
+        compactedEntryCount: compactionResult.compactedEntryCount,
+        summaryTextLength: compactionResult.summaryText.length,
+        conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
+        modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      });
+      return compactionResult;
+    } catch (error) {
+      const errorText = error instanceof Error ? error.message : String(error);
+      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.failed", {
+        errorText,
+      });
+      throw error;
+    } finally {
+      this.isCompactingConversationSession = false;
+    }
+  }
+}
+
+function buildConversationCompactionSystemPrompt(input: { workspaceRootPath: string }): string {
+  return [
+    "You are buli's conversation compaction worker.",
+    `Current workspace root: ${input.workspaceRootPath}`,
+    "Summarize the prior conversation for continuation by the same assistant.",
+    "Use only the provided conversation context. Do not call tools.",
+  ].join("\n");
+}
+
+function createConversationCompactionPromptSessionEntry(): ConversationSessionEntry {
+  return {
+    entryKind: "user_prompt",
+    promptText: CONVERSATION_COMPACTION_PROMPT_TEXT,
+    modelFacingPromptText: CONVERSATION_COMPACTION_PROMPT_TEXT,
+  };
+}
+
+function createConversationCompactionPromptModelContextItem(): ModelContextItem {
+  return {
+    itemKind: "user_message",
+    messageText: CONVERSATION_COMPACTION_PROMPT_TEXT,
+  };
+}
+
+async function collectConversationCompactionSummaryText(input: {
+  providerConversationTurn: ProviderConversationTurn;
+  diagnosticLogger: BuliDiagnosticLogger | undefined;
+}): Promise<string> {
+  let summaryText = "";
+
+  for await (const providerStreamEvent of input.providerConversationTurn.streamProviderEvents()) {
+    logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_compaction.provider_event_received", {
+      eventType: providerStreamEvent.type,
+      ...summarizeProviderStreamEventForDiagnostics(providerStreamEvent),
+    });
+
+    if (providerStreamEvent.type === "text_chunk") {
+      summaryText += providerStreamEvent.text;
+      continue;
+    }
+
+    if (providerStreamEvent.type === "completed") {
+      const trimmedSummaryText = summaryText.trim();
+      if (trimmedSummaryText.length === 0) {
+        throw new Error("Conversation compaction produced an empty summary.");
+      }
+
+      return trimmedSummaryText;
+    }
+
+    throwIfProviderEventCannotAppearDuringCompaction(providerStreamEvent);
+  }
+
+  throw new Error("Conversation compaction provider stream ended before completion.");
+}
+
+function throwIfProviderEventCannotAppearDuringCompaction(providerStreamEvent: ProviderStreamEvent): void {
+  if (
+    providerStreamEvent.type === "reasoning_summary_started" ||
+    providerStreamEvent.type === "reasoning_summary_text_chunk" ||
+    providerStreamEvent.type === "reasoning_summary_completed" ||
+    providerStreamEvent.type === "rate_limit_pending"
+  ) {
+    return;
+  }
+
+  if (providerStreamEvent.type === "incomplete") {
+    throw new Error(`Conversation compaction ended incomplete: ${providerStreamEvent.incompleteReason}`);
+  }
+
+  if (providerStreamEvent.type === "tool_call_requested") {
+    throw new Error(`Conversation compaction unexpectedly requested tool ${providerStreamEvent.toolCallRequest.toolName}.`);
+  }
+
+  throw new Error("Conversation compaction unexpectedly produced a plan proposal.");
 }
 
 class RuntimeConversationTurn implements ActiveConversationTurn {
@@ -139,6 +310,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
   readonly promptCacheKey: string | undefined;
+  readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
+  readonly canSpawnExplorer: boolean;
   readonly onConversationTurnFinished: () => void;
   readonly abortController: AbortController;
   currentPendingToolApprovalState: PendingToolApprovalState | undefined;
@@ -158,6 +331,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode: BashToolApprovalMode;
     promptCacheKey?: string | undefined;
+    availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+    canSpawnExplorer: boolean;
     onConversationTurnFinished: () => void;
   }) {
     this.conversationTurnInput = input.conversationTurnInput;
@@ -171,6 +346,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode;
     this.promptCacheKey = input.promptCacheKey;
+    this.availableToolNames = input.availableToolNames;
+    this.canSpawnExplorer = input.canSpawnExplorer;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
     this.abortController = new AbortController();
   }
@@ -234,6 +411,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
       conversationHistory: this.conversationHistory,
       userPromptText: this.conversationTurnInput.userPromptText,
+      ...(this.conversationTurnInput.userPromptImageAttachments
+        ? { userPromptImageAttachments: this.conversationTurnInput.userPromptImageAttachments }
+        : {}),
       diagnosticLogger: this.diagnosticLogger,
     });
     const providerStreamEventTranslator = new RuntimeProviderStreamEventTranslator({
@@ -257,6 +437,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         selectedModelId: this.conversationTurnInput.selectedModelId,
         selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort ?? null,
         userPromptLength: this.conversationTurnInput.userPromptText.length,
+        userPromptImageAttachmentCount: this.conversationTurnInput.userPromptImageAttachments?.length ?? 0,
         assistantOperatingMode: this.assistantOperatingMode,
       });
       yield logAssistantResponseEventEmitted(AssistantTurnStartedEventSchema.parse({
@@ -300,6 +481,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
           : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
+        ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
         abortSignal: this.abortController.signal,
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.started", {
@@ -331,14 +513,22 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           yield* streamAssistantResponseEventsForRequestedToolCall({
             assistantResponseMessageId,
             providerConversationTurn,
+            conversationTurnProvider: this.conversationTurnProvider,
             toolCallId: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallId,
             toolCallRequest: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallRequest,
+            selectedModelId: this.conversationTurnInput.selectedModelId,
+            ...(this.conversationTurnInput.selectedReasoningEffort
+              ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
+              : {}),
             assistantOperatingMode: this.assistantOperatingMode,
             bashToolApprovalMode: this.bashToolApprovalMode,
             workspaceRootPath: this.workspaceRootPath,
+            promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+            promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
             workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
             conversationHistory: this.conversationHistory,
             abortSignal: this.abortController.signal,
+            canSpawnExplorer: this.canSpawnExplorer,
             createPendingToolApproval: (pendingToolApprovalInput) =>
               this.createPendingToolApproval(pendingToolApprovalInput),
             throwIfConversationTurnInterrupted: () => {

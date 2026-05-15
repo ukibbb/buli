@@ -17,7 +17,6 @@ import { MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT } from "../components/MinimumHeig
 import { TOP_BAR_NATURAL_ROW_COUNT } from "../components/TopBar.tsx";
 
 const CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT = 1;
-const PROMPT_INPUT_REGION_MAX_WIDTH_IN_CELLS = 100;
 
 export type ChatScreenViewModel = {
   isPromptInputDisabled: boolean;
@@ -27,7 +26,6 @@ export type ChatScreenViewModel = {
   promptInputHintOverride: string | undefined;
   reasoningEffortLabel: string;
   inputRegionRowCount: number;
-  promptInputRegionColumnCount: number;
   availableCommandHelpModalRowCount: number;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
@@ -77,7 +75,6 @@ export function buildChatScreenViewModel(input: {
     reasoningEffortLabel:
       input.chatSessionState.selectedReasoningEffort ?? input.chatSessionState.selectedModelDefaultReasoningEffort ?? "default",
     inputRegionRowCount,
-    promptInputRegionColumnCount: Math.min(input.terminalColumnCount, PROMPT_INPUT_REGION_MAX_WIDTH_IN_CELLS),
     availableCommandHelpModalRowCount: Math.max(
       0,
       input.terminalRowCount - TOP_BAR_NATURAL_ROW_COUNT - CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT - inputRegionRowCount,

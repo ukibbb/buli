@@ -55,6 +55,7 @@ export {
 } from "./modelAndReasoningSelectionReducer.ts";
 export {
   getActivePromptContextQueryText,
+  appendPromptImageAttachmentToDraft,
   insertTextIntoPromptDraftAtCursor,
   movePromptDraftCursorLeft,
   movePromptDraftCursorRight,
@@ -62,6 +63,7 @@ export {
   movePromptDraftCursorToStart,
   removePromptDraftCharacterAtCursor,
   removePromptDraftCharacterBeforeCursor,
+  removeLastPromptImageAttachmentFromDraft,
   replacePromptDraftFromEditor,
   submitPromptDraft,
 } from "./promptDraftReducer.ts";

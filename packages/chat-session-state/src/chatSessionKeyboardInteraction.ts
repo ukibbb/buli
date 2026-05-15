@@ -1,4 +1,5 @@
 import { extractActivePromptContextQueryFromPromptDraft } from "@buli/engine";
+import type { UserPromptImageAttachment } from "@buli/contracts";
 import type { ChatSessionState, SlashCommand } from "./chatSessionState.ts";
 import { cycleAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 import { hideCommandHelpModal } from "./commandHelpModalReducer.ts";
@@ -35,6 +36,7 @@ import {
   movePromptDraftCursorRight,
   movePromptDraftCursorToEnd,
   movePromptDraftCursorToStart,
+  removeLastPromptImageAttachmentFromDraft,
   removePromptDraftCharacterAtCursor,
   removePromptDraftCharacterBeforeCursor,
   submitPromptDraft,
@@ -61,6 +63,7 @@ export type ChatSessionKeyboardKeyName =
   | "left"
   | "pagedown"
   | "pageup"
+  | "paste"
   | "return"
   | "right"
   | "tab"
@@ -89,6 +92,7 @@ export type ChatSessionKeyboardEffect =
   | {
       effectType: "stream_assistant_response_for_submitted_prompt";
       submittedPromptText: string;
+      submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
     }
   | {
       effectType: "submit_pending_tool_approval_decision";
@@ -521,7 +525,7 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
     }
 
     const promptDraftSubmission = submitPromptDraft(input.chatSessionState);
-    if (!promptDraftSubmission.submittedPromptText) {
+    if (promptDraftSubmission.submittedPromptText === undefined) {
       return createChatSessionKeyboardInteraction({
         nextChatSessionState: promptDraftSubmission.nextChatSessionState,
         shouldConsumeKeyboardInput: true,
@@ -535,6 +539,7 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
       chatSessionKeyboardEffect: {
         effectType: "stream_assistant_response_for_submitted_prompt",
         submittedPromptText: promptDraftSubmission.submittedPromptText,
+        submittedPromptImageAttachments: promptDraftSubmission.submittedPromptImageAttachments,
       },
     });
   }
@@ -597,6 +602,13 @@ function applyKeyboardInputToPromptDraftEditingKeys(
   }
 
   if (chatSessionKeyboardInput.keyName === "backspace") {
+    if (chatSessionState.promptDraft.length === 0 && chatSessionState.promptDraftCursorOffset === 0) {
+      return createChatSessionKeyboardInteraction({
+        nextChatSessionState: removeLastPromptImageAttachmentFromDraft(chatSessionState),
+        shouldConsumeKeyboardInput: true,
+      });
+    }
+
     return createChatSessionKeyboardInteraction({
       nextChatSessionState: removePromptDraftCharacterBeforeCursor(chatSessionState),
       shouldConsumeKeyboardInput: true,

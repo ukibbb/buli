@@ -43,16 +43,16 @@ function countTrailingBlankCells(renderedRow: string): number {
   return renderedRow.length - renderedRow.trimEnd().length;
 }
 
-function expectRenderedRowToBeHorizontallyCentered(renderedRow: string): void {
+function expectRenderedRowToSpanViewportWithTextMargin(renderedRow: string): void {
   const leadingBlankCellCount = countLeadingBlankCells(renderedRow);
   const trailingBlankCellCount = countTrailingBlankCells(renderedRow);
 
-  expect(leadingBlankCellCount).toBeGreaterThan(10);
-  expect(Math.abs(leadingBlankCellCount - trailingBlankCellCount)).toBeLessThanOrEqual(1);
+  expect(leadingBlankCellCount).toBeLessThanOrEqual(4);
+  expect(trailingBlankCellCount).toBeLessThanOrEqual(4);
 }
 
-function expectRenderedRowToStartInsideCenteredInputRegion(renderedRow: string): void {
-  expect(countLeadingBlankCells(renderedRow)).toBeGreaterThan(10);
+function expectRenderedRowToStartAtTextMargin(renderedRow: string): void {
+  expect(countLeadingBlankCells(renderedRow)).toBeLessThanOrEqual(4);
 }
 
 describe("ChatScreen responsive layout", () => {
@@ -90,7 +90,7 @@ describe("ChatScreen responsive layout", () => {
     expect(frame).toContain("implementation");
   });
 
-  test("centers_full_input_panel_at_bottom_of_wide_viewport", async () => {
+  test("left_aligns_full_input_panel_and_lets_it_span_the_wide_viewport", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ChatScreen
         selectedModelId="gpt-5.4"
@@ -105,11 +105,11 @@ describe("ChatScreen responsive layout", () => {
     const inputHeaderRow = findRenderedRowContaining(renderedRows.join("\n"), "implementation");
     const bottomViewportRow = renderedRows[renderedRows.length - 1] ?? "";
 
-    expectRenderedRowToBeHorizontallyCentered(inputHeaderRow);
-    expectRenderedRowToBeHorizontallyCentered(bottomViewportRow);
+    expectRenderedRowToSpanViewportWithTextMargin(inputHeaderRow);
+    expectRenderedRowToSpanViewportWithTextMargin(bottomViewportRow);
   });
 
-  test("centers_minimum_height_prompt_strip_at_bottom_of_wide_viewport", async () => {
+  test("left_aligns_minimum_height_prompt_strip_at_bottom_of_wide_viewport", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ChatScreen
         selectedModelId="gpt-5.4"
@@ -124,6 +124,6 @@ describe("ChatScreen responsive layout", () => {
     const bottomViewportRow = renderedRows[renderedRows.length - 1] ?? "";
 
     expect(bottomViewportRow).toContain(">");
-    expectRenderedRowToStartInsideCenteredInputRegion(bottomViewportRow);
+    expectRenderedRowToStartAtTextMargin(bottomViewportRow);
   });
 });

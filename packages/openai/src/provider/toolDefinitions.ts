@@ -1,3 +1,5 @@
+import type { ProviderAvailableToolName } from "@buli/contracts";
+
 export function createBashToolDefinition() {
   return {
     type: "function",
@@ -162,13 +164,47 @@ export function createWriteToolDefinition() {
   };
 }
 
-export function createOpenAiToolDefinitions() {
-  return [
+export function createExploreToolDefinition() {
+  return {
+    type: "function",
+    name: "explore",
+    description: "Ask a read-only Explorer subagent to inspect the codebase with read, glob, and grep, then return a concise report. Use this for broad or multi-step discovery before deciding what to explain or change.",
+    parameters: {
+      type: "object",
+      properties: {
+        description: {
+          type: "string",
+          description: "Short description of what the Explorer should investigate.",
+        },
+        prompt: {
+          type: "string",
+          description: "Detailed exploration instructions, including what files, patterns, flows, or questions to answer.",
+        },
+      },
+      required: ["description", "prompt"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+export function createOpenAiToolDefinitions(input: {
+  availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+} = {}) {
+  const toolDefinitions = [
     createBashToolDefinition(),
     createReadToolDefinition(),
     createGlobToolDefinition(),
     createGrepToolDefinition(),
     createEditToolDefinition(),
     createWriteToolDefinition(),
+    createExploreToolDefinition(),
   ];
+
+  if (!input.availableToolNames) {
+    return toolDefinitions;
+  }
+
+  const availableToolNameSet = new Set<ProviderAvailableToolName>(input.availableToolNames);
+  return toolDefinitions.filter((toolDefinition) => availableToolNameSet.has(toolDefinition.name as ProviderAvailableToolName));
 }

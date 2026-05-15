@@ -5,8 +5,15 @@ import type {
   ConversationSessionEntry,
   ConversationSessionSummary,
   ReasoningEffort,
+  UserPromptImageAttachment,
 } from "@buli/contracts";
-import type { ActiveConversationTurn, AssistantConversationRunner, ConversationTurnRequest, PromptContextCandidate } from "@buli/engine";
+import type {
+  ActiveConversationTurn,
+  AssistantConversationRunner,
+  ConversationCompactionRequest,
+  ConversationTurnRequest,
+  PromptContextCandidate,
+} from "@buli/engine";
 
 export type ChatScreenProps = {
   selectedModelId: string;
@@ -19,6 +26,10 @@ export type ChatScreenProps = {
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];
   switchConversationSession?: (conversationSessionId: string) => Promise<ConversationSessionSwitchResult> | ConversationSessionSwitchResult;
   exportCurrentConversationSession?: () => Promise<ConversationSessionExportResult> | ConversationSessionExportResult;
+  compactCurrentConversationSession?: (
+    input: ConversationCompactionRequest,
+  ) => Promise<ConversationSessionCompactionResult> | ConversationSessionCompactionResult;
+  readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: () => ConversationSessionSwitchResult | void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -32,6 +43,10 @@ export type ConversationSessionSwitchResult = {
 export type ConversationSessionExportResult = {
   exportFilePath: string;
   exportFileUrl: string;
+};
+
+export type ConversationSessionCompactionResult = {
+  conversationSessionEntries: readonly ConversationSessionEntry[];
 };
 
 export type TuiChatScreenInstance = {
@@ -50,6 +65,8 @@ export declare function renderChatScreenInTerminal(input: {
   loadConversationSessions?: ChatScreenProps["loadConversationSessions"];
   switchConversationSession?: ChatScreenProps["switchConversationSession"];
   exportCurrentConversationSession?: ChatScreenProps["exportCurrentConversationSession"];
+  compactCurrentConversationSession?: ChatScreenProps["compactCurrentConversationSession"];
+  readClipboardImageAttachment?: ChatScreenProps["readClipboardImageAttachment"];
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;

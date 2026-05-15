@@ -7,8 +7,10 @@ import {
   ConversationMessagePartSchema,
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
+  ModelContextItemSchema,
   PendingToolApprovalRequestSchema,
   ToolCallRequestSchema,
+  UserPromptImageAttachmentSchema,
 } from "../src/index.ts";
 
 test("ConversationMessageSchema parses a completed user message", () => {
@@ -41,6 +43,36 @@ test("ConversationMessagePartSchema parses an assistant text part with an open s
     partKind: "assistant_text",
     partStatus: "streaming",
   });
+});
+
+test("UserPromptImageAttachmentSchema parses a base64 image data URL", () => {
+  expect(
+    UserPromptImageAttachmentSchema.parse({
+      attachmentId: "image-1",
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+      fileName: "clipboard.png",
+    }),
+  ).toEqual({
+    attachmentId: "image-1",
+    mimeType: "image/png",
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+    fileName: "clipboard.png",
+  });
+});
+
+test("ConversationMessagePartSchema parses a user image attachment part", () => {
+  expect(
+    ConversationMessagePartSchema.parse({
+      id: "user-image-1",
+      partKind: "user_image_attachment",
+      attachment: {
+        attachmentId: "image-1",
+        mimeType: "image/png",
+        dataUrl: "data:image/png;base64,aGVsbG8=",
+      },
+    }).partKind,
+  ).toBe("user_image_attachment");
 });
 
 test("AssistantToolCallConversationMessagePartSchema parses a denied tool call", () => {
@@ -118,6 +150,27 @@ test("AssistantToolCallConversationMessagePartSchema parses a write tool call wi
   });
 });
 
+test("AssistantToolCallConversationMessagePartSchema parses an explore tool call", () => {
+  const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
+    id: "tool-part-explore",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-explore",
+    toolCallStatus: "completed",
+    toolCallStartedAtMs: 1,
+    toolCallDetail: {
+      toolName: "explore",
+      explorationDescription: "map runtime flow",
+      explorationPrompt: "Inspect engine runtime files and summarize tool dispatch.",
+      explorationResultSummary: "runtime.ts delegates tool calls through runtimeToolCallExecution.ts",
+    },
+  });
+
+  expect(parsedMessagePart.toolCallDetail).toMatchObject({
+    toolName: "explore",
+    explorationDescription: "map runtime flow",
+  });
+});
+
 test("PendingToolApprovalRequestSchema parses the dedicated approval model", () => {
   expect(
     PendingToolApprovalRequestSchema.parse({
@@ -191,6 +244,17 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
     writeTargetPath: "packages/contracts/src/generated.ts",
     fileContent: "",
   });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "explore",
+      explorationDescription: "map runtime flow",
+      explorationPrompt: "Inspect runtime and provider flow.",
+    }),
+  ).toEqual({
+    toolName: "explore",
+    explorationDescription: "map runtime flow",
+    explorationPrompt: "Inspect runtime and provider flow.",
+  });
 });
 
 test("AssistantResponseEventSchema parses assistant_message_part_added", () => {
@@ -244,6 +308,52 @@ test("ConversationSessionEntrySchema parses completed assistant history entries"
     entryKind: "assistant_message",
     assistantMessageStatus: "completed",
     assistantMessageText: "Done.",
+  });
+});
+
+test("ConversationSessionEntrySchema parses a user prompt with image attachments", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "user_prompt",
+      promptText: "What is in this image?",
+      modelFacingPromptText: "What is in this image?",
+      imageAttachments: [
+        {
+          attachmentId: "image-1",
+          mimeType: "image/png",
+          dataUrl: "data:image/png;base64,aGVsbG8=",
+        },
+      ],
+    }),
+  ).toMatchObject({
+    entryKind: "user_prompt",
+    imageAttachments: [{ attachmentId: "image-1" }],
+  });
+});
+
+test("ConversationSessionEntrySchema parses a conversation compaction summary", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue the implementation.",
+      compactedEntryCount: 12,
+    }),
+  ).toEqual({
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: continue the implementation.",
+    compactedEntryCount: 12,
+  });
+});
+
+test("ModelContextItemSchema parses a compaction summary", () => {
+  expect(
+    ModelContextItemSchema.parse({
+      itemKind: "compaction_summary",
+      summaryText: "Goal: continue the implementation.",
+    }),
+  ).toEqual({
+    itemKind: "compaction_summary",
+    summaryText: "Goal: continue the implementation.",
   });
 });
 

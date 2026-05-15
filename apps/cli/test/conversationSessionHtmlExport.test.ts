@@ -13,6 +13,14 @@ const conversationSessionEntries = [
     entryKind: "user_prompt",
     promptText: "Render <script>alert('x')</script>",
     modelFacingPromptText: "Render <script>alert('x')</script>",
+    imageAttachments: [
+      {
+        attachmentId: "image-1",
+        mimeType: "image/png",
+        dataUrl: "data:image/png;base64,aGVsbG8=",
+        fileName: "clipboard.png",
+      },
+    ],
   },
   {
     entryKind: "tool_call",
@@ -49,6 +57,11 @@ const conversationSessionEntries = [
       "const safe = true;",
       "```",
     ].join("\n"),
+  },
+  {
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: continue the exported session from compacted context.",
+    compactedEntryCount: 4,
   },
   {
     entryKind: "tool_call",
@@ -109,6 +122,25 @@ const conversationSessionEntries = [
     },
     toolResultText: "Wrote file: notes/new-file.txt",
   },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-5",
+    toolCallRequest: {
+      toolName: "explore",
+      explorationDescription: "map runtime",
+      explorationPrompt: "Inspect runtime dispatch.",
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-5",
+    toolCallDetail: {
+      toolName: "explore",
+      explorationDescription: "map runtime",
+      explorationResultSummary: "Runtime dispatches tool calls.",
+    },
+    toolResultText: "Runtime dispatches tool calls.",
+  },
 ] satisfies ConversationSessionEntry[];
 
 test("renderConversationSessionHtmlDocument renders escaped, styled current-session HTML", () => {
@@ -123,6 +155,8 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("Session ");
   expect(html).toContain(">session-a<");
   expect(html).toContain("Render &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
+  expect(html).toContain('src="data:image/png;base64,aGVsbG8="');
+  expect(html).toContain("clipboard.png · image/png");
   expect(html).not.toContain("<script>alert('x')</script>");
   expect(html).toContain("Tool · call");
   expect(html).toContain("pwd");
@@ -131,6 +165,9 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("const title = &quot;old&quot;;");
   expect(html).toContain("notes/new-file.txt");
   expect(html).toContain("hello from write");
+  expect(html).toContain("map runtime");
+  expect(html).toContain("Inspect runtime dispatch.");
+  expect(html).toContain("Runtime dispatches tool calls.");
   expect(html).toContain("<h1>Done</h1>");
   expect(html).toContain("&lt;script&gt;alert(&#39;assistant&#39;)&lt;/script&gt;");
   expect(html).not.toContain("<script>alert('assistant')</script>");
@@ -138,6 +175,34 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("unsafe link");
   expect(html).not.toContain("javascript:alert");
   expect(html).toContain('<pre data-lang="ts"><code>const safe = true;</code></pre>');
+  expect(html).toContain("Compaction");
+  expect(html).toContain("Context compacted from 4 entries.");
+  expect(html).toContain("continue the exported session from compacted context");
+});
+
+test("renderConversationSessionHtmlDocument renders image-only user prompts without empty text placeholder", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "",
+        modelFacingPromptText: "",
+        imageAttachments: [
+          {
+            attachmentId: "image-only-1",
+            mimeType: "image/jpeg",
+            dataUrl: "data:image/jpeg;base64,aW1hZ2U=",
+          },
+        ],
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-image-only",
+  });
+
+  expect(html).toContain('src="data:image/jpeg;base64,aW1hZ2U="');
+  expect(html).not.toContain("No prompt text was recorded.");
 });
 
 test("writeConversationSessionHtmlExport writes the exported session file", async () => {

@@ -2,14 +2,14 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ModelContextItem, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
+import type { ConversationSessionEntry, ModelContextItem, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import type {
   ConversationTurnProvider,
   ProviderConversationTurn,
   ProviderConversationTurnRequest,
   WorkspaceShellCommandExecutor,
 } from "../src/index.ts";
-import { AssistantConversationRuntime } from "../src/index.ts";
+import { AssistantConversationRuntime, InMemoryConversationHistory } from "../src/index.ts";
 
 class ScriptedProviderTurn implements ProviderConversationTurn {
   readonly beforeToolResultEvents: ProviderStreamEvent[];
@@ -1151,6 +1151,242 @@ test("AssistantConversationRuntime reuses prior user and assistant messages on t
     { itemKind: "assistant_message", messageText: "First answer" },
     { itemKind: "user_message", messageText: "Second prompt" },
   ]);
+});
+
+test("AssistantConversationRuntime compacts the current session into an append-only summary", async () => {
+  const initialConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "First answer",
+    },
+  ];
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Goal: continue the runtime compaction implementation." },
+      { type: "completed", usage: { total: 10, input: 8, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({ initialConversationSessionEntries });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory,
+  });
+
+  await expect(runtime.compactConversationSession({ selectedModelId: "gpt-5.4" })).resolves.toEqual({
+    summaryText: "Goal: continue the runtime compaction implementation.",
+    compactedEntryCount: 2,
+  });
+
+  expect(provider.startedTurnRequests).toHaveLength(1);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual([]);
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toEqual([
+    ...initialConversationSessionEntries,
+    {
+      entryKind: "user_prompt",
+      promptText: expect.stringContaining("Create a compact continuation summary"),
+      modelFacingPromptText: expect.stringContaining("Create a compact continuation summary"),
+    },
+  ]);
+  expect(conversationHistory.listConversationSessionEntries()).toEqual<ConversationSessionEntry[]>([
+    ...initialConversationSessionEntries,
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue the runtime compaction implementation.",
+      compactedEntryCount: 2,
+    },
+  ]);
+  expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "compaction_summary",
+      summaryText: "Goal: continue the runtime compaction implementation.",
+    },
+  ]);
+});
+
+test("AssistantConversationRuntime leaves the session unchanged when compaction fails", async () => {
+  const initialConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "First answer",
+    },
+  ];
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Partial summary" },
+      {
+        type: "incomplete",
+        incompleteReason: "max_output_tokens",
+        usage: { total: 10, input: 8, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({ initialConversationSessionEntries });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory,
+  });
+
+  await expect(runtime.compactConversationSession({ selectedModelId: "gpt-5.4" })).rejects.toThrow(
+    "Conversation compaction ended incomplete: max_output_tokens",
+  );
+
+  expect(conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
+});
+
+test("AssistantConversationRuntime runs Explorer as an isolated read-only child turn", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-tool-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nExplorer target\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "explore",
+          explorationDescription: "map docs",
+          explorationPrompt: "Read README.md and report what it contains.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Explorer result acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_1",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "README.md contains the Demo heading and Explorer target text." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(provider.startedTurnRequests).toHaveLength(2);
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "glob", "grep"]);
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer target");
+  expect(parentProviderTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_explore_1",
+      toolResultText: expect.stringContaining("README.md contains the Demo heading"),
+    },
+  ]);
+  expect(emittedAssistantEvents).toContainEqual(
+    expect.objectContaining({
+      type: "assistant_message_completed",
+    }),
+  );
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
+    { entryKind: "user_prompt" },
+    { entryKind: "tool_call", toolCallId: "call_explore_1", toolCallRequest: { toolName: "explore" } },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_explore_1",
+      toolCallDetail: {
+        toolName: "explore",
+        explorationResultSummary: "README.md contains the Demo heading and Explorer target text.",
+      },
+    },
+    { entryKind: "assistant_message", assistantMessageStatus: "completed" },
+  ]);
+  expect(runtime.conversationHistory.listConversationSessionEntries()).not.toContainEqual(
+    expect.objectContaining({ toolCallId: "call_read_1" }),
+  );
+});
+
+test("AssistantConversationRuntime denies nested Explorer calls inside Explorer turns", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-nested-explorer-tool-"));
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_parent",
+        toolCallRequest: {
+          toolName: "explore",
+          explorationDescription: "map runtime",
+          explorationPrompt: "Explore runtime flow.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Nested Explorer handled." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_child",
+        toolCallRequest: {
+          toolName: "explore",
+          explorationDescription: "nested",
+          explorationPrompt: "Try to spawn another Explorer.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Nested Explorer was denied, so no nested transcript was created." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore runtime",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer cannot spawn another Explorer");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Nested Explorer was denied");
+  expect(provider.startedTurnRequests).toHaveLength(2);
 });
 
 test("AssistantConversationRuntime requests approval before applying an edit tool call", async () => {

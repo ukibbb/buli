@@ -145,8 +145,16 @@ function summarizeConversationMessagePartStatusForDiagnostics(
     };
   }
 
+  if (conversationMessagePart.partKind === "user_text") {
+    return {
+      userTextLength: conversationMessagePart.text.length,
+    };
+  }
+
   return {
-    userTextLength: conversationMessagePart.text.length,
+    userPromptImageMimeType: conversationMessagePart.attachment.mimeType,
+    userPromptImageDataUrlLength: conversationMessagePart.attachment.dataUrl.length,
+    hasUserPromptImageFileName: conversationMessagePart.attachment.fileName !== undefined,
   };
 }
 

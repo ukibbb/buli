@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { GrepToolCallCard } from "../../../src/components/toolCalls/GrepToolCallCard.tsx";
 
@@ -20,7 +21,7 @@ describe("GrepToolCallCard", () => {
     expect(frame).toContain("searching");
   });
 
-  test("completed_shows_bracketed_pattern_and_match_count", async () => {
+  test("completed_starts_collapsed_with_match_summary", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GrepToolCallCard
         renderState="completed"
@@ -38,13 +39,57 @@ describe("GrepToolCallCard", () => {
           ],
         }}
       />,
-      { width: 80, height: 20 },
+      { width: 120, height: 20 },
     );
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("[useState]");
     expect(frame).toContain("5 matches");
-    expect(frame).toContain("/src/App.tsx");
+    expect(frame).toContain("1 of 5 matched lines across 2 files for useState");
+    expect(frame).toContain("click to show content");
+    expect(frame).not.toContain("/src/App.tsx");
+  });
+
+  test("completed_expands_match_hits_when_summary_is_clicked", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <GrepToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "grep",
+          searchPattern: "useState",
+          totalMatchCount: 5,
+          matchedFileCount: 2,
+          matchHits: [
+            {
+              matchFilePath: "/src/App.tsx",
+              matchLineNumber: 10,
+              matchSnippet: "const [state, setState] = useState(null);",
+            },
+            {
+              matchFilePath: "/src/App.tsx",
+              matchLineNumber: 12,
+              matchSnippet: "const enabled = useState(false);",
+            },
+          ],
+        }}
+      />,
+      { width: 90, height: 20 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).not.toContain("/src/App.tsx");
+
+    await act(async () => {
+      await mockMouse.click(6, 3);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("click to hide content");
+    expect(frame.split("/src/App.tsx").length - 1).toBe(1);
+    expect(frame).not.toContain("/src/App.tsx:10");
+    expect(frame).not.toContain("/src/App.tsx:12");
+    expect(frame).toContain("useState(null)");
+    expect(frame).toContain("useState(false)");
   });
 
   test("completed_shows_returned_and_total_match_hits_when_truncated", async () => {
@@ -75,7 +120,7 @@ describe("GrepToolCallCard", () => {
     expect(frame).toContain("truncated");
   });
 
-  test("completed_shortens_long_search_patterns_in_narrow_cards", async () => {
+  test("completed_clips_long_search_patterns_without_rendering_ellipses", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GrepToolCallCard
         renderState="completed"
@@ -94,7 +139,8 @@ describe("GrepToolCallCard", () => {
     const identityLine = frame.split("\n").find((line) => line.includes("Grep"));
     expect(identityLine).toBeDefined();
     expect(identityLine ?? "").not.toContain("ComponentGallery");
-    expect(frame).toContain("...");
+    expect(frame).not.toContain("...");
+    expect(frame).not.toContain("…");
     expect(frame).toContain("5 matches");
   });
 

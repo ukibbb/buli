@@ -2,12 +2,17 @@ import {
   type AssistantOperatingMode,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
+  type ReasoningEffort,
   type ToolCallRequest,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
-import type { ProviderConversationTurn } from "./provider.ts";
+import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { streamAssistantResponseEventsForBashToolCall } from "./runtimeBashToolCallExecution.ts";
+import {
+  isExploreToolCallRequest,
+  streamAssistantResponseEventsForExploreToolCall,
+} from "./runtimeExplorerToolCallExecution.ts";
 import {
   isFileMutationToolCallRequest,
   streamAssistantResponseEventsForFileMutationToolCall,
@@ -34,14 +39,20 @@ export type {
 export type StreamAssistantResponseEventsForRequestedToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
+  conversationTurnProvider: ConversationTurnProvider;
   toolCallId: string;
   toolCallRequest: ToolCallRequest;
+  selectedModelId: string;
+  selectedReasoningEffort?: ReasoningEffort;
   assistantOperatingMode: AssistantOperatingMode;
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
+  promptContextBrowseRootPath: string;
+  promptContextStartingDirectoryPath: string;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   conversationHistory: InMemoryConversationHistory;
   abortSignal: AbortSignal;
+  canSpawnExplorer: boolean;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -89,6 +100,25 @@ export async function* streamAssistantResponseEventsForRequestedToolCall(
       workspaceRootPath: input.workspaceRootPath,
       toolResultSessionRecorder,
       abortSignal: input.abortSignal,
+      throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+      diagnosticLogger: input.diagnosticLogger,
+    });
+    return;
+  }
+
+  if (isExploreToolCallRequest(input.toolCallRequest)) {
+    yield* streamAssistantResponseEventsForExploreToolCall({
+      assistantResponseMessageId: input.assistantResponseMessageId,
+      providerConversationTurn: input.providerConversationTurn,
+      conversationTurnProvider: input.conversationTurnProvider,
+      toolCallId: input.toolCallId,
+      exploreToolCallRequest: input.toolCallRequest,
+      selectedModelId: input.selectedModelId,
+      ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      workspaceRootPath: input.workspaceRootPath,
+      toolResultSessionRecorder,
+      abortSignal: input.abortSignal,
+      canSpawnExplorer: input.canSpawnExplorer,
       throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
       diagnosticLogger: input.diagnosticLogger,
     });

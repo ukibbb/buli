@@ -397,6 +397,15 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
         fileContent: "",
       },
     },
+    {
+      toolName: "explore",
+      argumentsText: '{"description":"map runtime","prompt":"Inspect engine runtime flow."}',
+      expectedToolCallRequest: {
+        toolName: "explore",
+        explorationDescription: "map runtime",
+        explorationPrompt: "Inspect engine runtime flow.",
+      },
+    },
   ] as const;
 
   for (const toolCallCase of toolCallCases) {
@@ -428,6 +437,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
+  const exploreToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "explore");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
@@ -435,6 +445,13 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
+  expect(exploreToolDefinition?.description).toContain("read-only Explorer subagent");
+});
+
+test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
+  const explorerToolDefinitions = createOpenAiToolDefinitions({ availableToolNames: ["read", "glob", "grep"] });
+
+  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep"]);
 });
 
 test("parseOpenAiStream rejects malformed typed tool JSON arguments clearly", async () => {
@@ -700,7 +717,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       reasoning: { summary: "auto" },
       stream: true,
     });
-    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["bash", "read", "glob", "grep", "edit", "write"]);
+    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["bash", "read", "glob", "grep", "edit", "write", "explore"]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },
       {

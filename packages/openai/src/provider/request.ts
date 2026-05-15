@@ -4,12 +4,26 @@ import type {
   OpenAiReasoningReplayItem,
   OpenAiProviderTurnReplay,
   OpenAiProviderTurnReplayInputItem,
+  UserPromptImageAttachment,
 } from "@buli/contracts";
 
-export type OpenAiConversationMessageInputItem = {
-  role: "user" | "assistant";
+export type OpenAiInputTextContentPart = { type: "input_text"; text: string };
+export type OpenAiInputImageContentPart = { type: "input_image"; image_url: string };
+export type OpenAiUserMessageContentPart = OpenAiInputTextContentPart | OpenAiInputImageContentPart;
+
+export type OpenAiUserConversationMessageInputItem = {
+  role: "user";
+  content: string | OpenAiUserMessageContentPart[];
+};
+
+export type OpenAiAssistantConversationMessageInputItem = {
+  role: "assistant";
   content: string;
 };
+
+export type OpenAiConversationMessageInputItem =
+  | OpenAiUserConversationMessageInputItem
+  | OpenAiAssistantConversationMessageInputItem;
 
 export type OpenAiFunctionCallInputItem = Extract<OpenAiProviderTurnReplayInputItem, { type: "function_call" }>;
 
@@ -44,19 +58,36 @@ type ToolResultConversationSessionEntry = Extract<
   { entryKind: "completed_tool_result" | "failed_tool_result" | "denied_tool_result" }
 >;
 type UserPromptConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>;
+type ConversationCompactionSummaryConversationSessionEntry = Extract<
+  ConversationSessionEntry,
+  { entryKind: "conversation_compaction_summary" }
+>;
 
 type ConversationSessionTurn = {
   userPromptEntry: UserPromptConversationSessionEntry;
   entriesAfterUserPrompt: ConversationSessionEntry[];
 };
 
+// This is the OpenAI model-context boundary. Session entries remain the
+// canonical history, but each request is rebuilt from the latest compaction
+// summary plus valid terminal turns after it. Replay items stay paired with
+// their tool results so OpenAI can validate function_call_output.call_id.
 export function createOpenAiResponsesInputItems(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): OpenAiConversationInputItem[] {
+  const effectiveConversationSessionEntries = sliceConversationSessionEntriesFromLatestCompactionSummary(
+    conversationSessionEntries,
+  );
   const openAiInputItems: OpenAiConversationInputItem[] = [];
   let pendingConversationSessionTurn: ConversationSessionTurn | undefined;
 
-  for (const conversationSessionEntry of conversationSessionEntries) {
+  for (const conversationSessionEntry of effectiveConversationSessionEntries) {
+    if (conversationSessionEntry.entryKind === "conversation_compaction_summary") {
+      pendingConversationSessionTurn = undefined;
+      openAiInputItems.push(createCompactionSummaryInputItem(conversationSessionEntry));
+      continue;
+    }
+
     if (conversationSessionEntry.entryKind === "user_prompt") {
       pendingConversationSessionTurn = {
         userPromptEntry: conversationSessionEntry,
@@ -77,10 +108,22 @@ export function createOpenAiResponsesInputItems(
   }
 
   if (pendingConversationSessionTurn?.entriesAfterUserPrompt.length === 0) {
-    openAiInputItems.push(createMessageInputItem("user", pendingConversationSessionTurn.userPromptEntry.modelFacingPromptText));
+    openAiInputItems.push(createUserMessageInputItem(pendingConversationSessionTurn.userPromptEntry));
   }
 
   return openAiInputItems;
+}
+
+function sliceConversationSessionEntriesFromLatestCompactionSummary(
+  conversationSessionEntries: readonly ConversationSessionEntry[],
+): readonly ConversationSessionEntry[] {
+  const latestCompactionSummaryEntryIndex = conversationSessionEntries.findLastIndex(
+    (conversationSessionEntry) => conversationSessionEntry.entryKind === "conversation_compaction_summary",
+  );
+
+  return latestCompactionSummaryEntryIndex === -1
+    ? conversationSessionEntries
+    : conversationSessionEntries.slice(latestCompactionSummaryEntryIndex);
 }
 
 function appendOpenAiInputItemsForConversationSessionTurn(
@@ -99,7 +142,7 @@ function appendOpenAiInputItemsForConversationSessionTurn(
     return;
   }
 
-  openAiInputItems.push(createMessageInputItem("user", conversationSessionTurn.userPromptEntry.modelFacingPromptText));
+  openAiInputItems.push(createUserMessageInputItem(conversationSessionTurn.userPromptEntry));
   if (isOpenAiProviderTurnReplay(terminalAssistantMessageEntry.providerTurnReplay)) {
     openAiInputItems.push(...terminalAssistantMessageEntry.providerTurnReplay.inputItems);
   } else {
@@ -161,12 +204,58 @@ export function createOpenAiResponseReplayItems(responseOutputItems: readonly un
 }
 
 function createMessageInputItem(
-  role: "user" | "assistant",
+  role: "assistant",
   messageText: string,
-): OpenAiConversationMessageInputItem {
+): OpenAiAssistantConversationMessageInputItem {
   return {
     role,
     content: messageText,
+  };
+}
+
+function createUserMessageInputItem(
+  userPromptEntry: UserPromptConversationSessionEntry,
+): OpenAiUserConversationMessageInputItem {
+  const imageAttachments = userPromptEntry.imageAttachments ?? [];
+  if (imageAttachments.length === 0) {
+    return {
+      role: "user",
+      content: userPromptEntry.modelFacingPromptText,
+    };
+  }
+
+  return {
+    role: "user",
+    content: [
+      ...(userPromptEntry.modelFacingPromptText.length > 0
+        ? [{ type: "input_text" as const, text: userPromptEntry.modelFacingPromptText }]
+        : []),
+      ...imageAttachments.map(createOpenAiInputImageContentPart),
+    ],
+  };
+}
+
+function createCompactionSummaryInputItem(
+  compactionSummaryEntry: ConversationCompactionSummaryConversationSessionEntry,
+): OpenAiUserConversationMessageInputItem {
+  return {
+    role: "user",
+    content: [
+      "<conversation_compaction_summary>",
+      "The earlier conversation was compacted. Continue from this summary:",
+      "",
+      compactionSummaryEntry.summaryText,
+      "</conversation_compaction_summary>",
+    ].join("\n"),
+  };
+}
+
+function createOpenAiInputImageContentPart(
+  imageAttachment: UserPromptImageAttachment,
+): OpenAiInputImageContentPart {
+  return {
+    type: "input_image",
+    image_url: imageAttachment.dataUrl,
   };
 }
 
@@ -380,6 +469,15 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
       "Tool: write",
       `Path: ${conversationSessionEntry.toolCallRequest.writeTargetPath}`,
       `Content length: ${conversationSessionEntry.toolCallRequest.fileContent.length}`,
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "explore") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: explore",
+      `Description: ${conversationSessionEntry.toolCallRequest.explorationDescription}`,
+      `Prompt: ${conversationSessionEntry.toolCallRequest.explorationPrompt}`,
     ].join("\n");
   }
 

@@ -2,12 +2,14 @@ import { z } from "zod";
 import { ProviderTurnReplaySchema } from "./providerTurnReplay.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
+import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 
 export const UserPromptConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("user_prompt"),
-    promptText: z.string().min(1),
-    modelFacingPromptText: z.string().min(1),
+    promptText: z.string(),
+    modelFacingPromptText: z.string(),
+    imageAttachments: z.array(UserPromptImageAttachmentSchema).optional(),
   })
   .strict();
 
@@ -60,6 +62,14 @@ export const ToolCallConversationSessionEntrySchema = z
   })
   .strict();
 
+export const ConversationCompactionSummaryConversationSessionEntrySchema = z
+  .object({
+    entryKind: z.literal("conversation_compaction_summary"),
+    summaryText: z.string().min(1),
+    compactedEntryCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const ToolResultConversationSessionEntryBaseSchema = z
   .object({
     toolCallId: z.string().min(1),
@@ -86,6 +96,7 @@ export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
+  ConversationCompactionSummaryConversationSessionEntrySchema,
   CompletedToolResultConversationSessionEntrySchema,
   FailedToolResultConversationSessionEntrySchema,
   DeniedToolResultConversationSessionEntrySchema,
@@ -112,6 +123,9 @@ export type InterruptedAssistantMessageConversationSessionEntry = z.infer<
 >;
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;
+export type ConversationCompactionSummaryConversationSessionEntry = z.infer<
+  typeof ConversationCompactionSummaryConversationSessionEntrySchema
+>;
 export type CompletedToolResultConversationSessionEntry = z.infer<typeof CompletedToolResultConversationSessionEntrySchema>;
 export type FailedToolResultConversationSessionEntry = z.infer<typeof FailedToolResultConversationSessionEntrySchema>;
 export type DeniedToolResultConversationSessionEntry = z.infer<typeof DeniedToolResultConversationSessionEntrySchema>;

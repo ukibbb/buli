@@ -6,7 +6,7 @@ import {
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { normalizeOpenTuiPasteEventText } from "../behavior/normalizeOpenTuiPasteEventText.ts";
 
-export const PROMPT_TEXTAREA_ROW_COUNT = 3;
+export const PROMPT_TEXTAREA_ROW_COUNT = 1;
 
 export type PromptTextareaEdit = {
   promptDraft: string;
@@ -20,6 +20,7 @@ export type PromptTextareaProps = {
   rowCount?: number;
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
+  onNativeClipboardPasteRequested?: (() => void | Promise<void>) | undefined;
 };
 
 const promptTextareaKeyBindings: KeyBinding[] = [
@@ -94,15 +95,15 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
         pasteEvent.preventDefault();
         if (pastedText.length > 0) {
           promptTextareaRef.current?.insertText(pastedText);
+          return;
         }
+        void props.onNativeClipboardPasteRequested?.();
       }}
       onSubmit={() => {
         if (!isSynchronizingTextareaFromPromptStateRef.current) {
           props.onPromptSubmitted();
         }
       }}
-      placeholder="Ask Buli..."
-      placeholderColor={chatScreenTheme.textDim}
       selectable={true}
       selectionBg={chatScreenTheme.accentPrimary}
       selectionFg={chatScreenTheme.textPrimary}

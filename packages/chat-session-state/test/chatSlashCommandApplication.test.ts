@@ -61,6 +61,9 @@ test("applyChatSlashCommandToChatSessionState returns external effects for sessi
     applyChatSlashCommandToChatSessionState(initialChatSessionState, "clear").chatSlashCommandApplicationEffect,
   ).toEqual({ effectType: "clear_current_conversation_session" } satisfies ChatSlashCommandApplicationEffect);
   expect(
+    applyChatSlashCommandToChatSessionState(initialChatSessionState, "compact").chatSlashCommandApplicationEffect,
+  ).toEqual({ effectType: "compact_current_conversation_session" } satisfies ChatSlashCommandApplicationEffect);
+  expect(
     applyChatSlashCommandToChatSessionState(initialChatSessionState, "sessions").chatSlashCommandApplicationEffect,
   ).toEqual({ effectType: "load_conversation_sessions" } satisfies ChatSlashCommandApplicationEffect);
   expect(

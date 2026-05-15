@@ -9,18 +9,18 @@ export type ConversationSessionSelectionPaneProps = {
   conversationSessions: readonly ConversationSessionSummary[];
   highlightedConversationSessionIndex: number;
   activeConversationSessionId: string | undefined;
+  accentColor: string;
 };
 
 export function ConversationSessionSelectionPane(props: ConversationSessionSelectionPaneProps): ReactNode {
   return (
     <box
       borderStyle="rounded"
-      borderColor={chatScreenTheme.border}
+      borderColor={props.accentColor}
       backgroundColor={chatScreenTheme.surfaceOne}
       flexDirection="column"
       flexShrink={0}
       marginX={2}
-      marginBottom={1}
       paddingX={1}
     >
       <text fg={chatScreenTheme.textMuted}>Sessions</text>

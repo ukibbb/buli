@@ -1,8 +1,7 @@
-import type { ReactNode } from "react";
-import type { ToolCallGrepDetail } from "@buli/contracts";
+import { useState, type ReactNode } from "react";
+import type { ToolCallGrepDetail, ToolCallGrepMatch } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
-import { FileReference } from "../primitives/FileReference.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
@@ -10,6 +9,7 @@ import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
 } from "./ToolCallCardHeaderSlots.tsx";
+import { ToolCallResultDisclosureControl } from "./ToolCallResultDisclosureControl.tsx";
 
 export type GrepToolCallCardProps = {
   toolCallDetail: ToolCallGrepDetail;
@@ -18,7 +18,16 @@ export type GrepToolCallCardProps = {
   errorText?: string;
 };
 
+type GrepMatchFileSection = {
+  matchFilePath: string;
+  matchLines: {
+    lineNumber: number;
+    lineText: string;
+  }[];
+};
+
 export function GrepToolCallCard(props: GrepToolCallCardProps): ReactNode {
+  const [isGrepResultExpanded, setIsGrepResultExpanded] = useState(false);
   const accentColor =
     props.renderState === "failed"
       ? chatScreenTheme.accentRed
@@ -51,7 +60,13 @@ export function GrepToolCallCard(props: GrepToolCallCardProps): ReactNode {
           statusLabel={buildGrepStatusLabel(props)}
         />
       }
-      bodyContent={buildGrepBodyContent(props)}
+      bodyContent={buildGrepBodyContent({
+        grepToolCallCardProps: props,
+        isGrepResultExpanded,
+        onGrepResultExpansionToggle: () => {
+          setIsGrepResultExpanded((currentGrepResultExpanded) => !currentGrepResultExpanded);
+        },
+      })}
     />
   );
 }
@@ -82,7 +97,14 @@ function buildGrepStatusLabel(props: GrepToolCallCardProps): string {
   return "done";
 }
 
-function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
+type GrepBodyContentInput = {
+  grepToolCallCardProps: GrepToolCallCardProps;
+  isGrepResultExpanded: boolean;
+  onGrepResultExpansionToggle: () => void;
+};
+
+function buildGrepBodyContent(input: GrepBodyContentInput): ReactNode {
+  const props = input.grepToolCallCardProps;
   if (props.renderState === "failed") {
     if (props.errorText !== undefined) {
       // Status header already carries errorText; suppress body to avoid duplicating it.
@@ -96,29 +118,84 @@ function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
   if (!matchHits || matchHits.length === 0) {
     return undefined;
   }
+  const grepMatchFileSections = groupGrepMatchesByFile(matchHits);
   return (
-    <box flexDirection="column" paddingX={1} width="100%">
-      {matchHits.map((matchHit, index) => (
-        <box
-          key={`grep-hit-${index}`}
-          flexDirection="column"
-          width="100%"
-          {...(index > 0 ? { marginTop: 1 } : {})}
-        >
-          <FileReference
-            filePath={matchHit.matchFilePath}
-            lineNumber={matchHit.matchLineNumber}
-            variant="inline"
-          />
-          <FencedCodeBlock
-            variant="embedded"
-            filePath={matchHit.matchFilePath}
-            codeLines={[
-              { lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet },
-            ]}
-          />
+    <box flexDirection="column" width="100%">
+      <ToolCallResultDisclosureControl
+        isResultExpanded={input.isGrepResultExpanded}
+        onResultExpansionToggle={input.onGrepResultExpansionToggle}
+        resultSummaryText={buildGrepResultSummaryText(props.toolCallDetail)}
+      />
+      {input.isGrepResultExpanded ? (
+        <box flexDirection="column" marginTop={1} paddingX={1} width="100%">
+          {grepMatchFileSections.map((grepMatchFileSection, index) => (
+            <box
+              key={grepMatchFileSection.matchFilePath}
+              flexDirection="column"
+              width="100%"
+              {...(index > 0 ? { marginTop: 1 } : {})}
+            >
+              <GrepMatchFileHeading matchFilePath={grepMatchFileSection.matchFilePath} />
+              <FencedCodeBlock
+                variant="embedded"
+                filePath={grepMatchFileSection.matchFilePath}
+                codeLines={grepMatchFileSection.matchLines}
+              />
+            </box>
+          ))}
         </box>
-      ))}
+      ) : null}
     </box>
   );
+}
+
+function groupGrepMatchesByFile(matchHits: readonly ToolCallGrepMatch[]): GrepMatchFileSection[] {
+  const grepMatchFileSections: GrepMatchFileSection[] = [];
+  const sectionIndexByMatchFilePath = new Map<string, number>();
+
+  for (const matchHit of matchHits) {
+    const existingSectionIndex = sectionIndexByMatchFilePath.get(matchHit.matchFilePath);
+    if (existingSectionIndex !== undefined) {
+      const existingGrepMatchFileSection = grepMatchFileSections[existingSectionIndex];
+      if (existingGrepMatchFileSection === undefined) {
+        continue;
+      }
+      existingGrepMatchFileSection.matchLines.push({
+        lineNumber: matchHit.matchLineNumber,
+        lineText: matchHit.matchSnippet,
+      });
+      continue;
+    }
+
+    sectionIndexByMatchFilePath.set(matchHit.matchFilePath, grepMatchFileSections.length);
+    grepMatchFileSections.push({
+      matchFilePath: matchHit.matchFilePath,
+      matchLines: [{ lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet }],
+    });
+  }
+
+  return grepMatchFileSections;
+}
+
+function GrepMatchFileHeading(props: { matchFilePath: string }): ReactNode {
+  return (
+    <text fg={chatScreenTheme.textSecondary} wrapMode="none" width="100%">
+      {props.matchFilePath}
+    </text>
+  );
+}
+
+function buildGrepResultSummaryText(toolCallDetail: ToolCallGrepDetail): string {
+  const returnedMatchHitCount = toolCallDetail.matchHits?.length ?? toolCallDetail.returnedMatchHitCount ?? 0;
+  const totalMatchCount = toolCallDetail.totalMatchCount;
+  const matchCountText = totalMatchCount !== undefined && totalMatchCount !== returnedMatchHitCount
+    ? `${returnedMatchHitCount} of ${totalMatchCount}`
+    : String(returnedMatchHitCount);
+  const matchCountForPlural = totalMatchCount ?? returnedMatchHitCount;
+  const matchCountLabel = matchCountForPlural === 1 ? "matched line" : "matched lines";
+  const fileCountText = toolCallDetail.matchedFileCount === undefined
+    ? ""
+    : ` across ${toolCallDetail.matchedFileCount} ${toolCallDetail.matchedFileCount === 1 ? "file" : "files"}`;
+
+  return `${matchCountText} ${matchCountLabel}${fileCountText} for ${toolCallDetail.searchPattern}`;
 }

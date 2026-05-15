@@ -3,17 +3,35 @@ import type {
   AssistantResponseEvent,
   ConversationSessionEntry,
   ModelContextItem,
+  ProviderAvailableToolName,
   ProviderStreamEvent,
   ProviderTurnReplay,
   ReasoningEffort,
+  UserPromptImageAttachment,
 } from "@buli/contracts";
 
 export type ConversationTurnRequest = {
   userPromptText: string;
+  userPromptImageAttachments?: readonly UserPromptImageAttachment[];
   assistantOperatingMode?: AssistantOperatingMode;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
 };
+
+export type ConversationCompactionRequest = {
+  selectedModelId: string;
+  selectedReasoningEffort?: ReasoningEffort;
+  abortSignal?: AbortSignal;
+};
+
+export type ConversationCompactionResult = {
+  summaryText: string;
+  compactedEntryCount: number;
+};
+
+export interface ConversationCompactionRunner {
+  compactConversationSession(input: ConversationCompactionRequest): Promise<ConversationCompactionResult>;
+}
 
 export type ProviderConversationTurnRequest = {
   systemPromptText: string;
@@ -22,6 +40,7 @@ export type ProviderConversationTurnRequest = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
+  availableToolNames?: readonly ProviderAvailableToolName[];
   abortSignal?: AbortSignal;
 };
 

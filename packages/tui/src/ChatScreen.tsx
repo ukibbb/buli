@@ -7,12 +7,15 @@ import type {
   ConversationSessionEntry,
   ConversationSessionSummary,
   ReasoningEffort,
+  UserPromptImageAttachment,
 } from "@buli/contracts";
 import {
   type AssistantConversationRunner,
+  type ConversationCompactionRequest,
   type PromptContextCandidate,
 } from "@buli/engine";
 import {
+  appendPromptImageAttachmentToDraft,
   applyChatSessionKeyboardInputToChatSessionState,
   applyAssistantResponseEventsToChatSessionState,
   applyChatSlashCommandToChatSessionState,
@@ -21,6 +24,7 @@ import {
   hideCommandHelpModal,
   listOrderedConversationMessageParts,
   refreshChatSlashCommandSelectionForCurrentState,
+  removeLastPromptImageAttachmentFromDraft,
   replacePromptDraftFromEditor,
   hydrateConversationTranscriptFromSessionEntries,
   showAvailableConversationSessionsForSelection,
@@ -57,6 +61,7 @@ import {
   normalizeOpenTuiKeyEventForChatSession,
 } from "./behavior/openTuiKeyboardInputAdapter.ts";
 import { normalizeOpenTuiPasteEventText } from "./behavior/normalizeOpenTuiPasteEventText.ts";
+import { readNativeClipboardImageAttachment } from "./clipboard/readNativeClipboardImageAttachment.ts";
 import { useChatScreenActiveTurnInterrupt } from "./behavior/useChatScreenActiveTurnInterrupt.ts";
 import { useChatScreenPromptContextSelectionRefresh } from "./behavior/useChatScreenPromptContextSelectionRefresh.ts";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
@@ -72,6 +77,10 @@ export type ChatScreenProps = {
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];
   switchConversationSession?: (conversationSessionId: string) => Promise<ConversationSessionSwitchResult> | ConversationSessionSwitchResult;
   exportCurrentConversationSession?: () => Promise<ConversationSessionExportResult> | ConversationSessionExportResult;
+  compactCurrentConversationSession?: (
+    input: ConversationCompactionRequest,
+  ) => Promise<ConversationSessionCompactionResult> | ConversationSessionCompactionResult;
+  readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: () => ConversationSessionSwitchResult | void;
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
@@ -88,7 +97,15 @@ export type ConversationSessionExportResult = {
   exportFileUrl: string;
 };
 
+export type ConversationSessionCompactionResult = {
+  conversationSessionEntries: readonly ConversationSessionEntry[];
+};
+
 type ConversationSessionExportStatus =
+  | { step: "idle" }
+  | { step: "failed"; errorMessage: string };
+
+type ConversationSessionCompactionStatus =
   | { step: "idle" }
   | { step: "failed"; errorMessage: string };
 
@@ -171,6 +188,9 @@ export function ChatScreen(props: ChatScreenProps) {
     props.initialConversationSessionId,
   );
   const [conversationSessionExportStatus, setConversationSessionExportStatus] = useState<ConversationSessionExportStatus>({
+    step: "idle",
+  });
+  const [conversationSessionCompactionStatus, setConversationSessionCompactionStatus] = useState<ConversationSessionCompactionStatus>({
     step: "idle",
   });
   const [chatSessionState, setChatSessionState] = useState(() => {
@@ -267,9 +287,15 @@ export function ChatScreen(props: ChatScreenProps) {
     conversationMessageScrollBox.scrollBy(direction === "up" ? -1 : 1, "viewport");
   });
 
-  const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (submittedPromptText: string) => {
+  const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (input: {
+    submittedPromptText: string;
+    submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+  }) => {
     const conversationTurnRequest = {
-      userPromptText: submittedPromptText,
+      userPromptText: input.submittedPromptText,
+      ...(input.submittedPromptImageAttachments.length > 0
+        ? { userPromptImageAttachments: input.submittedPromptImageAttachments }
+        : {}),
       assistantOperatingMode: latestChatSessionStateRef.current.selectedAssistantOperatingMode,
       selectedModelId: latestChatSessionStateRef.current.selectedModelId,
       ...(latestChatSessionStateRef.current.selectedReasoningEffort
@@ -281,7 +307,8 @@ export function ChatScreen(props: ChatScreenProps) {
       selectedModelId: conversationTurnRequest.selectedModelId,
       selectedReasoningEffort: conversationTurnRequest.selectedReasoningEffort ?? null,
       assistantOperatingMode: conversationTurnRequest.assistantOperatingMode,
-      submittedPromptLength: submittedPromptText.length,
+      submittedPromptLength: input.submittedPromptText.length,
+      submittedPromptImageAttachmentCount: input.submittedPromptImageAttachments.length,
     });
 
     try {
@@ -430,6 +457,38 @@ export function ChatScreen(props: ChatScreenProps) {
     }
   });
 
+  const compactCurrentConversationSession = useEffectEvent(async () => {
+    if (!props.compactCurrentConversationSession) {
+      setConversationSessionCompactionStatus({ step: "failed", errorMessage: "Session compaction is unavailable." });
+      return;
+    }
+
+    setConversationSessionCompactionStatus({ step: "idle" });
+    try {
+      const compactedConversationSession = await props.compactCurrentConversationSession({
+        selectedModelId: latestChatSessionStateRef.current.selectedModelId,
+        ...(latestChatSessionStateRef.current.selectedReasoningEffort
+          ? { selectedReasoningEffort: latestChatSessionStateRef.current.selectedReasoningEffort }
+          : {}),
+      });
+      startTransition(() => {
+        setChatSessionState((currentChatSessionState) => {
+          const nextChatSessionState = hydrateConversationTranscriptFromSessionEntries(
+            currentChatSessionState,
+            compactedConversationSession.conversationSessionEntries,
+          );
+          latestChatSessionStateRef.current = nextChatSessionState;
+          return nextChatSessionState;
+        });
+      });
+    } catch (error) {
+      setConversationSessionCompactionStatus({
+        step: "failed",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   const applyChatSlashCommandApplicationEffectToChatScreen = useEffectEvent(
     (chatSlashCommandApplicationEffect: ChatSlashCommandApplicationEffect | undefined) => {
       if (!chatSlashCommandApplicationEffect) {
@@ -455,6 +514,11 @@ export function ChatScreen(props: ChatScreenProps) {
 
       if (chatSlashCommandApplicationEffect.effectType === "load_conversation_sessions") {
         void loadConversationSessionsForSelection();
+        return;
+      }
+
+      if (chatSlashCommandApplicationEffect.effectType === "compact_current_conversation_session") {
+        void compactCurrentConversationSession();
         return;
       }
 
@@ -584,11 +648,15 @@ export function ChatScreen(props: ChatScreenProps) {
         isPromptSubmissionInFlightRef.current = true;
         logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.prompt_submitted", {
           submittedPromptLength: input.chatSessionKeyboardEffect.submittedPromptText.length,
+          submittedPromptImageAttachmentCount: input.chatSessionKeyboardEffect.submittedPromptImageAttachments.length,
           selectedModelId: input.previousChatSessionState.selectedModelId,
           selectedReasoningEffort: input.previousChatSessionState.selectedReasoningEffort ?? null,
         });
         scrollConversationMessagesToBottom();
-        void streamAssistantResponseForSubmittedPrompt(input.chatSessionKeyboardEffect.submittedPromptText);
+        void streamAssistantResponseForSubmittedPrompt({
+          submittedPromptText: input.chatSessionKeyboardEffect.submittedPromptText,
+          submittedPromptImageAttachments: input.chatSessionKeyboardEffect.submittedPromptImageAttachments,
+        });
         return;
       case "submit_pending_tool_approval_decision":
         submitPendingToolApprovalDecision({
@@ -611,6 +679,26 @@ export function ChatScreen(props: ChatScreenProps) {
     shouldRespectPromptTextareaOwnership?: boolean;
   }) => {
     const previousChatSessionState = latestChatSessionStateRef.current;
+    if (input.chatSessionKeyboardInput.keyName === "paste") {
+      input.inputEvent?.preventDefault();
+      input.inputEvent?.stopPropagation();
+      void pasteClipboardImageAttachmentIntoPrompt();
+      return;
+    }
+
+    if (
+      input.chatSessionKeyboardInput.keyName === "backspace" &&
+      previousChatSessionState.promptDraft.length === 0 &&
+      previousChatSessionState.pendingPromptImageAttachments.length > 0
+    ) {
+      input.inputEvent?.preventDefault();
+      input.inputEvent?.stopPropagation();
+      const nextChatSessionState = removeLastPromptImageAttachmentFromDraft(previousChatSessionState);
+      latestChatSessionStateRef.current = nextChatSessionState;
+      setChatSessionState(nextChatSessionState);
+      return;
+    }
+
     if (
       input.shouldRespectPromptTextareaOwnership !== false &&
       shouldPromptTextareaHandleKeyboardInput({
@@ -695,6 +783,35 @@ export function ChatScreen(props: ChatScreenProps) {
     });
   });
 
+  const pasteClipboardImageAttachmentIntoPrompt = useEffectEvent(async () => {
+    const previousChatSessionState = latestChatSessionStateRef.current;
+    if (!canPromptTextareaEditChatSessionState(previousChatSessionState)) {
+      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
+        conversationTurnStatus: previousChatSessionState.conversationTurnStatus,
+      });
+      return;
+    }
+
+    const readClipboardImageAttachment = props.readClipboardImageAttachment ?? readNativeClipboardImageAttachment;
+    const clipboardImageAttachment = await readClipboardImageAttachment().catch(() => undefined);
+    if (!clipboardImageAttachment) {
+      logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.clipboard_image_paste_no_image");
+      return;
+    }
+
+    const nextChatSessionState = appendPromptImageAttachmentToDraft(
+      latestChatSessionStateRef.current,
+      clipboardImageAttachment,
+    );
+    latestChatSessionStateRef.current = nextChatSessionState;
+    setChatSessionState(nextChatSessionState);
+    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.clipboard_image_pasted", {
+      pendingPromptImageAttachmentCount: nextChatSessionState.pendingPromptImageAttachments.length,
+      mimeType: clipboardImageAttachment.mimeType,
+      dataUrlLength: clipboardImageAttachment.dataUrl.length,
+    });
+  });
+
   const handlePasteOutsidePromptTextarea = useEffectEvent((pasteEvent: PasteEvent) => {
     if (canPromptTextareaEditChatSessionState(latestChatSessionStateRef.current)) {
       return;
@@ -723,6 +840,32 @@ export function ChatScreen(props: ChatScreenProps) {
     });
   });
 
+  const homeDirectoryPath = os.homedir();
+  const rawWorkingDirectoryPath = process.cwd();
+  const workingDirectoryPath = formatChatScreenWorkingDirectoryPath({
+    homeDirectoryPath,
+    workingDirectoryPath: rawWorkingDirectoryPath,
+  });
+  const {
+    isPromptInputDisabled,
+    availableChatSlashCommands,
+    modeLabel,
+    inputPanelAccentColor,
+    promptInputHintOverride,
+    reasoningEffortLabel,
+    availableCommandHelpModalRowCount,
+    totalContextTokensUsed,
+    contextWindowTokenCapacity,
+    orderedConversationMessages,
+    orderedConversationMessagePartCount,
+    shouldRenderMinimumHeightPromptStrip,
+  } = buildChatScreenViewModel({
+    chatSessionState,
+    terminalRowCount: rows,
+    terminalColumnCount: columns,
+    terminalSizeTierForChatScreen,
+  });
+
   const modelAndReasoningSelectionPane =
     chatSessionState.modelAndReasoningSelectionState.step === "loading_available_models" ? (
       <box alignItems="center" flexGrow={1} justifyContent="center">
@@ -740,6 +883,7 @@ export function ChatScreen(props: ChatScreenProps) {
         )}
         highlightedChoiceIndex={chatSessionState.modelAndReasoningSelectionState.highlightedModelIndex}
         headingText="Choose model"
+        accentColor={inputPanelAccentColor}
       />
     ) : chatSessionState.modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices" ? (
       <ModelAndReasoningSelectionPane
@@ -750,14 +894,7 @@ export function ChatScreen(props: ChatScreenProps) {
           chatSessionState.modelAndReasoningSelectionState.highlightedReasoningEffortChoiceIndex
         }
         headingText={`Choose reasoning for ${chatSessionState.modelAndReasoningSelectionState.selectedModel.displayName}`}
-      />
-    ) : null;
-
-  const slashCommandSelectionPane =
-    chatSessionState.slashCommandSelectionState.step === "showing_slash_commands" ? (
-      <SlashCommandSelectionPane
-        availableSlashCommands={chatSessionState.slashCommandSelectionState.availableSlashCommands}
-        highlightedSlashCommandIndex={chatSessionState.slashCommandSelectionState.highlightedSlashCommandIndex}
+        accentColor={inputPanelAccentColor}
       />
     ) : null;
 
@@ -765,19 +902,18 @@ export function ChatScreen(props: ChatScreenProps) {
     chatSessionState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
       <box
         borderStyle="rounded"
-        borderColor={chatScreenTheme.border}
+        borderColor={inputPanelAccentColor}
         backgroundColor={chatScreenTheme.surfaceOne}
         flexDirection="column"
         flexShrink={0}
         marginX={2}
-        marginBottom={1}
         paddingX={1}
       >
         <text fg={chatScreenTheme.textMuted}>Sessions</text>
         <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
       </box>
     ) : chatSessionState.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
-      <box paddingX={2} marginBottom={1}>
+      <box paddingX={2}>
         <ErrorBannerBlock
           titleText="Could not load sessions"
           errorText={chatSessionState.conversationSessionSelectionState.errorMessage}
@@ -790,6 +926,7 @@ export function ChatScreen(props: ChatScreenProps) {
           chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex
         }
         activeConversationSessionId={chatSessionState.conversationSessionSelectionState.activeConversationSessionId}
+        accentColor={inputPanelAccentColor}
       />
     ) : null;
 
@@ -800,6 +937,7 @@ export function ChatScreen(props: ChatScreenProps) {
         highlightedPromptContextCandidateIndex={
           chatSessionState.promptContextSelectionState.highlightedPromptContextCandidateIndex
         }
+        accentColor={inputPanelAccentColor}
       />
     ) : null;
 
@@ -810,32 +948,21 @@ export function ChatScreen(props: ChatScreenProps) {
       </box>
     ) : null;
 
-  const homeDirectoryPath = os.homedir();
-  const rawWorkingDirectoryPath = process.cwd();
-  const workingDirectoryPath = formatChatScreenWorkingDirectoryPath({
-    homeDirectoryPath,
-    workingDirectoryPath: rawWorkingDirectoryPath,
-  });
-  const {
-    isPromptInputDisabled,
-    availableChatSlashCommands,
-    modeLabel,
-    inputPanelAccentColor,
-    promptInputHintOverride,
-    reasoningEffortLabel,
-    promptInputRegionColumnCount,
-    availableCommandHelpModalRowCount,
-    totalContextTokensUsed,
-    contextWindowTokenCapacity,
-    orderedConversationMessages,
-    orderedConversationMessagePartCount,
-    shouldRenderMinimumHeightPromptStrip,
-  } = buildChatScreenViewModel({
-    chatSessionState,
-    terminalRowCount: rows,
-    terminalColumnCount: columns,
-    terminalSizeTierForChatScreen,
-  });
+  const conversationSessionCompactionStatusPane =
+    conversationSessionCompactionStatus.step === "failed" ? (
+      <box paddingX={2} marginBottom={1}>
+        <ErrorBannerBlock titleText="Could not compact session" errorText={conversationSessionCompactionStatus.errorMessage} />
+      </box>
+    ) : null;
+
+  const slashCommandSelectionPane =
+    chatSessionState.slashCommandSelectionState.step === "showing_slash_commands" ? (
+      <SlashCommandSelectionPane
+        availableSlashCommands={chatSessionState.slashCommandSelectionState.availableSlashCommands}
+        highlightedSlashCommandIndex={chatSessionState.slashCommandSelectionState.highlightedSlashCommandIndex}
+        accentColor={inputPanelAccentColor}
+      />
+    ) : null;
 
   useEffect(() => {
     logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.render_snapshot", {
@@ -864,6 +991,7 @@ export function ChatScreen(props: ChatScreenProps) {
     chatSessionState.isCommandHelpModalVisible,
     chatSessionState.modelAndReasoningSelectionState.step,
     chatSessionState.pendingToolApprovalRequest,
+    chatSessionState.pendingPromptImageAttachments.length,
     chatSessionState.promptContextSelectionState.step,
     chatSessionState.promptDraft.length,
     chatSessionState.isReasoningSummaryVisible,
@@ -907,6 +1035,7 @@ export function ChatScreen(props: ChatScreenProps) {
               listOrderedConversationMessageParts(chatSessionState, messageId)
             }
             conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
+            horizontalRuleColor={inputPanelAccentColor}
           />
         )}
       </box>
@@ -925,31 +1054,32 @@ export function ChatScreen(props: ChatScreenProps) {
           </box>
         ) : null}
         {conversationSessionExportStatusPane}
+        {conversationSessionCompactionStatusPane}
         {conversationSessionSelectionPane}
         {slashCommandSelectionPane}
         {promptContextSelectionPane}
-        <box
-          alignSelf="center"
-          flexDirection="column"
-          flexShrink={0}
-          width={promptInputRegionColumnCount}
-        >
+        <box flexDirection="column" flexShrink={0} width="100%">
           {shouldRenderMinimumHeightPromptStrip ? (
-            <MinimumHeightPromptStrip
-              promptDraft={chatSessionState.promptDraft}
-              promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
-              selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
-              isPromptInputDisabled={isPromptInputDisabled}
-              accentColor={inputPanelAccentColor}
-              assistantResponseStatus={chatSessionState.conversationTurnStatus}
-              isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
-              onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
-              onPromptSubmitted={submitPromptDraftFromPromptTextarea}
-            />
+            <box paddingX={2} width="100%">
+              <MinimumHeightPromptStrip
+                promptDraft={chatSessionState.promptDraft}
+                promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
+                pendingPromptImageAttachments={chatSessionState.pendingPromptImageAttachments}
+                selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
+                isPromptInputDisabled={isPromptInputDisabled}
+                accentColor={inputPanelAccentColor}
+                assistantResponseStatus={chatSessionState.conversationTurnStatus}
+                isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
+                onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
+                onPromptSubmitted={submitPromptDraftFromPromptTextarea}
+                onNativeClipboardPasteRequested={pasteClipboardImageAttachmentIntoPrompt}
+              />
+            </box>
           ) : (
             <InputPanel
               promptDraft={chatSessionState.promptDraft}
               promptDraftCursorOffset={chatSessionState.promptDraftCursorOffset}
+              pendingPromptImageAttachments={chatSessionState.pendingPromptImageAttachments}
               selectedPromptContextReferenceTexts={chatSessionState.selectedPromptContextReferenceTexts}
               isPromptInputDisabled={isPromptInputDisabled}
               {...(promptInputHintOverride !== undefined ? { promptInputHintOverride } : {})}
@@ -963,6 +1093,7 @@ export function ChatScreen(props: ChatScreenProps) {
               contextWindowTokenCapacity={contextWindowTokenCapacity}
               onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
               onPromptSubmitted={submitPromptDraftFromPromptTextarea}
+              onNativeClipboardPasteRequested={pasteClipboardImageAttachmentIntoPrompt}
             />
           )}
         </box>

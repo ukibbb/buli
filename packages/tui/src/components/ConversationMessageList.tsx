@@ -8,6 +8,7 @@ export type ConversationMessageListProps = {
   isReasoningSummaryVisible: boolean;
   resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
+  horizontalRuleColor: string;
 };
 
 const MemoizedConversationMessageRow = memo(ConversationMessageRow);
@@ -32,6 +33,7 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
               conversationMessage={conversationMessage}
               conversationMessageParts={props.resolveConversationMessageParts(conversationMessage.id)}
               isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+              horizontalRuleColor={props.horizontalRuleColor}
             />
           </box>
         ))}

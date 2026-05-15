@@ -23,7 +23,7 @@ export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./p
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
 export { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
-export { buildBuliSystemPrompt } from "./systemPrompt.ts";
+export { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "./systemPrompt.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
 export { createStartedEditToolCallDetail, prepareEditToolCall, runPreparedEditToolCall } from "./tools/editTool.ts";
 export { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
@@ -48,6 +48,9 @@ export type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 export type {
   ActiveConversationTurn,
   AssistantConversationRunner,
+  ConversationCompactionRequest,
+  ConversationCompactionResult,
+  ConversationCompactionRunner,
   ConversationTurnProvider,
   ConversationTurnRequest,
   ProviderConversationTurn,

@@ -27,6 +27,7 @@ export {
   AssistantToolCallPartStatusSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
   ConversationMessagePartSchema,
+  UserImageAttachmentConversationMessagePartSchema,
   UserTextConversationMessagePartSchema,
 } from "./conversationMessagePart.ts";
 export type {
@@ -43,8 +44,17 @@ export type {
   AssistantToolCallPartStatus,
   AssistantTurnSummaryConversationMessagePart,
   ConversationMessagePart,
+  UserImageAttachmentConversationMessagePart,
   UserTextConversationMessagePart,
 } from "./conversationMessagePart.ts";
+export {
+  UserPromptImageAttachmentMimeTypeSchema,
+  UserPromptImageAttachmentSchema,
+} from "./userPromptImageAttachment.ts";
+export type {
+  UserPromptImageAttachment,
+  UserPromptImageAttachmentMimeType,
+} from "./userPromptImageAttachment.ts";
 export { ConversationTurnStatusSchema } from "./conversationTurnStatus.ts";
 export type { ConversationTurnStatus } from "./conversationTurnStatus.ts";
 export { noopBuliDiagnosticLogger } from "./diagnosticLog.ts";
@@ -65,6 +75,7 @@ export {
   AssistantMessageConversationSessionEntryStatusSchema,
   CompletedAssistantMessageConversationSessionEntrySchema,
   CompletedToolResultConversationSessionEntrySchema,
+  ConversationCompactionSummaryConversationSessionEntrySchema,
   ConversationSessionEntrySchema,
   ConversationSessionSnapshotSchema,
   DeniedToolResultConversationSessionEntrySchema,
@@ -86,6 +97,7 @@ export type {
   AssistantMessageConversationSessionEntryStatus,
   CompletedAssistantMessageConversationSessionEntry,
   CompletedToolResultConversationSessionEntry,
+  ConversationCompactionSummaryConversationSessionEntry,
   ConversationSessionEntry,
   ConversationSessionSnapshot,
   DeniedToolResultConversationSessionEntry,
@@ -146,6 +158,7 @@ export type {
 } from "./events.ts";
 export {
   AssistantMessageModelContextItemSchema,
+  CompactionSummaryModelContextItemSchema,
   ModelContextItemSchema,
   ToolCallModelContextItemSchema,
   ToolResultModelContextItemSchema,
@@ -153,6 +166,7 @@ export {
 } from "./modelContextItem.ts";
 export type {
   AssistantMessageModelContextItem,
+  CompactionSummaryModelContextItem,
   ModelContextItem,
   ToolCallModelContextItem,
   ToolResultModelContextItem,
@@ -184,6 +198,7 @@ export type {
   ProviderReasoningSummaryCompletedEvent,
   ProviderReasoningSummaryStartedEvent,
   ProviderReasoningSummaryTextChunkEvent,
+  ProviderAvailableToolName,
   ProviderStreamEvent,
   ProviderTextChunkEvent,
   ProviderToolCallRequestedEvent,
@@ -198,6 +213,7 @@ export {
   ToolCallBashOutputLineSchema,
   ToolCallDetailSchema,
   ToolCallEditDetailSchema,
+  ToolCallExploreDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallGrepMatchSchema,
@@ -218,6 +234,7 @@ export type {
   ToolCallBashOutputLineKind,
   ToolCallDetail,
   ToolCallEditDetail,
+  ToolCallExploreDetail,
   ToolCallGlobDetail,
   ToolCallGrepDetail,
   ToolCallGrepMatch,
@@ -233,6 +250,7 @@ export type {
 export {
   BashToolCallRequestSchema,
   EditToolCallRequestSchema,
+  ExploreToolCallRequestSchema,
   GlobToolCallRequestSchema,
   GrepToolCallRequestSchema,
   ReadToolCallRequestSchema,
@@ -242,6 +260,7 @@ export {
 export type {
   BashToolCallRequest,
   EditToolCallRequest,
+  ExploreToolCallRequest,
   GlobToolCallRequest,
   GrepToolCallRequest,
   ReadToolCallRequest,

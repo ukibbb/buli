@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationSessionEntry, ReasoningEffort } from "@buli/contracts";
-import { AssistantConversationRuntime } from "@buli/engine";
+import { AssistantConversationRuntime, type ConversationCompactionRequest } from "@buli/engine";
 import { OpenAiAuthStore } from "@buli/openai";
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
@@ -260,6 +260,11 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   let capturedExportCurrentConversationSession:
     | (() => Promise<{ exportFilePath: string; exportFileUrl: string }> | { exportFilePath: string; exportFileUrl: string })
     | undefined;
+  let capturedCompactCurrentConversationSession:
+    | ((input: ConversationCompactionRequest) => Promise<{ conversationSessionEntries: readonly ConversationSessionEntry[] }> | {
+      conversationSessionEntries: readonly ConversationSessionEntry[];
+    })
+    | undefined;
   const openedBrowserUrls: string[] = [];
   await store.saveOpenAi({
     provider: "openai",
@@ -284,6 +289,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       capturedClearConversation = renderInput.onConversationCleared;
       capturedSwitchConversationSession = renderInput.switchConversationSession;
       capturedExportCurrentConversationSession = renderInput.exportCurrentConversationSession;
+      capturedCompactCurrentConversationSession = renderInput.compactCurrentConversationSession;
       expect(renderInput.initialConversationSessionEntries).toEqual(initialConversationSessionEntries);
       expect(renderInput.initialConversationSessionId).toBe("session-a");
       return { destroy: () => {}, waitUntilExit: async () => {} };
@@ -292,6 +298,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
 
   expect(output).toBe("");
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
+  expect(capturedCompactCurrentConversationSession).toBeDefined();
 
   capturedConversationRuntime?.conversationHistory.appendConversationSessionEntry({
     entryKind: "user_prompt",
