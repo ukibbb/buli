@@ -3,7 +3,6 @@ import type { ToolCallTodoWriteDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Checklist } from "../primitives/Checklist.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
@@ -35,8 +34,6 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.todoList}
-          toolGlyphColor={accentColor}
           toolNameLabel="TodoWrite"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={buildTodoTargetText(props)} />

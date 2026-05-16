@@ -3,7 +3,6 @@ import type { ToolCallGrepDetail, ToolCallGrepMatch } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
@@ -45,8 +44,6 @@ export function GrepToolCallCard(props: GrepToolCallCardProps): ReactNode {
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.grepSearch}
-          toolGlyphColor={accentColor}
           toolNameLabel="Grep"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.searchPattern} />

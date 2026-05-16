@@ -1,13 +1,5 @@
-// Lucide icon names referenced in the pen design map to these Unicode
-// glyphs. Every usage in the codebase must import from here so the
-// substitutions are greppable and inspectable. See terminal-rendering-limitations.md for
-// the full mapping table.
-//
-// Tool-call glyphs (fileText / grepSearch / globSearch / editPencil / bashTerminal /
-// todoList / taskSpawn) substitute Lucide's file-text / search / files / pencil /
-// terminal / list-checks / split-square glyphs. They keep the "one-cell
-// monochrome symbol" aesthetic of the rest of the palette so the card
-// headers read as a row of glyphs, not a mix of icon fonts and emoji.
+// Central Unicode glyph palette. Every usage in the codebase must import from
+// here so substitutions are greppable and inspectable.
 export const glyphs = {
   checkMark: "✓",
   arrowUp: "↑",
@@ -20,13 +12,6 @@ export const glyphs = {
   snakeEllipse: "●",
   progressFill: "▓",
   progressEmpty: "░",
-  fileText: "≡",
-  grepSearch: "⌕",
-  globSearch: "◇",
-  editPencil: "✎",
-  bashTerminal: ">_",
-  todoList: "☷",
-  taskSpawn: "◈",
 } as const;
 
 export type GlyphName = keyof typeof glyphs;

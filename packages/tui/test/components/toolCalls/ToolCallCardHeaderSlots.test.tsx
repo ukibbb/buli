@@ -8,11 +8,9 @@ import { BracketedTarget } from "../../../src/components/toolCalls/BracketedTarg
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("ToolCallCardHeaderSlots (opentui)", () => {
-  test("ToolCallHeaderLeft keeps the icon and label on the identity row", async () => {
+  test("ToolCallHeaderLeft keeps the label and target on the identity row", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallHeaderLeft
-        toolGlyph="▸"
-        toolGlyphColor={chatScreenTheme.accentAmber}
         toolNameLabel="Bash"
         toolTargetContent={<text fg={chatScreenTheme.textMuted}>bun test</text>}
       />,
@@ -22,15 +20,12 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     const frame = captureCharFrame();
     const singleHeaderLine = frame.split("\n").find((line) => line.includes("Bash"));
     expect(singleHeaderLine).toBeDefined();
-    expect(singleHeaderLine ?? "").toContain("▸");
     expect(frame).toContain("bun test");
   });
 
   test("ToolCallHeaderLeft keeps long targets on the tool identity row", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallHeaderLeft
-        toolGlyph="≡"
-        toolGlyphColor={chatScreenTheme.accentAmber}
         toolNameLabel="Read"
         toolTargetContent={
           <BracketedTarget
@@ -45,7 +40,7 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     const frame = captureCharFrame();
     const identityLine = frame.split("\n").find((line) => line.includes("Read"));
     expect(identityLine).toBeDefined();
-    expect(identityLine ?? "").toContain("≡");
+    expect(identityLine ?? "").not.toContain("≡");
     expect(identityLine ?? "").toContain("[");
     expect(identityLine ?? "").toContain("packages/");
     expect(frame.split("\n").filter((line) => line.includes("packages/"))).toHaveLength(1);
@@ -56,8 +51,6 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
   test("ToolCallHeaderLeft omits the target slot when no target content is provided", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallHeaderLeft
-        toolGlyph="☐"
-        toolGlyphColor={chatScreenTheme.accentGreen}
         toolNameLabel="TodoWrite"
       />,
       { width: 40, height: 3 },
@@ -65,6 +58,7 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("TodoWrite");
+    expect(frame).not.toContain("☐");
     expect(frame).not.toContain("·");
   });
 

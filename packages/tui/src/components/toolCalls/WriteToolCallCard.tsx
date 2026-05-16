@@ -3,7 +3,6 @@ import type { ToolCallWriteDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { DiffBlock } from "../primitives/DiffBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
@@ -35,8 +34,6 @@ export function WriteToolCallCard(props: WriteToolCallCardProps): ReactNode {
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.editPencil}
-          toolGlyphColor={accentColor}
           toolNameLabel="Write"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.writtenFilePath} />

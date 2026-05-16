@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
-import type { ToolCallExploreDetail } from "@buli/contracts";
+import type { ExplorerChildToolCall, ToolCallExploreDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
+import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
+import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
+import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
@@ -34,8 +36,6 @@ export function ExplorerToolCallCard(props: ExplorerToolCallCardProps): ReactNod
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.taskSpawn}
-          toolGlyphColor={accentColor}
           toolNameLabel="Explorer"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.explorationDescription} />
@@ -74,8 +74,9 @@ function buildExplorerBodyContent(props: ExplorerToolCallCardProps): ReactNode {
       </text>
     );
   }
-  const { explorationPrompt, explorationResultSummary } = props.toolCallDetail;
-  if (!explorationPrompt && !explorationResultSummary) {
+  const { explorationPrompt, explorationChildToolCalls, explorationResultSummary } = props.toolCallDetail;
+  const hasExplorationChildToolCalls = explorationChildToolCalls !== undefined && explorationChildToolCalls.length > 0;
+  if (!explorationPrompt && !hasExplorationChildToolCalls && !explorationResultSummary) {
     return undefined;
   }
   return (
@@ -90,8 +91,27 @@ function buildExplorerBodyContent(props: ExplorerToolCallCardProps): ReactNode {
           <text fg={chatScreenTheme.textSecondary}>{explorationPrompt}</text>
         </box>
       ) : null}
-      {explorationResultSummary ? (
+      {hasExplorationChildToolCalls ? (
         <box {...(explorationPrompt ? { marginTop: 1 } : {})} width="100%">
+          <text fg={chatScreenTheme.textMuted}>{"// activity"}</text>
+        </box>
+      ) : null}
+      {hasExplorationChildToolCalls ? (
+        <box flexDirection="column" width="100%">
+          {explorationChildToolCalls.map((explorerChildToolCall, index) => (
+            <box
+              key={explorerChildToolCall.explorerChildToolCallId}
+              flexDirection="column"
+              {...(index > 0 ? { marginTop: 1 } : {})}
+              width="100%"
+            >
+              <ExplorerChildToolCallCard explorerChildToolCall={explorerChildToolCall} />
+            </box>
+          ))}
+        </box>
+      ) : null}
+      {explorationResultSummary ? (
+        <box {...(explorationPrompt || hasExplorationChildToolCalls ? { marginTop: 1 } : {})} width="100%">
           <text fg={chatScreenTheme.textMuted}>{"// result"}</text>
         </box>
       ) : null}
@@ -102,6 +122,67 @@ function buildExplorerBodyContent(props: ExplorerToolCallCardProps): ReactNode {
       ) : null}
     </box>
   );
+}
+
+function ExplorerChildToolCallCard(props: { explorerChildToolCall: ExplorerChildToolCall }): ReactNode {
+  const explorerChildToolCallRenderState = resolveExplorerChildToolCallRenderState(
+    props.explorerChildToolCall.explorerChildToolCallStatus,
+  );
+  const durationProps = props.explorerChildToolCall.explorerChildToolCallDurationMs !== undefined
+    ? { durationMs: props.explorerChildToolCall.explorerChildToolCallDurationMs }
+    : {};
+  const explorerChildToolCallErrorText = props.explorerChildToolCall.explorerChildToolCallErrorText ??
+    props.explorerChildToolCall.explorerChildToolCallDenialText;
+  const errorProps = explorerChildToolCallErrorText !== undefined ? { errorText: explorerChildToolCallErrorText } : {};
+
+  if (props.explorerChildToolCall.explorerChildToolCallDetail.toolName === "read") {
+    return (
+      <ReadToolCallCard
+        renderState={explorerChildToolCallRenderState}
+        toolCallDetail={props.explorerChildToolCall.explorerChildToolCallDetail}
+        {...durationProps}
+        {...errorProps}
+      />
+    );
+  }
+
+  if (props.explorerChildToolCall.explorerChildToolCallDetail.toolName === "glob") {
+    return (
+      <GlobToolCallCard
+        renderState={explorerChildToolCallRenderState}
+        toolCallDetail={props.explorerChildToolCall.explorerChildToolCallDetail}
+        {...durationProps}
+        {...errorProps}
+      />
+    );
+  }
+
+  return (
+    <GrepToolCallCard
+      renderState={explorerChildToolCallRenderState}
+      toolCallDetail={props.explorerChildToolCall.explorerChildToolCallDetail}
+      {...durationProps}
+      {...errorProps}
+    />
+  );
+}
+
+function resolveExplorerChildToolCallRenderState(
+  explorerChildToolCallStatus: ExplorerChildToolCall["explorerChildToolCallStatus"],
+): ExplorerToolCallCardProps["renderState"] {
+  if (explorerChildToolCallStatus === "completed") {
+    return "completed";
+  }
+
+  if (
+    explorerChildToolCallStatus === "failed" ||
+    explorerChildToolCallStatus === "denied" ||
+    explorerChildToolCallStatus === "interrupted"
+  ) {
+    return "failed";
+  }
+
+  return "streaming";
 }
 
 function formatDurationMs(durationMs: number): string {

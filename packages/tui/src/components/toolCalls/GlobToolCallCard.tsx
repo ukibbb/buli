@@ -3,7 +3,6 @@ import type { ToolCallGlobDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FileReference } from "../primitives/FileReference.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
@@ -39,8 +38,6 @@ export function GlobToolCallCard(props: GlobToolCallCardProps): ReactNode {
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.globSearch}
-          toolGlyphColor={accentColor}
           toolNameLabel="Glob"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.globPattern} />

@@ -3,7 +3,6 @@ import type { ToolCallBashDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ShellBlock } from "../primitives/ShellBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
@@ -33,8 +32,6 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.bashTerminal}
-          toolGlyphColor={accentColor}
           toolNameLabel="Bash"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.commandLine} />

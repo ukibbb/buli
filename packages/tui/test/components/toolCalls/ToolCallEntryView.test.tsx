@@ -77,6 +77,25 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("+2");
   });
 
+  test("dispatches_write", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "write",
+          writtenFilePath: "/src/generated.ts",
+          addedLineCount: 1,
+          removedLineCount: 0,
+        }}
+      />,
+      { width: 80, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("/src/generated.ts");
+    expect(frame).toContain("+1");
+  });
+
   test("dispatches_bash", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView

@@ -3,7 +3,6 @@ import type { ToolCallReadDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
@@ -37,8 +36,6 @@ export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.fileText}
-          toolGlyphColor={accentColor}
           toolNameLabel="Read"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.readFilePath} />

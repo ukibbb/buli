@@ -3,8 +3,6 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "../glyphs.ts";
 
 export type ToolCallHeaderLeftProps = {
-  toolGlyph: string;
-  toolGlyphColor: string;
   toolNameLabel: string;
   toolTargetContent?: ReactNode;
 };
@@ -12,10 +10,7 @@ export type ToolCallHeaderLeftProps = {
 export function ToolCallHeaderLeft(props: ToolCallHeaderLeftProps): ReactNode {
   return (
     <box flexDirection="row" alignItems="center" flexShrink={1} minWidth={0} overflow="hidden" width="100%">
-      <box flexShrink={0} width={2}>
-        <text fg={props.toolGlyphColor}>{props.toolGlyph}</text>
-      </box>
-      <box flexShrink={0} marginLeft={1}>
+      <box flexShrink={0}>
         <text wrapMode="none">
           <b fg={chatScreenTheme.textPrimary}>{props.toolNameLabel}</b>
         </text>

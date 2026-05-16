@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { ToolCallTaskDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
   ToolCallHeaderLeft,
@@ -34,8 +33,6 @@ export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
       accentColor={accentColor}
       headerLeft={
         <ToolCallHeaderLeft
-          toolGlyph={glyphs.taskSpawn}
-          toolGlyphColor={accentColor}
           toolNameLabel="Task"
           toolTargetContent={
             <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.subagentDescription} />
