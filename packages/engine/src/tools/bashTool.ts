@@ -1,6 +1,7 @@
 import {
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   createStartedToolCallDetailFromRequest,
+  emitBuliDiagnosticLogEvent,
   type BashToolCallRequest,
   type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
@@ -150,7 +151,7 @@ function logEngineDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "engine",
     eventName,
     ...(fields ? { fields } : {}),

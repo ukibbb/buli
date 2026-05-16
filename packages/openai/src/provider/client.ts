@@ -6,6 +6,7 @@ import type {
   ProviderAvailableToolName,
   ReasoningEffort,
 } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent } from "@buli/contracts";
 import { z } from "zod";
 import { OPENAI_CODEX_API_ENDPOINT } from "../auth/constants.ts";
 import { refreshStoredAuth } from "../auth/refresh.ts";
@@ -204,7 +205,7 @@ function logOpenAiDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "openai",
     eventName,
     ...(fields ? { fields } : {}),

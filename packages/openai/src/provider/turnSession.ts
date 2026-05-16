@@ -10,6 +10,7 @@ import type {
   ReasoningEffort,
   TokenUsage,
 } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent } from "@buli/contracts";
 import {
   createFunctionCallOutputInputItem,
   createOpenAiResponseReplayItems,
@@ -518,7 +519,7 @@ function logOpenAiDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "openai",
     eventName,
     ...(fields ? { fields } : {}),

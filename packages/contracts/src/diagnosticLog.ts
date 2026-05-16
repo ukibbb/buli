@@ -15,3 +15,14 @@ export type BuliDiagnosticLogEvent = Readonly<{
 export type BuliDiagnosticLogger = (event: BuliDiagnosticLogEvent) => void;
 
 export const noopBuliDiagnosticLogger: BuliDiagnosticLogger = () => {};
+
+export function emitBuliDiagnosticLogEvent(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  diagnosticLogEvent: BuliDiagnosticLogEvent,
+): void {
+  try {
+    diagnosticLogger?.(diagnosticLogEvent);
+  } catch {
+    // Diagnostics must never change product behavior.
+  }
+}

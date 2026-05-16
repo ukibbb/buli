@@ -1,8 +1,9 @@
-import type {
-  AssistantResponseEvent,
-  BuliDiagnosticLogFields,
-  BuliDiagnosticLogger,
-  UserPromptImageAttachment,
+import {
+  emitBuliDiagnosticLogEvent,
+  type AssistantResponseEvent,
+  type BuliDiagnosticLogFields,
+  type BuliDiagnosticLogger,
+  type UserPromptImageAttachment,
 } from "@buli/contracts";
 import type { ActiveConversationTurn, AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
 import { applyAssistantResponseEventsToChatSessionState, type ChatSessionState } from "@buli/chat-session-state";
@@ -48,7 +49,7 @@ function logChatScreenDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "tui",
     eventName,
     ...(fields ? { fields } : {}),

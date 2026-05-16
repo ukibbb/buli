@@ -5,13 +5,14 @@ import type {
   ProviderStreamEvent,
   TokenUsage,
 } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent } from "@buli/contracts";
 
 export function logEngineDiagnosticEvent(
   diagnosticLogger: BuliDiagnosticLogger | undefined,
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "engine",
     eventName,
     ...(fields ? { fields } : {}),

@@ -1,6 +1,11 @@
 import os from "node:os";
 import { resolve, sep } from "node:path";
-import type { ReasoningEffort } from "@buli/contracts";
+import {
+  emitBuliDiagnosticLogEvent,
+  type BuliDiagnosticLogFields,
+  type BuliDiagnosticLogger,
+  type ReasoningEffort,
+} from "@buli/contracts";
 import {
   AssistantConversationRuntime,
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
@@ -29,6 +34,18 @@ const DEFAULT_MODEL_ID = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
 const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
+
+function logCliDiagnosticEvent(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  eventName: string,
+  fields?: BuliDiagnosticLogFields,
+): void {
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
+    subsystem: "cli",
+    eventName,
+    ...(fields ? { fields } : {}),
+  });
+}
 
 type InteractiveChatRenderer = typeof renderChatScreenInTerminal;
 
@@ -86,30 +103,22 @@ export async function runInteractiveChat(input: {
   const diagnosticLogger = consoleFileLoggerInstallation.logFilePath
     ? createDiagnosticFileLogger({ logFilePath: consoleFileLoggerInstallation.logFilePath })
     : undefined;
-  diagnosticLogger?.({
-    subsystem: "cli",
-    eventName: "interactive_chat.starting",
-    fields: {
-      selectedModelId,
-      selectedModelDefaultReasoningEffort: selectedModelDefaultReasoningEffort ?? null,
-      selectedReasoningEffort,
-      bashToolApprovalMode,
-      workingDirectoryPath: process.cwd(),
-      logFilePath: consoleFileLoggerInstallation.logFilePath ?? null,
-    },
+  logCliDiagnosticEvent(diagnosticLogger, "interactive_chat.starting", {
+    selectedModelId,
+    selectedModelDefaultReasoningEffort: selectedModelDefaultReasoningEffort ?? null,
+    selectedReasoningEffort,
+    bashToolApprovalMode,
+    workingDirectoryPath: process.cwd(),
+    logFilePath: consoleFileLoggerInstallation.logFilePath ?? null,
   });
   const conversationSessionStore = input.conversationSessionStore ?? new FileConversationSessionStore();
   const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
   let activeConversationSessionId = activeConversationSession.sessionId;
   const initialConversationSessionEntries = activeConversationSession.conversationSessionEntries;
-  diagnosticLogger?.({
-    subsystem: "cli",
-    eventName: "conversation_session.loaded",
-    fields: {
-      conversationSessionFilePath: activeConversationSession.filePath,
-      conversationSessionId: activeConversationSession.sessionId,
-      conversationSessionEntryCount: initialConversationSessionEntries.length,
-    },
+  logCliDiagnosticEvent(diagnosticLogger, "conversation_session.loaded", {
+    conversationSessionFilePath: activeConversationSession.filePath,
+    conversationSessionId: activeConversationSession.sessionId,
+    conversationSessionEntryCount: initialConversationSessionEntries.length,
   });
 
   const provider = new OpenAiProvider({ store, diagnosticLogger });
@@ -126,16 +135,12 @@ export async function runInteractiveChat(input: {
     initialConversationSessionEntries,
     onConversationSessionEntryAppended: (conversationSessionEntry, conversationSessionEntries) => {
       conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
-      diagnosticLogger?.({
-        subsystem: "cli",
-        eventName: "conversation_session.saved",
-        fields: {
-          conversationSessionEntryKind: conversationSessionEntry.entryKind,
-          assistantOperatingMode: conversationSessionEntry.entryKind === "user_prompt"
-            ? conversationSessionEntry.assistantOperatingMode ?? null
-            : null,
-          conversationSessionEntryCount: conversationSessionEntries.length,
-        },
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.saved", {
+        conversationSessionEntryKind: conversationSessionEntry.entryKind,
+        assistantOperatingMode: conversationSessionEntry.entryKind === "user_prompt"
+          ? conversationSessionEntry.assistantOperatingMode ?? null
+          : null,
+        conversationSessionEntryCount: conversationSessionEntries.length,
       });
     },
   });
@@ -159,14 +164,10 @@ export async function runInteractiveChat(input: {
       const switchedConversationSession = conversationSessionStore.switchActiveConversationSession(conversationSessionId);
       activeConversationSessionId = switchedConversationSession.sessionId;
       conversationHistory.replaceConversationSessionEntries(switchedConversationSession.conversationSessionEntries);
-      diagnosticLogger?.({
-        subsystem: "cli",
-        eventName: "conversation_session.switched",
-        fields: {
-          conversationSessionId: switchedConversationSession.sessionId,
-          conversationSessionFilePath: switchedConversationSession.filePath,
-          conversationSessionEntryCount: switchedConversationSession.conversationSessionEntries.length,
-        },
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.switched", {
+        conversationSessionId: switchedConversationSession.sessionId,
+        conversationSessionFilePath: switchedConversationSession.filePath,
+        conversationSessionEntryCount: switchedConversationSession.conversationSessionEntries.length,
       });
       return {
         conversationSessionId: switchedConversationSession.sessionId,
@@ -177,13 +178,9 @@ export async function runInteractiveChat(input: {
       const newConversationSession = conversationSessionStore.startNewConversationSession();
       activeConversationSessionId = newConversationSession.sessionId;
       conversationHistory.replaceConversationSessionEntries(newConversationSession.conversationSessionEntries);
-      diagnosticLogger?.({
-        subsystem: "cli",
-        eventName: "conversation_session.created",
-        fields: {
-          conversationSessionId: newConversationSession.sessionId,
-          conversationSessionFilePath: newConversationSession.filePath,
-        },
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.created", {
+        conversationSessionId: newConversationSession.sessionId,
+        conversationSessionFilePath: newConversationSession.filePath,
       });
       return {
         conversationSessionId: newConversationSession.sessionId,
@@ -198,26 +195,18 @@ export async function runInteractiveChat(input: {
         exportDirectoryPath: input.conversationSessionExportDirectoryPath ?? defaultConversationSessionExportDirectoryPath(),
       });
       await (input.openBrowserUrl ?? openBrowserUrl)(exportResult.exportFileUrl);
-      diagnosticLogger?.({
-        subsystem: "cli",
-        eventName: "conversation_session.exported",
-        fields: {
-          conversationSessionId: activeConversationSessionId,
-          exportFilePath: exportResult.exportFilePath,
-        },
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.exported", {
+        conversationSessionId: activeConversationSessionId,
+        exportFilePath: exportResult.exportFilePath,
       });
       return exportResult;
     },
     compactCurrentConversationSession: async (compactionRequest: ConversationCompactionRequest) => {
       await assistantConversationRunner.compactConversationSession(compactionRequest);
       const conversationSessionEntries = conversationHistory.listConversationSessionEntries();
-      diagnosticLogger?.({
-        subsystem: "cli",
-        eventName: "conversation_session.compacted",
-        fields: {
-          conversationSessionId: activeConversationSessionId,
-          conversationSessionEntryCount: conversationSessionEntries.length,
-        },
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.compacted", {
+        conversationSessionId: activeConversationSessionId,
+        conversationSessionEntryCount: conversationSessionEntries.length,
       });
       return { conversationSessionEntries };
     },
@@ -233,21 +222,17 @@ export async function runInteractiveChat(input: {
         conversationSessionEntries: conversationHistory.listConversationSessionEntries(),
         thresholdRatio: autoCompactionThresholdRatio,
       });
-      diagnosticLogger?.({
-        subsystem: "cli",
-        eventName: "conversation_session.auto_compaction_decided",
-        fields: {
-          conversationSessionId: activeConversationSessionId,
-          shouldCompact: autoCompactionDecision.shouldCompact,
-          reason: autoCompactionDecision.reason,
-          selectedModelId: autoCompactionDecision.selectedModelId,
-          contextTokensUsed: autoCompactionDecision.contextTokensUsed,
-          contextWindowTokenCapacity: autoCompactionDecision.contextWindowTokenCapacity ?? null,
-          contextUsageRatio: autoCompactionDecision.contextUsageRatio ?? null,
-          thresholdRatio: autoCompactionDecision.thresholdRatio,
-          sessionEntryCountAfterLatestCompactionSummary:
-            autoCompactionDecision.sessionEntryCountAfterLatestCompactionSummary,
-        },
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.auto_compaction_decided", {
+        conversationSessionId: activeConversationSessionId,
+        shouldCompact: autoCompactionDecision.shouldCompact,
+        reason: autoCompactionDecision.reason,
+        selectedModelId: autoCompactionDecision.selectedModelId,
+        contextTokensUsed: autoCompactionDecision.contextTokensUsed,
+        contextWindowTokenCapacity: autoCompactionDecision.contextWindowTokenCapacity ?? null,
+        contextUsageRatio: autoCompactionDecision.contextUsageRatio ?? null,
+        thresholdRatio: autoCompactionDecision.thresholdRatio,
+        sessionEntryCountAfterLatestCompactionSummary:
+          autoCompactionDecision.sessionEntryCountAfterLatestCompactionSummary,
       });
       if (!autoCompactionDecision.shouldCompact) {
         return { didCompact: false, decision: autoCompactionDecision };
@@ -260,15 +245,11 @@ export async function runInteractiveChat(input: {
           : {}),
       });
       const conversationSessionEntries = conversationHistory.listConversationSessionEntries();
-      diagnosticLogger?.({
-        subsystem: "cli",
-        eventName: "conversation_session.auto_compacted",
-        fields: {
-          conversationSessionId: activeConversationSessionId,
-          conversationSessionEntryCount: conversationSessionEntries.length,
-          contextTokensUsed: autoCompactionDecision.contextTokensUsed,
-          thresholdRatio: autoCompactionDecision.thresholdRatio,
-        },
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.auto_compacted", {
+        conversationSessionId: activeConversationSessionId,
+        conversationSessionEntryCount: conversationSessionEntries.length,
+        contextTokensUsed: autoCompactionDecision.contextTokensUsed,
+        thresholdRatio: autoCompactionDecision.thresholdRatio,
       });
       return {
         didCompact: true,
@@ -288,12 +269,8 @@ export async function runInteractiveChat(input: {
   const chatScreen = await renderChatScreen(renderArgs);
 
   await chatScreen.waitUntilExit();
-  diagnosticLogger?.({
-    subsystem: "cli",
-    eventName: "interactive_chat.exited",
-    fields: {
-      selectedModelId: renderArgs.selectedModelId,
-    },
+  logCliDiagnosticEvent(diagnosticLogger, "interactive_chat.exited", {
+    selectedModelId: renderArgs.selectedModelId,
   });
   return "";
 }

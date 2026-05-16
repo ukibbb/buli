@@ -57,7 +57,7 @@ export type {
 } from "./userPromptImageAttachment.ts";
 export { ConversationTurnStatusSchema } from "./conversationTurnStatus.ts";
 export type { ConversationTurnStatus } from "./conversationTurnStatus.ts";
-export { noopBuliDiagnosticLogger } from "./diagnosticLog.ts";
+export { emitBuliDiagnosticLogEvent, noopBuliDiagnosticLogger } from "./diagnosticLog.ts";
 export type {
   BuliDiagnosticLogEvent,
   BuliDiagnosticLogFields,

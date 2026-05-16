@@ -1,8 +1,9 @@
-import type {
-  AvailableAssistantModel,
-  BuliDiagnosticLogFields,
-  BuliDiagnosticLogger,
-  UserPromptImageAttachment,
+import {
+  emitBuliDiagnosticLogEvent,
+  type AvailableAssistantModel,
+  type BuliDiagnosticLogFields,
+  type BuliDiagnosticLogger,
+  type UserPromptImageAttachment,
 } from "@buli/contracts";
 import {
   appendPromptImageAttachmentToDraft,
@@ -122,7 +123,7 @@ function logChatScreenDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "tui",
     eventName,
     ...(fields ? { fields } : {}),

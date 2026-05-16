@@ -1,4 +1,4 @@
-import type { BuliDiagnosticLogFields, BuliDiagnosticLogger } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent, type BuliDiagnosticLogFields, type BuliDiagnosticLogger } from "@buli/contracts";
 import type { ActiveConversationTurn } from "@buli/engine";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { ActiveConversationTurnShutdownCoordinator } from "../activeConversationTurnShutdown.ts";
@@ -33,7 +33,7 @@ function logChatScreenDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "tui",
     eventName,
     ...(fields ? { fields } : {}),

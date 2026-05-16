@@ -1,7 +1,12 @@
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import React from "react";
-import type { BuliDiagnosticLogger, UserPromptImageAttachment } from "@buli/contracts";
+import {
+  emitBuliDiagnosticLogEvent,
+  type BuliDiagnosticLogFields,
+  type BuliDiagnosticLogger,
+  type UserPromptImageAttachment,
+} from "@buli/contracts";
 import type { AssistantConversationRunner } from "@buli/engine";
 import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
@@ -45,6 +50,18 @@ function disableOpenTuiConsoleCaptureWhileFileLoggingIsActive(isConsoleFileLogge
 
 function formatUnknownErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function logTuiDiagnosticEvent(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  eventName: string,
+  fields?: BuliDiagnosticLogFields,
+): void {
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
+    subsystem: "tui",
+    eventName,
+    ...(fields ? { fields } : {}),
+  });
 }
 
 export type TuiChatScreenInstance = {
@@ -117,16 +134,12 @@ export async function renderChatScreenInTerminalWithRuntime<
   const restoreOpenTuiConsoleCaptureEnvironment = disableOpenTuiConsoleCaptureWhileFileLoggingIsActive(
     isConsoleFileLoggerActive,
   );
-  input.diagnosticLogger?.({
-    subsystem: "tui",
-    eventName: "terminal_renderer_create_requested",
-    fields: {
-      screenMode: "alternate-screen",
-      consoleMode,
-      openTuiUseConsole: process.env.OTUI_USE_CONSOLE ?? null,
-      useMouse: true,
-      enableMouseMovement: true,
-    },
+  logTuiDiagnosticEvent(input.diagnosticLogger, "terminal_renderer_create_requested", {
+    screenMode: "alternate-screen",
+    consoleMode,
+    openTuiUseConsole: process.env.OTUI_USE_CONSOLE ?? null,
+    useMouse: true,
+    enableMouseMovement: true,
   });
   let cliRenderer: TerminalRenderer;
   try {
@@ -167,12 +180,8 @@ export async function renderChatScreenInTerminalWithRuntime<
       try {
         unmountReactRootOnce();
       } catch (error) {
-        input.diagnosticLogger?.({
-          subsystem: "tui",
-          eventName: "chat_screen_root_unmount_failed",
-          fields: {
-            errorMessage: formatUnknownErrorMessage(error),
-          },
+        logTuiDiagnosticEvent(input.diagnosticLogger, "chat_screen_root_unmount_failed", {
+          errorMessage: formatUnknownErrorMessage(error),
         });
       } finally {
         restoreOpenTuiConsoleCaptureEnvironmentOnce();
@@ -196,12 +205,8 @@ export async function renderChatScreenInTerminalWithRuntime<
       }
     }
   };
-  input.diagnosticLogger?.({
-    subsystem: "tui",
-    eventName: "terminal_renderer_created",
-    fields: {
-      consoleMode,
-    },
+  logTuiDiagnosticEvent(input.diagnosticLogger, "terminal_renderer_created", {
+    consoleMode,
   });
   try {
     root.render(
@@ -245,14 +250,10 @@ export async function renderChatScreenInTerminalWithRuntime<
     destroyRendererOnce();
     throw error;
   }
-  input.diagnosticLogger?.({
-    subsystem: "tui",
-    eventName: "chat_screen_root_rendered",
-    fields: {
-      selectedModelId: input.selectedModelId,
-      selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort ?? null,
-      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
-    },
+  logTuiDiagnosticEvent(input.diagnosticLogger, "chat_screen_root_rendered", {
+    selectedModelId: input.selectedModelId,
+    selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort ?? null,
+    selectedReasoningEffort: input.selectedReasoningEffort ?? null,
   });
 
   return {

@@ -17,8 +17,10 @@ import {
   READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
   RENDER_ONLY_TOOL_DETAIL_NAMES,
   ToolCallRequestSchema,
+  type BuliDiagnosticLogEvent,
   WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
   createStartedToolCallDetailFromRequest,
+  emitBuliDiagnosticLogEvent,
   isAssistantToolRequestName,
   isExploreToolCallRequest,
   isFileMutationToolCallRequest,
@@ -26,6 +28,35 @@ import {
   isWorkspaceInspectionToolCallRequest,
   UserPromptImageAttachmentSchema,
 } from "../src/index.ts";
+
+test("emitBuliDiagnosticLogEvent forwards diagnostic events", () => {
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+
+  emitBuliDiagnosticLogEvent((diagnosticEvent) => diagnosticEvents.push(diagnosticEvent), {
+    subsystem: "engine",
+    eventName: "conversation_turn.started",
+    fields: { selectedModelId: "gpt-5.5" },
+  });
+
+  expect(diagnosticEvents).toEqual([
+    {
+      subsystem: "engine",
+      eventName: "conversation_turn.started",
+      fields: { selectedModelId: "gpt-5.5" },
+    },
+  ]);
+});
+
+test("emitBuliDiagnosticLogEvent ignores diagnostic logger failures", () => {
+  expect(() =>
+    emitBuliDiagnosticLogEvent(() => {
+      throw new Error("diagnostic sink failed");
+    }, {
+      subsystem: "openai",
+      eventName: "stream.started",
+    })
+  ).not.toThrow();
+});
 
 test("AssistantOperatingModeSchema parses understand, plan, and implementation modes", () => {
   expect(AssistantOperatingModeSchema.options).toEqual(["understand", "plan", "implementation"]);

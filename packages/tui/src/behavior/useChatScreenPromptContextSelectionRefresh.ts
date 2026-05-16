@@ -1,4 +1,4 @@
-import type { BuliDiagnosticLogFields, BuliDiagnosticLogger } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent, type BuliDiagnosticLogFields, type BuliDiagnosticLogger } from "@buli/contracts";
 import {
   decidePromptContextSelectionRefreshForCurrentDraft,
   hidePromptContextSelection,
@@ -34,7 +34,7 @@ function logChatScreenDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "tui",
     eventName,
     ...(fields ? { fields } : {}),

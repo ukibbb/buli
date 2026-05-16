@@ -162,6 +162,34 @@ async function collectAssistantEvents(activeConversationTurn: ReturnType<Assista
   return emittedAssistantEvents;
 }
 
+test("AssistantConversationRuntime ignores diagnostic logger failures", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Hello" },
+      { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new RecordingConversationTurnProvider([providerTurn]),
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    diagnosticLogger: () => {
+      throw new Error("diagnostic sink failed");
+    },
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Say hello",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.at(-1)).toMatchObject({
+    type: "assistant_message_completed",
+  });
+});
+
 test("AssistantConversationRuntime emits a message-part turn for streamed text", async () => {
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [

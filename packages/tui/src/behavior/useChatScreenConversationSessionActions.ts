@@ -1,4 +1,4 @@
-import type { ConversationSessionEntry, ConversationSessionSummary, BuliDiagnosticLogFields, BuliDiagnosticLogger } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent, type ConversationSessionEntry, type ConversationSessionSummary, type BuliDiagnosticLogFields, type BuliDiagnosticLogger } from "@buli/contracts";
 import type { ConversationAutoCompactionRequest, ConversationAutoCompactionResult, ConversationCompactionRequest } from "@buli/engine";
 import {
   clearConversationTranscript,
@@ -66,7 +66,7 @@ function logChatScreenDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "tui",
     eventName,
     ...(fields ? { fields } : {}),

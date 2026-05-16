@@ -6,6 +6,7 @@ import type {
   TokenUsage,
   ToolCallRequest,
 } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent } from "@buli/contracts";
 import { z } from "zod";
 import { createOpenAiToolCallRequest } from "./toolDefinitions.ts";
 import { OpenAiUsageSchema, normalizeOpenAiUsage } from "./usage.ts";
@@ -966,7 +967,7 @@ function logOpenAiDiagnosticEvent(
   eventName: string,
   fields?: BuliDiagnosticLogFields,
 ): void {
-  diagnosticLogger?.({
+  emitBuliDiagnosticLogEvent(diagnosticLogger, {
     subsystem: "openai",
     eventName,
     ...(fields ? { fields } : {}),
