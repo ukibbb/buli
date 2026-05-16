@@ -22,7 +22,7 @@ import {
 } from "@buli/chat-session-state";
 import { type KeyEvent, type PasteEvent } from "@opentui/core";
 import { useKeyboard, usePaste } from "@opentui/react";
-import { startTransition, useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
+import { startTransition, useEffect, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
 import { readNativeClipboardImageAttachment } from "../clipboard/readNativeClipboardImageAttachment.ts";
 import type { PromptTextareaEdit } from "../components/PromptTextarea.tsx";
 import { normalizeOpenTuiPasteEventText } from "./normalizeOpenTuiPasteEventText.ts";
@@ -132,6 +132,8 @@ function logChatScreenDiagnosticEvent(
 export function useChatScreenKeyboardInputActions(
   input: UseChatScreenKeyboardInputActionsInput,
 ): UseChatScreenKeyboardInputActionsResult {
+  const latestModelSelectionLoadRequestSequenceRef = useRef(0);
+
   useEffect(() => {
     input.setChatSessionState((currentChatSessionState) =>
       refreshChatSlashCommandSelectionForCurrentState(currentChatSessionState)
@@ -149,15 +151,27 @@ export function useChatScreenKeyboardInputActions(
   ]);
 
   const loadAvailableModelsForSelection = useEffectEvent(async () => {
+    const requestSequence = latestModelSelectionLoadRequestSequenceRef.current + 1;
+    latestModelSelectionLoadRequestSequenceRef.current = requestSequence;
     logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_started", {
       currentSelectedModelId: input.latestChatSessionStateRef.current.selectedModelId,
+      requestSequence,
     });
     input.setChatSessionState((currentChatSessionState) => showModelSelectionLoadingState(currentChatSessionState));
 
     try {
       const availableAssistantModels = await input.loadAvailableAssistantModels();
+      if (requestSequence !== latestModelSelectionLoadRequestSequenceRef.current) {
+        logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_discarded", {
+          requestSequence,
+          activeRequestSequence: latestModelSelectionLoadRequestSequenceRef.current,
+          availableModelCount: availableAssistantModels.length,
+        });
+        return;
+      }
       logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_completed", {
         availableModelCount: availableAssistantModels.length,
+        requestSequence,
       });
       startTransition(() => {
         input.setChatSessionState((currentChatSessionState) =>
@@ -165,9 +179,13 @@ export function useChatScreenKeyboardInputActions(
         );
       });
     } catch (error) {
+      if (requestSequence !== latestModelSelectionLoadRequestSequenceRef.current) {
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_failed", {
         errorMessage,
+        requestSequence,
       });
       startTransition(() => {
         input.setChatSessionState((currentChatSessionState) =>

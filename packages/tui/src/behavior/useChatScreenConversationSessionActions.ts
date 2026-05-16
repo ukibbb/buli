@@ -8,7 +8,7 @@ import {
   showConversationSessionSelectionLoadingState,
   type ChatSessionState,
 } from "@buli/chat-session-state";
-import { startTransition, useEffectEvent, type Dispatch, type SetStateAction } from "react";
+import { startTransition, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./chatScreenConversationSessionStatus.ts";
 
 type MutableValueRef<T> = { current: T };
@@ -76,6 +76,9 @@ function logChatScreenDiagnosticEvent(
 export function useChatScreenConversationSessionActions(
   input: UseChatScreenConversationSessionActionsInput,
 ): UseChatScreenConversationSessionActionsResult {
+  const latestConversationSessionListLoadRequestSequenceRef = useRef(0);
+  const latestConversationSessionMutationRequestSequenceRef = useRef(0);
+
   const hydrateConversationSessionEntriesIntoChatScreen = useEffectEvent(
     (conversationSessionEntries: readonly ConversationSessionEntry[]): void => {
       startTransition(() => {
@@ -99,9 +102,14 @@ export function useChatScreenConversationSessionActions(
       return;
     }
 
+    const requestSequence = latestConversationSessionListLoadRequestSequenceRef.current + 1;
+    latestConversationSessionListLoadRequestSequenceRef.current = requestSequence;
     input.setChatSessionState((currentChatSessionState) => showConversationSessionSelectionLoadingState(currentChatSessionState));
     try {
       const conversationSessions = await input.loadConversationSessions();
+      if (requestSequence !== latestConversationSessionListLoadRequestSequenceRef.current) {
+        return;
+      }
       startTransition(() => {
         input.setChatSessionState((currentChatSessionState) =>
           showAvailableConversationSessionsForSelection(
@@ -112,6 +120,9 @@ export function useChatScreenConversationSessionActions(
         );
       });
     } catch (error) {
+      if (requestSequence !== latestConversationSessionListLoadRequestSequenceRef.current) {
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       startTransition(() => {
         input.setChatSessionState((currentChatSessionState) =>
@@ -129,12 +140,20 @@ export function useChatScreenConversationSessionActions(
       return;
     }
 
+    const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
+    latestConversationSessionMutationRequestSequenceRef.current = requestSequence;
     try {
       const switchedConversationSession = await input.switchConversationSession(conversationSessionId);
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
       input.latestActiveConversationSessionIdRef.current = switchedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(switchedConversationSession.conversationSessionId);
       hydrateConversationSessionEntriesIntoChatScreen(switchedConversationSession.conversationSessionEntries);
     } catch (error) {
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       startTransition(() => {
         input.setChatSessionState((currentChatSessionState) =>
@@ -172,6 +191,8 @@ export function useChatScreenConversationSessionActions(
       return;
     }
 
+    const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
+    latestConversationSessionMutationRequestSequenceRef.current = requestSequence;
     input.isConversationCompactionInFlightRef.current = true;
     const wasPromptSubmissionInFlight = input.isPromptSubmissionInFlightRef.current;
     input.isPromptSubmissionInFlightRef.current = true;
@@ -183,9 +204,15 @@ export function useChatScreenConversationSessionActions(
           ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }
           : {}),
       });
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
       hydrateConversationSessionEntriesIntoChatScreen(compactedConversationSession.conversationSessionEntries);
       input.setConversationSessionCompactionStatus({ step: "idle" });
     } catch (error) {
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
       input.setConversationSessionCompactionStatus({
         step: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -206,6 +233,8 @@ export function useChatScreenConversationSessionActions(
       return;
     }
 
+    const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
+    latestConversationSessionMutationRequestSequenceRef.current = requestSequence;
     input.isConversationCompactionInFlightRef.current = true;
     input.setConversationSessionCompactionStatus({ step: "compacting", source: "auto" });
     try {
@@ -217,11 +246,17 @@ export function useChatScreenConversationSessionActions(
         latestTokenUsage,
       };
       const autoCompactionResult = await input.autoCompactCurrentConversationSession(autoCompactionRequest);
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
       if (autoCompactionResult.didCompact) {
         hydrateConversationSessionEntriesIntoChatScreen(autoCompactionResult.conversationSessionEntries);
       }
       input.setConversationSessionCompactionStatus({ step: "idle" });
     } catch (error) {
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
       input.setConversationSessionCompactionStatus({
         step: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -232,6 +267,8 @@ export function useChatScreenConversationSessionActions(
   });
 
   const clearCurrentConversationSession = useEffectEvent((): void => {
+    latestConversationSessionMutationRequestSequenceRef.current += 1;
+    input.setConversationSessionCompactionStatus({ step: "idle" });
     const clearedConversationSession = input.onConversationCleared?.();
     if (clearedConversationSession) {
       input.latestActiveConversationSessionIdRef.current = clearedConversationSession.conversationSessionId;
