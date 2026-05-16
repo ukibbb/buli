@@ -7,9 +7,11 @@ import { OpenAiAuthStore } from "./store.ts";
 const TokenResponseSchema = z.object({
   id_token: z.string().optional(),
   access_token: z.string(),
-  refresh_token: z.string(),
+  refresh_token: z.string().optional(),
   expires_in: z.number().int().positive().optional(),
 });
+
+const AUTH_REFRESH_EXPIRY_SKEW_MS = 5 * 60 * 1000;
 
 export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 
@@ -71,12 +73,18 @@ export function toAuthInfo(input: {
   tokens: TokenResponse;
   now?: number | undefined;
   accountId?: string | undefined;
+  refreshToken?: string | undefined;
 }): OpenAiAuthInfo {
+  const refreshToken = input.tokens.refresh_token ?? input.refreshToken;
+  if (!refreshToken) {
+    throw new Error("OpenAI token response did not include a refresh token");
+  }
+
   return OpenAiAuthInfoSchema.parse({
     provider: "openai",
     method: "oauth",
     accessToken: input.tokens.access_token,
-    refreshToken: input.tokens.refresh_token,
+    refreshToken,
     expiresAt: (input.now ?? Date.now()) + (input.tokens.expires_in ?? 3600) * 1000,
     accountId: extractAccountId(input.tokens) ?? input.accountId,
   });
@@ -95,7 +103,7 @@ export async function refreshStoredAuth(input: {
   }
 
   const now = input.now ?? Date.now();
-  if (auth.expiresAt > now) {
+  if (auth.expiresAt - now > AUTH_REFRESH_EXPIRY_SKEW_MS) {
     return auth;
   }
 
@@ -109,6 +117,7 @@ export async function refreshStoredAuth(input: {
     tokens,
     now,
     accountId: auth.accountId,
+    refreshToken: auth.refreshToken,
   });
 
   await input.store.saveOpenAi(next);

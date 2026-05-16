@@ -81,7 +81,7 @@ test("OpenAiProvider.listAvailableAssistantModels sends auth headers and maps th
     method: "oauth",
     accessToken: "access-token",
     refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
     accountId: "acct_123",
   });
 
@@ -158,7 +158,7 @@ test("OpenAiProvider.listAvailableAssistantModels surfaces the backend error mes
     method: "oauth",
     accessToken: "access-token",
     refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
   });
 
   const server = createServer((_request, response) => {

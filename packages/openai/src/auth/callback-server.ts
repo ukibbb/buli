@@ -169,6 +169,14 @@ export class OpenAiCallbackServer {
   }
 
   private handleCallback(url: URL, response: ServerResponse): void {
+    const state = url.searchParams.get("state");
+    if (!this.pending || state !== this.pending.state) {
+      const message = "Invalid state - potential CSRF attack";
+      response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      response.end(errorHtml(message));
+      return;
+    }
+
     const error = url.searchParams.get("error");
     if (error) {
       const message = url.searchParams.get("error_description") ?? error;
@@ -181,15 +189,6 @@ export class OpenAiCallbackServer {
     const code = url.searchParams.get("code");
     if (!code) {
       const message = "Missing authorization code";
-      this.rejectPending(new Error(message));
-      response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-      response.end(errorHtml(message));
-      return;
-    }
-
-    const state = url.searchParams.get("state");
-    if (!this.pending || state !== this.pending.state) {
-      const message = "Invalid state - potential CSRF attack";
       this.rejectPending(new Error(message));
       response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       response.end(errorHtml(message));

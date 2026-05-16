@@ -152,3 +152,65 @@ test("refreshStoredAuth refreshes and persists an expired token", async () => {
   expect(stored?.accessToken).toBe("new-access");
   expect(stored?.accountId).toBe("acct_123");
 });
+
+test("refreshStoredAuth preserves the stored refresh token when refresh omits a replacement", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-refresh-preserve-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "old-access",
+    refreshToken: "old-refresh",
+    expiresAt: 10,
+    accountId: "acct_123",
+  });
+
+  await withTokenServer(
+    () => ({
+      access_token: "new-access",
+      expires_in: 3600,
+    }),
+    async (issuer) => {
+      const auth = await refreshStoredAuth({
+        store,
+        issuer,
+        now: 100,
+      });
+
+      expect(auth?.accessToken).toBe("new-access");
+      expect(auth?.refreshToken).toBe("old-refresh");
+    },
+  );
+});
+
+test("refreshStoredAuth refreshes before expiry using a safety window", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-refresh-skew-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "old-access",
+    refreshToken: "old-refresh",
+    expiresAt: 1_000 + 60_000,
+  });
+
+  await withTokenServer(
+    () => ({
+      access_token: "new-access",
+      refresh_token: "new-refresh",
+      expires_in: 3600,
+    }),
+    async (issuer) => {
+      const auth = await refreshStoredAuth({
+        store,
+        issuer,
+        now: 1_000,
+      });
+
+      expect(auth?.accessToken).toBe("new-access");
+      expect(auth?.refreshToken).toBe("new-refresh");
+    },
+  );
+});

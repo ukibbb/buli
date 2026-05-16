@@ -657,7 +657,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
     method: "oauth",
     accessToken: "access-token",
     refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
     accountId: "acct_123",
   });
 
@@ -754,7 +754,7 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
     method: "oauth",
     accessToken: "access-token",
     refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
   });
 
   const requests: string[] = [];
@@ -824,7 +824,7 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
     method: "oauth",
     accessToken: "access-token",
     refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
   });
 
   const requests: string[] = [];
@@ -941,7 +941,7 @@ test("OpenAiProvider includes backend error details when the request fails", asy
     method: "oauth",
     accessToken: "access-token",
     refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
   });
 
   const server = createServer((_request, response) => {

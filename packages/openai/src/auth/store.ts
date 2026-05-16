@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   OpenAiAuthInfoSchema,
   OpenAiAuthStoreSchema,
@@ -42,8 +43,21 @@ export class OpenAiAuthStore {
       ...(await this.load()),
       openai: OpenAiAuthInfoSchema.parse(auth),
     });
+    const authDirectoryPath = dirname(this.filePath);
+    const temporaryFilePath = join(
+      authDirectoryPath,
+      `.${basename(this.filePath)}.${process.pid}.${randomUUID()}.tmp`,
+    );
 
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(next, null, 2) + "\n", "utf8");
+    await mkdir(authDirectoryPath, { recursive: true, mode: 0o700 });
+    await chmod(authDirectoryPath, 0o700);
+    try {
+      await writeFile(temporaryFilePath, JSON.stringify(next, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+      await chmod(temporaryFilePath, 0o600);
+      await rename(temporaryFilePath, this.filePath);
+      await chmod(this.filePath, 0o600);
+    } finally {
+      await rm(temporaryFilePath, { force: true });
+    }
   }
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OpenAiAuthStoreSchema } from "../src/auth/schema.ts";
@@ -44,4 +44,20 @@ test("OpenAiAuthStore saves and loads OpenAI auth", async () => {
   const auth = await store.loadOpenAi();
   expect(auth?.accessToken).toBe("access-token");
   expect(auth?.accountId).toBe("acct_123");
+});
+
+test("OpenAiAuthStore saves OAuth tokens with private filesystem permissions", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-store-private-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: 1_764_000_000,
+  });
+
+  expect((await stat(dir)).mode & 0o777).toBe(0o700);
+  expect((await stat(join(dir, "auth.json"))).mode & 0o777).toBe(0o600);
 });
