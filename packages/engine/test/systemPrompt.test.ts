@@ -91,6 +91,12 @@ test("prefers typed workspace tools over bash for normal inspection", () => {
   expect(systemPromptText).toContain("use glob for finding files by path pattern");
   expect(systemPromptText).toContain("use grep for searching file contents");
   expect(systemPromptText).toContain("use explore for broad, multi-step codebase discovery");
+  expect(systemPromptText).toContain(
+    "When multiple read, glob, grep, or explore calls are independent, request them together in one tool-call batch so they can run concurrently.",
+  );
+  expect(systemPromptText).toContain(
+    "For broad independent research areas, launch multiple explore calls in the same tool-call batch instead of waiting for one Explorer to finish before starting another.",
+  );
   expect(systemPromptText).toContain("Do not use explore for a simple single-file read");
   expect(systemPromptText).toContain("Do not use bash for simple file reads, file discovery, or text search.");
 });
@@ -292,6 +298,9 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   expect(systemPromptText).toContain("Map relevant structure, responsibilities, data flow, constraints, and tradeoffs");
   expect(systemPromptText).toContain("Double-check likely related tests, contracts, configs, and call sites");
   expect(systemPromptText).toContain("Use only read, glob, and grep.");
+  expect(systemPromptText).toContain(
+    "When multiple read, glob, or grep calls are independent, request them together in one tool-call batch so they can run concurrently.",
+  );
   expect(systemPromptText).toContain("Do not modify files, run shell commands");
   expect(systemPromptText).toContain("Return a concise report for the parent assistant.");
   expect(systemPromptText).toContain(

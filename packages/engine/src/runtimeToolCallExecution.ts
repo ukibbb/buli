@@ -5,7 +5,9 @@ import {
   type AssistantOperatingMode,
   type AssistantResponseEvent,
   type AssistantToolRequestName,
+  type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
+  type ExploreToolCallRequest,
   type ProviderRequestedToolCall,
   type ReasoningEffort,
   type ToolCallRequest,
@@ -74,13 +76,51 @@ type AutoApprovedReadOnlyRequestedToolCall = {
   toolCallRequest: WorkspaceInspectionToolCallRequest;
 };
 
+type AutoConcurrentToolCallRequest = WorkspaceInspectionToolCallRequest | ExploreToolCallRequest;
+
+type AutoConcurrentRequestedToolCall = {
+  toolCallId: string;
+  toolCallRequest: AutoConcurrentToolCallRequest;
+};
+
+type RequestedToolCallExecutionGroup =
+  | {
+    groupKind: "auto_concurrent";
+    requestedToolCalls: AutoConcurrentRequestedToolCall[];
+  }
+  | {
+    groupKind: "serial";
+    requestedToolCall: ProviderRequestedToolCall;
+  };
+
 type RuntimeRequestedToolCallExecutorInput = StreamAssistantResponseEventsForRequestedToolCallInput & {
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
+};
+
+type StreamAssistantResponseEventsForAutoConcurrentRequestedToolCallsInput = Omit<
+  RuntimeRequestedToolCallExecutorInput,
+  "toolCallId" | "toolCallRequest"
+> & {
+  requestedToolCalls: readonly AutoConcurrentRequestedToolCall[];
 };
 
 type RuntimeRequestedToolCallExecutor = (
   input: RuntimeRequestedToolCallExecutorInput,
 ) => AsyncGenerator<AssistantResponseEvent>;
+
+type AssistantResponseEventStream = {
+  streamIndex: number;
+  iterator: AsyncIterator<AssistantResponseEvent>;
+};
+
+type ActiveAssistantResponseEventStream = AssistantResponseEventStream & {
+  nextEventPromise: Promise<AssistantResponseEventStreamResult>;
+};
+
+type AssistantResponseEventStreamResult = {
+  streamIndex: number;
+  iteratorResult: IteratorResult<AssistantResponseEvent>;
+};
 
 const requestedToolCallExecutorByName = {
   read: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
@@ -131,26 +171,20 @@ export async function* streamAssistantResponseEventsForRequestedToolCalls(
     });
   }
 
-  if (input.requestedToolCalls.length > 1 && areAllAutoApprovedReadOnlyToolCalls(input.requestedToolCalls)) {
-    yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
-      assistantResponseMessageId: input.assistantResponseMessageId,
-      providerConversationTurn: input.providerConversationTurn,
-      requestedToolCalls: input.requestedToolCalls,
-      workspaceRootPath: input.workspaceRootPath,
-      projectInstructionTracker: input.projectInstructionTracker,
-      toolResultSessionRecorder,
-      abortSignal: input.abortSignal,
-      throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
-      diagnosticLogger: input.diagnosticLogger,
-    });
-    return;
-  }
+  for (const requestedToolCallExecutionGroup of groupRequestedToolCallsForExecution(input.requestedToolCalls)) {
+    if (requestedToolCallExecutionGroup.groupKind === "auto_concurrent") {
+      yield* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls({
+        ...input,
+        requestedToolCalls: requestedToolCallExecutionGroup.requestedToolCalls,
+        toolResultSessionRecorder,
+      });
+      continue;
+    }
 
-  for (const requestedToolCall of input.requestedToolCalls) {
-    yield* resolveRequestedToolCallExecutor(requestedToolCall.toolCallRequest)({
+    yield* resolveRequestedToolCallExecutor(requestedToolCallExecutionGroup.requestedToolCall.toolCallRequest)({
       ...input,
-      toolCallId: requestedToolCall.toolCallId,
-      toolCallRequest: requestedToolCall.toolCallRequest,
+      toolCallId: requestedToolCallExecutionGroup.requestedToolCall.toolCallId,
+      toolCallRequest: requestedToolCallExecutionGroup.requestedToolCall.toolCallRequest,
       toolResultSessionRecorder,
     });
   }
@@ -178,6 +212,218 @@ function areAllAutoApprovedReadOnlyToolCalls(
   requestedToolCalls: readonly ProviderRequestedToolCall[],
 ): requestedToolCalls is readonly AutoApprovedReadOnlyRequestedToolCall[] {
   return requestedToolCalls.every((requestedToolCall) => isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest));
+}
+
+function groupRequestedToolCallsForExecution(
+  requestedToolCalls: readonly ProviderRequestedToolCall[],
+): RequestedToolCallExecutionGroup[] {
+  const requestedToolCallExecutionGroups: RequestedToolCallExecutionGroup[] = [];
+  let currentAutoConcurrentRequestedToolCalls: AutoConcurrentRequestedToolCall[] = [];
+
+  for (const requestedToolCall of requestedToolCalls) {
+    if (isAutoConcurrentToolCallRequest(requestedToolCall.toolCallRequest)) {
+      currentAutoConcurrentRequestedToolCalls.push({
+        toolCallId: requestedToolCall.toolCallId,
+        toolCallRequest: requestedToolCall.toolCallRequest,
+      });
+      continue;
+    }
+
+    if (currentAutoConcurrentRequestedToolCalls.length > 0) {
+      requestedToolCallExecutionGroups.push({
+        groupKind: "auto_concurrent",
+        requestedToolCalls: currentAutoConcurrentRequestedToolCalls,
+      });
+      currentAutoConcurrentRequestedToolCalls = [];
+    }
+
+    requestedToolCallExecutionGroups.push({
+      groupKind: "serial",
+      requestedToolCall,
+    });
+  }
+
+  if (currentAutoConcurrentRequestedToolCalls.length > 0) {
+    requestedToolCallExecutionGroups.push({
+      groupKind: "auto_concurrent",
+      requestedToolCalls: currentAutoConcurrentRequestedToolCalls,
+    });
+  }
+
+  return requestedToolCallExecutionGroups;
+}
+
+function isAutoConcurrentToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is AutoConcurrentToolCallRequest {
+  return isWorkspaceInspectionToolCallRequest(toolCallRequest) || isExploreToolCallRequest(toolCallRequest);
+}
+
+async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls(
+  input: StreamAssistantResponseEventsForAutoConcurrentRequestedToolCallsInput,
+): AsyncGenerator<AssistantResponseEvent> {
+  if (input.requestedToolCalls.length === 0) {
+    throw new Error("Cannot execute an empty auto-concurrent tool-call batch.");
+  }
+
+  if (input.requestedToolCalls.length === 1) {
+    const [requestedToolCall] = input.requestedToolCalls;
+    if (!requestedToolCall) {
+      throw new Error("Missing requested tool call in single auto-concurrent batch.");
+    }
+
+    yield* resolveRequestedToolCallExecutor(requestedToolCall.toolCallRequest)({
+      ...input,
+      toolCallId: requestedToolCall.toolCallId,
+      toolCallRequest: requestedToolCall.toolCallRequest,
+    });
+    return;
+  }
+
+  const concurrentGroupStartedAtMs = Date.now();
+  const concurrentGroupDiagnosticFields = buildConcurrentToolCallGroupDiagnosticFields(input.requestedToolCalls);
+  logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.concurrent_group_started", concurrentGroupDiagnosticFields);
+
+  let concurrentGroupOutcomeKind: "completed" | "failed" = "completed";
+  try {
+    if (areAllAutoApprovedReadOnlyToolCalls(input.requestedToolCalls)) {
+      yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
+        assistantResponseMessageId: input.assistantResponseMessageId,
+        providerConversationTurn: input.providerConversationTurn,
+        requestedToolCalls: input.requestedToolCalls,
+        workspaceRootPath: input.workspaceRootPath,
+        projectInstructionTracker: input.projectInstructionTracker,
+        toolResultSessionRecorder: input.toolResultSessionRecorder,
+        abortSignal: input.abortSignal,
+        throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+        diagnosticLogger: input.diagnosticLogger,
+      });
+      return;
+    }
+
+    yield* mergeAssistantResponseEventStreams({
+      assistantResponseEventStreams: input.requestedToolCalls.map((requestedToolCall) =>
+        resolveRequestedToolCallExecutor(requestedToolCall.toolCallRequest)({
+          ...input,
+          toolCallId: requestedToolCall.toolCallId,
+          toolCallRequest: requestedToolCall.toolCallRequest,
+        })
+      ),
+      throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+    });
+  } catch (error) {
+    concurrentGroupOutcomeKind = "failed";
+    throw error;
+  } finally {
+    logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.concurrent_group_finished", {
+      ...concurrentGroupDiagnosticFields,
+      outcomeKind: concurrentGroupOutcomeKind,
+      durationMs: Date.now() - concurrentGroupStartedAtMs,
+    });
+  }
+}
+
+function buildConcurrentToolCallGroupDiagnosticFields(
+  requestedToolCalls: readonly AutoConcurrentRequestedToolCall[],
+): BuliDiagnosticLogFields {
+  return {
+    toolCallCount: requestedToolCalls.length,
+    toolCallIds: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+    toolNames: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
+  };
+}
+
+async function* mergeAssistantResponseEventStreams(input: {
+  assistantResponseEventStreams: readonly AsyncGenerator<AssistantResponseEvent>[];
+  throwIfConversationTurnInterrupted: () => void;
+}): AsyncGenerator<AssistantResponseEvent> {
+  const assistantResponseEventStreams: AssistantResponseEventStream[] = input.assistantResponseEventStreams.map(
+    (assistantResponseEventStream, streamIndex) => {
+      const iterator = assistantResponseEventStream[Symbol.asyncIterator]();
+      return {
+        streamIndex,
+        iterator,
+      };
+    },
+  );
+
+  try {
+    const initialAssistantResponseEventStreamResults = await Promise.all(
+      assistantResponseEventStreams.map((assistantResponseEventStream) =>
+        readNextAssistantResponseEventFromStream(assistantResponseEventStream)
+      ),
+    );
+    input.throwIfConversationTurnInterrupted();
+
+    const assistantResponseEventStreamsWithRemainingEvents: AssistantResponseEventStream[] = [];
+    for (const initialAssistantResponseEventStreamResult of initialAssistantResponseEventStreamResults) {
+      const assistantResponseEventStream = assistantResponseEventStreams[initialAssistantResponseEventStreamResult.streamIndex];
+      if (!assistantResponseEventStream) {
+        throw new Error(`Missing assistant response stream at index ${initialAssistantResponseEventStreamResult.streamIndex}.`);
+      }
+
+      if (initialAssistantResponseEventStreamResult.iteratorResult.done) {
+        continue;
+      }
+
+      assistantResponseEventStreamsWithRemainingEvents.push(assistantResponseEventStream);
+      yield initialAssistantResponseEventStreamResult.iteratorResult.value;
+      input.throwIfConversationTurnInterrupted();
+    }
+
+    const activeAssistantResponseEventStreams: ActiveAssistantResponseEventStream[] = assistantResponseEventStreamsWithRemainingEvents.map(
+      (assistantResponseEventStream) => ({
+        ...assistantResponseEventStream,
+        nextEventPromise: readNextAssistantResponseEventFromStream(assistantResponseEventStream),
+      }),
+    );
+
+    while (activeAssistantResponseEventStreams.length > 0) {
+      input.throwIfConversationTurnInterrupted();
+      const nextAssistantResponseEventStreamResult = await Promise.race(
+        activeAssistantResponseEventStreams.map((activeAssistantResponseEventStream) =>
+          activeAssistantResponseEventStream.nextEventPromise
+        ),
+      );
+      input.throwIfConversationTurnInterrupted();
+
+      const activeStreamIndex = activeAssistantResponseEventStreams.findIndex((activeAssistantResponseEventStream) =>
+        activeAssistantResponseEventStream.streamIndex === nextAssistantResponseEventStreamResult.streamIndex
+      );
+      if (activeStreamIndex === -1) {
+        throw new Error(`Received an event from inactive assistant response stream ${nextAssistantResponseEventStreamResult.streamIndex}.`);
+      }
+
+      const activeAssistantResponseEventStream = activeAssistantResponseEventStreams[activeStreamIndex];
+      if (!activeAssistantResponseEventStream) {
+        throw new Error(`Missing active assistant response stream at index ${activeStreamIndex}.`);
+      }
+
+      if (nextAssistantResponseEventStreamResult.iteratorResult.done) {
+        activeAssistantResponseEventStreams.splice(activeStreamIndex, 1);
+        continue;
+      }
+
+      activeAssistantResponseEventStream.nextEventPromise = readNextAssistantResponseEventFromStream({
+        streamIndex: activeAssistantResponseEventStream.streamIndex,
+        iterator: activeAssistantResponseEventStream.iterator,
+      });
+      yield nextAssistantResponseEventStreamResult.iteratorResult.value;
+    }
+  } catch (error) {
+    await Promise.allSettled(
+      assistantResponseEventStreams.map((assistantResponseEventStream) => assistantResponseEventStream.iterator.return?.()),
+    );
+    throw error;
+  }
+}
+
+async function readNextAssistantResponseEventFromStream(input: {
+  streamIndex: number;
+  iterator: AsyncIterator<AssistantResponseEvent>;
+}): Promise<AssistantResponseEventStreamResult> {
+  return {
+    streamIndex: input.streamIndex,
+    iteratorResult: await input.iterator.next(),
+  };
 }
 
 async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(

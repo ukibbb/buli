@@ -154,6 +154,143 @@ class AbortAwareConversationTurnProvider implements ConversationTurnProvider {
   }
 }
 
+class DeferredCompletion {
+  readonly promise: Promise<void>;
+  private resolvePromise: (() => void) | undefined;
+
+  constructor() {
+    this.promise = new Promise<void>((resolvePromise) => {
+      this.resolvePromise = resolvePromise;
+    });
+  }
+
+  resolve(): void {
+    this.resolvePromise?.();
+  }
+}
+
+class ConcurrentExplorerStartBarrier {
+  readonly expectedExplorerStartCount: number;
+  readonly allExplorersStarted = new DeferredCompletion();
+  startedExplorerCount = 0;
+
+  constructor(expectedExplorerStartCount: number) {
+    this.expectedExplorerStartCount = expectedExplorerStartCount;
+  }
+
+  recordExplorerStarted(): void {
+    this.startedExplorerCount += 1;
+    if (this.startedExplorerCount >= this.expectedExplorerStartCount) {
+      this.allExplorersStarted.resolve();
+    }
+  }
+}
+
+class BlockingExplorerProviderTurn extends ScriptedProviderTurn {
+  readonly explorerSummaryText: string;
+  readonly recordExplorerStarted: () => void;
+  readonly waitBeforeCompleting: () => Promise<void>;
+
+  constructor(input: {
+    explorerSummaryText: string;
+    recordExplorerStarted: () => void;
+    waitBeforeCompleting: () => Promise<void>;
+  }) {
+    super({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: input.explorerSummaryText },
+        { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    });
+    this.explorerSummaryText = input.explorerSummaryText;
+    this.recordExplorerStarted = input.recordExplorerStarted;
+    this.waitBeforeCompleting = input.waitBeforeCompleting;
+  }
+
+  override async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
+    this.recordExplorerStarted();
+    await this.waitBeforeCompleting();
+    yield* super.streamProviderEvents();
+  }
+}
+
+class AbortTrackingExplorerProviderTurn implements ProviderConversationTurn {
+  readonly abortSignal: AbortSignal | undefined;
+  readonly streamStarted = new DeferredCompletion();
+  readonly streamAborted = new DeferredCompletion();
+
+  constructor(abortSignal: AbortSignal | undefined) {
+    this.abortSignal = abortSignal;
+  }
+
+  async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
+    this.streamStarted.resolve();
+    await new Promise<void>((_resolve, reject) => {
+      const abortListener = (): void => {
+        this.streamAborted.resolve();
+        reject(new Error("explorer provider aborted"));
+      };
+
+      this.abortSignal?.addEventListener("abort", abortListener, { once: true });
+      if (this.abortSignal?.aborted) {
+        abortListener();
+      }
+    });
+  }
+
+  async submitToolResult(): Promise<void> {}
+
+  getProviderTurnReplay(): ProviderTurnReplay | undefined {
+    return undefined;
+  }
+}
+
+class ParentAndAbortTrackingExplorerProvider implements ConversationTurnProvider {
+  readonly parentProviderTurn: ScriptedProviderTurn;
+  readonly expectedExplorerProviderTurnCount: number;
+  readonly allExplorerProviderTurnsStarted = new DeferredCompletion();
+  readonly startedTurnRequests: ProviderConversationTurnRequest[] = [];
+  readonly explorerProviderTurns: AbortTrackingExplorerProviderTurn[] = [];
+
+  constructor(parentProviderTurn: ScriptedProviderTurn, expectedExplorerProviderTurnCount: number) {
+    this.parentProviderTurn = parentProviderTurn;
+    this.expectedExplorerProviderTurnCount = expectedExplorerProviderTurnCount;
+  }
+
+  startConversationTurn(input: ProviderConversationTurnRequest): ProviderConversationTurn {
+    this.startedTurnRequests.push(input);
+    if (this.startedTurnRequests.length === 1) {
+      return this.parentProviderTurn;
+    }
+
+    const explorerProviderTurn = new AbortTrackingExplorerProviderTurn(input.abortSignal);
+    this.explorerProviderTurns.push(explorerProviderTurn);
+    if (this.explorerProviderTurns.length >= this.expectedExplorerProviderTurnCount) {
+      this.allExplorerProviderTurnsStarted.resolve();
+    }
+    return explorerProviderTurn;
+  }
+}
+
+async function waitForPromiseWithTimeout(input: {
+  promise: Promise<void>;
+  timeoutMilliseconds: number;
+  createTimeoutError: () => Error;
+}): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => reject(input.createTimeoutError()), input.timeoutMilliseconds);
+  });
+
+  try {
+    await Promise.race([input.promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 async function collectAssistantEvents(activeConversationTurn: ReturnType<AssistantConversationRuntime["startConversationTurn"]>) {
   const emittedAssistantEvents = [];
   for await (const assistantResponseEvent of activeConversationTurn.streamAssistantResponseEvents()) {
@@ -1242,6 +1379,416 @@ test("AssistantConversationRuntime runs batched read-only tool calls and records
   ]);
 });
 
+test("AssistantConversationRuntime starts mixed read-only and Explorer tool calls concurrently", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-mixed-concurrent-tools-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nMixed concurrent target\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_read_1",
+            toolCallRequest: {
+              toolName: "read",
+              readTargetPath: "README.md",
+            },
+          },
+          {
+            toolCallId: "call_explore_1",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map docs",
+              explorationPrompt: "Summarize README.md.",
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Mixed batch acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "README.md contains Mixed concurrent target text." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect README and explore docs",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const toolCallPartStatuses = emittedAssistantEvents.flatMap((assistantResponseEvent) =>
+    (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call"
+      ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
+      : []
+  );
+  const firstTerminalToolCallPartStatusIndex = toolCallPartStatuses.findIndex((toolCallPartStatus) =>
+    toolCallPartStatus.endsWith(":completed") ||
+    toolCallPartStatus.endsWith(":failed") ||
+    toolCallPartStatus.endsWith(":denied")
+  );
+
+  expect(firstTerminalToolCallPartStatusIndex).toBeGreaterThan(1);
+  expect(toolCallPartStatuses.slice(0, firstTerminalToolCallPartStatusIndex)).toEqual(
+    expect.arrayContaining(["call_read_1:running", "call_explore_1:running"]),
+  );
+  expect(provider.startedTurnRequests).toHaveLength(2);
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).sort()).toEqual([
+    "call_explore_1",
+    "call_read_1",
+  ]);
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolResultText).join("\n")).toContain(
+    "Mixed concurrent target",
+  );
+});
+
+test("AssistantConversationRuntime surfaces concurrent Explorer running states before starting child work", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-running-before-child-work-"));
+  const explorerStartBarrier = new ConcurrentExplorerStartBarrier(2);
+  const waitForBothExplorersToStart = () =>
+    waitForPromiseWithTimeout({
+      promise: explorerStartBarrier.allExplorersStarted.promise,
+      timeoutMilliseconds: 500,
+      createTimeoutError: () =>
+        new Error(`Sibling Explorer child work did not start; started ${explorerStartBarrier.startedExplorerCount}.`),
+    });
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_explore_docs",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map docs",
+              explorationPrompt: "Summarize docs responsibilities.",
+            },
+          },
+          {
+            toolCallId: "call_explore_runtime",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map runtime",
+              explorationPrompt: "Summarize runtime responsibilities.",
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Sibling Explorer results acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const docsExplorerProviderTurn = new BlockingExplorerProviderTurn({
+    explorerSummaryText: "Docs Explorer summary.",
+    recordExplorerStarted: () => explorerStartBarrier.recordExplorerStarted(),
+    waitBeforeCompleting: waitForBothExplorersToStart,
+  });
+  const runtimeExplorerProviderTurn = new BlockingExplorerProviderTurn({
+    explorerSummaryText: "Runtime Explorer summary.",
+    recordExplorerStarted: () => explorerStartBarrier.recordExplorerStarted(),
+    waitBeforeCompleting: waitForBothExplorersToStart,
+  });
+  const provider = new RecordingConversationTurnProvider([
+    parentProviderTurn,
+    docsExplorerProviderTurn,
+    runtimeExplorerProviderTurn,
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+  const activeConversationTurn = runtime.startConversationTurn({
+    userPromptText: "Explore docs and runtime independently",
+    selectedModelId: "gpt-5.4",
+  });
+  const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
+  const emittedAssistantEvents = [];
+
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  expect(explorerStartBarrier.startedExplorerCount).toBe(0);
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  expect(explorerStartBarrier.startedExplorerCount).toBe(0);
+
+  const initialExplorerToolCallPartStatuses = emittedAssistantEvents.slice(1).flatMap((assistantResponseEvent) =>
+    (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call"
+      ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
+      : []
+  );
+  expect(initialExplorerToolCallPartStatuses).toEqual([
+    "call_explore_docs:running",
+    "call_explore_runtime:running",
+  ]);
+
+  const nextAssistantEventPromise = assistantEventIterator.next();
+  await waitForBothExplorersToStart();
+  emittedAssistantEvents.push((await nextAssistantEventPromise).value);
+
+  while (true) {
+    const nextAssistantEvent = await assistantEventIterator.next();
+    if (nextAssistantEvent.done) {
+      break;
+    }
+
+    emittedAssistantEvents.push(nextAssistantEvent.value);
+  }
+
+  expect(explorerStartBarrier.startedExplorerCount).toBe(2);
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).sort()).toEqual([
+    "call_explore_docs",
+    "call_explore_runtime",
+  ]);
+});
+
+test("AssistantConversationRuntime completes a concurrent mixed group with one failed tool and one successful Explorer", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-concurrent-mixed-failure-"));
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_grep_failed",
+            toolCallRequest: {
+              toolName: "grep",
+              regexPattern: "[",
+            },
+          },
+          {
+            toolCallId: "call_explore_success",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map runtime",
+              explorationPrompt: "Summarize runtime responsibilities.",
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Mixed failure acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Runtime Explorer summary." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Search and explore concurrently",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const toolCallPartStatuses = emittedAssistantEvents.flatMap((assistantResponseEvent) =>
+    (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call"
+      ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
+      : []
+  );
+
+  expect(toolCallPartStatuses).toEqual(expect.arrayContaining([
+    "call_grep_failed:failed",
+    "call_explore_success:completed",
+  ]));
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).sort()).toEqual([
+    "call_explore_success",
+    "call_grep_failed",
+  ]);
+  expect(parentProviderTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_grep_failed")?.toolResultText)
+    .toContain("Grep failed: Invalid regular expression");
+  expect(parentProviderTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_explore_success")?.toolResultText)
+    .toContain("Runtime Explorer summary");
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ entryKind: "failed_tool_result", toolCallId: "call_grep_failed" }),
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_explore_success" }),
+    expect.objectContaining({ entryKind: "assistant_text_segment", assistantTextSegmentText: "Mixed failure acknowledged." }),
+    expect.objectContaining({ entryKind: "assistant_message", assistantMessageStatus: "completed" }),
+  ]));
+});
+
+test("AssistantConversationRuntime interrupts concurrent sibling Explorer turns", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-interrupted-concurrent-explorers-"));
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_explore_docs",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map docs",
+              explorationPrompt: "Summarize docs responsibilities.",
+            },
+          },
+          {
+            toolCallId: "call_explore_runtime",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map runtime",
+              explorationPrompt: "Summarize runtime responsibilities.",
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const provider = new ParentAndAbortTrackingExplorerProvider(parentProviderTurn, 2);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+  const activeConversationTurn = runtime.startConversationTurn({
+    userPromptText: "Explore docs and runtime until interrupted",
+    selectedModelId: "gpt-5.4",
+  });
+  const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
+  const emittedAssistantEvents = [];
+
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  expect(provider.explorerProviderTurns).toHaveLength(0);
+
+  const pendingAssistantEvent = assistantEventIterator.next();
+  await waitForPromiseWithTimeout({
+    promise: provider.allExplorerProviderTurnsStarted.promise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error(`Expected 2 Explorer provider turns, got ${provider.explorerProviderTurns.length}.`),
+  });
+  activeConversationTurn.interrupt();
+  emittedAssistantEvents.push((await pendingAssistantEvent).value);
+
+  while (true) {
+    const nextAssistantEvent = await assistantEventIterator.next();
+    if (nextAssistantEvent.done) {
+      break;
+    }
+
+    emittedAssistantEvents.push(nextAssistantEvent.value);
+  }
+
+  await waitForPromiseWithTimeout({
+    promise: Promise.all(provider.explorerProviderTurns.map((explorerProviderTurn) => explorerProviderTurn.streamAborted.promise)).then(() => {}),
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("Concurrent Explorer provider turns were not aborted."),
+  });
+  expect(provider.explorerProviderTurns.map((explorerProviderTurn) => explorerProviderTurn.abortSignal?.aborted)).toEqual([true, true]);
+  expect(parentProviderTurn.submittedToolResults).toEqual([]);
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_turn_started",
+    "assistant_message_part_added",
+    "assistant_message_part_added",
+    "assistant_message_interrupted",
+  ]);
+});
+
+test("AssistantConversationRuntime logs concurrent tool-call group diagnostics", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-concurrent-diagnostics-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nConcurrent diagnostics target\n", "utf8");
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_read_1",
+            toolCallRequest: {
+              toolName: "read",
+              readTargetPath: "README.md",
+            },
+          },
+          {
+            toolCallId: "call_explore_1",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map docs",
+              explorationPrompt: "Summarize README.md.",
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Concurrent diagnostics acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "README.md contains Concurrent diagnostics target text." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect README and explore docs",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "tool_call.concurrent_group_started",
+      fields: expect.objectContaining({
+        toolCallCount: 2,
+        toolCallIds: ["call_read_1", "call_explore_1"],
+        toolNames: ["read", "explore"],
+      }),
+    }),
+  );
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "tool_call.concurrent_group_finished",
+      fields: expect.objectContaining({
+        toolCallCount: 2,
+        toolCallIds: ["call_read_1", "call_explore_1"],
+        toolNames: ["read", "explore"],
+      }),
+    }),
+  );
+});
+
 test("AssistantConversationRuntime records assistant text segments in tool-call order", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-ordered-text-tool-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\n", "utf8");
@@ -1843,6 +2390,103 @@ test("AssistantConversationRuntime shows batched Explorer child read-only tool c
     { entryKind: "assistant_text_segment", assistantTextSegmentText: "Explorer batch acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
   ]);
+});
+
+test("AssistantConversationRuntime runs sibling Explorer tool calls concurrently", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-sibling-explorers-"));
+  const explorerStartBarrier = new ConcurrentExplorerStartBarrier(2);
+  const waitForBothExplorersToStart = () =>
+    waitForPromiseWithTimeout({
+      promise: explorerStartBarrier.allExplorersStarted.promise,
+      timeoutMilliseconds: 500,
+      createTimeoutError: () =>
+        new Error(`Sibling Explorer calls did not start concurrently; started ${explorerStartBarrier.startedExplorerCount}.`),
+    });
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_explore_docs",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map docs",
+              explorationPrompt: "Summarize docs responsibilities.",
+            },
+          },
+          {
+            toolCallId: "call_explore_runtime",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map runtime",
+              explorationPrompt: "Summarize runtime responsibilities.",
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Sibling Explorer results acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const docsExplorerProviderTurn = new BlockingExplorerProviderTurn({
+    explorerSummaryText: "Docs Explorer summary.",
+    recordExplorerStarted: () => explorerStartBarrier.recordExplorerStarted(),
+    waitBeforeCompleting: waitForBothExplorersToStart,
+  });
+  const runtimeExplorerProviderTurn = new BlockingExplorerProviderTurn({
+    explorerSummaryText: "Runtime Explorer summary.",
+    recordExplorerStarted: () => explorerStartBarrier.recordExplorerStarted(),
+    waitBeforeCompleting: waitForBothExplorersToStart,
+  });
+  const provider = new RecordingConversationTurnProvider([
+    parentProviderTurn,
+    docsExplorerProviderTurn,
+    runtimeExplorerProviderTurn,
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs and runtime independently",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const explorerToolCallPartStatuses = emittedAssistantEvents.flatMap((assistantResponseEvent) =>
+    (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call" &&
+      assistantResponseEvent.part.toolCallDetail.toolName === "explore"
+      ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
+      : []
+  );
+  const firstTerminalExplorerToolCallPartStatusIndex = explorerToolCallPartStatuses.findIndex((explorerToolCallPartStatus) =>
+    explorerToolCallPartStatus.endsWith(":completed") ||
+    explorerToolCallPartStatus.endsWith(":failed") ||
+    explorerToolCallPartStatus.endsWith(":denied")
+  );
+
+  expect(firstTerminalExplorerToolCallPartStatusIndex).toBeGreaterThan(1);
+  expect(explorerToolCallPartStatuses.slice(0, firstTerminalExplorerToolCallPartStatusIndex)).toEqual(
+    expect.arrayContaining(["call_explore_docs:running", "call_explore_runtime:running"]),
+  );
+  expect(explorerStartBarrier.startedExplorerCount).toBe(2);
+  expect(provider.startedTurnRequests).toHaveLength(3);
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).sort()).toEqual([
+    "call_explore_docs",
+    "call_explore_runtime",
+  ]);
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolResultText).join("\n")).toContain(
+    "Docs Explorer summary",
+  );
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolResultText).join("\n")).toContain(
+    "Runtime Explorer summary",
+  );
 });
 
 test("AssistantConversationRuntime denies nested Explorer calls inside Explorer turns", async () => {
