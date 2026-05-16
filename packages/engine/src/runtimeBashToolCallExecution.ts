@@ -12,7 +12,8 @@ import {
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
-import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
+import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
+import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
@@ -78,14 +79,12 @@ export async function* streamAssistantResponseEventsForBashToolCall(
         denialText,
       }),
     }));
-    logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-      toolCallId: input.toolCallId,
-      toolResultKind: "denied",
-      toolResultTextLength: denialText.length,
-    });
-    await input.providerConversationTurn.submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
+      providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: denialText,
+      toolResultKind: "denied",
+      diagnosticLogger: input.diagnosticLogger,
     });
     return;
   }
@@ -163,14 +162,12 @@ export async function* streamAssistantResponseEventsForBashToolCall(
           denialText,
         }),
       }));
-      logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-        toolCallId: input.toolCallId,
-        toolResultKind: "denied",
-        toolResultTextLength: denialText.length,
-      });
-      await input.providerConversationTurn.submitToolResult({
+      await submitProviderToolResultWithDiagnostics({
+        providerConversationTurn: input.providerConversationTurn,
         toolCallId: input.toolCallId,
         toolResultText: denialText,
+        toolResultKind: "denied",
+        diagnosticLogger: input.diagnosticLogger,
       });
       return;
     }
@@ -231,14 +228,12 @@ export async function* streamAssistantResponseEventsForBashToolCall(
         durationMs: bashToolCallOutcome.durationMilliseconds,
       }),
     }));
-    logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-      toolCallId: input.toolCallId,
-      toolResultKind: "completed",
-      toolResultTextLength: bashToolCallOutcome.toolResultText.length,
-    });
-    await input.providerConversationTurn.submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
+      providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: bashToolCallOutcome.toolResultText,
+      toolResultKind: "completed",
+      diagnosticLogger: input.diagnosticLogger,
     });
     return;
   }
@@ -263,24 +258,11 @@ export async function* streamAssistantResponseEventsForBashToolCall(
       durationMs: bashToolCallOutcome.durationMilliseconds,
     }),
   }));
-  logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-    toolCallId: input.toolCallId,
-    toolResultKind: "failed",
-    toolResultTextLength: bashToolCallOutcome.toolResultText.length,
-  });
-  await input.providerConversationTurn.submitToolResult({
+  await submitProviderToolResultWithDiagnostics({
+    providerConversationTurn: input.providerConversationTurn,
     toolCallId: input.toolCallId,
     toolResultText: bashToolCallOutcome.toolResultText,
+    toolResultKind: "failed",
+    diagnosticLogger: input.diagnosticLogger,
   });
-}
-
-function logAssistantResponseEventEmitted(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  assistantResponseEvent: AssistantResponseEvent,
-): AssistantResponseEvent {
-  logEngineDiagnosticEvent(diagnosticLogger, "assistant_response_event.emitted", {
-    eventType: assistantResponseEvent.type,
-    ...summarizeAssistantResponseEventForDiagnostics(assistantResponseEvent),
-  });
-  return assistantResponseEvent;
 }

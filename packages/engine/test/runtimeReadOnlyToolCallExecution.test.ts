@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AssistantResponseEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
+import type { AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
 import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../src/provider.ts";
 import {
@@ -61,6 +61,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-read-"));
   await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
   const providerConversationTurn = new RecordingProviderConversationTurn();
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const conversationHistory = new InMemoryConversationHistory({
     initialConversationSessionEntries: [
       {
@@ -92,6 +93,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
     toolResultSessionRecorder,
     abortSignal: new AbortController().signal,
     throwIfConversationTurnInterrupted: () => {},
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
 
   expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
@@ -126,6 +128,20 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
     toolCallDetail: { toolName: "read", readFilePath: "notes.txt" },
     toolResultText: expect.stringContaining("2: beta"),
   });
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "assistant_response_event.emitted").map(
+    (diagnosticEvent) => diagnosticEvent.fields?.toolCallStatus,
+  )).toEqual(["running", "completed"]);
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.tool_result_submitted"))
+    .toEqual([
+      expect.objectContaining({
+        subsystem: "engine",
+        fields: expect.objectContaining({
+          toolCallId: "call_read_1",
+          toolResultKind: "completed",
+          toolResultTextLength: providerConversationTurn.submittedToolResults[0]?.toolResultText.length,
+        }),
+      }),
+    ]);
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and submits completed glob results", async () => {

@@ -14,7 +14,7 @@ import {
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
-import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
+import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { runGlobToolCall } from "./tools/globTool.ts";
 import { runGrepToolCall } from "./tools/grepTool.ts";
@@ -176,14 +176,12 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
           durationMs: toolCallOutcome.durationMilliseconds,
         }),
       }));
-      logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-        toolCallId: pendingToolCallExecution.toolCallId,
-        toolResultKind: "completed",
-        toolResultTextLength: toolCallOutcome.toolResultText.length,
-      });
-      await input.providerConversationTurn.submitToolResult({
+      await submitProviderToolResultWithDiagnostics({
+        providerConversationTurn: input.providerConversationTurn,
         toolCallId: pendingToolCallExecution.toolCallId,
         toolResultText: toolCallOutcome.toolResultText,
+        toolResultKind: "completed",
+        diagnosticLogger: input.diagnosticLogger,
       });
       continue;
     }
@@ -208,14 +206,12 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
         durationMs: toolCallOutcome.durationMilliseconds,
       }),
     }));
-    logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-      toolCallId: pendingToolCallExecution.toolCallId,
-      toolResultKind: "failed",
-      toolResultTextLength: toolCallOutcome.toolResultText.length,
-    });
-    await input.providerConversationTurn.submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
+      providerConversationTurn: input.providerConversationTurn,
       toolCallId: pendingToolCallExecution.toolCallId,
       toolResultText: toolCallOutcome.toolResultText,
+      toolResultKind: "failed",
+      diagnosticLogger: input.diagnosticLogger,
     });
   }
 }
@@ -256,15 +252,4 @@ function runAutoApprovedReadOnlyToolCall(input: {
 
 function assertUnhandledReadOnlyToolCallRequest(toolCallRequest: never): never {
   throw new Error(`Unhandled read-only tool call request: ${JSON.stringify(toolCallRequest)}`);
-}
-
-function logAssistantResponseEventEmitted(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  assistantResponseEvent: AssistantResponseEvent,
-): AssistantResponseEvent {
-  logEngineDiagnosticEvent(diagnosticLogger, "assistant_response_event.emitted", {
-    eventType: assistantResponseEvent.type,
-    ...summarizeAssistantResponseEventForDiagnostics(assistantResponseEvent),
-  });
-  return assistantResponseEvent;
 }

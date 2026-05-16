@@ -16,7 +16,7 @@ import {
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
-import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
+import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import {
@@ -79,7 +79,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
         denialText,
       }),
     }));
-    await submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: denialText,
@@ -118,7 +118,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
         durationMs: preparedFileMutationToolCall.durationMilliseconds,
       }),
     }));
-    await submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: preparedFileMutationToolCall.toolResultText,
@@ -186,7 +186,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
         denialText,
       }),
     }));
-    await submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: denialText,
@@ -236,7 +236,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
         durationMs: toolCallOutcome.durationMilliseconds,
       }),
     }));
-    await submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: toolCallOutcome.toolResultText,
@@ -266,7 +266,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
       durationMs: toolCallOutcome.durationMilliseconds,
     }),
   }));
-  await submitToolResult({
+  await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
     toolCallId: input.toolCallId,
     toolResultText: toolCallOutcome.toolResultText,
@@ -351,33 +351,4 @@ function buildFileMutationRiskExplanation(toolCallDetail: ToolCallDetail): strin
 
 function isFailedToolCallOutcome(value: unknown): value is FailedToolCallOutcome {
   return typeof value === "object" && value !== null && "outcomeKind" in value && value.outcomeKind === "failed";
-}
-
-async function submitToolResult(input: {
-  providerConversationTurn: ProviderConversationTurn;
-  toolCallId: string;
-  toolResultText: string;
-  toolResultKind: "completed" | "failed" | "denied";
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
-}): Promise<void> {
-  logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-    toolCallId: input.toolCallId,
-    toolResultKind: input.toolResultKind,
-    toolResultTextLength: input.toolResultText.length,
-  });
-  await input.providerConversationTurn.submitToolResult({
-    toolCallId: input.toolCallId,
-    toolResultText: input.toolResultText,
-  });
-}
-
-function logAssistantResponseEventEmitted(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  assistantResponseEvent: AssistantResponseEvent,
-): AssistantResponseEvent {
-  logEngineDiagnosticEvent(diagnosticLogger, "assistant_response_event.emitted", {
-    eventType: assistantResponseEvent.type,
-    ...summarizeAssistantResponseEventForDiagnostics(assistantResponseEvent),
-  });
-  return assistantResponseEvent;
 }

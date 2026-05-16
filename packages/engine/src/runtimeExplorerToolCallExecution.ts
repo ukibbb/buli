@@ -23,8 +23,8 @@ import {
 } from "@buli/contracts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
-import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
 import { toProjectInstructionSnapshots, type ProjectInstructionTracker } from "./projectInstructions.ts";
+import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
@@ -119,7 +119,7 @@ export async function* streamAssistantResponseEventsForExploreToolCall(
         durationMs: Date.now() - toolCallStartedAtMs,
       }),
     }));
-    await submitExplorerToolResult({
+    await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: NESTED_EXPLORER_DENIAL_TEXT,
@@ -196,7 +196,7 @@ export async function* streamAssistantResponseEventsForExploreToolCall(
         durationMs: explorerConversationOutcome.durationMilliseconds,
       }),
     }));
-    await submitExplorerToolResult({
+    await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
       toolResultText: explorerConversationOutcome.toolResultText,
@@ -227,7 +227,7 @@ export async function* streamAssistantResponseEventsForExploreToolCall(
       durationMs: explorerConversationOutcome.durationMilliseconds,
     }),
   }));
-  await submitExplorerToolResult({
+  await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
     toolCallId: input.toolCallId,
     toolResultText: explorerConversationOutcome.toolResultText,
@@ -483,9 +483,12 @@ async function* streamExplorerChildToolCallsActivity(input: {
       toolResultText: denialExplanation,
       denialExplanation,
     });
-    await input.explorerProviderConversationTurn.submitToolResult({
+    await submitProviderToolResultWithDiagnostics({
+      providerConversationTurn: input.explorerProviderConversationTurn,
       toolCallId: requestedToolCall.toolCallId,
       toolResultText: denialExplanation,
+      toolResultKind: "denied",
+      diagnosticLogger: input.diagnosticLogger,
     });
   }
 }
@@ -695,33 +698,4 @@ function buildExplorerDisallowedToolDenialText(toolCallRequest: ToolCallRequest)
   }
 
   return `Explorer is read-only and cannot use ${toolCallRequest.toolName}. Use read, glob, or grep instead.`;
-}
-
-async function submitExplorerToolResult(input: {
-  providerConversationTurn: ProviderConversationTurn;
-  toolCallId: string;
-  toolResultText: string;
-  toolResultKind: "completed" | "failed" | "denied";
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
-}): Promise<void> {
-  logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
-    toolCallId: input.toolCallId,
-    toolResultKind: input.toolResultKind,
-    toolResultTextLength: input.toolResultText.length,
-  });
-  await input.providerConversationTurn.submitToolResult({
-    toolCallId: input.toolCallId,
-    toolResultText: input.toolResultText,
-  });
-}
-
-function logAssistantResponseEventEmitted(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  assistantResponseEvent: AssistantResponseEvent,
-): AssistantResponseEvent {
-  logEngineDiagnosticEvent(diagnosticLogger, "assistant_response_event.emitted", {
-    eventType: assistantResponseEvent.type,
-    ...summarizeAssistantResponseEventForDiagnostics(assistantResponseEvent),
-  });
-  return assistantResponseEvent;
 }

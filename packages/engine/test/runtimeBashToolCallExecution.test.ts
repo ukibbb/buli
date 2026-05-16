@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { AssistantOperatingMode, AssistantResponseEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
+import type { AssistantOperatingMode, AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
 import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../src/provider.ts";
 import { streamAssistantResponseEventsForBashToolCall } from "../src/runtimeBashToolCallExecution.ts";
@@ -51,6 +51,7 @@ async function collectBashToolCallEvents(input: {
   createPendingToolApproval?: ((input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval) | undefined;
   providerConversationTurn?: RecordingProviderConversationTurn | undefined;
   conversationHistory?: InMemoryConversationHistory | undefined;
+  diagnosticEvents?: BuliDiagnosticLogEvent[] | undefined;
 }): Promise<{
   assistantResponseEvents: AssistantResponseEvent[];
   providerConversationTurn: RecordingProviderConversationTurn;
@@ -81,6 +82,13 @@ async function collectBashToolCallEvents(input: {
       throw new Error("approval should not be requested");
     }),
     throwIfConversationTurnInterrupted: () => {},
+    ...(input.diagnosticEvents
+      ? {
+          diagnosticLogger: (diagnosticEvent) => {
+            input.diagnosticEvents?.push(diagnosticEvent);
+          },
+        }
+      : {}),
   })) {
     assistantResponseEvents.push(assistantResponseEvent);
   }
@@ -113,10 +121,12 @@ function createFailingWorkspaceShellCommandExecutor(): WorkspaceShellCommandExec
 }
 
 test("streamAssistantResponseEventsForBashToolCall blocks mutating bash commands in plan mode", async () => {
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const { assistantResponseEvents, providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
     shellCommand: "mkdir blocked-test",
     assistantOperatingMode: "plan",
     bashToolApprovalMode: "trusted",
+    diagnosticEvents,
   });
 
   expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
@@ -141,6 +151,17 @@ test("streamAssistantResponseEventsForBashToolCall blocks mutating bash commands
     toolCallId: "call_bash_1",
     toolResultText: expect.stringContaining("Plan mode is read-only"),
   });
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.tool_result_submitted"))
+    .toEqual([
+      expect.objectContaining({
+        subsystem: "engine",
+        fields: expect.objectContaining({
+          toolCallId: "call_bash_1",
+          toolResultKind: "denied",
+          toolResultTextLength: providerConversationTurn.submittedToolResults[0]?.toolResultText.length,
+        }),
+      }),
+    ]);
 });
 
 test("streamAssistantResponseEventsForBashToolCall records user-denied bash approvals", async () => {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   AssistantToolCallConversationMessagePart,
+  BuliDiagnosticLogEvent,
   ConversationSessionEntry,
   ModelContextItem,
   ProviderStreamEvent,
@@ -1853,10 +1854,12 @@ test("AssistantConversationRuntime denies nested Explorer calls inside Explorer 
     ],
   });
   const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const runtime = new AssistantConversationRuntime({
     conversationTurnProvider: provider,
     workspaceRootPath,
     promptContextBrowseRootPath: workspaceRootPath,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
 
   await collectAssistantEvents(
@@ -1868,6 +1871,17 @@ test("AssistantConversationRuntime denies nested Explorer calls inside Explorer 
 
   expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer cannot spawn another Explorer");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Nested Explorer was denied");
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "provider_turn.tool_result_submitted",
+      fields: expect.objectContaining({
+        toolCallId: "call_explore_child",
+        toolResultKind: "denied",
+        toolResultTextLength: explorerProviderTurn.submittedToolResults[0]?.toolResultText.length,
+      }),
+    }),
+  );
   expect(provider.startedTurnRequests).toHaveLength(2);
 });
 
