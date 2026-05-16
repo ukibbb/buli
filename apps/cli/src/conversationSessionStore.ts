@@ -131,15 +131,22 @@ export class FileConversationSessionStore implements ConversationSessionStore {
 
   saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void {
     this.runWithConversationSessionWriteLock(() => {
-      const persistedConversationSessionSnapshot: ConversationSessionSnapshot = ConversationSessionSnapshotSchema.parse({
-        schemaVersion: 1,
-        conversationSessionEntries,
+      const activeConversationSession = this.loadActiveConversationSessionWithoutLock();
+      const activeConversationSessionFile = loadRecoverableConversationSessionFile({
+        filePath: activeConversationSession.filePath,
+        nowMs: this.nowMs,
       });
 
       writeConversationSessionTextFileAtomically({
-        filePath: this.filePath,
-        text: JSON.stringify(persistedConversationSessionSnapshot, null, 2) + "\n",
+        filePath: activeConversationSession.filePath,
+        text: buildConversationSessionJsonlText({
+          headerRecord: activeConversationSessionFile.headerRecord,
+          conversationSessionEntries,
+          createSessionEntryId: this.createSessionEntryId,
+          nowMs: this.nowMs,
+        }),
       });
+      this.writeActiveConversationSessionId(activeConversationSession.sessionId);
     });
   }
 
@@ -225,7 +232,12 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       return undefined;
     }
 
-    const parsedPointer = JSON.parse(readFileSync(this.activeConversationSessionPointerFilePath, "utf8")) as unknown;
+    let parsedPointer: unknown;
+    try {
+      parsedPointer = JSON.parse(readFileSync(this.activeConversationSessionPointerFilePath, "utf8")) as unknown;
+    } catch {
+      return undefined;
+    }
     if (!isRecord(parsedPointer)) {
       return undefined;
     }
@@ -380,6 +392,31 @@ function listActiveConversationSessionEntryRecords(
   }
 
   return activeEntryRecords;
+}
+
+function buildConversationSessionJsonlText(input: {
+  headerRecord: ConversationSessionHeaderRecord;
+  conversationSessionEntries: readonly ConversationSessionEntry[];
+  createSessionEntryId: ConversationSessionEntryIdFactory;
+  nowMs: ClockMilliseconds;
+}): string {
+  let parentSessionEntryId: string | null = null;
+  const conversationSessionEntryRecords = input.conversationSessionEntries.map(
+    (conversationSessionEntry): ConversationSessionEntryRecord => {
+      const sessionEntryId = input.createSessionEntryId();
+      const conversationSessionEntryRecord: ConversationSessionEntryRecord = {
+        recordKind: "conversation_entry",
+        sessionEntryId,
+        parentSessionEntryId,
+        recordedAtMs: input.nowMs(),
+        conversationSessionEntry,
+      };
+      parentSessionEntryId = sessionEntryId;
+      return conversationSessionEntryRecord;
+    },
+  );
+
+  return [input.headerRecord, ...conversationSessionEntryRecords].map((record) => JSON.stringify(record)).join("\n") + "\n";
 }
 
 function createDefaultSessionWorkspaceDirectoryPath(input: {

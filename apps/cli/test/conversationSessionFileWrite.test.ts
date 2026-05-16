@@ -98,3 +98,17 @@ test("runWithExclusiveConversationSessionFileWriteLock fails clearly when anothe
   ).toThrow("Timed out waiting for conversation session write lock");
   expect(await readFile(lockFilePath, "utf8")).toBe("held by another process\n");
 });
+
+test("runWithExclusiveConversationSessionFileWriteLock recovers stale locks from dead processes", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-file-write-stale-lock-"));
+  const lockFilePath = join(directoryPath, "session-store.lock");
+  await writeFile(lockFilePath, JSON.stringify({ processId: 99_999_999, acquiredAtMs: 0 }) + "\n", "utf8");
+
+  const writeResult = runWithExclusiveConversationSessionFileWriteLock(
+    { lockFilePath, waitTimeoutMs: 100, retryDelayMs: 1, staleLockAgeMs: 0 },
+    () => "recovered-write",
+  );
+
+  expect(writeResult).toBe("recovered-write");
+  expect((await readdir(directoryPath)).includes("session-store.lock")).toBe(false);
+});

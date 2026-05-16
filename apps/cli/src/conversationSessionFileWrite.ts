@@ -1,16 +1,36 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 const defaultConversationSessionWriteLockWaitTimeoutMs = 5_000;
 const defaultConversationSessionWriteLockRetryDelayMs = 25;
+const defaultConversationSessionStaleLockAgeMs = 30 * 60 * 1000;
 const processHeldConversationSessionWriteLockCounts = new Map<string, number>();
+
+type ConversationSessionWriteLockFile = {
+  processId: number;
+  acquiredAtMs: number;
+};
 
 export function runWithExclusiveConversationSessionFileWriteLock<T>(
   input: {
     lockFilePath: string;
     waitTimeoutMs?: number;
     retryDelayMs?: number;
+    staleLockAgeMs?: number;
   },
   writeConversationSessionFiles: () => T,
 ): T {
@@ -29,6 +49,7 @@ export function runWithExclusiveConversationSessionFileWriteLock<T>(
     lockFilePath: resolvedLockFilePath,
     waitTimeoutMs: input.waitTimeoutMs ?? defaultConversationSessionWriteLockWaitTimeoutMs,
     retryDelayMs: input.retryDelayMs ?? defaultConversationSessionWriteLockRetryDelayMs,
+    staleLockAgeMs: input.staleLockAgeMs ?? defaultConversationSessionStaleLockAgeMs,
   });
   processHeldConversationSessionWriteLockCounts.set(resolvedLockFilePath, 1);
 
@@ -65,18 +86,29 @@ export function appendConversationSessionTextFileLineAtomically(input: { filePat
     throw new Error("Conversation session append text must be a single line.");
   }
 
-  const existingText = existsSync(input.filePath) ? readFileSync(input.filePath, "utf8") : "";
-  const existingTextWithLineBoundary = existingText.length === 0 || existingText.endsWith("\n") ? existingText : `${existingText}\n`;
-  writeConversationSessionTextFileAtomically({
-    filePath: input.filePath,
-    text: `${existingTextWithLineBoundary}${input.lineText}\n`,
-  });
+  mkdirSync(dirname(input.filePath), { recursive: true });
+  const fileDescriptor = openSync(input.filePath, "a+");
+  try {
+    const fileStats = fstatSync(fileDescriptor);
+    if (fileStats.size > 0) {
+      const finalByte = Buffer.alloc(1);
+      readSync(fileDescriptor, finalByte, 0, 1, fileStats.size - 1);
+      if (finalByte[0] !== 10) {
+        writeSync(fileDescriptor, "\n", null, "utf8");
+      }
+    }
+    writeSync(fileDescriptor, `${input.lineText}\n`, null, "utf8");
+    fsyncSync(fileDescriptor);
+  } finally {
+    closeSync(fileDescriptor);
+  }
 }
 
 function acquireConversationSessionWriteLock(input: {
   lockFilePath: string;
   waitTimeoutMs: number;
   retryDelayMs: number;
+  staleLockAgeMs: number;
 }): void {
   mkdirSync(dirname(input.lockFilePath), { recursive: true });
   const waitStartedAtMs = Date.now();
@@ -89,12 +121,76 @@ function acquireConversationSessionWriteLock(input: {
       return;
     }
 
+    if (tryRecoverStaleConversationSessionWriteLock({
+      lockFilePath: input.lockFilePath,
+      staleLockAgeMs: input.staleLockAgeMs,
+    })) {
+      continue;
+    }
+
     const elapsedWaitMs = Date.now() - waitStartedAtMs;
     if (elapsedWaitMs >= lockWaitTimeoutMs) {
       throw new Error(`Timed out waiting for conversation session write lock: ${input.lockFilePath}`);
     }
 
     sleepSynchronously(Math.min(lockRetryDelayMs, lockWaitTimeoutMs - elapsedWaitMs));
+  }
+}
+
+function tryRecoverStaleConversationSessionWriteLock(input: {
+  lockFilePath: string;
+  staleLockAgeMs: number;
+}): boolean {
+  const lockFile = readConversationSessionWriteLockFile(input.lockFilePath);
+  if (!lockFile) {
+    return false;
+  }
+
+  const lockAgeMs = Date.now() - lockFile.acquiredAtMs;
+  if (lockAgeMs < Math.max(0, input.staleLockAgeMs) || isProcessAlive(lockFile.processId)) {
+    return false;
+  }
+
+  rmSync(input.lockFilePath, { force: true });
+  return true;
+}
+
+function readConversationSessionWriteLockFile(lockFilePath: string): ConversationSessionWriteLockFile | undefined {
+  try {
+    const parsedLockFile = JSON.parse(readFileSync(lockFilePath, "utf8")) as unknown;
+    if (
+      typeof parsedLockFile === "object" &&
+      parsedLockFile !== null &&
+      "processId" in parsedLockFile &&
+      "acquiredAtMs" in parsedLockFile &&
+      typeof parsedLockFile.processId === "number" &&
+      Number.isInteger(parsedLockFile.processId) &&
+      parsedLockFile.processId > 0 &&
+      typeof parsedLockFile.acquiredAtMs === "number" &&
+      Number.isFinite(parsedLockFile.acquiredAtMs)
+    ) {
+      return {
+        processId: parsedLockFile.processId,
+        acquiredAtMs: parsedLockFile.acquiredAtMs,
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function isProcessAlive(processId: number): boolean {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    if (isNodeErrorWithCode(error, "ESRCH")) {
+      return false;
+    }
+
+    return true;
   }
 }
 

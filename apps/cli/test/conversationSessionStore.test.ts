@@ -33,7 +33,9 @@ test("FileConversationSessionStore saves and loads conversation session entries"
   conversationSessionStore.saveConversationSessionEntries(conversationSessionEntries);
 
   expect(conversationSessionStore.loadConversationSessionEntries()).toEqual(conversationSessionEntries);
-  await expect(readFile(conversationSessionFilePath, "utf8")).resolves.toContain('"schemaVersion": 1');
+  const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
+  await expect(readFile(activeConversationSession.filePath, "utf8")).resolves.toContain('"recordKind":"conversation_session"');
+  await expect(readFile(conversationSessionFilePath, "utf8")).rejects.toThrow();
 });
 
 test("FileConversationSessionStore appends JSONL session records with parent links", async () => {
@@ -174,7 +176,6 @@ test("FileConversationSessionStore appends after a valid JSONL session without a
 test("FileConversationSessionStore imports a legacy snapshot into the active JSONL session", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-"));
   const legacyConversationSessionFilePath = join(directoryPath, "legacy-session.json");
-  const legacyConversationSessionStore = new FileConversationSessionStore({ filePath: legacyConversationSessionFilePath });
   const legacyConversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
@@ -187,7 +188,11 @@ test("FileConversationSessionStore imports a legacy snapshot into the active JSO
       assistantMessageText: "Legacy answer",
     },
   ];
-  legacyConversationSessionStore.saveConversationSessionEntries(legacyConversationSessionEntries);
+  await writeFile(
+    legacyConversationSessionFilePath,
+    JSON.stringify({ schemaVersion: 1, conversationSessionEntries: legacyConversationSessionEntries }, null, 2) + "\n",
+    "utf8",
+  );
 
   const migratedConversationSessionStore = new FileConversationSessionStore({
     filePath: legacyConversationSessionFilePath,
@@ -213,6 +218,32 @@ test("FileConversationSessionStore imports a legacy snapshot into the active JSO
       conversationSessionEntryCount: 2,
     },
   ]);
+});
+
+test("FileConversationSessionStore ignores a corrupt active-session pointer and recovers the latest session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-corrupt-pointer-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+  });
+  const activeConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Recover me",
+    modelFacingPromptText: "Recover me",
+  });
+  await writeFile(conversationSessionStore.activeConversationSessionPointerFilePath, "{not-json", "utf8");
+
+  expect(conversationSessionStore.loadActiveConversationSession()).toMatchObject({
+    sessionId: activeConversationSession.sessionId,
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Recover me",
+        modelFacingPromptText: "Recover me",
+      },
+    ],
+  });
 });
 
 test("FileConversationSessionStore reloads history with safe model context after interrupted turns", async () => {
