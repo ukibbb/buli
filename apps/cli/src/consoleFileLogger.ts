@@ -1,8 +1,10 @@
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { inspect } from "node:util";
 
 const ENABLED_ENVIRONMENT_VALUES = new Set(["1", "true", "yes", "on"]);
+const privateConsoleLogDirectoryMode = 0o700;
+const privateConsoleLogFileMode = 0o600;
 export type ConsoleFileLogLevel = "debug" | "error" | "info" | "log" | "warn";
 
 export type ConsoleFileLoggerEnvironment = Readonly<{
@@ -45,9 +47,12 @@ export function installConsoleFileLogger(options: ConsoleFileLoggerOptions = {})
   const now = options.now ?? (() => new Date());
   const originalConsoleMethods = captureOriginalConsoleMethods(consoleTarget);
 
-  mkdirSync(dirname(requestedLogFilePath), { recursive: true });
+  ensurePrivateConsoleLogDirectory(dirname(requestedLogFilePath));
   if (isEnabledEnvironmentValue(environment.BULI_CONSOLE_LOG_RESET)) {
-    writeFileSync(requestedLogFilePath, "", "utf8");
+    writeFileSync(requestedLogFilePath, "", { encoding: "utf8", mode: privateConsoleLogFileMode });
+    chmodSync(requestedLogFilePath, privateConsoleLogFileMode);
+  } else {
+    tightenExistingConsoleLogFilePermissions(requestedLogFilePath);
   }
 
   for (const consoleFileLogLevel of consoleFileLogLevels) {
@@ -59,8 +64,9 @@ export function installConsoleFileLogger(options: ConsoleFileLoggerOptions = {})
           consoleArguments,
           loggedAt: now(),
         }),
-        "utf8",
+        { encoding: "utf8", mode: privateConsoleLogFileMode },
       );
+      chmodSync(requestedLogFilePath, privateConsoleLogFileMode);
 
     };
   }
@@ -100,6 +106,22 @@ function captureOriginalConsoleMethods(consoleTarget: ConsoleMethodTarget): Cons
     log: consoleTarget.log,
     warn: consoleTarget.warn,
   };
+}
+
+function ensurePrivateConsoleLogDirectory(logDirectoryPath: string): void {
+  const firstCreatedDirectoryPath = mkdirSync(logDirectoryPath, {
+    recursive: true,
+    mode: privateConsoleLogDirectoryMode,
+  });
+  if (firstCreatedDirectoryPath !== undefined) {
+    chmodSync(logDirectoryPath, privateConsoleLogDirectoryMode);
+  }
+}
+
+function tightenExistingConsoleLogFilePermissions(logFilePath: string): void {
+  if (existsSync(logFilePath)) {
+    chmodSync(logFilePath, privateConsoleLogFileMode);
+  }
 }
 
 function formatConsoleFileLogLine(input: {

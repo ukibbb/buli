@@ -1,8 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installConsoleFileLogger, type ConsoleMethodTarget } from "../src/consoleFileLogger.ts";
+
+async function readPermissionBits(filePath: string): Promise<number> {
+  return (await stat(filePath)).mode & 0o777;
+}
 
 function createRecordingConsoleTarget(recordedConsoleLines: string[]): ConsoleMethodTarget {
   return {
@@ -29,7 +33,8 @@ test("installConsoleFileLogger leaves console methods untouched when no log file
 
 test("installConsoleFileLogger writes console calls to the configured file only", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-console-logger-"));
-  const logFilePath = join(directoryPath, "buli-console.log");
+  const logDirectoryPath = join(directoryPath, "logs");
+  const logFilePath = join(logDirectoryPath, "buli-console.log");
   const recordedConsoleLines: string[] = [];
   const consoleTarget = createRecordingConsoleTarget(recordedConsoleLines);
 
@@ -49,6 +54,8 @@ test("installConsoleFileLogger writes console calls to the configured file only"
   const logText = await readFile(logFilePath, "utf8");
   expect(installation.isInstalled).toBe(true);
   expect(recordedConsoleLines).toEqual([]);
+  await expect(readPermissionBits(logDirectoryPath)).resolves.toBe(0o700);
+  await expect(readPermissionBits(logFilePath)).resolves.toBe(0o600);
   expect(logText).toContain("[2026-04-28T12:34:56.000Z] [log] renderArgs");
   expect(logText).toContain("selectedModelId: 'gpt-5.4'");
   expect(logText).toContain("[2026-04-28T12:34:56.000Z] [error] Error: boom");
@@ -56,8 +63,12 @@ test("installConsoleFileLogger writes console calls to the configured file only"
 
 test("installConsoleFileLogger can preserve existing file contents", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-console-logger-"));
-  const logFilePath = join(directoryPath, "buli-console.log");
+  const logDirectoryPath = join(directoryPath, "logs");
+  const logFilePath = join(logDirectoryPath, "buli-console.log");
+  await mkdir(logDirectoryPath, { recursive: true });
   await writeFile(logFilePath, "previous\n", "utf8");
+  await chmod(logDirectoryPath, 0o777);
+  await chmod(logFilePath, 0o666);
 
   const recordedConsoleLines: string[] = [];
   const consoleTarget = createRecordingConsoleTarget(recordedConsoleLines);
@@ -75,6 +86,7 @@ test("installConsoleFileLogger can preserve existing file contents", async () =>
 
   const logText = await readFile(logFilePath, "utf8");
   expect(recordedConsoleLines).toEqual([]);
+  await expect(readPermissionBits(logFilePath)).resolves.toBe(0o600);
   expect(logText.startsWith("previous\n")).toBe(true);
   expect(logText).toContain("[2026-04-28T12:34:56.000Z] [warn] still visible");
 });

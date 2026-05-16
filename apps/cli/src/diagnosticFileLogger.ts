@@ -1,7 +1,10 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { inspect } from "node:util";
 import type { BuliDiagnosticLogEvent, BuliDiagnosticLogger } from "@buli/contracts";
+
+const privateDiagnosticLogDirectoryMode = 0o700;
+const privateDiagnosticLogFileMode = 0o600;
 
 export type DiagnosticFileLoggerOptions = {
   logFilePath: string;
@@ -9,7 +12,8 @@ export type DiagnosticFileLoggerOptions = {
 };
 
 export function createDiagnosticFileLogger(options: DiagnosticFileLoggerOptions): BuliDiagnosticLogger {
-  mkdirSync(dirname(options.logFilePath), { recursive: true });
+  ensurePrivateDiagnosticLogDirectory(dirname(options.logFilePath));
+  tightenExistingDiagnosticLogFilePermissions(options.logFilePath);
   const now = options.now ?? (() => new Date());
 
   return (diagnosticLogEvent) => {
@@ -19,9 +23,26 @@ export function createDiagnosticFileLogger(options: DiagnosticFileLoggerOptions)
         diagnosticLogEvent,
         loggedAt: now(),
       }),
-      "utf8",
+      { encoding: "utf8", mode: privateDiagnosticLogFileMode },
     );
+    chmodSync(options.logFilePath, privateDiagnosticLogFileMode);
   };
+}
+
+function ensurePrivateDiagnosticLogDirectory(logDirectoryPath: string): void {
+  const firstCreatedDirectoryPath = mkdirSync(logDirectoryPath, {
+    recursive: true,
+    mode: privateDiagnosticLogDirectoryMode,
+  });
+  if (firstCreatedDirectoryPath !== undefined) {
+    chmodSync(logDirectoryPath, privateDiagnosticLogDirectoryMode);
+  }
+}
+
+function tightenExistingDiagnosticLogFilePermissions(logFilePath: string): void {
+  if (existsSync(logFilePath)) {
+    chmodSync(logFilePath, privateDiagnosticLogFileMode);
+  }
 }
 
 function formatDiagnosticFileLogEntry(input: {
