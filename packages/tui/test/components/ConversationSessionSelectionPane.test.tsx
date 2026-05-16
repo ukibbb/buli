@@ -32,9 +32,10 @@ describe("ConversationSessionSelectionPane", () => {
     await renderOnce();
 
     const frame = captureCharFrame();
-    expect(frame).toContain("Sessions");
+    expect(frame).not.toContain("Sessions");
+    expect(frame).not.toContain("▶");
     expect(frame).toContain("Planning session 3 entries");
-    expect(frame).toContain("\u25b6 Implementation session 5 entries active");
+    expect(frame).toContain("Implementation session 5 entries active");
   });
 
   test("keeps_the_highlighted_session_visible_after_the_first_eight_results", async () => {

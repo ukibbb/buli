@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 
 // Pen frame cbMSE. The design's 1-pixel h1Divider1 (pen tFwmC) below the bar
@@ -12,6 +12,7 @@ export const TOP_BAR_NATURAL_ROW_COUNT = 1;
 
 export type TopBarProps = {
   workingDirectoryPath: string;
+  accentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
 };
 
 export function TopBar(props: TopBarProps): ReactNode {
@@ -24,7 +25,7 @@ export function TopBar(props: TopBarProps): ReactNode {
       alignItems="center"
       flexShrink={0}
     >
-      <text fg={chatScreenTheme.accentGreen}>{glyphs.statusDot}</text>
+      <text fg={props.accentColor}>{glyphs.statusDot}</text>
       <box flexShrink={1} minWidth={0} overflow="hidden">
         <text fg={chatScreenTheme.textSecondary} truncate={true} wrapMode="none">{props.workingDirectoryPath}</text>
       </box>

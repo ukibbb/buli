@@ -5,8 +5,6 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ReactNode, RefObject } from "react";
 import { CommandHelpModal } from "./CommandHelpModal.tsx";
 import { ConversationMessageList } from "./ConversationMessageList.tsx";
-import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
-import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 
 export type ChatScreenMainAreaProps = {
   chatSessionState: ChatSessionState;
@@ -21,8 +19,6 @@ export type ChatScreenMainAreaProps = {
 };
 
 export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
-  const modelAndReasoningSelectionPane = renderModelAndReasoningSelectionPane(props);
-
   if (props.chatSessionState.isCommandHelpModalVisible) {
     return (
       <box alignItems="center" flexGrow={1} justifyContent="center">
@@ -36,7 +32,7 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
     );
   }
 
-  return modelAndReasoningSelectionPane ?? (
+  return (
     <ConversationMessageList
       conversationMessages={props.orderedConversationMessages}
       isReasoningSummaryVisible={props.chatSessionState.isReasoningSummaryVisible}
@@ -45,37 +41,4 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
       horizontalRuleColor={props.inputPanelAccentColor}
     />
   );
-}
-
-function renderModelAndReasoningSelectionPane(props: ChatScreenMainAreaProps): ReactNode {
-  return props.chatSessionState.modelAndReasoningSelectionState.step === "loading_available_models" ? (
-    <box alignItems="center" flexGrow={1} justifyContent="center">
-      <text fg={props.inputPanelAccentColor}>Loading models...</text>
-    </box>
-  ) : props.chatSessionState.modelAndReasoningSelectionState.step === "showing_model_loading_error" ? (
-    <ErrorBannerBlock
-      titleText="Could not load models"
-      errorText={props.chatSessionState.modelAndReasoningSelectionState.errorMessage}
-    />
-  ) : props.chatSessionState.modelAndReasoningSelectionState.step === "showing_available_models" ? (
-    <ModelAndReasoningSelectionPane
-      visibleChoices={props.chatSessionState.modelAndReasoningSelectionState.availableModels.map(
-        (availableAssistantModel) => availableAssistantModel.displayName,
-      )}
-      highlightedChoiceIndex={props.chatSessionState.modelAndReasoningSelectionState.highlightedModelIndex}
-      headingText="Choose model"
-      accentColor={props.inputPanelAccentColor}
-    />
-  ) : props.chatSessionState.modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices" ? (
-    <ModelAndReasoningSelectionPane
-      visibleChoices={props.chatSessionState.modelAndReasoningSelectionState.availableReasoningEffortChoices.map(
-        (availableReasoningEffortChoice) => availableReasoningEffortChoice.displayLabel,
-      )}
-      highlightedChoiceIndex={
-        props.chatSessionState.modelAndReasoningSelectionState.highlightedReasoningEffortChoiceIndex
-      }
-      headingText={`Choose reasoning for ${props.chatSessionState.modelAndReasoningSelectionState.selectedModel.displayName}`}
-      accentColor={props.inputPanelAccentColor}
-    />
-  ) : null;
 }

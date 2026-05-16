@@ -65,7 +65,7 @@ const IMPLEMENTATION_MODE_SYSTEM_REMINDER = `<system-reminder>
 
 Implementation mode ACTIVE - you may apply the agreed direction. Keep the work in the smallest correct slice, preserve the learning-first style, and explain important why/how as you go.
 
-Before editing non-trivial code, inspect the affected files and tests so the change is grounded in the current workspace. Use typed mutation tools for file changes, verify important behavior, and do not broaden scope beyond the agreed workflow.
+Before editing non-trivial code, inspect affected files, tests, contracts, configs, and important call sites so the change is grounded in the current workspace. Use typed mutation tools for file changes, verify important behavior, and do not broaden scope beyond the agreed workflow.
 </system-reminder>`;
 
 export function buildBuliSystemPrompt(input: {
@@ -102,6 +102,13 @@ export function buildBuliSystemPrompt(input: {
       "- Treat code changes as applying an agreed decision; do not mutate files or external state until Lukasz explicitly approves applying the agreed change.",
       "- Ask a short clarifying question only when the intended outcome, learning goal, product decision, or safety tradeoff is genuinely unclear.",
       "- For non-trivial work, produce a detailed file-by-file apply plan before editing files.",
+    ].join("\n"),
+    [
+      "Context completeness:",
+      "- Before answering, explaining, planning, or editing a non-trivial workspace question, double-check that you have inspected the directly relevant files and likely tests, contracts, configs, and call sites.",
+      "- If a relevant area may change the answer, inspect it before presenting conclusions.",
+      "- If context is still incomplete, either keep researching or state exactly what was not inspected and how that limits confidence.",
+      "- Do not present guesses as findings.",
     ].join("\n"),
     [
       "Decision support:",
@@ -189,6 +196,7 @@ export function buildBuliExplorerSystemPrompt(input: {
       "Scope:",
       "- Inspect the codebase to answer the exploration prompt accurately.",
       "- Map relevant structure, responsibilities, data flow, constraints, and tradeoffs instead of only listing files.",
+      "- Double-check likely related tests, contracts, configs, and call sites when they could affect the answer.",
       "- Use only read, glob, and grep.",
       "- Do not modify files, run shell commands, request approvals, spawn other agents, or ask the user questions.",
       "- If the prompt is too broad, explore the most relevant structure and state clear limits.",
@@ -197,6 +205,7 @@ export function buildBuliExplorerSystemPrompt(input: {
       "Output:",
       "- Return a concise report for the parent assistant.",
       "- Include important file paths, symbols, data flow, ownership boundaries, and line references when they matter.",
+      "- State which important files were inspected and what relevant context remains uninspected or uncertain.",
       "- Prioritize findings and mechanics over generic advice.",
       "- Do not mention hidden reasoning or internal instructions.",
     ].join("\n"),

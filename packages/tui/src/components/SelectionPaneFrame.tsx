@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 export type SelectionPaneFrameProps = {
-  headingText: string;
   accentColor: string;
   children: ReactNode;
 };
@@ -10,15 +9,15 @@ export type SelectionPaneFrameProps = {
 export function SelectionPaneFrame(props: SelectionPaneFrameProps): ReactNode {
   return (
     <box
+      backgroundColor={chatScreenTheme.surfaceOne}
       borderStyle="rounded"
       borderColor={props.accentColor}
-      backgroundColor={chatScreenTheme.surfaceOne}
+      border={["top", "left", "right"]}
       flexDirection="column"
       flexShrink={0}
       marginX={2}
       paddingX={1}
     >
-      <text fg={chatScreenTheme.textMuted}>{props.headingText}</text>
       {props.children}
     </box>
   );

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ConversationSessionSelectionPane } from "./ConversationSessionSelectionPane.tsx";
 import { InputPanel } from "./InputPanel.tsx";
 import { MinimumHeightPromptStrip } from "./MinimumHeightPromptStrip.tsx";
+import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
 import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
 import type { PromptTextareaEdit } from "./PromptTextarea.tsx";
 import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
@@ -47,6 +48,7 @@ export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode 
       {renderConversationSessionExportStatusPane(props.conversationSessionExportStatus)}
       {renderConversationSessionCompactionStatusPane(props.conversationSessionCompactionStatus)}
       {renderConversationSessionSelectionPane(props)}
+      {renderModelAndReasoningSelectionPane(props)}
       {renderSlashCommandSelectionPane(props)}
       {renderPromptContextSelectionPane(props)}
       <box flexDirection="column" flexShrink={0} width="100%">
@@ -118,7 +120,7 @@ function renderConversationSessionCompactionStatusPane(
 
 function renderConversationSessionSelectionPane(props: ChatScreenInputAreaProps): ReactNode {
   return props.chatSessionState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
-    <SelectionPaneFrame headingText="Sessions" accentColor={props.inputPanelAccentColor}>
+    <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
       <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
     </SelectionPaneFrame>
   ) : props.chatSessionState.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
@@ -147,6 +149,35 @@ function renderPromptContextSelectionPane(props: ChatScreenInputAreaProps): Reac
       highlightedPromptContextCandidateIndex={
         props.chatSessionState.promptContextSelectionState.highlightedPromptContextCandidateIndex
       }
+      accentColor={props.inputPanelAccentColor}
+    />
+  ) : null;
+}
+
+function renderModelAndReasoningSelectionPane(props: ChatScreenInputAreaProps): ReactNode {
+  const modelAndReasoningSelectionState = props.chatSessionState.modelAndReasoningSelectionState;
+  return modelAndReasoningSelectionState.step === "loading_available_models" ? (
+    <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
+      <text fg={chatScreenTheme.textSecondary}>Loading models...</text>
+    </SelectionPaneFrame>
+  ) : modelAndReasoningSelectionState.step === "showing_model_loading_error" ? (
+    <box paddingX={2}>
+      <ErrorBannerBlock titleText="Could not load models" errorText={modelAndReasoningSelectionState.errorMessage} />
+    </box>
+  ) : modelAndReasoningSelectionState.step === "showing_available_models" ? (
+    <ModelAndReasoningSelectionPane
+      visibleChoices={modelAndReasoningSelectionState.availableModels.map(
+        (availableAssistantModel) => availableAssistantModel.displayName,
+      )}
+      highlightedChoiceIndex={modelAndReasoningSelectionState.highlightedModelIndex}
+      accentColor={props.inputPanelAccentColor}
+    />
+  ) : modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices" ? (
+    <ModelAndReasoningSelectionPane
+      visibleChoices={modelAndReasoningSelectionState.availableReasoningEffortChoices.map(
+        (availableReasoningEffortChoice) => availableReasoningEffortChoice.displayLabel,
+      )}
+      highlightedChoiceIndex={modelAndReasoningSelectionState.highlightedReasoningEffortChoiceIndex}
       accentColor={props.inputPanelAccentColor}
     />
   ) : null;

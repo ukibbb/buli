@@ -440,11 +440,13 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
+  expect(readToolDefinition?.description).toContain("continue with offset before concluding");
   expect(globToolDefinition?.description).toContain("Use this instead of bash for file discovery");
   expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
   expect(exploreToolDefinition?.description).toContain("read-only Explorer subagent");
+  expect(exploreToolDefinition?.description).toContain("identify inspected files and remaining context gaps");
 });
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {

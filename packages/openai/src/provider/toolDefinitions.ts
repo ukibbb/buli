@@ -36,7 +36,7 @@ export function createReadToolDefinition() {
   return {
     type: "function",
     name: "read",
-    description: "Read a file or directory inside the current workspace. Use this instead of bash for known files and directories. For files, lines are returned with 1-indexed line numbers.",
+    description: "Read a file or directory inside the current workspace. Use this instead of bash for known files and directories. For files, lines are returned with 1-indexed line numbers. If output is truncated and the missing lines may affect the answer, continue with offset before concluding.",
     parameters: {
       type: "object",
       properties: {
@@ -168,7 +168,7 @@ export function createExploreToolDefinition() {
   return {
     type: "function",
     name: "explore",
-    description: "Ask a read-only Explorer subagent to inspect the codebase with read, glob, and grep, then return a concise report. Use this for broad or multi-step discovery before deciding what to explain or change.",
+    description: "Ask a read-only Explorer subagent to inspect the codebase with read, glob, and grep, then return a concise report. Use this for broad or multi-step discovery before deciding what to explain or change. Ask it to identify inspected files and remaining context gaps.",
     parameters: {
       type: "object",
       properties: {

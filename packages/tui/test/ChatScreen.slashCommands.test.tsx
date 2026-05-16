@@ -194,7 +194,7 @@ test("ChatScreen shows user-facing slash commands after typing a bare slash", as
 
   const frame = await renderedChatScreen.typeText("/");
 
-  expect(frame).toContain("Commands");
+  expect(frame).not.toContain("Commands");
   expect(frame).toContain("/help");
   expect(frame).toContain("/model");
   expect(frame).toContain("/clear");
@@ -451,7 +451,7 @@ test("ChatScreen hydrates the initial session and switches sessions through slas
 
   await renderedChatScreen.typeText("/sessions");
   const sessionListFrame = await renderedChatScreen.pressEnter();
-  expect(sessionListFrame).toContain("Sessions");
+  expect(sessionListFrame).not.toContain("Sessions");
   expect(sessionListFrame).toContain("Previous prompt");
   expect(sessionListFrame).toContain("Switched prompt");
 
@@ -522,7 +522,7 @@ test("ChatScreen opens model picker through slash command instead of ctrl-l", as
   const modelFrame = await renderedChatScreen.pressEnter();
 
   expect(modelLoadCount).toBe(1);
-  expect(modelFrame).toContain("Choose model");
+  expect(modelFrame).not.toContain("Choose model");
   expect(modelFrame).toContain("GPT 5.4");
 });
 
@@ -541,7 +541,7 @@ test("ChatScreen shows the model default reasoning label after choosing the mode
   await renderedChatScreen.typeText("/model");
   await renderedChatScreen.pressEnter();
   const reasoningChoicesFrame = await renderedChatScreen.pressEnter();
-  expect(reasoningChoicesFrame).toContain("Choose reasoning for GPT 5.4");
+  expect(reasoningChoicesFrame).not.toContain("Choose reasoning for GPT 5.4");
   expect(reasoningChoicesFrame).toContain("Use model default (medium)");
 
   const selectedDefaultReasoningFrame = await renderedChatScreen.pressEnter();

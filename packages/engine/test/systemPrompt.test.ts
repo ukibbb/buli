@@ -50,6 +50,20 @@ test("uses file-by-file apply plans for non-trivial work", () => {
   );
 });
 
+test("requires context completeness before workspace conclusions", () => {
+  const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain("Context completeness:");
+  expect(systemPromptText).toContain(
+    "Before answering, explaining, planning, or editing a non-trivial workspace question",
+  );
+  expect(systemPromptText).toContain("directly relevant files and likely tests, contracts, configs, and call sites");
+  expect(systemPromptText).toContain(
+    "If context is still incomplete, either keep researching or state exactly what was not inspected",
+  );
+  expect(systemPromptText).toContain("Do not present guesses as findings.");
+});
+
 test("includes project instructions below buli's learning-first behavior", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
@@ -138,6 +152,7 @@ test("implementation mode reminds the assistant to apply the agreed direction", 
   expect(systemPromptText).toContain("Implementation Mode - System Reminder");
   expect(systemPromptText).toContain("Implementation mode ACTIVE - you may apply the agreed direction.");
   expect(systemPromptText).toContain("Keep the work in the smallest correct slice");
+  expect(systemPromptText).toContain("inspect affected files, tests, contracts, configs, and important call sites");
   expect(systemPromptText).toContain("verify important behavior");
 });
 
@@ -275,7 +290,11 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   expect(systemPromptText).toContain("Buli Explorer");
   expect(systemPromptText).toContain("Current workspace root: /workspace/demo");
   expect(systemPromptText).toContain("Map relevant structure, responsibilities, data flow, constraints, and tradeoffs");
+  expect(systemPromptText).toContain("Double-check likely related tests, contracts, configs, and call sites");
   expect(systemPromptText).toContain("Use only read, glob, and grep.");
   expect(systemPromptText).toContain("Do not modify files, run shell commands");
   expect(systemPromptText).toContain("Return a concise report for the parent assistant.");
+  expect(systemPromptText).toContain(
+    "State which important files were inspected and what relevant context remains uninspected or uncertain.",
+  );
 });

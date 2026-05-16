@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
 import type { SlashCommand } from "@buli/chat-session-state";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
-import { SelectionPaneSelect } from "./SelectionPaneSelect.tsx";
 
 const MAX_VISIBLE_SLASH_COMMAND_COUNT = 10;
 const SLASH_COMMAND_COMMAND_COLUMN_WIDTH = 18;
+const SLASH_COMMAND_PANE_HORIZONTAL_MARGIN = 2;
 
 export type SlashCommandSelectionPaneProps = {
   availableSlashCommands: readonly SlashCommand[];
@@ -30,22 +29,58 @@ export function SlashCommandSelectionPane(props: SlashCommandSelectionPaneProps)
     firstVisibleSlashCommandIndex,
     firstVisibleSlashCommandIndex + MAX_VISIBLE_SLASH_COMMAND_COUNT,
   );
+  const slashCommandPaneInnerRowCount =
+    props.availableSlashCommands.length === 0 ? 1 : visibleSlashCommands.length;
+  const slashCommandPaneHeight = slashCommandPaneInnerRowCount + 1;
 
   return (
-    <SelectionPaneFrame headingText="Commands" accentColor={props.accentColor}>
+    <box
+      backgroundColor={chatScreenTheme.surfaceOne}
+      borderStyle="rounded"
+      borderColor={props.accentColor}
+      border={["top", "left", "right"]}
+      flexDirection="column"
+      flexShrink={0}
+      height={slashCommandPaneHeight}
+      marginX={SLASH_COMMAND_PANE_HORIZONTAL_MARGIN}
+      paddingX={1}
+    >
       {props.availableSlashCommands.length === 0 ? (
         <text fg={chatScreenTheme.textSecondary}>No matching commands.</text>
       ) : (
-        <SelectionPaneSelect
-          optionNames={visibleSlashCommands.map(formatSlashCommandSelectionOptionName)}
-          highlightedOptionIndex={highlightedSlashCommandIndex - firstVisibleSlashCommandIndex}
-          maxVisibleOptionCount={MAX_VISIBLE_SLASH_COMMAND_COUNT}
-        />
-      )}
-    </SelectionPaneFrame>
-  );
-}
+        visibleSlashCommands.map((slashCommand, visibleSlashCommandOffset) => {
+          const slashCommandIndex = firstVisibleSlashCommandIndex + visibleSlashCommandOffset;
+          const isHighlightedSlashCommand = slashCommandIndex === highlightedSlashCommandIndex;
 
-function formatSlashCommandSelectionOptionName(slashCommand: SlashCommand): string {
-  return `${`/${slashCommand.name}`.padEnd(SLASH_COMMAND_COMMAND_COLUMN_WIDTH)}${slashCommand.description}`;
+          return (
+            <box
+              backgroundColor={isHighlightedSlashCommand ? chatScreenTheme.borderSubtle : chatScreenTheme.surfaceOne}
+              flexDirection="row"
+              flexShrink={0}
+              height={1}
+              key={slashCommand.value}
+              width="100%"
+            >
+              <box flexShrink={0} width={SLASH_COMMAND_COMMAND_COLUMN_WIDTH}>
+                <text
+                  fg={isHighlightedSlashCommand ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+                  truncate={true}
+                  wrapMode="none"
+                >
+                  {`/${slashCommand.name}`}
+                </text>
+              </box>
+              <text
+                fg={isHighlightedSlashCommand ? chatScreenTheme.textPrimary : chatScreenTheme.textMuted}
+                truncate={true}
+                wrapMode="none"
+              >
+                {slashCommand.description}
+              </text>
+            </box>
+          );
+        })
+      )}
+    </box>
+  );
 }

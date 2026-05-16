@@ -15,7 +15,7 @@ export type ConversationSessionSelectionPaneProps = {
 
 export function ConversationSessionSelectionPane(props: ConversationSessionSelectionPaneProps): ReactNode {
   return (
-    <SelectionPaneFrame headingText="Sessions" accentColor={props.accentColor}>
+    <SelectionPaneFrame accentColor={props.accentColor}>
       {props.conversationSessions.length === 0 ? (
         <text fg={chatScreenTheme.textSecondary}>No saved sessions.</text>
       ) : (

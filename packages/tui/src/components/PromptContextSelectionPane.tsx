@@ -14,7 +14,7 @@ const MAX_VISIBLE_PROMPT_CONTEXT_CANDIDATE_COUNT = 6;
 
 export function PromptContextSelectionPane(props: PromptContextSelectionPaneProps): ReactNode {
   return (
-    <SelectionPaneFrame headingText="Context" accentColor={props.accentColor}>
+    <SelectionPaneFrame accentColor={props.accentColor}>
       {props.promptContextCandidates.length === 0 ? (
         <text fg={chatScreenTheme.textSecondary}>No matching files or folders.</text>
       ) : (
