@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Callout } from "../primitives/Callout.tsx";
+import { areTuiAnimationTimersEnabled } from "../tuiAnimationTimerPolicy.ts";
 
 // RateLimitNoticeBlock renders a live countdown so the user can tell when
 // the provider will retry. retryAfterSeconds is anchored to noticeStartedAtMs
@@ -17,6 +18,10 @@ export function RateLimitNoticeBlock(props: RateLimitNoticeBlockProps): ReactNod
   const [, setTick] = useState(0);
 
   useEffect(() => {
+    if (!areTuiAnimationTimersEnabled()) {
+      return;
+    }
+
     const id = setInterval(() => {
       setTick((t) => t + 1);
     }, 1000);

@@ -27,11 +27,14 @@ describe("AssistantMarkdownBlock", () => {
     await renderOnce();
 
     const frame = captureCharFrame();
+    expect(frame).toContain("▌");
     expect(frame).toContain("Done");
     expect(frame).toContain("Here is");
     expect(frame).toContain("code");
     expect(frame).toContain("first");
     expect(frame).toContain("second");
+    expect(frame).toContain("╭─ ts");
+    expect(frame).toContain("╰");
     expect(frame).toContain("const x = 1;");
   });
 
@@ -44,6 +47,23 @@ describe("AssistantMarkdownBlock", () => {
     await renderOnce();
 
     expect(captureCharFrame()).toContain("Still");
+  });
+
+  test("hides_incomplete_streaming_structural_markers", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={true}
+        markdownText={["Ready", "", "```ts"].join("\n")}
+      />,
+      { width: 60, height: 8 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Ready");
+    expect(frame).not.toContain("```ts");
   });
 
   test("renders_horizontal_rules_as_terminal_dividers", async () => {
@@ -69,6 +89,60 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain("Implementation mode");
     expect(frame).toContain("─");
     expect(frame).not.toContain("---");
+  });
+
+  test("renders_blockquotes_with_a_quote_rail", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["> Keep this constraint visible.", "> Second line."].join("\n")}
+      />,
+      { width: 72, height: 10 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("│ Keep this constraint visible.");
+    expect(frame).toContain("│ Second line.");
+  });
+
+  test("renders_github_style_callouts_as_colored_terminal_blocks", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["> [!WARNING]", "> Review the diff before approving."].join("\n")}
+      />,
+      { width: 72, height: 10 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("▌ WARNING");
+    expect(frame).toContain("├");
+    expect(frame).toContain("│ Review the diff before approving.");
+  });
+
+  test("renders_task_lists_with_checkbox_glyphs", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["- [x] Read the file", "- [ ] Update the tests"].join("\n")}
+      />,
+      { width: 72, height: 10 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("☑ Read the file");
+    expect(frame).toContain("☐ Update the tests");
+    expect(frame).not.toContain("[x]");
+    expect(frame).not.toContain("[ ]");
   });
 
   test("renders_markdown_tables_as_compact_visible_grids", async () => {
@@ -104,5 +178,74 @@ describe("AssistantMarkdownBlock", () => {
     expect(headerRowIndex).toBeGreaterThanOrEqual(0);
     expect(firstDataRowIndex).toBeGreaterThanOrEqual(0);
     expect(firstDataRowIndex - headerRowIndex).toBeLessThanOrEqual(2);
+  });
+
+  test("renders_nested_lists_with_depth_markers_and_indentation", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["- parent", "  - child", "    - grandchild"].join("\n")}
+      />,
+      { width: 72, height: 10 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("• parent");
+    expect(frame).toContain("  ◦ child");
+    expect(frame).toContain("    ▪ grandchild");
+  });
+
+  test("renders_diff_fences_with_change_rails", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["```diff", "@@ -1 +1 @@", "-old line", "+new line", "```"].join("\n")}
+      />,
+      { width: 96, height: 12 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("╭─ diff changes");
+    expect(frame).toContain("│ @@ -1 +1 @@");
+    expect(frame).toContain("│ -old line");
+    expect(frame).toContain("│ +new line");
+  });
+
+  test("renders_code_fence_filename_labels_from_info_strings", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["```ts title=src/app.ts", "const app = true;", "```"].join("\n")}
+      />,
+      { width: 96, height: 10 },
+    );
+
+    await renderOnce();
+
+    expect(captureCharFrame()).toContain("╭─ ts · src/app.ts");
+  });
+
+  test("aligns_ordered_list_markers_by_digit_width", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["9. ninth", "10. tenth"].join("\n")}
+      />,
+      { width: 72, height: 8 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain(" 9. ninth");
+    expect(frame).toContain("10. tenth");
   });
 });

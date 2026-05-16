@@ -25,7 +25,7 @@
     "@types/react": "^19.2.2"
   },
   "scripts": {
-    "test": "bun test --preload ./test/testLifecycle.ts",
+    "test": "bun test --preload ./test/testLifecycle.ts --max-concurrency=8",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

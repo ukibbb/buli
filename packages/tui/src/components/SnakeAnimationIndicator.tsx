@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
+import { areTuiAnimationTimersEnabled } from "./tuiAnimationTimerPolicy.ts";
 
 // Renders the six-cell snake from pen component snakeA1-A6: four green
 // rectangles with two amber ellipses whose positions cycle each tick to
@@ -16,6 +17,10 @@ export function SnakeAnimationIndicator(): ReactNode {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
+    if (!areTuiAnimationTimersEnabled()) {
+      return;
+    }
+
     const id = setInterval(() => {
       setFrame((prev) => prev + 1);
     }, 150);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { areTuiAnimationTimersEnabled } from "../tuiAnimationTimerPolicy.ts";
 
 // Mirrors the pen-file StreamingCursor variants (amber / green / cyan / dim).
 // Implemented as a single-cell blinking block so it reads as "still
@@ -27,6 +28,10 @@ export function StreamingCursor(props: StreamingCursorProps): ReactNode {
   const [frameIndex, setFrameIndex] = useState(0);
 
   useEffect(() => {
+    if (!areTuiAnimationTimersEnabled()) {
+      return;
+    }
+
     const id = setInterval(() => {
       setFrameIndex((prev) => (prev + 1) % blinkingFrames.length);
     }, 500);

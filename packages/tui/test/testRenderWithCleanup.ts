@@ -7,11 +7,19 @@ import {
 } from "./testRenderRegistry.ts";
 
 type OpenTuiTestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
+type ReactGlobalWithActEnvironment = typeof globalThis & {
+  IS_REACT_ACT_ENVIRONMENT?: boolean;
+};
+
+function enableReactActEnvironmentForOpenTuiTest(): void {
+  (globalThis as ReactGlobalWithActEnvironment).IS_REACT_ACT_ENVIRONMENT = true;
+}
 
 export async function testRender(
   node: ReactNode,
   testRendererOptions: TestRendererOptions = {},
 ): Promise<OpenTuiTestSetup> {
+  enableReactActEnvironmentForOpenTuiTest();
   const renderedTestSetup = await createTestRenderer({
     consoleMode: "disabled",
     ...testRendererOptions,
@@ -21,11 +29,13 @@ export async function testRender(
   let hasRenderedTestSetupBeenCleanedUp = false;
 
   try {
+    enableReactActEnvironmentForOpenTuiTest();
     await act(async () => {
       renderedRoot.render(node);
     });
 
     renderedTestSetup.renderOnce = async () => {
+      enableReactActEnvironmentForOpenTuiTest();
       await act(async () => {
         await renderSingleOpenTuiFrame();
       });
@@ -40,6 +50,7 @@ export async function testRender(
       unregisterOpenTuiTestCleanupCallbackFromLifecycle(cleanupRenderedTestSetup);
 
       try {
+        enableReactActEnvironmentForOpenTuiTest();
         await act(async () => {
           renderedRoot.unmount();
         });
