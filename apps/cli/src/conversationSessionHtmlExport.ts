@@ -92,7 +92,7 @@ export function renderConversationSessionHtmlDocument(input: {
 
   const renderedTranscript = input.conversationSessionEntries.length === 0
     ? '<p class="empty-state">This session has no messages yet.</p>'
-    : input.conversationSessionEntries.map(renderConversationSessionTranscriptEntry).join("\n");
+    : renderConversationSessionTranscriptEntries(input.conversationSessionEntries);
 
   return `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -132,10 +132,39 @@ export function renderConversationSessionHtmlDocument(input: {
 </html>`;
 }
 
+function renderConversationSessionTranscriptEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): string {
+  let hasRenderedAssistantTextSegmentInCurrentTurn = false;
+
+  return conversationSessionEntries.flatMap((conversationSessionEntry, entryIndex) => {
+    if (conversationSessionEntry.entryKind === "user_prompt" || conversationSessionEntry.entryKind === "conversation_compaction_summary") {
+      hasRenderedAssistantTextSegmentInCurrentTurn = false;
+      return [renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex)];
+    }
+
+    if (conversationSessionEntry.entryKind === "assistant_text_segment") {
+      hasRenderedAssistantTextSegmentInCurrentTurn = true;
+      return [renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex)];
+    }
+
+    if (conversationSessionEntry.entryKind === "assistant_message") {
+      const renderedTranscriptEntry = renderConversationSessionTranscriptEntry(
+        conversationSessionEntry,
+        entryIndex,
+        { shouldOmitAssistantMessageText: hasRenderedAssistantTextSegmentInCurrentTurn },
+      );
+      hasRenderedAssistantTextSegmentInCurrentTurn = false;
+      return renderedTranscriptEntry ? [renderedTranscriptEntry] : [];
+    }
+
+    return [renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex)];
+  }).join("\n");
+}
+
 function renderConversationSessionTranscriptEntry(
   conversationSessionEntry: ConversationSessionEntry,
   entryIndex: number,
-): string {
+  options: { shouldOmitAssistantMessageText?: boolean } = {},
+): string | undefined {
   const indexNumberLabel = paddedTwoDigitNumberLabel(entryIndex + 1);
   const entryAnchorId = `e-${indexNumberLabel}`;
 
@@ -150,8 +179,21 @@ function renderConversationSessionTranscriptEntry(
     });
   }
 
+  if (conversationSessionEntry.entryKind === "assistant_text_segment") {
+    return renderConversationSessionTranscriptEntryShell({
+      entryAnchorId,
+      indexNumberLabel,
+      entryIndex,
+      entryClassName: "assistant",
+      roleLabel: "Assistant",
+      bodyHtml: renderAssistantMarkdownText(conversationSessionEntry.assistantTextSegmentText),
+    });
+  }
+
   if (conversationSessionEntry.entryKind === "assistant_message") {
-    const assistantTextHtml = conversationSessionEntry.assistantMessageText.length > 0
+    const assistantTextHtml = options.shouldOmitAssistantMessageText
+      ? ""
+      : conversationSessionEntry.assistantMessageText.length > 0
       ? renderAssistantMarkdownText(conversationSessionEntry.assistantMessageText)
       : '<p class="muted">No assistant text was recorded.</p>';
 
@@ -160,13 +202,22 @@ function renderConversationSessionTranscriptEntry(
         ? `<p class="status-notice status-notice-warn">Incomplete: ${escapeHtml(conversationSessionEntry.incompleteReason)}</p>`
         : conversationSessionEntry.assistantMessageStatus === "failed"
           ? `<p class="status-notice status-notice-error">Failed: ${escapeHtml(conversationSessionEntry.failureExplanation)}</p>`
+          : conversationSessionEntry.assistantMessageStatus === "interrupted"
+          ? `<p class="status-notice status-notice-error">Interrupted: ${escapeHtml(conversationSessionEntry.interruptionReason)}</p>`
           : "";
+
+    if (assistantTextHtml.length === 0 && assistantStatusNoticeHtml.length === 0) {
+      return undefined;
+    }
 
     return renderConversationSessionTranscriptEntryShell({
       entryAnchorId,
       indexNumberLabel,
       entryIndex,
-      entryClassName: conversationSessionEntry.assistantMessageStatus === "failed" ? "assistant failed" : "assistant",
+      entryClassName:
+        conversationSessionEntry.assistantMessageStatus === "failed" || conversationSessionEntry.assistantMessageStatus === "interrupted"
+          ? "assistant failed"
+          : "assistant",
       roleLabel: "Assistant",
       bodyHtml: assistantTextHtml + assistantStatusNoticeHtml,
     });

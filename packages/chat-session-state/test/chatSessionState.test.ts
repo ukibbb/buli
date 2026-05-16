@@ -341,6 +341,146 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
 });
 
+test("hydrateConversationTranscriptFromSessionEntries restores assistant text segments around tools", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Inspect README",
+        modelFacingPromptText: "Inspect README",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "I will read the README first.\n\n",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-read",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call-read",
+        toolCallDetail: {
+          toolName: "read",
+          readFilePath: "README.md",
+          readLineCount: 2,
+        },
+        toolResultText: "1: # Demo",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "The README contains a Demo heading.",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "I will read the README first.\n\nThe README contains a Demo heading.",
+      },
+    ],
+  );
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState).find(
+    (conversationMessage) => conversationMessage.role === "assistant",
+  );
+  if (!assistantConversationMessage) {
+    throw new Error("expected assistant message");
+  }
+
+  const assistantConversationMessageParts = listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id);
+  expect(assistantConversationMessageParts.map((conversationMessagePart) => conversationMessagePart.partKind)).toEqual([
+    "assistant_text",
+    "assistant_tool_call",
+    "assistant_text",
+  ]);
+  expect(assistantConversationMessageParts).toMatchObject([
+    { partKind: "assistant_text", rawMarkdownText: "I will read the README first.\n\n" },
+    { partKind: "assistant_tool_call", toolCallDetail: { toolName: "read", readFilePath: "README.md" } },
+    { partKind: "assistant_text", rawMarkdownText: "The README contains a Demo heading." },
+  ]);
+});
+
+test("hydrateConversationTranscriptFromSessionEntries preserves Explorer child activity", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Explore docs",
+        modelFacingPromptText: "Explore docs",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-explore",
+        toolCallRequest: {
+          toolName: "explore",
+          explorationDescription: "map docs",
+          explorationPrompt: "Read README.md and summarize it.",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call-explore",
+        toolCallDetail: {
+          toolName: "explore",
+          explorationDescription: "map docs",
+          explorationPrompt: "Read README.md and summarize it.",
+          explorationResultSummary: "README.md explains the project.",
+          explorationChildToolCalls: [
+            {
+              explorerChildToolCallId: "call-read-1",
+              explorerChildToolCallStatus: "completed",
+              explorerChildToolCallStartedAtMs: 2,
+              explorerChildToolCallDurationMs: 3,
+              explorerChildToolCallDetail: {
+                toolName: "read",
+                readFilePath: "README.md",
+                readLineCount: 2,
+              },
+            },
+          ],
+        },
+        toolResultText: "README.md explains the project.",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Done.",
+      },
+    ],
+  );
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState).find(
+    (conversationMessage) => conversationMessage.role === "assistant",
+  );
+  if (!assistantConversationMessage) {
+    throw new Error("expected assistant message");
+  }
+
+  const explorerToolCallPart = listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id).find(
+    (conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call",
+  );
+  if (!explorerToolCallPart || explorerToolCallPart.partKind !== "assistant_tool_call") {
+    throw new Error("expected Explorer tool call part");
+  }
+
+  expect(explorerToolCallPart.toolCallDetail).toMatchObject({
+    toolName: "explore",
+    explorationChildToolCalls: [
+      {
+        explorerChildToolCallId: "call-read-1",
+        explorerChildToolCallStatus: "completed",
+        explorerChildToolCallDurationMs: 3,
+        explorerChildToolCallDetail: { toolName: "read", readFilePath: "README.md", readLineCount: 2 },
+      },
+    ],
+  });
+});
+
 test("hydrateConversationTranscriptFromSessionEntries creates tool details from requests", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

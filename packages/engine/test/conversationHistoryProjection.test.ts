@@ -24,6 +24,10 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       assistantMessageText: "Stored the context.",
     },
     {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "Stored ",
+    },
+    {
       entryKind: "assistant_message",
       assistantMessageStatus: "incomplete",
       assistantMessageText: "Partial answer",

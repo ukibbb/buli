@@ -166,11 +166,35 @@ export const ToolCallTaskDetailSchema = z
   .strict();
 export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 
+export const ExplorerChildToolCallStatusSchema = z.enum(["running", "completed", "failed", "denied", "interrupted"]);
+export type ExplorerChildToolCallStatus = z.infer<typeof ExplorerChildToolCallStatusSchema>;
+
+export const ExplorerChildToolCallDetailSchema = z.discriminatedUnion("toolName", [
+  ToolCallReadDetailSchema,
+  ToolCallGlobDetailSchema,
+  ToolCallGrepDetailSchema,
+]);
+export type ExplorerChildToolCallDetail = z.infer<typeof ExplorerChildToolCallDetailSchema>;
+
+export const ExplorerChildToolCallSchema = z
+  .object({
+    explorerChildToolCallId: z.string().min(1),
+    explorerChildToolCallStatus: ExplorerChildToolCallStatusSchema,
+    explorerChildToolCallStartedAtMs: z.number().int().nonnegative(),
+    explorerChildToolCallDetail: ExplorerChildToolCallDetailSchema,
+    explorerChildToolCallDurationMs: z.number().int().nonnegative().optional(),
+    explorerChildToolCallErrorText: z.string().min(1).optional(),
+    explorerChildToolCallDenialText: z.string().min(1).optional(),
+  })
+  .strict();
+export type ExplorerChildToolCall = z.infer<typeof ExplorerChildToolCallSchema>;
+
 export const ToolCallExploreDetailSchema = z
   .object({
     toolName: z.literal("explore"),
     explorationDescription: z.string().min(1),
     explorationPrompt: z.string().optional(),
+    explorationChildToolCalls: z.array(ExplorerChildToolCallSchema).optional(),
     explorationResultSummary: z.string().optional(),
   })
   .strict();

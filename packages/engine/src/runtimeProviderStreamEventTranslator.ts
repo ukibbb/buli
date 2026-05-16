@@ -8,8 +8,10 @@ import {
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
+  type AssistantTextPartStatus,
   type AssistantMessageConversationSessionEntry,
   type AssistantResponseEvent,
+  type AssistantTextSegmentConversationSessionEntry,
   type ProviderPlanProposedEvent,
   type ProviderStreamEvent,
   type ProviderToolCallRequestedEvent,
@@ -18,7 +20,7 @@ import {
 } from "@buli/contracts";
 import {
   appendAssistantTextDeltaToAssistantTextMessagePartBuilder,
-  buildCompletedAssistantTextConversationMessagePart,
+  buildAssistantTextConversationMessagePartWithStatus,
   buildStreamingAssistantTextConversationMessagePart,
   createInitialAssistantTextMessagePartBuilder,
   type AssistantTextMessagePartBuilderState,
@@ -32,11 +34,14 @@ export type RuntimeProviderStreamAssistantEventsTranslation = {
 export type RuntimeProviderStreamToolCallRequestedTranslation = {
   translationKind: "tool_call_requested";
   providerToolCallRequestedEvent: ProviderToolCallRequestedEvent;
+  assistantResponseEventsBeforeToolCall?: readonly AssistantResponseEvent[];
+  assistantTextSegmentSessionEntryBeforeToolCall?: AssistantTextSegmentConversationSessionEntry;
 };
 
 export type RuntimeProviderStreamTerminalAssistantResponseTranslation = {
   translationKind: "terminal_assistant_response";
   assistantResponseEventsBeforeTerminalSessionEntry: readonly AssistantResponseEvent[];
+  assistantTextSegmentSessionEntryBeforeTerminalSessionEntry?: AssistantTextSegmentConversationSessionEntry;
   terminalAssistantMessageSessionEntry: AssistantMessageConversationSessionEntry;
   terminalAssistantResponseEvent: AssistantResponseEvent;
 };
@@ -45,6 +50,11 @@ export type RuntimeProviderStreamEventTranslation =
   | RuntimeProviderStreamAssistantEventsTranslation
   | RuntimeProviderStreamToolCallRequestedTranslation
   | RuntimeProviderStreamTerminalAssistantResponseTranslation;
+
+export type RuntimeAssistantTextSegmentFlush = {
+  assistantResponseEvents: readonly AssistantResponseEvent[];
+  assistantTextSegmentSessionEntry?: AssistantTextSegmentConversationSessionEntry;
+};
 
 type RuntimeProviderStreamEventTranslatorInput = {
   assistantResponseMessageId: string;
@@ -61,8 +71,11 @@ export class RuntimeProviderStreamEventTranslator {
   readonly selectedModelId: string;
   readonly createConversationMessagePartId: () => string;
   readonly readCurrentTimeInMilliseconds: () => number;
-  private assistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState;
-  private hasEmittedAssistantTextMessagePart = false;
+  private nextAssistantTextPartId: string | undefined;
+  private currentAssistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState | undefined;
+  private hasEmittedCurrentAssistantTextMessagePart = false;
+  private completedAssistantTextSegmentTexts: string[] = [];
+  private hasObservedToolCallBoundary = false;
   private currentReasoningPartId: string | undefined;
   private currentReasoningSummaryText = "";
   private currentReasoningStartedAtMs: number | undefined;
@@ -73,11 +86,16 @@ export class RuntimeProviderStreamEventTranslator {
     this.selectedModelId = input.selectedModelId;
     this.createConversationMessagePartId = input.createConversationMessagePartId ?? randomUUID;
     this.readCurrentTimeInMilliseconds = input.readCurrentTimeInMilliseconds ?? Date.now;
-    this.assistantTextMessagePartBuilderState = createInitialAssistantTextMessagePartBuilder(input.assistantTextPartId);
+    this.nextAssistantTextPartId = input.assistantTextPartId;
   }
 
   get assistantMessageText(): string {
-    return this.assistantTextMessagePartBuilderState.rawMarkdownText;
+    return [
+      ...this.completedAssistantTextSegmentTexts,
+      ...(this.currentAssistantTextMessagePartBuilderState
+        ? [this.currentAssistantTextMessagePartBuilderState.rawMarkdownText]
+        : []),
+    ].join("");
   }
 
   translateProviderStreamEvent(input: {
@@ -101,9 +119,21 @@ export class RuntimeProviderStreamEventTranslator {
     }
 
     if (input.providerStreamEvent.type === "tool_call_requested") {
+      this.hasObservedToolCallBoundary = true;
+      const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
+        partStatus: "completed",
+        shouldEmitPartUpdatedEvent: true,
+        shouldRecordSessionEntry: true,
+      });
       return {
         translationKind: "tool_call_requested",
         providerToolCallRequestedEvent: input.providerStreamEvent,
+        ...(assistantTextSegmentFlush && assistantTextSegmentFlush.assistantResponseEvents.length > 0
+          ? { assistantResponseEventsBeforeToolCall: assistantTextSegmentFlush.assistantResponseEvents }
+          : {}),
+        ...(assistantTextSegmentFlush?.assistantTextSegmentSessionEntry
+          ? { assistantTextSegmentSessionEntryBeforeToolCall: assistantTextSegmentFlush.assistantTextSegmentSessionEntry }
+          : {}),
       };
     }
 
@@ -213,28 +243,102 @@ export class RuntimeProviderStreamEventTranslator {
   }
 
   private translateTextChunkProviderStreamEvent(assistantTextDelta: string): RuntimeProviderStreamAssistantEventsTranslation {
-    this.assistantTextMessagePartBuilderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
-      this.assistantTextMessagePartBuilderState,
+    const currentAssistantTextMessagePartBuilderState = this.ensureCurrentAssistantTextMessagePartBuilder();
+    this.currentAssistantTextMessagePartBuilderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
+      currentAssistantTextMessagePartBuilderState,
       assistantTextDelta,
     );
 
     const assistantTextConversationMessagePart = buildStreamingAssistantTextConversationMessagePart(
-      this.assistantTextMessagePartBuilderState,
+      this.currentAssistantTextMessagePartBuilderState,
     );
-    const assistantResponseEvent = (this.hasEmittedAssistantTextMessagePart
+    const assistantResponseEvent = (this.hasEmittedCurrentAssistantTextMessagePart
       ? AssistantMessagePartUpdatedEventSchema
       : AssistantMessagePartAddedEventSchema).parse({
-        type: this.hasEmittedAssistantTextMessagePart
+        type: this.hasEmittedCurrentAssistantTextMessagePart
           ? "assistant_message_part_updated"
           : "assistant_message_part_added",
         messageId: this.assistantResponseMessageId,
         part: assistantTextConversationMessagePart,
       });
-    this.hasEmittedAssistantTextMessagePart = true;
+    this.hasEmittedCurrentAssistantTextMessagePart = true;
 
     return {
       translationKind: "assistant_response_events",
       assistantResponseEvents: [assistantResponseEvent],
+    };
+  }
+
+  flushCurrentAssistantTextSegmentBeforeFailedTerminal(): RuntimeAssistantTextSegmentFlush | undefined {
+    return this.flushCurrentAssistantTextSegment({
+      partStatus: "failed",
+      shouldEmitPartUpdatedEvent: false,
+      shouldRecordSessionEntry: this.hasObservedToolCallBoundary,
+    });
+  }
+
+  flushCurrentAssistantTextSegmentBeforeInterruptedTerminal(): RuntimeAssistantTextSegmentFlush | undefined {
+    return this.flushCurrentAssistantTextSegment({
+      partStatus: "interrupted",
+      shouldEmitPartUpdatedEvent: false,
+      shouldRecordSessionEntry: this.hasObservedToolCallBoundary,
+    });
+  }
+
+  private ensureCurrentAssistantTextMessagePartBuilder(): AssistantTextMessagePartBuilderState {
+    if (this.currentAssistantTextMessagePartBuilderState) {
+      return this.currentAssistantTextMessagePartBuilderState;
+    }
+
+    const assistantTextPartId = this.nextAssistantTextPartId ?? this.createConversationMessagePartId();
+    this.nextAssistantTextPartId = undefined;
+    this.currentAssistantTextMessagePartBuilderState = createInitialAssistantTextMessagePartBuilder(assistantTextPartId);
+    this.hasEmittedCurrentAssistantTextMessagePart = false;
+    return this.currentAssistantTextMessagePartBuilderState;
+  }
+
+  private flushCurrentAssistantTextSegment(input: {
+    partStatus: AssistantTextPartStatus;
+    shouldEmitPartUpdatedEvent: boolean;
+    shouldRecordSessionEntry: boolean;
+  }): RuntimeAssistantTextSegmentFlush | undefined {
+    if (!this.currentAssistantTextMessagePartBuilderState || !this.hasEmittedCurrentAssistantTextMessagePart) {
+      return undefined;
+    }
+
+    const assistantTextSegmentText = this.currentAssistantTextMessagePartBuilderState.rawMarkdownText;
+    if (assistantTextSegmentText.length === 0) {
+      this.currentAssistantTextMessagePartBuilderState = undefined;
+      this.hasEmittedCurrentAssistantTextMessagePart = false;
+      return undefined;
+    }
+
+    const assistantResponseEvents = input.shouldEmitPartUpdatedEvent
+      ? [
+          AssistantMessagePartUpdatedEventSchema.parse({
+            type: "assistant_message_part_updated",
+            messageId: this.assistantResponseMessageId,
+            part: buildAssistantTextConversationMessagePartWithStatus(
+              this.currentAssistantTextMessagePartBuilderState,
+              input.partStatus,
+            ),
+          }),
+        ]
+      : [];
+    const assistantTextSegmentSessionEntry = input.shouldRecordSessionEntry
+      ? {
+          entryKind: "assistant_text_segment",
+          assistantTextSegmentText,
+        } satisfies AssistantTextSegmentConversationSessionEntry
+      : undefined;
+
+    this.completedAssistantTextSegmentTexts.push(assistantTextSegmentText);
+    this.currentAssistantTextMessagePartBuilderState = undefined;
+    this.hasEmittedCurrentAssistantTextMessagePart = false;
+
+    return {
+      assistantResponseEvents,
+      ...(assistantTextSegmentSessionEntry ? { assistantTextSegmentSessionEntry } : {}),
     };
   }
 
@@ -288,13 +392,21 @@ export class RuntimeProviderStreamEventTranslator {
     usage: TokenUsage;
     providerTurnReplay?: ProviderTurnReplay | undefined;
   }): RuntimeProviderStreamTerminalAssistantResponseTranslation {
+    const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
+      partStatus: "incomplete",
+      shouldEmitPartUpdatedEvent: false,
+      shouldRecordSessionEntry: this.hasObservedToolCallBoundary,
+    });
     return {
       translationKind: "terminal_assistant_response",
       assistantResponseEventsBeforeTerminalSessionEntry: [this.createAssistantTurnSummaryEvent()],
+      ...(assistantTextSegmentFlush?.assistantTextSegmentSessionEntry
+        ? { assistantTextSegmentSessionEntryBeforeTerminalSessionEntry: assistantTextSegmentFlush.assistantTextSegmentSessionEntry }
+        : {}),
       terminalAssistantMessageSessionEntry: {
         entryKind: "assistant_message",
         assistantMessageStatus: "incomplete",
-        assistantMessageText: this.assistantTextMessagePartBuilderState.rawMarkdownText,
+        assistantMessageText: this.assistantMessageText,
         incompleteReason: input.incompleteReason,
         ...(input.providerTurnReplay ? { providerTurnReplay: input.providerTurnReplay } : {}),
       },
@@ -311,24 +423,26 @@ export class RuntimeProviderStreamEventTranslator {
     usage: TokenUsage;
     providerTurnReplay?: ProviderTurnReplay | undefined;
   }): RuntimeProviderStreamTerminalAssistantResponseTranslation {
+    const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
+      partStatus: "completed",
+      shouldEmitPartUpdatedEvent: true,
+      shouldRecordSessionEntry: this.hasObservedToolCallBoundary,
+    });
     const assistantResponseEventsBeforeTerminalSessionEntry: AssistantResponseEvent[] = [this.createAssistantTurnSummaryEvent()];
-    if (this.hasEmittedAssistantTextMessagePart) {
-      assistantResponseEventsBeforeTerminalSessionEntry.push(
-        AssistantMessagePartUpdatedEventSchema.parse({
-          type: "assistant_message_part_updated",
-          messageId: this.assistantResponseMessageId,
-          part: buildCompletedAssistantTextConversationMessagePart(this.assistantTextMessagePartBuilderState),
-        }),
-      );
+    if (assistantTextSegmentFlush) {
+      assistantResponseEventsBeforeTerminalSessionEntry.push(...assistantTextSegmentFlush.assistantResponseEvents);
     }
 
     return {
       translationKind: "terminal_assistant_response",
       assistantResponseEventsBeforeTerminalSessionEntry,
+      ...(assistantTextSegmentFlush?.assistantTextSegmentSessionEntry
+        ? { assistantTextSegmentSessionEntryBeforeTerminalSessionEntry: assistantTextSegmentFlush.assistantTextSegmentSessionEntry }
+        : {}),
       terminalAssistantMessageSessionEntry: {
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
-        assistantMessageText: this.assistantTextMessagePartBuilderState.rawMarkdownText,
+        assistantMessageText: this.assistantMessageText,
         ...(input.providerTurnReplay ? { providerTurnReplay: input.providerTurnReplay } : {}),
       },
       terminalAssistantResponseEvent: AssistantMessageCompletedEventSchema.parse({

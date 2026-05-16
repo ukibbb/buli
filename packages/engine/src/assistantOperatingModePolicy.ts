@@ -1,9 +1,11 @@
-import type { AssistantOperatingMode, ProviderAvailableToolName } from "@buli/contracts";
+import {
+  READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
+  isReadOnlyAssistantModeToolRequestName,
+  type AssistantOperatingMode,
+  type ProviderAvailableToolName,
+} from "@buli/contracts";
 
-export const READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAMES = ["read", "glob", "grep", "explore"] as const satisfies readonly ProviderAvailableToolName[];
-const READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAME_SET = new Set<ProviderAvailableToolName>(
-  READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAMES,
-);
+export const READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAMES = READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES;
 
 export function resolveAvailableToolNamesForAssistantOperatingMode(input: {
   assistantOperatingMode: AssistantOperatingMode;
@@ -42,6 +44,6 @@ function listReadOnlyAssistantModeAvailableToolNames(
   }
 
   return requestedAvailableToolNames.filter((availableToolName) =>
-    READ_ONLY_ASSISTANT_MODE_AVAILABLE_TOOL_NAME_SET.has(availableToolName),
+    isReadOnlyAssistantModeToolRequestName(availableToolName),
   );
 }

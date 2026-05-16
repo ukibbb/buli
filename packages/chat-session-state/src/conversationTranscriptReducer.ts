@@ -1,11 +1,10 @@
-import type {
-  AssistantTextPartStatus,
-  AssistantToolCallPartStatus,
-  ConversationMessage,
-  ConversationMessagePart,
-  ConversationSessionEntry,
-  ToolCallDetail,
-  ToolCallRequest,
+import {
+  createStartedToolCallDetailFromRequest,
+  type AssistantTextPartStatus,
+  type AssistantToolCallPartStatus,
+  type ConversationMessage,
+  type ConversationMessagePart,
+  type ConversationSessionEntry,
 } from "@buli/contracts";
 import type { ChatSessionState } from "./chatSessionState.ts";
 
@@ -81,6 +80,35 @@ function buildHydratedConversationTranscript(
       partIds: [...conversationMessage.partIds, conversationMessagePart.id],
     };
     conversationMessagePartsById[conversationMessagePart.id] = conversationMessagePart;
+  };
+  const updateAssistantTextPartStatuses = (messageId: string, partStatus: AssistantTextPartStatus): void => {
+    const conversationMessage = conversationMessagesById[messageId];
+    if (!conversationMessage) {
+      return;
+    }
+
+    for (const partId of conversationMessage.partIds) {
+      const conversationMessagePart = conversationMessagePartsById[partId];
+      if (!conversationMessagePart || conversationMessagePart.partKind !== "assistant_text") {
+        continue;
+      }
+
+      conversationMessagePartsById[partId] = {
+        ...conversationMessagePart,
+        partStatus,
+      };
+    }
+  };
+  const hasAssistantTextPart = (messageId: string): boolean => {
+    const conversationMessage = conversationMessagesById[messageId];
+    if (!conversationMessage) {
+      return false;
+    }
+
+    return conversationMessage.partIds.some((partId) => {
+      const conversationMessagePart = conversationMessagePartsById[partId];
+      return conversationMessagePart?.partKind === "assistant_text";
+    });
   };
   const ensureAssistantConversationMessage = (entryIndex: number): string => {
     if (currentAssistantMessageId) {
@@ -205,6 +233,17 @@ function buildHydratedConversationTranscript(
       return;
     }
 
+    if (conversationSessionEntry.entryKind === "assistant_text_segment") {
+      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      appendConversationMessagePart(assistantMessageId, {
+        id: `persisted-entry-${entryIndex}-assistant-text-segment`,
+        partKind: "assistant_text",
+        partStatus: "completed",
+        rawMarkdownText: conversationSessionEntry.assistantTextSegmentText,
+      });
+      return;
+    }
+
     if (conversationSessionEntry.entryKind === "tool_call") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       const toolCallPartId = `persisted-entry-${entryIndex}-tool-call`;
@@ -215,7 +254,7 @@ function buildHydratedConversationTranscript(
         toolCallId: conversationSessionEntry.toolCallId,
         toolCallStatus: "running",
         toolCallStartedAtMs: entryIndex,
-        toolCallDetail: createToolCallDetailFromRequest(conversationSessionEntry.toolCallRequest),
+        toolCallDetail: createStartedToolCallDetailFromRequest(conversationSessionEntry.toolCallRequest),
       });
       return;
     }
@@ -243,7 +282,7 @@ function buildHydratedConversationTranscript(
         };
       }
 
-      if (conversationSessionEntry.assistantMessageText.length > 0) {
+      if (conversationSessionEntry.assistantMessageText.length > 0 && !hasAssistantTextPart(assistantMessageId)) {
         appendConversationMessagePart(assistantMessageId, {
           id: `persisted-entry-${entryIndex}-assistant-text`,
           partKind: "assistant_text",
@@ -251,6 +290,10 @@ function buildHydratedConversationTranscript(
           rawMarkdownText: conversationSessionEntry.assistantMessageText,
         });
       }
+      updateAssistantTextPartStatuses(
+        assistantMessageId,
+        conversationSessionEntry.assistantMessageStatus satisfies AssistantTextPartStatus,
+      );
 
       if (conversationSessionEntry.assistantMessageStatus === "incomplete") {
         appendConversationMessagePart(assistantMessageId, {
@@ -336,62 +379,6 @@ function upsertHydratedToolResultPart(input: {
       ? { denialText: input.conversationSessionEntry.denialExplanation }
       : {}),
   });
-}
-
-function createToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): ToolCallDetail {
-  if (toolCallRequest.toolName === "bash") {
-    return {
-      toolName: "bash",
-      commandLine: toolCallRequest.shellCommand,
-      commandDescription: toolCallRequest.commandDescription,
-      ...(toolCallRequest.workingDirectoryPath ? { workingDirectoryPath: toolCallRequest.workingDirectoryPath } : {}),
-      ...(toolCallRequest.timeoutMilliseconds ? { timeoutMilliseconds: toolCallRequest.timeoutMilliseconds } : {}),
-    };
-  }
-  if (toolCallRequest.toolName === "read") {
-    return {
-      toolName: "read",
-      readFilePath: toolCallRequest.readTargetPath,
-    };
-  }
-  if (toolCallRequest.toolName === "glob") {
-    return {
-      toolName: "glob",
-      globPattern: toolCallRequest.globPattern,
-      ...(toolCallRequest.searchDirectoryPath ? { searchDirectoryPath: toolCallRequest.searchDirectoryPath } : {}),
-    };
-  }
-  if (toolCallRequest.toolName === "edit") {
-    return {
-      toolName: "edit",
-      editedFilePath: toolCallRequest.editTargetPath,
-    };
-  }
-  if (toolCallRequest.toolName === "write") {
-    return {
-      toolName: "write",
-      writtenFilePath: toolCallRequest.writeTargetPath,
-    };
-  }
-  if (toolCallRequest.toolName === "grep") {
-    return {
-      toolName: "grep",
-      searchPattern: toolCallRequest.regexPattern,
-    };
-  }
-  if (toolCallRequest.toolName === "explore") {
-    return {
-      toolName: "explore",
-      explorationDescription: toolCallRequest.explorationDescription,
-      explorationPrompt: toolCallRequest.explorationPrompt,
-    };
-  }
-
-  return assertUnhandledToolCallRequest(toolCallRequest);
-}
-
-function assertUnhandledToolCallRequest(toolCallRequest: never): never {
-  throw new Error(`Unhandled tool call request: ${JSON.stringify(toolCallRequest)}`);
 }
 
 function mapToolResultEntryToToolCallStatus(

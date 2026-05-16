@@ -35,7 +35,7 @@ Important files:
 - `packages/engine/src/runtime.ts`
 - `packages/engine/src/assistantTextMessagePartBuilder.ts`
 
-This package runs the assistant turn, projects streaming text into message-part updates, and emits the event stream consumed by the shared state layer.
+This package runs the assistant turn, projects streaming text into message-part updates, closes text parts at tool boundaries, and emits the event stream consumed by the shared state layer.
 It also owns local tool execution for `read`, `glob`, `grep`, and `bash`, including workspace path safety, bash approval decisions, and model-facing tool result text.
 
 ### `@buli/chat-session-state`
@@ -76,9 +76,10 @@ This is the OpenTUI-backed renderer. It owns the fullscreen chat shell, follow-b
 3. the engine starts an assistant turn
 4. the engine emits `assistant_turn_started`
 5. the engine adds and updates assistant parts over time
-6. the shared reducer folds those events into normalized state
-7. the TUI renders `messages -> parts`
-8. the turn ends with `assistant_message_completed`, `assistant_message_incomplete`, or `assistant_message_failed`
+6. when a tool call interrupts text, the engine completes the current `assistant_text` part, emits the `assistant_tool_call` part, then starts a new `assistant_text` part for later prose
+7. the shared reducer folds those events into normalized state
+8. the TUI renders `messages -> parts`
+9. the turn ends with `assistant_message_completed`, `assistant_message_incomplete`, or `assistant_message_failed`
 
 ## Assistant Message Parts
 
@@ -93,7 +94,7 @@ An assistant message can contain parts like:
 - `assistant_error_notice`
 - `assistant_turn_summary`
 
-Text, reasoning, tool state, and turn metadata are separate typed concepts.
+Text, reasoning, tool state, and turn metadata are separate typed concepts. One assistant message can contain multiple `assistant_text` parts when tool calls happen between prose spans; their `partIds` order is the rendering order.
 
 ## Tool Approval
 
@@ -108,7 +109,9 @@ That is why the approval prompt can render below the message list instead of as 
 
 ## Session Persistence
 
-`buli` stores canonical conversation-session entries in workspace-scoped JSONL files under `~/.buli/conversation-sessions`. The CLI loads the active session on startup, appends new user prompts, assistant messages, tool calls, and tool results as records, and lets the TUI hydrate the visible transcript from those entries.
+`buli` stores canonical conversation-session entries in workspace-scoped JSONL files under `~/.buli/conversation-sessions`. The CLI loads the active session on startup, appends new user prompts, ordered assistant text segments, assistant messages, tool calls, and tool results as records, and lets the TUI hydrate the visible transcript from those entries.
+
+`assistant_text_segment` entries exist only for turns that cross a tool boundary. They preserve restored display order like `text -> tool -> text`; the terminal `assistant_message.assistantMessageText` remains the aggregate assistant text used for model context and legacy rendering.
 
 Session loading is defensive: valid records before the first corrupt JSONL line are preserved, and the corrupt suffix is quarantined beside the original session file as `*.corrupt-tail.<timestamp>.txt`. A partial final line after a crash is treated as a recoverable corrupt tail. Corruption in the middle of the file stops loading at that point because later records may depend on ordered parent links.
 

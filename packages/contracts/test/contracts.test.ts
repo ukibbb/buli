@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  ASSISTANT_TOOL_REQUEST_NAMES,
   AssistantOperatingModeSchema,
   AssistantResponseEventSchema,
   ConversationSessionEntrySchema,
@@ -8,9 +9,19 @@ import {
   ConversationMessagePartSchema,
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
+  FILE_MUTATION_TOOL_REQUEST_NAMES,
   ModelContextItemSchema,
   PendingToolApprovalRequestSchema,
+  READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
+  RENDER_ONLY_TOOL_DETAIL_NAMES,
   ToolCallRequestSchema,
+  WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
+  createStartedToolCallDetailFromRequest,
+  isAssistantToolRequestName,
+  isExploreToolCallRequest,
+  isFileMutationToolCallRequest,
+  isReadOnlyAssistantModeToolRequestName,
+  isWorkspaceInspectionToolCallRequest,
   UserPromptImageAttachmentSchema,
 } from "../src/index.ts";
 
@@ -179,6 +190,61 @@ test("AssistantToolCallConversationMessagePartSchema parses an explore tool call
   });
 });
 
+test("AssistantToolCallConversationMessagePartSchema parses an explore tool call with child activity", () => {
+  const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
+    id: "tool-part-explore",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-explore",
+    toolCallStatus: "running",
+    toolCallStartedAtMs: 1,
+    toolCallDetail: {
+      toolName: "explore",
+      explorationDescription: "map docs",
+      explorationPrompt: "Read README.md and summarize it.",
+      explorationChildToolCalls: [
+        {
+          explorerChildToolCallId: "call-read-1",
+          explorerChildToolCallStatus: "running",
+          explorerChildToolCallStartedAtMs: 2,
+          explorerChildToolCallDetail: {
+            toolName: "read",
+            readFilePath: "README.md",
+          },
+        },
+        {
+          explorerChildToolCallId: "call-grep-1",
+          explorerChildToolCallStatus: "completed",
+          explorerChildToolCallStartedAtMs: 3,
+          explorerChildToolCallDurationMs: 4,
+          explorerChildToolCallDetail: {
+            toolName: "grep",
+            searchPattern: "Explorer",
+            totalMatchCount: 1,
+            matchedFileCount: 1,
+          },
+        },
+      ],
+    },
+  });
+
+  expect(parsedMessagePart.toolCallDetail).toMatchObject({
+    toolName: "explore",
+    explorationChildToolCalls: [
+      {
+        explorerChildToolCallId: "call-read-1",
+        explorerChildToolCallStatus: "running",
+        explorerChildToolCallDetail: { toolName: "read", readFilePath: "README.md" },
+      },
+      {
+        explorerChildToolCallId: "call-grep-1",
+        explorerChildToolCallStatus: "completed",
+        explorerChildToolCallDurationMs: 4,
+        explorerChildToolCallDetail: { toolName: "grep", searchPattern: "Explorer" },
+      },
+    ],
+  });
+});
+
 test("PendingToolApprovalRequestSchema parses the dedicated approval model", () => {
   expect(
     PendingToolApprovalRequestSchema.parse({
@@ -265,6 +331,75 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
   });
 });
 
+test("tool catalog lists assistant request tools by execution boundary", () => {
+  expect(ASSISTANT_TOOL_REQUEST_NAMES).toEqual(["bash", "read", "glob", "grep", "edit", "write", "explore"]);
+  expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep"]);
+  expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "write"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "explore"]);
+  expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite", "task"]);
+});
+
+test("tool catalog classifies typed tool requests", () => {
+  expect(isAssistantToolRequestName("bash")).toBe(true);
+  expect(isAssistantToolRequestName("task")).toBe(false);
+  expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
+  expect(isWorkspaceInspectionToolCallRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toBe(true);
+  expect(isWorkspaceInspectionToolCallRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toBe(false);
+  expect(isFileMutationToolCallRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toBe(true);
+  expect(isFileMutationToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
+  expect(isExploreToolCallRequest({ toolName: "explore", explorationDescription: "map runtime", explorationPrompt: "Inspect runtime." })).toBe(true);
+  expect(isExploreToolCallRequest({ toolName: "glob", globPattern: "**/*.ts" })).toBe(false);
+  expect(isReadOnlyAssistantModeToolRequestName("read")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("explore")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
+});
+
+test("createStartedToolCallDetailFromRequest maps requests to render details", () => {
+  expect(createStartedToolCallDetailFromRequest({
+    toolName: "bash",
+    shellCommand: "pwd",
+    commandDescription: "Print working directory",
+    workingDirectoryPath: "packages/contracts",
+    timeoutMilliseconds: 1000,
+  })).toEqual({
+    toolName: "bash",
+    commandLine: "pwd",
+    commandDescription: "Print working directory",
+    workingDirectoryPath: "packages/contracts",
+    timeoutMilliseconds: 1000,
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "read", readTargetPath: "README.md" })).toEqual({
+    toolName: "read",
+    readFilePath: "README.md",
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "glob", globPattern: "**/*.ts", searchDirectoryPath: "packages" })).toEqual({
+    toolName: "glob",
+    globPattern: "**/*.ts",
+    searchDirectoryPath: "packages",
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toEqual({
+    toolName: "grep",
+    searchPattern: "ToolCallRequest",
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toEqual({
+    toolName: "edit",
+    editedFilePath: "README.md",
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toEqual({
+    toolName: "write",
+    writtenFilePath: "generated.ts",
+  });
+  expect(createStartedToolCallDetailFromRequest({
+    toolName: "explore",
+    explorationDescription: "map runtime",
+    explorationPrompt: "Inspect runtime.",
+  })).toEqual({
+    toolName: "explore",
+    explorationDescription: "map runtime",
+    explorationPrompt: "Inspect runtime.",
+  });
+});
+
 test("AssistantResponseEventSchema parses assistant_message_part_added", () => {
   expect(
     AssistantResponseEventSchema.parse({
@@ -316,6 +451,18 @@ test("ConversationSessionEntrySchema parses completed assistant history entries"
     entryKind: "assistant_message",
     assistantMessageStatus: "completed",
     assistantMessageText: "Done.",
+  });
+});
+
+test("ConversationSessionEntrySchema parses assistant text segment history entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "I will inspect the file first.",
+    }),
+  ).toEqual({
+    entryKind: "assistant_text_segment",
+    assistantTextSegmentText: "I will inspect the file first.",
   });
 });
 

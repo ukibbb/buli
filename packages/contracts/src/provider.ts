@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { PlanStepSchema } from "./planProposal.ts";
-import { ToolCallRequestSchema, type ToolCallRequest } from "./toolCallRequest.ts";
+import type { AssistantToolRequestName } from "./toolCatalog.ts";
+import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 
 export const ReasoningEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]);
-export type ProviderAvailableToolName = ToolCallRequest["toolName"];
+export type ProviderAvailableToolName = AssistantToolRequestName;
 
 export const AvailableAssistantModelSchema = z
   .object({

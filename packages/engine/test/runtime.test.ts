@@ -2,7 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ConversationSessionEntry, ModelContextItem, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
+import type {
+  AssistantToolCallConversationMessagePart,
+  ConversationSessionEntry,
+  ModelContextItem,
+  ProviderStreamEvent,
+  ProviderTurnReplay,
+} from "@buli/contracts";
 import type {
   ConversationTurnProvider,
   ProviderConversationTurn,
@@ -545,6 +551,41 @@ test("AssistantConversationRuntime emits failure when the provider stream ends w
     },
   ]);
   expect(runtime.conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([]);
+});
+
+test("AssistantConversationRuntime persists prompt when prompt-context expansion fails before provider start", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-prompt-context-failure-"));
+  const provider = new RecordingConversationTurnProvider([]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: join(workspaceRootPath, "missing-prompt-context-root"),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Read @README.md",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_turn_started",
+    "assistant_message_failed",
+  ]);
+  expect(provider.startedTurnRequests).toHaveLength(0);
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
+    {
+      entryKind: "user_prompt",
+      promptText: "Read @README.md",
+      modelFacingPromptText: "Read @README.md",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "",
+    },
+  ]);
 });
 
 test("AssistantConversationRuntime emits incomplete as a terminal turn and releases the runtime", async () => {
@@ -1090,7 +1131,62 @@ test("AssistantConversationRuntime auto-runs read-only tool calls without approv
       toolCallId: "call_read_1",
       toolCallDetail: { toolName: "read", readFilePath: "notes.txt" },
     },
+    { entryKind: "assistant_text_segment", assistantTextSegmentText: "Read acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
+  ]);
+});
+
+test("AssistantConversationRuntime records assistant text segments in tool-call order", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-ordered-text-tool-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\n", "utf8");
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "I will inspect README.md first.\n\n" },
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_1",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "README.md contains a Demo heading." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect README",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
+    { entryKind: "user_prompt" },
+    {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "I will inspect README.md first.\n\n",
+    },
+    { entryKind: "tool_call", toolCallId: "call_read_1" },
+    { entryKind: "completed_tool_result", toolCallId: "call_read_1" },
+    {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "README.md contains a Demo heading.",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "I will inspect README.md first.\n\nREADME.md contains a Demo heading.",
+    },
   ]);
 });
 
@@ -1144,6 +1240,7 @@ test("AssistantConversationRuntime submits failed read-only tool results back to
     { entryKind: "user_prompt" },
     { entryKind: "tool_call", toolCallId: "call_grep_1" },
     { entryKind: "failed_tool_result", toolCallId: "call_grep_1" },
+    { entryKind: "assistant_text_segment", assistantTextSegmentText: "Failure acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
   ]);
 });
@@ -1457,11 +1554,53 @@ test("AssistantConversationRuntime runs Explorer as an isolated read-only child 
       selectedModelId: "gpt-5.4",
     }),
   );
+  const explorerToolCallUpdatedParts: AssistantToolCallConversationMessagePart[] = emittedAssistantEvents.flatMap(
+    (assistantResponseEvent) =>
+      assistantResponseEvent.type === "assistant_message_part_updated" &&
+        assistantResponseEvent.part.partKind === "assistant_tool_call" &&
+        assistantResponseEvent.part.toolCallDetail.toolName === "explore"
+        ? [assistantResponseEvent.part]
+        : [],
+  );
 
   expect(provider.startedTurnRequests).toHaveLength(2);
   expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "glob", "grep"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer target");
+  expect(explorerToolCallUpdatedParts).toContainEqual(
+    expect.objectContaining({
+      toolCallStatus: "running",
+      toolCallDetail: expect.objectContaining({
+        toolName: "explore",
+        explorationChildToolCalls: [
+          expect.objectContaining({
+            explorerChildToolCallId: "call_read_1",
+            explorerChildToolCallStatus: "running",
+            explorerChildToolCallDetail: { toolName: "read", readFilePath: "README.md" },
+          }),
+        ],
+      }),
+    }),
+  );
+  expect(explorerToolCallUpdatedParts).toContainEqual(
+    expect.objectContaining({
+      toolCallStatus: "running",
+      toolCallDetail: expect.objectContaining({
+        toolName: "explore",
+        explorationChildToolCalls: [
+          expect.objectContaining({
+            explorerChildToolCallId: "call_read_1",
+            explorerChildToolCallStatus: "completed",
+            explorerChildToolCallDetail: expect.objectContaining({
+              toolName: "read",
+              readFilePath: "README.md",
+              readLineCount: 2,
+            }),
+          }),
+        ],
+      }),
+    }),
+  );
   expect(parentProviderTurn.submittedToolResults).toEqual([
     {
       toolCallId: "call_explore_1",
@@ -1482,8 +1621,19 @@ test("AssistantConversationRuntime runs Explorer as an isolated read-only child 
       toolCallDetail: {
         toolName: "explore",
         explorationResultSummary: "README.md contains the Demo heading and Explorer target text.",
+        explorationChildToolCalls: [
+          expect.objectContaining({
+            explorerChildToolCallId: "call_read_1",
+            explorerChildToolCallStatus: "completed",
+            explorerChildToolCallDetail: expect.objectContaining({
+              toolName: "read",
+              readFilePath: "README.md",
+            }),
+          }),
+        ],
       },
     },
+    { entryKind: "assistant_text_segment", assistantTextSegmentText: "Explorer result acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
   ]);
   expect(runtime.conversationHistory.listConversationSessionEntries()).not.toContainEqual(
@@ -1622,6 +1772,7 @@ test("AssistantConversationRuntime requests approval before applying an edit too
       toolCallId: "call_edit_1",
       toolCallDetail: { toolName: "edit", editedFilePath: "notes.txt" },
     },
+    { entryKind: "assistant_text_segment", assistantTextSegmentText: "Edit acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
   ]);
 });

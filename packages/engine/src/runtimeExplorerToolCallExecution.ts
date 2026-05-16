@@ -3,10 +3,16 @@ import {
   AssistantMessagePartAddedEventSchema,
   AssistantMessagePartUpdatedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
+  WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
+  createStartedToolCallDetailFromRequest,
+  isWorkspaceInspectionToolCallRequest,
   type AssistantResponseEvent,
+  type AssistantToolCallConversationMessagePart,
   type BuliDiagnosticLogger,
+  type ExplorerChildToolCall,
+  type ExplorerChildToolCallDetail,
+  type ExplorerChildToolCallStatus,
   type ExploreToolCallRequest,
-  type ProviderAvailableToolName,
   type ProviderStreamEvent,
   type ReasoningEffort,
   type ToolCallDetail,
@@ -17,15 +23,12 @@ import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
 import { toProjectInstructionSnapshots, type ProjectInstructionTracker } from "./projectInstructions.ts";
-import {
-  isAutoApprovedReadOnlyToolCallRequest,
-  streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
-} from "./runtimeReadOnlyToolCallExecution.ts";
+import { streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall } from "./runtimeReadOnlyToolCallExecution.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { buildBuliExplorerSystemPrompt } from "./systemPrompt.ts";
 
-const EXPLORER_AVAILABLE_TOOL_NAMES = ["read", "glob", "grep"] as const satisfies readonly ProviderAvailableToolName[];
+const EXPLORER_AVAILABLE_TOOL_NAMES = WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES;
 const NESTED_EXPLORER_DENIAL_TEXT = "Explorer cannot spawn another Explorer. Continue with read, glob, and grep instead.";
 
 type ExplorerConversationOutcome = {
@@ -35,6 +38,16 @@ type ExplorerConversationOutcome = {
   durationMilliseconds: number;
   failureExplanation?: string;
 };
+
+type ExplorerConversationProgress =
+  | {
+    progressKind: "explorer_child_tool_calls_changed";
+    explorationChildToolCalls: ExplorerChildToolCall[];
+  }
+  | {
+    progressKind: "explorer_conversation_finished";
+    explorerConversationOutcome: ExplorerConversationOutcome;
+  };
 
 export type StreamAssistantResponseEventsForExploreToolCallInput = {
   assistantResponseMessageId: string;
@@ -53,16 +66,12 @@ export type StreamAssistantResponseEventsForExploreToolCallInput = {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
-export function isExploreToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is ExploreToolCallRequest {
-  return toolCallRequest.toolName === "explore";
-}
-
 export async function* streamAssistantResponseEventsForExploreToolCall(
   input: StreamAssistantResponseEventsForExploreToolCallInput,
 ): AsyncGenerator<AssistantResponseEvent> {
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
-  const startedToolCallDetail = createStartedExploreToolCallDetail(input.exploreToolCallRequest);
+  const startedToolCallDetail = createStartedToolCallDetailFromRequest(input.exploreToolCallRequest);
 
   yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartAddedEventSchema.parse({
     type: "assistant_message_part_added",
@@ -110,7 +119,9 @@ export async function* streamAssistantResponseEventsForExploreToolCall(
   }
 
   input.throwIfConversationTurnInterrupted();
-  const explorerConversationOutcome = await runExplorerConversation({
+  let latestExplorationChildToolCalls: ExplorerChildToolCall[] = [];
+  let explorerConversationOutcome: ExplorerConversationOutcome | undefined;
+  for await (const explorerConversationProgress of streamExplorerConversationProgress({
     conversationTurnProvider: input.conversationTurnProvider,
     exploreToolCallRequest: input.exploreToolCallRequest,
     selectedModelId: input.selectedModelId,
@@ -120,13 +131,40 @@ export async function* streamAssistantResponseEventsForExploreToolCall(
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,
-  });
-  input.throwIfConversationTurnInterrupted();
+  })) {
+    input.throwIfConversationTurnInterrupted();
+    if (explorerConversationProgress.progressKind === "explorer_child_tool_calls_changed") {
+      latestExplorationChildToolCalls = explorerConversationProgress.explorationChildToolCalls;
+      yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
+        type: "assistant_message_part_updated",
+        messageId: input.assistantResponseMessageId,
+        part: AssistantToolCallConversationMessagePartSchema.parse({
+          id: toolCallPartId,
+          partKind: "assistant_tool_call",
+          toolCallId: input.toolCallId,
+          toolCallStatus: "running",
+          toolCallStartedAtMs,
+          toolCallDetail: buildExplorerToolCallDetail({
+            startedToolCallDetail,
+            explorationChildToolCalls: latestExplorationChildToolCalls,
+          }),
+        }),
+      }));
+      continue;
+    }
 
-  const completedToolCallDetail: ToolCallExploreDetail = {
-    ...startedToolCallDetail,
+    explorerConversationOutcome = explorerConversationProgress.explorerConversationOutcome;
+  }
+  input.throwIfConversationTurnInterrupted();
+  if (!explorerConversationOutcome) {
+    throw new Error("Explorer conversation stream ended before returning an outcome.");
+  }
+
+  const completedToolCallDetail = buildExplorerToolCallDetail({
+    startedToolCallDetail,
+    explorationChildToolCalls: latestExplorationChildToolCalls,
     explorationResultSummary: explorerConversationOutcome.explorationResultSummary,
-  };
+  });
 
   if (explorerConversationOutcome.outcomeKind === "completed") {
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
@@ -187,15 +225,7 @@ export async function* streamAssistantResponseEventsForExploreToolCall(
   });
 }
 
-function createStartedExploreToolCallDetail(exploreToolCallRequest: ExploreToolCallRequest): ToolCallExploreDetail {
-  return {
-    toolName: "explore",
-    explorationDescription: exploreToolCallRequest.explorationDescription,
-    explorationPrompt: exploreToolCallRequest.explorationPrompt,
-  };
-}
-
-async function runExplorerConversation(input: {
+async function* streamExplorerConversationProgress(input: {
   conversationTurnProvider: ConversationTurnProvider;
   exploreToolCallRequest: ExploreToolCallRequest;
   selectedModelId: string;
@@ -205,7 +235,7 @@ async function runExplorerConversation(input: {
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
-}): Promise<ExplorerConversationOutcome> {
+}): AsyncGenerator<ExplorerConversationProgress> {
   const explorerConversationStartedAtMs = Date.now();
   const explorerPromptText = buildExplorerPromptText(input.exploreToolCallRequest);
   const explorerConversationHistory = new InMemoryConversationHistory();
@@ -220,6 +250,8 @@ async function runExplorerConversation(input: {
     diagnosticLogger: input.diagnosticLogger,
   });
   let explorerAssistantMessageText = "";
+  const explorerChildToolCallsById = new Map<string, ExplorerChildToolCall>();
+  const orderedExplorerChildToolCallIds: string[] = [];
 
   try {
     explorerConversationSessionRecorder.appendAcceptedUserPromptSessionEntry(explorerPromptText);
@@ -244,7 +276,7 @@ async function runExplorerConversation(input: {
       }
 
       if (providerStreamEvent.type === "tool_call_requested") {
-        await executeExplorerChildToolCall({
+        for await (const explorerChildToolCall of streamExplorerChildToolCallActivity({
           providerStreamEvent,
           explorerProviderConversationTurn,
           explorerConversationHistory,
@@ -254,7 +286,20 @@ async function runExplorerConversation(input: {
           abortSignal: input.abortSignal,
           throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
           diagnosticLogger: input.diagnosticLogger,
-        });
+        })) {
+          upsertExplorerChildToolCall({
+            explorerChildToolCallsById,
+            orderedExplorerChildToolCallIds,
+            explorerChildToolCall,
+          });
+          yield {
+            progressKind: "explorer_child_tool_calls_changed",
+            explorationChildToolCalls: collectOrderedExplorerChildToolCalls({
+              explorerChildToolCallsById,
+              orderedExplorerChildToolCallIds,
+            }),
+          };
+        }
         continue;
       }
 
@@ -268,11 +313,15 @@ async function runExplorerConversation(input: {
             assistantMessageText: explorerAssistantMessageText,
             failureExplanation,
           });
-          return createFailedExplorerConversationOutcome({
-            exploreToolCallRequest: input.exploreToolCallRequest,
-            failureExplanation,
-            durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
-          });
+          yield {
+            progressKind: "explorer_conversation_finished",
+            explorerConversationOutcome: createFailedExplorerConversationOutcome({
+              exploreToolCallRequest: input.exploreToolCallRequest,
+              failureExplanation,
+              durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
+            }),
+          };
+          return;
         }
 
         explorerConversationSessionRecorder.appendTerminalAssistantMessageSessionEntry({
@@ -280,15 +329,19 @@ async function runExplorerConversation(input: {
           assistantMessageStatus: "completed",
           assistantMessageText: explorationResultSummary,
         });
-        return {
-          outcomeKind: "completed",
-          explorationResultSummary,
-          toolResultText: buildExplorerCompletedToolResultText({
-            exploreToolCallRequest: input.exploreToolCallRequest,
+        yield {
+          progressKind: "explorer_conversation_finished",
+          explorerConversationOutcome: {
+            outcomeKind: "completed",
             explorationResultSummary,
-          }),
-          durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
+            toolResultText: buildExplorerCompletedToolResultText({
+              exploreToolCallRequest: input.exploreToolCallRequest,
+              explorationResultSummary,
+            }),
+            durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
+          },
         };
+        return;
       }
 
       if (providerStreamEvent.type === "incomplete") {
@@ -299,12 +352,16 @@ async function runExplorerConversation(input: {
           assistantMessageText: explorerAssistantMessageText,
           incompleteReason: providerStreamEvent.incompleteReason,
         });
-        return createFailedExplorerConversationOutcome({
-          exploreToolCallRequest: input.exploreToolCallRequest,
-          failureExplanation,
-          explorationResultSummary: explorerAssistantMessageText.trim(),
-          durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
-        });
+        yield {
+          progressKind: "explorer_conversation_finished",
+          explorerConversationOutcome: createFailedExplorerConversationOutcome({
+            exploreToolCallRequest: input.exploreToolCallRequest,
+            failureExplanation,
+            explorationResultSummary: explorerAssistantMessageText.trim(),
+            durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
+          }),
+        };
+        return;
       }
     }
 
@@ -315,12 +372,16 @@ async function runExplorerConversation(input: {
       assistantMessageText: explorerAssistantMessageText,
       failureExplanation,
     });
-    return createFailedExplorerConversationOutcome({
-      exploreToolCallRequest: input.exploreToolCallRequest,
-      failureExplanation,
-      explorationResultSummary: explorerAssistantMessageText.trim(),
-      durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
-    });
+    yield {
+      progressKind: "explorer_conversation_finished",
+      explorerConversationOutcome: createFailedExplorerConversationOutcome({
+        exploreToolCallRequest: input.exploreToolCallRequest,
+        failureExplanation,
+        explorationResultSummary: explorerAssistantMessageText.trim(),
+        durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
+      }),
+    };
+    return;
   } catch (error) {
     if (input.abortSignal.aborted) {
       throw error;
@@ -335,16 +396,20 @@ async function runExplorerConversation(input: {
         failureExplanation,
       });
     }
-    return createFailedExplorerConversationOutcome({
-      exploreToolCallRequest: input.exploreToolCallRequest,
-      failureExplanation,
-      explorationResultSummary: explorerAssistantMessageText.trim(),
-      durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
-    });
+    yield {
+      progressKind: "explorer_conversation_finished",
+      explorerConversationOutcome: createFailedExplorerConversationOutcome({
+        exploreToolCallRequest: input.exploreToolCallRequest,
+        failureExplanation,
+        explorationResultSummary: explorerAssistantMessageText.trim(),
+        durationMilliseconds: Date.now() - explorerConversationStartedAtMs,
+      }),
+    };
+    return;
   }
 }
 
-async function executeExplorerChildToolCall(input: {
+async function* streamExplorerChildToolCallActivity(input: {
   providerStreamEvent: Extract<ProviderStreamEvent, { type: "tool_call_requested" }>;
   explorerProviderConversationTurn: ProviderConversationTurn;
   explorerConversationHistory: InMemoryConversationHistory;
@@ -354,15 +419,15 @@ async function executeExplorerChildToolCall(input: {
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
-}): Promise<void> {
+}): AsyncGenerator<ExplorerChildToolCall> {
   input.explorerConversationHistory.appendConversationSessionEntry({
     entryKind: "tool_call",
     toolCallId: input.providerStreamEvent.toolCallId,
     toolCallRequest: input.providerStreamEvent.toolCallRequest,
   });
 
-  if (isAutoApprovedReadOnlyToolCallRequest(input.providerStreamEvent.toolCallRequest)) {
-    for await (const _assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
+  if (isWorkspaceInspectionToolCallRequest(input.providerStreamEvent.toolCallRequest)) {
+    for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
       assistantResponseMessageId: randomUUID(),
       providerConversationTurn: input.explorerProviderConversationTurn,
       toolCallId: input.providerStreamEvent.toolCallId,
@@ -375,6 +440,10 @@ async function executeExplorerChildToolCall(input: {
       diagnosticLogger: input.diagnosticLogger,
     })) {
       input.throwIfConversationTurnInterrupted();
+      const explorerChildToolCall = createExplorerChildToolCallFromAssistantResponseEvent(assistantResponseEvent);
+      if (explorerChildToolCall) {
+        yield explorerChildToolCall;
+      }
     }
     return;
   }
@@ -382,13 +451,110 @@ async function executeExplorerChildToolCall(input: {
   const denialExplanation = buildExplorerDisallowedToolDenialText(input.providerStreamEvent.toolCallRequest);
   input.explorerToolResultSessionRecorder.appendDeniedToolResultSessionEntry({
     toolCallId: input.providerStreamEvent.toolCallId,
-    toolCallDetail: createToolCallDetailFromRequest(input.providerStreamEvent.toolCallRequest),
+    toolCallDetail: createStartedToolCallDetailFromRequest(input.providerStreamEvent.toolCallRequest),
     toolResultText: denialExplanation,
     denialExplanation,
   });
   await input.explorerProviderConversationTurn.submitToolResult({
     toolCallId: input.providerStreamEvent.toolCallId,
     toolResultText: denialExplanation,
+  });
+}
+
+function buildExplorerToolCallDetail(input: {
+  startedToolCallDetail: ToolCallExploreDetail;
+  explorationChildToolCalls: readonly ExplorerChildToolCall[];
+  explorationResultSummary?: string;
+}): ToolCallExploreDetail {
+  return {
+    ...input.startedToolCallDetail,
+    ...(input.explorationChildToolCalls.length > 0
+      ? { explorationChildToolCalls: [...input.explorationChildToolCalls] }
+      : {}),
+    ...(input.explorationResultSummary !== undefined
+      ? { explorationResultSummary: input.explorationResultSummary }
+      : {}),
+  };
+}
+
+function createExplorerChildToolCallFromAssistantResponseEvent(
+  assistantResponseEvent: AssistantResponseEvent,
+): ExplorerChildToolCall | undefined {
+  if (
+    assistantResponseEvent.type !== "assistant_message_part_added" &&
+    assistantResponseEvent.type !== "assistant_message_part_updated"
+  ) {
+    return undefined;
+  }
+
+  if (assistantResponseEvent.part.partKind !== "assistant_tool_call") {
+    return undefined;
+  }
+
+  if (!isExplorerChildToolCallDetail(assistantResponseEvent.part.toolCallDetail)) {
+    return undefined;
+  }
+
+  return createExplorerChildToolCallFromPart({
+    explorerChildToolCallPart: assistantResponseEvent.part,
+    explorerChildToolCallDetail: assistantResponseEvent.part.toolCallDetail,
+  });
+}
+
+function createExplorerChildToolCallFromPart(input: {
+  explorerChildToolCallPart: AssistantToolCallConversationMessagePart;
+  explorerChildToolCallDetail: ExplorerChildToolCallDetail;
+}): ExplorerChildToolCall {
+  return {
+    explorerChildToolCallId: input.explorerChildToolCallPart.toolCallId,
+    explorerChildToolCallStatus: mapExplorerChildToolCallStatus(input.explorerChildToolCallPart.toolCallStatus),
+    explorerChildToolCallStartedAtMs: input.explorerChildToolCallPart.toolCallStartedAtMs,
+    explorerChildToolCallDetail: input.explorerChildToolCallDetail,
+    ...(input.explorerChildToolCallPart.durationMs !== undefined
+      ? { explorerChildToolCallDurationMs: input.explorerChildToolCallPart.durationMs }
+      : {}),
+    ...(input.explorerChildToolCallPart.errorText !== undefined
+      ? { explorerChildToolCallErrorText: input.explorerChildToolCallPart.errorText }
+      : {}),
+    ...(input.explorerChildToolCallPart.denialText !== undefined
+      ? { explorerChildToolCallDenialText: input.explorerChildToolCallPart.denialText }
+      : {}),
+  };
+}
+
+function mapExplorerChildToolCallStatus(
+  toolCallStatus: AssistantToolCallConversationMessagePart["toolCallStatus"],
+): ExplorerChildToolCallStatus {
+  if (toolCallStatus === "pending_approval") {
+    throw new Error("Explorer child tool calls cannot wait for approval.");
+  }
+
+  return toolCallStatus;
+}
+
+function isExplorerChildToolCallDetail(toolCallDetail: ToolCallDetail): toolCallDetail is ExplorerChildToolCallDetail {
+  return toolCallDetail.toolName === "read" || toolCallDetail.toolName === "glob" || toolCallDetail.toolName === "grep";
+}
+
+function upsertExplorerChildToolCall(input: {
+  explorerChildToolCallsById: Map<string, ExplorerChildToolCall>;
+  orderedExplorerChildToolCallIds: string[];
+  explorerChildToolCall: ExplorerChildToolCall;
+}): void {
+  if (!input.explorerChildToolCallsById.has(input.explorerChildToolCall.explorerChildToolCallId)) {
+    input.orderedExplorerChildToolCallIds.push(input.explorerChildToolCall.explorerChildToolCallId);
+  }
+
+  input.explorerChildToolCallsById.set(input.explorerChildToolCall.explorerChildToolCallId, input.explorerChildToolCall);
+}
+
+function collectOrderedExplorerChildToolCalls(input: {
+  explorerChildToolCallsById: Map<string, ExplorerChildToolCall>;
+  orderedExplorerChildToolCallIds: readonly string[];
+}): ExplorerChildToolCall[] {
+  return input.orderedExplorerChildToolCallIds.flatMap((explorerChildToolCallId) => {
+    const explorerChildToolCall = input.explorerChildToolCallsById.get(explorerChildToolCallId);
+    return explorerChildToolCall ? [explorerChildToolCall] : [];
   });
 }
 
@@ -451,46 +617,6 @@ function buildExplorerDisallowedToolDenialText(toolCallRequest: ToolCallRequest)
   }
 
   return `Explorer is read-only and cannot use ${toolCallRequest.toolName}. Use read, glob, or grep instead.`;
-}
-
-function createToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): ToolCallDetail {
-  if (toolCallRequest.toolName === "bash") {
-    return {
-      toolName: "bash",
-      commandLine: toolCallRequest.shellCommand,
-      commandDescription: toolCallRequest.commandDescription,
-      ...(toolCallRequest.workingDirectoryPath ? { workingDirectoryPath: toolCallRequest.workingDirectoryPath } : {}),
-      ...(toolCallRequest.timeoutMilliseconds ? { timeoutMilliseconds: toolCallRequest.timeoutMilliseconds } : {}),
-    };
-  }
-  if (toolCallRequest.toolName === "read") {
-    return { toolName: "read", readFilePath: toolCallRequest.readTargetPath };
-  }
-  if (toolCallRequest.toolName === "glob") {
-    return {
-      toolName: "glob",
-      globPattern: toolCallRequest.globPattern,
-      ...(toolCallRequest.searchDirectoryPath ? { searchDirectoryPath: toolCallRequest.searchDirectoryPath } : {}),
-    };
-  }
-  if (toolCallRequest.toolName === "grep") {
-    return { toolName: "grep", searchPattern: toolCallRequest.regexPattern };
-  }
-  if (toolCallRequest.toolName === "edit") {
-    return { toolName: "edit", editedFilePath: toolCallRequest.editTargetPath };
-  }
-  if (toolCallRequest.toolName === "write") {
-    return { toolName: "write", writtenFilePath: toolCallRequest.writeTargetPath };
-  }
-  if (toolCallRequest.toolName === "explore") {
-    return createStartedExploreToolCallDetail(toolCallRequest);
-  }
-
-  return assertUnhandledToolCallRequest(toolCallRequest);
-}
-
-function assertUnhandledToolCallRequest(toolCallRequest: never): never {
-  throw new Error(`Unhandled tool call request: ${JSON.stringify(toolCallRequest)}`);
 }
 
 async function submitExplorerToolResult(input: {

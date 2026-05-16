@@ -68,6 +68,13 @@ export const AssistantMessageConversationSessionEntrySchema = z.discriminatedUni
   InterruptedAssistantMessageConversationSessionEntrySchema,
 ]);
 
+export const AssistantTextSegmentConversationSessionEntrySchema = z
+  .object({
+    entryKind: z.literal("assistant_text_segment"),
+    assistantTextSegmentText: z.string().min(1),
+  })
+  .strict();
+
 export const ToolCallConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("tool_call"),
@@ -108,6 +115,7 @@ export const DeniedToolResultConversationSessionEntrySchema = ToolResultConversa
 
 export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
+  AssistantTextSegmentConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
   ConversationCompactionSummaryConversationSessionEntrySchema,
@@ -138,6 +146,7 @@ export type InterruptedAssistantMessageConversationSessionEntry = z.infer<
   typeof InterruptedAssistantMessageConversationSessionEntrySchema
 >;
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
+export type AssistantTextSegmentConversationSessionEntry = z.infer<typeof AssistantTextSegmentConversationSessionEntrySchema>;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;
 export type ConversationCompactionSummaryConversationSessionEntry = z.infer<
   typeof ConversationCompactionSummaryConversationSessionEntrySchema

@@ -275,3 +275,75 @@ test("RuntimeProviderStreamEventTranslator passes tool call requests through to 
     },
   });
 });
+
+test("RuntimeProviderStreamEventTranslator segments assistant text around tool calls", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 2_000 });
+
+  providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "Before tool. " },
+  });
+  const toolCallTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: {
+      type: "tool_call_requested",
+      toolCallId: "call_read_1",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    },
+  });
+  const afterToolTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "After tool." },
+  });
+  const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "completed", usage: completedTokenUsage },
+  });
+
+  if (toolCallTranslation.translationKind !== "tool_call_requested") {
+    throw new Error("expected tool call requested translation");
+  }
+  if (afterToolTextTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (terminalTranslation.translationKind !== "terminal_assistant_response") {
+    throw new Error("expected terminal assistant response");
+  }
+
+  expect(toolCallTranslation.assistantResponseEventsBeforeToolCall).toEqual([
+    {
+      type: "assistant_message_part_updated",
+      messageId: "assistant-message-1",
+      part: {
+        id: "assistant-text-1",
+        partKind: "assistant_text",
+        partStatus: "completed",
+        rawMarkdownText: "Before tool. ",
+      },
+    },
+  ]);
+  expect(toolCallTranslation.assistantTextSegmentSessionEntryBeforeToolCall).toEqual({
+    entryKind: "assistant_text_segment",
+    assistantTextSegmentText: "Before tool. ",
+  });
+  expect(afterToolTextTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_added",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-1",
+        partKind: "assistant_text",
+        partStatus: "streaming",
+        rawMarkdownText: "After tool.",
+      },
+    },
+  ]);
+  expect(terminalTranslation.assistantTextSegmentSessionEntryBeforeTerminalSessionEntry).toEqual({
+    entryKind: "assistant_text_segment",
+    assistantTextSegmentText: "After tool.",
+  });
+  expect(terminalTranslation.terminalAssistantMessageSessionEntry).toMatchObject({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Before tool. After tool.",
+  });
+});

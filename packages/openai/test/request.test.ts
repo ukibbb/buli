@@ -386,6 +386,62 @@ test("createOpenAiResponsesInputItems falls back to assistant transcript text fo
   ]);
 });
 
+test("createOpenAiResponsesInputItems keeps segmented assistant text as terminal aggregate model context", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Inspect README",
+        modelFacingPromptText: "Inspect README",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "I will inspect README first.\n\n",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_read",
+        toolCallDetail: {
+          toolName: "read",
+          readFilePath: "README.md",
+          readLineCount: 2,
+        },
+        toolResultText: "1: # Demo",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "README.md contains a Demo heading.",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "I will inspect README first.\n\nREADME.md contains a Demo heading.",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Inspect README",
+    },
+    {
+      role: "assistant",
+      content: "[assistant tool call call_read]\nTool: read\nPath: README.md\n\n[assistant tool result call_read]\n1: # Demo",
+    },
+    {
+      role: "assistant",
+      content: "I will inspect README first.\n\nREADME.md contains a Demo heading.",
+    },
+  ]);
+});
+
 test("createOpenAiResponsesInputItems includes typed tools in legacy transcript fallback", () => {
   expect(
     createOpenAiResponsesInputItems([

@@ -1,5 +1,6 @@
 import {
   AssistantTextConversationMessagePartSchema,
+  type AssistantTextPartStatus,
   type AssistantTextConversationMessagePart,
 } from "@buli/contracts";
 
@@ -33,21 +34,23 @@ export function appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
 export function buildStreamingAssistantTextConversationMessagePart(
   assistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState,
 ): AssistantTextConversationMessagePart {
-  return AssistantTextConversationMessagePartSchema.parse({
-    id: assistantTextMessagePartBuilderState.partId,
-    partKind: "assistant_text",
-    partStatus: "streaming",
-    rawMarkdownText: assistantTextMessagePartBuilderState.rawMarkdownText,
-  });
+  return buildAssistantTextConversationMessagePartWithStatus(assistantTextMessagePartBuilderState, "streaming");
 }
 
 export function buildCompletedAssistantTextConversationMessagePart(
   assistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState,
 ): AssistantTextConversationMessagePart {
+  return buildAssistantTextConversationMessagePartWithStatus(assistantTextMessagePartBuilderState, "completed");
+}
+
+export function buildAssistantTextConversationMessagePartWithStatus(
+  assistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState,
+  partStatus: AssistantTextPartStatus,
+): AssistantTextConversationMessagePart {
   return AssistantTextConversationMessagePartSchema.parse({
     id: assistantTextMessagePartBuilderState.partId,
     partKind: "assistant_text",
-    partStatus: "completed",
+    partStatus,
     rawMarkdownText: assistantTextMessagePartBuilderState.rawMarkdownText,
   });
 }

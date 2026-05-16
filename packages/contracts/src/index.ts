@@ -73,6 +73,7 @@ export type { CalloutSeverity, ChecklistItem } from "./presentationPrimitives.ts
 export {
   AssistantMessageConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntryStatusSchema,
+  AssistantTextSegmentConversationSessionEntrySchema,
   CompletedAssistantMessageConversationSessionEntrySchema,
   CompletedToolResultConversationSessionEntrySchema,
   ConversationCompactionSummaryConversationSessionEntrySchema,
@@ -97,6 +98,7 @@ export {
 export type {
   AssistantMessageConversationSessionEntry,
   AssistantMessageConversationSessionEntryStatus,
+  AssistantTextSegmentConversationSessionEntry,
   CompletedAssistantMessageConversationSessionEntry,
   CompletedToolResultConversationSessionEntry,
   ConversationCompactionSummaryConversationSessionEntry,
@@ -118,6 +120,33 @@ export type {
   ConversationSessionJsonLineRecord,
   ConversationSessionSummary,
 } from "./conversationSessionRecord.ts";
+export {
+  ASSISTANT_TOOL_REQUEST_NAMES,
+  FILE_MUTATION_TOOL_REQUEST_NAMES,
+  READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
+  RENDER_ONLY_TOOL_DETAIL_NAMES,
+  WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
+  createStartedToolCallDetailFromRequest,
+  isAssistantToolRequestName,
+  isExploreToolCallRequest,
+  isFileMutationToolCallRequest,
+  isReadOnlyAssistantModeToolRequestName,
+  isWorkspaceInspectionToolCallRequest,
+} from "./toolCatalog.ts";
+export type {
+  AssistantToolCallDetail,
+  AssistantToolRequestName,
+  FileMutationToolCallRequest,
+  FileMutationToolRequestName,
+  ReadOnlyAssistantModeToolRequestName,
+  RenderOnlyToolDetailName,
+  StartedToolCallDetailByRequestName,
+  ToolCallDetailByName,
+  ToolCallDetailName,
+  ToolCallRequestByName,
+  WorkspaceInspectionToolCallRequest,
+  WorkspaceInspectionToolRequestName,
+} from "./toolCatalog.ts";
 export {
   OpenAiReasoningReplayItemSchema,
   OpenAiReasoningSummaryReplayPartSchema,
@@ -210,6 +239,9 @@ export type {
   TokenUsage,
 } from "./provider.ts";
 export {
+  ExplorerChildToolCallDetailSchema,
+  ExplorerChildToolCallSchema,
+  ExplorerChildToolCallStatusSchema,
   SyntaxHighlightSpanSchema,
   SyntaxHighlightSpanStyleSchema,
   ToolCallBashDetailSchema,
@@ -231,6 +263,9 @@ export {
   UnifiedDiffTextSchema,
 } from "./toolCallDetail.ts";
 export type {
+  ExplorerChildToolCall,
+  ExplorerChildToolCallDetail,
+  ExplorerChildToolCallStatus,
   SyntaxHighlightSpan,
   SyntaxHighlightSpanStyle,
   ToolCallBashDetail,

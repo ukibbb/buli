@@ -1,6 +1,7 @@
 import type {
   AssistantOperatingMode,
   AssistantMessageConversationSessionEntry,
+  AssistantTextSegmentConversationSessionEntry,
   BuliDiagnosticLogger,
   ProjectInstructionSnapshot,
   UserPromptImageAttachment,
@@ -79,6 +80,18 @@ export class RuntimeConversationTurnSessionRecorder {
       assistantMessageStatus: assistantMessageConversationSessionEntry.assistantMessageStatus,
       assistantMessageTextLength: assistantMessageConversationSessionEntry.assistantMessageText.length,
       providerTurnReplayInputItemCount: assistantMessageConversationSessionEntry.providerTurnReplay?.inputItems.length ?? 0,
+      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
+      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+    });
+  }
+
+  appendAssistantTextSegmentSessionEntry(
+    assistantTextSegmentConversationSessionEntry: AssistantTextSegmentConversationSessionEntry,
+  ): void {
+    this.conversationHistory.appendConversationSessionEntry(assistantTextSegmentConversationSessionEntry);
+    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentTextLength: assistantTextSegmentConversationSessionEntry.assistantTextSegmentText.length,
       conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });

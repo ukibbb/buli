@@ -207,6 +207,56 @@ test("renderConversationSessionHtmlDocument renders image-only user prompts with
   expect(html).not.toContain("No prompt text was recorded.");
 });
 
+test("renderConversationSessionHtmlDocument renders assistant text segments without duplicating terminal aggregate text", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Inspect README",
+        modelFacingPromptText: "Inspect README",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "Before tool.",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call-read",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call-read",
+        toolCallDetail: {
+          toolName: "read",
+          readFilePath: "README.md",
+          readLineCount: 1,
+        },
+        toolResultText: "1: # Demo",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "After tool.",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Before tool.\n\nAfter tool.",
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-segmented",
+  });
+
+  expect(html.match(/Before tool\./g)).toHaveLength(1);
+  expect(html.match(/After tool\./g)).toHaveLength(1);
+  expect(html).not.toContain("No assistant text was recorded.");
+});
+
 test("renderConversationSessionHtmlDocument omits mode labels for legacy user prompts", () => {
   const html = renderConversationSessionHtmlDocument({
     conversationSessionEntries: [

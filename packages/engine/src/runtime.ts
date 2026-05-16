@@ -527,6 +527,14 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         }
 
         if (providerStreamEventTranslation.translationKind === "tool_call_requested") {
+          for (const assistantResponseEvent of providerStreamEventTranslation.assistantResponseEventsBeforeToolCall ?? []) {
+            yield logAssistantResponseEventEmitted(assistantResponseEvent);
+          }
+          if (providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeToolCall) {
+            conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
+              providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeToolCall,
+            );
+          }
           yield* streamAssistantResponseEventsForRequestedToolCall({
             assistantResponseMessageId,
             providerConversationTurn,
@@ -560,6 +568,11 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         for (const assistantResponseEvent of providerStreamEventTranslation.assistantResponseEventsBeforeTerminalSessionEntry) {
           yield logAssistantResponseEventEmitted(assistantResponseEvent);
         }
+        if (providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeTerminalSessionEntry) {
+          conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
+            providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeTerminalSessionEntry,
+          );
+        }
         conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry(
           providerStreamEventTranslation.terminalAssistantMessageSessionEntry,
         );
@@ -572,6 +585,15 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         conversationTurnSessionRecorder.hasAppendedAcceptedUserPromptSessionEntry() &&
         !conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()
       ) {
+        const assistantTextSegmentFlush = providerStreamEventTranslator.flushCurrentAssistantTextSegmentBeforeFailedTerminal();
+        for (const assistantResponseEvent of assistantTextSegmentFlush?.assistantResponseEvents ?? []) {
+          yield logAssistantResponseEventEmitted(assistantResponseEvent);
+        }
+        if (assistantTextSegmentFlush?.assistantTextSegmentSessionEntry) {
+          conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
+            assistantTextSegmentFlush.assistantTextSegmentSessionEntry,
+          );
+        }
         conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
           entryKind: "assistant_message",
           assistantMessageStatus: "failed",
@@ -597,6 +619,15 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           );
         }
         if (!conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()) {
+          const assistantTextSegmentFlush = providerStreamEventTranslator.flushCurrentAssistantTextSegmentBeforeInterruptedTerminal();
+          for (const assistantResponseEvent of assistantTextSegmentFlush?.assistantResponseEvents ?? []) {
+            yield logAssistantResponseEventEmitted(assistantResponseEvent);
+          }
+          if (assistantTextSegmentFlush?.assistantTextSegmentSessionEntry) {
+            conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
+              assistantTextSegmentFlush.assistantTextSegmentSessionEntry,
+            );
+          }
           conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
             entryKind: "assistant_message",
             assistantMessageStatus: "interrupted",
@@ -617,10 +648,22 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.failed", {
         errorText: failureExplanation,
       });
-      if (
-        conversationTurnSessionRecorder.hasAppendedAcceptedUserPromptSessionEntry() &&
-        !conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()
-      ) {
+      if (!conversationTurnSessionRecorder.hasAppendedAcceptedUserPromptSessionEntry()) {
+        conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(
+          modelFacingPromptTextForAcceptedTurn ?? this.conversationTurnInput.userPromptText,
+          projectInstructionSnapshotsForAcceptedTurn,
+        );
+      }
+      if (!conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()) {
+        const assistantTextSegmentFlush = providerStreamEventTranslator.flushCurrentAssistantTextSegmentBeforeFailedTerminal();
+        for (const assistantResponseEvent of assistantTextSegmentFlush?.assistantResponseEvents ?? []) {
+          yield logAssistantResponseEventEmitted(assistantResponseEvent);
+        }
+        if (assistantTextSegmentFlush?.assistantTextSegmentSessionEntry) {
+          conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
+            assistantTextSegmentFlush.assistantTextSegmentSessionEntry,
+          );
+        }
         conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
           entryKind: "assistant_message",
           assistantMessageStatus: "failed",

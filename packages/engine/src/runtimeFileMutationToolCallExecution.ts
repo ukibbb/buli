@@ -5,13 +5,14 @@ import {
   AssistantPendingToolApprovalClearedEventSchema,
   AssistantPendingToolApprovalRequestedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
+  createStartedToolCallDetailFromRequest,
+  isFileMutationToolCallRequest as isContractFileMutationToolCallRequest,
   type AssistantOperatingMode,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
-  type EditToolCallRequest,
+  type FileMutationToolCallRequest as ContractFileMutationToolCallRequest,
   type ToolCallDetail,
   type ToolCallRequest,
-  type WriteToolCallRequest,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
@@ -19,20 +20,18 @@ import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import {
-  createStartedEditToolCallDetail,
   prepareEditToolCall,
   runPreparedEditToolCall,
   type PreparedEditToolCall,
 } from "./tools/editTool.ts";
 import type { FailedToolCallOutcome, ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 import {
-  createStartedWriteToolCallDetail,
   prepareWriteToolCall,
   runPreparedWriteToolCall,
   type PreparedWriteToolCall,
 } from "./tools/writeTool.ts";
 
-export type FileMutationToolCallRequest = EditToolCallRequest | WriteToolCallRequest;
+export type FileMutationToolCallRequest = ContractFileMutationToolCallRequest;
 
 type PreparedFileMutationToolCall =
   | { toolName: "edit"; preparedEditToolCall: PreparedEditToolCall }
@@ -55,7 +54,7 @@ export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
 export async function* streamAssistantResponseEventsForFileMutationToolCall(
   input: StreamAssistantResponseEventsForFileMutationToolCallInput,
 ): AsyncGenerator<AssistantResponseEvent> {
-  const startedToolCallDetail = createStartedFileMutationToolCallDetail(input.fileMutationToolCallRequest);
+  const startedToolCallDetail = createStartedToolCallDetailFromRequest(input.fileMutationToolCallRequest);
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
 
@@ -279,15 +278,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
 export function isFileMutationToolCallRequest(
   toolCallRequest: ToolCallRequest,
 ): toolCallRequest is FileMutationToolCallRequest {
-  return toolCallRequest.toolName === "edit" || toolCallRequest.toolName === "write";
-}
-
-function createStartedFileMutationToolCallDetail(toolCallRequest: FileMutationToolCallRequest): ToolCallDetail {
-  if (toolCallRequest.toolName === "edit") {
-    return createStartedEditToolCallDetail(toolCallRequest);
-  }
-
-  return createStartedWriteToolCallDetail(toolCallRequest);
+  return isContractFileMutationToolCallRequest(toolCallRequest);
 }
 
 async function prepareFileMutationToolCall(input: {

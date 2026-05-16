@@ -3,30 +3,28 @@ import {
   AssistantMessagePartAddedEventSchema,
   AssistantMessagePartUpdatedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
+  createStartedToolCallDetailFromRequest,
+  isWorkspaceInspectionToolCallRequest,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
-  type GlobToolCallRequest,
-  type GrepToolCallRequest,
-  type ReadToolCallRequest,
-  type ToolCallDetail,
   type ToolCallRequest,
+  type ToolCallRequestByName,
+  type WorkspaceInspectionToolCallRequest,
+  type WorkspaceInspectionToolRequestName,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
-import { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
-import { createStartedGrepToolCallDetail, runGrepToolCall } from "./tools/grepTool.ts";
-import { createStartedReadToolCallDetail, runReadToolCall } from "./tools/readTool.ts";
+import { runGlobToolCall } from "./tools/globTool.ts";
+import { runGrepToolCall } from "./tools/grepTool.ts";
+import { runReadToolCall } from "./tools/readTool.ts";
 import type { ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 
-export type AutoApprovedReadOnlyToolCallRequest = ReadToolCallRequest | GlobToolCallRequest | GrepToolCallRequest;
+export type AutoApprovedReadOnlyToolCallRequest = WorkspaceInspectionToolCallRequest;
 
-type AutoApprovedReadOnlyToolName = AutoApprovedReadOnlyToolCallRequest["toolName"];
-type AutoApprovedReadOnlyToolCallRequestByName<ToolName extends AutoApprovedReadOnlyToolName> = Extract<
-  AutoApprovedReadOnlyToolCallRequest,
-  { toolName: ToolName }
->;
+type AutoApprovedReadOnlyToolName = WorkspaceInspectionToolRequestName;
+type AutoApprovedReadOnlyToolCallRequestByName<ToolName extends AutoApprovedReadOnlyToolName> = ToolCallRequestByName<ToolName>;
 
 type AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName extends AutoApprovedReadOnlyToolName> = {
   toolCallRequest: AutoApprovedReadOnlyToolCallRequestByName<ToolName>;
@@ -36,9 +34,6 @@ type AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName extends AutoApprovedR
 };
 
 type AutoApprovedReadOnlyToolCallExecutor<ToolName extends AutoApprovedReadOnlyToolName> = {
-  createStartedToolCallDetail(
-    toolCallRequest: AutoApprovedReadOnlyToolCallRequestByName<ToolName>,
-  ): ToolCallDetail;
   runToolCall(input: AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName>): Promise<ToolCallOutcome>;
 };
 
@@ -46,7 +41,6 @@ const autoApprovedReadOnlyToolCallExecutorByName: {
   readonly [ToolName in AutoApprovedReadOnlyToolName]: AutoApprovedReadOnlyToolCallExecutor<ToolName>;
 } = {
   read: {
-    createStartedToolCallDetail: createStartedReadToolCallDetail,
     runToolCall: (input) =>
       runReadToolCall({
         readToolCallRequest: input.toolCallRequest,
@@ -56,7 +50,6 @@ const autoApprovedReadOnlyToolCallExecutorByName: {
       }),
   },
   glob: {
-    createStartedToolCallDetail: createStartedGlobToolCallDetail,
     runToolCall: (input) =>
       runGlobToolCall({
         globToolCallRequest: input.toolCallRequest,
@@ -65,7 +58,6 @@ const autoApprovedReadOnlyToolCallExecutorByName: {
       }),
   },
   grep: {
-    createStartedToolCallDetail: createStartedGrepToolCallDetail,
     runToolCall: (input) =>
       runGrepToolCall({
         grepToolCallRequest: input.toolCallRequest,
@@ -91,7 +83,7 @@ export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = 
 export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall(
   input: StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput,
 ): AsyncGenerator<AssistantResponseEvent> {
-  const startedToolCallDetail = createStartedAutoApprovedReadOnlyToolCallDetail(input.toolCallRequest);
+  const startedToolCallDetail = createStartedToolCallDetailFromRequest(input.toolCallRequest);
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
 
@@ -182,14 +174,7 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
 export function isAutoApprovedReadOnlyToolCallRequest(
   toolCallRequest: ToolCallRequest,
 ): toolCallRequest is AutoApprovedReadOnlyToolCallRequest {
-  return toolCallRequest.toolName === "read" || toolCallRequest.toolName === "glob" || toolCallRequest.toolName === "grep";
-}
-
-function createStartedAutoApprovedReadOnlyToolCallDetail(
-  toolCallRequest: AutoApprovedReadOnlyToolCallRequest,
-): ToolCallDetail {
-  const readOnlyToolCallExecutor = resolveAutoApprovedReadOnlyToolCallExecutor(toolCallRequest);
-  return readOnlyToolCallExecutor.createStartedToolCallDetail(toolCallRequest);
+  return isWorkspaceInspectionToolCallRequest(toolCallRequest);
 }
 
 function runAutoApprovedReadOnlyToolCall(input: {
@@ -198,14 +183,30 @@ function runAutoApprovedReadOnlyToolCall(input: {
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
 }): Promise<ToolCallOutcome> {
-  const readOnlyToolCallExecutor = resolveAutoApprovedReadOnlyToolCallExecutor(input.toolCallRequest);
-  return readOnlyToolCallExecutor.runToolCall(input);
+  if (input.toolCallRequest.toolName === "read") {
+    return autoApprovedReadOnlyToolCallExecutorByName.read.runToolCall({
+      ...input,
+      toolCallRequest: input.toolCallRequest,
+    });
+  }
+  if (input.toolCallRequest.toolName === "glob") {
+    return autoApprovedReadOnlyToolCallExecutorByName.glob.runToolCall({
+      ...input,
+      toolCallRequest: input.toolCallRequest,
+    });
+  }
+  if (input.toolCallRequest.toolName === "grep") {
+    return autoApprovedReadOnlyToolCallExecutorByName.grep.runToolCall({
+      ...input,
+      toolCallRequest: input.toolCallRequest,
+    });
+  }
+
+  return assertUnhandledReadOnlyToolCallRequest(input.toolCallRequest);
 }
 
-function resolveAutoApprovedReadOnlyToolCallExecutor<ToolName extends AutoApprovedReadOnlyToolName>(
-  toolCallRequest: AutoApprovedReadOnlyToolCallRequestByName<ToolName>,
-): AutoApprovedReadOnlyToolCallExecutor<ToolName> {
-  return autoApprovedReadOnlyToolCallExecutorByName[toolCallRequest.toolName];
+function assertUnhandledReadOnlyToolCallRequest(toolCallRequest: never): never {
+  throw new Error(`Unhandled read-only tool call request: ${JSON.stringify(toolCallRequest)}`);
 }
 
 function logAssistantResponseEventEmitted(
