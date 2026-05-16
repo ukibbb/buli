@@ -1,14 +1,16 @@
-import { resolve, sep } from "node:path";
-import type {
-  BashToolCallRequest,
-  BuliDiagnosticLogFields,
-  BuliDiagnosticLogger,
-  ToolCallBashDetail,
-  ToolCallBashOutputLine,
+import {
+  createStartedToolCallDetailFromRequest,
+  type BashToolCallRequest,
+  type BuliDiagnosticLogFields,
+  type BuliDiagnosticLogger,
+  type ToolCallBashDetail,
+  type ToolCallBashOutputLine,
 } from "@buli/contracts";
 import { WorkspaceShellCommandExecutor } from "./workspaceShellCommandExecutor.ts";
+import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 
 const DEFAULT_BASH_TIMEOUT_MILLISECONDS = 120_000;
+const MAX_CAPTURED_OUTPUT_CHARACTERS_PER_STREAM = 100_000;
 const MAX_MODEL_VISIBLE_OUTPUT_CHARACTERS = 12_000;
 const MAX_RENDERED_OUTPUT_LINES = 120;
 
@@ -30,13 +32,7 @@ export type FailedBashToolCallOutcome = {
 export type BashToolCallOutcome = CompletedBashToolCallOutcome | FailedBashToolCallOutcome;
 
 export function createStartedBashToolCallDetail(bashToolCallRequest: BashToolCallRequest): ToolCallBashDetail {
-  return {
-    toolName: "bash",
-    commandLine: bashToolCallRequest.shellCommand,
-    commandDescription: bashToolCallRequest.commandDescription,
-    workingDirectoryPath: bashToolCallRequest.workingDirectoryPath,
-    timeoutMilliseconds: bashToolCallRequest.timeoutMilliseconds,
-  };
+  return createStartedToolCallDetailFromRequest(bashToolCallRequest);
 }
 
 export async function runApprovedBashToolCall(input: {
@@ -47,37 +43,46 @@ export async function runApprovedBashToolCall(input: {
   abortSignal?: AbortSignal;
 }): Promise<BashToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
-  const workingDirectoryPath = resolveBashWorkingDirectoryPath({
-    workspaceRootPath: input.workspaceRootPath,
-    requestedWorkingDirectoryPath: input.bashToolCallRequest.workingDirectoryPath,
-  });
   const timeoutMilliseconds = input.bashToolCallRequest.timeoutMilliseconds ?? DEFAULT_BASH_TIMEOUT_MILLISECONDS;
   const startedToolCallDetail = createStartedBashToolCallDetail({
     ...input.bashToolCallRequest,
-    workingDirectoryPath,
-    timeoutMilliseconds,
-  });
-  logEngineDiagnosticEvent(input.diagnosticLogger, "bash_tool.execution_started", {
-    shellCommandLength: input.bashToolCallRequest.shellCommand.length,
-    commandDescriptionLength: input.bashToolCallRequest.commandDescription.length,
-    workingDirectoryPath,
     timeoutMilliseconds,
   });
 
   try {
+    const workingDirectoryPath = await resolveBashWorkingDirectoryPath({
+      workspaceRootPath: input.workspaceRootPath,
+      requestedWorkingDirectoryPath: input.bashToolCallRequest.workingDirectoryPath,
+    });
+    const resolvedStartedToolCallDetail = createStartedBashToolCallDetail({
+      ...input.bashToolCallRequest,
+      workingDirectoryPath,
+      timeoutMilliseconds,
+    });
+    logEngineDiagnosticEvent(input.diagnosticLogger, "bash_tool.execution_started", {
+      shellCommandLength: input.bashToolCallRequest.shellCommand.length,
+      commandDescriptionLength: input.bashToolCallRequest.commandDescription.length,
+      workingDirectoryPath,
+      timeoutMilliseconds,
+    });
     const workspaceShellCommandExecutionResult = await input.workspaceShellCommandExecutor.runShellCommand({
       shellCommand: input.bashToolCallRequest.shellCommand,
       workingDirectoryPath,
       timeoutMilliseconds,
+      maximumCapturedOutputCharacters: MAX_CAPTURED_OUTPUT_CHARACTERS_PER_STREAM,
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
     });
     const outputLines = buildBashOutputLines({
       shellCommand: input.bashToolCallRequest.shellCommand,
       stdoutText: workspaceShellCommandExecutionResult.stdoutText,
       stderrText: workspaceShellCommandExecutionResult.stderrText,
+      stdoutWasTruncated: workspaceShellCommandExecutionResult.stdoutWasTruncated,
+      stderrWasTruncated: workspaceShellCommandExecutionResult.stderrWasTruncated,
+      stdoutOmittedCharacterCount: workspaceShellCommandExecutionResult.stdoutOmittedCharacterCount,
+      stderrOmittedCharacterCount: workspaceShellCommandExecutionResult.stderrOmittedCharacterCount,
     });
     const toolCallDetail: ToolCallBashDetail = {
-      ...startedToolCallDetail,
+      ...resolvedStartedToolCallDetail,
       exitCode: workspaceShellCommandExecutionResult.exitCode,
       outputLines,
     };
@@ -90,6 +95,8 @@ export async function runApprovedBashToolCall(input: {
       stdoutLength: workspaceShellCommandExecutionResult.stdoutText.length,
       stderrLength: workspaceShellCommandExecutionResult.stderrText.length,
       renderedOutputLineCount: outputLines.length,
+      stdoutWasTruncated: workspaceShellCommandExecutionResult.stdoutWasTruncated ?? false,
+      stderrWasTruncated: workspaceShellCommandExecutionResult.stderrWasTruncated ?? false,
     });
     return {
       outcomeKind: "completed",
@@ -100,6 +107,10 @@ export async function runApprovedBashToolCall(input: {
         exitCode: workspaceShellCommandExecutionResult.exitCode,
         stdoutText: workspaceShellCommandExecutionResult.stdoutText,
         stderrText: workspaceShellCommandExecutionResult.stderrText,
+        stdoutWasTruncated: workspaceShellCommandExecutionResult.stdoutWasTruncated,
+        stderrWasTruncated: workspaceShellCommandExecutionResult.stderrWasTruncated,
+        stdoutOmittedCharacterCount: workspaceShellCommandExecutionResult.stdoutOmittedCharacterCount,
+        stderrOmittedCharacterCount: workspaceShellCommandExecutionResult.stderrOmittedCharacterCount,
       }),
       durationMilliseconds,
     };
@@ -111,7 +122,7 @@ export async function runApprovedBashToolCall(input: {
     const failureExplanation = error instanceof Error ? error.message : String(error);
     const durationMilliseconds = Date.now() - startedAtMilliseconds;
     logEngineDiagnosticEvent(input.diagnosticLogger, "bash_tool.execution_failed", {
-      workingDirectoryPath,
+      requestedWorkingDirectoryPath: input.bashToolCallRequest.workingDirectoryPath ?? null,
       timeoutMilliseconds,
       durationMilliseconds,
       failureExplanation,
@@ -138,29 +149,29 @@ function logEngineDiagnosticEvent(
   });
 }
 
-function resolveBashWorkingDirectoryPath(input: {
+async function resolveBashWorkingDirectoryPath(input: {
   workspaceRootPath: string;
   requestedWorkingDirectoryPath: string | undefined;
-}): string {
-  const workspaceRootPath = resolve(input.workspaceRootPath);
-  const resolvedWorkingDirectoryPath = input.requestedWorkingDirectoryPath
-    ? resolve(workspaceRootPath, input.requestedWorkingDirectoryPath)
-    : workspaceRootPath;
-
-  if (
-    resolvedWorkingDirectoryPath !== workspaceRootPath &&
-    !resolvedWorkingDirectoryPath.startsWith(`${workspaceRootPath}${sep}`)
-  ) {
-    throw new Error(`Working directory must stay inside the workspace root: ${workspaceRootPath}`);
+}): Promise<string> {
+  const resolvedWorkingDirectory = await resolveExistingWorkspacePath({
+    workspaceRootPath: input.workspaceRootPath,
+    requestedPath: input.requestedWorkingDirectoryPath ?? ".",
+  });
+  if (!resolvedWorkingDirectory.stats.isDirectory()) {
+    throw new Error(`Working directory is not a directory: ${resolvedWorkingDirectory.displayPath}`);
   }
 
-  return resolvedWorkingDirectoryPath;
+  return resolvedWorkingDirectory.absolutePath;
 }
 
 function buildBashOutputLines(input: {
   shellCommand: string;
   stdoutText: string;
   stderrText: string;
+  stdoutWasTruncated?: boolean | undefined;
+  stderrWasTruncated?: boolean | undefined;
+  stdoutOmittedCharacterCount?: number | undefined;
+  stderrOmittedCharacterCount?: number | undefined;
 }): ToolCallBashOutputLine[] {
   const outputLines: ToolCallBashOutputLine[] = [{ lineKind: "prompt", lineText: `$ ${input.shellCommand}` }];
 
@@ -169,6 +180,18 @@ function buildBashOutputLines(input: {
   }
   for (const stderrLine of splitIntoDisplayLines(input.stderrText)) {
     outputLines.push({ lineKind: "stderr", lineText: stderrLine });
+  }
+  if (input.stdoutWasTruncated) {
+    outputLines.push({
+      lineKind: "stderr",
+      lineText: `stdout truncated; omitted ${input.stdoutOmittedCharacterCount ?? 0} characters`,
+    });
+  }
+  if (input.stderrWasTruncated) {
+    outputLines.push({
+      lineKind: "stderr",
+      lineText: `stderr truncated; omitted ${input.stderrOmittedCharacterCount ?? 0} characters`,
+    });
   }
 
   if (outputLines.length <= MAX_RENDERED_OUTPUT_LINES) {
@@ -190,15 +213,25 @@ function buildModelVisibleBashToolResultText(input: {
   exitCode: number;
   stdoutText: string;
   stderrText: string;
+  stdoutWasTruncated?: boolean | undefined;
+  stderrWasTruncated?: boolean | undefined;
+  stdoutOmittedCharacterCount?: number | undefined;
+  stderrOmittedCharacterCount?: number | undefined;
 }): string {
+  const stdoutTruncationText = input.stdoutWasTruncated
+    ? `\n[stdout truncated; omitted ${input.stdoutOmittedCharacterCount ?? 0} characters]`
+    : "";
+  const stderrTruncationText = input.stderrWasTruncated
+    ? `\n[stderr truncated; omitted ${input.stderrOmittedCharacterCount ?? 0} characters]`
+    : "";
   const rawResultText = [
     `Command: ${input.shellCommand}`,
     `Working directory: ${input.workingDirectoryPath}`,
     `Exit code: ${input.exitCode}`,
     "Stdout:",
-    input.stdoutText || "<empty>",
+    `${input.stdoutText || "<empty>"}${stdoutTruncationText}`,
     "Stderr:",
-    input.stderrText || "<empty>",
+    `${input.stderrText || "<empty>"}${stderrTruncationText}`,
   ].join("\n");
 
   if (rawResultText.length <= MAX_MODEL_VISIBLE_OUTPUT_CHARACTERS) {

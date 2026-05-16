@@ -5,7 +5,13 @@ export type WorkspaceShellCommandExecutionResult = {
   exitCode: number;
   stdoutText: string;
   stderrText: string;
+  stdoutWasTruncated?: boolean;
+  stderrWasTruncated?: boolean;
+  stdoutOmittedCharacterCount?: number;
+  stderrOmittedCharacterCount?: number;
 };
+
+const DEFAULT_MAXIMUM_CAPTURED_OUTPUT_CHARACTERS = 100_000;
 
 export class WorkspaceShellCommandExecutor {
   readonly workspaceRootPath: string;
@@ -20,6 +26,7 @@ export class WorkspaceShellCommandExecutor {
     shellCommand: string;
     workingDirectoryPath: string;
     timeoutMilliseconds: number;
+    maximumCapturedOutputCharacters?: number;
     abortSignal?: AbortSignal;
   }): Promise<WorkspaceShellCommandExecutionResult> {
     if (input.abortSignal?.aborted) {
@@ -33,8 +40,12 @@ export class WorkspaceShellCommandExecutor {
         detached: true,
       });
 
-      let stdoutText = "";
-      let stderrText = "";
+      const maximumCapturedOutputCharacters = Math.max(
+        0,
+        input.maximumCapturedOutputCharacters ?? DEFAULT_MAXIMUM_CAPTURED_OUTPUT_CHARACTERS,
+      );
+      let stdoutCapture = createBoundedShellOutputCapture(maximumCapturedOutputCharacters);
+      let stderrCapture = createBoundedShellOutputCapture(maximumCapturedOutputCharacters);
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
       let forceKillHandle: ReturnType<typeof setTimeout> | undefined;
       let hasSettled = false;
@@ -103,10 +114,10 @@ export class WorkspaceShellCommandExecutor {
       childProcess.stdout.setEncoding("utf8");
       childProcess.stderr.setEncoding("utf8");
       childProcess.stdout.on("data", (chunk: string) => {
-        stdoutText += chunk;
+        stdoutCapture = appendShellOutputChunk(stdoutCapture, chunk);
       });
       childProcess.stderr.on("data", (chunk: string) => {
-        stderrText += chunk;
+        stderrCapture = appendShellOutputChunk(stderrCapture, chunk);
       });
 
       childProcess.on("error", (error) => {
@@ -121,8 +132,16 @@ export class WorkspaceShellCommandExecutor {
 
         settleExecution(() => resolveExecution({
           exitCode: exitCode ?? 1,
-          stdoutText,
-          stderrText,
+          stdoutText: stdoutCapture.capturedText,
+          stderrText: stderrCapture.capturedText,
+          ...(stdoutCapture.wasTruncated ? { stdoutWasTruncated: true } : {}),
+          ...(stderrCapture.wasTruncated ? { stderrWasTruncated: true } : {}),
+          ...(stdoutCapture.omittedCharacterCount > 0
+            ? { stdoutOmittedCharacterCount: stdoutCapture.omittedCharacterCount }
+            : {}),
+          ...(stderrCapture.omittedCharacterCount > 0
+            ? { stderrOmittedCharacterCount: stderrCapture.omittedCharacterCount }
+            : {}),
         }));
       });
 
@@ -136,4 +155,52 @@ export class WorkspaceShellCommandExecutor {
       }
     });
   }
+}
+
+type BoundedShellOutputCapture = {
+  capturedText: string;
+  capturedCharacterCount: number;
+  omittedCharacterCount: number;
+  maximumCharacterCount: number;
+  wasTruncated: boolean;
+};
+
+function createBoundedShellOutputCapture(maximumCharacterCount: number): BoundedShellOutputCapture {
+  return {
+    capturedText: "",
+    capturedCharacterCount: 0,
+    omittedCharacterCount: 0,
+    maximumCharacterCount,
+    wasTruncated: false,
+  };
+}
+
+function appendShellOutputChunk(
+  shellOutputCapture: BoundedShellOutputCapture,
+  chunk: string,
+): BoundedShellOutputCapture {
+  const remainingCharacterCount = shellOutputCapture.maximumCharacterCount - shellOutputCapture.capturedCharacterCount;
+  if (remainingCharacterCount <= 0) {
+    return {
+      ...shellOutputCapture,
+      omittedCharacterCount: shellOutputCapture.omittedCharacterCount + chunk.length,
+      wasTruncated: true,
+    };
+  }
+
+  if (chunk.length <= remainingCharacterCount) {
+    return {
+      ...shellOutputCapture,
+      capturedText: `${shellOutputCapture.capturedText}${chunk}`,
+      capturedCharacterCount: shellOutputCapture.capturedCharacterCount + chunk.length,
+    };
+  }
+
+  return {
+    ...shellOutputCapture,
+    capturedText: `${shellOutputCapture.capturedText}${chunk.slice(0, remainingCharacterCount)}`,
+    capturedCharacterCount: shellOutputCapture.maximumCharacterCount,
+    omittedCharacterCount: shellOutputCapture.omittedCharacterCount + chunk.length - remainingCharacterCount,
+    wasTruncated: true,
+  };
 }

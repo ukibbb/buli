@@ -1,5 +1,9 @@
 import { writeFile } from "node:fs/promises";
-import type { EditToolCallRequest, ToolCallEditDetail } from "@buli/contracts";
+import {
+  createStartedToolCallDetailFromRequest,
+  type EditToolCallRequest,
+  type ToolCallEditDetail,
+} from "@buli/contracts";
 import { createUnifiedFileDiff } from "./fileMutationDiff.ts";
 import type { FailedToolCallOutcome, ToolCallOutcome } from "./toolCallOutcome.ts";
 import { readWorkspaceTextFile } from "./workspaceTextFile.ts";
@@ -19,10 +23,7 @@ export type EditToolPreparationOutcome =
   | FailedToolCallOutcome;
 
 export function createStartedEditToolCallDetail(editToolCallRequest: EditToolCallRequest): ToolCallEditDetail {
-  return {
-    toolName: "edit",
-    editedFilePath: editToolCallRequest.editTargetPath,
-  };
+  return createStartedToolCallDetailFromRequest(editToolCallRequest);
 }
 
 export async function prepareEditToolCall(input: {

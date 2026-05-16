@@ -1,6 +1,11 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ReadToolCallRequest, ToolCallReadDetail, ToolCallReadPreviewLine } from "@buli/contracts";
+import {
+  createStartedToolCallDetailFromRequest,
+  type ReadToolCallRequest,
+  type ToolCallReadDetail,
+  type ToolCallReadPreviewLine,
+} from "@buli/contracts";
 import {
   buildProjectInstructionUpdateText,
   type ProjectInstructionTracker,
@@ -20,10 +25,7 @@ type ReadVisibleLine = {
 };
 
 export function createStartedReadToolCallDetail(readToolCallRequest: ReadToolCallRequest): ToolCallReadDetail {
-  return {
-    toolName: "read",
-    readFilePath: readToolCallRequest.readTargetPath,
-  };
+  return createStartedToolCallDetailFromRequest(readToolCallRequest);
 }
 
 export async function runReadToolCall(input: {

@@ -1,6 +1,10 @@
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ToolCallWriteDetail, WriteToolCallRequest } from "@buli/contracts";
+import {
+  createStartedToolCallDetailFromRequest,
+  type ToolCallWriteDetail,
+  type WriteToolCallRequest,
+} from "@buli/contracts";
 import { createUnifiedFileDiff } from "./fileMutationDiff.ts";
 import type { FailedToolCallOutcome, ToolCallOutcome } from "./toolCallOutcome.ts";
 import { readWorkspaceTextFile } from "./workspaceTextFile.ts";
@@ -20,10 +24,7 @@ export type WriteToolPreparationOutcome =
   | FailedToolCallOutcome;
 
 export function createStartedWriteToolCallDetail(writeToolCallRequest: WriteToolCallRequest): ToolCallWriteDetail {
-  return {
-    toolName: "write",
-    writtenFilePath: writeToolCallRequest.writeTargetPath,
-  };
+  return createStartedToolCallDetailFromRequest(writeToolCallRequest);
 }
 
 export async function prepareWriteToolCall(input: {

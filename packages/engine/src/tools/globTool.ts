@@ -1,4 +1,8 @@
-import type { GlobToolCallRequest, ToolCallGlobDetail } from "@buli/contracts";
+import {
+  createStartedToolCallDetailFromRequest,
+  type GlobToolCallRequest,
+  type ToolCallGlobDetail,
+} from "@buli/contracts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { listWorkspaceFiles } from "./workspaceFileSearch.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
@@ -6,13 +10,7 @@ import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 const MAX_GLOB_RESULT_COUNT = 100;
 
 export function createStartedGlobToolCallDetail(globToolCallRequest: GlobToolCallRequest): ToolCallGlobDetail {
-  return {
-    toolName: "glob",
-    globPattern: globToolCallRequest.globPattern,
-    ...(globToolCallRequest.searchDirectoryPath !== undefined
-      ? { searchDirectoryPath: globToolCallRequest.searchDirectoryPath }
-      : {}),
-  };
+  return createStartedToolCallDetailFromRequest(globToolCallRequest);
 }
 
 export async function runGlobToolCall(input: {

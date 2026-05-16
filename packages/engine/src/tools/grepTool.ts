@@ -1,5 +1,10 @@
 import { readFile } from "node:fs/promises";
-import type { GrepToolCallRequest, ToolCallGrepDetail, ToolCallGrepMatch } from "@buli/contracts";
+import {
+  createStartedToolCallDetailFromRequest,
+  type GrepToolCallRequest,
+  type ToolCallGrepDetail,
+  type ToolCallGrepMatch,
+} from "@buli/contracts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { listWorkspaceFiles, matchesWorkspaceGlobPattern, type WorkspaceSearchFile } from "./workspaceFileSearch.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
@@ -14,10 +19,7 @@ type GrepMatchSnippet = {
 };
 
 export function createStartedGrepToolCallDetail(grepToolCallRequest: GrepToolCallRequest): ToolCallGrepDetail {
-  return {
-    toolName: "grep",
-    searchPattern: grepToolCallRequest.regexPattern,
-  };
+  return createStartedToolCallDetailFromRequest(grepToolCallRequest);
 }
 
 export async function runGrepToolCall(input: {
