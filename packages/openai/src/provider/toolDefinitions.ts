@@ -1,6 +1,45 @@
-import type { ProviderAvailableToolName } from "@buli/contracts";
+import {
+  ASSISTANT_TOOL_REQUEST_NAMES,
+  isAssistantToolRequestName,
+  type AssistantToolRequestName,
+  type ProviderAvailableToolName,
+  type ToolCallRequest,
+  type ToolCallRequestByName,
+} from "@buli/contracts";
 
-export function createBashToolDefinition() {
+type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boolean" | "null";
+
+type OpenAiToolParameterProperty = {
+  readonly type: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
+  readonly description: string;
+};
+
+type OpenAiToolParameters = {
+  readonly type: "object";
+  readonly properties: Record<string, OpenAiToolParameterProperty>;
+  readonly required: readonly string[];
+  readonly additionalProperties: false;
+};
+
+export type OpenAiToolDefinition<ToolName extends AssistantToolRequestName = AssistantToolRequestName> = {
+  readonly type: "function";
+  readonly name: ToolName;
+  readonly description: string;
+  readonly parameters: OpenAiToolParameters;
+  readonly strict: true;
+};
+
+type JsonObjectRecord = {
+  readonly [fieldName: string]: unknown;
+};
+
+type OpenAiToolAdapter<ToolName extends AssistantToolRequestName> = {
+  readonly toolName: ToolName;
+  readonly definition: OpenAiToolDefinition<ToolName>;
+  parseToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<ToolName>;
+};
+
+export function createBashToolDefinition(): OpenAiToolDefinition<"bash"> {
   return {
     type: "function",
     name: "bash",
@@ -32,7 +71,7 @@ export function createBashToolDefinition() {
   };
 }
 
-export function createReadToolDefinition() {
+export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
   return {
     type: "function",
     name: "read",
@@ -60,7 +99,7 @@ export function createReadToolDefinition() {
   };
 }
 
-export function createGlobToolDefinition() {
+export function createGlobToolDefinition(): OpenAiToolDefinition<"glob"> {
   return {
     type: "function",
     name: "glob",
@@ -84,7 +123,7 @@ export function createGlobToolDefinition() {
   };
 }
 
-export function createGrepToolDefinition() {
+export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
   return {
     type: "function",
     name: "grep",
@@ -112,7 +151,7 @@ export function createGrepToolDefinition() {
   };
 }
 
-export function createEditToolDefinition() {
+export function createEditToolDefinition(): OpenAiToolDefinition<"edit"> {
   return {
     type: "function",
     name: "edit",
@@ -140,7 +179,7 @@ export function createEditToolDefinition() {
   };
 }
 
-export function createWriteToolDefinition() {
+export function createWriteToolDefinition(): OpenAiToolDefinition<"write"> {
   return {
     type: "function",
     name: "write",
@@ -164,7 +203,7 @@ export function createWriteToolDefinition() {
   };
 }
 
-export function createExploreToolDefinition() {
+export function createExploreToolDefinition(): OpenAiToolDefinition<"explore"> {
   return {
     type: "function",
     name: "explore",
@@ -188,23 +227,205 @@ export function createExploreToolDefinition() {
   };
 }
 
+const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]: OpenAiToolAdapter<ToolName> } = {
+  bash: {
+    toolName: "bash",
+    definition: createBashToolDefinition(),
+    parseToolCallRequest: parseBashOpenAiToolCallRequest,
+  },
+  read: {
+    toolName: "read",
+    definition: createReadToolDefinition(),
+    parseToolCallRequest: parseReadOpenAiToolCallRequest,
+  },
+  glob: {
+    toolName: "glob",
+    definition: createGlobToolDefinition(),
+    parseToolCallRequest: parseGlobOpenAiToolCallRequest,
+  },
+  grep: {
+    toolName: "grep",
+    definition: createGrepToolDefinition(),
+    parseToolCallRequest: parseGrepOpenAiToolCallRequest,
+  },
+  edit: {
+    toolName: "edit",
+    definition: createEditToolDefinition(),
+    parseToolCallRequest: parseEditOpenAiToolCallRequest,
+  },
+  write: {
+    toolName: "write",
+    definition: createWriteToolDefinition(),
+    parseToolCallRequest: parseWriteOpenAiToolCallRequest,
+  },
+  explore: {
+    toolName: "explore",
+    definition: createExploreToolDefinition(),
+    parseToolCallRequest: parseExploreOpenAiToolCallRequest,
+  },
+};
+
 export function createOpenAiToolDefinitions(input: {
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
-} = {}) {
-  const toolDefinitions = [
-    createBashToolDefinition(),
-    createReadToolDefinition(),
-    createGlobToolDefinition(),
-    createGrepToolDefinition(),
-    createEditToolDefinition(),
-    createWriteToolDefinition(),
-    createExploreToolDefinition(),
-  ];
+} = {}): OpenAiToolDefinition[] {
+  const availableToolNameSet = input.availableToolNames
+    ? new Set<ProviderAvailableToolName>(input.availableToolNames)
+    : undefined;
 
-  if (!input.availableToolNames) {
-    return toolDefinitions;
+  return ASSISTANT_TOOL_REQUEST_NAMES
+    .filter((toolName) => !availableToolNameSet || availableToolNameSet.has(toolName))
+    .map((toolName) => openAiToolAdapterByName[toolName].definition);
+}
+
+export function createOpenAiToolCallRequest(input: {
+  toolName: string;
+  argumentsText: string;
+}): ToolCallRequest {
+  const parsedArguments = parseOpenAiToolArguments(input);
+  if (!isAssistantToolRequestName(input.toolName)) {
+    throw new Error(`Unsupported tool requested by OpenAI: ${input.toolName}`);
   }
 
-  const availableToolNameSet = new Set<ProviderAvailableToolName>(input.availableToolNames);
-  return toolDefinitions.filter((toolDefinition) => availableToolNameSet.has(toolDefinition.name as ProviderAvailableToolName));
+  return openAiToolAdapterByName[input.toolName].parseToolCallRequest(parsedArguments);
+}
+
+function parseBashOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"bash"> {
+  const workingDirectoryPath = readOptionalStringToolArgument(parsedArguments, "workdir", "bash");
+  const timeoutMilliseconds = readOptionalPositiveIntegerToolArgument(parsedArguments, "timeout", "bash");
+  return {
+    toolName: "bash",
+    shellCommand: readRequiredStringToolArgument(parsedArguments, "command", "bash"),
+    commandDescription: readRequiredStringToolArgument(parsedArguments, "description", "bash"),
+    ...(workingDirectoryPath !== undefined ? { workingDirectoryPath } : {}),
+    ...(timeoutMilliseconds !== undefined ? { timeoutMilliseconds } : {}),
+  };
+}
+
+function parseReadOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"read"> {
+  const offsetLineNumber = readOptionalPositiveIntegerToolArgument(parsedArguments, "offset", "read");
+  const maximumLineCount = readOptionalPositiveIntegerToolArgument(parsedArguments, "limit", "read");
+  return {
+    toolName: "read",
+    readTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "read"),
+    ...(offsetLineNumber !== undefined ? { offsetLineNumber } : {}),
+    ...(maximumLineCount !== undefined ? { maximumLineCount } : {}),
+  };
+}
+
+function parseGlobOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"glob"> {
+  const searchDirectoryPath = readOptionalStringToolArgument(parsedArguments, "path", "glob");
+  return {
+    toolName: "glob",
+    globPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "glob"),
+    ...(searchDirectoryPath !== undefined ? { searchDirectoryPath } : {}),
+  };
+}
+
+function parseGrepOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"grep"> {
+  const searchPath = readOptionalStringToolArgument(parsedArguments, "path", "grep");
+  const includeGlobPattern = readOptionalStringToolArgument(parsedArguments, "include", "grep");
+  return {
+    toolName: "grep",
+    regexPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "grep"),
+    ...(searchPath !== undefined ? { searchPath } : {}),
+    ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
+  };
+}
+
+function parseEditOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"edit"> {
+  return {
+    toolName: "edit",
+    editTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "edit"),
+    oldString: readRequiredStringToolArgument(parsedArguments, "oldString", "edit"),
+    newString: readRequiredTextToolArgument(parsedArguments, "newString", "edit"),
+  };
+}
+
+function parseWriteOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"write"> {
+  return {
+    toolName: "write",
+    writeTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "write"),
+    fileContent: readRequiredTextToolArgument(parsedArguments, "content", "write"),
+  };
+}
+
+function parseExploreOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"explore"> {
+  return {
+    toolName: "explore",
+    explorationDescription: readRequiredStringToolArgument(parsedArguments, "description", "explore"),
+    explorationPrompt: readRequiredStringToolArgument(parsedArguments, "prompt", "explore"),
+  };
+}
+
+function parseOpenAiToolArguments(input: { toolName: string; argumentsText: string }): JsonObjectRecord {
+  let parsedArguments: unknown;
+  try {
+    parsedArguments = JSON.parse(input.argumentsText) as unknown;
+  } catch (error) {
+    const parsingFailureExplanation = error instanceof Error ? error.message : String(error);
+    throw new Error(`OpenAI function call for ${input.toolName} has malformed JSON arguments: ${parsingFailureExplanation}`);
+  }
+  if (typeof parsedArguments !== "object" || parsedArguments === null || Array.isArray(parsedArguments)) {
+    throw new Error(`OpenAI function call for ${input.toolName} has non-object arguments`);
+  }
+
+  return parsedArguments as JsonObjectRecord;
+}
+
+function readRequiredStringToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): string {
+  const argumentValue = parsedArguments[argumentName];
+  if (typeof argumentValue !== "string" || argumentValue.length === 0) {
+    throw new Error(`OpenAI function call for ${toolName} is missing required string argument: ${argumentName}`);
+  }
+
+  return argumentValue;
+}
+
+function readRequiredTextToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): string {
+  const argumentValue = parsedArguments[argumentName];
+  if (typeof argumentValue !== "string") {
+    throw new Error(`OpenAI function call for ${toolName} is missing required string argument: ${argumentName}`);
+  }
+
+  return argumentValue;
+}
+
+function readOptionalStringToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): string | undefined {
+  const argumentValue = parsedArguments[argumentName];
+  if (argumentValue === undefined || argumentValue === null) {
+    return undefined;
+  }
+  if (typeof argumentValue === "string" && argumentValue.length > 0) {
+    return argumentValue;
+  }
+
+  throw new Error(`OpenAI function call for ${toolName} has invalid string argument: ${argumentName}`);
+}
+
+function readOptionalPositiveIntegerToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): number | undefined {
+  const argumentValue = parsedArguments[argumentName];
+  if (argumentValue === undefined || argumentValue === null) {
+    return undefined;
+  }
+  if (typeof argumentValue === "number" && Number.isInteger(argumentValue) && argumentValue > 0) {
+    return argumentValue;
+  }
+
+  throw new Error(`OpenAI function call for ${toolName} has invalid positive integer argument: ${argumentName}`);
 }

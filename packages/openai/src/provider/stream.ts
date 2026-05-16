@@ -6,6 +6,7 @@ import type {
   ToolCallRequest,
 } from "@buli/contracts";
 import { z } from "zod";
+import { createOpenAiToolCallRequest } from "./toolDefinitions.ts";
 import { OpenAiUsageSchema, normalizeOpenAiUsage } from "./usage.ts";
 
 const TextDeltaChunkSchema = z.object({
@@ -116,10 +117,6 @@ type PendingFunctionCallState = {
 type OpenAiChunkObject = {
   type: string;
   [fieldName: string]: unknown;
-};
-
-type JsonObjectRecord = {
-  readonly [fieldName: string]: unknown;
 };
 
 function nextFrameBoundary(buffer: string): { index: number; length: number } | undefined {
@@ -239,79 +236,6 @@ function createProviderIncompleteEvent(input: {
     incompleteReason: input.incompleteReason,
     usage: normalizeOpenAiUsage(input.usage),
   };
-}
-
-function parseOpenAiToolArguments(toolCallState: PendingFunctionCallState): JsonObjectRecord {
-  let parsedArguments: unknown;
-  try {
-    parsedArguments = JSON.parse(toolCallState.argumentsText) as unknown;
-  } catch (error) {
-    const parsingFailureExplanation = error instanceof Error ? error.message : String(error);
-    throw new Error(`OpenAI function call for ${toolCallState.toolName} has malformed JSON arguments: ${parsingFailureExplanation}`);
-  }
-  if (typeof parsedArguments !== "object" || parsedArguments === null || Array.isArray(parsedArguments)) {
-    throw new Error(`OpenAI function call for ${toolCallState.toolName} has non-object arguments`);
-  }
-
-  return parsedArguments as JsonObjectRecord;
-}
-
-function readRequiredStringToolArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  toolName: string,
-): string {
-  const argumentValue = parsedArguments[argumentName];
-  if (typeof argumentValue !== "string" || argumentValue.length === 0) {
-    throw new Error(`OpenAI function call for ${toolName} is missing required string argument: ${argumentName}`);
-  }
-
-  return argumentValue;
-}
-
-function readRequiredTextToolArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  toolName: string,
-): string {
-  const argumentValue = parsedArguments[argumentName];
-  if (typeof argumentValue !== "string") {
-    throw new Error(`OpenAI function call for ${toolName} is missing required string argument: ${argumentName}`);
-  }
-
-  return argumentValue;
-}
-
-function readOptionalStringToolArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  toolName: string,
-): string | undefined {
-  const argumentValue = parsedArguments[argumentName];
-  if (argumentValue === undefined || argumentValue === null) {
-    return undefined;
-  }
-  if (typeof argumentValue === "string" && argumentValue.length > 0) {
-    return argumentValue;
-  }
-
-  throw new Error(`OpenAI function call for ${toolName} has invalid string argument: ${argumentName}`);
-}
-
-function readOptionalPositiveIntegerToolArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  toolName: string,
-): number | undefined {
-  const argumentValue = parsedArguments[argumentName];
-  if (argumentValue === undefined || argumentValue === null) {
-    return undefined;
-  }
-  if (typeof argumentValue === "number" && Number.isInteger(argumentValue) && argumentValue > 0) {
-    return argumentValue;
-  }
-
-  throw new Error(`OpenAI function call for ${toolName} has invalid positive integer argument: ${argumentName}`);
 }
 
 // Reasoning summary timing is captured provider-side because the provider is
@@ -490,77 +414,10 @@ export async function* parseOpenAiStream(
   }
 
   function createToolCallRequest(toolCallState: PendingFunctionCallState): ToolCallRequest {
-    const parsedArguments = parseOpenAiToolArguments(toolCallState);
-
-    if (toolCallState.toolName === "bash") {
-      const workingDirectoryPath = readOptionalStringToolArgument(parsedArguments, "workdir", "bash");
-      const timeoutMilliseconds = readOptionalPositiveIntegerToolArgument(parsedArguments, "timeout", "bash");
-      return {
-        toolName: "bash",
-        shellCommand: readRequiredStringToolArgument(parsedArguments, "command", "bash"),
-        commandDescription: readRequiredStringToolArgument(parsedArguments, "description", "bash"),
-        ...(workingDirectoryPath !== undefined ? { workingDirectoryPath } : {}),
-        ...(timeoutMilliseconds !== undefined ? { timeoutMilliseconds } : {}),
-      };
-    }
-
-    if (toolCallState.toolName === "read") {
-      const offsetLineNumber = readOptionalPositiveIntegerToolArgument(parsedArguments, "offset", "read");
-      const maximumLineCount = readOptionalPositiveIntegerToolArgument(parsedArguments, "limit", "read");
-      return {
-        toolName: "read",
-        readTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "read"),
-        ...(offsetLineNumber !== undefined ? { offsetLineNumber } : {}),
-        ...(maximumLineCount !== undefined ? { maximumLineCount } : {}),
-      };
-    }
-
-    if (toolCallState.toolName === "glob") {
-      const searchDirectoryPath = readOptionalStringToolArgument(parsedArguments, "path", "glob");
-      return {
-        toolName: "glob",
-        globPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "glob"),
-        ...(searchDirectoryPath !== undefined ? { searchDirectoryPath } : {}),
-      };
-    }
-
-    if (toolCallState.toolName === "grep") {
-      const searchPath = readOptionalStringToolArgument(parsedArguments, "path", "grep");
-      const includeGlobPattern = readOptionalStringToolArgument(parsedArguments, "include", "grep");
-      return {
-        toolName: "grep",
-        regexPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "grep"),
-        ...(searchPath !== undefined ? { searchPath } : {}),
-        ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
-      };
-    }
-
-    if (toolCallState.toolName === "edit") {
-      return {
-        toolName: "edit",
-        editTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "edit"),
-        oldString: readRequiredStringToolArgument(parsedArguments, "oldString", "edit"),
-        newString: readRequiredTextToolArgument(parsedArguments, "newString", "edit"),
-      };
-    }
-
-    if (toolCallState.toolName === "write") {
-      return {
-        toolName: "write",
-        writeTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "write"),
-        fileContent: readRequiredTextToolArgument(parsedArguments, "content", "write"),
-      };
-    }
-
-    if (toolCallState.toolName === "explore") {
-      return {
-        toolName: "explore",
-        explorationDescription: readRequiredStringToolArgument(parsedArguments, "description", "explore"),
-        explorationPrompt: readRequiredStringToolArgument(parsedArguments, "prompt", "explore"),
-      };
-    }
-
-    throw new Error(`Unsupported tool requested by OpenAI: ${toolCallState.toolName}`);
+    return createOpenAiToolCallRequest({
+      toolName: toolCallState.toolName,
+      argumentsText: toolCallState.argumentsText,
+    });
   }
 
   function emitRequestedToolCallIfReady(itemId: string): ProviderStreamEvent | undefined {
