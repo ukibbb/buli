@@ -41,7 +41,7 @@ export async function listPromptContextCandidates(input: {
           promptContextPathQuery,
           promptContextPathScope,
         })
-      : await listRecursivePromptContextEntries({
+      : await listFuzzyPromptContextEntries({
           promptContextPathScope,
           maximumSearchEntryCount,
         });
@@ -97,8 +97,10 @@ async function listDirectoryPromptContextEntries(input: {
 export async function listRecursivePromptContextEntries(input: {
   promptContextPathScope: PromptContextPathScope;
   maximumSearchEntryCount: number;
+  recursiveSearchRootPath?: string;
 }): Promise<PromptContextEntry[]> {
   const promptContextEntries: PromptContextEntry[] = [];
+  const recursiveSearchRootPath = input.recursiveSearchRootPath ?? input.promptContextPathScope.promptContextBrowseRootPath;
 
   async function visitDirectory(currentDirectoryPath: string): Promise<void> {
     if (promptContextEntries.length >= input.maximumSearchEntryCount) {
@@ -137,7 +139,46 @@ export async function listRecursivePromptContextEntries(input: {
     }
   }
 
-  await visitDirectory(input.promptContextPathScope.promptContextBrowseRootPath);
+  await visitDirectory(recursiveSearchRootPath);
+  return promptContextEntries;
+}
+
+export async function listFuzzyPromptContextEntries(input: {
+  promptContextPathScope: PromptContextPathScope;
+  maximumSearchEntryCount: number;
+}): Promise<PromptContextEntry[]> {
+  const promptContextEntries: PromptContextEntry[] = [];
+  const seenPromptContextAbsolutePaths = new Set<string>();
+
+  async function appendPromptContextEntriesFromRoot(recursiveSearchRootPath: string): Promise<void> {
+    if (promptContextEntries.length >= input.maximumSearchEntryCount) {
+      return;
+    }
+
+    const candidatePromptContextEntries = await listRecursivePromptContextEntries({
+      promptContextPathScope: input.promptContextPathScope,
+      maximumSearchEntryCount: input.maximumSearchEntryCount - promptContextEntries.length,
+      recursiveSearchRootPath,
+    });
+
+    for (const promptContextEntry of candidatePromptContextEntries) {
+      if (seenPromptContextAbsolutePaths.has(promptContextEntry.absolutePath)) {
+        continue;
+      }
+
+      seenPromptContextAbsolutePaths.add(promptContextEntry.absolutePath);
+      promptContextEntries.push(promptContextEntry);
+      if (promptContextEntries.length >= input.maximumSearchEntryCount) {
+        return;
+      }
+    }
+  }
+
+  await appendPromptContextEntriesFromRoot(input.promptContextPathScope.promptContextStartingDirectoryPath);
+  if (input.promptContextPathScope.promptContextStartingDirectoryPath !== input.promptContextPathScope.promptContextBrowseRootPath) {
+    await appendPromptContextEntriesFromRoot(input.promptContextPathScope.promptContextBrowseRootPath);
+  }
+
   return promptContextEntries;
 }
 

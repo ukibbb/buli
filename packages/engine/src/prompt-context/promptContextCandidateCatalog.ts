@@ -4,9 +4,9 @@ import {
   DEFAULT_MAXIMUM_PROMPT_CONTEXT_SEARCH_ENTRY_COUNT,
   determinePromptContextQueryLoadStrategy,
   filterAndSortPromptContextEntries,
+  listFuzzyPromptContextEntries,
   listCurrentDirectoryPromptContextEntries,
   listPromptContextCandidates,
-  listRecursivePromptContextEntries,
   type PromptContextQueryLoadStrategy,
 } from "./listPromptContextCandidates.ts";
 import type { PromptContextCandidate } from "./types.ts";
@@ -95,7 +95,7 @@ export class PromptContextCandidateCatalog {
       return this.recursivePromptContextEntrySnapshot;
     }
 
-    const promptContextEntries = await listRecursivePromptContextEntries({
+    const promptContextEntries = await listFuzzyPromptContextEntries({
       promptContextPathScope,
       maximumSearchEntryCount: this.maximumSearchEntryCount,
     });

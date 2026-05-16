@@ -112,3 +112,31 @@ test("PromptContextCandidateCatalog bypasses the fuzzy cache for path and curren
     ]),
   );
 });
+
+test("PromptContextCandidateCatalog finds fuzzy matches from the configured starting directory before the broader root", async () => {
+  const homeRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-catalog-cwd-first-"));
+  const repositoryPath = join(homeRootPath, "repo");
+  await mkdir(repositoryPath);
+  for (let index = 0; index < 6; index += 1) {
+    const earlierDirectoryPath = join(homeRootPath, `aaa-${index}`);
+    await mkdir(earlierDirectoryPath);
+    await writeFile(join(earlierDirectoryPath, "noise.txt"), "noise", "utf8");
+  }
+  const targetFilePath = join(repositoryPath, "target-note.md");
+  await writeFile(targetFilePath, "target", "utf8");
+  const realTargetFilePath = await realpath(targetFilePath);
+
+  const promptContextCandidateCatalog = new PromptContextCandidateCatalog({
+    promptContextBrowseRootPath: homeRootPath,
+    promptContextStartingDirectoryPath: repositoryPath,
+    maximumSearchEntryCount: 5,
+  });
+
+  expect(await promptContextCandidateCatalog.listPromptContextCandidates("target")).toEqual([
+    {
+      kind: "file",
+      displayPath: toPortablePath(realTargetFilePath),
+      promptReferenceText: `@${toPortablePath(realTargetFilePath)}`,
+    },
+  ]);
+});
