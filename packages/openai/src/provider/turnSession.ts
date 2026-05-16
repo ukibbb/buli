@@ -24,6 +24,12 @@ type OpenAiProviderToolResultSubmission = {
   toolResultText: string;
 };
 
+type PendingOpenAiToolResultSubmissionWait = {
+  resolveSubmission: (toolResultSubmission: OpenAiProviderToolResultSubmission) => void;
+  rejectSubmission: (error: Error) => void;
+  abortListener?: (() => void) | undefined;
+};
+
 type OpenAiTerminalUsageProviderEvent = Extract<ProviderStreamEvent, { type: "completed" | "incomplete" }>;
 
 type OpenAiReasoningRequest = {
@@ -98,10 +104,7 @@ export class OpenAiProviderConversationTurn {
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
-  readonly pendingToolResultSubmissionResolverByToolCallId: Map<
-    string,
-    (toolResultSubmission: OpenAiProviderToolResultSubmission) => void
-  >;
+  readonly pendingToolResultSubmissionWaitByToolCallId: Map<string, PendingOpenAiToolResultSubmissionWait>;
   hasStartedStreamingProviderEvents = false;
 
   constructor(input: {
@@ -132,21 +135,18 @@ export class OpenAiProviderConversationTurn {
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
-    this.pendingToolResultSubmissionResolverByToolCallId = new Map<
-      string,
-      (toolResultSubmission: OpenAiProviderToolResultSubmission) => void
-    >();
+    this.pendingToolResultSubmissionWaitByToolCallId = new Map<string, PendingOpenAiToolResultSubmissionWait>();
   }
 
   async submitToolResult(input: OpenAiProviderToolResultSubmission): Promise<void> {
-    const resolveSubmission = this.pendingToolResultSubmissionResolverByToolCallId.get(input.toolCallId);
-    if (resolveSubmission) {
-      this.pendingToolResultSubmissionResolverByToolCallId.delete(input.toolCallId);
+    const pendingSubmissionWait = this.pendingToolResultSubmissionWaitByToolCallId.get(input.toolCallId);
+    if (pendingSubmissionWait) {
+      this.clearPendingToolResultSubmissionWait(input.toolCallId, pendingSubmissionWait);
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.resolved_pending_wait", {
         toolCallId: input.toolCallId,
         toolResultTextLength: input.toolResultText.length,
       });
-      resolveSubmission(input);
+      pendingSubmissionWait.resolveSubmission(input);
       return;
     }
 
@@ -354,15 +354,39 @@ export class OpenAiProviderConversationTurn {
       return Promise.resolve(queuedToolResultSubmission);
     }
 
+    if (this.abortSignal?.aborted) {
+      return Promise.reject(new Error("OpenAI provider turn interrupted while waiting for tool result"));
+    }
+
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.wait_started", {
       toolCallId,
     });
-    return new Promise<OpenAiProviderToolResultSubmission>((resolveSubmission) => {
-      this.pendingToolResultSubmissionResolverByToolCallId.set(toolCallId, (toolResultSubmission) => {
-        this.pendingToolResultSubmissionResolverByToolCallId.delete(toolCallId);
-        resolveSubmission(toolResultSubmission);
-      });
+    return new Promise<OpenAiProviderToolResultSubmission>((resolveSubmission, rejectSubmission) => {
+      const pendingSubmissionWait: PendingOpenAiToolResultSubmissionWait = {
+        resolveSubmission,
+        rejectSubmission,
+      };
+      const abortListener = (): void => {
+        this.clearPendingToolResultSubmissionWait(toolCallId, pendingSubmissionWait);
+        rejectSubmission(new Error("OpenAI provider turn interrupted while waiting for tool result"));
+      };
+      pendingSubmissionWait.abortListener = abortListener;
+      this.pendingToolResultSubmissionWaitByToolCallId.set(toolCallId, pendingSubmissionWait);
+      this.abortSignal?.addEventListener("abort", abortListener, { once: true });
+      if (this.abortSignal?.aborted) {
+        abortListener();
+      }
     });
+  }
+
+  private clearPendingToolResultSubmissionWait(
+    toolCallId: string,
+    pendingSubmissionWait: PendingOpenAiToolResultSubmissionWait,
+  ): void {
+    this.pendingToolResultSubmissionWaitByToolCallId.delete(toolCallId);
+    if (pendingSubmissionWait.abortListener) {
+      this.abortSignal?.removeEventListener("abort", pendingSubmissionWait.abortListener);
+    }
   }
 }
 

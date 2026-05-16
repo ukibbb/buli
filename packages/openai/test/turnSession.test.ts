@@ -257,6 +257,35 @@ test("OpenAiProviderConversationTurn passes the abort signal to response fetch",
   expect(receivedAbortSignals).toEqual([abortController.signal]);
 });
 
+test("OpenAiProviderConversationTurn stops waiting for a tool result when aborted", async () => {
+  const abortController = new AbortController();
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      createOpenAiStepResponse([
+        'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+        'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+        'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+      ]),
+    ], []),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Run pwd"),
+    abortSignal: abortController.signal,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+  const providerEventIterator = providerTurn.streamProviderEvents()[Symbol.asyncIterator]();
+
+  await expect(providerEventIterator.next()).resolves.toMatchObject({
+    done: false,
+    value: { type: "tool_call_requested", toolCallId: "call_1" },
+  });
+  abortController.abort();
+
+  await expect(providerEventIterator.next()).rejects.toThrow("interrupted while waiting for tool result");
+});
+
 test("OpenAiProviderConversationTurn restricts tool definitions when availableToolNames is provided", async () => {
   const requestBodies: string[] = [];
   const queuedResponses = [
