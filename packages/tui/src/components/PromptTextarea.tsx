@@ -6,7 +6,8 @@ import {
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { normalizeOpenTuiPasteEventText } from "../behavior/normalizeOpenTuiPasteEventText.ts";
 
-export const PROMPT_TEXTAREA_ROW_COUNT = 1;
+export const PROMPT_TEXTAREA_MIN_ROW_COUNT = 2;
+export const PROMPT_TEXTAREA_MAX_ROW_COUNT = 6;
 
 export type PromptTextareaEdit = {
   promptDraft: string;
@@ -36,6 +37,15 @@ function clampPromptDraftCursorOffset(promptDraft: string, promptDraftCursorOffs
 export function PromptTextarea(props: PromptTextareaProps): ReactNode {
   const promptTextareaRef = useRef<TextareaRenderable | null>(null);
   const isSynchronizingTextareaFromPromptStateRef = useRef(false);
+  const promptTextareaRowSizing =
+    props.rowCount === undefined
+      ? {
+          minHeight: PROMPT_TEXTAREA_MIN_ROW_COUNT,
+          maxHeight: PROMPT_TEXTAREA_MAX_ROW_COUNT,
+        }
+      : {
+          height: props.rowCount,
+        };
 
   useEffect(() => {
     const promptTextarea = promptTextareaRef.current;
@@ -85,7 +95,7 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       focused={props.isFocused}
       focusedBackgroundColor={chatScreenTheme.bg}
       focusedTextColor={chatScreenTheme.textPrimary}
-      height={props.rowCount ?? PROMPT_TEXTAREA_ROW_COUNT}
+      {...promptTextareaRowSizing}
       initialValue={props.promptDraft}
       keyBindings={promptTextareaKeyBindings}
       onContentChange={publishPromptTextareaEdit}

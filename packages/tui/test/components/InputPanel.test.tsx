@@ -10,6 +10,11 @@ function countRenderedLinesMatchingPattern(renderedOutput: string, pattern: RegE
   return renderedOutput.split("\n").filter((renderedLine) => pattern.test(renderedLine)).length;
 }
 
+function splitRenderedViewportRows(renderedOutput: string): string[] {
+  const renderedRows = renderedOutput.split("\n");
+  return renderedRows[renderedRows.length - 1] === "" ? renderedRows.slice(0, -1) : renderedRows;
+}
+
 describe("InputPanel", () => {
   test("renders_mode_label_and_model_identifier", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
@@ -62,6 +67,34 @@ describe("InputPanel", () => {
     expect(frame).not.toContain("transcript");
   });
 
+  test("reserves_a_second_prompt_row_for_single_line_drafts", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InputPanel
+        promptDraft="hello"
+        promptDraftCursorOffset={5}
+        isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
+        modeLabel="chat"
+        modelIdentifier="gpt-5.4"
+        reasoningEffortLabel="default"
+        assistantResponseStatus="waiting_for_user_input"
+        totalContextTokensUsed={undefined}
+        contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
+      />,
+      { width: 80, height: 10 },
+    );
+
+    await renderOnce();
+
+    const renderedRows = splitRenderedViewportRows(captureCharFrame());
+    const promptRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("> hello"));
+    const footerRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("--"));
+    expect(promptRowIndex).toBeGreaterThanOrEqual(0);
+    expect(footerRowIndex - promptRowIndex).toBe(2);
+  });
+
   test("renders_override_hint_when_provided", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
@@ -112,11 +145,11 @@ describe("InputPanel", () => {
     expect(frame).not.toContain("Selection is open");
   });
 
-  test("keeps_a_long_prompt_draft_inside_the_single_visible_textarea_row", async () => {
+  test("renders_multiline_prompt_draft_across_the_growing_textarea", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
-        promptDraft="@/Users/lukasz/Desktop/Projekty/buli/.bun/install/cache/@babel/helper-annotate-as-pure@7.27.3@@@1/README.md"
-        promptDraftCursorOffset={107}
+        promptDraft={["first line", "second line", "third line"].join("\n")}
+        promptDraftCursorOffset={33}
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
         modeLabel="chat"
@@ -128,12 +161,40 @@ describe("InputPanel", () => {
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
-      { width: 58, height: 8 },
+      { width: 80, height: 12 },
     );
 
     await renderOnce();
 
-    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /install\/cache|helper-annotate|README\.md/)).toBeLessThanOrEqual(1);
+    const frame = captureCharFrame();
+    expect(frame).toContain("first line");
+    expect(frame).toContain("second line");
+    expect(frame).toContain("third line");
+  });
+
+  test("caps_the_growing_prompt_textarea_at_six_rows", async () => {
+    const promptDraft = Array.from({ length: 8 }, (_value, index) => `draft line ${index + 1}`).join("\n");
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InputPanel
+        promptDraft={promptDraft}
+        promptDraftCursorOffset={promptDraft.length}
+        isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentGreen}
+        modeLabel="chat"
+        modelIdentifier="gpt-5.4"
+        reasoningEffortLabel="default"
+        assistantResponseStatus="waiting_for_user_input"
+        totalContextTokensUsed={undefined}
+        contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
+      />,
+      { width: 80, height: 16 },
+    );
+
+    await renderOnce();
+
+    expect(countRenderedLinesMatchingPattern(captureCharFrame(), /draft line \d/)).toBeLessThanOrEqual(6);
   });
 
   test("renders_the_prompt_draft_through_the_textarea", async () => {

@@ -4,18 +4,23 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
 import { PromptDraftText } from "./PromptDraftText.tsx";
-import { PromptTextarea, PROMPT_TEXTAREA_ROW_COUNT, type PromptTextareaEdit } from "./PromptTextarea.tsx";
+import {
+  PromptTextarea,
+  PROMPT_TEXTAREA_MAX_ROW_COUNT,
+  PROMPT_TEXTAREA_MIN_ROW_COUNT,
+  type PromptTextareaEdit,
+} from "./PromptTextarea.tsx";
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
-// Pen frame HOeet. Owns three stacked rows: a header strip with mode + model
-// chips, a body with the prompt draft and caret, and a footer that shows the
-// working indicator while streaming, a contextual override message when one is
-// supplied, or only the context meter when idle.
+// Pen frame HOeet. Owns a header strip with mode + model chips, a body with
+// the prompt draft and caret, and a footer that shows the working indicator
+// while streaming, a contextual override message when one is supplied, or only
+// the context meter when idle.
 //
-// Exported row count = 2 (rounded border) + 1 (header) + textarea rows + 1 (footer).
-// It is the source of truth for ChatScreen's responsive budgeting math — keep
-// it in sync with the rendered output below.
-export const INPUT_PANEL_NATURAL_ROW_COUNT = 2 + 1 + PROMPT_TEXTAREA_ROW_COUNT + 1;
+// Exported max row count = 2 (rounded border) + 1 (header) + max textarea rows
+// + 1 (footer). It is the source of truth for ChatScreen's responsive budgeting
+// math — keep it in sync with the rendered output below.
+export const INPUT_PANEL_MAX_ROW_COUNT = 2 + 1 + PROMPT_TEXTAREA_MAX_ROW_COUNT + 1;
 
 export type InputPanelProps = {
   promptDraft: string;
@@ -64,7 +69,14 @@ export function InputPanel(props: InputPanelProps): ReactNode {
           {`[ ${props.modelIdentifier} · ${props.reasoningEffortLabel} ]`}
         </text>
       </box>
-      <box flexDirection="row" paddingX={1} gap={1} height={PROMPT_TEXTAREA_ROW_COUNT}>
+      <box
+        flexDirection="row"
+        paddingX={1}
+        gap={1}
+        minHeight={PROMPT_TEXTAREA_MIN_ROW_COUNT}
+        maxHeight={PROMPT_TEXTAREA_MAX_ROW_COUNT}
+        overflow="hidden"
+      >
         <text fg={props.accentColor}>
           <b>{">"}</b>
         </text>

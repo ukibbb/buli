@@ -65,3 +65,15 @@ test("buildChatScreenViewModel derives context usage and minimum input branch", 
   expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(true);
   expect(viewModel.inputRegionRowCount).toBe(1);
 });
+
+test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at comfortable tier", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    terminalRowCount: 32,
+    terminalColumnCount: 140,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(false);
+  expect(viewModel.inputRegionRowCount).toBe(10);
+});

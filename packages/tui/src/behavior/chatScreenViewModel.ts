@@ -12,7 +12,7 @@ import {
   type ChatScreenTheme,
   type TerminalSizeTierForChatScreen,
 } from "@buli/assistant-design-tokens";
-import { INPUT_PANEL_NATURAL_ROW_COUNT } from "../components/InputPanel.tsx";
+import { INPUT_PANEL_MAX_ROW_COUNT } from "../components/InputPanel.tsx";
 import { MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT } from "../components/MinimumHeightPromptStrip.tsx";
 import { TOP_BAR_NATURAL_ROW_COUNT } from "../components/TopBar.tsx";
 
@@ -51,7 +51,7 @@ export function buildChatScreenViewModel(input: {
   const inputRegionRowCount =
     input.terminalSizeTierForChatScreen === minimumTerminalSizeTier
       ? MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT
-      : INPUT_PANEL_NATURAL_ROW_COUNT;
+      : INPUT_PANEL_MAX_ROW_COUNT;
   const totalContextTokensUsed = input.chatSessionState.latestTokenUsage
     ? calculateContextTokensUsedFromTokenUsage(input.chatSessionState.latestTokenUsage)
     : undefined;
