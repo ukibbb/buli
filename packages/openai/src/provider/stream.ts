@@ -1,6 +1,7 @@
 import type {
   BuliDiagnosticLogFields,
   BuliDiagnosticLogger,
+  ProviderRequestedToolCall,
   ProviderStreamEvent,
   TokenUsage,
   ToolCallRequest,
@@ -88,7 +89,12 @@ type OpenAiResponseStepToolCallRequestedState = {
   usage: TokenUsage;
 };
 
-type PendingOpenAiResponseStepToolCallRequestedState = Omit<OpenAiResponseStepToolCallRequestedState, "responseOutputItems" | "usage">;
+type OpenAiResponseStepToolCallsRequestedState = {
+  terminalKind: "tool_calls_requested";
+  requestedToolCalls: ProviderRequestedToolCall[];
+  responseOutputItems: unknown[];
+  usage: TokenUsage;
+};
 
 type OpenAiResponseStepCompletedState = {
   terminalKind: "completed";
@@ -100,6 +106,7 @@ type OpenAiResponseStepIncompleteState = {
 
 export type OpenAiResponseStepTerminalState =
   | OpenAiResponseStepToolCallRequestedState
+  | OpenAiResponseStepToolCallsRequestedState
   | OpenAiResponseStepCompletedState
   | OpenAiResponseStepIncompleteState;
 
@@ -111,7 +118,7 @@ type PendingFunctionCallState = {
   toolCallId: string;
   toolName: string;
   argumentsText: string;
-  hasEmittedProviderEvent: boolean;
+  hasRecordedToolCallRequest: boolean;
 };
 
 type OpenAiChunkObject = {
@@ -146,35 +153,44 @@ async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<st
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
 
-  while (true) {
-    const chunk = await reader.read();
-    if (chunk.done) {
-      break;
-    }
-
-    buffer += chunk.value;
-
+  try {
     while (true) {
-      const boundary = nextFrameBoundary(buffer);
-      if (!boundary) {
+      const chunk = await reader.read();
+      if (chunk.done) {
         break;
       }
 
-      const frame = buffer.slice(0, boundary.index);
-      buffer = buffer.slice(boundary.index + boundary.length);
+      buffer += chunk.value;
 
-      const data = extractData(frame);
+      while (true) {
+        const boundary = nextFrameBoundary(buffer);
+        if (!boundary) {
+          break;
+        }
 
-      if (data) {
-        yield data;
+        const frame = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary.length);
+
+        const data = extractData(frame);
+
+        if (data) {
+          yield data;
+        }
       }
     }
-  }
 
-  const data = extractData(buffer);
+    const data = extractData(buffer);
 
-  if (data) {
-    yield data;
+    if (data) {
+      yield data;
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // The stream may already be closed; releaseLock below is still required.
+    }
+    reader.releaseLock();
   }
 }
 
@@ -220,6 +236,22 @@ function createProviderToolCallRequestedEvent(toolCallId: string, toolCallReques
   return { type: "tool_call_requested", toolCallId, toolCallRequest };
 }
 
+function createProviderToolCallsRequestedEvent(requestedToolCalls: readonly ProviderRequestedToolCall[]): ProviderStreamEvent {
+  if (requestedToolCalls.length === 1) {
+    const requestedToolCall = requestedToolCalls[0];
+    if (!requestedToolCall) {
+      throw new Error("OpenAI stream tried to emit an empty tool-call batch.");
+    }
+
+    return createProviderToolCallRequestedEvent(requestedToolCall.toolCallId, requestedToolCall.toolCallRequest);
+  }
+
+  return {
+    type: "tool_calls_requested",
+    requestedToolCalls: [...requestedToolCalls],
+  };
+}
+
 function createProviderCompletedEvent(input: { usage: z.infer<typeof OpenAiUsageSchema> }): ProviderStreamEvent {
   return {
     type: "completed",
@@ -259,7 +291,7 @@ export async function* parseOpenAiStream(
   let isReasoningSummaryInProgress = false;
   let reasoningPartSeparatorPending = false;
   let terminalState: OpenAiResponseStepTerminalState | undefined;
-  let pendingToolCallTerminalState: PendingOpenAiResponseStepToolCallRequestedState | undefined;
+  const pendingRequestedToolCalls: ProviderRequestedToolCall[] = [];
   const pendingFunctionCallStateByItemId = new Map<string, PendingFunctionCallState>();
   const trackedOutputItemsByIndex = new Map<number, unknown>();
   let sseFrameCount = 0;
@@ -333,9 +365,9 @@ export async function* parseOpenAiStream(
       const responseArguments = typeof input.responseOutputItem.arguments === "string"
         ? input.responseOutputItem.arguments
         : undefined;
-      const mostCompleteArguments = trackedArguments && trackedArguments.length > 0
-        ? trackedArguments
-        : responseArguments ?? trackedArguments;
+      const mostCompleteArguments = responseArguments && responseArguments.length > 0
+        ? responseArguments
+        : trackedArguments;
 
       return {
         ...input.responseOutputItem,
@@ -413,30 +445,41 @@ export async function* parseOpenAiStream(
     return mergedOutputItems;
   }
 
-  function createToolCallRequest(toolCallState: PendingFunctionCallState): ToolCallRequest {
-    return createOpenAiToolCallRequest({
-      toolName: toolCallState.toolName,
-      argumentsText: toolCallState.argumentsText,
+  function recordRequestedToolCall(input: {
+    itemId?: string;
+    toolCallId: string;
+    toolName: string;
+    argumentsText: string;
+  }): void {
+    const toolCallRequest = createOpenAiToolCallRequest({
+      toolName: input.toolName,
+      argumentsText: input.argumentsText,
     });
-  }
-
-  function emitRequestedToolCallIfReady(itemId: string): ProviderStreamEvent | undefined {
-    const pendingFunctionCallState = pendingFunctionCallStateByItemId.get(itemId);
-    if (!pendingFunctionCallState || pendingFunctionCallState.hasEmittedProviderEvent || !pendingFunctionCallState.argumentsText) {
-      return undefined;
+    const existingRequestedToolCallIndex = pendingRequestedToolCalls.findIndex(
+      (requestedToolCall) => requestedToolCall.toolCallId === input.toolCallId,
+    );
+    if (existingRequestedToolCallIndex >= 0) {
+      pendingRequestedToolCalls[existingRequestedToolCallIndex] = {
+        toolCallId: input.toolCallId,
+        toolCallRequest,
+      };
+      return;
     }
 
-    pendingFunctionCallState.hasEmittedProviderEvent = true;
-    const toolCallRequest = createToolCallRequest(pendingFunctionCallState);
-    pendingToolCallTerminalState = {
-      terminalKind: "tool_call_requested",
-      toolCallId: pendingFunctionCallState.toolCallId,
+    pendingRequestedToolCalls.push({
+      toolCallId: input.toolCallId,
       toolCallRequest,
-    };
+    });
+    if (input.itemId) {
+      const pendingFunctionCallState = pendingFunctionCallStateByItemId.get(input.itemId);
+      if (pendingFunctionCallState) {
+        pendingFunctionCallState.hasRecordedToolCallRequest = true;
+      }
+    }
     logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.tool_call_ready", {
-      toolCallId: pendingFunctionCallState.toolCallId,
-      toolName: pendingFunctionCallState.toolName,
-      functionArgumentsLength: pendingFunctionCallState.argumentsText.length,
+      toolCallId: input.toolCallId,
+      toolName: input.toolName,
+      functionArgumentsLength: input.argumentsText.length,
       ...(toolCallRequest.toolName === "bash"
         ? {
             shellCommandLength: toolCallRequest.shellCommand.length,
@@ -446,7 +489,76 @@ export async function* parseOpenAiStream(
           }
         : {}),
     });
-    return createProviderToolCallRequestedEvent(pendingFunctionCallState.toolCallId, toolCallRequest);
+  }
+
+  function recordRequestedToolCallIfReady(itemId: string): void {
+    const pendingFunctionCallState = pendingFunctionCallStateByItemId.get(itemId);
+    if (
+      !pendingFunctionCallState ||
+      pendingFunctionCallState.hasRecordedToolCallRequest ||
+      !pendingFunctionCallState.argumentsText
+    ) {
+      return;
+    }
+
+    recordRequestedToolCall({
+      itemId,
+      toolCallId: pendingFunctionCallState.toolCallId,
+      toolName: pendingFunctionCallState.toolName,
+      argumentsText: pendingFunctionCallState.argumentsText,
+    });
+  }
+
+  function recordRequestedToolCallsFromResponseOutputItems(responseOutputItems: readonly unknown[]): void {
+    for (const responseOutputItem of responseOutputItems) {
+      if (!isOpenAiChunkObject(responseOutputItem) || responseOutputItem.type !== "function_call") {
+        continue;
+      }
+
+      if (
+        typeof responseOutputItem.id !== "string" ||
+        typeof responseOutputItem.call_id !== "string" ||
+        typeof responseOutputItem.name !== "string" ||
+        typeof responseOutputItem.arguments !== "string" ||
+        responseOutputItem.arguments.length === 0
+      ) {
+        continue;
+      }
+
+      recordRequestedToolCall({
+        itemId: responseOutputItem.id,
+        toolCallId: responseOutputItem.call_id,
+        toolName: responseOutputItem.name,
+        argumentsText: responseOutputItem.arguments,
+      });
+    }
+  }
+
+  function createToolCallTerminalState(input: {
+    responseOutputItems: unknown[];
+    usage: TokenUsage;
+  }): OpenAiResponseStepToolCallRequestedState | OpenAiResponseStepToolCallsRequestedState {
+    if (pendingRequestedToolCalls.length === 1) {
+      const requestedToolCall = pendingRequestedToolCalls[0];
+      if (!requestedToolCall) {
+        throw new Error("OpenAI stream tried to finish an empty tool-call batch.");
+      }
+
+      return {
+        terminalKind: "tool_call_requested",
+        toolCallId: requestedToolCall.toolCallId,
+        toolCallRequest: requestedToolCall.toolCallRequest,
+        responseOutputItems: input.responseOutputItems,
+        usage: input.usage,
+      };
+    }
+
+    return {
+      terminalKind: "tool_calls_requested",
+      requestedToolCalls: [...pendingRequestedToolCalls],
+      responseOutputItems: input.responseOutputItems,
+      usage: input.usage,
+    };
   }
 
   async function* emitPendingReasoningCompletedEvent(): AsyncGenerator<ProviderStreamEvent> {
@@ -465,7 +577,16 @@ export async function* parseOpenAiStream(
     }
 
     sseFrameCount += 1;
-    const value = JSON.parse(data) as unknown;
+    let value: unknown;
+    try {
+      value = JSON.parse(data) as unknown;
+    } catch {
+      logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_malformed_json", {
+        sseFrameCount,
+        frameCharacterCount: data.length,
+      });
+      throw new Error(`OpenAI stream returned malformed SSE JSON at frame ${sseFrameCount} (${data.length} characters).`);
+    }
     if (!isOpenAiChunkObject(value)) {
       ignoredSseEventCount += 1;
       logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.sse_event_ignored", {
@@ -641,7 +762,7 @@ export async function* parseOpenAiStream(
               toolCallId: functionCallItem.call_id,
               toolName: functionCallItem.name,
               argumentsText: functionCallItem.arguments ?? "",
-              hasEmittedProviderEvent: false,
+              hasRecordedToolCallRequest: false,
             });
           }
         }
@@ -673,11 +794,7 @@ export async function* parseOpenAiStream(
               ? { ...trackedOutputItem, arguments: functionCallArgumentsDone.data.arguments }
               : trackedOutputItem,
           );
-          const requestedToolCallEvent = emitRequestedToolCallIfReady(functionCallArgumentsDone.data.item_id);
-          if (requestedToolCallEvent) {
-            yield* emitPendingReasoningCompletedEvent();
-            yield requestedToolCallEvent;
-          }
+          recordRequestedToolCallIfReady(functionCallArgumentsDone.data.item_id);
         }
         continue;
       }
@@ -732,17 +849,13 @@ export async function* parseOpenAiStream(
               toolCallId: functionCallItem.call_id,
               toolName: functionCallItem.name,
               argumentsText: functionCallItem.arguments ?? "",
-              hasEmittedProviderEvent: false,
+              hasRecordedToolCallRequest: false,
             };
             if (functionCallItem.arguments) {
               pendingFunctionCallState.argumentsText = functionCallItem.arguments;
             }
             pendingFunctionCallStateByItemId.set(functionCallItem.id, pendingFunctionCallState);
-            const requestedToolCallEvent = emitRequestedToolCallIfReady(functionCallItem.id);
-            if (requestedToolCallEvent) {
-              yield* emitPendingReasoningCompletedEvent();
-              yield requestedToolCallEvent;
-            }
+            recordRequestedToolCallIfReady(functionCallItem.id);
           }
         }
         continue;
@@ -752,16 +865,22 @@ export async function* parseOpenAiStream(
         const completedResponse = ResponseCompletedChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
+        const responseOutputItems = createTrackedBackedResponseOutputItems(completedResponse.response.output);
+        recordRequestedToolCallsFromResponseOutputItems(responseOutputItems);
         logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.terminal_observed", {
-          terminalKind: pendingToolCallTerminalState ? "tool_call_requested" : "completed",
+          terminalKind: pendingRequestedToolCalls.length > 1
+            ? "tool_calls_requested"
+            : pendingRequestedToolCalls.length === 1
+              ? "tool_call_requested"
+              : "completed",
           ...summarizeTokenUsageForDiagnostics(normalizeOpenAiUsage(completedResponse.response.usage)),
         });
-        if (pendingToolCallTerminalState) {
-          terminalState = {
-            ...pendingToolCallTerminalState,
-            responseOutputItems: createTrackedBackedResponseOutputItems(completedResponse.response.output),
+        if (pendingRequestedToolCalls.length > 0) {
+          terminalState = createToolCallTerminalState({
+            responseOutputItems,
             usage: normalizeOpenAiUsage(completedResponse.response.usage),
-          };
+          });
+          yield createProviderToolCallsRequestedEvent(pendingRequestedToolCalls);
           continue;
         }
         terminalState = { terminalKind: "completed" };
@@ -773,17 +892,23 @@ export async function* parseOpenAiStream(
         const incompleteResponse = ResponseIncompleteChunkSchema.parse(value);
         yield* emitPendingReasoningCompletedEvent();
         finished = true;
+        const responseOutputItems = createTrackedBackedResponseOutputItems(incompleteResponse.response.output);
+        recordRequestedToolCallsFromResponseOutputItems(responseOutputItems);
         logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.terminal_observed", {
-          terminalKind: pendingToolCallTerminalState ? "tool_call_requested" : "incomplete",
+          terminalKind: pendingRequestedToolCalls.length > 1
+            ? "tool_calls_requested"
+            : pendingRequestedToolCalls.length === 1
+              ? "tool_call_requested"
+              : "incomplete",
           incompleteReason: incompleteResponse.response.incomplete_details?.reason ?? "unknown",
           ...summarizeTokenUsageForDiagnostics(normalizeOpenAiUsage(incompleteResponse.response.usage)),
         });
-        if (pendingToolCallTerminalState) {
-          terminalState = {
-            ...pendingToolCallTerminalState,
-            responseOutputItems: createTrackedBackedResponseOutputItems(incompleteResponse.response.output),
+        if (pendingRequestedToolCalls.length > 0) {
+          terminalState = createToolCallTerminalState({
+            responseOutputItems,
             usage: normalizeOpenAiUsage(incompleteResponse.response.usage),
-          };
+          });
+          yield createProviderToolCallsRequestedEvent(pendingRequestedToolCalls);
           continue;
         }
         terminalState = { terminalKind: "incomplete" };

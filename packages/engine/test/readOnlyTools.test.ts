@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectInstructionTracker, runGlobToolCall, runGrepToolCall, runReadToolCall } from "../src/index.ts";
+
+async function writeFakeRipgrepExecutable(workspaceRootPath: string, scriptBody: string): Promise<string> {
+  const fakeRipgrepPath = join(workspaceRootPath, "fake-rg");
+  await writeFile(fakeRipgrepPath, `#!${process.execPath}\n${scriptBody}`, "utf8");
+  await chmod(fakeRipgrepPath, 0o755);
+  return fakeRipgrepPath;
+}
 
 test("runReadToolCall reads a workspace file with line offsets", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-"));
@@ -90,6 +97,77 @@ test("runReadToolCall reports line count and long-line truncation", async () => 
   expect(readToolCallOutcome.toolResultText).toContain("Long lines were truncated to 2000 characters");
 });
 
+test("runReadToolCall rejects default reads of oversized text files with range guidance", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-large-file-"));
+  await writeFile(join(workspaceRootPath, "large.txt"), "x".repeat(1_000_001), "utf8");
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "large.txt",
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("failed");
+  expect(readToolCallOutcome.toolResultText).toContain("File is too large for a default read");
+  expect(readToolCallOutcome.toolResultText).toContain("Use offsetLineNumber and maximumLineCount");
+});
+
+test("runReadToolCall reads bounded line windows from oversized text files", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-large-file-window-"));
+  await writeFile(
+    join(workspaceRootPath, "large.txt"),
+    Array.from({ length: 1_005 }, (_unusedValue, lineIndex) => `line-${lineIndex + 1} ${"x".repeat(1_100)}`).join("\n"),
+    "utf8",
+  );
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "large.txt",
+      offsetLineNumber: 2,
+      maximumLineCount: 2,
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("completed");
+  expect(readToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "read",
+    readFilePath: "large.txt",
+    returnedLineCount: 2,
+    readByteCount: expect.any(Number),
+    wasLineCountTruncated: true,
+    previewLines: [
+      { lineNumber: 2, lineText: expect.stringContaining("line-2") },
+      { lineNumber: 3, lineText: expect.stringContaining("line-3") },
+    ],
+  });
+  expect(readToolCallOutcome.toolResultText).toContain("2: line-2");
+  expect(readToolCallOutcome.toolResultText).toContain("3: line-3");
+  expect(readToolCallOutcome.toolResultText).not.toContain("4: line-4");
+  expect(readToolCallOutcome.toolResultText).toContain("Use offset=4 to continue");
+});
+
+test("runReadToolCall rejects bounded reads of oversized binary files", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-large-binary-"));
+  await writeFile(join(workspaceRootPath, "large.bin"), Buffer.alloc(1_000_001));
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "large.bin",
+      offsetLineNumber: 1,
+      maximumLineCount: 1,
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("failed");
+  expect(readToolCallOutcome.toolResultText).toContain("Cannot read binary file: large.bin");
+});
+
 test("runReadToolCall appends newly discovered nested project instructions", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-instructions-"));
   await mkdir(join(workspaceRootPath, "src"));
@@ -140,6 +218,53 @@ test("runGlobToolCall finds files by glob pattern", async () => {
   });
   expect(globToolCallOutcome.toolResultText).toContain("src/app.ts");
   expect(globToolCallOutcome.toolResultText).toContain("src/app.test.ts");
+});
+
+test("runGlobToolCall prefers ripgrep file discovery when available", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-rg-"));
+  await writeFile(join(workspaceRootPath, "from-rg.ts"), "export const fromRipgrep = true;\n", "utf8");
+  await writeFile(join(workspaceRootPath, "fallback-only.ts"), "export const fallbackOnly = true;\n", "utf8");
+  const fakeRipgrepPath = await writeFakeRipgrepExecutable(
+    workspaceRootPath,
+    [
+      "const args = process.argv.slice(2);",
+      "if (args.includes('--files')) {",
+      "  process.stdout.write('from-rg.ts\\0');",
+      "  process.exit(0);",
+      "}",
+      "process.exit(2);",
+    ].join("\n"),
+  );
+
+  const globToolCallOutcome = await runGlobToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: fakeRipgrepPath,
+    globToolCallRequest: {
+      toolName: "glob",
+      globPattern: "*.ts",
+    },
+  });
+
+  expect(globToolCallOutcome.outcomeKind).toBe("completed");
+  expect(globToolCallOutcome.toolResultText).toContain("from-rg.ts");
+  expect(globToolCallOutcome.toolResultText).not.toContain("fallback-only.ts");
+});
+
+test("runGlobToolCall falls back when ripgrep is unavailable", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-rg-fallback-"));
+  await writeFile(join(workspaceRootPath, "fallback.ts"), "export const fallback = true;\n", "utf8");
+
+  const globToolCallOutcome = await runGlobToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    globToolCallRequest: {
+      toolName: "glob",
+      globPattern: "*.ts",
+    },
+  });
+
+  expect(globToolCallOutcome.outcomeKind).toBe("completed");
+  expect(globToolCallOutcome.toolResultText).toContain("fallback.ts");
 });
 
 test("runGlobToolCall ignores default excluded directories", async () => {
@@ -215,6 +340,67 @@ test("runGrepToolCall searches text files with include glob", async () => {
   expect(grepToolCallOutcome.toolResultText).toContain("Line 1: const answer = 42;");
 });
 
+test("runGrepToolCall prefers ripgrep JSON search when available", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-rg-"));
+  await writeFile(join(workspaceRootPath, "from-rg.ts"), "no local match here\n", "utf8");
+  const fakeRipgrepPath = await writeFakeRipgrepExecutable(
+    workspaceRootPath,
+    [
+      "const args = process.argv.slice(2);",
+      "if (args.includes('--files')) {",
+      "  process.stdout.write('from-rg.ts\\0');",
+      "  process.exit(0);",
+      "}",
+      "if (args.includes('--json')) {",
+      "  process.stdout.write(JSON.stringify({ type: 'match', data: { path: { text: 'from-rg.ts' }, lines: { text: 'fake ripgrep hit\\n' }, line_number: 7 } }) + '\\n');",
+      "  process.exit(0);",
+      "}",
+      "process.exit(2);",
+    ].join("\n"),
+  );
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: fakeRipgrepPath,
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "fake ripgrep hit",
+      includeGlobPattern: "*.ts",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    matchedFileCount: 1,
+    totalMatchCount: 1,
+    matchHits: [{ matchFilePath: "from-rg.ts", matchLineNumber: 7, matchSnippet: "fake ripgrep hit" }],
+  });
+});
+
+test("runGrepToolCall falls back when ripgrep is unavailable", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-rg-fallback-"));
+  await writeFile(join(workspaceRootPath, "fallback.ts"), "const fallbackNeedle = true;\n", "utf8");
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "fallbackNeedle",
+      includeGlobPattern: "*.ts",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    matchedFileCount: 1,
+    totalMatchCount: 1,
+    matchHits: [{ matchFilePath: "fallback.ts", matchLineNumber: 1, matchSnippet: "const fallbackNeedle = true;" }],
+  });
+});
+
 test("runGrepToolCall rejects invalid regex with a useful failure", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-invalid-regex-"));
   await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\n", "utf8");
@@ -257,4 +443,25 @@ test("runGrepToolCall limits match hits and marks truncation", async () => {
     wasTruncated: true,
   });
   expect(grepToolCallOutcome.toolResultText).toContain("Results truncated: showing 100 of 105 matches");
+});
+
+test("runGrepToolCall skips oversized files instead of loading them", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-large-file-"));
+  await writeFile(join(workspaceRootPath, "large.txt"), `needle ${"x".repeat(1_000_001)}`, "utf8");
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "needle",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    totalMatchCount: 0,
+    wasTruncated: true,
+  });
+  expect(grepToolCallOutcome.toolResultText).toContain("Skipped 1 files larger than 1000000 bytes");
 });

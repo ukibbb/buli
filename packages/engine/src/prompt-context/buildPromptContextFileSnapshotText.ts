@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "../modelFacingXmlEscaping.ts";
 
 const DEFAULT_MAXIMUM_PROMPT_CONTEXT_FILE_CHARACTER_COUNT = 16_000;
 
@@ -21,7 +22,7 @@ export async function buildPromptContextFileSnapshotText(input: {
     ? `\n[truncated to ${maximumCharacterCount.toLocaleString("en-US")} characters]`
     : "";
 
-  return `<context_file path="${input.displayPath}">\n${visibleFileContents}${truncationNotice}\n</context_file>`;
+  return `<context_file path="${escapeModelFacingXmlAttributeValue(input.displayPath)}">\n${escapeModelFacingXmlText(visibleFileContents)}${truncationNotice}\n</context_file>`;
 }
 
 function throwIfPromptContextExpansionAborted(abortSignal: AbortSignal | undefined): void {

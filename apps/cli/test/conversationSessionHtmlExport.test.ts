@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationSessionEntry } from "@buli/contracts";
@@ -153,6 +153,8 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   });
 
   expect(html).toContain("buli-session-export");
+  expect(html).not.toContain("fonts.googleapis.com");
+  expect(html).not.toContain("fonts.gstatic.com");
   expect(html).toContain("Session ");
   expect(html).toContain(">session-a<");
   expect(html).toContain("Mode: Understand");
@@ -205,6 +207,31 @@ test("renderConversationSessionHtmlDocument renders image-only user prompts with
 
   expect(html).toContain('src="data:image/jpeg;base64,aW1hZ2U="');
   expect(html).not.toContain("No prompt text was recorded.");
+});
+
+test("renderConversationSessionHtmlDocument omits invalid image data URLs", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Look at this image",
+        modelFacingPromptText: "Look at this image",
+        imageAttachments: [
+          {
+            attachmentId: "invalid-image-1",
+            mimeType: "image/png",
+            dataUrl: "https://example.test/tracker.png",
+          },
+        ],
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-invalid-image",
+  });
+
+  expect(html).not.toContain("https://example.test/tracker.png");
+  expect(html).toContain("1 image attachment omitted from export");
 });
 
 test("renderConversationSessionHtmlDocument renders assistant text segments without duplicating terminal aggregate text", () => {
@@ -291,4 +318,6 @@ test("writeConversationSessionHtmlExport writes the exported session file", asyn
   expect(exportResult.exportFileUrl.startsWith("file://")).toBe(true);
   const exportedHtml = await readFile(exportResult.exportFilePath, "utf8");
   expect(exportedHtml).toContain(">session-a<");
+  expect((await stat(exportDirectoryPath)).mode & 0o777).toBe(0o700);
+  expect((await stat(exportResult.exportFilePath)).mode & 0o777).toBe(0o600);
 });

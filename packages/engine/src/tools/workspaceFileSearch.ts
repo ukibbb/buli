@@ -3,7 +3,7 @@ import { basename, join, relative, sep } from "node:path";
 import type { Stats } from "node:fs";
 import { formatWorkspaceDisplayPath, isPathInsideWorkspace } from "./workspacePath.ts";
 
-const EXCLUDED_SEARCH_DIRECTORY_NAMES = new Set([
+export const DEFAULT_EXCLUDED_SEARCH_DIRECTORY_NAMES = [
   ".cache",
   ".git",
   ".next",
@@ -12,7 +12,9 @@ const EXCLUDED_SEARCH_DIRECTORY_NAMES = new Set([
   "coverage",
   "dist",
   "node_modules",
-]);
+] as const;
+
+const EXCLUDED_SEARCH_DIRECTORY_NAMES = new Set<string>(DEFAULT_EXCLUDED_SEARCH_DIRECTORY_NAMES);
 
 export type WorkspaceSearchFile = {
   absolutePath: string;

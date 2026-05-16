@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_BASH_TOOL_APPROVAL_MODE,
   type BashCommandRiskKind,
   classifyBashToolApprovalRequirement,
   parseBashToolApprovalMode,
@@ -58,13 +59,27 @@ describe("classifyBashToolApprovalRequirement", () => {
     expect(bashToolApprovalDecision.riskExplanation.length).toBeGreaterThan(0);
   });
 
-  test("default trusted mode auto-runs commands that risk-based mode would require approval for", () => {
+  test("default mode requires approval for commands with filesystem mutation risk", () => {
     expect(
       classifyBashToolApprovalRequirement({
         toolName: "bash",
         shellCommand: "rm -rf build",
         commandDescription: "Classify bash command",
       }).approvalPolicy,
+    ).toBe("requires_user_approval");
+    expect(DEFAULT_BASH_TOOL_APPROVAL_MODE).toBe("risk_based");
+  });
+
+  test("explicit trusted mode auto-runs commands that risk-based mode would require approval for", () => {
+    expect(
+      classifyBashToolApprovalRequirement(
+        {
+          toolName: "bash",
+          shellCommand: "rm -rf build",
+          commandDescription: "Classify bash command",
+        },
+        "trusted",
+      ).approvalPolicy,
     ).toBe("auto_run");
   });
 

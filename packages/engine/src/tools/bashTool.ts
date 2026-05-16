@@ -1,4 +1,5 @@
 import {
+  MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   createStartedToolCallDetailFromRequest,
   type BashToolCallRequest,
   type BuliDiagnosticLogFields,
@@ -43,7 +44,7 @@ export async function runApprovedBashToolCall(input: {
   abortSignal?: AbortSignal;
 }): Promise<BashToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
-  const timeoutMilliseconds = input.bashToolCallRequest.timeoutMilliseconds ?? DEFAULT_BASH_TIMEOUT_MILLISECONDS;
+  const timeoutMilliseconds = normalizeBashToolTimeoutMilliseconds(input.bashToolCallRequest.timeoutMilliseconds);
   const startedToolCallDetail = createStartedBashToolCallDetail({
     ...input.bashToolCallRequest,
     timeoutMilliseconds,
@@ -135,6 +136,13 @@ export async function runApprovedBashToolCall(input: {
       durationMilliseconds,
     };
   }
+}
+
+function normalizeBashToolTimeoutMilliseconds(requestedTimeoutMilliseconds: number | undefined): number {
+  return Math.min(
+    requestedTimeoutMilliseconds ?? DEFAULT_BASH_TIMEOUT_MILLISECONDS,
+    MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  );
 }
 
 function logEngineDiagnosticEvent(

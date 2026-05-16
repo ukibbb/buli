@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
+  chmodSync,
   existsSync,
   fstatSync,
   fsyncSync,
@@ -19,6 +20,8 @@ const defaultConversationSessionWriteLockWaitTimeoutMs = 5_000;
 const defaultConversationSessionWriteLockRetryDelayMs = 25;
 const defaultConversationSessionStaleLockAgeMs = 30 * 60 * 1000;
 const processHeldConversationSessionWriteLockCounts = new Map<string, number>();
+const privateConversationSessionDirectoryMode = 0o700;
+const privateConversationSessionFileMode = 0o600;
 
 type ConversationSessionWriteLockFile = {
   processId: number;
@@ -68,11 +71,13 @@ export function writeConversationSessionTextFileAtomically(input: { filePath: st
   );
   let temporaryFileWasCreated = false;
 
-  mkdirSync(fileDirectoryPath, { recursive: true });
+  ensurePrivateConversationSessionDirectory(fileDirectoryPath);
   try {
-    writeFileSync(temporaryFilePath, input.text, "utf8");
+    writeFileSync(temporaryFilePath, input.text, { encoding: "utf8", mode: privateConversationSessionFileMode });
+    chmodSync(temporaryFilePath, privateConversationSessionFileMode);
     temporaryFileWasCreated = true;
     renameSync(temporaryFilePath, input.filePath);
+    chmodSync(input.filePath, privateConversationSessionFileMode);
     temporaryFileWasCreated = false;
   } finally {
     if (temporaryFileWasCreated) {
@@ -86,9 +91,10 @@ export function appendConversationSessionTextFileLineAtomically(input: { filePat
     throw new Error("Conversation session append text must be a single line.");
   }
 
-  mkdirSync(dirname(input.filePath), { recursive: true });
-  const fileDescriptor = openSync(input.filePath, "a+");
+  ensurePrivateConversationSessionDirectory(dirname(input.filePath));
+  const fileDescriptor = openSync(input.filePath, "a+", privateConversationSessionFileMode);
   try {
+    chmodSync(input.filePath, privateConversationSessionFileMode);
     const fileStats = fstatSync(fileDescriptor);
     if (fileStats.size > 0) {
       const finalByte = Buffer.alloc(1);
@@ -110,7 +116,7 @@ function acquireConversationSessionWriteLock(input: {
   retryDelayMs: number;
   staleLockAgeMs: number;
 }): void {
-  mkdirSync(dirname(input.lockFilePath), { recursive: true });
+  ensurePrivateConversationSessionDirectory(dirname(input.lockFilePath));
   const waitStartedAtMs = Date.now();
   const lockWaitTimeoutMs = Math.max(0, input.waitTimeoutMs);
   const lockRetryDelayMs = Math.max(1, input.retryDelayMs);
@@ -197,7 +203,7 @@ function isProcessAlive(processId: number): boolean {
 function tryAcquireConversationSessionWriteLock(lockFilePath: string): boolean {
   let lockFileDescriptor: number | undefined;
   try {
-    lockFileDescriptor = openSync(lockFilePath, "wx");
+    lockFileDescriptor = openSync(lockFilePath, "wx", privateConversationSessionFileMode);
     writeFileSync(
       lockFileDescriptor,
       JSON.stringify({ processId: process.pid, acquiredAtMs: Date.now() }) + "\n",
@@ -217,6 +223,11 @@ function tryAcquireConversationSessionWriteLock(lockFilePath: string): boolean {
       closeSync(lockFileDescriptor);
     }
   }
+}
+
+function ensurePrivateConversationSessionDirectory(directoryPath: string): void {
+  mkdirSync(directoryPath, { recursive: true, mode: privateConversationSessionDirectoryMode });
+  chmodSync(directoryPath, privateConversationSessionDirectoryMode);
 }
 
 function releaseProcessHeldConversationSessionWriteLock(input: {

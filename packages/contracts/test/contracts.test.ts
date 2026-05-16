@@ -10,8 +10,10 @@ import {
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
   FILE_MUTATION_TOOL_REQUEST_NAMES,
+  MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   ModelContextItemSchema,
   PendingToolApprovalRequestSchema,
+  ProviderStreamEventSchema,
   READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
   RENDER_ONLY_TOOL_DETAIL_NAMES,
   ToolCallRequestSchema,
@@ -80,6 +82,17 @@ test("UserPromptImageAttachmentSchema parses a base64 image data URL", () => {
   });
 });
 
+test("ToolCallRequestSchema rejects bash timeouts above the safety cap", () => {
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+      timeoutMilliseconds: MAX_BASH_TOOL_TIMEOUT_MILLISECONDS + 1,
+    }),
+  ).toThrow();
+});
+
 test("ConversationMessagePartSchema parses a user image attachment part", () => {
   expect(
     ConversationMessagePartSchema.parse({
@@ -118,6 +131,7 @@ test("AssistantToolCallConversationMessagePartSchema parses an edit tool call wi
     toolCallId: "call-2",
     toolCallStatus: "completed",
     toolCallStartedAtMs: 1,
+    durationMs: 4,
     toolCallDetail: {
       toolName: "edit",
       editedFilePath: "src/config.ts",
@@ -176,6 +190,7 @@ test("AssistantToolCallConversationMessagePartSchema parses an explore tool call
     toolCallId: "call-explore",
     toolCallStatus: "completed",
     toolCallStartedAtMs: 1,
+    durationMs: 5,
     toolCallDetail: {
       toolName: "explore",
       explorationDescription: "map runtime flow",
@@ -243,6 +258,81 @@ test("AssistantToolCallConversationMessagePartSchema parses an explore tool call
       },
     ],
   });
+});
+
+test("AssistantToolCallConversationMessagePartSchema enforces status-specific terminal fields", () => {
+  const toolCallPartBase = {
+    id: "tool-part-status-rules",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-status-rules",
+    toolCallStartedAtMs: 1,
+    toolCallDetail: {
+      toolName: "bash",
+      commandLine: "pwd",
+    },
+  };
+
+  expect(() =>
+    AssistantToolCallConversationMessagePartSchema.parse({
+      ...toolCallPartBase,
+      toolCallStatus: "completed",
+    })
+  ).toThrow();
+  expect(() =>
+    AssistantToolCallConversationMessagePartSchema.parse({
+      ...toolCallPartBase,
+      toolCallStatus: "completed",
+      durationMs: 1,
+      errorText: "should not be present",
+    })
+  ).toThrow();
+  expect(() =>
+    AssistantToolCallConversationMessagePartSchema.parse({
+      ...toolCallPartBase,
+      toolCallStatus: "failed",
+      durationMs: 1,
+    })
+  ).toThrow();
+  expect(() =>
+    AssistantToolCallConversationMessagePartSchema.parse({
+      ...toolCallPartBase,
+      toolCallStatus: "denied",
+    })
+  ).toThrow();
+  expect(() =>
+    AssistantToolCallConversationMessagePartSchema.parse({
+      ...toolCallPartBase,
+      toolCallStatus: "interrupted",
+    })
+  ).toThrow();
+  expect(() =>
+    AssistantToolCallConversationMessagePartSchema.parse({
+      ...toolCallPartBase,
+      toolCallStatus: "running",
+      durationMs: 1,
+    })
+  ).toThrow();
+
+  expect(AssistantToolCallConversationMessagePartSchema.parse({
+    ...toolCallPartBase,
+    toolCallStatus: "completed",
+    durationMs: 1,
+  }).toolCallStatus).toBe("completed");
+  expect(AssistantToolCallConversationMessagePartSchema.parse({
+    ...toolCallPartBase,
+    toolCallStatus: "failed",
+    errorText: "Command failed.",
+  }).toolCallStatus).toBe("failed");
+  expect(AssistantToolCallConversationMessagePartSchema.parse({
+    ...toolCallPartBase,
+    toolCallStatus: "denied",
+    denialText: "The user denied this command.",
+  }).toolCallStatus).toBe("denied");
+  expect(AssistantToolCallConversationMessagePartSchema.parse({
+    ...toolCallPartBase,
+    toolCallStatus: "interrupted",
+    errorText: "Interrupted by user.",
+  }).toolCallStatus).toBe("interrupted");
 });
 
 test("PendingToolApprovalRequestSchema parses the dedicated approval model", () => {
@@ -424,6 +514,30 @@ test("AssistantResponseEventSchema parses assistant_message_failed", () => {
       errorText: "Provider stream ended before completion",
     }).type,
   ).toBe("assistant_message_failed");
+});
+
+test("ProviderStreamEventSchema parses ordered batched tool-call requests", () => {
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "tool_calls_requested",
+      requestedToolCalls: [
+        {
+          toolCallId: "call-read-1",
+          toolCallRequest: {
+            toolName: "read",
+            readTargetPath: "README.md",
+          },
+        },
+        {
+          toolCallId: "call-grep-1",
+          toolCallRequest: {
+            toolName: "grep",
+            regexPattern: "ProviderStreamEventSchema",
+          },
+        },
+      ],
+    }).type,
+  ).toBe("tool_calls_requested");
 });
 
 test("AssistantResponseEventSchema parses assistant_message_interrupted", () => {

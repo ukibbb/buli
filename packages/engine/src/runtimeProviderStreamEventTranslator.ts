@@ -15,6 +15,7 @@ import {
   type ProviderPlanProposedEvent,
   type ProviderStreamEvent,
   type ProviderToolCallRequestedEvent,
+  type ProviderToolCallsRequestedEvent,
   type ProviderTurnReplay,
   type TokenUsage,
 } from "@buli/contracts";
@@ -38,6 +39,13 @@ export type RuntimeProviderStreamToolCallRequestedTranslation = {
   assistantTextSegmentSessionEntryBeforeToolCall?: AssistantTextSegmentConversationSessionEntry;
 };
 
+export type RuntimeProviderStreamToolCallsRequestedTranslation = {
+  translationKind: "tool_calls_requested";
+  providerToolCallsRequestedEvent: ProviderToolCallsRequestedEvent;
+  assistantResponseEventsBeforeToolCall?: readonly AssistantResponseEvent[];
+  assistantTextSegmentSessionEntryBeforeToolCall?: AssistantTextSegmentConversationSessionEntry;
+};
+
 export type RuntimeProviderStreamTerminalAssistantResponseTranslation = {
   translationKind: "terminal_assistant_response";
   assistantResponseEventsBeforeTerminalSessionEntry: readonly AssistantResponseEvent[];
@@ -49,6 +57,7 @@ export type RuntimeProviderStreamTerminalAssistantResponseTranslation = {
 export type RuntimeProviderStreamEventTranslation =
   | RuntimeProviderStreamAssistantEventsTranslation
   | RuntimeProviderStreamToolCallRequestedTranslation
+  | RuntimeProviderStreamToolCallsRequestedTranslation
   | RuntimeProviderStreamTerminalAssistantResponseTranslation;
 
 export type RuntimeAssistantTextSegmentFlush = {
@@ -128,6 +137,25 @@ export class RuntimeProviderStreamEventTranslator {
       return {
         translationKind: "tool_call_requested",
         providerToolCallRequestedEvent: input.providerStreamEvent,
+        ...(assistantTextSegmentFlush && assistantTextSegmentFlush.assistantResponseEvents.length > 0
+          ? { assistantResponseEventsBeforeToolCall: assistantTextSegmentFlush.assistantResponseEvents }
+          : {}),
+        ...(assistantTextSegmentFlush?.assistantTextSegmentSessionEntry
+          ? { assistantTextSegmentSessionEntryBeforeToolCall: assistantTextSegmentFlush.assistantTextSegmentSessionEntry }
+          : {}),
+      };
+    }
+
+    if (input.providerStreamEvent.type === "tool_calls_requested") {
+      this.hasObservedToolCallBoundary = true;
+      const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
+        partStatus: "completed",
+        shouldEmitPartUpdatedEvent: true,
+        shouldRecordSessionEntry: true,
+      });
+      return {
+        translationKind: "tool_calls_requested",
+        providerToolCallsRequestedEvent: input.providerStreamEvent,
         ...(assistantTextSegmentFlush && assistantTextSegmentFlush.assistantResponseEvents.length > 0
           ? { assistantResponseEventsBeforeToolCall: assistantTextSegmentFlush.assistantResponseEvents }
           : {}),

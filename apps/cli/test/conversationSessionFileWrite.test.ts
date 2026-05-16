@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,6 +20,8 @@ test("writeConversationSessionTextFileAtomically replaces text without leaving a
 
   expect(await readFile(filePath, "utf8")).toBe('{"activeConversationSessionId":"session-1"}\n');
   expect((await readdir(directoryPath)).filter((fileName) => fileName.includes(".tmp"))).toEqual([]);
+  expect((await stat(directoryPath)).mode & 0o777).toBe(0o700);
+  expect((await stat(filePath)).mode & 0o777).toBe(0o600);
 });
 
 test("appendConversationSessionTextFileLineAtomically appends one line without leaving a temporary file", async () => {
@@ -34,6 +36,8 @@ test("appendConversationSessionTextFileLineAtomically appends one line without l
 
   expect(await readFile(filePath, "utf8")).toBe("first\nsecond\n");
   expect((await readdir(directoryPath)).filter((fileName) => fileName.includes(".tmp"))).toEqual([]);
+  expect((await stat(directoryPath)).mode & 0o777).toBe(0o700);
+  expect((await stat(filePath)).mode & 0o777).toBe(0o600);
 });
 
 test("appendConversationSessionTextFileLineAtomically preserves line boundaries without a trailing newline", async () => {

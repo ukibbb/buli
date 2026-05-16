@@ -120,6 +120,23 @@ export async function refreshStoredAuth(input: {
     refreshToken: auth.refreshToken,
   });
 
+  const latestAuth = await input.store.loadOpenAi();
+  if (!latestAuth) {
+    return undefined;
+  }
+  if (!isSameStoredAuthSnapshot(latestAuth, auth)) {
+    return latestAuth;
+  }
+
   await input.store.saveOpenAi(next);
   return next;
+}
+
+function isSameStoredAuthSnapshot(leftAuth: OpenAiAuthInfo, rightAuth: OpenAiAuthInfo): boolean {
+  return leftAuth.provider === rightAuth.provider &&
+    leftAuth.method === rightAuth.method &&
+    leftAuth.accessToken === rightAuth.accessToken &&
+    leftAuth.refreshToken === rightAuth.refreshToken &&
+    leftAuth.expiresAt === rightAuth.expiresAt &&
+    leftAuth.accountId === rightAuth.accountId;
 }

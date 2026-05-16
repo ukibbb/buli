@@ -5,6 +5,7 @@ import type {
   OpenAiProviderTurnReplay,
   OpenAiProviderTurnReplayInputItem,
   ProviderAvailableToolName,
+  ProviderRequestedToolCall,
   ProviderStreamEvent,
   ReasoningEffort,
   TokenUsage,
@@ -31,6 +32,10 @@ type PendingOpenAiToolResultSubmissionWait = {
 };
 
 type OpenAiTerminalUsageProviderEvent = Extract<ProviderStreamEvent, { type: "completed" | "incomplete" }>;
+type OpenAiResponseStepToolCallTerminalState = Extract<
+  OpenAiResponseStepTerminalState,
+  { terminalKind: "tool_call_requested" | "tool_calls_requested" }
+>;
 
 type OpenAiReasoningRequest = {
   effort?: ReasoningEffort;
@@ -42,6 +47,9 @@ type HttpErrorDebugResponse = {
   headers: { get(name: string): string | null };
   text(): Promise<string>;
 };
+
+const DEFAULT_MAX_OPENAI_RESPONSE_STEPS_PER_TURN = 20;
+const DEFAULT_MAX_OPENAI_TOOL_CALLS_PER_TURN = 100;
 
 function createHttpRequestBody(input: {
   selectedModelId: string;
@@ -59,7 +67,7 @@ function createHttpRequestBody(input: {
     ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
     input: input.openAiInputItems,
     tools: createOpenAiToolDefinitions({ availableToolNames: input.availableToolNames }),
-    parallel_tool_calls: false,
+    parallel_tool_calls: true,
     ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] } : {}),
     ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
     stream: true,
@@ -101,6 +109,8 @@ export class OpenAiProviderConversationTurn {
   readonly systemPromptText: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
+  readonly maxResponseStepsPerTurn: number;
+  readonly maxToolCallsPerTurn: number;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
@@ -119,6 +129,8 @@ export class OpenAiProviderConversationTurn {
     systemPromptText: string;
     conversationSessionEntries: readonly ConversationSessionEntry[];
     onStepRequestFailed: (response: Response) => Promise<Error>;
+    maxResponseStepsPerTurn?: number;
+    maxToolCallsPerTurn?: number;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.endpoint = input.endpoint;
@@ -132,6 +144,14 @@ export class OpenAiProviderConversationTurn {
     this.systemPromptText = input.systemPromptText;
     this.diagnosticLogger = input.diagnosticLogger;
     this.onStepRequestFailed = input.onStepRequestFailed;
+    this.maxResponseStepsPerTurn = normalizePositiveIntegerLimit(
+      input.maxResponseStepsPerTurn,
+      DEFAULT_MAX_OPENAI_RESPONSE_STEPS_PER_TURN,
+    );
+    this.maxToolCallsPerTurn = normalizePositiveIntegerLimit(
+      input.maxToolCallsPerTurn,
+      DEFAULT_MAX_OPENAI_TOOL_CALLS_PER_TURN,
+    );
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
@@ -181,6 +201,9 @@ export class OpenAiProviderConversationTurn {
 
     while (true) {
       responseStepIndex += 1;
+      if (responseStepIndex > this.maxResponseStepsPerTurn) {
+        throw new Error(`OpenAI response step limit exceeded after ${this.maxResponseStepsPerTurn} steps.`);
+      }
       const responseStepStartedAtMs = Date.now();
       const requestBody = createHttpRequestBody({
         selectedModelId: this.selectedModelId,
@@ -256,51 +279,66 @@ export class OpenAiProviderConversationTurn {
         throw new Error("OpenAI response step ended without a terminal state");
       }
 
-      if (terminalState.terminalKind === "tool_call_requested") {
-        requestedToolCallCount += 1;
+      if (terminalState.terminalKind === "tool_call_requested" || terminalState.terminalKind === "tool_calls_requested") {
+        const requestedToolCalls = listRequestedToolCallsFromTerminalState(terminalState);
+        const onlyRequestedToolCall = requestedToolCalls.length === 1 ? requestedToolCalls[0] : undefined;
+        requestedToolCallCount += requestedToolCalls.length;
+        if (requestedToolCallCount > this.maxToolCallsPerTurn) {
+          throw new Error(
+            `OpenAI tool-call limit exceeded: requested ${requestedToolCallCount} tool calls (max ${this.maxToolCallsPerTurn}).`,
+          );
+        }
         accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, terminalState.usage);
         const responseReplayItems = createOpenAiResponseReplayItems(terminalState.responseOutputItems);
         const toolCallTerminalDebugSummary = {
-          toolCallId: terminalState.toolCallId,
-          toolName: terminalState.toolCallRequest.toolName,
+          toolCallCount: requestedToolCalls.length,
+          toolCallIds: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+          toolNames: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
           responseStepIndex,
           responseOutputItemCount: terminalState.responseOutputItems.length,
           continuationInputItemCount: responseReplayItems.continuationInputItems.length,
           providerTurnReplayInputItemCount: responseReplayItems.providerTurnReplayInputItems.length,
-          ...(terminalState.toolCallRequest.toolName === "bash"
+          ...(onlyRequestedToolCall?.toolCallRequest.toolName === "bash"
             ? {
-                shellCommandLength: terminalState.toolCallRequest.shellCommand.length,
-                commandDescriptionLength: terminalState.toolCallRequest.commandDescription.length,
-                hasWorkingDirectoryPath: terminalState.toolCallRequest.workingDirectoryPath !== undefined,
-                hasTimeoutMilliseconds: terminalState.toolCallRequest.timeoutMilliseconds !== undefined,
+                shellCommandLength: onlyRequestedToolCall.toolCallRequest.shellCommand.length,
+                commandDescriptionLength: onlyRequestedToolCall.toolCallRequest.commandDescription.length,
+                hasWorkingDirectoryPath: onlyRequestedToolCall.toolCallRequest.workingDirectoryPath !== undefined,
+                hasTimeoutMilliseconds: onlyRequestedToolCall.toolCallRequest.timeoutMilliseconds !== undefined,
               }
             : {}),
           ...summarizeTokenUsageForDiagnostics(terminalState.usage),
         };
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.tool_call_terminal_observed", toolCallTerminalDebugSummary);
         await writeOpenAiDebugLog("OpenAI tool-call terminal state", toolCallTerminalDebugSummary);
-        if (!responseReplayItems.providerTurnReplayInputItems.some(isMatchingFunctionCallReplayItem(terminalState.toolCallId))) {
-          throw new Error(
-            `OpenAI response omitted a replayable function_call item for tool call ${terminalState.toolCallId}.`,
-          );
+        for (const requestedToolCall of requestedToolCalls) {
+          if (!responseReplayItems.providerTurnReplayInputItems.some(isMatchingFunctionCallReplayItem(requestedToolCall.toolCallId))) {
+            throw new Error(
+              `OpenAI response omitted a replayable function_call item for tool call ${requestedToolCall.toolCallId}.`,
+            );
+          }
         }
 
         this.openAiConversationInputItems.push(...responseReplayItems.continuationInputItems);
         this.providerTurnReplayInputItems.push(...responseReplayItems.providerTurnReplayInputItems);
-        const toolResultSubmission = await this.waitForToolResultSubmission(terminalState.toolCallId);
-        const functionCallOutputInputItem = createFunctionCallOutputInputItem(
-          toolResultSubmission.toolCallId,
-          toolResultSubmission.toolResultText,
+        const toolResultSubmissions = await this.waitForToolResultSubmissions(
+          requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+        );
+        const functionCallOutputInputItems = toolResultSubmissions.map((toolResultSubmission) =>
+          createFunctionCallOutputInputItem(
+            toolResultSubmission.toolCallId,
+            toolResultSubmission.toolResultText,
+          )
         );
         const toolResultDebugSummary = {
           responseStepIndex,
-          toolCallId: toolResultSubmission.toolCallId,
-          toolResultTextLength: toolResultSubmission.toolResultText.length,
+          toolCallCount: toolResultSubmissions.length,
+          toolCallIds: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolCallId),
+          toolResultTextLengths: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolResultText.length),
         };
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.tool_result_recorded_for_continuation", toolResultDebugSummary);
         await writeOpenAiDebugLog("OpenAI tool result submission", toolResultDebugSummary);
-        this.openAiConversationInputItems.push(functionCallOutputInputItem);
-        this.providerTurnReplayInputItems.push(functionCallOutputInputItem);
+        this.openAiConversationInputItems.push(...functionCallOutputInputItems);
+        this.providerTurnReplayInputItems.push(...functionCallOutputInputItems);
         continue;
       }
 
@@ -379,6 +417,10 @@ export class OpenAiProviderConversationTurn {
     });
   }
 
+  private waitForToolResultSubmissions(toolCallIds: readonly string[]): Promise<OpenAiProviderToolResultSubmission[]> {
+    return Promise.all(toolCallIds.map((toolCallId) => this.waitForToolResultSubmission(toolCallId)));
+  }
+
   private clearPendingToolResultSubmissionWait(
     toolCallId: string,
     pendingSubmissionWait: PendingOpenAiToolResultSubmissionWait,
@@ -388,6 +430,14 @@ export class OpenAiProviderConversationTurn {
       this.abortSignal?.removeEventListener("abort", pendingSubmissionWait.abortListener);
     }
   }
+}
+
+function normalizePositiveIntegerLimit(requestedLimit: number | undefined, defaultLimit: number): number {
+  if (requestedLimit === undefined || !Number.isFinite(requestedLimit)) {
+    return defaultLimit;
+  }
+
+  return Math.max(1, Math.floor(requestedLimit));
 }
 
 function shouldIncludeReasoningEncryptedContent(input: {
@@ -444,6 +494,19 @@ function isOpenAiReasoningModel(selectedModelId: string): boolean {
 function isMatchingFunctionCallReplayItem(toolCallId: string) {
   return (openAiInputItem: OpenAiProviderTurnReplayInputItem): boolean =>
     openAiInputItem.type === "function_call" && openAiInputItem.call_id === toolCallId;
+}
+
+function listRequestedToolCallsFromTerminalState(
+  terminalState: OpenAiResponseStepToolCallTerminalState,
+): ProviderRequestedToolCall[] {
+  if (terminalState.terminalKind === "tool_calls_requested") {
+    return [...terminalState.requestedToolCalls];
+  }
+
+  return [{
+    toolCallId: terminalState.toolCallId,
+    toolCallRequest: terminalState.toolCallRequest,
+  }];
 }
 
 function isOpenAiReasoningInputItem(openAiInputItem: OpenAiConversationInputItem): openAiInputItem is Extract<OpenAiConversationInputItem, { type: "reasoning" }> {
@@ -580,7 +643,15 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
             shellCommandLength: providerStreamEvent.toolCallRequest.shellCommand.length,
             commandDescriptionLength: providerStreamEvent.toolCallRequest.commandDescription.length,
           }
-        : {}),
+      : {}),
+    };
+  }
+
+  if (providerStreamEvent.type === "tool_calls_requested") {
+    return {
+      toolCallCount: providerStreamEvent.requestedToolCalls.length,
+      toolCallIds: providerStreamEvent.requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+      toolNames: providerStreamEvent.requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
     };
   }
 

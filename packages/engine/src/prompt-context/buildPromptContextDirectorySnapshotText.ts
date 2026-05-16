@@ -1,5 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "../modelFacingXmlEscaping.ts";
 
 const DEFAULT_MAXIMUM_PROMPT_CONTEXT_DIRECTORY_DEPTH = 4;
 const DEFAULT_MAXIMUM_PROMPT_CONTEXT_DIRECTORY_ENTRY_COUNT = 200;
@@ -48,7 +49,7 @@ export async function buildPromptContextDirectorySnapshotText(input: {
       }
 
       const linePrefix = `${"  ".repeat(depth)}- `;
-      const lineText = `${linePrefix}${directoryEntry.name}${directoryEntry.isDirectory() ? "/" : ""}`;
+      const lineText = `${linePrefix}${escapeModelFacingXmlText(directoryEntry.name)}${directoryEntry.isDirectory() ? "/" : ""}`;
       visibleDirectoryLines.push(lineText);
       writtenEntryCount += 1;
 
@@ -69,7 +70,7 @@ export async function buildPromptContextDirectorySnapshotText(input: {
     visibleDirectoryLines.push("- ... truncated");
   }
 
-  return `<context_directory path="${input.displayPath}">\n${visibleDirectoryLines.join("\n")}\n</context_directory>`;
+  return `<context_directory path="${escapeModelFacingXmlAttributeValue(input.displayPath)}">\n${visibleDirectoryLines.join("\n")}\n</context_directory>`;
 }
 
 function throwIfPromptContextExpansionAborted(abortSignal: AbortSignal | undefined): void {

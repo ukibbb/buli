@@ -59,7 +59,15 @@ export function summarizeProviderStreamEventForDiagnostics(
             shellCommandLength: providerStreamEvent.toolCallRequest.shellCommand.length,
             commandDescriptionLength: providerStreamEvent.toolCallRequest.commandDescription.length,
           }
-        : {}),
+      : {}),
+    };
+  }
+
+  if (providerStreamEvent.type === "tool_calls_requested") {
+    return {
+      toolCallCount: providerStreamEvent.requestedToolCalls.length,
+      toolCallIds: providerStreamEvent.requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+      toolNames: providerStreamEvent.requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
     };
   }
 

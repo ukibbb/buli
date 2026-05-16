@@ -80,7 +80,22 @@ export function useChatScreenPromptContextSelectionRefresh(
         requestSequence: loadRequest.requestSequence,
         promptContextQueryLength: loadRequest.promptContextQueryText.length,
       });
-      const promptContextCandidates = await input.loadPromptContextCandidates(loadRequest.promptContextQueryText);
+      let promptContextCandidates: readonly PromptContextCandidate[];
+      try {
+        promptContextCandidates = await input.loadPromptContextCandidates(loadRequest.promptContextQueryText);
+      } catch (error) {
+        logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_failed", {
+          requestSequence: loadRequest.requestSequence,
+          activeRequestSequence: latestPromptContextLoadRequestSequenceRef.current,
+          promptContextQueryLength: loadRequest.promptContextQueryText.length,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        if (loadRequest.requestSequence === latestPromptContextLoadRequestSequenceRef.current) {
+          input.setChatSessionState((currentChatSessionState) => hidePromptContextSelection(currentChatSessionState));
+        }
+        return;
+      }
+
       if (loadRequest.requestSequence !== latestPromptContextLoadRequestSequenceRef.current) {
         logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_discarded", {
           requestSequence: loadRequest.requestSequence,

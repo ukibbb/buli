@@ -1,11 +1,13 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ExplorerChildToolCall, ToolCallExploreDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { AssistantMarkdownBlock } from "../primitives/AssistantMarkdownBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
 import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
+import { ToolCallResultDisclosureControl } from "./ToolCallResultDisclosureControl.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
@@ -19,6 +21,7 @@ export type ExplorerToolCallCardProps = {
 };
 
 export function ExplorerToolCallCard(props: ExplorerToolCallCardProps): ReactNode {
+  const [isExplorerContentExpanded, setIsExplorerContentExpanded] = useState(false);
   const accentColor =
     props.renderState === "failed"
       ? chatScreenTheme.accentRed
@@ -49,7 +52,14 @@ export function ExplorerToolCallCard(props: ExplorerToolCallCardProps): ReactNod
           statusLabel={buildExplorerStatusLabel(props)}
         />
       }
-      bodyContent={buildExplorerBodyContent(props)}
+      bodyContent={buildExplorerBodyContent({
+        accentColor,
+        explorerToolCallCardProps: props,
+        isExplorerContentExpanded,
+        onExplorerContentExpansionToggle: () => {
+          setIsExplorerContentExpanded((currentExplorerContentExpanded) => !currentExplorerContentExpanded);
+        },
+      })}
     />
   );
 }
@@ -66,7 +76,15 @@ function buildExplorerStatusLabel(props: ExplorerToolCallCardProps): string {
   return `returned${durationLabel}`;
 }
 
-function buildExplorerBodyContent(props: ExplorerToolCallCardProps): ReactNode {
+type ExplorerBodyContentInput = {
+  explorerToolCallCardProps: ExplorerToolCallCardProps;
+  isExplorerContentExpanded: boolean;
+  onExplorerContentExpansionToggle: () => void;
+  accentColor: string;
+};
+
+function buildExplorerBodyContent(input: ExplorerBodyContentInput): ReactNode {
+  const props = input.explorerToolCallCardProps;
   if (props.renderState === "failed") {
     return (
       <text fg={chatScreenTheme.accentRed}>
@@ -80,48 +98,78 @@ function buildExplorerBodyContent(props: ExplorerToolCallCardProps): ReactNode {
     return undefined;
   }
   return (
-    <box flexDirection="column" paddingX={1} width="100%">
-      {explorationPrompt ? (
-        <box width="100%">
-          <text fg={chatScreenTheme.textMuted}>{"// prompt"}</text>
-        </box>
-      ) : null}
-      {explorationPrompt ? (
-        <box width="100%">
-          <text fg={chatScreenTheme.textSecondary}>{explorationPrompt}</text>
-        </box>
-      ) : null}
-      {hasExplorationChildToolCalls ? (
-        <box {...(explorationPrompt ? { marginTop: 1 } : {})} width="100%">
-          <text fg={chatScreenTheme.textMuted}>{"// activity"}</text>
-        </box>
-      ) : null}
-      {hasExplorationChildToolCalls ? (
-        <box flexDirection="column" width="100%">
-          {explorationChildToolCalls.map((explorerChildToolCall, index) => (
-            <box
-              key={explorerChildToolCall.explorerChildToolCallId}
-              flexDirection="column"
-              {...(index > 0 ? { marginTop: 1 } : {})}
-              width="100%"
-            >
-              <ExplorerChildToolCallCard explorerChildToolCall={explorerChildToolCall} />
+    <box flexDirection="column" width="100%">
+      <ToolCallResultDisclosureControl
+        isResultExpanded={input.isExplorerContentExpanded}
+        onResultExpansionToggle={input.onExplorerContentExpansionToggle}
+        resultSummaryText={buildExplorerDisclosureSummaryText(props.toolCallDetail)}
+      />
+      {input.isExplorerContentExpanded ? (
+        <box flexDirection="column" marginTop={1} paddingX={1} width="100%">
+          {explorationPrompt ? (
+            <box width="100%">
+              <text fg={chatScreenTheme.textMuted}>{"// prompt"}</text>
             </box>
-          ))}
-        </box>
-      ) : null}
-      {explorationResultSummary ? (
-        <box {...(explorationPrompt || hasExplorationChildToolCalls ? { marginTop: 1 } : {})} width="100%">
-          <text fg={chatScreenTheme.textMuted}>{"// result"}</text>
-        </box>
-      ) : null}
-      {explorationResultSummary ? (
-        <box width="100%">
-          <text fg={chatScreenTheme.textPrimary}>{explorationResultSummary}</text>
+          ) : null}
+          {explorationPrompt ? (
+            <box width="100%">
+              <text fg={chatScreenTheme.textSecondary}>{explorationPrompt}</text>
+            </box>
+          ) : null}
+          {hasExplorationChildToolCalls ? (
+            <box {...(explorationPrompt ? { marginTop: 1 } : {})} width="100%">
+              <text fg={chatScreenTheme.textMuted}>{"// activity"}</text>
+            </box>
+          ) : null}
+          {hasExplorationChildToolCalls ? (
+            <box flexDirection="column" width="100%">
+              {explorationChildToolCalls.map((explorerChildToolCall, index) => (
+                <box
+                  key={explorerChildToolCall.explorerChildToolCallId}
+                  flexDirection="column"
+                  {...(index > 0 ? { marginTop: 1 } : {})}
+                  width="100%"
+                >
+                  <ExplorerChildToolCallCard explorerChildToolCall={explorerChildToolCall} />
+                </box>
+              ))}
+            </box>
+          ) : null}
+          {explorationResultSummary ? (
+            <box {...(explorationPrompt || hasExplorationChildToolCalls ? { marginTop: 1 } : {})} width="100%">
+              <text fg={chatScreenTheme.textMuted}>{"// result"}</text>
+            </box>
+          ) : null}
+          {explorationResultSummary ? (
+            <box width="100%">
+              <AssistantMarkdownBlock
+                horizontalRuleColor={input.accentColor}
+                isStreaming={props.renderState === "streaming"}
+                markdownText={explorationResultSummary}
+              />
+            </box>
+          ) : null}
         </box>
       ) : null}
     </box>
   );
+}
+
+function buildExplorerDisclosureSummaryText(toolCallDetail: ToolCallExploreDetail): string {
+  const explorerContentSectionNames: string[] = [];
+  if (toolCallDetail.explorationPrompt) {
+    explorerContentSectionNames.push("prompt");
+  }
+  if (toolCallDetail.explorationChildToolCalls && toolCallDetail.explorationChildToolCalls.length > 0) {
+    explorerContentSectionNames.push("activity");
+  }
+  if (toolCallDetail.explorationResultSummary) {
+    explorerContentSectionNames.push("result");
+  }
+
+  return explorerContentSectionNames.length > 0
+    ? `Explorer details: ${explorerContentSectionNames.join(", ")}`
+    : "Explorer details";
 }
 
 function ExplorerChildToolCallCard(props: { explorerChildToolCall: ExplorerChildToolCall }): ReactNode {

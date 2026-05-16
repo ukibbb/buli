@@ -1,10 +1,11 @@
 import {
   createStartedToolCallDetailFromRequest,
+  type AssistantToolCallConversationMessagePart,
   type AssistantTextPartStatus,
-  type AssistantToolCallPartStatus,
   type ConversationMessage,
   type ConversationMessagePart,
   type ConversationSessionEntry,
+  type ToolCallDetail,
 } from "@buli/contracts";
 import type { ChatSessionState } from "./chatSessionState.ts";
 
@@ -17,6 +18,13 @@ type HydratedConversationTranscript = {
   conversationMessagesById: Record<string, ConversationMessage>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   orderedConversationMessageIds: string[];
+};
+
+type HydratedToolResultPartBase = {
+  id: string;
+  toolCallId: string;
+  toolCallStartedAtMs: number;
+  toolCallDetail: ToolCallDetail;
 };
 
 const INTERRUPTED_TOOL_CALL_ERROR_TEXT = "Tool call was interrupted before a result was recorded.";
@@ -159,8 +167,12 @@ function buildHydratedConversationTranscript(
       }
 
       conversationMessagePartsById[interruptedToolCallPartId] = {
-        ...interruptedToolCallPart,
+        id: interruptedToolCallPart.id,
+        partKind: "assistant_tool_call",
+        toolCallId: interruptedToolCallPart.toolCallId,
         toolCallStatus: "interrupted",
+        toolCallStartedAtMs: interruptedToolCallPart.toolCallStartedAtMs,
+        toolCallDetail: interruptedToolCallPart.toolCallDetail,
         errorText: INTERRUPTED_TOOL_CALL_ERROR_TEXT,
       };
     }
@@ -342,57 +354,78 @@ function upsertHydratedToolResultPart(input: {
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   appendConversationMessagePart: (messageId: string, conversationMessagePart: ConversationMessagePart) => void;
 }): void {
-  const toolCallStatus = mapToolResultEntryToToolCallStatus(input.conversationSessionEntry);
   const existingToolCallPartId = input.toolCallPartIdByToolCallId.get(input.conversationSessionEntry.toolCallId);
   const existingToolCallPart = existingToolCallPartId
     ? input.conversationMessagePartsById[existingToolCallPartId]
     : undefined;
 
   if (existingToolCallPart?.partKind === "assistant_tool_call") {
-    input.conversationMessagePartsById[existingToolCallPart.id] = {
-      ...existingToolCallPart,
-      toolCallStatus,
-      toolCallDetail: input.conversationSessionEntry.toolCallDetail,
-      ...(input.conversationSessionEntry.entryKind === "failed_tool_result"
-        ? { errorText: input.conversationSessionEntry.failureExplanation }
-        : {}),
-      ...(input.conversationSessionEntry.entryKind === "denied_tool_result"
-        ? { denialText: input.conversationSessionEntry.denialExplanation }
-        : {}),
-    };
+    input.conversationMessagePartsById[existingToolCallPart.id] = buildHydratedToolResultConversationMessagePart({
+      conversationSessionEntry: input.conversationSessionEntry,
+      hydratedToolResultPartBase: {
+        id: existingToolCallPart.id,
+        toolCallId: existingToolCallPart.toolCallId,
+        toolCallStartedAtMs: existingToolCallPart.toolCallStartedAtMs,
+        toolCallDetail: input.conversationSessionEntry.toolCallDetail,
+      },
+      durationMs: input.entryIndex - existingToolCallPart.toolCallStartedAtMs,
+    });
     return;
   }
 
   const toolCallPartId = `persisted-entry-${input.entryIndex}-tool-result`;
   input.toolCallPartIdByToolCallId.set(input.conversationSessionEntry.toolCallId, toolCallPartId);
-  input.appendConversationMessagePart(input.assistantMessageId, {
-    id: toolCallPartId,
-    partKind: "assistant_tool_call",
-    toolCallId: input.conversationSessionEntry.toolCallId,
-    toolCallStatus,
-    toolCallStartedAtMs: input.entryIndex,
-    toolCallDetail: input.conversationSessionEntry.toolCallDetail,
-    ...(input.conversationSessionEntry.entryKind === "failed_tool_result"
-      ? { errorText: input.conversationSessionEntry.failureExplanation }
-      : {}),
-    ...(input.conversationSessionEntry.entryKind === "denied_tool_result"
-      ? { denialText: input.conversationSessionEntry.denialExplanation }
-      : {}),
-  });
+  input.appendConversationMessagePart(
+    input.assistantMessageId,
+    buildHydratedToolResultConversationMessagePart({
+      conversationSessionEntry: input.conversationSessionEntry,
+      hydratedToolResultPartBase: {
+        id: toolCallPartId,
+        toolCallId: input.conversationSessionEntry.toolCallId,
+        toolCallStartedAtMs: input.entryIndex,
+        toolCallDetail: input.conversationSessionEntry.toolCallDetail,
+      },
+      durationMs: 0,
+    }),
+  );
 }
 
-function mapToolResultEntryToToolCallStatus(
-  conversationSessionEntry: ToolResultConversationSessionEntry,
-): AssistantToolCallPartStatus {
-  if (conversationSessionEntry.entryKind === "completed_tool_result") {
-    return "completed";
+function buildHydratedToolResultConversationMessagePart(input: {
+  conversationSessionEntry: ToolResultConversationSessionEntry;
+  hydratedToolResultPartBase: HydratedToolResultPartBase;
+  durationMs: number;
+}): AssistantToolCallConversationMessagePart {
+  const commonHydratedToolCallPartFields = {
+    id: input.hydratedToolResultPartBase.id,
+    partKind: "assistant_tool_call" as const,
+    toolCallId: input.hydratedToolResultPartBase.toolCallId,
+    toolCallStartedAtMs: input.hydratedToolResultPartBase.toolCallStartedAtMs,
+    toolCallDetail: input.hydratedToolResultPartBase.toolCallDetail,
+  };
+
+  if (input.conversationSessionEntry.entryKind === "completed_tool_result") {
+    return {
+      ...commonHydratedToolCallPartFields,
+      toolCallStatus: "completed",
+      durationMs: Math.max(0, input.durationMs),
+    };
   }
 
-  if (conversationSessionEntry.entryKind === "denied_tool_result") {
-    return "denied";
+  if (input.conversationSessionEntry.entryKind === "failed_tool_result") {
+    return {
+      ...commonHydratedToolCallPartFields,
+      toolCallStatus: "failed",
+      errorText: input.conversationSessionEntry.failureExplanation,
+      durationMs: Math.max(0, input.durationMs),
+    };
   }
 
-  return "failed";
+  return {
+    ...commonHydratedToolCallPartFields,
+    toolCallStatus: "denied",
+    denialText: input.conversationSessionEntry.denialExplanation,
+    durationMs: Math.max(0, input.durationMs),
+  };
 }
 
 function isToolResultConversationSessionEntry(

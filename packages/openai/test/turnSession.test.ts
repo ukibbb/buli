@@ -230,6 +230,177 @@ test("OpenAiProviderConversationTurn captures replay items for a completed typed
   });
 });
 
+test("OpenAiProviderConversationTurn continues with ordered outputs for a batched tool step", async () => {
+  const requestBodies: string[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_read_1","name":"read","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"filePath\\":\\"README.md\\"}"}\n\n',
+      'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_2","call_id":"call_grep_1","name":"grep","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_2","arguments":"{\\"pattern\\":\\"ToolCallRequest\\",\\"path\\":\\"packages\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_read_1","name":"read","arguments":"{\\"filePath\\":\\"README.md\\"}"},{"id":"fc_2","type":"function_call","call_id":"call_grep_1","name":"grep","arguments":"{\\"pattern\\":\\"ToolCallRequest\\",\\"path\\":\\"packages\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ]),
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Inspect docs"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  const emittedEvents: ProviderStreamEvent[] = [];
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    emittedEvents.push(emittedEvent);
+    if (emittedEvent.type === "tool_calls_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: "call_grep_1",
+        toolResultText: "packages/contracts/src/toolCallRequest.ts:64: ToolCallRequestSchema",
+      });
+      await providerTurn.submitToolResult({
+        toolCallId: "call_read_1",
+        toolResultText: "<path>README.md</path>\n1: # buli",
+      });
+    }
+  }
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "tool_calls_requested",
+    "text_chunk",
+    "completed",
+  ]);
+  expect(JSON.parse(requestBodies[1] ?? "{}")).toMatchObject({
+    input: [
+      { role: "user", content: "Inspect docs" },
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_read_1",
+        name: "read",
+        arguments: '{"filePath":"README.md"}',
+      },
+      {
+        id: "fc_2",
+        type: "function_call",
+        call_id: "call_grep_1",
+        name: "grep",
+        arguments: '{"pattern":"ToolCallRequest","path":"packages"}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_read_1",
+        output: "<path>README.md</path>\n1: # buli",
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_grep_1",
+        output: "packages/contracts/src/toolCallRequest.ts:64: ToolCallRequestSchema",
+      },
+    ],
+  });
+  expect(providerTurn.getProviderTurnReplay()).toEqual({
+    provider: "openai",
+    inputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_read_1",
+        name: "read",
+        arguments: '{"filePath":"README.md"}',
+      },
+      {
+        type: "function_call",
+        id: "fc_2",
+        call_id: "call_grep_1",
+        name: "grep",
+        arguments: '{"pattern":"ToolCallRequest","path":"packages"}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_read_1",
+        output: "<path>README.md</path>\n1: # buli",
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_grep_1",
+        output: "packages/contracts/src/toolCallRequest.ts:64: ToolCallRequestSchema",
+      },
+    ],
+  });
+});
+
+test("OpenAiProviderConversationTurn stops before exceeding the response-step limit", async () => {
+  const requestBodies: string[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      createOpenAiStepResponse([
+        'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":""}}\n\n',
+        'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"filePath\\":\\"README.md\\"}"}\n\n',
+        'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"read","arguments":"{\\"filePath\\":\\"README.md\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+      ]),
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read README"),
+    maxResponseStepsPerTurn: 1,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+  const emittedEvents: ProviderStreamEvent[] = [];
+
+  await expect((async () => {
+    for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+      emittedEvents.push(emittedEvent);
+      if (emittedEvent.type === "tool_call_requested") {
+        await providerTurn.submitToolResult({
+          toolCallId: emittedEvent.toolCallId,
+          toolResultText: "<path>README.md</path>\n1: # buli",
+        });
+      }
+    }
+  })()).rejects.toThrow("OpenAI response step limit exceeded after 1 steps");
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual(["tool_call_requested"]);
+  expect(requestBodies).toHaveLength(1);
+});
+
+test("OpenAiProviderConversationTurn stops when a tool batch exceeds the per-turn tool-call limit", async () => {
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      createOpenAiStepResponse([
+        'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_read_1","name":"read","arguments":""}}\n\n',
+        'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"filePath\\":\\"README.md\\"}"}\n\n',
+        'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_2","call_id":"call_grep_1","name":"grep","arguments":""}}\n\n',
+        'data: {"type":"response.function_call_arguments.done","item_id":"fc_2","arguments":"{\\"pattern\\":\\"Buli\\"}"}\n\n',
+        'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_read_1","name":"read","arguments":"{\\"filePath\\":\\"README.md\\"}"},{"id":"fc_2","type":"function_call","call_id":"call_grep_1","name":"grep","arguments":"{\\"pattern\\":\\"Buli\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+      ]),
+    ], []),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Inspect README"),
+    maxToolCallsPerTurn: 1,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+  const emittedEvents: ProviderStreamEvent[] = [];
+
+  await expect((async () => {
+    for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+      emittedEvents.push(emittedEvent);
+    }
+  })()).rejects.toThrow("OpenAI tool-call limit exceeded: requested 2 tool calls (max 1)");
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual(["tool_calls_requested"]);
+});
+
 test("OpenAiProviderConversationTurn passes the abort signal to response fetch", async () => {
   const abortController = new AbortController();
   const receivedAbortSignals: Array<AbortSignal | null | undefined> = [];

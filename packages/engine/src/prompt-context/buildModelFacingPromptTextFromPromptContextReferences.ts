@@ -1,4 +1,5 @@
 import { lstat, realpath } from "node:fs/promises";
+import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "../modelFacingXmlEscaping.ts";
 import { buildPromptContextDirectorySnapshotText } from "./buildPromptContextDirectorySnapshotText.ts";
 import { buildPromptContextFileSnapshotText } from "./buildPromptContextFileSnapshotText.ts";
 import { parsePromptContextReferencesFromPromptText } from "./parsePromptContextReferencesFromPromptText.ts";
@@ -49,7 +50,7 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
     seenPromptContextKeys.add(dedupeKey);
     if (resolvedPromptContextReference.kind === "unresolved") {
       promptContextBlocks.push(
-        `<context_reference_error reference="${parsedPromptContextReference.promptReferenceText}">\n${resolvedPromptContextReference.errorMessage}\n</context_reference_error>`,
+        `<context_reference_error reference="${escapeModelFacingXmlAttributeValue(parsedPromptContextReference.promptReferenceText)}">\n${escapeModelFacingXmlText(resolvedPromptContextReference.errorMessage)}\n</context_reference_error>`,
       );
       continue;
     }

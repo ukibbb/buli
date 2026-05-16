@@ -1,4 +1,5 @@
-import { readFile, readdir } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { open, readFile, readdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   createStartedToolCallDetailFromRequest,
@@ -15,6 +16,7 @@ import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 
 const DEFAULT_READ_LIMIT = 2_000;
 const MAX_READ_LIMIT = 2_000;
+const MAX_READ_FILE_BYTE_COUNT = 1_000_000;
 const MAX_PREVIEW_LINE_COUNT = 80;
 const MAX_LINE_LENGTH = 2_000;
 const BINARY_SAMPLE_BYTE_COUNT = 4_096;
@@ -22,6 +24,13 @@ const BINARY_SAMPLE_BYTE_COUNT = 4_096;
 type ReadVisibleLine = {
   lineText: string;
   wasLineTruncated?: boolean;
+};
+
+type LargeTextFileLineWindow = {
+  visibleFileLines: ReadVisibleLine[];
+  totalLineCount?: number;
+  wasLineCountTruncated: boolean;
+  wasLongLineTruncated: boolean;
 };
 
 export function createStartedReadToolCallDetail(readToolCallRequest: ReadToolCallRequest): ToolCallReadDetail {
@@ -99,6 +108,70 @@ export async function runReadToolCall(input: {
 
     if (!resolvedReadPath.stats.isFile()) {
       throw new Error(`Path is not a file or directory: ${resolvedReadPath.displayPath}`);
+    }
+    if (resolvedReadPath.stats.size > MAX_READ_FILE_BYTE_COUNT) {
+      const fileSampleBytes = await readFileSampleBytes({
+        absoluteFilePath: resolvedReadPath.absolutePath,
+        maximumByteCount: BINARY_SAMPLE_BYTE_COUNT,
+        abortSignal: input.abortSignal,
+      });
+      if (isBinaryFileSample(fileSampleBytes)) {
+        throw new Error(`Cannot read binary file: ${resolvedReadPath.displayPath} (${resolvedReadPath.stats.size} bytes)`);
+      }
+
+      const hasExplicitLineWindow = input.readToolCallRequest.offsetLineNumber !== undefined ||
+        input.readToolCallRequest.maximumLineCount !== undefined;
+      if (!hasExplicitLineWindow) {
+        throw new Error(
+          `File is too large for a default read: ${resolvedReadPath.displayPath} (${resolvedReadPath.stats.size} bytes, max ${MAX_READ_FILE_BYTE_COUNT} bytes). Use offsetLineNumber and maximumLineCount to request a bounded line window.`,
+        );
+      }
+
+      const largeTextFileLineWindow = await readLargeTextFileLineWindow({
+        absoluteFilePath: resolvedReadPath.absolutePath,
+        offsetLineNumber,
+        maximumLineCount,
+        abortSignal: input.abortSignal,
+      });
+      const visibleFileLineTexts = largeTextFileLineWindow.visibleFileLines.map((visibleFileLine) => visibleFileLine.lineText);
+      const previewLines = buildReadPreviewLines(largeTextFileLineWindow.visibleFileLines, offsetLineNumber);
+      const toolCallDetail: ToolCallReadDetail = {
+        toolName: "read",
+        readFilePath: resolvedReadPath.displayPath,
+        ...(largeTextFileLineWindow.totalLineCount !== undefined
+          ? { readLineCount: largeTextFileLineWindow.totalLineCount }
+          : {}),
+        returnedLineCount: largeTextFileLineWindow.visibleFileLines.length,
+        readByteCount: resolvedReadPath.stats.size,
+        previewLines,
+        wasLineCountTruncated: largeTextFileLineWindow.wasLineCountTruncated,
+        wasLongLineTruncated: largeTextFileLineWindow.wasLongLineTruncated,
+      };
+
+      const projectInstructionUpdateText = await discoverProjectInstructionUpdateText({
+        projectInstructionTracker: input.projectInstructionTracker,
+        targetDirectoryPath: dirname(resolvedReadPath.absolutePath),
+        excludedAbsolutePath: resolvedReadPath.absolutePath,
+        abortSignal: input.abortSignal,
+      });
+
+      return {
+        outcomeKind: "completed",
+        toolCallDetail,
+        toolResultText: appendProjectInstructionUpdateText(
+          buildLargeFileReadToolResultText({
+            displayPath: resolvedReadPath.displayPath,
+            fileByteCount: resolvedReadPath.stats.size,
+            visibleFileLines: visibleFileLineTexts,
+            offsetLineNumber,
+            totalLineCount: largeTextFileLineWindow.totalLineCount,
+            wasLineCountTruncated: largeTextFileLineWindow.wasLineCountTruncated,
+            wasLongLineTruncated: largeTextFileLineWindow.wasLongLineTruncated,
+          }),
+          projectInstructionUpdateText,
+        ),
+        durationMilliseconds: Date.now() - startedAtMilliseconds,
+      };
     }
 
     const fileBytes = await readFile(resolvedReadPath.absolutePath);
@@ -245,12 +318,156 @@ function buildFileReadToolResultText(input: {
   ].join("\n");
 }
 
+function buildLargeFileReadToolResultText(input: {
+  displayPath: string;
+  fileByteCount: number;
+  visibleFileLines: readonly string[];
+  offsetLineNumber: number;
+  totalLineCount: number | undefined;
+  wasLineCountTruncated: boolean;
+  wasLongLineTruncated: boolean;
+}): string {
+  const lastVisibleLineNumber = input.offsetLineNumber + input.visibleFileLines.length - 1;
+  const lineText = input.visibleFileLines
+    .map((visibleFileLine, visibleFileLineIndex) => `${input.offsetLineNumber + visibleFileLineIndex}: ${visibleFileLine}`)
+    .join("\n");
+  const statusLine = input.wasLineCountTruncated
+    ? `(Showing lines ${input.offsetLineNumber}-${lastVisibleLineNumber} of a large ${input.fileByteCount}-byte file. Use offset=${lastVisibleLineNumber + 1} to continue.)`
+    : `(End of file - total ${input.totalLineCount ?? lastVisibleLineNumber} lines; ${input.fileByteCount} bytes)`;
+  const truncationLines = input.wasLongLineTruncated
+    ? [`(Long lines were truncated to ${MAX_LINE_LENGTH} characters.)`]
+    : [];
+
+  return [
+    `<path>${input.displayPath}</path>`,
+    "<type>file</type>",
+    "<content>",
+    lineText,
+    statusLine,
+    ...truncationLines,
+    "</content>",
+  ].join("\n");
+}
+
 function buildReadPreviewLines(lines: readonly ReadVisibleLine[], offsetLineNumber = 1): ToolCallReadPreviewLine[] {
   return lines.slice(0, MAX_PREVIEW_LINE_COUNT).map((visibleLine, index) => ({
     lineNumber: offsetLineNumber + index,
     lineText: visibleLine.lineText,
     ...(visibleLine.wasLineTruncated ? { wasLineTruncated: true } : {}),
-  }));
+}));
+}
+
+async function readFileSampleBytes(input: {
+  absoluteFilePath: string;
+  maximumByteCount: number;
+  abortSignal: AbortSignal | undefined;
+}): Promise<Uint8Array> {
+  throwIfReadToolAborted(input.abortSignal);
+  const fileHandle = await open(input.absoluteFilePath, "r");
+  try {
+    const sampleBuffer = Buffer.alloc(input.maximumByteCount);
+    const readResult = await fileHandle.read(sampleBuffer, 0, input.maximumByteCount, 0);
+    throwIfReadToolAborted(input.abortSignal);
+    return sampleBuffer.subarray(0, readResult.bytesRead);
+  } finally {
+    await fileHandle.close();
+  }
+}
+
+async function readLargeTextFileLineWindow(input: {
+  absoluteFilePath: string;
+  offsetLineNumber: number;
+  maximumLineCount: number;
+  abortSignal: AbortSignal | undefined;
+}): Promise<LargeTextFileLineWindow> {
+  const visibleFileLines: ReadVisibleLine[] = [];
+  const lastRequestedLineNumber = input.offsetLineNumber + input.maximumLineCount - 1;
+  let completedLineCount = 0;
+  let currentLineText = "";
+  let currentLineHasContent = false;
+  let currentLineWasTruncated = false;
+  let wasLongLineTruncated = false;
+  let previousCharacterWasCarriageReturn = false;
+
+  const finishCurrentLine = (): void => {
+    const currentLineNumber = completedLineCount + 1;
+    if (currentLineNumber >= input.offsetLineNumber && currentLineNumber <= lastRequestedLineNumber) {
+      visibleFileLines.push({
+        lineText: currentLineWasTruncated ? `${currentLineText}...` : currentLineText,
+        ...(currentLineWasTruncated ? { wasLineTruncated: true } : {}),
+      });
+    }
+    if (currentLineWasTruncated) {
+      wasLongLineTruncated = true;
+    }
+
+    completedLineCount += 1;
+    currentLineText = "";
+    currentLineHasContent = false;
+    currentLineWasTruncated = false;
+  };
+
+  const fileReadStream = createReadStream(input.absoluteFilePath, { encoding: "utf8" });
+  const interruptFileReadStream = (): void => {
+    fileReadStream.destroy(new Error("Read interrupted"));
+  };
+  input.abortSignal?.addEventListener("abort", interruptFileReadStream, { once: true });
+  try {
+    for await (const chunk of fileReadStream) {
+      throwIfReadToolAborted(input.abortSignal);
+      for (const character of String(chunk)) {
+        if (previousCharacterWasCarriageReturn) {
+          previousCharacterWasCarriageReturn = false;
+          if (character === "\n") {
+            continue;
+          }
+        }
+
+        if (completedLineCount >= lastRequestedLineNumber) {
+          return {
+            visibleFileLines,
+            wasLineCountTruncated: true,
+            wasLongLineTruncated,
+          };
+        }
+
+        if (character === "\r" || character === "\n") {
+          finishCurrentLine();
+          previousCharacterWasCarriageReturn = character === "\r";
+          continue;
+        }
+
+        currentLineHasContent = true;
+        const currentLineNumber = completedLineCount + 1;
+        if (currentLineNumber < input.offsetLineNumber || currentLineNumber > lastRequestedLineNumber) {
+          continue;
+        }
+
+        if (currentLineText.length < MAX_LINE_LENGTH) {
+          currentLineText = `${currentLineText}${character}`;
+        } else {
+          currentLineWasTruncated = true;
+        }
+      }
+    }
+  } finally {
+    input.abortSignal?.removeEventListener("abort", interruptFileReadStream);
+  }
+
+  if (currentLineHasContent) {
+    finishCurrentLine();
+  }
+
+  if (visibleFileLines.length === 0 && input.offsetLineNumber > completedLineCount) {
+    throw new Error(`Offset ${input.offsetLineNumber} is out of range for this file (${completedLineCount} lines)`);
+  }
+
+  return {
+    visibleFileLines,
+    totalLineCount: completedLineCount,
+    wasLineCountTruncated: false,
+    wasLongLineTruncated,
+  };
 }
 
 function splitFileTextIntoLines(fileText: string): string[] {

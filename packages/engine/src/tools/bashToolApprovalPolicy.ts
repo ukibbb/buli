@@ -2,7 +2,7 @@ import type { BashToolCallRequest } from "@buli/contracts";
 
 export const BASH_TOOL_APPROVAL_MODES = ["risk_based", "trusted"] as const;
 export type BashToolApprovalMode = (typeof BASH_TOOL_APPROVAL_MODES)[number];
-export const DEFAULT_BASH_TOOL_APPROVAL_MODE: BashToolApprovalMode = "trusted";
+export const DEFAULT_BASH_TOOL_APPROVAL_MODE: BashToolApprovalMode = "risk_based";
 
 export type BashCommandRiskKind =
   | "ambiguous_shell_syntax"

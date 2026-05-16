@@ -203,21 +203,35 @@ function createKeyboardApprovalAssistantConversationRunner(): {
 
             const approvalDecision = await approvalDecisionPromise;
             yield { type: "assistant_pending_tool_approval_cleared", approvalId: "approval-1" };
-            yield {
-              type: "assistant_message_part_updated",
-              messageId: "assistant-1",
-              part: {
-                id: "tool-1",
-                partKind: "assistant_tool_call",
-                toolCallId: "call-1",
-                toolCallStatus: approvalDecision === "approved" ? "completed" : "denied",
-                toolCallStartedAtMs: 1,
-                toolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
-                ...(approvalDecision === "denied"
-                  ? { denialText: "The user denied this bash command, so it was not executed." }
-                  : { durationMs: 1 }),
-              },
-            } satisfies AssistantResponseEvent;
+            if (approvalDecision === "denied") {
+              yield {
+                type: "assistant_message_part_updated",
+                messageId: "assistant-1",
+                part: {
+                  id: "tool-1",
+                  partKind: "assistant_tool_call",
+                  toolCallId: "call-1",
+                  toolCallStatus: "denied",
+                  toolCallStartedAtMs: 1,
+                  toolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
+                  denialText: "The user denied this bash command, so it was not executed.",
+                },
+              } satisfies AssistantResponseEvent;
+            } else {
+              yield {
+                type: "assistant_message_part_updated",
+                messageId: "assistant-1",
+                part: {
+                  id: "tool-1",
+                  partKind: "assistant_tool_call",
+                  toolCallId: "call-1",
+                  toolCallStatus: "completed",
+                  toolCallStartedAtMs: 1,
+                  toolCallDetail: { toolName: "bash", commandLine: "rm -rf build" },
+                  durationMs: 1,
+                },
+              } satisfies AssistantResponseEvent;
+            }
             yield {
               type: "assistant_message_part_added",
               messageId: "assistant-1",

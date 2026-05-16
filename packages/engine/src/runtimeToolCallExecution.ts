@@ -6,8 +6,10 @@ import {
   type AssistantResponseEvent,
   type AssistantToolRequestName,
   type BuliDiagnosticLogger,
+  type ProviderRequestedToolCall,
   type ReasoningEffort,
   type ToolCallRequest,
+  type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
@@ -16,7 +18,10 @@ import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { streamAssistantResponseEventsForBashToolCall } from "./runtimeBashToolCallExecution.ts";
 import { streamAssistantResponseEventsForExploreToolCall } from "./runtimeExplorerToolCallExecution.ts";
 import { streamAssistantResponseEventsForFileMutationToolCall } from "./runtimeFileMutationToolCallExecution.ts";
-import { streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall } from "./runtimeReadOnlyToolCallExecution.ts";
+import {
+  streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
+  streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
+} from "./runtimeReadOnlyToolCallExecution.ts";
 import type {
   RuntimePendingToolApproval,
   RuntimePendingToolApprovalInput,
@@ -57,6 +62,18 @@ export type StreamAssistantResponseEventsForRequestedToolCallInput = {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
+export type StreamAssistantResponseEventsForRequestedToolCallsInput = Omit<
+  StreamAssistantResponseEventsForRequestedToolCallInput,
+  "toolCallId" | "toolCallRequest"
+> & {
+  requestedToolCalls: readonly ProviderRequestedToolCall[];
+};
+
+type AutoApprovedReadOnlyRequestedToolCall = {
+  toolCallId: string;
+  toolCallRequest: WorkspaceInspectionToolCallRequest;
+};
+
 type RuntimeRequestedToolCallExecutorInput = StreamAssistantResponseEventsForRequestedToolCallInput & {
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
 };
@@ -78,40 +95,89 @@ const requestedToolCallExecutorByName = {
 export async function* streamAssistantResponseEventsForRequestedToolCall(
   input: StreamAssistantResponseEventsForRequestedToolCallInput,
 ): AsyncGenerator<AssistantResponseEvent> {
+  const { toolCallId, toolCallRequest, ...sharedInput } = input;
+
+  yield* streamAssistantResponseEventsForRequestedToolCalls({
+    ...sharedInput,
+    requestedToolCalls: [{ toolCallId, toolCallRequest }],
+  });
+}
+
+export async function* streamAssistantResponseEventsForRequestedToolCalls(
+  input: StreamAssistantResponseEventsForRequestedToolCallsInput,
+): AsyncGenerator<AssistantResponseEvent> {
+  if (input.requestedToolCalls.length === 0) {
+    throw new Error("Cannot execute an empty tool-call batch.");
+  }
+
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
     conversationHistory: input.conversationHistory,
     diagnosticLogger: input.diagnosticLogger,
   });
 
+  for (const requestedToolCall of input.requestedToolCalls) {
+    logRequestedToolCall(input, requestedToolCall);
+    input.conversationHistory.appendConversationSessionEntry({
+      entryKind: "tool_call",
+      toolCallId: requestedToolCall.toolCallId,
+      toolCallRequest: requestedToolCall.toolCallRequest,
+    });
+    logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_history.entry_appended", {
+      entryKind: "tool_call",
+      toolCallId: requestedToolCall.toolCallId,
+      toolName: requestedToolCall.toolCallRequest.toolName,
+      conversationSessionEntryCount: input.conversationHistory.listConversationSessionEntries().length,
+      modelContextItemCount: input.conversationHistory.listModelContextItems().length,
+    });
+  }
+
+  if (input.requestedToolCalls.length > 1 && areAllAutoApprovedReadOnlyToolCalls(input.requestedToolCalls)) {
+    yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
+      assistantResponseMessageId: input.assistantResponseMessageId,
+      providerConversationTurn: input.providerConversationTurn,
+      requestedToolCalls: input.requestedToolCalls,
+      workspaceRootPath: input.workspaceRootPath,
+      projectInstructionTracker: input.projectInstructionTracker,
+      toolResultSessionRecorder,
+      abortSignal: input.abortSignal,
+      throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+      diagnosticLogger: input.diagnosticLogger,
+    });
+    return;
+  }
+
+  for (const requestedToolCall of input.requestedToolCalls) {
+    yield* resolveRequestedToolCallExecutor(requestedToolCall.toolCallRequest)({
+      ...input,
+      toolCallId: requestedToolCall.toolCallId,
+      toolCallRequest: requestedToolCall.toolCallRequest,
+      toolResultSessionRecorder,
+    });
+  }
+}
+
+function logRequestedToolCall(
+  input: StreamAssistantResponseEventsForRequestedToolCallsInput,
+  requestedToolCall: ProviderRequestedToolCall,
+): void {
   logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.requested", {
-    toolCallId: input.toolCallId,
-    toolName: input.toolCallRequest.toolName,
-    ...(input.toolCallRequest.toolName === "bash"
+    toolCallId: requestedToolCall.toolCallId,
+    toolName: requestedToolCall.toolCallRequest.toolName,
+    ...(requestedToolCall.toolCallRequest.toolName === "bash"
       ? {
-          shellCommandLength: input.toolCallRequest.shellCommand.length,
-          commandDescriptionLength: input.toolCallRequest.commandDescription.length,
-          hasRequestedWorkingDirectoryPath: input.toolCallRequest.workingDirectoryPath !== undefined,
-          hasRequestedTimeoutMilliseconds: input.toolCallRequest.timeoutMilliseconds !== undefined,
+          shellCommandLength: requestedToolCall.toolCallRequest.shellCommand.length,
+          commandDescriptionLength: requestedToolCall.toolCallRequest.commandDescription.length,
+          hasRequestedWorkingDirectoryPath: requestedToolCall.toolCallRequest.workingDirectoryPath !== undefined,
+          hasRequestedTimeoutMilliseconds: requestedToolCall.toolCallRequest.timeoutMilliseconds !== undefined,
         }
       : {}),
   });
-  input.conversationHistory.appendConversationSessionEntry({
-    entryKind: "tool_call",
-    toolCallId: input.toolCallId,
-    toolCallRequest: input.toolCallRequest,
-  });
-  logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_history.entry_appended", {
-    entryKind: "tool_call",
-    toolCallId: input.toolCallId,
-    toolName: input.toolCallRequest.toolName,
-    conversationSessionEntryCount: input.conversationHistory.listConversationSessionEntries().length,
-    modelContextItemCount: input.conversationHistory.listModelContextItems().length,
-  });
+}
 
-  yield* resolveRequestedToolCallExecutor(input.toolCallRequest)({
-    ...input,
-    toolResultSessionRecorder,
-  });
+function areAllAutoApprovedReadOnlyToolCalls(
+  requestedToolCalls: readonly ProviderRequestedToolCall[],
+): requestedToolCalls is readonly AutoApprovedReadOnlyRequestedToolCall[] {
+  return requestedToolCalls.every((requestedToolCall) => isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest));
 }
 
 async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(

@@ -14,19 +14,25 @@ import {
   type ExplorerChildToolCallStatus,
   type ExploreToolCallRequest,
   type ProviderStreamEvent,
+  type ProviderRequestedToolCall,
   type ReasoningEffort,
   type ToolCallDetail,
   type ToolCallExploreDetail,
   type ToolCallRequest,
+  type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import { logEngineDiagnosticEvent, summarizeAssistantResponseEventForDiagnostics } from "./runtimeDiagnostics.ts";
 import { toProjectInstructionSnapshots, type ProjectInstructionTracker } from "./projectInstructions.ts";
-import { streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall } from "./runtimeReadOnlyToolCallExecution.ts";
+import {
+  streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
+  streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
+} from "./runtimeReadOnlyToolCallExecution.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { buildBuliExplorerSystemPrompt } from "./systemPrompt.ts";
+import { escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 
 const EXPLORER_AVAILABLE_TOOL_NAMES = WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES;
 const NESTED_EXPLORER_DENIAL_TEXT = "Explorer cannot spawn another Explorer. Continue with read, glob, and grep instead.";
@@ -48,6 +54,11 @@ type ExplorerConversationProgress =
     progressKind: "explorer_conversation_finished";
     explorerConversationOutcome: ExplorerConversationOutcome;
   };
+
+type ExplorerReadOnlyRequestedToolCall = {
+  toolCallId: string;
+  toolCallRequest: WorkspaceInspectionToolCallRequest;
+};
 
 export type StreamAssistantResponseEventsForExploreToolCallInput = {
   assistantResponseMessageId: string;
@@ -275,9 +286,9 @@ async function* streamExplorerConversationProgress(input: {
         continue;
       }
 
-      if (providerStreamEvent.type === "tool_call_requested") {
-        for await (const explorerChildToolCall of streamExplorerChildToolCallActivity({
-          providerStreamEvent,
+      if (providerStreamEvent.type === "tool_call_requested" || providerStreamEvent.type === "tool_calls_requested") {
+        for await (const explorerChildToolCall of streamExplorerChildToolCallsActivity({
+          requestedToolCalls: listRequestedToolCallsFromProviderStreamEvent(providerStreamEvent),
           explorerProviderConversationTurn,
           explorerConversationHistory,
           explorerToolResultSessionRecorder,
@@ -409,8 +420,8 @@ async function* streamExplorerConversationProgress(input: {
   }
 }
 
-async function* streamExplorerChildToolCallActivity(input: {
-  providerStreamEvent: Extract<ProviderStreamEvent, { type: "tool_call_requested" }>;
+async function* streamExplorerChildToolCallsActivity(input: {
+  requestedToolCalls: readonly ProviderRequestedToolCall[];
   explorerProviderConversationTurn: ProviderConversationTurn;
   explorerConversationHistory: InMemoryConversationHistory;
   explorerToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
@@ -420,18 +431,23 @@ async function* streamExplorerChildToolCallActivity(input: {
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): AsyncGenerator<ExplorerChildToolCall> {
-  input.explorerConversationHistory.appendConversationSessionEntry({
-    entryKind: "tool_call",
-    toolCallId: input.providerStreamEvent.toolCallId,
-    toolCallRequest: input.providerStreamEvent.toolCallRequest,
-  });
+  if (input.requestedToolCalls.length === 0) {
+    throw new Error("Explorer cannot execute an empty child tool-call batch.");
+  }
 
-  if (isWorkspaceInspectionToolCallRequest(input.providerStreamEvent.toolCallRequest)) {
-    for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
+  for (const requestedToolCall of input.requestedToolCalls) {
+    input.explorerConversationHistory.appendConversationSessionEntry({
+      entryKind: "tool_call",
+      toolCallId: requestedToolCall.toolCallId,
+      toolCallRequest: requestedToolCall.toolCallRequest,
+    });
+  }
+
+  if (input.requestedToolCalls.length > 1 && areAllExplorerReadOnlyToolCalls(input.requestedToolCalls)) {
+    for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
       assistantResponseMessageId: randomUUID(),
       providerConversationTurn: input.explorerProviderConversationTurn,
-      toolCallId: input.providerStreamEvent.toolCallId,
-      toolCallRequest: input.providerStreamEvent.toolCallRequest,
+      requestedToolCalls: input.requestedToolCalls,
       workspaceRootPath: input.workspaceRootPath,
       projectInstructionTracker: input.projectInstructionTracker,
       toolResultSessionRecorder: input.explorerToolResultSessionRecorder,
@@ -448,17 +464,79 @@ async function* streamExplorerChildToolCallActivity(input: {
     return;
   }
 
-  const denialExplanation = buildExplorerDisallowedToolDenialText(input.providerStreamEvent.toolCallRequest);
-  input.explorerToolResultSessionRecorder.appendDeniedToolResultSessionEntry({
-    toolCallId: input.providerStreamEvent.toolCallId,
-    toolCallDetail: createStartedToolCallDetailFromRequest(input.providerStreamEvent.toolCallRequest),
-    toolResultText: denialExplanation,
-    denialExplanation,
-  });
-  await input.explorerProviderConversationTurn.submitToolResult({
-    toolCallId: input.providerStreamEvent.toolCallId,
-    toolResultText: denialExplanation,
-  });
+  for (const requestedToolCall of input.requestedToolCalls) {
+    if (isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest)) {
+      yield* streamSingleExplorerReadOnlyChildToolCall({
+        ...input,
+        requestedToolCall: {
+          toolCallId: requestedToolCall.toolCallId,
+          toolCallRequest: requestedToolCall.toolCallRequest,
+        },
+      });
+      continue;
+    }
+
+    const denialExplanation = buildExplorerDisallowedToolDenialText(requestedToolCall.toolCallRequest);
+    input.explorerToolResultSessionRecorder.appendDeniedToolResultSessionEntry({
+      toolCallId: requestedToolCall.toolCallId,
+      toolCallDetail: createStartedToolCallDetailFromRequest(requestedToolCall.toolCallRequest),
+      toolResultText: denialExplanation,
+      denialExplanation,
+    });
+    await input.explorerProviderConversationTurn.submitToolResult({
+      toolCallId: requestedToolCall.toolCallId,
+      toolResultText: denialExplanation,
+    });
+  }
+}
+
+async function* streamSingleExplorerReadOnlyChildToolCall(input: {
+  requestedToolCall: ExplorerReadOnlyRequestedToolCall;
+  explorerProviderConversationTurn: ProviderConversationTurn;
+  explorerToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
+  workspaceRootPath: string;
+  projectInstructionTracker: ProjectInstructionTracker;
+  abortSignal: AbortSignal;
+  throwIfConversationTurnInterrupted: () => void;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
+}): AsyncGenerator<ExplorerChildToolCall> {
+  for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
+    assistantResponseMessageId: randomUUID(),
+    providerConversationTurn: input.explorerProviderConversationTurn,
+    toolCallId: input.requestedToolCall.toolCallId,
+    toolCallRequest: input.requestedToolCall.toolCallRequest,
+    workspaceRootPath: input.workspaceRootPath,
+    projectInstructionTracker: input.projectInstructionTracker,
+    toolResultSessionRecorder: input.explorerToolResultSessionRecorder,
+    abortSignal: input.abortSignal,
+    throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+    diagnosticLogger: input.diagnosticLogger,
+  })) {
+    input.throwIfConversationTurnInterrupted();
+    const explorerChildToolCall = createExplorerChildToolCallFromAssistantResponseEvent(assistantResponseEvent);
+    if (explorerChildToolCall) {
+      yield explorerChildToolCall;
+    }
+  }
+}
+
+function listRequestedToolCallsFromProviderStreamEvent(
+  providerStreamEvent: Extract<ProviderStreamEvent, { type: "tool_call_requested" | "tool_calls_requested" }>,
+): ProviderRequestedToolCall[] {
+  if (providerStreamEvent.type === "tool_calls_requested") {
+    return [...providerStreamEvent.requestedToolCalls];
+  }
+
+  return [{
+    toolCallId: providerStreamEvent.toolCallId,
+    toolCallRequest: providerStreamEvent.toolCallRequest,
+  }];
+}
+
+function areAllExplorerReadOnlyToolCalls(
+  requestedToolCalls: readonly ProviderRequestedToolCall[],
+): requestedToolCalls is readonly ExplorerReadOnlyRequestedToolCall[] {
+  return requestedToolCalls.every((requestedToolCall) => isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest));
 }
 
 function buildExplorerToolCallDetail(input: {
@@ -575,9 +653,9 @@ function buildExplorerCompletedToolResultText(input: {
 }): string {
   return [
     "<explorer_result>",
-    `<description>${input.exploreToolCallRequest.explorationDescription}</description>`,
+    `<description>${escapeModelFacingXmlText(input.exploreToolCallRequest.explorationDescription)}</description>`,
     "<summary>",
-    input.explorationResultSummary,
+    escapeModelFacingXmlText(input.explorationResultSummary),
     "</summary>",
     "</explorer_result>",
   ].join("\n");
@@ -597,12 +675,12 @@ function createFailedExplorerConversationOutcome(input: {
     explorationResultSummary,
     toolResultText: [
       "<explorer_result>",
-      `<description>${input.exploreToolCallRequest.explorationDescription}</description>`,
+      `<description>${escapeModelFacingXmlText(input.exploreToolCallRequest.explorationDescription)}</description>`,
       "<failure>",
-      input.failureExplanation,
+      escapeModelFacingXmlText(input.failureExplanation),
       "</failure>",
       ...(input.explorationResultSummary && input.explorationResultSummary.length > 0
-        ? ["<partial_summary>", input.explorationResultSummary, "</partial_summary>"]
+        ? ["<partial_summary>", escapeModelFacingXmlText(input.explorationResultSummary), "</partial_summary>"]
         : []),
       "</explorer_result>",
     ].join("\n"),

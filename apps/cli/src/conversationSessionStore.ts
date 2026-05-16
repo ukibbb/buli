@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
@@ -224,7 +224,8 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   }
 
   private ensureSessionDirectoriesExist(): void {
-    mkdirSync(this.sessionsDirectoryPath, { recursive: true });
+    mkdirSync(this.sessionsDirectoryPath, { recursive: true, mode: 0o700 });
+    chmodSync(this.sessionsDirectoryPath, 0o700);
   }
 
   private readActiveConversationSessionId(): string | undefined {

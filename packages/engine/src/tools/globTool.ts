@@ -6,6 +6,7 @@ import {
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { listWorkspaceFiles } from "./workspaceFileSearch.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
+import { listWorkspaceFilesWithRipgrep } from "./workspaceRipgrepSearch.ts";
 
 const MAX_GLOB_RESULT_COUNT = 100;
 
@@ -16,6 +17,7 @@ export function createStartedGlobToolCallDetail(globToolCallRequest: GlobToolCal
 export async function runGlobToolCall(input: {
   globToolCallRequest: GlobToolCallRequest;
   workspaceRootPath: string;
+  ripgrepExecutablePath?: string;
   abortSignal?: AbortSignal;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
@@ -30,14 +32,29 @@ export async function runGlobToolCall(input: {
       throw new Error(`Glob search path must be a directory: ${resolvedSearchPath.displayPath}`);
     }
 
-    const searchFilesResult = await listWorkspaceFiles({
+    const ripgrepSearchAttempt = await listWorkspaceFilesWithRipgrep({
       workspaceRootPath: input.workspaceRootPath,
       searchRootPath: resolvedSearchPath.absolutePath,
       includeGlobPattern: input.globToolCallRequest.globPattern,
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      ...(input.ripgrepExecutablePath ? { ripgrepExecutablePath: input.ripgrepExecutablePath } : {}),
     });
-    const matchedFiles = searchFilesResult.files
-      .sort((leftWorkspaceFile, rightWorkspaceFile) => rightWorkspaceFile.stats.mtimeMs - leftWorkspaceFile.stats.mtimeMs);
+    const workspaceFiles = ripgrepSearchAttempt.attemptKind === "completed"
+      ? ripgrepSearchAttempt.files
+      : (await listWorkspaceFiles({
+          workspaceRootPath: input.workspaceRootPath,
+          searchRootPath: resolvedSearchPath.absolutePath,
+          includeGlobPattern: input.globToolCallRequest.globPattern,
+          ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+        })).files;
+    const matchedFiles = workspaceFiles
+      .sort((leftWorkspaceFile, rightWorkspaceFile) => {
+        if (leftWorkspaceFile.stats.mtimeMs !== rightWorkspaceFile.stats.mtimeMs) {
+          return rightWorkspaceFile.stats.mtimeMs - leftWorkspaceFile.stats.mtimeMs;
+        }
+
+        return leftWorkspaceFile.displayPath.localeCompare(rightWorkspaceFile.displayPath);
+      });
     const totalMatchedPathCount = matchedFiles.length;
     const wasTruncated = totalMatchedPathCount > MAX_GLOB_RESULT_COUNT;
     const visibleMatchedFiles = matchedFiles.slice(0, MAX_GLOB_RESULT_COUNT);

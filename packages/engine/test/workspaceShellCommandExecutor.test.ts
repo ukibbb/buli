@@ -2,6 +2,7 @@ import { access, mkdir, mkdtemp, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
+import { MAX_BASH_TOOL_TIMEOUT_MILLISECONDS } from "@buli/contracts";
 import { runApprovedBashToolCall, WorkspaceShellCommandExecutor } from "../src/index.ts";
 
 test("WorkspaceShellCommandExecutor waits for interrupted process group to exit", async () => {
@@ -74,4 +75,31 @@ test("runApprovedBashToolCall rejects working directories that resolve outside t
   expect(bashToolCallOutcome.outcomeKind).toBe("failed");
   expect(didRunCommand).toBe(false);
   expect(bashToolCallOutcome.toolResultText).toContain("Path must stay inside the workspace root");
+});
+
+test("runApprovedBashToolCall clamps provider-requested timeout to the safety cap", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-shell-timeout-cap-"));
+  let receivedTimeoutMilliseconds: number | undefined;
+  const workspaceShellCommandExecutor = {
+    workspaceRootPath,
+    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    async runShellCommand(input) {
+      receivedTimeoutMilliseconds = input.timeoutMilliseconds;
+      return { exitCode: 0, stdoutText: "ok\n", stderrText: "" };
+    },
+  } satisfies WorkspaceShellCommandExecutor;
+
+  const bashToolCallOutcome = await runApprovedBashToolCall({
+    workspaceRootPath,
+    workspaceShellCommandExecutor,
+    bashToolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+      timeoutMilliseconds: MAX_BASH_TOOL_TIMEOUT_MILLISECONDS + 60_000,
+    },
+  });
+
+  expect(bashToolCallOutcome.outcomeKind).toBe("completed");
+  expect(receivedTimeoutMilliseconds).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
 });

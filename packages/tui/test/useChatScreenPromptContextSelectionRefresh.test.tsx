@@ -210,6 +210,41 @@ test("useChatScreenPromptContextSelectionRefresh discards stale resolved loads",
   });
 });
 
+test("useChatScreenPromptContextSelectionRefresh hides candidates when loading fails", async () => {
+  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
+  const renderedHook = await renderPromptContextRefreshHook({
+    diagnosticLogEvents,
+    async loadPromptContextCandidates(promptContextQueryText) {
+      if (promptContextQueryText === "") {
+        return [createPromptContextCandidate("README.md")];
+      }
+
+      throw new Error("prompt context index unavailable");
+    },
+  });
+
+  await renderedHook.replacePromptDraft("@");
+  await renderedHook.flushHookEffects();
+  expect(renderedHook.readCurrentChatSessionState().promptContextSelectionState).toMatchObject({
+    step: "showing_prompt_context_candidates",
+    promptContextQueryText: "",
+  });
+
+  await renderedHook.replacePromptDraft("@./broken");
+  await renderedHook.flushHookEffects();
+
+  expect(renderedHook.readCurrentChatSessionState().promptContextSelectionState.step).toBe("hidden");
+  expect(diagnosticLogEvents).toContainEqual(
+    expect.objectContaining({
+      eventName: "chat_screen.prompt_context_load_failed",
+      fields: expect.objectContaining({
+        promptContextQueryLength: 8,
+        errorMessage: "prompt context index unavailable",
+      }),
+    }),
+  );
+});
+
 function createPromptContextCandidate(displayPath: string): PromptContextCandidate {
   return {
     kind: "file",

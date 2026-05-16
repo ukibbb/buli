@@ -214,3 +214,50 @@ test("refreshStoredAuth refreshes before expiry using a safety window", async ()
     },
   );
 });
+
+test("refreshStoredAuth does not overwrite credentials refreshed by another process", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-refresh-race-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "old-access",
+    refreshToken: "old-refresh",
+    expiresAt: 10,
+    accountId: "acct_123",
+  });
+
+  const fetchImpl: typeof fetch = Object.assign(
+    async () => {
+      await store.saveOpenAi({
+        provider: "openai",
+        method: "oauth",
+        accessToken: "newer-access",
+        refreshToken: "newer-refresh",
+        expiresAt: 10_000,
+        accountId: "acct_123",
+      });
+      return new Response(JSON.stringify({
+        access_token: "stale-new-access",
+        refresh_token: "stale-new-refresh",
+        expires_in: 3600,
+      }), { headers: { "Content-Type": "application/json" } });
+    },
+    { preconnect: fetch.preconnect.bind(fetch) },
+  );
+
+  const auth = await refreshStoredAuth({
+    store,
+    issuer: "https://example.test",
+    fetchImpl,
+    now: 100,
+  });
+
+  expect(auth?.accessToken).toBe("newer-access");
+  expect(auth?.refreshToken).toBe("newer-refresh");
+  expect(await store.loadOpenAi()).toMatchObject({
+    accessToken: "newer-access",
+    refreshToken: "newer-refresh",
+  });
+});

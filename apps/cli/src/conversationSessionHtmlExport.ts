@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -47,6 +47,12 @@ class SafeAssistantMarkdownHtmlRenderer extends Renderer {
 }
 
 const assistantMarkdownHtmlRenderer = new SafeAssistantMarkdownHtmlRenderer();
+const MAX_EXPORTED_IMAGE_DATA_URL_LENGTH = 2_000_000;
+const privateConversationSessionExportDirectoryMode = 0o700;
+const privateConversationSessionExportFileMode = 0o600;
+type ConversationSessionExportImageAttachment = NonNullable<
+  Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>["imageAttachments"]
+>[number];
 
 export function defaultConversationSessionExportDirectoryPath(): string {
   return join(homedir(), ".buli", "session-exports");
@@ -72,8 +78,10 @@ export function writeConversationSessionHtmlExport(input: {
     exportedAtMs,
   });
 
-  mkdirSync(exportDirectoryPath, { recursive: true });
-  writeFileSync(exportFilePath, html, "utf8");
+  mkdirSync(exportDirectoryPath, { recursive: true, mode: privateConversationSessionExportDirectoryMode });
+  chmodSync(exportDirectoryPath, privateConversationSessionExportDirectoryMode);
+  writeFileSync(exportFilePath, html, { encoding: "utf8", mode: privateConversationSessionExportFileMode });
+  chmodSync(exportFilePath, privateConversationSessionExportFileMode);
   return {
     exportFilePath,
     exportFileUrl: pathToFileURL(exportFilePath).href,
@@ -100,9 +108,6 @@ export function renderConversationSessionHtmlDocument(input: {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(documentTitle)}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${renderConversationSessionExportStyles()}</style>
 </head>
 <body class="buli-session-export">
@@ -287,7 +292,12 @@ function renderUserPromptBlock(conversationSessionEntry: Extract<ConversationSes
     : imageAttachments.length > 0
     ? ""
     : '<p class="muted">No prompt text was recorded.</p>';
-  const imageAttachmentsHtml = imageAttachments
+  const safeImageAttachments = imageAttachments.filter(isSafeConversationSessionExportImageAttachment);
+  const omittedImageAttachmentCount = imageAttachments.length - safeImageAttachments.length;
+  const omittedImageAttachmentsHtml = omittedImageAttachmentCount > 0
+    ? `<p class="muted">${omittedImageAttachmentCount} image attachment${omittedImageAttachmentCount === 1 ? "" : "s"} omitted from export because the data URL was invalid or too large.</p>`
+    : "";
+  const imageAttachmentsHtml = safeImageAttachments
     .map((imageAttachment, imageAttachmentIndex) => {
       const imageLabel = imageAttachment.fileName ?? `image-${imageAttachmentIndex + 1}`;
       return `<figure class="user-image-attachment" style="margin:16px 0 0;">
@@ -297,7 +307,16 @@ function renderUserPromptBlock(conversationSessionEntry: Extract<ConversationSes
     })
     .join("\n");
 
-  return `${assistantOperatingModeHtml}${promptTextHtml}${imageAttachmentsHtml}`;
+  return `${assistantOperatingModeHtml}${promptTextHtml}${imageAttachmentsHtml}${omittedImageAttachmentsHtml}`;
+}
+
+function isSafeConversationSessionExportImageAttachment(
+  imageAttachment: ConversationSessionExportImageAttachment,
+): boolean {
+  const expectedDataUrlPrefix = `data:${imageAttachment.mimeType};base64,`;
+  return imageAttachment.dataUrl.length <= MAX_EXPORTED_IMAGE_DATA_URL_LENGTH &&
+    imageAttachment.dataUrl.startsWith(expectedDataUrlPrefix) &&
+    imageAttachment.dataUrl.slice(expectedDataUrlPrefix.length).trim().length > 0;
 }
 
 function formatAssistantOperatingModeDisplayName(assistantOperatingMode: AssistantOperatingMode): string {

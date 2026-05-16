@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { ExplorerToolCallCard } from "../../../src/components/toolCalls/ExplorerToolCallCard.tsx";
 
@@ -21,7 +22,7 @@ describe("ExplorerToolCallCard (opentui)", () => {
     expect(frame).toContain("exploring");
   });
 
-  test("streaming renders nested Explorer child activity", async () => {
+  test("streaming starts collapsed when nested Explorer child activity exists", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ExplorerToolCallCard
         toolCallDetail={{
@@ -45,37 +46,61 @@ describe("ExplorerToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("activity");
-    expect(frame).toContain("Read");
-    expect(frame).toContain("README.md");
-    expect(frame).toContain("reading");
+    expect(frame).toContain("Explorer details: activity");
+    expect(frame).toContain("click to show content");
+    expect(frame).not.toContain("Read");
+    expect(frame).not.toContain("README.md");
+    expect(frame).toContain("exploring");
   });
 
-  test("completed renders prompt, result, and duration", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
+  test("completed expands prompt and markdown result when summary is clicked", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <ExplorerToolCallCard
         toolCallDetail={{
           toolName: "explore",
           explorationDescription: "summarize runtime",
           explorationPrompt: "Inspect packages/engine/src/runtime.ts.",
-          explorationResultSummary: "Runtime starts provider turns and dispatches tool calls.",
+          explorationResultSummary: [
+            "## Findings",
+            "",
+            "Runtime **dispatches** tool calls.",
+            "",
+            "- Child activity is summarized.",
+          ].join("\n"),
         }}
         renderState="completed"
         durationMs={1200}
       />,
-      { width: 120, height: 14 },
+      { width: 120, height: 20 },
     );
     await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("Explorer");
-    expect(frame).toContain("Inspect packages/engine");
-    expect(frame).toContain("result");
-    expect(frame).toContain("Runtime starts");
-    expect(frame).toContain("1.2s");
+    const collapsedFrame = captureCharFrame();
+    expect(collapsedFrame).toContain("Explorer");
+    expect(collapsedFrame).toContain("Explorer details: prompt, result");
+    expect(collapsedFrame).toContain("click to show content");
+    expect(collapsedFrame).toContain("1.2s");
+    expect(collapsedFrame).not.toContain("Inspect packages/engine");
+    expect(collapsedFrame).not.toContain("Findings");
+
+    await act(async () => {
+      await mockMouse.click(6, 3);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("click to hide content");
+    expect(expandedFrame).toContain("Inspect packages/engine");
+    expect(expandedFrame).toContain("result");
+    expect(expandedFrame).toContain("Findings");
+    expect(expandedFrame).toContain("Runtime");
+    expect(expandedFrame).toContain("dispatches");
+    expect(expandedFrame).toContain("• Child activity is summarized.");
+    expect(expandedFrame).not.toContain("## Findings");
+    expect(expandedFrame).not.toContain("- Child activity is summarized.");
   });
 
-  test("completed renders nested Explorer child activity and result", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
+  test("completed expands nested Explorer child activity and result when summary is clicked", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <ExplorerToolCallCard
         toolCallDetail={{
           toolName: "explore",
@@ -101,12 +126,23 @@ describe("ExplorerToolCallCard (opentui)", () => {
       { width: 120, height: 22 },
     );
     await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("activity");
-    expect(frame).toContain("Read");
-    expect(frame).toContain("README.md");
-    expect(frame).toContain("2 lines");
-    expect(frame).toContain("README.md explains");
+    const collapsedFrame = captureCharFrame();
+    expect(collapsedFrame).toContain("Explorer details: prompt, activity, result");
+    expect(collapsedFrame).toContain("click to show content");
+    expect(collapsedFrame).not.toContain("// activity");
+    expect(collapsedFrame).not.toContain("Read");
+
+    await act(async () => {
+      await mockMouse.click(6, 3);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("activity");
+    expect(expandedFrame).toContain("Read");
+    expect(expandedFrame).toContain("README.md");
+    expect(expandedFrame).toContain("2 lines");
+    expect(expandedFrame).toContain("README.md explains");
   });
 
   test("failed renders Explorer label and error text", async () => {

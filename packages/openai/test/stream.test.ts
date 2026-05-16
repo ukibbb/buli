@@ -168,6 +168,12 @@ test("parseOpenAiStream ignores unknown SSE event types and malformed hot delta 
   ]);
 });
 
+test("parseOpenAiStream fails with stream context when an SSE frame is malformed JSON", async () => {
+  const response = new Response("data: {not-json}\n\n", { headers: { "Content-Type": "text/event-stream" } });
+
+  await expect(collectParsedEvents(response)).rejects.toThrow("OpenAI stream returned malformed SSE JSON at frame 1");
+});
+
 test("parseOpenAiStream emits reasoning_summary_completed before the first non-reasoning text chunk", async () => {
   const response = new Response(
     [
@@ -316,6 +322,54 @@ test("parseOpenAiStream emits tool_call_requested and returns a tool-request ter
       },
     },
   ]);
+});
+
+test("parseOpenAiStream emits an ordered batch for same-step function calls", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_read_1","name":"read","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"filePath\\":\\"README.md\\"}"}\n\n',
+      'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_2","call_id":"call_grep_1","name":"grep","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_2","arguments":"{\\"pattern\\":\\"ToolCallRequest\\",\\"path\\":\\"packages\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_read_1","name":"read","arguments":"{\\"filePath\\":\\"README.md\\"}"},{"id":"fc_2","type":"function_call","call_id":"call_grep_1","name":"grep","arguments":"{\\"pattern\\":\\"ToolCallRequest\\",\\"path\\":\\"packages\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "tool_calls_requested",
+      requestedToolCalls: [
+        {
+          toolCallId: "call_read_1",
+          toolCallRequest: {
+            toolName: "read",
+            readTargetPath: "README.md",
+          },
+        },
+        {
+          toolCallId: "call_grep_1",
+          toolCallRequest: {
+            toolName: "grep",
+            regexPattern: "ToolCallRequest",
+            searchPath: "packages",
+          },
+        },
+      ],
+    },
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_calls_requested",
+    requestedToolCalls: [
+      { toolCallId: "call_read_1", toolCallRequest: { toolName: "read", readTargetPath: "README.md" } },
+      {
+        toolCallId: "call_grep_1",
+        toolCallRequest: { toolName: "grep", regexPattern: "ToolCallRequest", searchPath: "packages" },
+      },
+    ],
+  });
 });
 
 test("parseOpenAiStream accepts nullable bash function arguments", async () => {
@@ -582,6 +636,43 @@ test("parseOpenAiStream repairs weakened function_call arguments from response.c
   });
 });
 
+test("parseOpenAiStream prefers complete terminal function_call arguments over stale tracked arguments", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"p\\",\\"description\\":\\"Partial command\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}","status":"completed"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_call_requested",
+    responseOutputItems: [
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+  });
+});
+
 test("parseOpenAiStream repairs tracked function_call items from output_item.done without output_index", async () => {
   const response = new Response(
     [
@@ -714,7 +805,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
           content: "Say hello",
         },
       ],
-      parallel_tool_calls: false,
+      parallel_tool_calls: true,
       reasoning: { summary: "auto" },
       stream: true,
     });

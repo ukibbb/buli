@@ -1,12 +1,14 @@
 import { z } from "zod";
 
+export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 300_000;
+
 export const BashToolCallRequestSchema = z
   .object({
     toolName: z.literal("bash"),
     shellCommand: z.string().min(1),
     commandDescription: z.string().min(1),
     workingDirectoryPath: z.string().min(1).optional(),
-    timeoutMilliseconds: z.number().int().positive().optional(),
+    timeoutMilliseconds: z.number().int().positive().max(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS).optional(),
   })
   .strict();
 

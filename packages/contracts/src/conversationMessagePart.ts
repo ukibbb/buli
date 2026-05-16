@@ -52,19 +52,64 @@ export const AssistantReasoningConversationMessagePartSchema = z
   })
   .strict();
 
-export const AssistantToolCallConversationMessagePartSchema = z
-  .object({
-    id: z.string().min(1),
-    partKind: z.literal("assistant_tool_call"),
-    toolCallId: z.string().min(1),
-    toolCallStatus: AssistantToolCallPartStatusSchema,
-    toolCallStartedAtMs: z.number().int().nonnegative(),
-    toolCallDetail: ToolCallDetailSchema,
-    durationMs: z.number().int().nonnegative().optional(),
-    errorText: z.string().min(1).optional(),
-    denialText: z.string().min(1).optional(),
-  })
-  .strict();
+const AssistantToolCallConversationMessagePartBaseSchema = z.object({
+  id: z.string().min(1),
+  partKind: z.literal("assistant_tool_call"),
+  toolCallId: z.string().min(1),
+  toolCallStartedAtMs: z.number().int().nonnegative(),
+  toolCallDetail: ToolCallDetailSchema,
+});
+
+const AssistantPendingApprovalToolCallConversationMessagePartSchema = AssistantToolCallConversationMessagePartBaseSchema.extend({
+  toolCallStatus: z.literal("pending_approval"),
+  durationMs: z.never().optional(),
+  errorText: z.never().optional(),
+  denialText: z.never().optional(),
+}).strict();
+
+const AssistantRunningToolCallConversationMessagePartSchema = AssistantToolCallConversationMessagePartBaseSchema.extend({
+  toolCallStatus: z.literal("running"),
+  durationMs: z.never().optional(),
+  errorText: z.never().optional(),
+  denialText: z.never().optional(),
+}).strict();
+
+const AssistantCompletedToolCallConversationMessagePartSchema = AssistantToolCallConversationMessagePartBaseSchema.extend({
+  toolCallStatus: z.literal("completed"),
+  durationMs: z.number().int().nonnegative(),
+  errorText: z.never().optional(),
+  denialText: z.never().optional(),
+}).strict();
+
+const AssistantFailedToolCallConversationMessagePartSchema = AssistantToolCallConversationMessagePartBaseSchema.extend({
+  toolCallStatus: z.literal("failed"),
+  durationMs: z.number().int().nonnegative().optional(),
+  errorText: z.string().min(1),
+  denialText: z.never().optional(),
+}).strict();
+
+const AssistantDeniedToolCallConversationMessagePartSchema = AssistantToolCallConversationMessagePartBaseSchema.extend({
+  toolCallStatus: z.literal("denied"),
+  durationMs: z.number().int().nonnegative().optional(),
+  errorText: z.never().optional(),
+  denialText: z.string().min(1),
+}).strict();
+
+const AssistantInterruptedToolCallConversationMessagePartSchema = AssistantToolCallConversationMessagePartBaseSchema.extend({
+  toolCallStatus: z.literal("interrupted"),
+  durationMs: z.number().int().nonnegative().optional(),
+  errorText: z.string().min(1),
+  denialText: z.never().optional(),
+}).strict();
+
+export const AssistantToolCallConversationMessagePartSchema = z.discriminatedUnion("toolCallStatus", [
+  AssistantPendingApprovalToolCallConversationMessagePartSchema,
+  AssistantRunningToolCallConversationMessagePartSchema,
+  AssistantCompletedToolCallConversationMessagePartSchema,
+  AssistantFailedToolCallConversationMessagePartSchema,
+  AssistantDeniedToolCallConversationMessagePartSchema,
+  AssistantInterruptedToolCallConversationMessagePartSchema,
+]);
 
 export const AssistantPlanProposalConversationMessagePartSchema = z
   .object({
@@ -120,7 +165,7 @@ export const AssistantTurnSummaryConversationMessagePartSchema = z
   })
   .strict();
 
-export const ConversationMessagePartSchema = z.discriminatedUnion("partKind", [
+export const ConversationMessagePartSchema = z.union([
   UserTextConversationMessagePartSchema,
   UserImageAttachmentConversationMessagePartSchema,
   AssistantTextConversationMessagePartSchema,

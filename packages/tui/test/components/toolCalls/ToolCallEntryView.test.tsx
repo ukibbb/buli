@@ -168,6 +168,8 @@ describe("ToolCallEntryView", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("returned");
-    expect(frame).toContain("Runtime flow mapped.");
+    expect(frame).toContain("Explorer details: result");
+    expect(frame).toContain("click to show content");
+    expect(frame).not.toContain("Runtime flow mapped.");
   });
 });

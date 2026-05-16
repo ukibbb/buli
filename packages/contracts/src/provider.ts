@@ -85,6 +85,20 @@ export const ProviderToolCallRequestedEventSchema = z
   })
   .strict();
 
+export const ProviderRequestedToolCallSchema = z
+  .object({
+    toolCallId: z.string().min(1),
+    toolCallRequest: ToolCallRequestSchema,
+  })
+  .strict();
+
+export const ProviderToolCallsRequestedEventSchema = z
+  .object({
+    type: z.literal("tool_calls_requested"),
+    requestedToolCalls: z.array(ProviderRequestedToolCallSchema).min(1),
+  })
+  .strict();
+
 export const ProviderRateLimitPendingEventSchema = z
   .object({
     type: z.literal("rate_limit_pending"),
@@ -110,6 +124,7 @@ export const ProviderStreamEventSchema = z.discriminatedUnion("type", [
   ProviderReasoningSummaryTextChunkEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
   ProviderToolCallRequestedEventSchema,
+  ProviderToolCallsRequestedEventSchema,
   ProviderRateLimitPendingEventSchema,
   ProviderPlanProposedEventSchema,
 ]);
@@ -123,7 +138,9 @@ export type ProviderIncompleteEvent = z.infer<typeof ProviderIncompleteEventSche
 export type ProviderReasoningSummaryStartedEvent = z.infer<typeof ProviderReasoningSummaryStartedEventSchema>;
 export type ProviderReasoningSummaryTextChunkEvent = z.infer<typeof ProviderReasoningSummaryTextChunkEventSchema>;
 export type ProviderReasoningSummaryCompletedEvent = z.infer<typeof ProviderReasoningSummaryCompletedEventSchema>;
+export type ProviderRequestedToolCall = z.infer<typeof ProviderRequestedToolCallSchema>;
 export type ProviderToolCallRequestedEvent = z.infer<typeof ProviderToolCallRequestedEventSchema>;
+export type ProviderToolCallsRequestedEvent = z.infer<typeof ProviderToolCallsRequestedEventSchema>;
 export type ProviderRateLimitPendingEvent = z.infer<typeof ProviderRateLimitPendingEventSchema>;
 export type ProviderPlanProposedEvent = z.infer<typeof ProviderPlanProposedEventSchema>;
 export type ProviderStreamEvent = z.infer<typeof ProviderStreamEventSchema>;
