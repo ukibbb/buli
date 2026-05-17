@@ -45,6 +45,31 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(frame).toContain("1.2s");
   });
 
+  test("completed limits long prompt and result sections", async () => {
+    const longSubagentPrompt = Array.from({ length: 30 }, (_, index) => `prompt line ${index + 1}`).join("\n");
+    const longSubagentResultSummary = Array.from({ length: 30 }, (_, index) => `result line ${index + 1}`).join("\n");
+    const { captureCharFrame, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentDescription: "large subagent result",
+          subagentPrompt: longSubagentPrompt,
+          subagentResultSummary: longSubagentResultSummary,
+        }}
+        renderState="completed"
+      />,
+      { width: 120, height: 70 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame).toContain("prompt line 24");
+    expect(frame).toContain("result line 24");
+    expect(frame).toContain("showing first 24 of 30 lines");
+    expect(frame).not.toContain("prompt line 25");
+    expect(frame).not.toContain("result line 25");
+  });
+
   test("completed with sub-1000ms duration shows ms suffix", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TaskToolCallCard

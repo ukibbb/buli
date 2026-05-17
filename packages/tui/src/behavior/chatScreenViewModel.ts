@@ -15,6 +15,7 @@ import {
 import { INPUT_PANEL_MAX_ROW_COUNT } from "../components/InputPanel.tsx";
 import { MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT } from "../components/MinimumHeightPromptStrip.tsx";
 import { TOP_BAR_NATURAL_ROW_COUNT } from "../components/TopBar.tsx";
+import type { ConversationSessionCompactionStatus } from "./chatScreenConversationSessionStatus.ts";
 
 const CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT = 1;
 
@@ -36,11 +37,14 @@ export type ChatScreenViewModel = {
 
 export function buildChatScreenViewModel(input: {
   chatSessionState: ChatSessionState;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   terminalRowCount: number;
   terminalColumnCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
 }): ChatScreenViewModel {
+  const isConversationCompactionRunning = input.conversationSessionCompactionStatus.step === "compacting";
   const isPromptInputDisabled =
+    isConversationCompactionRunning ||
     input.chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
     input.chatSessionState.conversationTurnStatus === "waiting_for_tool_approval" ||
     input.chatSessionState.modelAndReasoningSelectionState.step !== "hidden" ||

@@ -48,6 +48,10 @@ export const reasoningAndTextReply: ChatSessionFixtureScenario = {
       role: "assistant",
       messageStatus: "completed",
       partKinds: ["assistant_reasoning", "assistant_text"],
+      parts: [
+        { partKind: "assistant_reasoning", partStatus: "completed" },
+        { partKind: "assistant_text", partStatus: "completed" },
+      ],
     },
   ],
   expectedConversationTurnStatus: "waiting_for_user_input",

@@ -33,10 +33,12 @@ export async function loginWithBrowser(input: {
   });
 
   const pending = server.waitForCode(state);
+  let hasResolvedCallback = false;
 
   try {
     await (input.openUrl ?? openBrowser)(url);
     const callback = await pending;
+    hasResolvedCallback = true;
 
     const tokens = await exchangeAuthorizationCode({
       code: callback.code,
@@ -49,6 +51,9 @@ export async function loginWithBrowser(input: {
     await store.saveOpenAi(auth);
     return auth;
   } finally {
-    await server.stop({ rejectPending: false });
+    if (!hasResolvedCallback) {
+      void pending.catch(() => {});
+    }
+    await server.stop({ rejectPending: !hasResolvedCallback });
   }
 }

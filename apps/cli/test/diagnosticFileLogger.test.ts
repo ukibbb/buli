@@ -71,6 +71,7 @@ test("createDiagnosticFileLogger tightens existing log permissions", async () =>
     eventName: "chat_screen_root_rendered",
   });
 
+  await expect(readPermissionBits(logDirectoryPath)).resolves.toBe(0o700);
   await expect(readPermissionBits(logFilePath)).resolves.toBe(0o600);
   await expect(readFile(logFilePath, "utf8")).resolves.toContain("previous\n");
 });

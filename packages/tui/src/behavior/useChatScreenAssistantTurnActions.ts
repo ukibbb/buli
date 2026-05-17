@@ -1,7 +1,5 @@
 import {
-  emitBuliDiagnosticLogEvent,
   type AssistantResponseEvent,
-  type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
   type UserPromptImageAttachment,
 } from "@buli/contracts";
@@ -9,6 +7,7 @@ import type { ActiveConversationTurn, AssistantConversationRunner, ConversationT
 import { applyAssistantResponseEventsToChatSessionState, type ChatSessionState } from "@buli/chat-session-state";
 import { startTransition, useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { summarizeAssistantResponseEventsForDiagnostics } from "../assistantResponseEventDiagnostics.ts";
+import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
 import { relayAssistantResponseRunnerEvents } from "../relayAssistantResponseRunnerEvents.ts";
 import type { FinishedChatScreenActiveTurn, StartedChatScreenActiveTurn } from "./useChatScreenActiveTurnInterrupt.ts";
 
@@ -43,18 +42,6 @@ export type UseChatScreenAssistantTurnActionsResult = {
   streamAssistantResponseForSubmittedPrompt: (submittedPrompt: SubmittedChatScreenPrompt) => Promise<void>;
   submitPendingToolApprovalDecision: (submission: PendingToolApprovalDecisionSubmission) => void;
 };
-
-function logChatScreenDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
 
 export function useChatScreenAssistantTurnActions(
   input: UseChatScreenAssistantTurnActionsInput,

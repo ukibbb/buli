@@ -109,13 +109,11 @@ function captureOriginalConsoleMethods(consoleTarget: ConsoleMethodTarget): Cons
 }
 
 function ensurePrivateConsoleLogDirectory(logDirectoryPath: string): void {
-  const firstCreatedDirectoryPath = mkdirSync(logDirectoryPath, {
+  mkdirSync(logDirectoryPath, {
     recursive: true,
     mode: privateConsoleLogDirectoryMode,
   });
-  if (firstCreatedDirectoryPath !== undefined) {
-    chmodSync(logDirectoryPath, privateConsoleLogDirectoryMode);
-  }
+  chmodSync(logDirectoryPath, privateConsoleLogDirectoryMode);
 }
 
 function tightenExistingConsoleLogFilePermissions(logFilePath: string): void {

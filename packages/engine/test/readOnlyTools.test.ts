@@ -193,6 +193,23 @@ test("runReadToolCall appends newly discovered nested project instructions", asy
   expect(readToolCallOutcome.toolResultText).not.toContain("- Root convention.");
 });
 
+test("runReadToolCall rejects directory offsets beyond the entry count", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-directory-offset-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\n", "utf8");
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: ".",
+      offsetLineNumber: 3,
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("failed");
+  expect(readToolCallOutcome.toolResultText).toContain("Offset 3 is out of range for this directory (1 entries)");
+});
+
 test("runGlobToolCall finds files by glob pattern", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-"));
   await mkdir(join(workspaceRootPath, "src"));
@@ -385,6 +402,64 @@ test("runGrepToolCall falls back when ripgrep is unavailable", async () => {
   const grepToolCallOutcome = await runGrepToolCall({
     workspaceRootPath,
     ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "fallbackNeedle",
+      includeGlobPattern: "*.ts",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    matchedFileCount: 1,
+    totalMatchCount: 1,
+    matchHits: [{ matchFilePath: "fallback.ts", matchLineNumber: 1, matchSnippet: "const fallbackNeedle = true;" }],
+  });
+});
+
+test("runGrepToolCall rejects unsafe JavaScript regex fallback patterns", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-unsafe-fallback-"));
+  await writeFile(join(workspaceRootPath, "fallback.ts"), "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!\n", "utf8");
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "(a+)+$",
+      includeGlobPattern: "*.ts",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("failed");
+  expect(grepToolCallOutcome.toolResultText).toContain("Grep fallback cannot safely evaluate this regex pattern without ripgrep");
+});
+
+test("runGrepToolCall falls back before parsing when ripgrep stdout exceeds the capture limit", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-rg-output-cap-"));
+  await writeFile(join(workspaceRootPath, "fallback.ts"), "const fallbackNeedle = true;\n", "utf8");
+  const fakeRipgrepPath = await writeFakeRipgrepExecutable(
+    workspaceRootPath,
+    [
+      "const args = process.argv.slice(2);",
+      "if (args.includes('--files')) {",
+      "  process.stdout.write('fallback.ts\\0');",
+      "  process.exit(0);",
+      "}",
+      "else if (args.includes('--json')) {",
+      "  process.stdout.write('x'.repeat(200), () => process.exit(0));",
+      "}",
+      "else {",
+      "  process.exit(2);",
+      "}",
+    ].join("\n"),
+  );
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: fakeRipgrepPath,
+    maximumRipgrepCapturedOutputCharacters: 100,
     grepToolCallRequest: {
       toolName: "grep",
       regexPattern: "fallbackNeedle",

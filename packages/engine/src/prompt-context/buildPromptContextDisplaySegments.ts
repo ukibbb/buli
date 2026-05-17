@@ -1,4 +1,5 @@
 import type { PromptDraftDisplaySegment } from "./types.ts";
+import { parsePromptContextReferencesFromPromptText } from "./parsePromptContextReferencesFromPromptText.ts";
 
 export function buildPromptContextDisplaySegments(input: {
   promptDraft: string;
@@ -9,18 +10,23 @@ export function buildPromptContextDisplaySegments(input: {
   }
 
   const promptDraftDisplaySegments: PromptDraftDisplaySegment[] = [];
+  const parsedPromptContextReferences = parsePromptContextReferencesFromPromptText(input.promptDraft);
   let cursorOffset = 0;
 
   for (const selectedPromptContextReferenceText of input.selectedPromptContextReferenceTexts) {
-    const matchedOffset = input.promptDraft.indexOf(selectedPromptContextReferenceText, cursorOffset);
-    if (matchedOffset === -1) {
+    const matchedPromptContextReference = parsedPromptContextReferences.find(
+      (parsedPromptContextReference) =>
+        parsedPromptContextReference.startOffset >= cursorOffset &&
+        parsedPromptContextReference.promptReferenceText === selectedPromptContextReferenceText,
+    );
+    if (!matchedPromptContextReference) {
       continue;
     }
 
-    if (matchedOffset > cursorOffset) {
+    if (matchedPromptContextReference.startOffset > cursorOffset) {
       promptDraftDisplaySegments.push({
         segmentKind: "plain_text",
-        text: input.promptDraft.slice(cursorOffset, matchedOffset),
+        text: input.promptDraft.slice(cursorOffset, matchedPromptContextReference.startOffset),
       });
     }
 
@@ -28,7 +34,7 @@ export function buildPromptContextDisplaySegments(input: {
       segmentKind: "selected_prompt_context_reference",
       text: selectedPromptContextReferenceText,
     });
-    cursorOffset = matchedOffset + selectedPromptContextReferenceText.length;
+    cursorOffset = matchedPromptContextReference.endOffset;
   }
 
   if (cursorOffset < input.promptDraft.length) {

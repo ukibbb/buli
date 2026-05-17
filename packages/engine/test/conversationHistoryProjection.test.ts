@@ -271,6 +271,56 @@ test("projectConversationSessionEntriesToModelContextItems skips failed turns", 
   ]);
 });
 
+test("projectConversationSessionEntriesToModelContextItems keeps completed tool side effects from failed turns", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Write generated file",
+      modelFacingPromptText: "Write generated file",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_write",
+      toolCallRequest: {
+        toolName: "write",
+        writeTargetPath: "generated.txt",
+        fileContent: "created\n",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_write",
+      toolCallDetail: {
+        toolName: "write",
+        writtenFilePath: "generated.txt",
+        addedLineCount: 1,
+        removedLineCount: 0,
+      },
+      toolResultText: "Wrote generated.txt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "",
+      failureExplanation: "Provider failed mid-turn",
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    { itemKind: "user_message", messageText: "Write generated file" },
+    {
+      itemKind: "tool_call",
+      toolCallId: "call_write",
+      toolCallRequest: {
+        toolName: "write",
+        writeTargetPath: "generated.txt",
+        fileContent: "created\n",
+      },
+    },
+    { itemKind: "tool_result", toolCallId: "call_write", toolResultText: "Wrote generated.txt" },
+  ]);
+});
+
 test("projectConversationSessionEntriesToModelContextItems skips interrupted turns", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {

@@ -7,6 +7,8 @@ import { formatWorkspaceDisplayPath, isPathInsideWorkspace } from "./workspacePa
 
 const DEFAULT_RIPGREP_EXECUTABLE_PATH = "rg";
 const RIPGREP_MAX_LINE_LENGTH = 2_000;
+const MAX_RIPGREP_STDOUT_CAPTURE_CHARACTERS = 1_000_000;
+const MAX_RIPGREP_STDERR_CAPTURE_CHARACTERS = 100_000;
 
 export type RipgrepWorkspaceFile = {
   absolutePath: string;
@@ -75,11 +77,19 @@ type RipgrepJsonMatchEvent = {
   };
 };
 
+type BoundedRipgrepOutputCapture = {
+  capturedText: string;
+  capturedCharacterCount: number;
+  maximumCharacterCount: number;
+  wasTruncated: boolean;
+};
+
 export async function listWorkspaceFilesWithRipgrep(input: {
   workspaceRootPath: string;
   searchRootPath: string;
   includeGlobPattern?: string;
   ripgrepExecutablePath?: string;
+  maximumCapturedOutputCharacters?: number;
   abortSignal?: AbortSignal;
 }): Promise<RipgrepFileSearchAttempt> {
   const workspaceRootPath = await realpath(input.workspaceRootPath);
@@ -88,6 +98,9 @@ export async function listWorkspaceFilesWithRipgrep(input: {
     executablePath: input.ripgrepExecutablePath ?? DEFAULT_RIPGREP_EXECUTABLE_PATH,
     workingDirectoryPath: searchRootPath,
     args: buildRipgrepFileListArgs(input.includeGlobPattern),
+    ...(input.maximumCapturedOutputCharacters !== undefined
+      ? { maximumStdoutCaptureCharacters: input.maximumCapturedOutputCharacters }
+      : {}),
     abortSignal: input.abortSignal,
   });
   if (ripgrepProcessAttempt.attemptKind !== "completed") {
@@ -131,6 +144,7 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
   maximumFileByteCount?: number;
   includeGlobPattern?: string;
   ripgrepExecutablePath?: string;
+  maximumCapturedOutputCharacters?: number;
   abortSignal?: AbortSignal;
 }): Promise<RipgrepGrepSearchAttempt> {
   const workspaceRootPath = await realpath(input.workspaceRootPath);
@@ -146,6 +160,9 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
     ...(input.maximumSearchFileCount !== undefined ? { maximumSearchFileCount: input.maximumSearchFileCount } : {}),
     ...(input.maximumFileByteCount !== undefined ? { maximumFileByteCount: input.maximumFileByteCount } : {}),
     ...(input.ripgrepExecutablePath ? { ripgrepExecutablePath: input.ripgrepExecutablePath } : {}),
+    ...(input.maximumCapturedOutputCharacters !== undefined
+      ? { maximumCapturedOutputCharacters: input.maximumCapturedOutputCharacters }
+      : {}),
     ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
   });
   if (candidateFileSafetyCheck.attemptKind !== "completed") {
@@ -167,6 +184,9 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
       ...(input.maximumFileByteCount !== undefined ? { maximumFileByteCount: input.maximumFileByteCount } : {}),
       ...(input.includeGlobPattern ? { includeGlobPattern: input.includeGlobPattern } : {}),
     }),
+    ...(input.maximumCapturedOutputCharacters !== undefined
+      ? { maximumStdoutCaptureCharacters: input.maximumCapturedOutputCharacters }
+      : {}),
     abortSignal: input.abortSignal,
   });
   if (ripgrepProcessAttempt.attemptKind !== "completed") {
@@ -251,6 +271,7 @@ async function checkRipgrepCandidateFileSafety(input: {
   maximumSearchFileCount?: number;
   maximumFileByteCount?: number;
   ripgrepExecutablePath?: string;
+  maximumCapturedOutputCharacters?: number;
   abortSignal?: AbortSignal;
 }): Promise<RipgrepCandidateFileSafetyCheckAttempt> {
   const maximumFileByteCount = input.maximumFileByteCount;
@@ -271,6 +292,9 @@ async function checkRipgrepCandidateFileSafety(input: {
     searchRootPath: input.searchRootPath,
     ...(input.includeGlobPattern ? { includeGlobPattern: input.includeGlobPattern } : {}),
     ...(input.ripgrepExecutablePath ? { ripgrepExecutablePath: input.ripgrepExecutablePath } : {}),
+    ...(input.maximumCapturedOutputCharacters !== undefined
+      ? { maximumCapturedOutputCharacters: input.maximumCapturedOutputCharacters }
+      : {}),
     ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
   });
   if (fileSearchAttempt.attemptKind !== "completed") {
@@ -331,6 +355,8 @@ async function runRipgrepProcess(input: {
   executablePath: string;
   args: readonly string[];
   workingDirectoryPath: string;
+  maximumStdoutCaptureCharacters?: number;
+  maximumStderrCaptureCharacters?: number;
   abortSignal: AbortSignal | undefined;
 }): Promise<RipgrepProcessAttempt> {
   if (input.abortSignal?.aborted) {
@@ -342,8 +368,12 @@ async function runRipgrepProcess(input: {
       cwd: input.workingDirectoryPath,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let stdoutText = "";
-    let stderrText = "";
+    let stdoutCapture = createBoundedRipgrepOutputCapture(
+      input.maximumStdoutCaptureCharacters ?? MAX_RIPGREP_STDOUT_CAPTURE_CHARACTERS,
+    );
+    let stderrCapture = createBoundedRipgrepOutputCapture(
+      input.maximumStderrCaptureCharacters ?? MAX_RIPGREP_STDERR_CAPTURE_CHARACTERS,
+    );
     let hasSettled = false;
 
     const settleProcess = (settle: () => void): void => {
@@ -361,13 +391,27 @@ async function runRipgrepProcess(input: {
       settleProcess(() => rejectProcess(new Error("Ripgrep interrupted")));
     }
 
+    function failRipgrepForCapturedOutputLimit(outputName: "stderr" | "stdout", maximumCharacterCount: number): void {
+      childProcess.kill("SIGTERM");
+      settleProcess(() => resolveProcess({
+        attemptKind: "failed",
+        failureExplanation: `Ripgrep ${outputName} exceeded ${maximumCharacterCount} captured characters`,
+      }));
+    }
+
     childProcess.stdout.setEncoding("utf8");
     childProcess.stderr.setEncoding("utf8");
     childProcess.stdout.on("data", (chunk: string | Buffer) => {
-      stdoutText += String(chunk);
+      stdoutCapture = appendRipgrepOutputChunk(stdoutCapture, String(chunk));
+      if (stdoutCapture.wasTruncated) {
+        failRipgrepForCapturedOutputLimit("stdout", stdoutCapture.maximumCharacterCount);
+      }
     });
     childProcess.stderr.on("data", (chunk: string | Buffer) => {
-      stderrText += String(chunk);
+      stderrCapture = appendRipgrepOutputChunk(stderrCapture, String(chunk));
+      if (stderrCapture.wasTruncated) {
+        failRipgrepForCapturedOutputLimit("stderr", stderrCapture.maximumCharacterCount);
+      }
     });
     childProcess.on("error", (error) => {
       if (hasErrorCode(error, "ENOENT")) {
@@ -387,8 +431,8 @@ async function runRipgrepProcess(input: {
       settleProcess(() => resolveProcess({
         attemptKind: "completed",
         exitCode: exitCode ?? 1,
-        stdoutText,
-        stderrText,
+        stdoutText: stdoutCapture.capturedText,
+        stderrText: stderrCapture.capturedText,
       }));
     });
 
@@ -397,6 +441,40 @@ async function runRipgrepProcess(input: {
       interruptRipgrepProcess();
     }
   });
+}
+
+function createBoundedRipgrepOutputCapture(maximumCharacterCount: number): BoundedRipgrepOutputCapture {
+  return {
+    capturedText: "",
+    capturedCharacterCount: 0,
+    maximumCharacterCount,
+    wasTruncated: false,
+  };
+}
+
+function appendRipgrepOutputChunk(
+  ripgrepOutputCapture: BoundedRipgrepOutputCapture,
+  chunk: string,
+): BoundedRipgrepOutputCapture {
+  const remainingCharacterCount = ripgrepOutputCapture.maximumCharacterCount - ripgrepOutputCapture.capturedCharacterCount;
+  if (remainingCharacterCount <= 0) {
+    return { ...ripgrepOutputCapture, wasTruncated: true };
+  }
+
+  if (chunk.length <= remainingCharacterCount) {
+    return {
+      ...ripgrepOutputCapture,
+      capturedText: `${ripgrepOutputCapture.capturedText}${chunk}`,
+      capturedCharacterCount: ripgrepOutputCapture.capturedCharacterCount + chunk.length,
+    };
+  }
+
+  return {
+    ...ripgrepOutputCapture,
+    capturedText: `${ripgrepOutputCapture.capturedText}${chunk.slice(0, remainingCharacterCount)}`,
+    capturedCharacterCount: ripgrepOutputCapture.maximumCharacterCount,
+    wasTruncated: true,
+  };
 }
 
 async function loadRipgrepWorkspaceFile(input: {

@@ -4,7 +4,7 @@
 // Renderers consume this event stream into normalized message/part state rather
 // than rebuilding transcript-entry-shaped UI objects.
 import { z } from "zod";
-import { ConversationMessagePartSchema } from "./conversationMessagePart.ts";
+import { AssistantConversationMessagePartSchema } from "./conversationMessagePart.ts";
 import { PendingToolApprovalRequestSchema } from "./pendingToolApprovalRequest.ts";
 import { TokenUsageSchema } from "./provider.ts";
 
@@ -20,7 +20,7 @@ export const AssistantMessagePartAddedEventSchema = z
   .object({
     type: z.literal("assistant_message_part_added"),
     messageId: z.string().min(1),
-    part: ConversationMessagePartSchema,
+    part: AssistantConversationMessagePartSchema,
   })
   .strict();
 
@@ -28,7 +28,7 @@ export const AssistantMessagePartUpdatedEventSchema = z
   .object({
     type: z.literal("assistant_message_part_updated"),
     messageId: z.string().min(1),
-    part: ConversationMessagePartSchema,
+    part: AssistantConversationMessagePartSchema,
   })
   .strict();
 

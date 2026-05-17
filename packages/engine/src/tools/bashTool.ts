@@ -1,13 +1,12 @@
 import {
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   createStartedToolCallDetailFromRequest,
-  emitBuliDiagnosticLogEvent,
   type BashToolCallRequest,
-  type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
   type ToolCallBashDetail,
   type ToolCallBashOutputLine,
 } from "@buli/contracts";
+import { logEngineDiagnosticEvent } from "../runtimeDiagnostics.ts";
 import { WorkspaceShellCommandExecutor } from "./workspaceShellCommandExecutor.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 
@@ -140,22 +139,13 @@ export async function runApprovedBashToolCall(input: {
 }
 
 function normalizeBashToolTimeoutMilliseconds(requestedTimeoutMilliseconds: number | undefined): number {
-  return Math.min(
-    requestedTimeoutMilliseconds ?? DEFAULT_BASH_TIMEOUT_MILLISECONDS,
-    MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  return Math.max(
+    1,
+    Math.min(
+      requestedTimeoutMilliseconds ?? DEFAULT_BASH_TIMEOUT_MILLISECONDS,
+      MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+    ),
   );
-}
-
-function logEngineDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "engine",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
 }
 
 async function resolveBashWorkingDirectoryPath(input: {

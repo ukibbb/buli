@@ -35,11 +35,11 @@ import {
   summarizeProviderStreamEventForDiagnostics,
 } from "./runtimeDiagnostics.ts";
 import {
-  streamAssistantResponseEventsForRequestedToolCall,
   streamAssistantResponseEventsForRequestedToolCalls,
   type RuntimePendingToolApproval,
   type RuntimePendingToolApprovalInput,
   type RuntimeToolApprovalDecision,
+  type RuntimeToolCallExecutionContext,
 } from "./runtimeToolCallExecution.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
@@ -531,46 +531,10 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           continue;
         }
 
-        if (providerStreamEventTranslation.translationKind === "tool_call_requested") {
-          for (const assistantResponseEvent of providerStreamEventTranslation.assistantResponseEventsBeforeToolCall ?? []) {
-            yield logAssistantResponseEventEmitted(assistantResponseEvent);
-          }
-          if (providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeToolCall) {
-            conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
-              providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeToolCall,
-            );
-          }
-          yield* streamAssistantResponseEventsForRequestedToolCall({
-            assistantResponseMessageId,
-            providerConversationTurn,
-            conversationTurnProvider: this.conversationTurnProvider,
-            toolCallId: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallId,
-            toolCallRequest: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallRequest,
-            selectedModelId: this.conversationTurnInput.selectedModelId,
-            ...(this.conversationTurnInput.selectedReasoningEffort
-              ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
-              : {}),
-            assistantOperatingMode: this.assistantOperatingMode,
-            bashToolApprovalMode: this.bashToolApprovalMode,
-            workspaceRootPath: this.workspaceRootPath,
-            projectInstructionTracker: this.projectInstructionTracker,
-            promptContextBrowseRootPath: this.promptContextBrowseRootPath,
-            promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
-            workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
-            conversationHistory: this.conversationHistory,
-            abortSignal: this.abortController.signal,
-            canSpawnExplorer: this.canSpawnExplorer,
-            createPendingToolApproval: (pendingToolApprovalInput) =>
-              this.createPendingToolApproval(pendingToolApprovalInput),
-            throwIfConversationTurnInterrupted: () => {
-              this.throwIfConversationTurnInterrupted();
-            },
-            diagnosticLogger: this.diagnosticLogger,
-          });
-          continue;
-        }
-
-        if (providerStreamEventTranslation.translationKind === "tool_calls_requested") {
+        if (
+          providerStreamEventTranslation.translationKind === "tool_call_requested" ||
+          providerStreamEventTranslation.translationKind === "tool_calls_requested"
+        ) {
           for (const assistantResponseEvent of providerStreamEventTranslation.assistantResponseEventsBeforeToolCall ?? []) {
             yield logAssistantResponseEventEmitted(assistantResponseEvent);
           }
@@ -580,30 +544,13 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
             );
           }
           yield* streamAssistantResponseEventsForRequestedToolCalls({
-            assistantResponseMessageId,
-            providerConversationTurn,
-            conversationTurnProvider: this.conversationTurnProvider,
-            requestedToolCalls: providerStreamEventTranslation.providerToolCallsRequestedEvent.requestedToolCalls,
-            selectedModelId: this.conversationTurnInput.selectedModelId,
-            ...(this.conversationTurnInput.selectedReasoningEffort
-              ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
-              : {}),
-            assistantOperatingMode: this.assistantOperatingMode,
-            bashToolApprovalMode: this.bashToolApprovalMode,
-            workspaceRootPath: this.workspaceRootPath,
-            projectInstructionTracker: this.projectInstructionTracker,
-            promptContextBrowseRootPath: this.promptContextBrowseRootPath,
-            promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
-            workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
-            conversationHistory: this.conversationHistory,
-            abortSignal: this.abortController.signal,
-            canSpawnExplorer: this.canSpawnExplorer,
-            createPendingToolApproval: (pendingToolApprovalInput) =>
-              this.createPendingToolApproval(pendingToolApprovalInput),
-            throwIfConversationTurnInterrupted: () => {
-              this.throwIfConversationTurnInterrupted();
-            },
-            diagnosticLogger: this.diagnosticLogger,
+            ...this.createRequestedToolCallsExecutionContext({ assistantResponseMessageId, providerConversationTurn }),
+            requestedToolCalls: providerStreamEventTranslation.translationKind === "tool_call_requested"
+              ? [{
+                  toolCallId: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallId,
+                  toolCallRequest: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallRequest,
+                }]
+              : providerStreamEventTranslation.providerToolCallsRequestedEvent.requestedToolCalls,
           });
           continue;
         }
@@ -746,6 +693,36 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       };
     });
     return { approvalId, approvalDecisionPromise };
+  }
+
+  private createRequestedToolCallsExecutionContext(input: {
+    assistantResponseMessageId: string;
+    providerConversationTurn: ProviderConversationTurn;
+  }): RuntimeToolCallExecutionContext {
+    return {
+      assistantResponseMessageId: input.assistantResponseMessageId,
+      providerConversationTurn: input.providerConversationTurn,
+      conversationTurnProvider: this.conversationTurnProvider,
+      selectedModelId: this.conversationTurnInput.selectedModelId,
+      ...(this.conversationTurnInput.selectedReasoningEffort
+        ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
+        : {}),
+      assistantOperatingMode: this.assistantOperatingMode,
+      bashToolApprovalMode: this.bashToolApprovalMode,
+      workspaceRootPath: this.workspaceRootPath,
+      projectInstructionTracker: this.projectInstructionTracker,
+      promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+      promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
+      workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
+      conversationHistory: this.conversationHistory,
+      abortSignal: this.abortController.signal,
+      canSpawnExplorer: this.canSpawnExplorer,
+      createPendingToolApproval: (pendingToolApprovalInput) => this.createPendingToolApproval(pendingToolApprovalInput),
+      throwIfConversationTurnInterrupted: () => {
+        this.throwIfConversationTurnInterrupted();
+      },
+      diagnosticLogger: this.diagnosticLogger,
+    };
   }
 
   private throwIfConversationTurnInterrupted(): void {

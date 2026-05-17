@@ -1,4 +1,5 @@
 import type { ActivePromptContextQuery } from "./types.ts";
+import { trimTrailingPromptContextPunctuation } from "./parsePromptContextReferencesFromPromptText.ts";
 
 function decodeActivePromptContextQueryText(rawQueryText: string): string {
   if (!rawQueryText.startsWith('"')) {
@@ -37,7 +38,8 @@ function findPromptContextQueryEndOffset(promptDraft: string, promptContextQuery
     while (endOffset < promptDraft.length && !/\s/.test(promptDraft[endOffset] ?? "")) {
       endOffset += 1;
     }
-    return endOffset;
+    const rawQueryText = promptDraft.slice(queryTextStartOffset, endOffset);
+    return queryTextStartOffset + trimTrailingPromptContextPunctuation(rawQueryText).length;
   }
 
   let endOffset = queryTextStartOffset + 1;

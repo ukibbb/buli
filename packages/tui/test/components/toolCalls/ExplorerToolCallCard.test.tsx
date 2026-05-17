@@ -145,6 +145,45 @@ describe("ExplorerToolCallCard (opentui)", () => {
     expect(expandedFrame).toContain("README.md explains");
   });
 
+  test("completed expands denied Explorer child activity for disallowed tools", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <ExplorerToolCallCard
+        toolCallDetail={{
+          toolName: "explore",
+          explorationDescription: "map runtime",
+          explorationChildToolCalls: [
+            {
+              explorerChildToolCallId: "call-bash-1",
+              explorerChildToolCallStatus: "denied",
+              explorerChildToolCallStartedAtMs: 1,
+              explorerChildToolCallDurationMs: 1,
+              explorerChildToolCallDenialText: "Explorer is read-only and cannot use bash.",
+              explorerChildToolCallDetail: {
+                toolName: "bash",
+                commandLine: "pwd",
+                commandDescription: "Print working directory",
+              },
+            },
+          ],
+        }}
+        renderState="completed"
+      />,
+      { width: 120, height: 18 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(6, 3);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("activity");
+    expect(expandedFrame).toContain("Bash");
+    expect(expandedFrame).toContain("pwd");
+    expect(expandedFrame).toContain("Explorer is read-only");
+  });
+
   test("failed renders Explorer label and error text", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ExplorerToolCallCard

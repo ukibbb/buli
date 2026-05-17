@@ -300,7 +300,7 @@ export class RuntimeProviderStreamEventTranslator {
   flushCurrentAssistantTextSegmentBeforeFailedTerminal(): RuntimeAssistantTextSegmentFlush | undefined {
     return this.flushCurrentAssistantTextSegment({
       partStatus: "failed",
-      shouldEmitPartUpdatedEvent: false,
+      shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.hasObservedToolCallBoundary,
     });
   }
@@ -308,7 +308,7 @@ export class RuntimeProviderStreamEventTranslator {
   flushCurrentAssistantTextSegmentBeforeInterruptedTerminal(): RuntimeAssistantTextSegmentFlush | undefined {
     return this.flushCurrentAssistantTextSegment({
       partStatus: "interrupted",
-      shouldEmitPartUpdatedEvent: false,
+      shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.hasObservedToolCallBoundary,
     });
   }
@@ -422,12 +422,16 @@ export class RuntimeProviderStreamEventTranslator {
   }): RuntimeProviderStreamTerminalAssistantResponseTranslation {
     const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
       partStatus: "incomplete",
-      shouldEmitPartUpdatedEvent: false,
+      shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.hasObservedToolCallBoundary,
     });
+    const assistantResponseEventsBeforeTerminalSessionEntry: AssistantResponseEvent[] = [this.createAssistantTurnSummaryEvent()];
+    if (assistantTextSegmentFlush) {
+      assistantResponseEventsBeforeTerminalSessionEntry.push(...assistantTextSegmentFlush.assistantResponseEvents);
+    }
     return {
       translationKind: "terminal_assistant_response",
-      assistantResponseEventsBeforeTerminalSessionEntry: [this.createAssistantTurnSummaryEvent()],
+      assistantResponseEventsBeforeTerminalSessionEntry,
       ...(assistantTextSegmentFlush?.assistantTextSegmentSessionEntry
         ? { assistantTextSegmentSessionEntryBeforeTerminalSessionEntry: assistantTextSegmentFlush.assistantTextSegmentSessionEntry }
         : {}),

@@ -31,6 +31,22 @@ describe("BracketedTarget (opentui)", () => {
     expect(frame).not.toContain("ConversationMessageList.tsx");
   });
 
+  test("applies the explicit maximum target text character count", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <BracketedTarget
+        accentColor={chatScreenTheme.accentGreen}
+        maximumTargetTextCharacterCount={12}
+        targetText="abcdefghijklmnopqrst"
+      />,
+      { width: 40, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame).toContain("[abcdefghijkl]");
+    expect(frame).not.toContain("mnop");
+  });
+
   test("accepts a ReactNode as target for rich content", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BracketedTarget accentColor={chatScreenTheme.accentRed}>

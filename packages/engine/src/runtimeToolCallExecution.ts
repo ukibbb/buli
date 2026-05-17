@@ -7,7 +7,6 @@ import {
   type AssistantToolRequestName,
   type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
-  type ExploreToolCallRequest,
   type ProviderRequestedToolCall,
   type ReasoningEffort,
   type ToolCallRequest,
@@ -16,7 +15,13 @@ import {
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
+import { mergeAssistantResponseEventStreams } from "./runtimeAssistantResponseEventStreamMerge.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
+import {
+  areAllAutoApprovedReadOnlyToolCalls,
+  groupRequestedToolCallsForExecution,
+  type AutoConcurrentRequestedToolCall,
+} from "./runtimeRequestedToolCallExecutionGroups.ts";
 import { streamAssistantResponseEventsForBashToolCall } from "./runtimeBashToolCallExecution.ts";
 import { streamAssistantResponseEventsForExploreToolCall } from "./runtimeExplorerToolCallExecution.ts";
 import { streamAssistantResponseEventsForFileMutationToolCall } from "./runtimeFileMutationToolCallExecution.ts";
@@ -41,12 +46,10 @@ export type {
 
 type RequestedToolName = AssistantToolRequestName;
 
-export type StreamAssistantResponseEventsForRequestedToolCallInput = {
+export type RuntimeToolCallExecutionContext = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
   conversationTurnProvider: ConversationTurnProvider;
-  toolCallId: string;
-  toolCallRequest: ToolCallRequest;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   assistantOperatingMode: AssistantOperatingMode;
@@ -64,63 +67,24 @@ export type StreamAssistantResponseEventsForRequestedToolCallInput = {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
-export type StreamAssistantResponseEventsForRequestedToolCallsInput = Omit<
-  StreamAssistantResponseEventsForRequestedToolCallInput,
-  "toolCallId" | "toolCallRequest"
-> & {
+export type StreamAssistantResponseEventsForRequestedToolCallsInput = RuntimeToolCallExecutionContext & {
   requestedToolCalls: readonly ProviderRequestedToolCall[];
 };
 
-type AutoApprovedReadOnlyRequestedToolCall = {
+type RuntimeRequestedToolCallExecutorInput = RuntimeToolCallExecutionContext & {
   toolCallId: string;
-  toolCallRequest: WorkspaceInspectionToolCallRequest;
-};
-
-type AutoConcurrentToolCallRequest = WorkspaceInspectionToolCallRequest | ExploreToolCallRequest;
-
-type AutoConcurrentRequestedToolCall = {
-  toolCallId: string;
-  toolCallRequest: AutoConcurrentToolCallRequest;
-};
-
-type RequestedToolCallExecutionGroup =
-  | {
-    groupKind: "auto_concurrent";
-    requestedToolCalls: AutoConcurrentRequestedToolCall[];
-  }
-  | {
-    groupKind: "serial";
-    requestedToolCall: ProviderRequestedToolCall;
-  };
-
-type RuntimeRequestedToolCallExecutorInput = StreamAssistantResponseEventsForRequestedToolCallInput & {
+  toolCallRequest: ToolCallRequest;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
 };
 
-type StreamAssistantResponseEventsForAutoConcurrentRequestedToolCallsInput = Omit<
-  RuntimeRequestedToolCallExecutorInput,
-  "toolCallId" | "toolCallRequest"
-> & {
+type StreamAssistantResponseEventsForAutoConcurrentRequestedToolCallsInput = RuntimeToolCallExecutionContext & {
   requestedToolCalls: readonly AutoConcurrentRequestedToolCall[];
+  toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
 };
 
 type RuntimeRequestedToolCallExecutor = (
   input: RuntimeRequestedToolCallExecutorInput,
 ) => AsyncGenerator<AssistantResponseEvent>;
-
-type AssistantResponseEventStream = {
-  streamIndex: number;
-  iterator: AsyncIterator<AssistantResponseEvent>;
-};
-
-type ActiveAssistantResponseEventStream = AssistantResponseEventStream & {
-  nextEventPromise: Promise<AssistantResponseEventStreamResult>;
-};
-
-type AssistantResponseEventStreamResult = {
-  streamIndex: number;
-  iteratorResult: IteratorResult<AssistantResponseEvent>;
-};
 
 const requestedToolCallExecutorByName = {
   read: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
@@ -131,17 +95,6 @@ const requestedToolCallExecutorByName = {
   write: streamAssistantResponseEventsForFileMutationRequestedToolCall,
   bash: streamAssistantResponseEventsForBashRequestedToolCall,
 } satisfies { readonly [ToolName in RequestedToolName]: RuntimeRequestedToolCallExecutor };
-
-export async function* streamAssistantResponseEventsForRequestedToolCall(
-  input: StreamAssistantResponseEventsForRequestedToolCallInput,
-): AsyncGenerator<AssistantResponseEvent> {
-  const { toolCallId, toolCallRequest, ...sharedInput } = input;
-
-  yield* streamAssistantResponseEventsForRequestedToolCalls({
-    ...sharedInput,
-    requestedToolCalls: [{ toolCallId, toolCallRequest }],
-  });
-}
 
 export async function* streamAssistantResponseEventsForRequestedToolCalls(
   input: StreamAssistantResponseEventsForRequestedToolCallsInput,
@@ -155,24 +108,11 @@ export async function* streamAssistantResponseEventsForRequestedToolCalls(
     diagnosticLogger: input.diagnosticLogger,
   });
 
-  for (const requestedToolCall of input.requestedToolCalls) {
-    logRequestedToolCall(input, requestedToolCall);
-    input.conversationHistory.appendConversationSessionEntry({
-      entryKind: "tool_call",
-      toolCallId: requestedToolCall.toolCallId,
-      toolCallRequest: requestedToolCall.toolCallRequest,
-    });
-    logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_history.entry_appended", {
-      entryKind: "tool_call",
-      toolCallId: requestedToolCall.toolCallId,
-      toolName: requestedToolCall.toolCallRequest.toolName,
-      conversationSessionEntryCount: input.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: input.conversationHistory.listModelContextItems().length,
-    });
-  }
-
   for (const requestedToolCallExecutionGroup of groupRequestedToolCallsForExecution(input.requestedToolCalls)) {
     if (requestedToolCallExecutionGroup.groupKind === "auto_concurrent") {
+      for (const requestedToolCall of requestedToolCallExecutionGroup.requestedToolCalls) {
+        appendStartedRequestedToolCallSessionEntry(input, requestedToolCall);
+      }
       yield* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls({
         ...input,
         requestedToolCalls: requestedToolCallExecutionGroup.requestedToolCalls,
@@ -181,6 +121,7 @@ export async function* streamAssistantResponseEventsForRequestedToolCalls(
       continue;
     }
 
+    appendStartedRequestedToolCallSessionEntry(input, requestedToolCallExecutionGroup.requestedToolCall);
     yield* resolveRequestedToolCallExecutor(requestedToolCallExecutionGroup.requestedToolCall.toolCallRequest)({
       ...input,
       toolCallId: requestedToolCallExecutionGroup.requestedToolCall.toolCallId,
@@ -188,6 +129,25 @@ export async function* streamAssistantResponseEventsForRequestedToolCalls(
       toolResultSessionRecorder,
     });
   }
+}
+
+function appendStartedRequestedToolCallSessionEntry(
+  input: StreamAssistantResponseEventsForRequestedToolCallsInput,
+  requestedToolCall: ProviderRequestedToolCall,
+): void {
+  logRequestedToolCall(input, requestedToolCall);
+  input.conversationHistory.appendConversationSessionEntry({
+    entryKind: "tool_call",
+    toolCallId: requestedToolCall.toolCallId,
+    toolCallRequest: requestedToolCall.toolCallRequest,
+  });
+  logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_history.entry_appended", {
+    entryKind: "tool_call",
+    toolCallId: requestedToolCall.toolCallId,
+    toolName: requestedToolCall.toolCallRequest.toolName,
+    conversationSessionEntryCount: input.conversationHistory.listConversationSessionEntries().length,
+    modelContextItemCount: input.conversationHistory.listModelContextItems().length,
+  });
 }
 
 function logRequestedToolCall(
@@ -208,74 +168,11 @@ function logRequestedToolCall(
   });
 }
 
-function areAllAutoApprovedReadOnlyToolCalls(
-  requestedToolCalls: readonly ProviderRequestedToolCall[],
-): requestedToolCalls is readonly AutoApprovedReadOnlyRequestedToolCall[] {
-  return requestedToolCalls.every((requestedToolCall) => isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest));
-}
-
-function groupRequestedToolCallsForExecution(
-  requestedToolCalls: readonly ProviderRequestedToolCall[],
-): RequestedToolCallExecutionGroup[] {
-  const requestedToolCallExecutionGroups: RequestedToolCallExecutionGroup[] = [];
-  let currentAutoConcurrentRequestedToolCalls: AutoConcurrentRequestedToolCall[] = [];
-
-  for (const requestedToolCall of requestedToolCalls) {
-    if (isAutoConcurrentToolCallRequest(requestedToolCall.toolCallRequest)) {
-      currentAutoConcurrentRequestedToolCalls.push({
-        toolCallId: requestedToolCall.toolCallId,
-        toolCallRequest: requestedToolCall.toolCallRequest,
-      });
-      continue;
-    }
-
-    if (currentAutoConcurrentRequestedToolCalls.length > 0) {
-      requestedToolCallExecutionGroups.push({
-        groupKind: "auto_concurrent",
-        requestedToolCalls: currentAutoConcurrentRequestedToolCalls,
-      });
-      currentAutoConcurrentRequestedToolCalls = [];
-    }
-
-    requestedToolCallExecutionGroups.push({
-      groupKind: "serial",
-      requestedToolCall,
-    });
-  }
-
-  if (currentAutoConcurrentRequestedToolCalls.length > 0) {
-    requestedToolCallExecutionGroups.push({
-      groupKind: "auto_concurrent",
-      requestedToolCalls: currentAutoConcurrentRequestedToolCalls,
-    });
-  }
-
-  return requestedToolCallExecutionGroups;
-}
-
-function isAutoConcurrentToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is AutoConcurrentToolCallRequest {
-  return isWorkspaceInspectionToolCallRequest(toolCallRequest) || isExploreToolCallRequest(toolCallRequest);
-}
-
 async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls(
   input: StreamAssistantResponseEventsForAutoConcurrentRequestedToolCallsInput,
 ): AsyncGenerator<AssistantResponseEvent> {
   if (input.requestedToolCalls.length === 0) {
     throw new Error("Cannot execute an empty auto-concurrent tool-call batch.");
-  }
-
-  if (input.requestedToolCalls.length === 1) {
-    const [requestedToolCall] = input.requestedToolCalls;
-    if (!requestedToolCall) {
-      throw new Error("Missing requested tool call in single auto-concurrent batch.");
-    }
-
-    yield* resolveRequestedToolCallExecutor(requestedToolCall.toolCallRequest)({
-      ...input,
-      toolCallId: requestedToolCall.toolCallId,
-      toolCallRequest: requestedToolCall.toolCallRequest,
-    });
-    return;
   }
 
   const concurrentGroupStartedAtMs = Date.now();
@@ -328,101 +225,6 @@ function buildConcurrentToolCallGroupDiagnosticFields(
     toolCallCount: requestedToolCalls.length,
     toolCallIds: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
     toolNames: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
-  };
-}
-
-async function* mergeAssistantResponseEventStreams(input: {
-  assistantResponseEventStreams: readonly AsyncGenerator<AssistantResponseEvent>[];
-  throwIfConversationTurnInterrupted: () => void;
-}): AsyncGenerator<AssistantResponseEvent> {
-  const assistantResponseEventStreams: AssistantResponseEventStream[] = input.assistantResponseEventStreams.map(
-    (assistantResponseEventStream, streamIndex) => {
-      const iterator = assistantResponseEventStream[Symbol.asyncIterator]();
-      return {
-        streamIndex,
-        iterator,
-      };
-    },
-  );
-
-  try {
-    const initialAssistantResponseEventStreamResults = await Promise.all(
-      assistantResponseEventStreams.map((assistantResponseEventStream) =>
-        readNextAssistantResponseEventFromStream(assistantResponseEventStream)
-      ),
-    );
-    input.throwIfConversationTurnInterrupted();
-
-    const assistantResponseEventStreamsWithRemainingEvents: AssistantResponseEventStream[] = [];
-    for (const initialAssistantResponseEventStreamResult of initialAssistantResponseEventStreamResults) {
-      const assistantResponseEventStream = assistantResponseEventStreams[initialAssistantResponseEventStreamResult.streamIndex];
-      if (!assistantResponseEventStream) {
-        throw new Error(`Missing assistant response stream at index ${initialAssistantResponseEventStreamResult.streamIndex}.`);
-      }
-
-      if (initialAssistantResponseEventStreamResult.iteratorResult.done) {
-        continue;
-      }
-
-      assistantResponseEventStreamsWithRemainingEvents.push(assistantResponseEventStream);
-      yield initialAssistantResponseEventStreamResult.iteratorResult.value;
-      input.throwIfConversationTurnInterrupted();
-    }
-
-    const activeAssistantResponseEventStreams: ActiveAssistantResponseEventStream[] = assistantResponseEventStreamsWithRemainingEvents.map(
-      (assistantResponseEventStream) => ({
-        ...assistantResponseEventStream,
-        nextEventPromise: readNextAssistantResponseEventFromStream(assistantResponseEventStream),
-      }),
-    );
-
-    while (activeAssistantResponseEventStreams.length > 0) {
-      input.throwIfConversationTurnInterrupted();
-      const nextAssistantResponseEventStreamResult = await Promise.race(
-        activeAssistantResponseEventStreams.map((activeAssistantResponseEventStream) =>
-          activeAssistantResponseEventStream.nextEventPromise
-        ),
-      );
-      input.throwIfConversationTurnInterrupted();
-
-      const activeStreamIndex = activeAssistantResponseEventStreams.findIndex((activeAssistantResponseEventStream) =>
-        activeAssistantResponseEventStream.streamIndex === nextAssistantResponseEventStreamResult.streamIndex
-      );
-      if (activeStreamIndex === -1) {
-        throw new Error(`Received an event from inactive assistant response stream ${nextAssistantResponseEventStreamResult.streamIndex}.`);
-      }
-
-      const activeAssistantResponseEventStream = activeAssistantResponseEventStreams[activeStreamIndex];
-      if (!activeAssistantResponseEventStream) {
-        throw new Error(`Missing active assistant response stream at index ${activeStreamIndex}.`);
-      }
-
-      if (nextAssistantResponseEventStreamResult.iteratorResult.done) {
-        activeAssistantResponseEventStreams.splice(activeStreamIndex, 1);
-        continue;
-      }
-
-      activeAssistantResponseEventStream.nextEventPromise = readNextAssistantResponseEventFromStream({
-        streamIndex: activeAssistantResponseEventStream.streamIndex,
-        iterator: activeAssistantResponseEventStream.iterator,
-      });
-      yield nextAssistantResponseEventStreamResult.iteratorResult.value;
-    }
-  } catch (error) {
-    await Promise.allSettled(
-      assistantResponseEventStreams.map((assistantResponseEventStream) => assistantResponseEventStream.iterator.return?.()),
-    );
-    throw error;
-  }
-}
-
-async function readNextAssistantResponseEventFromStream(input: {
-  streamIndex: number;
-  iterator: AsyncIterator<AssistantResponseEvent>;
-}): Promise<AssistantResponseEventStreamResult> {
-  return {
-    streamIndex: input.streamIndex,
-    iteratorResult: await input.iterator.next(),
   };
 }
 

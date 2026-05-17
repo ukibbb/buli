@@ -12,14 +12,28 @@ export type WorkspaceShellCommandExecutionResult = {
 };
 
 const DEFAULT_MAXIMUM_CAPTURED_OUTPUT_CHARACTERS = 100_000;
+const SHELL_COMMAND_ENVIRONMENT_ALLOWLIST = new Set([
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LOGNAME",
+  "PATH",
+  "SHELL",
+  "TERM",
+  "TMPDIR",
+  "USER",
+]);
+const shellCommandEnvironmentByExecutor = new WeakMap<WorkspaceShellCommandExecutor, NodeJS.ProcessEnv>();
 
 export class WorkspaceShellCommandExecutor {
   readonly workspaceRootPath: string;
   readonly shellExecutablePath: string;
 
-  constructor(input: { workspaceRootPath: string; shellExecutablePath?: string }) {
+  constructor(input: { workspaceRootPath: string; shellExecutablePath?: string; environment?: NodeJS.ProcessEnv }) {
     this.workspaceRootPath = resolve(input.workspaceRootPath);
     this.shellExecutablePath = input.shellExecutablePath ?? process.env.SHELL ?? "/bin/zsh";
+    shellCommandEnvironmentByExecutor.set(this, createScrubbedShellCommandEnvironment(input.environment ?? process.env));
   }
 
   async runShellCommand(input: {
@@ -36,7 +50,7 @@ export class WorkspaceShellCommandExecutor {
     return new Promise<WorkspaceShellCommandExecutionResult>((resolveExecution, rejectExecution) => {
       const childProcess = spawn(this.shellExecutablePath, ["-lc", input.shellCommand], {
         cwd: input.workingDirectoryPath,
-        env: process.env,
+        env: shellCommandEnvironmentByExecutor.get(this) ?? createScrubbedShellCommandEnvironment(process.env),
         detached: true,
       });
 
@@ -155,6 +169,18 @@ export class WorkspaceShellCommandExecutor {
       }
     });
   }
+}
+
+export function createScrubbedShellCommandEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const shellCommandEnvironment: NodeJS.ProcessEnv = {};
+  for (const environmentVariableName of SHELL_COMMAND_ENVIRONMENT_ALLOWLIST) {
+    const environmentVariableValue = environment[environmentVariableName];
+    if (environmentVariableValue !== undefined) {
+      shellCommandEnvironment[environmentVariableName] = environmentVariableValue;
+    }
+  }
+
+  return shellCommandEnvironment;
 }
 
 type BoundedShellOutputCapture = {

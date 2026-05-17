@@ -337,6 +337,33 @@ test("createOpenAiResponseReplayItems reconstructs reasoning, assistant text, an
   });
 });
 
+test("createOpenAiResponseReplayItems concatenates only valid assistant output text parts", () => {
+  expect(
+    createOpenAiResponseReplayItems([
+      {
+        type: "message",
+        id: "msg_1",
+        role: "assistant",
+        content: [
+          { type: "output_text", text: "Hello" },
+          { type: "annotation", text: "ignored" },
+          { type: "output_text", text: " world" },
+          { type: "output_text", text: 42 },
+          null,
+        ],
+      },
+    ]),
+  ).toEqual({
+    continuationInputItems: [
+      {
+        role: "assistant",
+        content: "Hello world",
+      },
+    ],
+    providerTurnReplayInputItems: [],
+  });
+});
+
 test("createOpenAiResponsesInputItems falls back to assistant transcript text for legacy tool history without replay state", () => {
   expect(
     createOpenAiResponsesInputItems([

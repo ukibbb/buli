@@ -39,7 +39,6 @@ const SAFE_READ_ONLY_COMMAND_NAMES = new Set([
   "id",
   "jq",
   "ls",
-  "printenv",
   "printf",
   "ps",
   "pwd",

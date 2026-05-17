@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { formatCompactTokenCount } from "./formatCompactTokenCount.ts";
 
 // ContextWindowMeter keeps the footer compact: used tokens, optionally followed
 // by the known model limit. It intentionally avoids a bar because the available
@@ -15,21 +16,12 @@ export function ContextWindowMeter(props: ContextWindowMeterProps): ReactNode {
     return <text fg={chatScreenTheme.textMuted}>{"--"}</text>;
   }
   if (props.contextWindowTokenCapacity === undefined || props.contextWindowTokenCapacity <= 0) {
-    return <text fg={chatScreenTheme.textMuted}>{formatTokenCount(props.totalTokensUsed)}</text>;
+    return <text fg={chatScreenTheme.textMuted}>{formatCompactTokenCount(props.totalTokensUsed)}</text>;
   }
 
   return (
     <text fg={chatScreenTheme.textMuted}>
-      {`${formatTokenCount(props.totalTokensUsed)} / ${formatTokenCount(props.contextWindowTokenCapacity)}`}
+      {`${formatCompactTokenCount(props.totalTokensUsed)} / ${formatCompactTokenCount(props.contextWindowTokenCapacity)}`}
     </text>
   );
-}
-
-function formatTokenCount(tokenCount: number): string {
-  if (tokenCount < 1000) {
-    return String(tokenCount);
-  }
-
-  const tokenCountInThousands = tokenCount / 1000;
-  return `${Number.isInteger(tokenCountInThousands) ? tokenCountInThousands : tokenCountInThousands.toFixed(1)}k`;
 }

@@ -38,6 +38,26 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain("const x = 1;");
   });
 
+  test("renders_third_level_headings_without_the_hollow_diamond_decoration", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["# Done", "", "## Scope", "", "### 1. The scope is huge", "", "#### Follow-up"].join("\n")}
+      />,
+      { width: 72, height: 12 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("▌ Done");
+    expect(frame).toContain("◆ Scope");
+    expect(frame).toContain("1. The scope is huge");
+    expect(frame).toContain("• Follow-up");
+    expect(frame).not.toContain("◇ 1. The scope is huge");
+  });
+
   test("renders_streaming_markdown_tail", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock horizontalRuleColor="#10B981" isStreaming={true} markdownText="Still **typing" />,

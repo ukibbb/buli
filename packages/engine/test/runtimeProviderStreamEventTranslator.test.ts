@@ -233,6 +233,16 @@ test("RuntimeProviderStreamEventTranslator translates incomplete provider events
         modelDisplayName: "gpt-5.4",
       },
     },
+    {
+      type: "assistant_message_part_updated",
+      messageId: "assistant-message-1",
+      part: {
+        id: "assistant-text-1",
+        partKind: "assistant_text",
+        partStatus: "incomplete",
+        rawMarkdownText: "Partial",
+      },
+    },
   ]);
   expect(terminalTranslation.terminalAssistantMessageSessionEntry).toEqual({
     entryKind: "assistant_message",

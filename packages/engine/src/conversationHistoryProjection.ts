@@ -117,7 +117,13 @@ function projectConversationSessionTurnToModelContextItems(
     terminalAssistantMessageEntry.assistantMessageStatus === "failed" ||
     terminalAssistantMessageEntry.assistantMessageStatus === "interrupted"
   ) {
-    return [];
+    const pairedToolModelContextItems = projectPairedToolEntriesToModelContextItems(conversationSessionTurn.entriesAfterUserPrompt.slice(0, -1));
+    return pairedToolModelContextItems.length > 0
+      ? [
+          ...projectConversationSessionEntryToModelContextItems(conversationSessionTurn.userPromptEntry),
+          ...pairedToolModelContextItems,
+        ]
+      : [];
   }
 
   return [

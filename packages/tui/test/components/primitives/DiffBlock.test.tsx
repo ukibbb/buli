@@ -91,4 +91,34 @@ describe("DiffBlock", () => {
     expect(renderedLinesWithCode[0] ?? "").toContain("+");
     expect(frame).not.toContain("components/ConversationMessageList.tsx");
   });
+
+  test("limits_visible_diff_rows_and_reports_hidden_rows", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <DiffBlock
+        maximumVisibleLineCount={2}
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/example.ts b/src/example.ts",
+            "--- a/src/example.ts",
+            "+++ b/src/example.ts",
+            "@@ -0,0 +1,4 @@",
+            "+visible one",
+            "+visible two",
+            "+hidden one",
+            "+hidden two",
+            "",
+          ])
+        }
+      />,
+      { width: 80, height: 12 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame).toContain("visible one");
+    expect(frame).toContain("visible two");
+    expect(frame).toContain("showing first 2 of 4 diff rows");
+    expect(frame).not.toContain("hidden one");
+    expect(frame).not.toContain("hidden two");
+  });
 });

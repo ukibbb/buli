@@ -12,6 +12,7 @@ type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boo
 type OpenAiToolParameterProperty = {
   readonly type: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
   readonly description: string;
+  readonly minimum?: number;
 };
 
 type OpenAiToolParameters = {
@@ -61,6 +62,7 @@ export function createBashToolDefinition(): OpenAiToolDefinition<"bash"> {
         },
         timeout: {
           type: ["integer", "null"],
+          minimum: 1,
           description: "Timeout in milliseconds, or null to use the default timeout.",
         },
       },
@@ -85,10 +87,12 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
         },
         offset: {
           type: ["integer", "null"],
+          minimum: 1,
           description: "1-indexed first line to return, or null to start at line 1.",
         },
         limit: {
           type: ["integer", "null"],
+          minimum: 1,
           description: "Maximum number of lines or directory entries to return, or null for the default limit.",
         },
       },

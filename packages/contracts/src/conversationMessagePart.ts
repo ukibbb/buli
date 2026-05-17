@@ -179,6 +179,18 @@ export const ConversationMessagePartSchema = z.union([
   AssistantTurnSummaryConversationMessagePartSchema,
 ]);
 
+export const AssistantConversationMessagePartSchema = z.union([
+  AssistantTextConversationMessagePartSchema,
+  AssistantReasoningConversationMessagePartSchema,
+  AssistantToolCallConversationMessagePartSchema,
+  AssistantPlanProposalConversationMessagePartSchema,
+  AssistantRateLimitNoticeConversationMessagePartSchema,
+  AssistantIncompleteNoticeConversationMessagePartSchema,
+  AssistantErrorNoticeConversationMessagePartSchema,
+  AssistantInterruptedNoticeConversationMessagePartSchema,
+  AssistantTurnSummaryConversationMessagePartSchema,
+]);
+
 export type AssistantTextPartStatus = z.infer<typeof AssistantTextPartStatusSchema>;
 export type AssistantReasoningPartStatus = z.infer<typeof AssistantReasoningPartStatusSchema>;
 export type AssistantToolCallPartStatus = z.infer<typeof AssistantToolCallPartStatusSchema>;
@@ -186,6 +198,7 @@ export type UserTextConversationMessagePart = z.infer<typeof UserTextConversatio
 export type AssistantTextConversationMessagePart = z.infer<typeof AssistantTextConversationMessagePartSchema>;
 export type AssistantReasoningConversationMessagePart = z.infer<typeof AssistantReasoningConversationMessagePartSchema>;
 export type AssistantToolCallConversationMessagePart = z.infer<typeof AssistantToolCallConversationMessagePartSchema>;
+export type AssistantConversationMessagePart = z.infer<typeof AssistantConversationMessagePartSchema>;
 export type AssistantPlanProposalConversationMessagePart = z.infer<typeof AssistantPlanProposalConversationMessagePartSchema>;
 export type AssistantRateLimitNoticeConversationMessagePart = z.infer<typeof AssistantRateLimitNoticeConversationMessagePartSchema>;
 export type AssistantIncompleteNoticeConversationMessagePart = z.infer<typeof AssistantIncompleteNoticeConversationMessagePartSchema>;

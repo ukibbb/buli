@@ -24,6 +24,25 @@ test("extractActivePromptContextQueryFromPromptDraft decodes quoted queries", ()
   });
 });
 
+test("extractActivePromptContextQueryFromPromptDraft treats trailing sentence punctuation as outside an unquoted query", () => {
+  expect(extractActivePromptContextQueryFromPromptDraft("Compare @docs/README.md, next", 16)).toEqual({
+    rawQueryText: "docs/README.md",
+    decodedQueryText: "docs/README.md",
+    startOffset: 8,
+    endOffset: 23,
+  });
+  expect(extractActivePromptContextQueryFromPromptDraft("Compare @docs/README.md, next", 24)).toBeUndefined();
+});
+
+test("extractActivePromptContextQueryFromPromptDraft keeps current-directory path queries", () => {
+  expect(extractActivePromptContextQueryFromPromptDraft("@.", 2)).toEqual({
+    rawQueryText: ".",
+    decodedQueryText: ".",
+    startOffset: 0,
+    endOffset: 2,
+  });
+});
+
 test("replaceActivePromptContextQueryWithSelectedReference replaces only the active query", () => {
   const activePromptContextQuery = extractActivePromptContextQueryFromPromptDraft("Read @pack now", 9);
   if (!activePromptContextQuery) {
@@ -46,6 +65,24 @@ test("reconcileSelectedPromptContextReferenceTextsWithPromptDraft preserves sele
       selectedPromptContextReferenceTexts: ["@README.md", "@missing.ts", "@packages/engine"],
     }),
   ).toEqual(["@README.md", "@packages/engine"]);
+});
+
+test("reconcileSelectedPromptContextReferenceTextsWithPromptDraft matches references instead of substrings", () => {
+  expect(
+    reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
+      promptDraft: "Read @README.md.backup",
+      selectedPromptContextReferenceTexts: ["@README.md"],
+    }),
+  ).toEqual([]);
+});
+
+test("reconcileSelectedPromptContextReferenceTextsWithPromptDraft preserves references before trailing punctuation", () => {
+  expect(
+    reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
+      promptDraft: "Read @README.md, then continue",
+      selectedPromptContextReferenceTexts: ["", "@README.md"],
+    }),
+  ).toEqual(["@README.md"]);
 });
 
 test("determinePromptContextQueryLoadStrategy classifies browse, path, and fuzzy queries", () => {

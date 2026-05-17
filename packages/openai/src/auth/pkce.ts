@@ -1,26 +1,47 @@
 import { createHash, randomBytes } from "node:crypto";
+import { z } from "zod";
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./constants.ts";
 
 const TOKEN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+const TOKEN_CHARACTER_SET_RANDOM_BYTE_LIMIT = Math.floor(256 / TOKEN_CHARS.length) * TOKEN_CHARS.length;
 
 export type PkcePair = {
   verifier: string;
   challenge: string;
 };
 
-export type TokenClaims = {
-  chatgpt_account_id?: string;
-  organizations?: Array<{ id: string }>;
-  email?: string;
-  "https://api.openai.com/auth"?: {
-    chatgpt_account_id?: string;
-  };
-};
+const TokenClaimsSchema = z.object({
+  chatgpt_account_id: z.string().optional(),
+  organizations: z.array(z.object({ id: z.string() })).optional(),
+  email: z.string().optional(),
+  "https://api.openai.com/auth": z.object({
+    chatgpt_account_id: z.string().optional(),
+  }).optional(),
+}).passthrough();
+
+export type TokenClaims = z.infer<typeof TokenClaimsSchema>;
 
 function createToken(length: number): string {
-  const bytes = randomBytes(length);
+  let token = "";
+  while (token.length < length) {
+    const bytes = randomBytes(length - token.length);
+    for (const byte of bytes) {
+      if (byte >= TOKEN_CHARACTER_SET_RANDOM_BYTE_LIMIT) {
+        continue;
+      }
 
-  return Array.from(bytes, (byte) => TOKEN_CHARS[byte % TOKEN_CHARS.length]).join("");
+      token += TOKEN_CHARS[byte % TOKEN_CHARS.length];
+      if (token.length === length) {
+        break;
+      }
+    }
+  }
+
+  return token;
+}
+
+function buildIssuerUrl(input: { issuer?: string | undefined; pathname: string }): string {
+  return new URL(input.pathname, input.issuer ?? OPENAI_ISSUER).toString();
 }
 
 export async function createPkcePair(): Promise<PkcePair> {
@@ -54,7 +75,9 @@ export function buildAuthorizeUrl(input: {
     originator: "buli",
   });
 
-  return `${input.issuer ?? OPENAI_ISSUER}/oauth/authorize?${params.toString()}`;
+  const authorizeUrl = new URL(buildIssuerUrl({ issuer: input.issuer, pathname: "/oauth/authorize" }));
+  authorizeUrl.search = params.toString();
+  return authorizeUrl.toString();
 }
 
 export function parseJwtClaims(token: string): TokenClaims | undefined {
@@ -69,7 +92,9 @@ export function parseJwtClaims(token: string): TokenClaims | undefined {
   }
 
   try {
-    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as TokenClaims;
+    const parsedClaims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
+    const validatedClaims = TokenClaimsSchema.safeParse(parsedClaims);
+    return validatedClaims.success ? validatedClaims.data : undefined;
   } catch {
     return undefined;
   }

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@buli/contracts": "workspace:*",
-    "open": "^10.1.2",
+    "open": "^10.2.0",
     "zod": "^3.24.2"
   },
   "scripts": {

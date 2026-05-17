@@ -29,6 +29,7 @@ export async function runGrepToolCall(input: {
   grepToolCallRequest: GrepToolCallRequest;
   workspaceRootPath: string;
   ripgrepExecutablePath?: string;
+  maximumRipgrepCapturedOutputCharacters?: number;
   abortSignal?: AbortSignal;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
@@ -61,9 +62,18 @@ export async function runGrepToolCall(input: {
             ? { includeGlobPattern: input.grepToolCallRequest.includeGlobPattern }
             : {}),
           ...(input.ripgrepExecutablePath ? { ripgrepExecutablePath: input.ripgrepExecutablePath } : {}),
+          ...(input.maximumRipgrepCapturedOutputCharacters !== undefined
+            ? { maximumCapturedOutputCharacters: input.maximumRipgrepCapturedOutputCharacters }
+            : {}),
           ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
         })
       : undefined;
+    if (
+      ripgrepSearchAttempt?.attemptKind !== "completed" &&
+      hasPotentiallyCatastrophicJavaScriptRegexPattern(input.grepToolCallRequest.regexPattern)
+    ) {
+      throw new Error("Grep fallback cannot safely evaluate this regex pattern without ripgrep. Install ripgrep or simplify the pattern.");
+    }
     const grepSearchResult = ripgrepSearchAttempt?.attemptKind === "completed"
       ? buildGrepSearchResultFromRipgrepMatches(ripgrepSearchAttempt)
       : await searchWorkspaceFilesWithJavaScriptRegex({
@@ -119,6 +129,10 @@ export async function runGrepToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+function hasPotentiallyCatastrophicJavaScriptRegexPattern(regexPattern: string): boolean {
+  return /\([^)]*[+*][^)]*\)\s*[+*?]/.test(regexPattern) || /\([^)]*[+*][^)]*\)\s*\{/.test(regexPattern);
 }
 
 type GrepSearchResult = {

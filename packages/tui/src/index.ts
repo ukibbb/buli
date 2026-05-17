@@ -2,8 +2,6 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import React from "react";
 import {
-  emitBuliDiagnosticLogEvent,
-  type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
   type UserPromptImageAttachment,
 } from "@buli/contracts";
@@ -11,6 +9,7 @@ import type { AssistantConversationRunner } from "@buli/engine";
 import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
 import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
 import { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
+import { logTuiDiagnosticEvent } from "./diagnostics/logTuiDiagnosticEvent.ts";
 export { ChatScreen } from "./ChatScreen.tsx";
 export type {
   ChatScreenProps,
@@ -50,18 +49,6 @@ function disableOpenTuiConsoleCaptureWhileFileLoggingIsActive(isConsoleFileLogge
 
 function formatUnknownErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function logTuiDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
 }
 
 export type TuiChatScreenInstance = {
@@ -175,9 +162,19 @@ export async function renderChatScreenInTerminalWithRuntime<
     hasReactRootBeenUnmounted = true;
     root.unmount();
   };
+  const interruptActiveConversationTurnForShutdown = (): void => {
+    try {
+      activeConversationTurnShutdownCoordinator.interruptActiveConversationTurn();
+    } catch (error) {
+      logTuiDiagnosticEvent(input.diagnosticLogger, "chat_screen_active_turn_shutdown_interrupt_failed", {
+        errorMessage: formatUnknownErrorMessage(error),
+      });
+    }
+  };
   const rendererDestroyedPromise = new Promise<void>((resolve) => {
     cliRenderer.once("destroy", () => {
       try {
+        interruptActiveConversationTurnForShutdown();
         unmountReactRootOnce();
       } catch (error) {
         logTuiDiagnosticEvent(input.diagnosticLogger, "chat_screen_root_unmount_failed", {
@@ -196,6 +193,7 @@ export async function renderChatScreenInTerminalWithRuntime<
 
     hasRendererShutdownBeenRequested = true;
     try {
+      interruptActiveConversationTurnForShutdown();
       unmountReactRootOnce();
     } finally {
       if (!cliRenderer.isDestroyed) {

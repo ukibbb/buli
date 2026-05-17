@@ -698,6 +698,7 @@ test("AssistantConversationRuntime emits failure when the provider stream ends w
   expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_turn_started",
     "assistant_message_part_added",
+    "assistant_message_part_updated",
     "assistant_message_failed",
   ]);
   expect(emittedAssistantEvents.at(-1)).toMatchObject({
@@ -845,6 +846,7 @@ test("AssistantConversationRuntime interrupts an active provider stream", async 
   expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_turn_started",
     "assistant_message_part_added",
+    "assistant_message_part_updated",
     "assistant_message_interrupted",
   ]);
   expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
@@ -1712,6 +1714,71 @@ test("AssistantConversationRuntime interrupts concurrent sibling Explorer turns"
   ]);
 });
 
+test("AssistantConversationRuntime does not record serial tool calls that never start after interruption", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-interrupted-before-serial-tool-"));
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_explore_docs",
+            toolCallRequest: {
+              toolName: "explore",
+              explorationDescription: "map docs",
+              explorationPrompt: "Summarize docs responsibilities.",
+            },
+          },
+          {
+            toolCallId: "call_bash_after_explore",
+            toolCallRequest: {
+              toolName: "bash",
+              shellCommand: "pwd",
+              commandDescription: "Print working directory",
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const provider = new ParentAndAbortTrackingExplorerProvider(parentProviderTurn, 1);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+  const activeConversationTurn = runtime.startConversationTurn({
+    userPromptText: "Explore docs, then run pwd",
+    selectedModelId: "gpt-5.4",
+  });
+  const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
+
+  await assistantEventIterator.next();
+  await assistantEventIterator.next();
+  const pendingAssistantEvent = assistantEventIterator.next();
+  await waitForPromiseWithTimeout({
+    promise: provider.allExplorerProviderTurnsStarted.promise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error(`Expected 1 Explorer provider turn, got ${provider.explorerProviderTurns.length}.`),
+  });
+  activeConversationTurn.interrupt();
+  await pendingAssistantEvent;
+  while (!(await assistantEventIterator.next()).done) {
+    // Consume the interruption event so the runtime settles.
+  }
+
+  const conversationSessionEntries = runtime.conversationHistory.listConversationSessionEntries();
+  expect(conversationSessionEntries).toContainEqual(expect.objectContaining({
+    entryKind: "tool_call",
+    toolCallId: "call_explore_docs",
+  }));
+  expect(conversationSessionEntries).not.toContainEqual(expect.objectContaining({
+    entryKind: "tool_call",
+    toolCallId: "call_bash_after_explore",
+  }));
+  expect(parentProviderTurn.submittedToolResults).toEqual([]);
+});
+
 test("AssistantConversationRuntime logs concurrent tool-call group diagnostics", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-concurrent-diagnostics-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nConcurrent diagnostics target\n", "utf8");
@@ -2017,7 +2084,11 @@ test("AssistantConversationRuntime marks the turn failed when tool result submis
       failureExplanation: "tool result submission failed",
     },
   ]);
-  expect(runtime.conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([]);
+  expect(runtime.conversationHistory.listModelContextItems()).toMatchObject([
+    { itemKind: "user_message", messageText: "Try submission failure" },
+    { itemKind: "tool_call", toolCallId: "call_bash_1" },
+    { itemKind: "tool_result", toolCallId: "call_bash_1", toolResultText: expect.stringContaining("ok") },
+  ]);
 });
 
 test("AssistantConversationRuntime reuses prior user and assistant messages on the next turn", async () => {
@@ -2534,7 +2605,7 @@ test("AssistantConversationRuntime denies nested Explorer calls inside Explorer 
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
 
-  await collectAssistantEvents(
+  const emittedAssistantEvents = await collectAssistantEvents(
     runtime.startConversationTurn({
       userPromptText: "Explore runtime",
       selectedModelId: "gpt-5.4",
@@ -2555,6 +2626,48 @@ test("AssistantConversationRuntime denies nested Explorer calls inside Explorer 
     }),
   );
   expect(provider.startedTurnRequests).toHaveLength(2);
+  expect(emittedAssistantEvents).toContainEqual(
+    expect.objectContaining({
+      type: "assistant_message_part_updated",
+      part: expect.objectContaining({
+        toolCallStatus: "running",
+        toolCallDetail: expect.objectContaining({
+          toolName: "explore",
+          explorationChildToolCalls: [
+            expect.objectContaining({
+              explorerChildToolCallId: "call_explore_child",
+              explorerChildToolCallStatus: "denied",
+              explorerChildToolCallDenialText: expect.stringContaining("Explorer cannot spawn another Explorer"),
+              explorerChildToolCallDetail: expect.objectContaining({
+                toolName: "explore",
+                explorationDescription: "nested",
+              }),
+            }),
+          ],
+        }),
+      }),
+    }),
+  );
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toContainEqual(
+    expect.objectContaining({
+      entryKind: "completed_tool_result",
+      toolCallId: "call_explore_parent",
+      toolCallDetail: expect.objectContaining({
+        toolName: "explore",
+        explorationChildToolCalls: [
+          expect.objectContaining({
+            explorerChildToolCallId: "call_explore_child",
+            explorerChildToolCallStatus: "denied",
+            explorerChildToolCallDenialText: expect.stringContaining("Explorer cannot spawn another Explorer"),
+            explorerChildToolCallDetail: expect.objectContaining({
+              toolName: "explore",
+              explorationDescription: "nested",
+            }),
+          }),
+        ],
+      }),
+    }),
+  );
 });
 
 test("AssistantConversationRuntime requests approval before applying an edit tool call", async () => {

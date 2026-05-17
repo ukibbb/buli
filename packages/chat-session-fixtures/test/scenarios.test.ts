@@ -12,7 +12,7 @@ const scenarioValues: ChatSessionFixtureScenario[] = Object.values(scenariosBarr
     "expectedConversationMessages" in exported,
 );
 
-describe("assistant transcript fixtures", () => {
+describe("chat session fixtures", () => {
   test("exports_exactly_four_scenarios", () => {
     expect(scenarioValues.length).toBe(4);
   });

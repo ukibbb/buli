@@ -1,4 +1,4 @@
-import { emitBuliDiagnosticLogEvent, type ConversationSessionEntry, type ConversationSessionSummary, type BuliDiagnosticLogFields, type BuliDiagnosticLogger } from "@buli/contracts";
+import type { BuliDiagnosticLogger, ConversationSessionEntry, ConversationSessionSummary } from "@buli/contracts";
 import type { ConversationAutoCompactionRequest, ConversationAutoCompactionResult, ConversationCompactionRequest } from "@buli/engine";
 import {
   clearConversationTranscript,
@@ -10,6 +10,7 @@ import {
 } from "@buli/chat-session-state";
 import { startTransition, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./chatScreenConversationSessionStatus.ts";
+import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
 
 type MutableValueRef<T> = { current: T };
 
@@ -60,18 +61,6 @@ export type UseChatScreenConversationSessionActionsResult = {
   autoCompactCurrentConversationSessionAfterAssistantTurn: () => Promise<void>;
   clearCurrentConversationSession: () => void;
 };
-
-function logChatScreenDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
 
 export function useChatScreenConversationSessionActions(
   input: UseChatScreenConversationSessionActionsInput,

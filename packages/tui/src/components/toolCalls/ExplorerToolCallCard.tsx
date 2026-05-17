@@ -3,11 +3,14 @@ import type { ExplorerChildToolCall, ToolCallExploreDetail } from "@buli/contrac
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { AssistantMarkdownBlock } from "../primitives/AssistantMarkdownBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
+import { BashToolCallCard } from "./BashToolCallCard.tsx";
 import { BracketedTarget } from "./BracketedTarget.tsx";
+import { EditToolCallCard } from "./EditToolCallCard.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
 import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import { ToolCallResultDisclosureControl } from "./ToolCallResultDisclosureControl.tsx";
+import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
 import {
   ToolCallHeaderLeft,
   ToolCallHeaderRight,
@@ -182,23 +185,68 @@ function ExplorerChildToolCallCard(props: { explorerChildToolCall: ExplorerChild
   const explorerChildToolCallErrorText = props.explorerChildToolCall.explorerChildToolCallErrorText ??
     props.explorerChildToolCall.explorerChildToolCallDenialText;
   const errorProps = explorerChildToolCallErrorText !== undefined ? { errorText: explorerChildToolCallErrorText } : {};
+  const explorerChildToolCallDetail = props.explorerChildToolCall.explorerChildToolCallDetail;
 
-  if (props.explorerChildToolCall.explorerChildToolCallDetail.toolName === "read") {
+  if (explorerChildToolCallDetail.toolName === "read") {
     return (
       <ReadToolCallCard
         renderState={explorerChildToolCallRenderState}
-        toolCallDetail={props.explorerChildToolCall.explorerChildToolCallDetail}
+        toolCallDetail={explorerChildToolCallDetail}
         {...durationProps}
         {...errorProps}
       />
     );
   }
 
-  if (props.explorerChildToolCall.explorerChildToolCallDetail.toolName === "glob") {
+  if (explorerChildToolCallDetail.toolName === "glob") {
     return (
       <GlobToolCallCard
         renderState={explorerChildToolCallRenderState}
-        toolCallDetail={props.explorerChildToolCall.explorerChildToolCallDetail}
+        toolCallDetail={explorerChildToolCallDetail}
+        {...durationProps}
+        {...errorProps}
+      />
+    );
+  }
+
+  if (explorerChildToolCallDetail.toolName === "grep") {
+    return (
+      <GrepToolCallCard
+        renderState={explorerChildToolCallRenderState}
+        toolCallDetail={explorerChildToolCallDetail}
+        {...durationProps}
+        {...errorProps}
+      />
+    );
+  }
+
+  if (explorerChildToolCallDetail.toolName === "bash") {
+    return (
+      <BashToolCallCard
+        renderState={explorerChildToolCallRenderState}
+        toolCallDetail={explorerChildToolCallDetail}
+        {...durationProps}
+        {...errorProps}
+      />
+    );
+  }
+
+  if (explorerChildToolCallDetail.toolName === "edit") {
+    return (
+      <EditToolCallCard
+        renderState={explorerChildToolCallRenderState}
+        toolCallDetail={explorerChildToolCallDetail}
+        {...durationProps}
+        {...errorProps}
+      />
+    );
+  }
+
+  if (explorerChildToolCallDetail.toolName === "write") {
+    return (
+      <WriteToolCallCard
+        renderState={explorerChildToolCallRenderState}
+        toolCallDetail={explorerChildToolCallDetail}
         {...durationProps}
         {...errorProps}
       />
@@ -206,9 +254,9 @@ function ExplorerChildToolCallCard(props: { explorerChildToolCall: ExplorerChild
   }
 
   return (
-    <GrepToolCallCard
+    <ExplorerToolCallCard
       renderState={explorerChildToolCallRenderState}
-      toolCallDetail={props.explorerChildToolCall.explorerChildToolCallDetail}
+      toolCallDetail={explorerChildToolCallDetail}
       {...durationProps}
       {...errorProps}
     />

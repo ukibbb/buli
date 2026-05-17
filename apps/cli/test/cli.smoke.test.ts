@@ -12,15 +12,16 @@ import {
 import { OpenAiAuthStore } from "@buli/openai";
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
+import { runLogin } from "../src/commands/login.ts";
 import {
   defaultConversationSessionFilePath,
   FileConversationSessionStore,
   type ConversationSessionStore,
 } from "../src/conversationSessionStore.ts";
 import { runListAvailableModels } from "../src/commands/models.ts";
-import { type InteractiveChatStartOptions, runCli } from "../src/main.ts";
+import { type InteractiveChatStartOptions, runCli, USAGE } from "../src/main.ts";
 
-const CLI_USAGE = "Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]";
+const CLI_USAGE = USAGE;
 
 test("runCli delegates the login command", async () => {
   const output = await runCli(["login"], {
@@ -29,7 +30,7 @@ test("runCli delegates the login command", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe("delegated login");
+  expect(output).toEqual({ status: "ok", output: "delegated login" });
 });
 
 test("runCli delegates the models command", async () => {
@@ -39,7 +40,7 @@ test("runCli delegates the models command", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe("delegated models");
+  expect(output).toEqual({ status: "ok", output: "delegated models" });
 });
 
 test("runCli returns usage for unknown commands", async () => {
@@ -49,7 +50,7 @@ test("runCli returns usage for unknown commands", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe(CLI_USAGE);
+  expect(output).toEqual({ status: "usage_error", output: CLI_USAGE });
 });
 
 test("runCli delegates the default command when no args are provided", async () => {
@@ -65,7 +66,7 @@ test("runCli delegates the default command when no args are provided", async () 
   });
 
   expect(received).toEqual({});
-  expect(output).toBe("delegated start");
+  expect(output).toEqual({ status: "ok", output: "delegated start" });
 });
 
 test("runCli returns usage for the removed chat alias", async () => {
@@ -75,7 +76,7 @@ test("runCli returns usage for the removed chat alias", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe(CLI_USAGE);
+  expect(output).toEqual({ status: "usage_error", output: CLI_USAGE });
 });
 
 test("runCli passes startup flags to the chat command", async () => {
@@ -91,7 +92,7 @@ test("runCli passes startup flags to the chat command", async () => {
   });
 
   expect(received).toEqual({ selectedModelId: "gpt-5.4", selectedReasoningEffort: "high" });
-  expect(output).toBe("delegated start");
+  expect(output).toEqual({ status: "ok", output: "delegated start" });
 });
 
 test("runCli passes the bash approval startup flag to the chat command", async () => {
@@ -107,7 +108,7 @@ test("runCli passes the bash approval startup flag to the chat command", async (
   });
 
   expect(received).toEqual({ bashToolApprovalMode: "trusted" });
-  expect(output).toBe("delegated start");
+  expect(output).toEqual({ status: "ok", output: "delegated start" });
 });
 
 test("runCli returns usage when a startup flag is invalid", async () => {
@@ -117,7 +118,30 @@ test("runCli returns usage when a startup flag is invalid", async () => {
     runLogin: async () => "delegated login",
   });
 
-  expect(output).toBe(CLI_USAGE);
+  expect(output).toEqual({ status: "usage_error", output: CLI_USAGE });
+});
+
+test("runCli returns usage successfully for help", async () => {
+  const output = await runCli(["--help"], {
+    runInteractiveChat: async () => "delegated start",
+    runListAvailableModels: async () => "delegated models",
+    runLogin: async () => "delegated login",
+  });
+
+  expect(output).toEqual({ status: "ok", output: CLI_USAGE });
+});
+
+test("runLogin can use an injected browser login dependency", async () => {
+  await expect(runLogin({
+    loginWithBrowser: async () => ({
+      provider: "openai",
+      method: "oauth",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: Date.now() + 60_000,
+      accountId: "acct_test",
+    }),
+  })).resolves.toBe("OpenAI login complete for account acct_test");
 });
 
 test("runInteractiveChat returns a clean message when auth is missing", async () => {
@@ -201,6 +225,65 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
     selectedModelDefaultReasoningEffort: "xhigh",
     selectedReasoningEffort: "xhigh",
   });
+});
+
+test("runInteractiveChat restores console logging after the renderer exits", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-console-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const originalConsoleLog = console.log;
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    stdin: { isTTY: true },
+    environment: {
+      BULI_CONSOLE_LOG_FILE: join(dir, "console.log"),
+      BULI_CONSOLE_LOG_RESET: "true",
+    },
+    renderChatScreen: async () => {
+      expect(console.log).not.toBe(originalConsoleLog);
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(console.log).toBe(originalConsoleLog);
+});
+
+test("runInteractiveChat restores console logging when the renderer throws", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-console-error-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const originalConsoleLog = console.log;
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  await expect(runInteractiveChat({
+    store,
+    stdin: { isTTY: true },
+    environment: {
+      BULI_CONSOLE_LOG_FILE: join(dir, "console.log"),
+      BULI_CONSOLE_LOG_RESET: "true",
+    },
+    renderChatScreen: async () => {
+      expect(console.log).not.toBe(originalConsoleLog);
+      throw new Error("renderer failed");
+    },
+  })).rejects.toThrow("renderer failed");
+
+  expect(console.log).toBe(originalConsoleLog);
 });
 
 test("runInteractiveChat loads persisted session entries and saves when history changes", async () => {
@@ -319,6 +402,8 @@ test("runInteractiveChat loads persisted session entries and saves when history 
 
   expect(output).toBe("");
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
+  expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(process.cwd());
+  expect(capturedConversationRuntime?.promptContextStartingDirectoryPath).toBe(process.cwd());
   expect(capturedCompactCurrentConversationSession).toBeDefined();
   expect(capturedAutoCompactCurrentConversationSession).toBeDefined();
 
@@ -445,6 +530,9 @@ test("runListAvailableModels returns a clean message when auth is missing", asyn
 test("main prints usage for an unknown command", async () => {
   const outputs: string[] = [];
   const originalLog = console.log;
+  const originalExitCode = process.exitCode;
+  let observedExitCode: string | number | undefined;
+  process.exitCode = undefined;
 
   console.log = (value?: unknown) => {
     outputs.push(String(value ?? ""));
@@ -452,9 +540,12 @@ test("main prints usage for an unknown command", async () => {
 
   try {
     await main(["unknown"]);
+    observedExitCode = process.exitCode;
   } finally {
     console.log = originalLog;
+    process.exitCode = originalExitCode ?? 0;
   }
 
   expect(outputs).toEqual([CLI_USAGE]);
+  expect(Number(observedExitCode)).toBe(1);
 });

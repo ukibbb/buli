@@ -16,6 +16,10 @@ function buildResponseWithSseFixture(fixtureFileName: string): Response {
   });
 }
 
+function createSseDataFrame(openAiStreamEvent: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(openAiStreamEvent)}\n\n`;
+}
+
 function createConversationTurnRequest(input: { messageText: string }) {
   return {
     systemPromptText: "You are buli.",
@@ -103,6 +107,16 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
       },
     },
   ]);
+});
+
+test("parseOpenAiStream rejects non-SSE content types", async () => {
+  const response = new Response("<html>not an event stream</html>", {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+
+  await expect(collectParsedEvents(response)).rejects.toThrow(
+    "OpenAI stream response must be text/event-stream, received text/html; charset=utf-8",
+  );
 });
 
 test("parseOpenAiStream emits incomplete when the response stops early", async () => {
@@ -194,6 +208,43 @@ test("parseOpenAiStream emits reasoning_summary_completed before the first non-r
   ]);
 });
 
+test("parseOpenAiStream ignores reasoning deltas with invalid summary indexes", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.reasoning_summary_text.delta",
+        item_id: "rs_1",
+        summary_index: -1,
+        delta: "invalid",
+      }),
+      createSseDataFrame({
+        type: "response.reasoning_summary_text.delta",
+        item_id: "rs_1",
+        summary_index: 1.5,
+        delta: "invalid",
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect(await collectParsedEvents(response)).toEqual([
+    {
+      type: "completed",
+      usage: {
+        total: 15,
+        input: 10,
+        output: 5,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
 test("parseOpenAiStream preserves streamed reasoning summary text for tool-call replay", async () => {
   const response = new Response(
     [
@@ -230,6 +281,84 @@ test("parseOpenAiStream preserves streamed reasoning summary text for tool-call 
       {
         id: "fc_1",
         type: "function_call",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream preserves reasoning deltas received before output_item.added", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.reasoning_summary_text.delta",
+        item_id: "rs_1",
+        summary_index: 0,
+        delta: "I should ",
+      }),
+      createSseDataFrame({
+        type: "response.reasoning_summary_text.delta",
+        item_id: "rs_1",
+        summary_index: 0,
+        delta: "inspect first.",
+      }),
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "reasoning", id: "rs_1", summary: [], encrypted_content: "encrypted-reasoning" },
+      }),
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 1,
+        item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: "" },
+      }),
+      createSseDataFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_1",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: {
+          output: [
+            {
+              id: "fc_1",
+              type: "function_call",
+              call_id: "call_1",
+              name: "bash",
+              arguments: '{"command":"pwd","description":"Print working directory"}',
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents.map((parsedEvent) => parsedEvent.type)).toEqual([
+    "reasoning_summary_started",
+    "reasoning_summary_text_chunk",
+    "reasoning_summary_text_chunk",
+    "reasoning_summary_completed",
+    "tool_call_requested",
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_call_requested",
+    responseOutputItems: [
+      {
+        type: "reasoning",
+        id: "rs_1",
+        encrypted_content: "encrypted-reasoning",
+        summary: [{ type: "summary_text", text: "I should inspect first." }],
+      },
+      {
+        type: "function_call",
+        id: "fc_1",
         call_id: "call_1",
         name: "bash",
         arguments: '{"command":"pwd","description":"Print working directory"}',
@@ -501,6 +630,9 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
   expect(exploreToolDefinition?.description).toContain("read-only Explorer subagent");
   expect(exploreToolDefinition?.description).toContain("identify inspected files and remaining context gaps");
+  expect(bashToolDefinition?.parameters.properties.timeout?.minimum).toBe(1);
+  expect(readToolDefinition?.parameters.properties.offset?.minimum).toBe(1);
+  expect(readToolDefinition?.parameters.properties.limit?.minimum).toBe(1);
 });
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
@@ -602,6 +734,62 @@ test("parseOpenAiStream repairs tool-turn output when response.completed omits t
   });
 });
 
+test("parseOpenAiStream preserves function_call arguments from output_item.added when terminal output omits the call", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          type: "function_call",
+          id: "fc_1",
+          call_id: "call_1",
+          name: "bash",
+          arguments: '{"command":"pwd","description":"Print working directory"}',
+        },
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: { output: [], usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 } },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+  expect(terminalState).toEqual({
+    terminalKind: "tool_call_requested",
+    toolCallId: "call_1",
+    toolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+    },
+    responseOutputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+    usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  });
+});
+
 test("parseOpenAiStream repairs weakened function_call arguments from response.completed output", async () => {
   const response = new Response(
     [
@@ -633,6 +821,324 @@ test("parseOpenAiStream repairs weakened function_call arguments from response.c
       },
     ],
     usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  });
+});
+
+test("parseOpenAiStream preserves terminal function_call metadata while repairing arguments", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          type: "function_call",
+          id: "fc_1",
+          call_id: "call_1",
+          name: "bash",
+          arguments: "",
+          status: "in_progress",
+        },
+      }),
+      createSseDataFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_1",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: {
+          output: [
+            {
+              id: "fc_1",
+              type: "function_call",
+              call_id: "call_1",
+              name: "bash",
+              arguments: "",
+              status: "completed",
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_call_requested",
+    responseOutputItems: [
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+        status: "completed",
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream preserves streamed assistant text deltas for tool-call replay", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_text.delta",
+        output_index: 0,
+        item_id: "msg_1",
+        content_index: 0,
+        delta: "I will ",
+      }),
+      createSseDataFrame({
+        type: "response.output_text.delta",
+        output_index: 0,
+        item_id: "msg_1",
+        content_index: 0,
+        delta: "inspect first.",
+      }),
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 1,
+        item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: "" },
+      }),
+      createSseDataFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_1",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: {
+          output: [
+            {
+              id: "fc_1",
+              type: "function_call",
+              call_id: "call_1",
+              name: "bash",
+              arguments: '{"command":"pwd","description":"Print working directory"}',
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    { type: "text_chunk", text: "I will " },
+    { type: "text_chunk", text: "inspect first." },
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_call_requested",
+    responseOutputItems: [
+      {
+        type: "message",
+        id: "msg_1",
+        role: "assistant",
+        content: [{ type: "output_text", text: "I will inspect first." }],
+      },
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream rejects response.failed with the OpenAI failure message", async () => {
+  const response = new Response(
+    createSseDataFrame({
+      type: "response.failed",
+      response: {
+        error: {
+          code: "server_error",
+          message: "The model failed while generating the response.",
+        },
+      },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow(
+    "OpenAI response failed: The model failed while generating the response. | code=server_error",
+  );
+});
+
+test("parseOpenAiStream preserves streamed function_call argument deltas when terminal output omits the function_call", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: "" },
+      }),
+      createSseDataFrame({
+        type: "response.function_call_arguments.delta",
+        item_id: "fc_1",
+        delta: '{"command":"pw',
+      }),
+      createSseDataFrame({
+        type: "response.function_call_arguments.delta",
+        item_id: "fc_1",
+        delta: 'd","description":"Print working directory"}',
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: { output: [], usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 } },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+  expect(terminalState).toEqual({
+    terminalKind: "tool_call_requested",
+    toolCallId: "call_1",
+    toolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+    },
+    responseOutputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+    usage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  });
+});
+
+test("parseOpenAiStream preserves function_call argument deltas received before output_item.added", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.function_call_arguments.delta",
+        item_id: "fc_1",
+        delta: '{"command":"pw',
+      }),
+      createSseDataFrame({
+        type: "response.function_call_arguments.delta",
+        item_id: "fc_1",
+        delta: 'd","description":"Print working directory"}',
+      }),
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: "" },
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: { output: [], usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 } },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_call_requested",
+    responseOutputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream preserves function_call arguments.done received before output_item.added", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_1",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      }),
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: "" },
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: { output: [], usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 } },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Print working directory",
+      },
+    },
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "tool_call_requested",
+    responseOutputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+    ],
   });
 });
 

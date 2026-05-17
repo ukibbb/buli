@@ -1,4 +1,8 @@
-export type { ChatSessionFixtureScenario, ExpectedConversationMessageShape } from "./scenarioShape.ts";
+export type {
+  ChatSessionFixtureScenario,
+  ExpectedConversationMessagePartShape,
+  ExpectedConversationMessageShape,
+} from "./scenarioShape.ts";
 
 export { incompleteReply } from "./scenarios/incompleteReply.ts";
 export { pendingToolApproval } from "./scenarios/pendingToolApproval.ts";

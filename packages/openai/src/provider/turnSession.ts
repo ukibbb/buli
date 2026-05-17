@@ -10,7 +10,6 @@ import type {
   ReasoningEffort,
   TokenUsage,
 } from "@buli/contracts";
-import { emitBuliDiagnosticLogEvent } from "@buli/contracts";
 import {
   createFunctionCallOutputInputItem,
   createOpenAiResponseReplayItems,
@@ -18,7 +17,20 @@ import {
   type OpenAiConversationInputItem,
 } from "./request.ts";
 import { writeOpenAiDebugLog } from "./debugLog.ts";
-import { createOpenAiToolDefinitions } from "./toolDefinitions.ts";
+import {
+  logOpenAiDiagnosticEvent,
+  summarizeOpenAiToolCallRequestForDiagnostics,
+  summarizeTokenUsageForDiagnostics,
+} from "./diagnostics.ts";
+import {
+  extractStructuredOpenAiErrorMessage,
+  getOpenAiRequestId,
+  type OpenAiHttpErrorResponse,
+} from "./httpResponseDiagnostics.ts";
+import {
+  createOpenAiResponsesHttpRequestBody,
+  summarizeOpenAiResponsesRequestForDiagnostics,
+} from "./openAiResponsesRequest.ts";
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
 
 type OpenAiProviderToolResultSubmission = {
@@ -38,44 +50,8 @@ type OpenAiResponseStepToolCallTerminalState = Extract<
   { terminalKind: "tool_call_requested" | "tool_calls_requested" }
 >;
 
-type OpenAiReasoningRequest = {
-  effort?: ReasoningEffort;
-  summary?: "auto";
-};
-
-type HttpErrorDebugResponse = {
-  status: number;
-  headers: { get(name: string): string | null };
-  text(): Promise<string>;
-};
-
 const DEFAULT_MAX_OPENAI_RESPONSE_STEPS_PER_TURN = 20;
 const DEFAULT_MAX_OPENAI_TOOL_CALLS_PER_TURN = 100;
-
-function createHttpRequestBody(input: {
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
-  promptCacheKey?: string;
-  availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
-  systemPromptText: string;
-  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
-}) {
-  const reasoningRequest = createReasoningRequest(input);
-  return {
-    model: input.selectedModelId,
-    instructions: input.systemPromptText,
-    store: false,
-    ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
-    input: input.openAiInputItems,
-    tools: createOpenAiToolDefinitions({ availableToolNames: input.availableToolNames }),
-    parallel_tool_calls: true,
-    ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] } : {}),
-    ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
-    stream: true,
-  };
-}
-
-type OpenAiResponsesHttpRequestBody = ReturnType<typeof createHttpRequestBody>;
 
 function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenUsage: TokenUsage): TokenUsage {
   if (!accumulatedTokenUsage) {
@@ -206,7 +182,7 @@ export class OpenAiProviderConversationTurn {
         throw new Error(`OpenAI response step limit exceeded after ${this.maxResponseStepsPerTurn} steps.`);
       }
       const responseStepStartedAtMs = Date.now();
-      const requestBody = createHttpRequestBody({
+      const requestBody = createOpenAiResponsesHttpRequestBody({
         selectedModelId: this.selectedModelId,
         ...(this.selectedReasoningEffort ? { selectedReasoningEffort: this.selectedReasoningEffort } : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
@@ -250,6 +226,7 @@ export class OpenAiProviderConversationTurn {
       })[Symbol.asyncIterator]();
       let terminalState: OpenAiResponseStepTerminalState | undefined;
       let terminalUsageProviderEvent: OpenAiTerminalUsageProviderEvent | undefined;
+      const pendingExecutableToolCallProviderEvents: ProviderStreamEvent[] = [];
       while (true) {
         const nextStepItem = await openAiStepEventIterator.next();
         if (nextStepItem.done) {
@@ -265,6 +242,11 @@ export class OpenAiProviderConversationTurn {
           });
           terminalUsageProviderEvent = nextStepItem.value;
           accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, nextStepItem.value.usage);
+          continue;
+        }
+
+        if (nextStepItem.value.type === "tool_call_requested" || nextStepItem.value.type === "tool_calls_requested") {
+          pendingExecutableToolCallProviderEvents.push(nextStepItem.value);
           continue;
         }
 
@@ -299,13 +281,8 @@ export class OpenAiProviderConversationTurn {
           responseOutputItemCount: terminalState.responseOutputItems.length,
           continuationInputItemCount: responseReplayItems.continuationInputItems.length,
           providerTurnReplayInputItemCount: responseReplayItems.providerTurnReplayInputItems.length,
-          ...(onlyRequestedToolCall?.toolCallRequest.toolName === "bash"
-            ? {
-                shellCommandLength: onlyRequestedToolCall.toolCallRequest.shellCommand.length,
-                commandDescriptionLength: onlyRequestedToolCall.toolCallRequest.commandDescription.length,
-                hasWorkingDirectoryPath: onlyRequestedToolCall.toolCallRequest.workingDirectoryPath !== undefined,
-                hasTimeoutMilliseconds: onlyRequestedToolCall.toolCallRequest.timeoutMilliseconds !== undefined,
-              }
+          ...(onlyRequestedToolCall
+            ? summarizeOpenAiToolCallRequestForDiagnostics(onlyRequestedToolCall.toolCallRequest)
             : {}),
           ...summarizeTokenUsageForDiagnostics(terminalState.usage),
         };
@@ -317,6 +294,15 @@ export class OpenAiProviderConversationTurn {
               `OpenAI response omitted a replayable function_call item for tool call ${requestedToolCall.toolCallId}.`,
             );
           }
+        }
+
+        for (const pendingExecutableToolCallProviderEvent of pendingExecutableToolCallProviderEvents) {
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+            responseStepIndex,
+            eventType: pendingExecutableToolCallProviderEvent.type,
+            ...summarizeProviderStreamEventForDiagnostics(pendingExecutableToolCallProviderEvent),
+          });
+          yield pendingExecutableToolCallProviderEvent;
         }
 
         this.openAiConversationInputItems.push(...responseReplayItems.continuationInputItems);
@@ -441,57 +427,6 @@ function normalizePositiveIntegerLimit(requestedLimit: number | undefined, defau
   return Math.max(1, Math.floor(requestedLimit));
 }
 
-function shouldIncludeReasoningEncryptedContent(input: {
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
-  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
-}): boolean {
-  if (input.selectedReasoningEffort === "none") {
-    return false;
-  }
-
-  if (input.selectedReasoningEffort) {
-    return true;
-  }
-
-  if (input.openAiInputItems.some(isOpenAiReasoningInputItem)) {
-    return true;
-  }
-
-  return isOpenAiReasoningModel(input.selectedModelId);
-}
-
-function createReasoningRequest(input: {
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
-}): OpenAiReasoningRequest | undefined {
-  if (input.selectedReasoningEffort === "none") {
-    return { effort: "none" };
-  }
-
-  const reasoningRequest: OpenAiReasoningRequest = {};
-  if (input.selectedReasoningEffort) {
-    reasoningRequest.effort = input.selectedReasoningEffort;
-  }
-  if (shouldRequestReasoningSummary(input.selectedModelId)) {
-    reasoningRequest.summary = "auto";
-  }
-
-  return reasoningRequest.effort || reasoningRequest.summary ? reasoningRequest : undefined;
-}
-
-function shouldRequestReasoningSummary(selectedModelId: string): boolean {
-  return isOpenAiReasoningModel(selectedModelId);
-}
-
-function isOpenAiReasoningModel(selectedModelId: string): boolean {
-  const normalizedSelectedModelId = selectedModelId.toLowerCase();
-  return (
-    (normalizedSelectedModelId.includes("gpt-5") || normalizedSelectedModelId.includes("codex")) &&
-    !normalizedSelectedModelId.includes("chat")
-  );
-}
-
 function isMatchingFunctionCallReplayItem(toolCallId: string) {
   return (openAiInputItem: OpenAiProviderTurnReplayInputItem): boolean =>
     openAiInputItem.type === "function_call" && openAiInputItem.call_id === toolCallId;
@@ -508,108 +443,6 @@ function listRequestedToolCallsFromTerminalState(
     toolCallId: terminalState.toolCallId,
     toolCallRequest: terminalState.toolCallRequest,
   }];
-}
-
-function isOpenAiReasoningInputItem(openAiInputItem: OpenAiConversationInputItem): openAiInputItem is Extract<OpenAiConversationInputItem, { type: "reasoning" }> {
-  return "type" in openAiInputItem && openAiInputItem.type === "reasoning";
-}
-
-function logOpenAiDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "openai",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
-
-function summarizeOpenAiResponsesRequestForDiagnostics(input: {
-  requestBody: OpenAiResponsesHttpRequestBody;
-  responseStepIndex: number;
-}): BuliDiagnosticLogFields {
-  const inputItemSummary = summarizeOpenAiInputItemsForDiagnostics(input.requestBody.input);
-  return {
-    responseStepIndex: input.responseStepIndex,
-    model: input.requestBody.model,
-    reasoningEffort: input.requestBody.reasoning?.effort ?? null,
-    reasoningSummary: input.requestBody.reasoning?.summary ?? null,
-    includesReasoningEncryptedContent: input.requestBody.include?.includes("reasoning.encrypted_content") ?? false,
-    hasPromptCacheKey: input.requestBody.prompt_cache_key !== undefined,
-    toolDefinitionCount: input.requestBody.tools.length,
-    toolNames: input.requestBody.tools.map((toolDefinition) => toolDefinition.name),
-    parallelToolCalls: input.requestBody.parallel_tool_calls,
-    stream: input.requestBody.stream,
-    ...inputItemSummary,
-  };
-}
-
-function summarizeOpenAiInputItemsForDiagnostics(
-  openAiInputItems: readonly OpenAiConversationInputItem[],
-): BuliDiagnosticLogFields {
-  let userMessageInputItemCount = 0;
-  let assistantMessageInputItemCount = 0;
-  let messageInputContentLength = 0;
-  let userMessageInputImageCount = 0;
-  let reasoningInputItemCount = 0;
-  let reasoningEncryptedContentItemCount = 0;
-  let functionCallInputItemCount = 0;
-  let functionCallOutputInputItemCount = 0;
-  let functionCallOutputLength = 0;
-
-  for (const openAiInputItem of openAiInputItems) {
-    if ("role" in openAiInputItem) {
-      if (openAiInputItem.role === "user") {
-        userMessageInputItemCount += 1;
-      } else {
-        assistantMessageInputItemCount += 1;
-      }
-      if (typeof openAiInputItem.content === "string") {
-        messageInputContentLength += openAiInputItem.content.length;
-      } else {
-        messageInputContentLength += openAiInputItem.content.reduce((contentLength, contentPart) => {
-          if (contentPart.type === "input_text") {
-            return contentLength + contentPart.text.length;
-          }
-
-          return contentLength + contentPart.image_url.length;
-        }, 0);
-        userMessageInputImageCount += openAiInputItem.content.filter((contentPart) => contentPart.type === "input_image").length;
-      }
-      continue;
-    }
-
-    if (openAiInputItem.type === "reasoning") {
-      reasoningInputItemCount += 1;
-      if (openAiInputItem.encrypted_content !== undefined) {
-        reasoningEncryptedContentItemCount += 1;
-      }
-      continue;
-    }
-
-    if (openAiInputItem.type === "function_call") {
-      functionCallInputItemCount += 1;
-      continue;
-    }
-
-    functionCallOutputInputItemCount += 1;
-    functionCallOutputLength += openAiInputItem.output.length;
-  }
-
-  return {
-    inputItemCount: openAiInputItems.length,
-    userMessageInputItemCount,
-    assistantMessageInputItemCount,
-    messageInputContentLength,
-    userMessageInputImageCount,
-    reasoningInputItemCount,
-    reasoningEncryptedContentItemCount,
-    functionCallInputItemCount,
-    functionCallOutputInputItemCount,
-    functionCallOutputLength,
-  };
 }
 
 function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: ProviderStreamEvent): BuliDiagnosticLogFields {
@@ -638,13 +471,7 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
   if (providerStreamEvent.type === "tool_call_requested") {
     return {
       toolCallId: providerStreamEvent.toolCallId,
-      toolName: providerStreamEvent.toolCallRequest.toolName,
-      ...(providerStreamEvent.toolCallRequest.toolName === "bash"
-        ? {
-            shellCommandLength: providerStreamEvent.toolCallRequest.shellCommand.length,
-            commandDescriptionLength: providerStreamEvent.toolCallRequest.commandDescription.length,
-          }
-      : {}),
+      ...summarizeOpenAiToolCallRequestForDiagnostics(providerStreamEvent.toolCallRequest),
     };
   }
 
@@ -681,22 +508,7 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
   return summarizeTokenUsageForDiagnostics(providerStreamEvent.usage);
 }
 
-function summarizeTokenUsageForDiagnostics(tokenUsage: TokenUsage): BuliDiagnosticLogFields {
-  return {
-    totalTokens: tokenUsage.total ?? tokenUsage.input + tokenUsage.output + tokenUsage.reasoning,
-    inputTokens: tokenUsage.input,
-    outputTokens: tokenUsage.output,
-    reasoningTokens: tokenUsage.reasoning,
-    cacheReadTokens: tokenUsage.cache.read,
-    cacheWriteTokens: tokenUsage.cache.write,
-  };
-}
-
-function getOpenAiRequestId(headers: Headers): string | undefined {
-  return headers.get("x-request-id") ?? headers.get("request-id") ?? headers.get("openai-request-id") ?? undefined;
-}
-
-async function createFailedResponseDebugPayload(response: HttpErrorDebugResponse): Promise<{
+async function createFailedResponseDebugPayload(response: OpenAiHttpErrorResponse): Promise<{
   status: number;
   requestId: string | null;
   contentType: string | null;
@@ -706,28 +518,9 @@ async function createFailedResponseDebugPayload(response: HttpErrorDebugResponse
   const bodyText = await response.text();
   return {
     status: response.status,
-    requestId: response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? response.headers.get("openai-request-id"),
+    requestId: getOpenAiRequestId(response.headers) ?? null,
     contentType: response.headers.get("content-type"),
     bodyTextLength: bodyText.length,
     structuredErrorMessage: extractStructuredOpenAiErrorMessage(bodyText) ?? null,
   };
-}
-
-function extractStructuredOpenAiErrorMessage(responseBodyText: string): string | undefined {
-  try {
-    const parsedBody = JSON.parse(responseBodyText) as unknown;
-    if (typeof parsedBody !== "object" || parsedBody === null || Array.isArray(parsedBody)) {
-      return undefined;
-    }
-
-    const errorValue = (parsedBody as { error?: unknown }).error;
-    if (typeof errorValue !== "object" || errorValue === null || Array.isArray(errorValue)) {
-      return undefined;
-    }
-
-    const messageValue = (errorValue as { message?: unknown }).message;
-    return typeof messageValue === "string" ? messageValue : undefined;
-  } catch {
-    return undefined;
-  }
 }

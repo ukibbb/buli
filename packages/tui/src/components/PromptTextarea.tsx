@@ -107,7 +107,9 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
           promptTextareaRef.current?.insertText(pastedText);
           return;
         }
-        void props.onNativeClipboardPasteRequested?.();
+        if (pasteEvent.bytes.length === 0) {
+          void props.onNativeClipboardPasteRequested?.();
+        }
       }}
       onSubmit={() => {
         if (!isSynchronizingTextareaFromPromptStateRef.current) {

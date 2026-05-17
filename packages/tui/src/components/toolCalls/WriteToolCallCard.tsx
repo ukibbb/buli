@@ -16,6 +16,8 @@ export type WriteToolCallCardProps = {
   errorText?: string;
 };
 
+const MAX_VISIBLE_WRITE_DIFF_LINES = 80;
+
 export function WriteToolCallCard(props: WriteToolCallCardProps): ReactNode {
   const accentColor =
     props.renderState === "failed"
@@ -79,5 +81,5 @@ function buildWriteBodyContent(props: WriteToolCallCardProps): ReactNode {
   if (!unifiedDiffText) {
     return undefined;
   }
-  return <DiffBlock unifiedDiffText={unifiedDiffText} />;
+  return <DiffBlock maximumVisibleLineCount={MAX_VISIBLE_WRITE_DIFF_LINES} unifiedDiffText={unifiedDiffText} />;
 }

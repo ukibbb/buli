@@ -49,7 +49,7 @@ export {
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
   parseBashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
-export { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
+export { WorkspaceShellCommandExecutor, createScrubbedShellCommandEnvironment } from "./tools/workspaceShellCommandExecutor.ts";
 export type {
   ParsedPromptContextReference,
   PromptContextCandidate,

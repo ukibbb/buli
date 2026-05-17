@@ -299,24 +299,31 @@ async function prepareFileMutationToolCall(input: {
     return { toolName: "edit", preparedEditToolCall: editPreparationOutcome.preparedEditToolCall };
   }
 
-  const writePreparationOutcome = await prepareWriteToolCall({
-    writeToolCallRequest: input.fileMutationToolCallRequest,
-    workspaceRootPath: input.workspaceRootPath,
-    abortSignal: input.abortSignal,
-  });
-  if (isFailedToolCallOutcome(writePreparationOutcome)) {
-    return writePreparationOutcome;
+  if (input.fileMutationToolCallRequest.toolName === "write") {
+    const writePreparationOutcome = await prepareWriteToolCall({
+      writeToolCallRequest: input.fileMutationToolCallRequest,
+      workspaceRootPath: input.workspaceRootPath,
+      abortSignal: input.abortSignal,
+    });
+    if (isFailedToolCallOutcome(writePreparationOutcome)) {
+      return writePreparationOutcome;
+    }
+
+    return { toolName: "write", preparedWriteToolCall: writePreparationOutcome.preparedWriteToolCall };
   }
 
-  return { toolName: "write", preparedWriteToolCall: writePreparationOutcome.preparedWriteToolCall };
+  return assertUnhandledFileMutationToolCallRequest(input.fileMutationToolCallRequest);
 }
 
 function getPreparedFileMutationToolCallDetail(preparedFileMutationToolCall: PreparedFileMutationToolCall): ToolCallDetail {
   if (preparedFileMutationToolCall.toolName === "edit") {
     return preparedFileMutationToolCall.preparedEditToolCall.toolCallDetail;
   }
+  if (preparedFileMutationToolCall.toolName === "write") {
+    return preparedFileMutationToolCall.preparedWriteToolCall.toolCallDetail;
+  }
 
-  return preparedFileMutationToolCall.preparedWriteToolCall.toolCallDetail;
+  return assertUnhandledPreparedFileMutationToolCall(preparedFileMutationToolCall);
 }
 
 function runPreparedFileMutationToolCall(input: {
@@ -331,11 +338,23 @@ function runPreparedFileMutationToolCall(input: {
     });
   }
 
-  return runPreparedWriteToolCall({
-    preparedWriteToolCall: input.preparedFileMutationToolCall.preparedWriteToolCall,
-    workspaceRootPath: input.workspaceRootPath,
-    abortSignal: input.abortSignal,
-  });
+  if (input.preparedFileMutationToolCall.toolName === "write") {
+    return runPreparedWriteToolCall({
+      preparedWriteToolCall: input.preparedFileMutationToolCall.preparedWriteToolCall,
+      workspaceRootPath: input.workspaceRootPath,
+      abortSignal: input.abortSignal,
+    });
+  }
+
+  return assertUnhandledPreparedFileMutationToolCall(input.preparedFileMutationToolCall);
+}
+
+function assertUnhandledFileMutationToolCallRequest(fileMutationToolCallRequest: never): never {
+  throw new Error(`Unhandled file mutation tool call request: ${JSON.stringify(fileMutationToolCallRequest)}`);
+}
+
+function assertUnhandledPreparedFileMutationToolCall(preparedFileMutationToolCall: never): never {
+  throw new Error(`Unhandled prepared file mutation tool call: ${JSON.stringify(preparedFileMutationToolCall)}`);
 }
 
 function buildFileMutationRiskExplanation(toolCallDetail: ToolCallDetail): string {

@@ -18,6 +18,11 @@ export type PreparedEditToolCall = {
   toolCallDetail: ToolCallEditDetail;
 };
 
+type ApprovedEditFileCommitter = (input: {
+  absolutePath: string;
+  nextFileText: string;
+}) => Promise<void>;
+
 export type EditToolPreparationOutcome =
   | { preparationKind: "prepared"; preparedEditToolCall: PreparedEditToolCall }
   | FailedToolCallOutcome;
@@ -36,6 +41,10 @@ export async function prepareEditToolCall(input: {
 
   try {
     throwIfEditToolAborted(input.abortSignal);
+    if (input.editToolCallRequest.oldString.length === 0) {
+      throw new Error("Edit target text must not be empty");
+    }
+
     const resolvedEditPath = await resolveExistingWorkspacePath({
       workspaceRootPath: input.workspaceRootPath,
       requestedPath: input.editToolCallRequest.editTargetPath,
@@ -106,8 +115,10 @@ export async function prepareEditToolCall(input: {
 export async function runPreparedEditToolCall(input: {
   preparedEditToolCall: PreparedEditToolCall;
   abortSignal?: AbortSignal;
+  commitApprovedEditFile?: ApprovedEditFileCommitter;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
+  const commitApprovedEditFile = input.commitApprovedEditFile ?? writeApprovedEditFile;
 
   try {
     throwIfEditToolAborted(input.abortSignal);
@@ -119,8 +130,10 @@ export async function runPreparedEditToolCall(input: {
       throw new Error(`File changed after edit approval preview: ${input.preparedEditToolCall.displayPath}`);
     }
 
-    await writeFile(input.preparedEditToolCall.absolutePath, input.preparedEditToolCall.nextFileText, "utf8");
-    throwIfEditToolAborted(input.abortSignal);
+    await commitApprovedEditFile({
+      absolutePath: input.preparedEditToolCall.absolutePath,
+      nextFileText: input.preparedEditToolCall.nextFileText,
+    });
 
     return {
       outcomeKind: "completed",
@@ -142,6 +155,13 @@ export async function runPreparedEditToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+async function writeApprovedEditFile(input: {
+  absolutePath: string;
+  nextFileText: string;
+}): Promise<void> {
+  await writeFile(input.absolutePath, input.nextFileText, "utf8");
 }
 
 function buildCompletedEditToolResultText(toolCallDetail: ToolCallEditDetail): string {

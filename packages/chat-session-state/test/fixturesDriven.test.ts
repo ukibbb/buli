@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import * as fixtureScenarios from "@buli/chat-session-fixtures";
-import type { ChatSessionFixtureScenario, ExpectedConversationMessageShape } from "@buli/chat-session-fixtures";
+import type {
+  ChatSessionFixtureScenario,
+  ExpectedConversationMessagePartShape,
+  ExpectedConversationMessageShape,
+} from "@buli/chat-session-fixtures";
+import type { ConversationMessagePart } from "@buli/contracts";
 import {
   applyAssistantResponseEventToChatSessionState,
   createInitialChatSessionState,
@@ -16,6 +21,26 @@ const scenarioValues: ChatSessionFixtureScenario[] = Object.values(fixtureScenar
     "responseEventSequence" in exported &&
     "expectedConversationMessages" in exported,
 );
+
+function summarizeConversationMessagePart(
+  conversationMessagePart: ConversationMessagePart,
+): ExpectedConversationMessagePartShape {
+  if (conversationMessagePart.partKind === "assistant_text" || conversationMessagePart.partKind === "assistant_reasoning") {
+    return {
+      partKind: conversationMessagePart.partKind,
+      partStatus: conversationMessagePart.partStatus,
+    };
+  }
+
+  if (conversationMessagePart.partKind === "assistant_tool_call") {
+    return {
+      partKind: conversationMessagePart.partKind,
+      toolCallStatus: conversationMessagePart.toolCallStatus,
+    };
+  }
+
+  return { partKind: conversationMessagePart.partKind };
+}
 
 describe("chat session state against shared fixtures", () => {
   test("fixtures_package_exposes_at_least_one_scenario", () => {
@@ -35,6 +60,7 @@ describe("chat session state against shared fixtures", () => {
         partKinds: listOrderedConversationMessageParts(chatSessionState, conversationMessage.id).map(
           (conversationMessagePart) => conversationMessagePart.partKind,
         ),
+        parts: listOrderedConversationMessageParts(chatSessionState, conversationMessage.id).map(summarizeConversationMessagePart),
       }));
       expect(actualConversationMessages).toEqual([...scenario.expectedConversationMessages]);
       expect(chatSessionState.conversationTurnStatus).toBe(scenario.expectedConversationTurnStatus);

@@ -106,4 +106,5 @@ test("loginWithBrowser preserves browser launch failures", async () => {
       },
     }),
   ).rejects.toThrow("browser launch failed");
+  expect(callbackServer.pending).toBeUndefined();
 });

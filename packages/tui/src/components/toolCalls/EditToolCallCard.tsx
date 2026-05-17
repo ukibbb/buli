@@ -16,6 +16,8 @@ export type EditToolCallCardProps = {
   errorText?: string;
 };
 
+const MAX_VISIBLE_EDIT_DIFF_LINES = 80;
+
 export function EditToolCallCard(props: EditToolCallCardProps): ReactNode {
   const accentColor =
     props.renderState === "failed"
@@ -79,5 +81,5 @@ function buildEditBodyContent(props: EditToolCallCardProps): ReactNode {
   if (!unifiedDiffText) {
     return undefined;
   }
-  return <DiffBlock unifiedDiffText={unifiedDiffText} />;
+  return <DiffBlock maximumVisibleLineCount={MAX_VISIBLE_EDIT_DIFF_LINES} unifiedDiffText={unifiedDiffText} />;
 }

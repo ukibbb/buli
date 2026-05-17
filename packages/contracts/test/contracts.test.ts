@@ -16,6 +16,7 @@ import {
   ProviderStreamEventSchema,
   READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
   RENDER_ONLY_TOOL_DETAIL_NAMES,
+  summarizeTokenUsageForDiagnostics,
   ToolCallRequestSchema,
   type BuliDiagnosticLogEvent,
   WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
@@ -56,6 +57,22 @@ test("emitBuliDiagnosticLogEvent ignores diagnostic logger failures", () => {
       eventName: "stream.started",
     })
   ).not.toThrow();
+});
+
+test("summarizeTokenUsageForDiagnostics reports normalized token counts", () => {
+  expect(summarizeTokenUsageForDiagnostics({
+    input: 10,
+    output: 5,
+    reasoning: 2,
+    cache: { read: 3, write: 1 },
+  })).toEqual({
+    totalTokens: 17,
+    inputTokens: 10,
+    outputTokens: 5,
+    reasoningTokens: 2,
+    cacheReadTokens: 3,
+    cacheWriteTokens: 1,
+  });
 });
 
 test("AssistantOperatingModeSchema parses understand, plan, and implementation modes", () => {
@@ -286,6 +303,63 @@ test("AssistantToolCallConversationMessagePartSchema parses an explore tool call
         explorerChildToolCallStatus: "completed",
         explorerChildToolCallDurationMs: 4,
         explorerChildToolCallDetail: { toolName: "grep", searchPattern: "Explorer" },
+      },
+    ],
+  });
+});
+
+test("AssistantToolCallConversationMessagePartSchema parses denied Explorer child tool requests", () => {
+  const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
+    id: "tool-part-explore-denied-children",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-explore",
+    toolCallStatus: "running",
+    toolCallStartedAtMs: 1,
+    toolCallDetail: {
+      toolName: "explore",
+      explorationDescription: "map runtime",
+      explorationPrompt: "Inspect runtime files.",
+      explorationChildToolCalls: [
+        {
+          explorerChildToolCallId: "call-bash-1",
+          explorerChildToolCallStatus: "denied",
+          explorerChildToolCallStartedAtMs: 2,
+          explorerChildToolCallDurationMs: 1,
+          explorerChildToolCallDenialText: "Explorer is read-only and cannot use bash.",
+          explorerChildToolCallDetail: {
+            toolName: "bash",
+            commandLine: "pwd",
+            commandDescription: "Print working directory",
+          },
+        },
+        {
+          explorerChildToolCallId: "call-explore-child",
+          explorerChildToolCallStatus: "denied",
+          explorerChildToolCallStartedAtMs: 3,
+          explorerChildToolCallDurationMs: 1,
+          explorerChildToolCallDenialText: "Explorer cannot spawn another Explorer.",
+          explorerChildToolCallDetail: {
+            toolName: "explore",
+            explorationDescription: "nested",
+            explorationPrompt: "Try to spawn another Explorer.",
+          },
+        },
+      ],
+    },
+  });
+
+  expect(parsedMessagePart.toolCallDetail).toMatchObject({
+    toolName: "explore",
+    explorationChildToolCalls: [
+      {
+        explorerChildToolCallId: "call-bash-1",
+        explorerChildToolCallStatus: "denied",
+        explorerChildToolCallDetail: { toolName: "bash", commandLine: "pwd" },
+      },
+      {
+        explorerChildToolCallId: "call-explore-child",
+        explorerChildToolCallStatus: "denied",
+        explorerChildToolCallDetail: { toolName: "explore", explorationDescription: "nested" },
       },
     ],
   });
@@ -535,6 +609,20 @@ test("AssistantResponseEventSchema parses assistant_message_part_added", () => {
       },
     }).type,
   ).toBe("assistant_message_part_added");
+});
+
+test("AssistantResponseEventSchema rejects user-only parts in assistant events", () => {
+  expect(
+    AssistantResponseEventSchema.safeParse({
+      type: "assistant_message_part_added",
+      messageId: "assistant-1",
+      part: {
+        id: "user-text-1",
+        partKind: "user_text",
+        text: "This belongs to a user message.",
+      },
+    }).success,
+  ).toBe(false);
 });
 
 test("AssistantResponseEventSchema parses assistant_message_failed", () => {

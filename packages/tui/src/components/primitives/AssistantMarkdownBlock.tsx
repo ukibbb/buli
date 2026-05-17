@@ -238,7 +238,7 @@ function formatAssistantMarkdownHeadingText(headingText: string, depth: number):
   }
 
   if (depth === 3) {
-    return `\n◇ ${headingText}`;
+    return `\n${headingText}`;
   }
 
   return `\n• ${headingText}`;

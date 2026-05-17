@@ -30,13 +30,11 @@ export function createDiagnosticFileLogger(options: DiagnosticFileLoggerOptions)
 }
 
 function ensurePrivateDiagnosticLogDirectory(logDirectoryPath: string): void {
-  const firstCreatedDirectoryPath = mkdirSync(logDirectoryPath, {
+  mkdirSync(logDirectoryPath, {
     recursive: true,
     mode: privateDiagnosticLogDirectoryMode,
   });
-  if (firstCreatedDirectoryPath !== undefined) {
-    chmodSync(logDirectoryPath, privateDiagnosticLogDirectoryMode);
-  }
+  chmodSync(logDirectoryPath, privateDiagnosticLogDirectoryMode);
 }
 
 function tightenExistingDiagnosticLogFilePermissions(logFilePath: string): void {

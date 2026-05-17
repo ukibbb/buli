@@ -17,6 +17,7 @@ export {
   AssistantErrorNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantInterruptedNoticeConversationMessagePartSchema,
+  AssistantConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
@@ -34,6 +35,7 @@ export type {
   AssistantErrorNoticeConversationMessagePart,
   AssistantIncompleteNoticeConversationMessagePart,
   AssistantInterruptedNoticeConversationMessagePart,
+  AssistantConversationMessagePart,
   AssistantPlanProposalConversationMessagePart,
   AssistantRateLimitNoticeConversationMessagePart,
   AssistantReasoningConversationMessagePart,
@@ -58,6 +60,7 @@ export type {
 export { ConversationTurnStatusSchema } from "./conversationTurnStatus.ts";
 export type { ConversationTurnStatus } from "./conversationTurnStatus.ts";
 export { emitBuliDiagnosticLogEvent, noopBuliDiagnosticLogger } from "./diagnosticLog.ts";
+export { summarizeTokenUsageForDiagnostics } from "./tokenUsageDiagnostics.ts";
 export type {
   BuliDiagnosticLogEvent,
   BuliDiagnosticLogFields,

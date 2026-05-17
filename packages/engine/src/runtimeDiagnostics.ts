@@ -3,9 +3,8 @@ import type {
   BuliDiagnosticLogFields,
   BuliDiagnosticLogger,
   ProviderStreamEvent,
-  TokenUsage,
 } from "@buli/contracts";
-import { emitBuliDiagnosticLogEvent } from "@buli/contracts";
+import { emitBuliDiagnosticLogEvent, summarizeTokenUsageForDiagnostics } from "@buli/contracts";
 
 export function logEngineDiagnosticEvent(
   diagnosticLogger: BuliDiagnosticLogger | undefined,
@@ -169,16 +168,5 @@ export function summarizeAssistantResponseEventForDiagnostics(
   return {
     messageId: assistantResponseEvent.messageId,
     errorTextLength: assistantResponseEvent.errorText.length,
-  };
-}
-
-function summarizeTokenUsageForDiagnostics(tokenUsage: TokenUsage): BuliDiagnosticLogFields {
-  return {
-    totalTokens: tokenUsage.total ?? tokenUsage.input + tokenUsage.output + tokenUsage.reasoning,
-    inputTokens: tokenUsage.input,
-    outputTokens: tokenUsage.output,
-    reasoningTokens: tokenUsage.reasoning,
-    cacheReadTokens: tokenUsage.cache.read,
-    cacheWriteTokens: tokenUsage.cache.write,
   };
 }

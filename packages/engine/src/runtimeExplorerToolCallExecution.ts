@@ -7,6 +7,7 @@ import {
   createStartedToolCallDetailFromRequest,
   isWorkspaceInspectionToolCallRequest,
   type AssistantResponseEvent,
+  type AssistantToolCallDetail,
   type AssistantToolCallConversationMessagePart,
   type BuliDiagnosticLogger,
   type ExplorerChildToolCall,
@@ -476,10 +477,12 @@ async function* streamExplorerChildToolCallsActivity(input: {
       continue;
     }
 
+    const deniedChildToolCallStartedAtMs = Date.now();
     const denialExplanation = buildExplorerDisallowedToolDenialText(requestedToolCall.toolCallRequest);
+    const deniedChildToolCallDetail = createStartedToolCallDetailFromRequest(requestedToolCall.toolCallRequest);
     input.explorerToolResultSessionRecorder.appendDeniedToolResultSessionEntry({
       toolCallId: requestedToolCall.toolCallId,
-      toolCallDetail: createStartedToolCallDetailFromRequest(requestedToolCall.toolCallRequest),
+      toolCallDetail: deniedChildToolCallDetail,
       toolResultText: denialExplanation,
       denialExplanation,
     });
@@ -490,7 +493,29 @@ async function* streamExplorerChildToolCallsActivity(input: {
       toolResultKind: "denied",
       diagnosticLogger: input.diagnosticLogger,
     });
+    yield createDeniedExplorerChildToolCall({
+      toolCallId: requestedToolCall.toolCallId,
+      deniedChildToolCallStartedAtMs,
+      deniedChildToolCallDetail,
+      denialExplanation,
+    });
   }
+}
+
+function createDeniedExplorerChildToolCall(input: {
+  toolCallId: string;
+  deniedChildToolCallStartedAtMs: number;
+  deniedChildToolCallDetail: AssistantToolCallDetail;
+  denialExplanation: string;
+}): ExplorerChildToolCall {
+  return {
+    explorerChildToolCallId: input.toolCallId,
+    explorerChildToolCallStatus: "denied",
+    explorerChildToolCallStartedAtMs: input.deniedChildToolCallStartedAtMs,
+    explorerChildToolCallDetail: input.deniedChildToolCallDetail,
+    explorerChildToolCallDenialText: input.denialExplanation,
+    explorerChildToolCallDurationMs: Date.now() - input.deniedChildToolCallStartedAtMs,
+  };
 }
 
 async function* streamSingleExplorerReadOnlyChildToolCall(input: {

@@ -99,3 +99,40 @@ test("ChatScreen removes the last pasted image with Backspace when the prompt dr
   await renderedChatScreen.renderOnce();
   expect(renderedChatScreen.captureCharFrame()).not.toContain("[Image 1]");
 });
+
+test("ChatScreen does not read the native clipboard when bracketed paste sanitizes to empty text", async () => {
+  let nativeClipboardReadCount = 0;
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      return {
+        async *streamAssistantResponseEvents() {
+          return;
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const renderedChatScreen = await testRender(
+    <ChatScreen
+      selectedModelId="gpt-5.4"
+      loadAvailableAssistantModels={async () => []}
+      loadPromptContextCandidates={async () => []}
+      assistantConversationRunner={assistantConversationRunner}
+      readClipboardImageAttachment={async () => {
+        nativeClipboardReadCount += 1;
+        return pastedImageAttachment;
+      }}
+    />,
+    { width: 120, height: 24 },
+  );
+
+  await act(async () => {
+    await renderedChatScreen.mockInput.pasteBracketedText("\x1B[31m\x1B[0m");
+  });
+  await renderedChatScreen.renderOnce();
+
+  expect(nativeClipboardReadCount).toBe(0);
+  expect(renderedChatScreen.captureCharFrame()).not.toContain("[Image 1]");
+});

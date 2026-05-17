@@ -64,6 +64,26 @@ test("prepareEditToolCall rejects ambiguous exact replacement text", async () =>
   });
 });
 
+test("prepareEditToolCall rejects empty exact replacement text", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-edit-tool-empty-old-string-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
+
+  const editPreparationOutcome = await prepareEditToolCall({
+    workspaceRootPath,
+    editToolCallRequest: {
+      toolName: "edit",
+      editTargetPath: "notes.txt",
+      oldString: "",
+      newString: "delta",
+    },
+  });
+
+  expect(editPreparationOutcome).toMatchObject({
+    outcomeKind: "failed",
+    failureExplanation: "Edit target text must not be empty",
+  });
+});
+
 test("runPreparedEditToolCall rejects stale files after the approval preview", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-edit-tool-stale-"));
   const notesPath = join(workspaceRootPath, "notes.txt");
@@ -92,6 +112,38 @@ test("runPreparedEditToolCall rejects stale files after the approval preview", a
     failureExplanation: expect.stringContaining("File changed after edit approval preview"),
   });
   expect(await readFile(notesPath, "utf8")).toBe("alpha\nchanged\n");
+});
+
+test("runPreparedEditToolCall completes when abort is signaled after the approved edit commits", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-edit-tool-post-commit-abort-"));
+  const notesPath = join(workspaceRootPath, "notes.txt");
+  const abortController = new AbortController();
+  await writeFile(notesPath, "alpha\nbeta\n", "utf8");
+  const editPreparationOutcome = await prepareEditToolCall({
+    workspaceRootPath,
+    editToolCallRequest: {
+      toolName: "edit",
+      editTargetPath: "notes.txt",
+      oldString: "beta",
+      newString: "delta",
+    },
+  });
+
+  if (!("preparationKind" in editPreparationOutcome) || editPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared edit");
+  }
+
+  const editToolCallOutcome = await runPreparedEditToolCall({
+    preparedEditToolCall: editPreparationOutcome.preparedEditToolCall,
+    abortSignal: abortController.signal,
+    commitApprovedEditFile: async (approvedEditFile) => {
+      await writeFile(approvedEditFile.absolutePath, approvedEditFile.nextFileText, "utf8");
+      abortController.abort();
+    },
+  });
+
+  expect(editToolCallOutcome.outcomeKind).toBe("completed");
+  expect(await readFile(notesPath, "utf8")).toBe("alpha\ndelta\n");
 });
 
 test("prepareWriteToolCall previews a new-file diff and runPreparedWriteToolCall creates the file", async () => {
@@ -143,4 +195,35 @@ test("prepareWriteToolCall rejects paths outside the workspace", async () => {
     outcomeKind: "failed",
     failureExplanation: expect.stringContaining("Path must stay inside the workspace root"),
   });
+});
+
+test("runPreparedWriteToolCall completes when abort is signaled after the approved write commits", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-write-tool-post-commit-abort-"));
+  const generatedPath = join(workspaceRootPath, "src", "generated.ts");
+  const abortController = new AbortController();
+  const writePreparationOutcome = await prepareWriteToolCall({
+    workspaceRootPath,
+    writeToolCallRequest: {
+      toolName: "write",
+      writeTargetPath: "src/generated.ts",
+      fileContent: "export const generated = true;\n",
+    },
+  });
+
+  if (!("preparationKind" in writePreparationOutcome) || writePreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared write");
+  }
+
+  const writeToolCallOutcome = await runPreparedWriteToolCall({
+    workspaceRootPath,
+    preparedWriteToolCall: writePreparationOutcome.preparedWriteToolCall,
+    abortSignal: abortController.signal,
+    commitApprovedWriteFile: async (approvedWriteFile) => {
+      await writeFile(approvedWriteFile.absolutePath, approvedWriteFile.nextFileText, "utf8");
+      abortController.abort();
+    },
+  });
+
+  expect(writeToolCallOutcome.outcomeKind).toBe("completed");
+  expect(await readFile(generatedPath, "utf8")).toBe("export const generated = true;\n");
 });

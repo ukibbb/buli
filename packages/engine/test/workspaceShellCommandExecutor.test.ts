@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { MAX_BASH_TOOL_TIMEOUT_MILLISECONDS } from "@buli/contracts";
-import { runApprovedBashToolCall, WorkspaceShellCommandExecutor } from "../src/index.ts";
+import { createScrubbedShellCommandEnvironment, runApprovedBashToolCall, WorkspaceShellCommandExecutor } from "../src/index.ts";
 
 test("WorkspaceShellCommandExecutor waits for interrupted process group to exit", async () => {
   const temporaryDirectoryPath = await mkdtemp(join(tmpdir(), "buli-shell-interrupt-"));
@@ -44,6 +44,38 @@ test("WorkspaceShellCommandExecutor bounds captured stdout before process exit",
   expect(executionResult.stdoutText).toHaveLength(10);
   expect(executionResult.stdoutWasTruncated).toBe(true);
   expect(executionResult.stdoutOmittedCharacterCount).toBeGreaterThan(0);
+});
+
+test("createScrubbedShellCommandEnvironment removes secret-like process variables", () => {
+  expect(createScrubbedShellCommandEnvironment({
+    PATH: "/bin",
+    HOME: "/tmp/home",
+    OPENAI_API_KEY: "secret",
+    BULI_SECRET_TOKEN: "secret",
+  })).toEqual({
+    PATH: "/bin",
+    HOME: "/tmp/home",
+  });
+});
+
+test("WorkspaceShellCommandExecutor runs commands with a scrubbed environment", async () => {
+  const temporaryDirectoryPath = await mkdtemp(join(tmpdir(), "buli-shell-env-"));
+  const workspaceShellCommandExecutor = new WorkspaceShellCommandExecutor({
+    workspaceRootPath: temporaryDirectoryPath,
+    environment: {
+      PATH: process.env.PATH,
+      BULI_SECRET_TOKEN: "secret-token",
+    },
+  });
+
+  const executionResult = await workspaceShellCommandExecutor.runShellCommand({
+    shellCommand: "printf '%s' \"${BULI_SECRET_TOKEN-unset}\"",
+    workingDirectoryPath: temporaryDirectoryPath,
+    timeoutMilliseconds: 10_000,
+  });
+
+  expect(executionResult.exitCode).toBe(0);
+  expect(executionResult.stdoutText).toBe("unset");
 });
 
 test("runApprovedBashToolCall rejects working directories that resolve outside the workspace", async () => {
@@ -102,4 +134,31 @@ test("runApprovedBashToolCall clamps provider-requested timeout to the safety ca
 
   expect(bashToolCallOutcome.outcomeKind).toBe("completed");
   expect(receivedTimeoutMilliseconds).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
+});
+
+test("runApprovedBashToolCall normalizes non-positive timeouts to one millisecond", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-shell-timeout-min-"));
+  let receivedTimeoutMilliseconds: number | undefined;
+  const workspaceShellCommandExecutor = {
+    workspaceRootPath,
+    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    async runShellCommand(input) {
+      receivedTimeoutMilliseconds = input.timeoutMilliseconds;
+      return { exitCode: 0, stdoutText: "ok\n", stderrText: "" };
+    },
+  } satisfies WorkspaceShellCommandExecutor;
+
+  const bashToolCallOutcome = await runApprovedBashToolCall({
+    workspaceRootPath,
+    workspaceShellCommandExecutor,
+    bashToolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+      timeoutMilliseconds: 0,
+    },
+  });
+
+  expect(bashToolCallOutcome.outcomeKind).toBe("completed");
+  expect(receivedTimeoutMilliseconds).toBe(1);
 });

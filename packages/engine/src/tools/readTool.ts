@@ -68,6 +68,9 @@ export async function runReadToolCall(input: {
           return leftDirectoryEntry.name.localeCompare(rightDirectoryEntry.name);
         })
         .map((directoryEntry) => `${directoryEntry.name}${directoryEntry.isDirectory() ? "/" : ""}`);
+      if (offsetLineNumber > sortedEntryNames.length && !(sortedEntryNames.length === 0 && offsetLineNumber === 1)) {
+        throw new Error(`Offset ${offsetLineNumber} is out of range for this directory (${sortedEntryNames.length} entries)`);
+      }
       const visibleEntryNames = sortedEntryNames.slice(offsetLineNumber - 1, offsetLineNumber - 1 + maximumLineCount);
       const previewLines = buildReadPreviewLines(
         visibleEntryNames.map((visibleEntryName) => ({ lineText: visibleEntryName })),

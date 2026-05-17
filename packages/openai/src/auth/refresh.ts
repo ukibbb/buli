@@ -23,6 +23,10 @@ async function parseTokenResponse(response: Response): Promise<TokenResponse> {
   return TokenResponseSchema.parse(await response.json());
 }
 
+function buildTokenEndpointUrl(issuer: string | undefined): string {
+  return new URL("/oauth/token", issuer ?? OPENAI_ISSUER).toString();
+}
+
 export async function exchangeAuthorizationCode(input: {
   code: string;
   redirectUri: string;
@@ -31,7 +35,7 @@ export async function exchangeAuthorizationCode(input: {
   clientId?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
 }): Promise<TokenResponse> {
-  const response = await (input.fetchImpl ?? fetch)(`${input.issuer ?? OPENAI_ISSUER}/oauth/token`, {
+  const response = await (input.fetchImpl ?? fetch)(buildTokenEndpointUrl(input.issuer), {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -54,7 +58,7 @@ export async function refreshAccessToken(input: {
   clientId?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
 }): Promise<TokenResponse> {
-  const response = await (input.fetchImpl ?? fetch)(`${input.issuer ?? OPENAI_ISSUER}/oauth/token`, {
+  const response = await (input.fetchImpl ?? fetch)(buildTokenEndpointUrl(input.issuer), {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -97,39 +101,45 @@ export async function refreshStoredAuth(input: {
   fetchImpl?: typeof fetch | undefined;
   now?: number | undefined;
 }): Promise<OpenAiAuthInfo | undefined> {
-  const auth = await input.store.loadOpenAi();
-  if (!auth) {
-    return undefined;
-  }
+  let auth = await input.store.loadOpenAi();
 
   const now = input.now ?? Date.now();
-  if (auth.expiresAt - now > AUTH_REFRESH_EXPIRY_SKEW_MS) {
-    return auth;
+  while (auth) {
+    if (isStoredAuthFreshEnough(auth, now)) {
+      return auth;
+    }
+
+    const tokens = await refreshAccessToken({
+      refreshToken: auth.refreshToken,
+      issuer: input.issuer,
+      clientId: input.clientId,
+      fetchImpl: input.fetchImpl,
+    });
+    const next = toAuthInfo({
+      tokens,
+      now,
+      accountId: auth.accountId,
+      refreshToken: auth.refreshToken,
+    });
+
+    const latestAuth = await input.store.loadOpenAi();
+    if (!latestAuth) {
+      return undefined;
+    }
+    if (!isSameStoredAuthSnapshot(latestAuth, auth)) {
+      auth = latestAuth;
+      continue;
+    }
+
+    await input.store.saveOpenAi(next);
+    return next;
   }
 
-  const tokens = await refreshAccessToken({
-    refreshToken: auth.refreshToken,
-    issuer: input.issuer,
-    clientId: input.clientId,
-    fetchImpl: input.fetchImpl,
-  });
-  const next = toAuthInfo({
-    tokens,
-    now,
-    accountId: auth.accountId,
-    refreshToken: auth.refreshToken,
-  });
+  return undefined;
+}
 
-  const latestAuth = await input.store.loadOpenAi();
-  if (!latestAuth) {
-    return undefined;
-  }
-  if (!isSameStoredAuthSnapshot(latestAuth, auth)) {
-    return latestAuth;
-  }
-
-  await input.store.saveOpenAi(next);
-  return next;
+function isStoredAuthFreshEnough(auth: OpenAiAuthInfo, now: number): boolean {
+  return auth.expiresAt - now > AUTH_REFRESH_EXPIRY_SKEW_MS;
 }
 
 function isSameStoredAuthSnapshot(leftAuth: OpenAiAuthInfo, rightAuth: OpenAiAuthInfo): boolean {

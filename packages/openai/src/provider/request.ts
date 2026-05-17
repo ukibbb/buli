@@ -6,6 +6,13 @@ import type {
   OpenAiProviderTurnReplayInputItem,
   UserPromptImageAttachment,
 } from "@buli/contracts";
+import {
+  isOpenAiOutputTextContentPart,
+  isOpenAiResponseObject,
+  listOpenAiReasoningSummaryTextParts,
+  readOpenAiFunctionCallOutputItem,
+  type OpenAiResponseObject,
+} from "./openAiResponseObjects.ts";
 
 export type OpenAiInputTextContentPart = { type: "input_text"; text: string };
 export type OpenAiInputImageContentPart = { type: "input_image"; image_url: string };
@@ -36,16 +43,6 @@ export type OpenAiConversationInputItem =
   | OpenAiReasoningInputItem
   | OpenAiFunctionCallInputItem
   | OpenAiFunctionCallOutputInputItem;
-
-type OpenAiResponseOutputItem = {
-  type: string;
-  [fieldName: string]: unknown;
-};
-
-type OpenAiResponseOutputSummaryPart = {
-  type: string;
-  text?: unknown;
-};
 
 export type OpenAiResponseReplayItems = {
   continuationInputItems: OpenAiConversationInputItem[];
@@ -173,7 +170,7 @@ export function createOpenAiResponseReplayItems(responseOutputItems: readonly un
   const providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[] = [];
 
   for (const responseOutputItem of responseOutputItems) {
-    if (!isOpenAiResponseOutputItem(responseOutputItem)) {
+    if (!isOpenAiResponseObject(responseOutputItem)) {
       continue;
     }
 
@@ -265,32 +262,12 @@ function isOpenAiProviderTurnReplay(
   return providerTurnReplay?.provider === "openai";
 }
 
-function isOpenAiResponseOutputItem(value: unknown): value is OpenAiResponseOutputItem {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    typeof (value as { type?: unknown }).type === "string"
-  );
-}
-
-function createReasoningReplayItem(responseOutputItem: OpenAiResponseOutputItem): OpenAiReasoningReplayItem | undefined {
+function createReasoningReplayItem(responseOutputItem: OpenAiResponseObject): OpenAiReasoningReplayItem | undefined {
   if (responseOutputItem.type !== "reasoning" || typeof responseOutputItem.id !== "string") {
     return undefined;
   }
 
-  const summaryParts = Array.isArray(responseOutputItem.summary)
-    ? responseOutputItem.summary.flatMap((summaryPart) => {
-        if (!isOpenAiResponseOutputSummaryPart(summaryPart)) {
-          return [];
-        }
-        if (summaryPart.type !== "summary_text" || typeof summaryPart.text !== "string") {
-          return [];
-        }
-
-        return [{ type: "summary_text" as const, text: summaryPart.text }];
-      })
-    : [];
+  const summaryParts = listOpenAiReasoningSummaryTextParts(responseOutputItem.summary);
 
   const replayItem: OpenAiReasoningReplayItem = {
     type: "reasoning",
@@ -305,31 +282,15 @@ function createReasoningReplayItem(responseOutputItem: OpenAiResponseOutputItem)
   return replayItem;
 }
 
-function isOpenAiResponseOutputSummaryPart(value: unknown): value is OpenAiResponseOutputSummaryPart {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && typeof (value as { type?: unknown }).type === "string";
-}
-
 function createAssistantMessageInputItemFromResponseOutputItem(
-  responseOutputItem: OpenAiResponseOutputItem,
+  responseOutputItem: OpenAiResponseObject,
 ): OpenAiConversationMessageInputItem | undefined {
   if (responseOutputItem.type !== "message" || responseOutputItem.role !== "assistant" || !Array.isArray(responseOutputItem.content)) {
     return undefined;
   }
 
   const assistantMessageText = responseOutputItem.content
-    .flatMap((contentPart) => {
-      if (
-        typeof contentPart !== "object" ||
-        contentPart === null ||
-        Array.isArray(contentPart) ||
-        (contentPart as { type?: unknown }).type !== "output_text" ||
-        typeof (contentPart as { text?: unknown }).text !== "string"
-      ) {
-        return [];
-      }
-
-      return [(contentPart as { text: string }).text];
-    })
+    .flatMap((contentPart) => isOpenAiOutputTextContentPart(contentPart) ? [contentPart.text] : [])
     .join("");
 
   if (assistantMessageText.length === 0) {
@@ -340,24 +301,19 @@ function createAssistantMessageInputItemFromResponseOutputItem(
 }
 
 function createFunctionCallInputItemFromResponseOutputItem(
-  responseOutputItem: OpenAiResponseOutputItem,
+  responseOutputItem: OpenAiResponseObject,
 ): OpenAiFunctionCallInputItem | undefined {
-  if (
-    responseOutputItem.type !== "function_call" ||
-    typeof responseOutputItem.id !== "string" ||
-    typeof responseOutputItem.call_id !== "string" ||
-    typeof responseOutputItem.name !== "string" ||
-    typeof responseOutputItem.arguments !== "string"
-  ) {
+  const functionCallOutputItem = readOpenAiFunctionCallOutputItem(responseOutputItem);
+  if (!functionCallOutputItem || functionCallOutputItem.argumentsText === undefined) {
     return undefined;
   }
 
   return {
     type: "function_call",
-    id: responseOutputItem.id,
-    call_id: responseOutputItem.call_id,
-    name: responseOutputItem.name,
-    arguments: responseOutputItem.arguments,
+    id: functionCallOutputItem.itemId,
+    call_id: functionCallOutputItem.toolCallId,
+    name: functionCallOutputItem.toolName,
+    arguments: functionCallOutputItem.argumentsText,
   };
 }
 

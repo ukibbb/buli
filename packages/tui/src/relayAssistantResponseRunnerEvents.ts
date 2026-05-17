@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
-  emitBuliDiagnosticLogEvent,
   type AssistantResponseEvent,
-  type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
 } from "@buli/contracts";
 import type { ActiveConversationTurn, AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
@@ -10,6 +8,7 @@ import {
   summarizeAssistantResponseEventForDiagnostics,
   summarizeAssistantResponseEventsForDiagnostics,
 } from "./assistantResponseEventDiagnostics.ts";
+import { logTuiDiagnosticEvent } from "./diagnostics/logTuiDiagnosticEvent.ts";
 
 const ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS = 16;
 
@@ -34,18 +33,6 @@ function resolveAssistantResponseEventMessageId(assistantResponseEvent: Assistan
   return assistantResponseEvent.messageId;
 }
 
-function logTuiDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
-
 export async function relayAssistantResponseRunnerEvents(input: {
   assistantConversationRunner: AssistantConversationRunner;
   conversationTurnRequest: ConversationTurnRequest;
@@ -64,6 +51,12 @@ export async function relayAssistantResponseRunnerEvents(input: {
   let lastFlushAtMs = 0;
   let currentAssistantResponseMessageId: string | undefined;
   let hasSeenTerminalAssistantResponseEvent = false;
+  let activeConversationTurn: ActiveConversationTurn | undefined;
+  let assistantResponseEventDeliveryError: unknown;
+
+  function recordAssistantResponseEventDeliveryError(error: unknown): void {
+    assistantResponseEventDeliveryError ??= error;
+  }
 
   function flushQueuedAssistantResponseEvents(): void {
     if (queuedAssistantResponseEvents.length === 0) {
@@ -80,7 +73,12 @@ export async function relayAssistantResponseRunnerEvents(input: {
       elapsedSinceLastFlushMs: lastFlushAtMs === 0 ? null : flushedAtMs - lastFlushAtMs,
     });
     lastFlushAtMs = flushedAtMs;
-    input.onAssistantResponseEvents(assistantResponseEventsToFlush);
+    try {
+      input.onAssistantResponseEvents(assistantResponseEventsToFlush);
+    } catch (error) {
+      recordAssistantResponseEventDeliveryError(error);
+      throw error;
+    }
   }
 
   function scheduleAssistantResponseEventFlush(): void {
@@ -94,7 +92,14 @@ export async function relayAssistantResponseRunnerEvents(input: {
       return;
     }
 
-    scheduledFlushTimeout = setTimeout(flushQueuedAssistantResponseEvents, ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS);
+    scheduledFlushTimeout = setTimeout(() => {
+      try {
+        flushQueuedAssistantResponseEvents();
+      } catch (error) {
+        recordAssistantResponseEventDeliveryError(error);
+        activeConversationTurn?.interrupt();
+      }
+    }, ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS);
   }
 
   function queueAssistantResponseEvent(assistantResponseEvent: AssistantResponseEvent): void {
@@ -138,7 +143,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
   }
 
   try {
-    const activeConversationTurn = input.assistantConversationRunner.startConversationTurn(input.conversationTurnRequest);
+    activeConversationTurn = input.assistantConversationRunner.startConversationTurn(input.conversationTurnRequest);
     input.onConversationTurnStarted(activeConversationTurn);
     logTuiDiagnosticEvent(input.diagnosticLogger, "relay.turn_started", {
       selectedModelId: input.conversationTurnRequest.selectedModelId,
@@ -148,7 +153,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
       queueAssistantResponseEvent(assistantResponseEvent);
     }
 
-    if (!hasSeenTerminalAssistantResponseEvent) {
+    if (!hasSeenTerminalAssistantResponseEvent && assistantResponseEventDeliveryError === undefined) {
       logTuiDiagnosticEvent(input.diagnosticLogger, "relay.non_terminal_stream_finished", {
         selectedModelId: input.conversationTurnRequest.selectedModelId,
         hasAssistantMessageId: currentAssistantResponseMessageId !== undefined,
@@ -156,6 +161,12 @@ export async function relayAssistantResponseRunnerEvents(input: {
       queueSyntheticFailedAssistantTurn("Assistant turn ended without a terminal event.");
     }
   } catch (error) {
+    if (assistantResponseEventDeliveryError !== undefined) {
+      logTuiDiagnosticEvent(input.diagnosticLogger, "relay.event_delivery_error", {
+        errorText: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
     const errorText = error instanceof Error ? error.message : String(error);
     logTuiDiagnosticEvent(input.diagnosticLogger, "relay.runner_error", {
       errorText,
@@ -165,10 +176,25 @@ export async function relayAssistantResponseRunnerEvents(input: {
     if (scheduledFlushTimeout) {
       clearTimeout(scheduledFlushTimeout);
     }
-    flushQueuedAssistantResponseEvents();
-    input.onConversationTurnFinished();
-    logTuiDiagnosticEvent(input.diagnosticLogger, "relay.turn_finished", {
-      selectedModelId: input.conversationTurnRequest.selectedModelId,
-    });
+    if (assistantResponseEventDeliveryError === undefined) {
+      try {
+        flushQueuedAssistantResponseEvents();
+      } catch (error) {
+        recordAssistantResponseEventDeliveryError(error);
+      }
+    } else {
+      queuedAssistantResponseEvents = [];
+    }
+    try {
+      input.onConversationTurnFinished();
+      logTuiDiagnosticEvent(input.diagnosticLogger, "relay.turn_finished", {
+        selectedModelId: input.conversationTurnRequest.selectedModelId,
+      });
+    } finally {
+      activeConversationTurn = undefined;
+    }
+    if (assistantResponseEventDeliveryError !== undefined) {
+      throw assistantResponseEventDeliveryError;
+    }
   }
 }

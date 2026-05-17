@@ -26,6 +26,10 @@ export const incompleteReply: ChatSessionFixtureScenario = {
       role: "assistant",
       messageStatus: "incomplete",
       partKinds: ["assistant_text", "assistant_incomplete_notice"],
+      parts: [
+        { partKind: "assistant_text", partStatus: "incomplete" },
+        { partKind: "assistant_incomplete_notice" },
+      ],
     },
   ],
   expectedConversationTurnStatus: "waiting_for_user_input",

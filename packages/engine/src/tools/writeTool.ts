@@ -19,6 +19,11 @@ export type PreparedWriteToolCall = {
   toolCallDetail: ToolCallWriteDetail;
 };
 
+type ApprovedWriteFileCommitter = (input: {
+  absolutePath: string;
+  nextFileText: string;
+}) => Promise<void>;
+
 export type WriteToolPreparationOutcome =
   | { preparationKind: "prepared"; preparedWriteToolCall: PreparedWriteToolCall }
   | FailedToolCallOutcome;
@@ -95,8 +100,10 @@ export async function runPreparedWriteToolCall(input: {
   preparedWriteToolCall: PreparedWriteToolCall;
   workspaceRootPath: string;
   abortSignal?: AbortSignal;
+  commitApprovedWriteFile?: ApprovedWriteFileCommitter;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
+  const commitApprovedWriteFile = input.commitApprovedWriteFile ?? writeApprovedWriteFile;
 
   try {
     throwIfWriteToolAborted(input.abortSignal);
@@ -113,8 +120,10 @@ export async function runPreparedWriteToolCall(input: {
       absoluteWritePath: input.preparedWriteToolCall.absolutePath,
       displayPath: input.preparedWriteToolCall.displayPath,
     });
-    await writeFile(input.preparedWriteToolCall.absolutePath, input.preparedWriteToolCall.nextFileText, "utf8");
-    throwIfWriteToolAborted(input.abortSignal);
+    await commitApprovedWriteFile({
+      absolutePath: input.preparedWriteToolCall.absolutePath,
+      nextFileText: input.preparedWriteToolCall.nextFileText,
+    });
 
     return {
       outcomeKind: "completed",
@@ -136,6 +145,13 @@ export async function runPreparedWriteToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+async function writeApprovedWriteFile(input: {
+  absolutePath: string;
+  nextFileText: string;
+}): Promise<void> {
+  await writeFile(input.absolutePath, input.nextFileText, "utf8");
 }
 
 async function readExistingWriteTargetText(input: {

@@ -1,7 +1,6 @@
 import os from "node:os";
 import type {
   AvailableAssistantModel,
-  BuliDiagnosticLogFields,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
   ConversationSessionSummary,
@@ -30,6 +29,7 @@ import { ChatScreenInputArea } from "./components/ChatScreenInputArea.tsx";
 import { ChatScreenMainArea } from "./components/ChatScreenMainArea.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { buildChatScreenViewModel } from "./behavior/chatScreenViewModel.ts";
+import { buildChatScreenRenderSnapshotDiagnosticFields } from "./behavior/chatScreenRenderSnapshotDiagnostics.ts";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
 import { useChatScreenActiveTurnInterrupt } from "./behavior/useChatScreenActiveTurnInterrupt.ts";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./behavior/chatScreenConversationSessionStatus.ts";
@@ -43,6 +43,7 @@ import {
 import { useChatScreenKeyboardInputActions } from "./behavior/useChatScreenKeyboardInputActions.ts";
 import { useChatScreenPromptContextSelectionRefresh } from "./behavior/useChatScreenPromptContextSelectionRefresh.ts";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
+import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "./diagnostics/logTuiDiagnosticEvent.ts";
 
 export type ChatScreenProps = {
   selectedModelId: string;
@@ -73,18 +74,6 @@ export type {
   ConversationSessionExportResult,
   ConversationSessionSwitchResult,
 } from "./behavior/useChatScreenConversationSessionActions.ts";
-
-function logChatScreenDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  diagnosticLogger?.({
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
 
 export function ChatScreen(props: ChatScreenProps) {
   const { height: rows, width: columns } = useTerminalDimensions();
@@ -226,6 +215,7 @@ export function ChatScreen(props: ChatScreenProps) {
     readClipboardImageAttachment: props.readClipboardImageAttachment,
     latestChatSessionStateRef,
     isPromptSubmissionInFlightRef,
+    isConversationCompactionInFlightRef,
     setChatSessionState,
     requestActiveConversationTurnInterrupt,
     dismissActivePromptContextQuery,
@@ -262,35 +252,31 @@ export function ChatScreen(props: ChatScreenProps) {
     shouldRenderMinimumHeightPromptStrip,
   } = buildChatScreenViewModel({
     chatSessionState,
+    conversationSessionCompactionStatus,
     terminalRowCount: rows,
     terminalColumnCount: columns,
     terminalSizeTierForChatScreen,
   });
 
   useEffect(() => {
-    logChatScreenDiagnosticEvent(diagnosticLogger, "chat_screen.render_snapshot", {
-      rows,
-      terminalSizeTier: terminalSizeTierForChatScreen,
-      conversationTurnStatus: chatSessionState.conversationTurnStatus,
-      selectedAssistantOperatingMode: chatSessionState.selectedAssistantOperatingMode,
-      selectedModelId: chatSessionState.selectedModelId,
-      selectedModelDefaultReasoningEffort: chatSessionState.selectedModelDefaultReasoningEffort ?? null,
-      selectedReasoningEffort: chatSessionState.selectedReasoningEffort ?? null,
-      promptDraftLength: chatSessionState.promptDraft.length,
-      selectedPromptContextReferenceCount: chatSessionState.selectedPromptContextReferenceTexts.length,
-      conversationMessageCount: orderedConversationMessages.length,
-      conversationMessagePartCount: orderedConversationMessagePartCount,
-      hasPendingToolApprovalRequest: chatSessionState.pendingToolApprovalRequest !== undefined,
-      promptContextSelectionStep: chatSessionState.promptContextSelectionState.step,
-      slashCommandSelectionStep: chatSessionState.slashCommandSelectionState.step,
-      modelSelectionStep: chatSessionState.modelAndReasoningSelectionState.step,
-      isCommandHelpModalVisible: chatSessionState.isCommandHelpModalVisible,
-      isReasoningSummaryVisible: chatSessionState.isReasoningSummaryVisible,
-      totalContextTokensUsed: totalContextTokensUsed ?? null,
-      contextWindowTokenCapacity: contextWindowTokenCapacity ?? null,
-    });
+    logChatScreenDiagnosticEvent(
+      diagnosticLogger,
+      "chat_screen.render_snapshot",
+      buildChatScreenRenderSnapshotDiagnosticFields({
+        chatSessionState,
+        conversationSessionCompactionStatus,
+        terminalRowCount: rows,
+        terminalColumnCount: columns,
+        terminalSizeTierForChatScreen,
+        orderedConversationMessageCount: orderedConversationMessages.length,
+        orderedConversationMessagePartCount,
+        totalContextTokensUsed,
+        contextWindowTokenCapacity,
+      }),
+    );
   }, [
     chatSessionState.conversationTurnStatus,
+    chatSessionState.conversationSessionSelectionState.step,
     chatSessionState.isCommandHelpModalVisible,
     chatSessionState.modelAndReasoningSelectionState.step,
     chatSessionState.pendingToolApprovalRequest,
@@ -305,6 +291,8 @@ export function ChatScreen(props: ChatScreenProps) {
     chatSessionState.selectedReasoningEffort,
     chatSessionState.slashCommandSelectionState.step,
     contextWindowTokenCapacity,
+    conversationSessionCompactionStatus,
+    columns,
     diagnosticLogger,
     orderedConversationMessagePartCount,
     orderedConversationMessages.length,

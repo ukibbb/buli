@@ -45,6 +45,10 @@ export const simpleUserPromptAndAssistantParagraphReply: ChatSessionFixtureScena
       role: "assistant",
       messageStatus: "completed",
       partKinds: ["assistant_text", "assistant_turn_summary"],
+      parts: [
+        { partKind: "assistant_text", partStatus: "completed" },
+        { partKind: "assistant_turn_summary" },
+      ],
     },
   ],
   expectedConversationTurnStatus: "waiting_for_user_input",

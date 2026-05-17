@@ -15,3 +15,16 @@ test("buildPromptContextDisplaySegments splits the draft into plain text and sel
     { segmentKind: "plain_text", text: " next" },
   ]);
 });
+
+test("buildPromptContextDisplaySegments highlights selected references before trailing punctuation only", () => {
+  expect(
+    buildPromptContextDisplaySegments({
+      promptDraft: "Inspect @notes.txt, not @notes.txt.backup",
+      selectedPromptContextReferenceTexts: ["@notes.txt"],
+    }),
+  ).toEqual([
+    { segmentKind: "plain_text", text: "Inspect " },
+    { segmentKind: "selected_prompt_context_reference", text: "@notes.txt" },
+    { segmentKind: "plain_text", text: ", not @notes.txt.backup" },
+  ]);
+});

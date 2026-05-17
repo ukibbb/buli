@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { TokenUsage } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { formatCompactTokenCount } from "./formatCompactTokenCount.ts";
 import { glyphs } from "./glyphs.ts";
 import { shortenTerminalTextWithMiddleEllipsis } from "./shortenTerminalTextWithMiddleEllipsis.ts";
 
@@ -45,17 +46,17 @@ function buildTurnMetadataText(props: TurnFooterProps, totalTokenCount: number |
   const metadataLabels: string[] = [];
 
   if (totalTokenCount !== undefined) {
-    metadataLabels.push(`${formatTokenCount(totalTokenCount)} tok`);
+    metadataLabels.push(`${formatCompactTokenCount(totalTokenCount)} tok`);
   }
 
   if (props.usage && props.usage.reasoning > 0) {
-    metadataLabels.push(`${formatTokenCount(props.usage.reasoning)} reasoning tok`);
+    metadataLabels.push(`${formatCompactTokenCount(props.usage.reasoning)} reasoning tok`);
   }
 
   metadataLabels.push(props.modelDisplayName);
 
   if (props.usage && props.usage.cache.read > 0) {
-    metadataLabels.push(`${formatTokenCount(props.usage.cache.read)} cached`);
+    metadataLabels.push(`${formatCompactTokenCount(props.usage.cache.read)} cached`);
   }
 
   return metadataLabels.join(" · ");
@@ -66,13 +67,4 @@ function formatTurnDurationMs(turnDurationMs: number): string {
     return `${turnDurationMs}ms`;
   }
   return `${(turnDurationMs / 1000).toFixed(1)}s`;
-}
-
-function formatTokenCount(tokenCount: number): string {
-  if (tokenCount < 1000) {
-    return String(tokenCount);
-  }
-
-  const tokenCountInThousands = tokenCount / 1000;
-  return `${Number.isInteger(tokenCountInThousands) ? tokenCountInThousands : tokenCountInThousands.toFixed(1)}k`;
 }

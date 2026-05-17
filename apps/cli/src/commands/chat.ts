@@ -1,4 +1,3 @@
-import os from "node:os";
 import { resolve, sep } from "node:path";
 import {
   emitBuliDiagnosticLogEvent,
@@ -99,7 +98,7 @@ export async function runInteractiveChat(input: {
     return "Interactive chat requires a TTY. Run `buli` in a terminal.";
   }
 
-  const consoleFileLoggerInstallation = installConsoleFileLogger();
+  const consoleFileLoggerInstallation = installConsoleFileLogger({ environment });
   const diagnosticLogger = consoleFileLoggerInstallation.logFilePath
     ? createDiagnosticFileLogger({ logFilePath: consoleFileLoggerInstallation.logFilePath })
     : undefined;
@@ -122,7 +121,7 @@ export async function runInteractiveChat(input: {
   });
 
   const provider = new OpenAiProvider({ store, diagnosticLogger });
-  const promptContextBrowseRootPath = os.homedir();
+  const promptContextBrowseRootPath = process.cwd();
   const promptContextStartingDirectoryPath = resolvePromptContextStartingDirectoryPath({
     promptContextBrowseRootPath,
     requestedStartingDirectoryPath: process.cwd(),
@@ -266,13 +265,17 @@ export async function runInteractiveChat(input: {
   };
 
   const renderChatScreen = input.renderChatScreen ?? renderChatScreenInTerminal;
-  const chatScreen = await renderChatScreen(renderArgs);
+  try {
+    const chatScreen = await renderChatScreen(renderArgs);
 
-  await chatScreen.waitUntilExit();
-  logCliDiagnosticEvent(diagnosticLogger, "interactive_chat.exited", {
-    selectedModelId: renderArgs.selectedModelId,
-  });
-  return "";
+    await chatScreen.waitUntilExit();
+    logCliDiagnosticEvent(diagnosticLogger, "interactive_chat.exited", {
+      selectedModelId: renderArgs.selectedModelId,
+    });
+    return "";
+  } finally {
+    consoleFileLoggerInstallation.restore();
+  }
 }
 
 function lookupKnownModelDefaultReasoningEffort(selectedModelId: string): ReasoningEffort | undefined {

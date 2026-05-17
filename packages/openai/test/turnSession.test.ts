@@ -398,7 +398,7 @@ test("OpenAiProviderConversationTurn stops when a tool batch exceeds the per-tur
     }
   })()).rejects.toThrow("OpenAI tool-call limit exceeded: requested 2 tool calls (max 1)");
 
-  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual(["tool_calls_requested"]);
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([]);
 });
 
 test("OpenAiProviderConversationTurn passes the abort signal to response fetch", async () => {
@@ -634,6 +634,59 @@ test("OpenAiProviderConversationTurn replays streamed function_call items when t
         role: "assistant",
         content: "I will run pwd.",
       },
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_1",
+        name: "bash",
+        arguments: '{"command":"pwd","description":"Print working directory"}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_1",
+        output: "Command: pwd\nWorking directory: /tmp\nExit code: 0",
+      },
+    ],
+  });
+});
+
+test("OpenAiProviderConversationTurn replays streamed assistant text before a tool call when terminal output omits it", async () => {
+  const requestBodies: string[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","output_index":0,"item_id":"msg_1","content_index":0,"delta":"I will run pwd."}\n\n',
+      'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ]),
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_2","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Run pwd"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: "Command: pwd\nWorking directory: /tmp\nExit code: 0",
+      });
+    }
+  }
+
+  expect(JSON.parse(requestBodies[1] ?? "{}")).toMatchObject({
+    input: [
+      { role: "user", content: "Run pwd" },
+      { role: "assistant", content: "I will run pwd." },
       {
         id: "fc_1",
         type: "function_call",

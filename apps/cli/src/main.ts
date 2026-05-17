@@ -16,13 +16,25 @@ type CommandHandlers = {
   runInteractiveChat: (input?: InteractiveChatStartOptions) => Promise<string>;
 };
 
+export type CliRunResult =
+  | { status: "ok"; output: string }
+  | { status: "usage_error"; output: string };
+
 const defaultCommandHandlers: CommandHandlers = {
   runInteractiveChat,
   runListAvailableModels,
   runLogin,
 };
 
-const USAGE = "Usage: buli [login|models] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]";
+export const USAGE = "Usage: buli [login|models|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]";
+
+function ok(output: string): CliRunResult {
+  return { status: "ok", output };
+}
+
+function usageError(): CliRunResult {
+  return { status: "usage_error", output: USAGE };
+}
 
 function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveChatStartOptions | undefined {
   const interactiveChatStartOptions: InteractiveChatStartOptions = {};
@@ -84,28 +96,32 @@ function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveC
 export async function runCli(
   args: readonly string[],
   commandHandlers: CommandHandlers = defaultCommandHandlers,
-): Promise<string> {
+): Promise<CliRunResult> {
   const firstArgument = args[0];
 
   if (!firstArgument) {
-    return commandHandlers.runInteractiveChat({});
+    return ok(await commandHandlers.runInteractiveChat({}));
+  }
+
+  if (firstArgument === "help" || firstArgument === "--help" || firstArgument === "-h") {
+    return ok(USAGE);
   }
 
   if (firstArgument.startsWith("--")) {
     const interactiveChatStartOptions = parseInteractiveChatStartOptions(args);
     if (!interactiveChatStartOptions) {
-      return USAGE;
+      return usageError();
     }
 
-    return commandHandlers.runInteractiveChat(interactiveChatStartOptions);
+    return ok(await commandHandlers.runInteractiveChat(interactiveChatStartOptions));
   }
 
   switch (firstArgument) {
     case "login":
-      return commandHandlers.runLogin();
+      return ok(await commandHandlers.runLogin());
     case "models":
-      return commandHandlers.runListAvailableModels();
+      return ok(await commandHandlers.runListAvailableModels());
     default:
-      return USAGE;
+      return usageError();
   }
 }

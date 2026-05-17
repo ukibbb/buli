@@ -192,21 +192,116 @@ function appendAssistantInterruptedNoticePartIfMissing(
   });
 }
 
-function updateAssistantTextPartStatusesForMessage(
-  chatSessionState: ChatSessionState,
-  messageId: string,
-  partStatus: AssistantTextConversationMessagePart["partStatus"],
-): ChatSessionState {
+function markCompletedConversationMessageParts(chatSessionState: ChatSessionState, messageId: string): ChatSessionState {
   return updateConversationMessageParts({
     chatSessionState,
     messageId,
-    updateConversationMessagePart: (conversationMessagePart) =>
-      conversationMessagePart.partKind === "assistant_text"
-        ? {
-            ...conversationMessagePart,
-            partStatus,
-          }
-        : conversationMessagePart,
+    updateConversationMessagePart: (conversationMessagePart) => {
+      if (conversationMessagePart.partKind === "assistant_text") {
+        return {
+          ...conversationMessagePart,
+          partStatus: "completed",
+        } satisfies AssistantTextConversationMessagePart;
+      }
+
+      if (conversationMessagePart.partKind === "assistant_reasoning" && conversationMessagePart.partStatus === "streaming") {
+        return {
+          ...conversationMessagePart,
+          partStatus: "completed",
+        } satisfies AssistantReasoningConversationMessagePart;
+      }
+
+      if (
+        conversationMessagePart.partKind === "assistant_tool_call" &&
+        (conversationMessagePart.toolCallStatus === "running" || conversationMessagePart.toolCallStatus === "pending_approval")
+      ) {
+        return {
+          ...conversationMessagePart,
+          toolCallStatus: "interrupted",
+          errorText: "Tool call did not finish before the assistant message completed.",
+        } satisfies AssistantToolCallConversationMessagePart;
+      }
+
+      return conversationMessagePart;
+    },
+  });
+}
+
+function markIncompleteConversationMessageParts(input: {
+  chatSessionState: ChatSessionState;
+  messageId: string;
+  incompleteToolCallErrorText: string;
+}): ChatSessionState {
+  return updateConversationMessageParts({
+    chatSessionState: input.chatSessionState,
+    messageId: input.messageId,
+    updateConversationMessagePart: (conversationMessagePart) => {
+      if (conversationMessagePart.partKind === "assistant_text") {
+        return {
+          ...conversationMessagePart,
+          partStatus: "incomplete",
+        } satisfies AssistantTextConversationMessagePart;
+      }
+
+      if (conversationMessagePart.partKind === "assistant_reasoning" && conversationMessagePart.partStatus === "streaming") {
+        return {
+          ...conversationMessagePart,
+          partStatus: "interrupted",
+        } satisfies AssistantReasoningConversationMessagePart;
+      }
+
+      if (
+        conversationMessagePart.partKind === "assistant_tool_call" &&
+        (conversationMessagePart.toolCallStatus === "running" || conversationMessagePart.toolCallStatus === "pending_approval")
+      ) {
+        return {
+          ...conversationMessagePart,
+          toolCallStatus: "interrupted",
+          errorText: input.incompleteToolCallErrorText,
+        } satisfies AssistantToolCallConversationMessagePart;
+      }
+
+      return conversationMessagePart;
+    },
+  });
+}
+
+function markFailedConversationMessageParts(input: {
+  chatSessionState: ChatSessionState;
+  messageId: string;
+  failureExplanation: string;
+}): ChatSessionState {
+  return updateConversationMessageParts({
+    chatSessionState: input.chatSessionState,
+    messageId: input.messageId,
+    updateConversationMessagePart: (conversationMessagePart) => {
+      if (conversationMessagePart.partKind === "assistant_text") {
+        return {
+          ...conversationMessagePart,
+          partStatus: "failed",
+        } satisfies AssistantTextConversationMessagePart;
+      }
+
+      if (conversationMessagePart.partKind === "assistant_reasoning" && conversationMessagePart.partStatus === "streaming") {
+        return {
+          ...conversationMessagePart,
+          partStatus: "interrupted",
+        } satisfies AssistantReasoningConversationMessagePart;
+      }
+
+      if (
+        conversationMessagePart.partKind === "assistant_tool_call" &&
+        (conversationMessagePart.toolCallStatus === "running" || conversationMessagePart.toolCallStatus === "pending_approval")
+      ) {
+        return {
+          ...conversationMessagePart,
+          toolCallStatus: "failed",
+          errorText: input.failureExplanation,
+        } satisfies AssistantToolCallConversationMessagePart;
+      }
+
+      return conversationMessagePart;
+    },
   });
 }
 
@@ -382,7 +477,7 @@ export function applyAssistantResponseEventToChatSessionState(
   if (assistantResponseEvent.type === "assistant_message_completed") {
     return backfillCompletedReasoningPartTokenCountForMessage(
       backfillAssistantTurnSummaryUsageForMessage(
-        updateConversationMessage({
+        markCompletedConversationMessageParts(updateConversationMessage({
           chatSessionState: {
             ...chatSessionState,
             conversationTurnStatus: "waiting_for_user_input",
@@ -394,7 +489,7 @@ export function applyAssistantResponseEventToChatSessionState(
             ...conversationMessage,
             messageStatus: "completed",
           }),
-        }),
+        }), assistantResponseEvent.messageId),
         assistantResponseEvent.messageId,
         assistantResponseEvent.usage,
       ),
@@ -407,8 +502,8 @@ export function applyAssistantResponseEventToChatSessionState(
     return backfillCompletedReasoningPartTokenCountForMessage(
       backfillAssistantTurnSummaryUsageForMessage(
         appendAssistantIncompleteNoticePartIfMissing(
-          updateAssistantTextPartStatusesForMessage(
-            updateConversationMessage({
+          markIncompleteConversationMessageParts({
+            chatSessionState: updateConversationMessage({
               chatSessionState: {
                 ...chatSessionState,
                 conversationTurnStatus: "waiting_for_user_input",
@@ -421,9 +516,9 @@ export function applyAssistantResponseEventToChatSessionState(
                 messageStatus: "incomplete",
               }),
             }),
-            assistantResponseEvent.messageId,
-            "incomplete",
-          ),
+            messageId: assistantResponseEvent.messageId,
+            incompleteToolCallErrorText: `Assistant message became incomplete: ${assistantResponseEvent.incompleteReason}`,
+          }),
           assistantResponseEvent.messageId,
           assistantResponseEvent.incompleteReason,
         ),
@@ -437,8 +532,8 @@ export function applyAssistantResponseEventToChatSessionState(
 
   if (assistantResponseEvent.type === "assistant_message_failed") {
     return appendAssistantErrorNoticePartIfMissing(
-      updateAssistantTextPartStatusesForMessage(
-        updateConversationMessage({
+      markFailedConversationMessageParts({
+        chatSessionState: updateConversationMessage({
           chatSessionState: {
             ...chatSessionState,
             conversationTurnStatus: "waiting_for_user_input",
@@ -450,9 +545,9 @@ export function applyAssistantResponseEventToChatSessionState(
             messageStatus: "failed",
           }),
         }),
-        assistantResponseEvent.messageId,
-        "failed",
-      ),
+        messageId: assistantResponseEvent.messageId,
+        failureExplanation: assistantResponseEvent.errorText,
+      }),
       assistantResponseEvent.messageId,
       assistantResponseEvent.errorText,
     );

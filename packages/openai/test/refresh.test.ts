@@ -73,6 +73,29 @@ test("exchangeAuthorizationCode posts the expected OAuth form", async () => {
   );
 });
 
+test("exchangeAuthorizationCode handles trailing slash issuers", async () => {
+  const requestedUrls: string[] = [];
+  const fetchImpl: typeof fetch = Object.assign(
+    async (url: Parameters<typeof fetch>[0]) => {
+      requestedUrls.push(String(url));
+      return new Response(JSON.stringify({ access_token: "access-token", refresh_token: "refresh-token" }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    { preconnect: fetch.preconnect.bind(fetch) },
+  );
+
+  await exchangeAuthorizationCode({
+    code: "auth-code",
+    redirectUri: "http://localhost:1455/auth/callback",
+    verifier: "verifier",
+    issuer: "https://auth.example.com/",
+    fetchImpl,
+  });
+
+  expect(requestedUrls).toEqual(["https://auth.example.com/oauth/token"]);
+});
+
 test("refreshAccessToken posts the refresh token form", async () => {
   await withTokenServer(
     (body) => {
@@ -235,7 +258,7 @@ test("refreshStoredAuth does not overwrite credentials refreshed by another proc
         method: "oauth",
         accessToken: "newer-access",
         refreshToken: "newer-refresh",
-        expiresAt: 10_000,
+        expiresAt: 1_000_000,
         accountId: "acct_123",
       });
       return new Response(JSON.stringify({
@@ -259,5 +282,58 @@ test("refreshStoredAuth does not overwrite credentials refreshed by another proc
   expect(await store.loadOpenAi()).toMatchObject({
     accessToken: "newer-access",
     refreshToken: "newer-refresh",
+  });
+});
+
+test("refreshStoredAuth refreshes a stale credential snapshot written by another process", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-openai-refresh-stale-race-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const requestedRefreshTokens: string[] = [];
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "old-access",
+    refreshToken: "old-refresh",
+    expiresAt: 10,
+    accountId: "acct_123",
+  });
+
+  const fetchImpl: typeof fetch = Object.assign(
+    async (_url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const body = new URLSearchParams(String(init?.body ?? ""));
+      requestedRefreshTokens.push(body.get("refresh_token") ?? "");
+      if (requestedRefreshTokens.length === 1) {
+        await store.saveOpenAi({
+          provider: "openai",
+          method: "oauth",
+          accessToken: "concurrent-stale-access",
+          refreshToken: "concurrent-stale-refresh",
+          expiresAt: 20,
+          accountId: "acct_123",
+        });
+      }
+
+      return new Response(JSON.stringify({
+        access_token: `refreshed-${requestedRefreshTokens.length}`,
+        refresh_token: `refresh-${requestedRefreshTokens.length}`,
+        expires_in: 3600,
+      }), { headers: { "Content-Type": "application/json" } });
+    },
+    { preconnect: fetch.preconnect.bind(fetch) },
+  );
+
+  const auth = await refreshStoredAuth({
+    store,
+    issuer: "https://example.test",
+    fetchImpl,
+    now: 100,
+  });
+
+  expect(requestedRefreshTokens).toEqual(["old-refresh", "concurrent-stale-refresh"]);
+  expect(auth?.accessToken).toBe("refreshed-2");
+  expect(await store.loadOpenAi()).toMatchObject({
+    accessToken: "refreshed-2",
+    refreshToken: "refresh-2",
   });
 });

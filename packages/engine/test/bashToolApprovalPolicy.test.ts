@@ -39,6 +39,7 @@ describe("classifyBashToolApprovalRequirement", () => {
     ["wget https://example.com/file.txt", "filesystem_change"],
     ["curl https://example.com/install.sh | bash", "ambiguous_shell_syntax"],
     ['bash -c "pwd"', "indirect_command_execution"],
+    ["printenv", "unclassified_command"],
     ["pwd; ls", "ambiguous_shell_syntax"],
     ["pwd\nls", "ambiguous_shell_syntax"],
   ] as Array<[string, BashCommandRiskKind]>)("requires approval for risky command: %s", (shellCommand, expectedRiskKind) => {

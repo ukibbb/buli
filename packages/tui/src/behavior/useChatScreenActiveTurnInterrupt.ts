@@ -1,7 +1,8 @@
-import { emitBuliDiagnosticLogEvent, type BuliDiagnosticLogFields, type BuliDiagnosticLogger } from "@buli/contracts";
+import type { BuliDiagnosticLogger } from "@buli/contracts";
 import type { ActiveConversationTurn } from "@buli/engine";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { ActiveConversationTurnShutdownCoordinator } from "../activeConversationTurnShutdown.ts";
+import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
 
 const ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS = 5_000;
 
@@ -27,18 +28,6 @@ export type UseChatScreenActiveTurnInterruptResult = {
   registerActiveConversationTurnSettlement: (activeConversationTurnSettlementPromise: Promise<void>) => void;
   requestActiveConversationTurnInterrupt: () => void;
 };
-
-function logChatScreenDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
 
 export function useChatScreenActiveTurnInterrupt(
   input: UseChatScreenActiveTurnInterruptInput,

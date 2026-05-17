@@ -31,6 +31,9 @@ export const pendingToolApproval: ChatSessionFixtureScenario = {
       role: "assistant",
       messageStatus: "streaming",
       partKinds: ["assistant_tool_call"],
+      parts: [
+        { partKind: "assistant_tool_call", toolCallStatus: "pending_approval" },
+      ],
     },
   ],
   expectedConversationTurnStatus: "waiting_for_tool_approval",

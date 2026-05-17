@@ -5,9 +5,12 @@ import { runCli } from "./main.ts";
 // importing CLI logic in tests does not accidentally print output or exit.
 export async function main(args: readonly string[]): Promise<void> {
   try {
-    const output = await runCli(args);
-    if (output) {
-      console.log(output);
+    const cliRunResult = await runCli(args);
+    if (cliRunResult.output) {
+      console.log(cliRunResult.output);
+    }
+    if (cliRunResult.status === "usage_error") {
+      process.exitCode = 1;
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

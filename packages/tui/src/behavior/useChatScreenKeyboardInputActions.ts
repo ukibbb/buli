@@ -1,7 +1,5 @@
 import {
-  emitBuliDiagnosticLogEvent,
   type AvailableAssistantModel,
-  type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
   type UserPromptImageAttachment,
 } from "@buli/contracts";
@@ -26,6 +24,13 @@ import { useKeyboard, usePaste } from "@opentui/react";
 import { startTransition, useEffect, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
 import { readNativeClipboardImageAttachment } from "../clipboard/readNativeClipboardImageAttachment.ts";
 import type { PromptTextareaEdit } from "../components/PromptTextarea.tsx";
+import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
+import {
+  canPromptTextareaEditChatScreenInput,
+  canPromptTextareaEditChatSessionState,
+  isPromptInteractionKeyboardInput,
+  shouldPromptTextareaHandleKeyboardInput,
+} from "./chatScreenPromptTextareaKeyboardOwnership.ts";
 import { normalizeOpenTuiPasteEventText } from "./normalizeOpenTuiPasteEventText.ts";
 import { normalizeOpenTuiKeyEventForChatSession } from "./openTuiKeyboardInputAdapter.ts";
 import type {
@@ -43,6 +48,7 @@ export type UseChatScreenKeyboardInputActionsInput = {
   readClipboardImageAttachment?: (() => Promise<UserPromptImageAttachment | undefined>) | undefined;
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
+  isConversationCompactionInFlightRef: MutableValueRef<boolean>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   requestActiveConversationTurnInterrupt: () => void;
   dismissActivePromptContextQuery: (dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined) => void;
@@ -63,72 +69,6 @@ export type UseChatScreenKeyboardInputActionsResult = {
   submitPromptDraftFromPromptTextarea: () => void;
   pasteClipboardImageAttachmentIntoPrompt: () => Promise<void>;
 };
-
-function canPromptTextareaEditChatSessionState(chatSessionState: ChatSessionState): boolean {
-  return chatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
-    !chatSessionState.isCommandHelpModalVisible &&
-    chatSessionState.modelAndReasoningSelectionState.step === "hidden" &&
-    chatSessionState.conversationSessionSelectionState.step === "hidden";
-}
-
-function shouldPromptTextareaHandleKeyboardInput(input: {
-  chatSessionState: ChatSessionState;
-  chatSessionKeyboardInput: ChatSessionKeyboardInput;
-}): boolean {
-  if (!canPromptTextareaEditChatSessionState(input.chatSessionState)) {
-    return false;
-  }
-
-  if (
-    input.chatSessionKeyboardInput.keyName === "tab" ||
-    input.chatSessionKeyboardInput.keyName === "pageup" ||
-    input.chatSessionKeyboardInput.keyName === "pagedown"
-  ) {
-    return false;
-  }
-
-  if (
-    input.chatSessionState.slashCommandSelectionState.step !== "hidden" ||
-    input.chatSessionState.promptContextSelectionState.step !== "hidden"
-  ) {
-    return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
-      input.chatSessionKeyboardInput.keyName !== "up" &&
-      input.chatSessionKeyboardInput.keyName !== "down" &&
-      input.chatSessionKeyboardInput.keyName !== "return" &&
-      input.chatSessionKeyboardInput.keyName !== "escape";
-  }
-
-  return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
-    input.chatSessionKeyboardInput.keyName !== "escape";
-}
-
-function isPromptTextareaEditingKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {
-  if (chatSessionKeyboardInput.textInput !== undefined) {
-    return true;
-  }
-
-  return chatSessionKeyboardInput.keyName === "backspace" ||
-    chatSessionKeyboardInput.keyName === "delete" ||
-    chatSessionKeyboardInput.keyName === "down" ||
-    chatSessionKeyboardInput.keyName === "end" ||
-    chatSessionKeyboardInput.keyName === "home" ||
-    chatSessionKeyboardInput.keyName === "left" ||
-    chatSessionKeyboardInput.keyName === "return" ||
-    chatSessionKeyboardInput.keyName === "right" ||
-    chatSessionKeyboardInput.keyName === "up";
-}
-
-function logChatScreenDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
 
 export function useChatScreenKeyboardInputActions(
   input: UseChatScreenKeyboardInputActionsInput,
@@ -313,6 +253,15 @@ export function useChatScreenKeyboardInputActions(
     }
 
     if (
+      input.isConversationCompactionInFlightRef.current &&
+      isPromptInteractionKeyboardInput(keyboardInput.chatSessionKeyboardInput)
+    ) {
+      keyboardInput.inputEvent?.preventDefault();
+      keyboardInput.inputEvent?.stopPropagation();
+      return;
+    }
+
+    if (
       keyboardInput.chatSessionKeyboardInput.keyName === "backspace" &&
       previousChatSessionState.promptDraft.length === 0 &&
       previousChatSessionState.pendingPromptImageAttachments.length > 0
@@ -338,7 +287,7 @@ export function useChatScreenKeyboardInputActions(
     const keyboardInteraction = applyChatSessionKeyboardInputToChatSessionState({
       chatSessionState: previousChatSessionState,
       chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
-      isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current,
+      isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || input.isConversationCompactionInFlightRef.current,
     });
 
     if (keyboardInteraction.shouldConsumeKeyboardInput) {
@@ -379,6 +328,10 @@ export function useChatScreenKeyboardInputActions(
   });
 
   const applyPromptTextareaEditToChatScreen = useEffectEvent((promptTextareaEdit: PromptTextareaEdit) => {
+    if (input.isConversationCompactionInFlightRef.current) {
+      return;
+    }
+
     const previousChatSessionState = input.latestChatSessionStateRef.current;
     const nextChatSessionState = replacePromptDraftFromEditor({
       chatSessionState: previousChatSessionState,
@@ -408,9 +361,13 @@ export function useChatScreenKeyboardInputActions(
 
   const pasteClipboardImageAttachmentIntoPrompt = useEffectEvent(async () => {
     const previousChatSessionState = input.latestChatSessionStateRef.current;
-    if (!canPromptTextareaEditChatSessionState(previousChatSessionState)) {
+    if (!canPromptTextareaEditChatScreenInput({
+      chatSessionState: previousChatSessionState,
+      isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
+    })) {
       logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
         conversationTurnStatus: previousChatSessionState.conversationTurnStatus,
+        reason: input.isConversationCompactionInFlightRef.current ? "conversation_compaction_in_flight" : "prompt_not_editable",
       });
       return;
     }
@@ -436,7 +393,10 @@ export function useChatScreenKeyboardInputActions(
   });
 
   const handlePasteOutsidePromptTextarea = useEffectEvent((pasteEvent: PasteEvent) => {
-    if (canPromptTextareaEditChatSessionState(input.latestChatSessionStateRef.current)) {
+    if (canPromptTextareaEditChatScreenInput({
+      chatSessionState: input.latestChatSessionStateRef.current,
+      isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
+    })) {
       return;
     }
 

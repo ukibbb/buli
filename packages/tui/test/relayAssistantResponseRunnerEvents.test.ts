@@ -235,3 +235,47 @@ test("relayAssistantResponseRunnerEvents fails an assistant turn that starts but
     },
   ]);
 });
+
+test("relayAssistantResponseRunnerEvents finishes and rejects when event delivery fails", async () => {
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      return {
+        async *streamAssistantResponseEvents() {
+          yield { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 };
+          yield {
+            type: "assistant_message_completed",
+            messageId: "assistant-1",
+            usage: { total: 1, input: 1, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          };
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const deliveredEventTypes: string[][] = [];
+  let deliveryAttemptCount = 0;
+  let finishedTurnCount = 0;
+
+  await expect(
+    relayAssistantResponseRunnerEvents({
+      assistantConversationRunner,
+      conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
+      onConversationTurnStarted: () => {},
+      onConversationTurnFinished: () => {
+        finishedTurnCount += 1;
+      },
+      onAssistantResponseEvents: (assistantResponseEvents) => {
+        deliveredEventTypes.push(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type));
+        deliveryAttemptCount += 1;
+        if (deliveryAttemptCount === 1) {
+          throw new Error("chat state update failed");
+        }
+      },
+    }),
+  ).rejects.toThrow("chat state update failed");
+
+  expect(finishedTurnCount).toBe(1);
+  expect(deliveredEventTypes).toEqual([["assistant_turn_started"]]);
+});

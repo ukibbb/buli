@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import type { AssistantConversationRunner, PromptContextCandidate } from "@buli/engine";
+import type { ActiveConversationTurn, AssistantConversationRunner, PromptContextCandidate } from "@buli/engine";
 import {
   renderChatScreenInTerminalWithRuntime,
+  type ChatScreenProps,
   type ReactRootForChatScreenRuntime,
   type RenderChatScreenInTerminalInput,
   type TerminalRendererCreateOptionsForChatScreen,
@@ -57,7 +58,9 @@ function createRuntimeTestInput(): RenderChatScreenInTerminalInput {
   };
 }
 
-function createRuntimeHarness() {
+function createRuntimeHarness(options?: {
+  onChatScreenPropsCreated?: (chatScreenProps: ChatScreenProps) => void;
+}) {
   const actions: string[] = [];
   const fakeTerminalRenderer = new FakeTerminalRenderer(actions);
   const createdRendererOptions: TerminalRendererCreateOptionsForChatScreen[] = [];
@@ -87,7 +90,8 @@ function createRuntimeHarness() {
           },
         };
       },
-      createChatScreenElement() {
+      createChatScreenElement(chatScreenProps: ChatScreenProps) {
+        options?.onChatScreenPropsCreated?.(chatScreenProps);
         return "chat-screen";
       },
     },
@@ -115,6 +119,38 @@ test("renderChatScreenInTerminalWithRuntime unmounts React before destroying Ope
   expect(runtimeHarness.fakeTerminalRenderer.destroyCount).toBe(1);
   expect(runtimeHarness.getUnmountCount()).toBe(1);
   expect(runtimeHarness.getRenderedChatScreenElementCount()).toBe(1);
+});
+
+test("renderChatScreenInTerminalWithRuntime interrupts active turns before unmounting during shutdown", async () => {
+  let resolveActiveTurnSettlement: () => void = () => {};
+  const activeTurnSettlementPromise = new Promise<void>((resolve) => {
+    resolveActiveTurnSettlement = resolve;
+  });
+  const runtimeHarness = createRuntimeHarness({
+    onChatScreenPropsCreated: (chatScreenProps) => {
+      const activeConversationTurn: ActiveConversationTurn = {
+        async *streamAssistantResponseEvents() {
+          return;
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {
+          runtimeHarness.actions.push("interrupt");
+        },
+      };
+      chatScreenProps.activeConversationTurnShutdownCoordinator?.registerActiveConversationTurn(activeConversationTurn);
+      chatScreenProps.activeConversationTurnShutdownCoordinator?.registerActiveConversationTurnSettlement(
+        activeTurnSettlementPromise,
+      );
+    },
+  });
+  const chatScreen = await renderChatScreenInTerminalWithRuntime(createRuntimeTestInput(), runtimeHarness.runtime);
+
+  chatScreen.destroy();
+  expect(runtimeHarness.actions).toEqual(["render", "interrupt", "unmount", "destroy"]);
+
+  resolveActiveTurnSettlement();
+  await chatScreen.waitUntilExit();
 });
 
 test("renderChatScreenInTerminalWithRuntime unmounts React when OpenTUI destroys itself", async () => {

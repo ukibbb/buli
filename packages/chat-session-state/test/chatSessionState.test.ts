@@ -611,6 +611,16 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
     type: "assistant_message_part_added",
     messageId: "assistant-1",
     part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Done.",
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
       id: "turn-summary-1",
       partKind: "assistant_turn_summary",
       turnDurationMs: 1200,
@@ -647,6 +657,12 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
       reasoningTokenCount: 2,
     },
     {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "completed",
+      rawMarkdownText: "Done.",
+    },
+    {
       id: "turn-summary-1",
       partKind: "assistant_turn_summary",
       turnDurationMs: 1200,
@@ -668,6 +684,17 @@ test("assistant_pending_tool_approval_requested stores dedicated approval state 
     type: "assistant_turn_started",
     messageId: "assistant-1",
     startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "reasoning-1",
+      partKind: "assistant_reasoning",
+      partStatus: "streaming",
+      reasoningSummaryText: "Thinking",
+      reasoningStartedAtMs: 1,
+    },
   });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
     type: "assistant_message_part_added",
@@ -708,6 +735,29 @@ test("assistant_pending_tool_approval_cleared clears matching approval state and
     startedAtMs: 1,
   });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "reasoning-1",
+      partKind: "assistant_reasoning",
+      partStatus: "streaming",
+      reasoningSummaryText: "Thinking",
+      reasoningStartedAtMs: 1,
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "tool-1",
+      partKind: "assistant_tool_call",
+      toolCallId: "call-1",
+      toolCallStatus: "running",
+      toolCallStartedAtMs: 1,
+      toolCallDetail: { toolName: "bash", commandLine: "sleep 10" },
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
     type: "assistant_pending_tool_approval_requested",
     approvalRequest: {
       approvalId: "approval-1",
@@ -733,6 +783,29 @@ test("assistant_message_failed clears pending approval, records a failed assista
     startedAtMs: 1,
   });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "reasoning-1",
+      partKind: "assistant_reasoning",
+      partStatus: "streaming",
+      reasoningSummaryText: "Thinking",
+      reasoningStartedAtMs: 1,
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "tool-1",
+      partKind: "assistant_tool_call",
+      toolCallId: "call-1",
+      toolCallStatus: "running",
+      toolCallStartedAtMs: 1,
+      toolCallDetail: { toolName: "bash", commandLine: "sleep 10" },
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
     type: "assistant_pending_tool_approval_requested",
     approvalRequest: {
       approvalId: "approval-1",
@@ -748,11 +821,16 @@ test("assistant_message_failed clears pending approval, records a failed assista
   });
 
   const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
+  const failedParts = listOrderedConversationMessageParts(chatSessionState, "assistant-1");
+  const failedReasoningPart = failedParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_reasoning");
+  const failedToolPart = failedParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call");
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
   expect(assistantConversationMessage?.messageStatus).toBe("failed");
+  expect(failedReasoningPart).toMatchObject({ partStatus: "interrupted" });
+  expect(failedToolPart).toMatchObject({ toolCallStatus: "failed", errorText: "provider failed" });
   expect(
-    listOrderedConversationMessageParts(chatSessionState, "assistant-1").some(
+    failedParts.some(
       (conversationMessagePart) =>
         conversationMessagePart.partKind === "assistant_error_notice" &&
         conversationMessagePart.errorText === "provider failed",
@@ -775,6 +853,17 @@ test("assistant_message_interrupted clears pending approval, marks open parts in
       partKind: "assistant_text",
       partStatus: "streaming",
       rawMarkdownText: "Partial",
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "reasoning-1",
+      partKind: "assistant_reasoning",
+      partStatus: "streaming",
+      reasoningSummaryText: "Thinking",
+      reasoningStartedAtMs: 1,
     },
   });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
@@ -808,11 +897,13 @@ test("assistant_message_interrupted clears pending approval, marks open parts in
   const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
   const interruptedParts = listOrderedConversationMessageParts(chatSessionState, "assistant-1");
   const interruptedTextPart = interruptedParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_text");
+  const interruptedReasoningPart = interruptedParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_reasoning");
   const interruptedToolPart = interruptedParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call");
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
   expect(assistantConversationMessage?.messageStatus).toBe("interrupted");
   expect(interruptedTextPart).toMatchObject({ partStatus: "interrupted" });
+  expect(interruptedReasoningPart).toMatchObject({ partStatus: "interrupted" });
   expect(interruptedToolPart).toMatchObject({ toolCallStatus: "interrupted", errorText: "Interrupted by user." });
   expect(interruptedParts.some(
     (conversationMessagePart) =>
@@ -885,6 +976,39 @@ test("assistant_message_incomplete clears pending approval and returns to user i
     startedAtMs: 1,
   });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Partial",
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "reasoning-1",
+      partKind: "assistant_reasoning",
+      partStatus: "streaming",
+      reasoningSummaryText: "Thinking",
+      reasoningStartedAtMs: 1,
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "tool-1",
+      partKind: "assistant_tool_call",
+      toolCallId: "call-1",
+      toolCallStatus: "running",
+      toolCallStartedAtMs: 1,
+      toolCallDetail: { toolName: "bash", commandLine: "sleep 10" },
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
     type: "assistant_pending_tool_approval_requested",
     approvalRequest: {
       approvalId: "approval-1",
@@ -901,7 +1025,17 @@ test("assistant_message_incomplete clears pending approval and returns to user i
   });
 
   const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
+  const incompleteParts = listOrderedConversationMessageParts(chatSessionState, "assistant-1");
+  const incompleteTextPart = incompleteParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_text");
+  const incompleteReasoningPart = incompleteParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_reasoning");
+  const incompleteToolPart = incompleteParts.find((conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call");
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(chatSessionState.pendingToolApprovalRequest).toBeUndefined();
   expect(assistantConversationMessage?.messageStatus).toBe("incomplete");
+  expect(incompleteTextPart).toMatchObject({ partStatus: "incomplete" });
+  expect(incompleteReasoningPart).toMatchObject({ partStatus: "interrupted" });
+  expect(incompleteToolPart).toMatchObject({
+    toolCallStatus: "interrupted",
+    errorText: "Assistant message became incomplete: max_output_tokens",
+  });
 });

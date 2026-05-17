@@ -11,6 +11,25 @@ test("buildChatScreenViewModel disables prompt input while a turn is streaming",
 
   const viewModel = buildChatScreenViewModel({
     chatSessionState,
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.isPromptInputDisabled).toBe(true);
+  expect(viewModel.promptInputHintOverride).toBeUndefined();
+});
+
+test("buildChatScreenViewModel disables prompt input while conversation compaction is running", () => {
+  const chatSessionState = insertTextIntoPromptDraftAtCursor(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "next prompt",
+  );
+
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState,
+    conversationSessionCompactionStatus: { step: "compacting", source: "auto" },
     terminalRowCount: 32,
     terminalColumnCount: 120,
     terminalSizeTierForChatScreen: "comfortable",
@@ -26,6 +45,7 @@ test("buildChatScreenViewModel derives plan-mode input copy", () => {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
       selectedAssistantOperatingMode: "plan",
     },
+    conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 32,
     terminalColumnCount: 120,
     terminalSizeTierForChatScreen: "comfortable",
@@ -39,6 +59,7 @@ test("buildChatScreenViewModel derives plan-mode input copy", () => {
 test("buildChatScreenViewModel derives understand-mode pink input copy", () => {
   const viewModel = buildChatScreenViewModel({
     chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 32,
     terminalColumnCount: 120,
     terminalSizeTierForChatScreen: "comfortable",
@@ -55,6 +76,7 @@ test("buildChatScreenViewModel derives context usage and minimum input branch", 
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
       latestTokenUsage: { input: 10, output: 20, reasoning: 30, total: undefined, cache: { read: 0, write: 0 } },
     },
+    conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 8,
     terminalColumnCount: 140,
     terminalSizeTierForChatScreen: minimumTerminalSizeTier,
@@ -69,6 +91,7 @@ test("buildChatScreenViewModel derives context usage and minimum input branch", 
 test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at comfortable tier", () => {
   const viewModel = buildChatScreenViewModel({
     chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 32,
     terminalColumnCount: 140,
     terminalSizeTierForChatScreen: "comfortable",

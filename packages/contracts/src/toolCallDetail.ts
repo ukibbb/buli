@@ -166,6 +166,14 @@ export const ToolCallTaskDetailSchema = z
   .strict();
 export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 
+export const ExplorerChildExploreToolCallDetailSchema = z
+  .object({
+    toolName: z.literal("explore"),
+    explorationDescription: z.string().min(1),
+    explorationPrompt: z.string().optional(),
+  })
+  .strict();
+
 export const ExplorerChildToolCallStatusSchema = z.enum(["running", "completed", "failed", "denied", "interrupted"]);
 export type ExplorerChildToolCallStatus = z.infer<typeof ExplorerChildToolCallStatusSchema>;
 
@@ -173,6 +181,10 @@ export const ExplorerChildToolCallDetailSchema = z.discriminatedUnion("toolName"
   ToolCallReadDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
+  ToolCallBashDetailSchema,
+  ToolCallEditDetailSchema,
+  ToolCallWriteDetailSchema,
+  ExplorerChildExploreToolCallDetailSchema,
 ]);
 export type ExplorerChildToolCallDetail = z.infer<typeof ExplorerChildToolCallDetailSchema>;
 

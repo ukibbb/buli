@@ -15,6 +15,14 @@ export type TaskToolCallCardProps = {
   errorText?: string;
 };
 
+const MAX_VISIBLE_TASK_SECTION_LINES = 24;
+const MAX_VISIBLE_TASK_SECTION_CHARACTERS = 4_000;
+
+type VisibleTaskSectionText = {
+  visibleText: string;
+  truncationSummaryText?: string;
+};
+
 export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
   const accentColor =
     props.renderState === "failed"
@@ -84,7 +92,7 @@ function buildTaskBodyContent(props: TaskToolCallCardProps): ReactNode {
       ) : null}
       {subagentPrompt ? (
         <box width="100%">
-          <text fg={chatScreenTheme.textSecondary}>{subagentPrompt}</text>
+          <TaskTextSection foregroundColor={chatScreenTheme.textSecondary} taskSectionText={subagentPrompt} />
         </box>
       ) : null}
       {subagentResultSummary ? (
@@ -94,11 +102,55 @@ function buildTaskBodyContent(props: TaskToolCallCardProps): ReactNode {
       ) : null}
       {subagentResultSummary ? (
         <box width="100%">
-          <text fg={chatScreenTheme.textPrimary}>{subagentResultSummary}</text>
+          <TaskTextSection foregroundColor={chatScreenTheme.textPrimary} taskSectionText={subagentResultSummary} />
         </box>
       ) : null}
     </box>
   );
+}
+
+function TaskTextSection(props: {
+  foregroundColor: string;
+  taskSectionText: string;
+}): ReactNode {
+  const visibleTaskSectionText = buildVisibleTaskSectionText(props.taskSectionText);
+  return (
+    <box flexDirection="column" width="100%">
+      <text fg={props.foregroundColor} wrapMode="word">{visibleTaskSectionText.visibleText}</text>
+      {visibleTaskSectionText.truncationSummaryText ? (
+        <box width="100%">
+          <text fg={chatScreenTheme.textMuted}>{visibleTaskSectionText.truncationSummaryText}</text>
+        </box>
+      ) : null}
+    </box>
+  );
+}
+
+function buildVisibleTaskSectionText(taskSectionText: string): VisibleTaskSectionText {
+  const taskSectionLines = taskSectionText.split("\n");
+  const lineLimitedTaskSectionText = taskSectionLines.slice(0, MAX_VISIBLE_TASK_SECTION_LINES).join("\n");
+  const isLineLimited = taskSectionLines.length > MAX_VISIBLE_TASK_SECTION_LINES;
+  const isCharacterLimited = lineLimitedTaskSectionText.length > MAX_VISIBLE_TASK_SECTION_CHARACTERS;
+  const visibleText = isCharacterLimited
+    ? lineLimitedTaskSectionText.slice(0, MAX_VISIBLE_TASK_SECTION_CHARACTERS)
+    : lineLimitedTaskSectionText;
+
+  if (isLineLimited) {
+    const visibleLineCount = visibleText.length === 0 ? 0 : visibleText.split("\n").length;
+    return {
+      visibleText,
+      truncationSummaryText: `... showing first ${visibleLineCount} of ${taskSectionLines.length} lines`,
+    };
+  }
+
+  if (isCharacterLimited) {
+    return {
+      visibleText,
+      truncationSummaryText: "... content truncated",
+    };
+  }
+
+  return { visibleText };
 }
 
 function formatDurationMs(durationMs: number): string {

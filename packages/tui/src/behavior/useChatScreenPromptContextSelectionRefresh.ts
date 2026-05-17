@@ -1,4 +1,4 @@
-import { emitBuliDiagnosticLogEvent, type BuliDiagnosticLogFields, type BuliDiagnosticLogger } from "@buli/contracts";
+import type { BuliDiagnosticLogger } from "@buli/contracts";
 import {
   decidePromptContextSelectionRefreshForCurrentDraft,
   hidePromptContextSelection,
@@ -11,6 +11,7 @@ import {
 } from "@buli/chat-session-state";
 import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import { useEffect, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
+import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
 
 const FUZZY_PROMPT_CONTEXT_QUERY_DEBOUNCE_MS = 120;
 
@@ -28,18 +29,6 @@ export type UseChatScreenPromptContextSelectionRefreshInput = {
 export type UseChatScreenPromptContextSelectionRefreshResult = {
   dismissActivePromptContextQuery: (dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined) => void;
 };
-
-function logChatScreenDiagnosticEvent(
-  diagnosticLogger: BuliDiagnosticLogger | undefined,
-  eventName: string,
-  fields?: BuliDiagnosticLogFields,
-): void {
-  emitBuliDiagnosticLogEvent(diagnosticLogger, {
-    subsystem: "tui",
-    eventName,
-    ...(fields ? { fields } : {}),
-  });
-}
 
 export function useChatScreenPromptContextSelectionRefresh(
   input: UseChatScreenPromptContextSelectionRefreshInput,

@@ -1,6 +1,10 @@
 import type {
   AssistantResponseEvent,
+  AssistantReasoningPartStatus,
+  AssistantTextPartStatus,
   AssistantToolCallConversationMessagePart,
+  AssistantToolCallPartStatus,
+  ConversationMessagePart,
   ConversationMessageStatus,
   ConversationTurnStatus,
   PendingToolApprovalRequest,
@@ -9,7 +13,14 @@ import type {
 export type ExpectedConversationMessageShape = {
   role: "user" | "assistant";
   messageStatus: ConversationMessageStatus;
-  partKinds: readonly string[];
+  partKinds: readonly ConversationMessagePart["partKind"][];
+  parts: readonly ExpectedConversationMessagePartShape[];
+};
+
+export type ExpectedConversationMessagePartShape = {
+  partKind: ConversationMessagePart["partKind"];
+  partStatus?: AssistantTextPartStatus | AssistantReasoningPartStatus | undefined;
+  toolCallStatus?: AssistantToolCallPartStatus | undefined;
 };
 
 export type ChatSessionFixtureScenario = {
