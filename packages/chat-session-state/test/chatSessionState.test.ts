@@ -404,6 +404,53 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant text se
   ]);
 });
 
+test("hydrateConversationTranscriptFromSessionEntries restores assistant learning sequence segments", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Explain the runtime flow",
+        modelFacingPromptText: "Explain the runtime flow",
+      },
+      {
+        entryKind: "assistant_learning_sequence_segment",
+        titleText: "Runtime flow",
+        summaryText: "The main stages in one turn.",
+        sequenceItems: [
+          { labelText: "Prompt accepted" },
+          { labelText: "Provider streams", detailText: "Chunks become assistant events." },
+        ],
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.\nPrompt accepted -> Provider streams\n\n- Provider streams: Chunks become assistant events.",
+      },
+    ],
+  );
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState).find(
+    (conversationMessage) => conversationMessage.role === "assistant",
+  );
+  if (!assistantConversationMessage) {
+    throw new Error("expected assistant message");
+  }
+
+  expect(listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id)).toEqual([
+    {
+      id: "persisted-entry-1-assistant-learning-sequence",
+      partKind: "assistant_learning_sequence",
+      titleText: "Runtime flow",
+      summaryText: "The main stages in one turn.",
+      sequenceItems: [
+        { labelText: "Prompt accepted" },
+        { labelText: "Provider streams", detailText: "Chunks become assistant events." },
+      ],
+    },
+  ]);
+});
+
 test("hydrateConversationTranscriptFromSessionEntries preserves Explorer child activity", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

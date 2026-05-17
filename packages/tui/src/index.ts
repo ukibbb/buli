@@ -40,9 +40,9 @@ function disableOpenTuiConsoleCaptureWhileFileLoggingIsActive(isConsoleFileLogge
 
   const previousOpenTuiUseConsoleEnvironment = {
     name: "OTUI_USE_CONSOLE",
-    value: process.env.OTUI_USE_CONSOLE,
+    value: process.env["OTUI_USE_CONSOLE"],
   } satisfies EnvironmentVariableSnapshot;
-  process.env.OTUI_USE_CONSOLE = "false";
+  process.env["OTUI_USE_CONSOLE"] = "false";
 
   return () => restoreEnvironmentVariable(previousOpenTuiUseConsoleEnvironment);
 }
@@ -116,7 +116,7 @@ export async function renderChatScreenInTerminalWithRuntime<
   runtime: RenderChatScreenInTerminalRuntime<TerminalRenderer>,
 ): Promise<TuiChatScreenInstance> {
   const originalConsole = globalThis.console;
-  const isConsoleFileLoggerActive = Boolean(process.env.BULI_CONSOLE_LOG_FILE?.trim());
+  const isConsoleFileLoggerActive = Boolean(process.env["BULI_CONSOLE_LOG_FILE"]?.trim());
   const consoleMode = isConsoleFileLoggerActive ? "disabled" : "console-overlay";
   const restoreOpenTuiConsoleCaptureEnvironment = disableOpenTuiConsoleCaptureWhileFileLoggingIsActive(
     isConsoleFileLoggerActive,
@@ -124,7 +124,7 @@ export async function renderChatScreenInTerminalWithRuntime<
   logTuiDiagnosticEvent(input.diagnosticLogger, "terminal_renderer_create_requested", {
     screenMode: "alternate-screen",
     consoleMode,
-    openTuiUseConsole: process.env.OTUI_USE_CONSOLE ?? null,
+    openTuiUseConsole: process.env["OTUI_USE_CONSOLE"] ?? null,
     useMouse: true,
     enableMouseMovement: true,
   });

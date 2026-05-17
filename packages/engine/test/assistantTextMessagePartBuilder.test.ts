@@ -41,3 +41,15 @@ test("assistant text builder emits a completed assistant text part on finalize",
     rawMarkdownText: "# Title\n\n- first\n- second",
   });
 });
+
+test("assistant text builder preserves exact text across many small deltas", () => {
+  let builderState = createInitialAssistantTextMessagePartBuilder("assistant-text-1");
+  const assistantTextDeltas = Array.from({ length: 2_000 }, (_, deltaIndex) => `${deltaIndex % 10}`);
+  for (const assistantTextDelta of assistantTextDeltas) {
+    builderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(builderState, assistantTextDelta);
+  }
+
+  expect(buildCompletedAssistantTextConversationMessagePart(builderState).rawMarkdownText).toBe(
+    assistantTextDeltas.join(""),
+  );
+});

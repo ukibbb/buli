@@ -10,6 +10,8 @@ import {
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
   FILE_MUTATION_TOOL_REQUEST_NAMES,
+  formatLearningSequenceAsMarkdownText,
+  LearningSequenceSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   ModelContextItemSchema,
   PendingToolApprovalRequestSchema,
@@ -111,6 +113,76 @@ test("ConversationMessagePartSchema parses an assistant text part with an open s
   ).toMatchObject({
     partKind: "assistant_text",
     partStatus: "streaming",
+  });
+});
+
+test("ConversationMessagePartSchema parses an assistant learning sequence part", () => {
+  expect(
+    ConversationMessagePartSchema.parse({
+      id: "assistant-learning-sequence-1",
+      partKind: "assistant_learning_sequence",
+      titleText: "Request flow",
+      summaryText: "How a turn moves through the runtime.",
+      sequenceItems: [
+        { labelText: "Prompt accepted", detailText: "The prompt is recorded." },
+        { labelText: "Provider streams" },
+      ],
+    }),
+  ).toEqual({
+    id: "assistant-learning-sequence-1",
+    partKind: "assistant_learning_sequence",
+    titleText: "Request flow",
+    summaryText: "How a turn moves through the runtime.",
+    sequenceItems: [
+      { labelText: "Prompt accepted", detailText: "The prompt is recorded." },
+      { labelText: "Provider streams" },
+    ],
+  });
+});
+
+test("LearningSequenceSchema formats model-readable fallback text", () => {
+  const learningSequence = LearningSequenceSchema.parse({
+    titleText: "Runtime flow",
+    sequenceItems: [
+      { labelText: "Translate event", detailText: "The stream event becomes a message part." },
+      { labelText: "Render part" },
+    ],
+  });
+
+  expect(formatLearningSequenceAsMarkdownText(learningSequence)).toBe([
+    "**Runtime flow**",
+    "Translate event -> Render part",
+    "",
+    "- Translate event: The stream event becomes a message part.",
+  ].join("\n"));
+});
+
+test("LearningSequenceSchema rejects whitespace-only text fields", () => {
+  expect(() =>
+    LearningSequenceSchema.parse({
+      titleText: "   ",
+      sequenceItems: [{ labelText: "Valid stage" }],
+    })
+  ).toThrow();
+  expect(() =>
+    LearningSequenceSchema.parse({
+      titleText: "Runtime flow",
+      sequenceItems: [{ labelText: "\t" }],
+    })
+  ).toThrow();
+});
+
+test("LearningSequenceSchema trims accepted text fields", () => {
+  expect(
+    LearningSequenceSchema.parse({
+      titleText: " Runtime flow ",
+      summaryText: " Summary ",
+      sequenceItems: [{ labelText: " Prompt accepted ", detailText: " Recorded " }],
+    }),
+  ).toEqual({
+    titleText: "Runtime flow",
+    summaryText: "Summary",
+    sequenceItems: [{ labelText: "Prompt accepted", detailText: "Recorded" }],
   });
 });
 
@@ -696,6 +768,26 @@ test("ConversationSessionEntrySchema parses assistant text segment history entri
   ).toEqual({
     entryKind: "assistant_text_segment",
     assistantTextSegmentText: "I will inspect the file first.",
+  });
+});
+
+test("ConversationSessionEntrySchema parses assistant learning sequence segment history entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "assistant_learning_sequence_segment",
+      titleText: "Request flow",
+      sequenceItems: [
+        { labelText: "Prompt accepted" },
+        { labelText: "Provider streams", detailText: "Streaming chunks update the transcript." },
+      ],
+    }),
+  ).toEqual({
+    entryKind: "assistant_learning_sequence_segment",
+    titleText: "Request flow",
+    sequenceItems: [
+      { labelText: "Prompt accepted" },
+      { labelText: "Provider streams", detailText: "Streaming chunks update the transcript." },
+    ],
   });
 });
 

@@ -3,6 +3,7 @@ import { PlanStepSchema } from "./planProposal.ts";
 import { TokenUsageSchema } from "./provider.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
+import { LearningSequenceSchema } from "./learningSequence.ts";
 
 export const AssistantTextPartStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed", "interrupted"]);
 export const AssistantReasoningPartStatusSchema = z.enum(["streaming", "completed", "interrupted"]);
@@ -121,6 +122,11 @@ export const AssistantPlanProposalConversationMessagePartSchema = z
   })
   .strict();
 
+export const AssistantLearningSequenceConversationMessagePartSchema = LearningSequenceSchema.extend({
+  id: z.string().min(1),
+  partKind: z.literal("assistant_learning_sequence"),
+}).strict();
+
 export const AssistantRateLimitNoticeConversationMessagePartSchema = z
   .object({
     id: z.string().min(1),
@@ -172,6 +178,7 @@ export const ConversationMessagePartSchema = z.union([
   AssistantReasoningConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
+  AssistantLearningSequenceConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantErrorNoticeConversationMessagePartSchema,
@@ -184,6 +191,7 @@ export const AssistantConversationMessagePartSchema = z.union([
   AssistantReasoningConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
+  AssistantLearningSequenceConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantErrorNoticeConversationMessagePartSchema,
@@ -200,6 +208,9 @@ export type AssistantReasoningConversationMessagePart = z.infer<typeof Assistant
 export type AssistantToolCallConversationMessagePart = z.infer<typeof AssistantToolCallConversationMessagePartSchema>;
 export type AssistantConversationMessagePart = z.infer<typeof AssistantConversationMessagePartSchema>;
 export type AssistantPlanProposalConversationMessagePart = z.infer<typeof AssistantPlanProposalConversationMessagePartSchema>;
+export type AssistantLearningSequenceConversationMessagePart = z.infer<
+  typeof AssistantLearningSequenceConversationMessagePartSchema
+>;
 export type AssistantRateLimitNoticeConversationMessagePart = z.infer<typeof AssistantRateLimitNoticeConversationMessagePartSchema>;
 export type AssistantIncompleteNoticeConversationMessagePart = z.infer<typeof AssistantIncompleteNoticeConversationMessagePartSchema>;
 export type AssistantErrorNoticeConversationMessagePart = z.infer<typeof AssistantErrorNoticeConversationMessagePartSchema>;

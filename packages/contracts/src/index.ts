@@ -17,6 +17,7 @@ export {
   AssistantErrorNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantInterruptedNoticeConversationMessagePartSchema,
+  AssistantLearningSequenceConversationMessagePartSchema,
   AssistantConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
@@ -35,6 +36,7 @@ export type {
   AssistantErrorNoticeConversationMessagePart,
   AssistantIncompleteNoticeConversationMessagePart,
   AssistantInterruptedNoticeConversationMessagePart,
+  AssistantLearningSequenceConversationMessagePart,
   AssistantConversationMessagePart,
   AssistantPlanProposalConversationMessagePart,
   AssistantRateLimitNoticeConversationMessagePart,
@@ -50,6 +52,12 @@ export type {
   UserTextConversationMessagePart,
 } from "./conversationMessagePart.ts";
 export {
+  formatLearningSequenceAsMarkdownText,
+  LearningSequenceItemSchema,
+  LearningSequenceSchema,
+} from "./learningSequence.ts";
+export type { LearningSequence, LearningSequenceItem } from "./learningSequence.ts";
+export {
   UserPromptImageAttachmentMimeTypeSchema,
   UserPromptImageAttachmentSchema,
 } from "./userPromptImageAttachment.ts";
@@ -60,6 +68,12 @@ export type {
 export { ConversationTurnStatusSchema } from "./conversationTurnStatus.ts";
 export type { ConversationTurnStatus } from "./conversationTurnStatus.ts";
 export { emitBuliDiagnosticLogEvent, noopBuliDiagnosticLogger } from "./diagnosticLog.ts";
+export {
+  DEFAULT_REDACTED_SENSITIVE_TEXT_MAX_LENGTH,
+  DEFAULT_SENSITIVE_TEXT_REDACTION,
+  redactSensitiveText,
+} from "./sensitiveTextRedaction.ts";
+export type { SensitiveTextRedactionOptions } from "./sensitiveTextRedaction.ts";
 export { summarizeTokenUsageForDiagnostics } from "./tokenUsageDiagnostics.ts";
 export type {
   BuliDiagnosticLogEvent,
@@ -75,6 +89,7 @@ export { CalloutSeveritySchema, ChecklistItemSchema } from "./presentationPrimit
 export type { CalloutSeverity, ChecklistItem } from "./presentationPrimitives.ts";
 export {
   AssistantMessageConversationSessionEntrySchema,
+  AssistantLearningSequenceSegmentConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntryStatusSchema,
   AssistantTextSegmentConversationSessionEntrySchema,
   CompletedAssistantMessageConversationSessionEntrySchema,
@@ -100,6 +115,8 @@ export {
 } from "./conversationSessionRecord.ts";
 export type {
   AssistantMessageConversationSessionEntry,
+  AssistantLearningSequenceSegmentConversationSessionEntry,
+  AssistantSegmentConversationSessionEntry,
   AssistantMessageConversationSessionEntryStatus,
   AssistantTextSegmentConversationSessionEntry,
   CompletedAssistantMessageConversationSessionEntry,

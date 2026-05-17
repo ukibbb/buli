@@ -366,7 +366,6 @@ test("AssistantConversationRuntime emits a message-part turn for streamed text",
   expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_turn_started",
     "assistant_message_part_added",
-    "assistant_message_part_updated",
     "assistant_message_part_added",
     "assistant_message_part_updated",
     "assistant_message_completed",
@@ -567,7 +566,7 @@ test("AssistantConversationRuntime blocks mutating bash tool calls in plan mode"
   const executedShellCommands: string[] = [];
   const workspaceShellCommandExecutor = {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand(input) {
       executedShellCommands.push(input.shellCommand);
       return {
@@ -673,6 +672,44 @@ test("AssistantConversationRuntime emits failure and releases the active turn wh
       assistantMessageText: "Recovered",
     },
   ]);
+});
+
+test("AssistantConversationRuntime redacts provider failure text before persisting and logging", async () => {
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const provider: ConversationTurnProvider = {
+    startConversationTurn() {
+      throw new Error(`provider echoed Bearer secret-token and refresh_token=abc123 ${"x".repeat(600)}`);
+    },
+  };
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Prompt with private context",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.at(-1)).toMatchObject({
+    type: "assistant_message_failed",
+    errorText: expect.stringContaining("Bearer [REDACTED]"),
+  });
+  const failedAssistantSessionEntry = runtime.conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry) => conversationSessionEntry.entryKind === "assistant_message",
+  );
+  expect(failedAssistantSessionEntry).toMatchObject({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "failed",
+    failureExplanation: expect.stringContaining("refresh_token=[REDACTED]"),
+  });
+  const diagnosticJson = JSON.stringify(diagnosticEvents);
+  expect(diagnosticJson).not.toContain("secret-token");
+  expect(diagnosticJson).not.toContain("abc123");
 });
 
 test("AssistantConversationRuntime emits failure when the provider stream ends without completion", async () => {
@@ -991,7 +1028,7 @@ test("AssistantConversationRuntime interrupts a running bash tool call", async (
   });
   const workspaceShellCommandExecutor = {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand(input) {
       receivedAbortSignal = input.abortSignal;
       resolveShellStarted?.();
@@ -1141,7 +1178,7 @@ test("AssistantConversationRuntime approves a pending bash tool call and continu
   const executedShellCommands: string[] = [];
   const workspaceShellCommandExecutor = {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand(input) {
       executedShellCommands.push(input.shellCommand);
       return {
@@ -1223,7 +1260,7 @@ test("AssistantConversationRuntime auto-runs bash tool calls in implementation m
   const executedShellCommands: string[] = [];
   const workspaceShellCommandExecutor = {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand(input) {
       executedShellCommands.push(input.shellCommand);
       return {
@@ -1986,7 +2023,7 @@ test("AssistantConversationRuntime submits failed bash tool results back to the 
   const provider = new RecordingConversationTurnProvider([providerTurn]);
   const workspaceShellCommandExecutor = {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand() {
       throw new Error("executor failed");
     },
@@ -2035,7 +2072,7 @@ test("AssistantConversationRuntime marks the turn failed when tool result submis
   const provider = new RecordingConversationTurnProvider([providerTurn]);
   const workspaceShellCommandExecutor = {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand() {
       return {
         exitCode: 0,

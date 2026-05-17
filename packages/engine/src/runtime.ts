@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ASSISTANT_OPERATING_MODE,
-  AssistantMessageFailedEventSchema,
-  AssistantMessageInterruptedEventSchema,
   AssistantTurnStartedEventSchema,
   type AssistantOperatingMode,
   type AssistantResponseEvent,
@@ -10,10 +8,10 @@ import {
   type ConversationSessionEntry,
   type ProviderAvailableToolName,
   type ProviderStreamEvent,
-  type ToolCallRequest,
+  type ProjectInstructionSnapshot,
+  redactSensitiveText,
 } from "@buli/contracts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
-import { buildBuliSystemPrompt } from "./systemPrompt.ts";
 import type {
   ActiveConversationTurn,
   AssistantConversationRunner,
@@ -23,7 +21,6 @@ import type {
   ConversationTurnRequest,
   ProviderConversationTurn,
 } from "./provider.ts";
-import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import {
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
   type BashToolApprovalMode,
@@ -35,25 +32,25 @@ import {
   summarizeProviderStreamEventForDiagnostics,
 } from "./runtimeDiagnostics.ts";
 import {
-  streamAssistantResponseEventsForRequestedToolCalls,
   type RuntimePendingToolApproval,
   type RuntimePendingToolApprovalInput,
-  type RuntimeToolApprovalDecision,
   type RuntimeToolCallExecutionContext,
 } from "./runtimeToolCallExecution.ts";
+import { RuntimePendingToolApprovalController } from "./runtimePendingToolApprovalController.ts";
+import {
+  RuntimeConversationTurnLifecycle,
+} from "./runtimeConversationTurnLifecycle.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
-import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
-import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
+import { ProjectInstructionTracker } from "./projectInstructions.ts";
+import { startAcceptedRuntimeConversationTurn } from "./runtimeConversationTurnStart.ts";
+import { streamAssistantResponseEventsFromProviderStream } from "./runtimeProviderStreamProcessor.ts";
+import {
+  finalizeFailedConversationTurn,
+  finalizeInterruptedConversationTurn,
+  finalizeProviderStreamEndedBeforeCompletion,
+} from "./runtimeConversationTurnTerminalFinalizer.ts";
 
-type PendingToolApprovalState = {
-  approvalId: string;
-  toolCallId: string;
-  toolCallRequest: ToolCallRequest;
-  resolveDecision: (decision: RuntimeToolApprovalDecision) => void;
-};
-
-const USER_INTERRUPTED_CONVERSATION_TURN_REASON = "Interrupted by user.";
 const CONVERSATION_COMPACTION_PROMPT_TEXT = [
   "Create a compact continuation summary for the next assistant turn.",
   "Preserve only information needed to continue the current session correctly.",
@@ -218,8 +215,10 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       return compactionResult;
     } catch (error) {
       const errorText = error instanceof Error ? error.message : String(error);
+      const sanitizedErrorText = sanitizeRuntimeFailureExplanation(errorText);
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.failed", {
-        errorText,
+        errorTextLength: sanitizedErrorText.length,
+        rawErrorTextLength: errorText.length,
       });
       throw error;
     } finally {
@@ -318,11 +317,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly canSpawnExplorer: boolean;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly onConversationTurnFinished: () => void;
-  readonly abortController: AbortController;
-  currentPendingToolApprovalState: PendingToolApprovalState | undefined;
-  hasStartedStreamingAssistantResponseEvents = false;
-  hasFinishedConversationTurn = false;
-  hasInterruptedConversationTurn = false;
+  readonly pendingToolApprovalController: RuntimePendingToolApprovalController;
+  readonly conversationTurnLifecycle: RuntimeConversationTurnLifecycle;
 
   constructor(input: {
     conversationTurnInput: ConversationTurnRequest;
@@ -356,61 +352,38 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.canSpawnExplorer = input.canSpawnExplorer;
     this.projectInstructionTracker = input.projectInstructionTracker;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
-    this.abortController = new AbortController();
+    this.pendingToolApprovalController = new RuntimePendingToolApprovalController({
+      diagnosticLogger: this.diagnosticLogger,
+    });
+    this.conversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
+      selectedModelId: this.conversationTurnInput.selectedModelId,
+      diagnosticLogger: this.diagnosticLogger,
+      onConversationTurnFinished: this.onConversationTurnFinished,
+      hasPendingToolApproval: () => this.pendingToolApprovalController.hasPendingToolApproval(),
+      resolvePendingToolApprovalAsInterrupted: () => {
+        this.pendingToolApprovalController.resolveCurrentPendingToolApprovalAsInterrupted();
+      },
+    });
   }
 
   hasFinishedTurn(): boolean {
-    return this.hasFinishedConversationTurn;
+    return this.conversationTurnLifecycle.hasFinishedTurn();
   }
 
   async approvePendingToolCall(approvalId: string): Promise<void> {
-    if (!this.currentPendingToolApprovalState || this.currentPendingToolApprovalState.approvalId !== approvalId) {
-      throw new Error(`No pending tool approval matches approvalId=${approvalId}`);
-    }
-
-    logEngineDiagnosticEvent(this.diagnosticLogger, "tool_approval.decision_received", {
-      approvalId,
-      toolCallId: this.currentPendingToolApprovalState.toolCallId,
-      decision: "approved",
-    });
-    this.currentPendingToolApprovalState.resolveDecision("approved");
-    this.currentPendingToolApprovalState = undefined;
+    await this.pendingToolApprovalController.approvePendingToolCall(approvalId);
   }
 
   async denyPendingToolCall(approvalId: string): Promise<void> {
-    if (!this.currentPendingToolApprovalState || this.currentPendingToolApprovalState.approvalId !== approvalId) {
-      throw new Error(`No pending tool approval matches approvalId=${approvalId}`);
-    }
-
-    logEngineDiagnosticEvent(this.diagnosticLogger, "tool_approval.decision_received", {
-      approvalId,
-      toolCallId: this.currentPendingToolApprovalState.toolCallId,
-      decision: "denied",
-    });
-    this.currentPendingToolApprovalState.resolveDecision("denied");
-    this.currentPendingToolApprovalState = undefined;
+    await this.pendingToolApprovalController.denyPendingToolCall(approvalId);
   }
 
   interrupt(): void {
-    if (this.hasFinishedConversationTurn || this.hasInterruptedConversationTurn) {
-      return;
-    }
-
-    this.hasInterruptedConversationTurn = true;
-    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.interrupt_requested", {
-      selectedModelId: this.conversationTurnInput.selectedModelId,
-      hasPendingToolApproval: this.currentPendingToolApprovalState !== undefined,
-    });
-    this.currentPendingToolApprovalState?.resolveDecision("interrupted");
-    this.currentPendingToolApprovalState = undefined;
-    this.abortController.abort();
+    this.conversationTurnLifecycle.interrupt();
   }
 
   async *streamAssistantResponseEvents(): AsyncGenerator<AssistantResponseEvent> {
-    if (this.hasStartedStreamingAssistantResponseEvents) {
-      throw new Error("Conversation turn events can only be streamed once");
-    }
-    this.hasStartedStreamingAssistantResponseEvents = true;
+    this.conversationTurnLifecycle.markAssistantResponseEventStreamStarted();
 
     const conversationTurnStartedAtMilliseconds = Date.now();
     const assistantResponseMessageId = randomUUID();
@@ -430,9 +403,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       conversationTurnStartedAtMilliseconds,
       selectedModelId: this.conversationTurnInput.selectedModelId,
     });
-    let providerConversationTurn: ProviderConversationTurn | undefined;
     let modelFacingPromptTextForAcceptedTurn: string | undefined;
-    let projectInstructionSnapshotsForAcceptedTurn = [] as ReturnType<typeof toProjectInstructionSnapshots>;
+    let projectInstructionSnapshotsForAcceptedTurn: readonly ProjectInstructionSnapshot[] = [];
     const logAssistantResponseEventEmitted = (assistantResponseEvent: AssistantResponseEvent): AssistantResponseEvent => {
       logEngineDiagnosticEvent(this.diagnosticLogger, "assistant_response_event.emitted", {
         eventType: assistantResponseEvent.type,
@@ -455,244 +427,98 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         startedAtMs: conversationTurnStartedAtMilliseconds,
       }));
 
-      this.throwIfConversationTurnInterrupted();
-      modelFacingPromptTextForAcceptedTurn = await buildModelFacingPromptTextFromPromptContextReferences({
-        promptText: this.conversationTurnInput.userPromptText,
-        promptContextBrowseRootPath: this.promptContextBrowseRootPath,
-        promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
-        abortSignal: this.abortController.signal,
-      });
-      this.throwIfConversationTurnInterrupted();
-      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.prompt_context_expanded", {
-        userPromptLength: this.conversationTurnInput.userPromptText.length,
-        modelFacingPromptLength: modelFacingPromptTextForAcceptedTurn.length,
-        promptContextBrowseRootPath: this.promptContextBrowseRootPath,
-        promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
-      });
-      projectInstructionSnapshotsForAcceptedTurn = toProjectInstructionSnapshots(
-        await this.projectInstructionTracker.loadProjectInstructionsForDirectory({
-          targetDirectoryPath: this.workspaceRootPath,
-          abortSignal: this.abortController.signal,
-        }),
-      );
-      this.throwIfConversationTurnInterrupted();
-      conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(
-        modelFacingPromptTextForAcceptedTurn,
-        projectInstructionSnapshotsForAcceptedTurn,
-      );
-
-      logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.start_requested", {
-        selectedModelId: this.conversationTurnInput.selectedModelId,
-        selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort ?? null,
-        conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-        modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      const startedRuntimeConversationTurn = await startAcceptedRuntimeConversationTurn({
+        conversationTurnInput: this.conversationTurnInput,
         assistantOperatingMode: this.assistantOperatingMode,
-      });
-      providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
-        systemPromptText: buildBuliSystemPrompt({
-          workspaceRootPath: this.workspaceRootPath,
-          assistantOperatingMode: this.assistantOperatingMode,
-          projectInstructionSnapshots: projectInstructionSnapshotsForAcceptedTurn,
-        }),
-        conversationSessionEntries: this.conversationHistory.listConversationSessionEntries(),
-        selectedModelId: this.conversationTurnInput.selectedModelId,
-        ...(this.conversationTurnInput.selectedReasoningEffort
-          ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
-          : {}),
+        conversationTurnProvider: this.conversationTurnProvider,
+        conversationHistory: this.conversationHistory,
+        workspaceRootPath: this.workspaceRootPath,
+        promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+        promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
+        projectInstructionTracker: this.projectInstructionTracker,
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
-        ...resolveAvailableToolNamesForAssistantOperatingMode({
-          assistantOperatingMode: this.assistantOperatingMode,
-          requestedAvailableToolNames: this.availableToolNames,
+        ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
+        abortSignal: this.conversationTurnLifecycle.abortSignal,
+        conversationTurnSessionRecorder,
+        throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
+        diagnosticLogger: this.diagnosticLogger,
+      });
+      modelFacingPromptTextForAcceptedTurn = startedRuntimeConversationTurn.modelFacingPromptTextForAcceptedTurn;
+      projectInstructionSnapshotsForAcceptedTurn = startedRuntimeConversationTurn.projectInstructionSnapshotsForAcceptedTurn;
+
+      const providerStreamProcessingOutcome = yield* streamAssistantResponseEventsFromProviderStream({
+        providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
+        providerStreamEventTranslator,
+        conversationTurnSessionRecorder,
+        createRequestedToolCallsExecutionContext: () => this.createRequestedToolCallsExecutionContext({
+          assistantResponseMessageId,
+          providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
         }),
-        abortSignal: this.abortController.signal,
+        throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
+        logAssistantResponseEventEmitted,
+        diagnosticLogger: this.diagnosticLogger,
       });
-      logEngineDiagnosticEvent(this.diagnosticLogger, "provider_turn.started", {
-        selectedModelId: this.conversationTurnInput.selectedModelId,
-      });
-
-      for await (const providerStreamEvent of providerConversationTurn.streamProviderEvents()) {
-        this.throwIfConversationTurnInterrupted();
-        logEngineDiagnosticEvent(this.diagnosticLogger, "provider_stream.event_received", {
-          eventType: providerStreamEvent.type,
-          ...summarizeProviderStreamEventForDiagnostics(providerStreamEvent),
-        });
-
-        const providerStreamEventTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
-          providerStreamEvent,
-          providerTurnReplay: providerStreamEvent.type === "completed" || providerStreamEvent.type === "incomplete"
-            ? providerConversationTurn.getProviderTurnReplay()
-            : undefined,
-        });
-
-        if (providerStreamEventTranslation.translationKind === "assistant_response_events") {
-          for (const assistantResponseEvent of providerStreamEventTranslation.assistantResponseEvents) {
-            yield logAssistantResponseEventEmitted(assistantResponseEvent);
-          }
-          continue;
-        }
-
-        if (
-          providerStreamEventTranslation.translationKind === "tool_call_requested" ||
-          providerStreamEventTranslation.translationKind === "tool_calls_requested"
-        ) {
-          for (const assistantResponseEvent of providerStreamEventTranslation.assistantResponseEventsBeforeToolCall ?? []) {
-            yield logAssistantResponseEventEmitted(assistantResponseEvent);
-          }
-          if (providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeToolCall) {
-            conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
-              providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeToolCall,
-            );
-          }
-          yield* streamAssistantResponseEventsForRequestedToolCalls({
-            ...this.createRequestedToolCallsExecutionContext({ assistantResponseMessageId, providerConversationTurn }),
-            requestedToolCalls: providerStreamEventTranslation.translationKind === "tool_call_requested"
-              ? [{
-                  toolCallId: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallId,
-                  toolCallRequest: providerStreamEventTranslation.providerToolCallRequestedEvent.toolCallRequest,
-                }]
-              : providerStreamEventTranslation.providerToolCallsRequestedEvent.requestedToolCalls,
-          });
-          continue;
-        }
-
-        for (const assistantResponseEvent of providerStreamEventTranslation.assistantResponseEventsBeforeTerminalSessionEntry) {
-          yield logAssistantResponseEventEmitted(assistantResponseEvent);
-        }
-        if (providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeTerminalSessionEntry) {
-          conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
-            providerStreamEventTranslation.assistantTextSegmentSessionEntryBeforeTerminalSessionEntry,
-          );
-        }
-        conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry(
-          providerStreamEventTranslation.terminalAssistantMessageSessionEntry,
-        );
-        yield logAssistantResponseEventEmitted(providerStreamEventTranslation.terminalAssistantResponseEvent);
+      if (providerStreamProcessingOutcome.outcomeKind === "terminal_assistant_response") {
         return;
       }
 
-      const failureExplanation = "Provider stream ended before completion";
-      if (
-        conversationTurnSessionRecorder.hasAppendedAcceptedUserPromptSessionEntry() &&
-        !conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()
-      ) {
-        const assistantTextSegmentFlush = providerStreamEventTranslator.flushCurrentAssistantTextSegmentBeforeFailedTerminal();
-        for (const assistantResponseEvent of assistantTextSegmentFlush?.assistantResponseEvents ?? []) {
-          yield logAssistantResponseEventEmitted(assistantResponseEvent);
-        }
-        if (assistantTextSegmentFlush?.assistantTextSegmentSessionEntry) {
-          conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
-            assistantTextSegmentFlush.assistantTextSegmentSessionEntry,
-          );
-        }
-        conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
-          entryKind: "assistant_message",
-          assistantMessageStatus: "failed",
-          assistantMessageText: providerStreamEventTranslator.assistantMessageText,
-          failureExplanation,
-        });
+      for (const assistantResponseEvent of finalizeProviderStreamEndedBeforeCompletion({
+        assistantResponseMessageId,
+        conversationTurnSessionRecorder,
+        providerStreamEventTranslator,
+      })) {
+        yield logAssistantResponseEventEmitted(assistantResponseEvent);
       }
-      yield logAssistantResponseEventEmitted(AssistantMessageFailedEventSchema.parse({
-        type: "assistant_message_failed",
-        messageId: assistantResponseMessageId,
-        errorText: failureExplanation,
-      }));
     } catch (error) {
-      if (this.hasInterruptedConversationTurn || this.abortController.signal.aborted) {
+      if (this.conversationTurnLifecycle.hasInterruptedTurn() || this.conversationTurnLifecycle.abortSignal.aborted) {
         logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.interrupted", {
           selectedModelId: this.conversationTurnInput.selectedModelId,
           assistantMessageTextLength: providerStreamEventTranslator.assistantMessageText.length,
         });
-        if (!conversationTurnSessionRecorder.hasAppendedAcceptedUserPromptSessionEntry()) {
-          conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(
-            modelFacingPromptTextForAcceptedTurn ?? this.conversationTurnInput.userPromptText,
+        for (const assistantResponseEvent of finalizeInterruptedConversationTurn({
+          assistantResponseMessageId,
+          conversationTurnSessionRecorder,
+          providerStreamEventTranslator,
+          acceptedPromptFallback: {
+            userPromptText: this.conversationTurnInput.userPromptText,
+            modelFacingPromptTextForAcceptedTurn,
             projectInstructionSnapshotsForAcceptedTurn,
-          );
+          },
+        })) {
+          yield logAssistantResponseEventEmitted(assistantResponseEvent);
         }
-        if (!conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()) {
-          const assistantTextSegmentFlush = providerStreamEventTranslator.flushCurrentAssistantTextSegmentBeforeInterruptedTerminal();
-          for (const assistantResponseEvent of assistantTextSegmentFlush?.assistantResponseEvents ?? []) {
-            yield logAssistantResponseEventEmitted(assistantResponseEvent);
-          }
-          if (assistantTextSegmentFlush?.assistantTextSegmentSessionEntry) {
-            conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
-              assistantTextSegmentFlush.assistantTextSegmentSessionEntry,
-            );
-          }
-          conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
-            entryKind: "assistant_message",
-            assistantMessageStatus: "interrupted",
-            assistantMessageText: providerStreamEventTranslator.assistantMessageText,
-            interruptionReason: USER_INTERRUPTED_CONVERSATION_TURN_REASON,
-          });
-        }
-        yield logAssistantResponseEventEmitted(AssistantMessageInterruptedEventSchema.parse({
-          type: "assistant_message_interrupted",
-          messageId: assistantResponseMessageId,
-          interruptionReason: USER_INTERRUPTED_CONVERSATION_TURN_REASON,
-        }));
         return;
       }
 
-      const errorText = error instanceof Error ? error.message : String(error);
-      const failureExplanation = errorText.length > 0 ? errorText : "Unknown conversation turn failure";
+      const rawErrorText = error instanceof Error ? error.message : String(error);
+      const failureExplanation = sanitizeRuntimeFailureExplanation(
+        rawErrorText.length > 0 ? rawErrorText : "Unknown conversation turn failure",
+      );
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.failed", {
-        errorText: failureExplanation,
+        failureExplanationLength: failureExplanation.length,
+        rawErrorTextLength: rawErrorText.length,
       });
-      if (!conversationTurnSessionRecorder.hasAppendedAcceptedUserPromptSessionEntry()) {
-        conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(
-          modelFacingPromptTextForAcceptedTurn ?? this.conversationTurnInput.userPromptText,
+      for (const assistantResponseEvent of finalizeFailedConversationTurn({
+        assistantResponseMessageId,
+        conversationTurnSessionRecorder,
+        providerStreamEventTranslator,
+        acceptedPromptFallback: {
+          userPromptText: this.conversationTurnInput.userPromptText,
+          modelFacingPromptTextForAcceptedTurn,
           projectInstructionSnapshotsForAcceptedTurn,
-        );
+        },
+        failureExplanation,
+      })) {
+        yield logAssistantResponseEventEmitted(assistantResponseEvent);
       }
-      if (!conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry()) {
-        const assistantTextSegmentFlush = providerStreamEventTranslator.flushCurrentAssistantTextSegmentBeforeFailedTerminal();
-        for (const assistantResponseEvent of assistantTextSegmentFlush?.assistantResponseEvents ?? []) {
-          yield logAssistantResponseEventEmitted(assistantResponseEvent);
-        }
-        if (assistantTextSegmentFlush?.assistantTextSegmentSessionEntry) {
-          conversationTurnSessionRecorder.appendAssistantTextSegmentSessionEntry(
-            assistantTextSegmentFlush.assistantTextSegmentSessionEntry,
-          );
-        }
-        conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
-          entryKind: "assistant_message",
-          assistantMessageStatus: "failed",
-          assistantMessageText: providerStreamEventTranslator.assistantMessageText,
-          failureExplanation,
-        });
-      }
-      yield logAssistantResponseEventEmitted(AssistantMessageFailedEventSchema.parse({
-        type: "assistant_message_failed",
-        messageId: assistantResponseMessageId,
-        errorText: failureExplanation,
-      }));
     } finally {
-      this.hasFinishedConversationTurn = true;
-      this.currentPendingToolApprovalState = undefined;
-      this.onConversationTurnFinished();
-      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.finished", {
-        selectedModelId: this.conversationTurnInput.selectedModelId,
-        turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
-      });
+      this.pendingToolApprovalController.clearPendingToolApproval();
+      this.conversationTurnLifecycle.finish({ conversationTurnStartedAtMilliseconds });
     }
   }
 
   private createPendingToolApproval(input: RuntimePendingToolApprovalInput): RuntimePendingToolApproval {
-    const approvalId = randomUUID();
-    logEngineDiagnosticEvent(this.diagnosticLogger, "tool_approval.request_created", {
-      approvalId,
-      toolCallId: input.toolCallId,
-      toolName: input.toolCallRequest.toolName,
-    });
-    const approvalDecisionPromise = new Promise<RuntimeToolApprovalDecision>((resolveDecision) => {
-      this.currentPendingToolApprovalState = {
-        approvalId,
-        toolCallId: input.toolCallId,
-        toolCallRequest: input.toolCallRequest,
-        resolveDecision,
-      };
-    });
-    return { approvalId, approvalDecisionPromise };
+    return this.pendingToolApprovalController.createPendingToolApproval(input);
   }
 
   private createRequestedToolCallsExecutionContext(input: {
@@ -715,7 +541,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
       conversationHistory: this.conversationHistory,
-      abortSignal: this.abortController.signal,
+      abortSignal: this.conversationTurnLifecycle.abortSignal,
       canSpawnExplorer: this.canSpawnExplorer,
       createPendingToolApproval: (pendingToolApprovalInput) => this.createPendingToolApproval(pendingToolApprovalInput),
       throwIfConversationTurnInterrupted: () => {
@@ -726,8 +552,10 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   }
 
   private throwIfConversationTurnInterrupted(): void {
-    if (this.hasInterruptedConversationTurn || this.abortController.signal.aborted) {
-      throw new Error(USER_INTERRUPTED_CONVERSATION_TURN_REASON);
-    }
+    this.conversationTurnLifecycle.throwIfInterrupted();
   }
+}
+
+function sanitizeRuntimeFailureExplanation(failureExplanation: string): string {
+  return redactSensitiveText(failureExplanation);
 }

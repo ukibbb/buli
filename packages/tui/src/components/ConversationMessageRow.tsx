@@ -8,6 +8,7 @@ import { TurnFooter } from "./TurnFooter.tsx";
 import { ThinkingStatusLine } from "./ThinkingStatusLine.tsx";
 import { UserImageAttachmentBlock } from "./UserImageAttachmentBlock.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
+import { AssistantLearningSequencePartView } from "./messageParts/AssistantLearningSequencePartView.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
@@ -16,6 +17,7 @@ function ConversationMessagePartView(props: {
   conversationMessagePart: ConversationMessagePart;
   isReasoningSummaryVisible: boolean;
   horizontalRuleColor: string;
+  terminalColumnCount?: number | undefined;
 }): ReactNode {
   const { conversationMessagePart } = props;
   if (conversationMessagePart.partKind === "user_text") {
@@ -29,6 +31,7 @@ function ConversationMessagePartView(props: {
       <AssistantTextPartView
         assistantTextConversationMessagePart={conversationMessagePart}
         horizontalRuleColor={props.horizontalRuleColor}
+        terminalColumnCount={props.terminalColumnCount}
       />
     );
   }
@@ -45,6 +48,9 @@ function ConversationMessagePartView(props: {
   }
   if (conversationMessagePart.partKind === "assistant_plan_proposal") {
     return <PlanProposalBlock planTitle={conversationMessagePart.planTitle} planSteps={conversationMessagePart.planSteps} />;
+  }
+  if (conversationMessagePart.partKind === "assistant_learning_sequence") {
+    return <AssistantLearningSequencePartView assistantLearningSequenceConversationMessagePart={conversationMessagePart} />;
   }
   if (conversationMessagePart.partKind === "assistant_rate_limit_notice") {
     return (
@@ -73,12 +79,15 @@ function ConversationMessagePartView(props: {
   );
 }
 
-export function ConversationMessageRow(props: {
+export type ConversationMessageRowProps = {
   conversationMessage: ConversationMessage;
   conversationMessageParts: readonly ConversationMessagePart[];
   isReasoningSummaryVisible: boolean;
   horizontalRuleColor: string;
-}): ReactNode {
+  terminalColumnCount?: number | undefined;
+};
+
+export function ConversationMessageRow(props: ConversationMessageRowProps): ReactNode {
   const shouldShowEmptyAssistantThinkingLine =
     props.conversationMessage.role === "assistant" &&
     props.conversationMessage.messageStatus === "streaming" &&
@@ -100,6 +109,7 @@ export function ConversationMessageRow(props: {
             conversationMessagePart={conversationMessagePart}
             isReasoningSummaryVisible={props.isReasoningSummaryVisible}
             horizontalRuleColor={props.horizontalRuleColor}
+            terminalColumnCount={props.terminalColumnCount}
           />
         </box>
       ))}

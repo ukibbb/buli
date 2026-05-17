@@ -27,7 +27,6 @@ import type { PromptTextareaEdit } from "../components/PromptTextarea.tsx";
 import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
 import {
   canPromptTextareaEditChatScreenInput,
-  canPromptTextareaEditChatSessionState,
   isPromptInteractionKeyboardInput,
   shouldPromptTextareaHandleKeyboardInput,
 } from "./chatScreenPromptTextareaKeyboardOwnership.ts";

@@ -176,4 +176,37 @@ describe("ConversationMessageList", () => {
     await renderOnce();
     expect(conversationMessageScrollBoxRef.current?.scrollTop).toBeGreaterThan(0);
   });
+
+  test("keeps_the_latest_message_visible_for_long_transcripts", async () => {
+    const conversationMessages: ConversationMessage[] = Array.from({ length: 220 }, (_, messageIndex) => ({
+      id: `message-${messageIndex}`,
+      role: "assistant" as const,
+      messageStatus: "completed" as const,
+      createdAtMs: messageIndex,
+      partIds: [`part-${messageIndex}`],
+    }));
+    const latestMessageIndex = conversationMessages.length - 1;
+
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        conversationMessages={conversationMessages}
+        isReasoningSummaryVisible={true}
+        resolveConversationMessageParts={(messageId) => [{
+          id: `part-${messageId}`,
+          partKind: "assistant_text",
+          partStatus: "completed",
+          rawMarkdownText: `Transcript message ${messageId}`,
+        }]}
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+      />,
+      { width: 40, height: 10 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain(`Transcript message message-${latestMessageIndex}`);
+    expect(frame).not.toContain("Transcript message message-0");
+  });
 });

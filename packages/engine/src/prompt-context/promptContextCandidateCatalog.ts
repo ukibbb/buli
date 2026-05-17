@@ -5,9 +5,7 @@ import {
   determinePromptContextQueryLoadStrategy,
   filterAndSortPromptContextEntries,
   listFuzzyPromptContextEntries,
-  listCurrentDirectoryPromptContextEntries,
   listPromptContextCandidates,
-  type PromptContextQueryLoadStrategy,
 } from "./listPromptContextCandidates.ts";
 import type { PromptContextCandidate } from "./types.ts";
 import {

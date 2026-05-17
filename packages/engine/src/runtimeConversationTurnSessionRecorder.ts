@@ -1,7 +1,7 @@
 import type {
   AssistantOperatingMode,
   AssistantMessageConversationSessionEntry,
-  AssistantTextSegmentConversationSessionEntry,
+  AssistantSegmentConversationSessionEntry,
   BuliDiagnosticLogger,
   ProjectInstructionSnapshot,
   UserPromptImageAttachment,
@@ -85,13 +85,24 @@ export class RuntimeConversationTurnSessionRecorder {
     });
   }
 
-  appendAssistantTextSegmentSessionEntry(
-    assistantTextSegmentConversationSessionEntry: AssistantTextSegmentConversationSessionEntry,
+  appendAssistantSegmentSessionEntry(
+    assistantSegmentConversationSessionEntry: AssistantSegmentConversationSessionEntry,
   ): void {
-    this.conversationHistory.appendConversationSessionEntry(assistantTextSegmentConversationSessionEntry);
+    this.conversationHistory.appendConversationSessionEntry(assistantSegmentConversationSessionEntry);
+
+    if (assistantSegmentConversationSessionEntry.entryKind === "assistant_text_segment") {
+      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentTextLength: assistantSegmentConversationSessionEntry.assistantTextSegmentText.length,
+        conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
+        modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      });
+      return;
+    }
+
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
-      entryKind: "assistant_text_segment",
-      assistantTextSegmentTextLength: assistantTextSegmentConversationSessionEntry.assistantTextSegmentText.length,
+      entryKind: "assistant_learning_sequence_segment",
+      learningSequenceItemCount: assistantSegmentConversationSessionEntry.sequenceItems.length,
       conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });

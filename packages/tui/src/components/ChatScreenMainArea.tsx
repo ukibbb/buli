@@ -11,6 +11,7 @@ export type ChatScreenMainAreaProps = {
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   availableCommandHelpModalRowCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
+  terminalColumnCount: number;
   availableChatSlashCommands: readonly ChatSlashCommand[];
   orderedConversationMessages: readonly ConversationMessage[];
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
@@ -39,6 +40,7 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
       resolveConversationMessageParts={props.resolveConversationMessageParts}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       horizontalRuleColor={props.inputPanelAccentColor}
+      terminalColumnCount={props.terminalColumnCount}
     />
   );
 }

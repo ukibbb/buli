@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   closeSync,
   chmodSync,
-  existsSync,
   fstatSync,
   fsyncSync,
   mkdirSync,

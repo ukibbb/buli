@@ -268,4 +268,31 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain(" 9. ninth");
     expect(frame).toContain("10. tenth");
   });
+
+  test("keeps_decorated_blocks_readable_in_narrow_terminals", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "# Narrow",
+          "",
+          "---",
+          "",
+          "```ts title=src/narrow.ts",
+          "const narrow = true;",
+          "```",
+        ].join("\n")}
+      />,
+      { width: 32, height: 16 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Narrow");
+    expect(frame).toContain("╭─ ts");
+    expect(frame).toContain("const narrow");
+    expect(frame).not.toContain("---");
+  });
 });

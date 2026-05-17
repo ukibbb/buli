@@ -32,7 +32,7 @@ export class WorkspaceShellCommandExecutor {
 
   constructor(input: { workspaceRootPath: string; shellExecutablePath?: string; environment?: NodeJS.ProcessEnv }) {
     this.workspaceRootPath = resolve(input.workspaceRootPath);
-    this.shellExecutablePath = input.shellExecutablePath ?? process.env.SHELL ?? "/bin/zsh";
+    this.shellExecutablePath = input.shellExecutablePath ?? process.env["SHELL"] ?? "/bin/zsh";
     shellCommandEnvironmentByExecutor.set(this, createScrubbedShellCommandEnvironment(input.environment ?? process.env));
   }
 

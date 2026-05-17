@@ -630,9 +630,9 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
   expect(exploreToolDefinition?.description).toContain("read-only Explorer subagent");
   expect(exploreToolDefinition?.description).toContain("identify inspected files and remaining context gaps");
-  expect(bashToolDefinition?.parameters.properties.timeout?.minimum).toBe(1);
-  expect(readToolDefinition?.parameters.properties.offset?.minimum).toBe(1);
-  expect(readToolDefinition?.parameters.properties.limit?.minimum).toBe(1);
+  expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
+  expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);
+  expect(readToolDefinition?.parameters.properties["limit"]?.minimum).toBe(1);
 });
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
@@ -979,6 +979,58 @@ test("parseOpenAiStream rejects response.failed with the OpenAI failure message"
   await expect(collectParsedEvents(response)).rejects.toThrow(
     "OpenAI response failed: The model failed while generating the response. | code=server_error",
   );
+});
+
+test("parseOpenAiStream redacts and caps response.failed messages", async () => {
+  const response = new Response(
+    createSseDataFrame({
+      type: "response.failed",
+      response: {
+        error: {
+          code: "server_error",
+          message: `proxy echoed Bearer secret-token and access_token=abc123 ${"x".repeat(600)}`,
+        },
+      },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  let thrownError: unknown;
+  try {
+    await collectParsedEvents(response);
+  } catch (error) {
+    thrownError = error;
+  }
+
+  expect(thrownError).toBeInstanceOf(Error);
+  const errorMessage = thrownError instanceof Error ? thrownError.message : String(thrownError);
+  expect(errorMessage).toMatch(
+    /OpenAI response failed: proxy echoed Bearer \[REDACTED\] and access_token=\[REDACTED\].*chars omitted.*code=server_error/,
+  );
+  expect(errorMessage).not.toContain("secret-token");
+  expect(errorMessage).not.toContain("abc123");
+});
+
+test("parseOpenAiStream redacts generic error events", async () => {
+  const response = new Response(
+    createSseDataFrame({
+      type: "error",
+      message: "proxy echoed refresh_token=refresh123",
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  let thrownError: unknown;
+  try {
+    await collectParsedEvents(response);
+  } catch (error) {
+    thrownError = error;
+  }
+
+  expect(thrownError).toBeInstanceOf(Error);
+  const errorMessage = thrownError instanceof Error ? thrownError.message : String(thrownError);
+  expect(errorMessage).toBe("proxy echoed refresh_token=[REDACTED]");
+  expect(errorMessage).not.toContain("refresh123");
 });
 
 test("parseOpenAiStream preserves streamed function_call argument deltas when terminal output omits the function_call", async () => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import {
   CodeRenderable,
   RGBA,
@@ -17,6 +17,7 @@ export type AssistantMarkdownBlockProps = {
   markdownText: string;
   isStreaming: boolean;
   horizontalRuleColor: string;
+  terminalColumnCount?: number | undefined;
 };
 
 const assistantMarkdownSyntaxStyle = SyntaxStyle.fromStyles({
@@ -154,7 +155,9 @@ const assistantMarkdownCalloutSyntaxStyleByKind = {
 
 const assistantMarkdownUnorderedListMarkers = ["•", "◦", "▪", "▫"] as const;
 
-const assistantMarkdownHorizontalRuleText = "─".repeat(300);
+const minimumAssistantMarkdownChromeRuleLength = 8;
+const maximumAssistantMarkdownChromeRuleLength = 120;
+const defaultAssistantMarkdownTerminalColumnCount = 80;
 const dashOnlyParagraphPattern = /^[-*_\s]{3,}$/;
 const calloutMarkerPattern = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n?([\s\S]*)$/i;
 const codeFenceDiffLanguagePattern = /^(?:diff|patch)$/i;
@@ -286,30 +289,52 @@ function resolveAssistantMarkdownCodeFenceFileLabel(codeFenceInfoString: string)
   return codeFenceFallbackFileLabelPattern.exec(codeFenceInfoString)?.[1];
 }
 
-function formatAssistantMarkdownCodeFenceText(codeToken: AssistantMarkdownCodeToken): string {
+function repeatAssistantMarkdownChromeRule(input: { availableColumnCount: number; occupiedColumnCount?: number }): string {
+  const availableRuleColumnCount = input.availableColumnCount - (input.occupiedColumnCount ?? 0);
+  return "─".repeat(
+    Math.max(
+      minimumAssistantMarkdownChromeRuleLength,
+      Math.min(maximumAssistantMarkdownChromeRuleLength, availableRuleColumnCount),
+    ),
+  );
+}
+
+function formatAssistantMarkdownCodeFenceText(codeToken: AssistantMarkdownCodeToken, availableColumnCount: number): string {
   const codeFenceInfo = parseAssistantMarkdownCodeFenceInfo(codeToken.lang);
   if (codeFenceDiffLanguagePattern.test(codeFenceInfo.codeLanguageLabel)) {
-    return formatAssistantMarkdownDiffFenceText(codeToken.text, codeFenceInfo);
+    return formatAssistantMarkdownDiffFenceText(codeToken.text, codeFenceInfo, availableColumnCount);
   }
 
+  const topBorderPrefix = `╭─ ${codeFenceInfo.codeFenceDisplayLabel} `;
   return [
-    `╭─ ${codeFenceInfo.codeFenceDisplayLabel} ` + "─".repeat(96),
+    topBorderPrefix + repeatAssistantMarkdownChromeRule({
+      availableColumnCount,
+      occupiedColumnCount: topBorderPrefix.length,
+    }),
     codeToken.text,
-    "╰" + "─".repeat(103),
+    "╰" + repeatAssistantMarkdownChromeRule({ availableColumnCount, occupiedColumnCount: 1 }),
   ].join("\n");
 }
 
-function formatAssistantMarkdownDiffFenceText(diffText: string, codeFenceInfo: AssistantMarkdownCodeFenceInfo): string {
+function formatAssistantMarkdownDiffFenceText(
+  diffText: string,
+  codeFenceInfo: AssistantMarkdownCodeFenceInfo,
+  availableColumnCount: number,
+): string {
   const diffLines = diffText.split("\n").map((diffLine) => `│ ${diffLine}`.trimEnd());
   const diffFenceLabel = `${codeFenceInfo.codeLanguageLabel} changes${
     codeFenceInfo.codeFenceDisplayLabel === codeFenceInfo.codeLanguageLabel
       ? ""
       : ` · ${codeFenceInfo.codeFenceDisplayLabel.replace(`${codeFenceInfo.codeLanguageLabel} · `, "")}`
   }`;
+  const topBorderPrefix = `╭─ ${diffFenceLabel} `;
   return [
-    `╭─ ${diffFenceLabel} ` + "─".repeat(88),
+    topBorderPrefix + repeatAssistantMarkdownChromeRule({
+      availableColumnCount,
+      occupiedColumnCount: topBorderPrefix.length,
+    }),
     ...diffLines,
-    "╰" + "─".repeat(103),
+    "╰" + repeatAssistantMarkdownChromeRule({ availableColumnCount, occupiedColumnCount: 1 }),
   ].join("\n");
 }
 
@@ -392,14 +417,22 @@ function prepareAssistantMarkdownTextForRendering(markdownText: string, isStream
 }
 
 export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): ReactNode {
-  const horizontalRuleSyntaxStyle = SyntaxStyle.fromStyles({
-    default: { fg: RGBA.fromHex(props.horizontalRuleColor) },
-  });
+  const terminalColumnCount = props.terminalColumnCount ?? defaultAssistantMarkdownTerminalColumnCount;
+  const markdownChromeColumnCount = Math.max(20, terminalColumnCount - 4);
+  const horizontalRuleText = useMemo(
+    () => repeatAssistantMarkdownChromeRule({ availableColumnCount: markdownChromeColumnCount }),
+    [markdownChromeColumnCount],
+  );
+  const preparedMarkdownText = useMemo(
+    () => prepareAssistantMarkdownTextForRendering(props.markdownText, props.isStreaming),
+    [props.isStreaming, props.markdownText],
+  );
+  const horizontalRuleSyntaxStyle = useMemo(
+    () => SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(props.horizontalRuleColor) } }),
+    [props.horizontalRuleColor],
+  );
 
-  const renderMarkdownNodeWithImmediatePlainTextFallback: NonNullable<MarkdownOptions["renderNode"]> = (
-    token,
-    context,
-  ) => {
+  const renderMarkdownNodeWithImmediatePlainTextFallback = useCallback<NonNullable<MarkdownOptions["renderNode"]>>((token, context) => {
     const defaultRenderable = context.defaultRender();
 
     if (defaultRenderable instanceof CodeRenderable) {
@@ -408,7 +441,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       defaultRenderable.drawUnstyledText = true;
 
       if (isAssistantMarkdownCodeToken(token)) {
-        defaultRenderable.content = formatAssistantMarkdownCodeFenceText(token);
+        defaultRenderable.content = formatAssistantMarkdownCodeFenceText(token, markdownChromeColumnCount);
         if (codeFenceDiffLanguagePattern.test(token.lang?.trim().split(/\s+/)[0] ?? "")) {
           defaultRenderable.filetype = "text";
           defaultRenderable.onChunks = decorateAssistantMarkdownDiffFenceChunks;
@@ -450,7 +483,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       if (token.type === "hr" || isAssistantMarkdownDashOnlyParagraphToken(token)) {
         // Dash-only paragraphs slip through during streaming before the parser classifies
         // them as `hr`. Render both the same way to avoid raw `---` leaking on screen.
-        defaultRenderable.content = assistantMarkdownHorizontalRuleText;
+        defaultRenderable.content = horizontalRuleText;
         defaultRenderable.filetype = "text";
         defaultRenderable.syntaxStyle = horizontalRuleSyntaxStyle;
         defaultRenderable.wrapMode = "none";
@@ -461,14 +494,14 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
     }
 
     return defaultRenderable;
-  };
+  }, [horizontalRuleSyntaxStyle, horizontalRuleText, markdownChromeColumnCount]);
 
   return (
     <markdown
       bg={chatScreenTheme.bg}
       conceal={true}
       concealCode={false}
-      content={prepareAssistantMarkdownTextForRendering(props.markdownText, props.isStreaming)}
+      content={preparedMarkdownText}
       fg={chatScreenTheme.textPrimary}
       renderNode={renderMarkdownNodeWithImmediatePlainTextFallback}
       streaming={props.isStreaming}

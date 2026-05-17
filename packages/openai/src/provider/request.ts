@@ -10,6 +10,8 @@ import {
   isOpenAiOutputTextContentPart,
   isOpenAiResponseObject,
   listOpenAiReasoningSummaryTextParts,
+  readOpenAiResponseObjectArrayField,
+  readOpenAiResponseObjectStringField,
   readOpenAiFunctionCallOutputItem,
   type OpenAiResponseObject,
 } from "./openAiResponseObjects.ts";
@@ -263,20 +265,22 @@ function isOpenAiProviderTurnReplay(
 }
 
 function createReasoningReplayItem(responseOutputItem: OpenAiResponseObject): OpenAiReasoningReplayItem | undefined {
-  if (responseOutputItem.type !== "reasoning" || typeof responseOutputItem.id !== "string") {
+  const responseOutputItemId = readOpenAiResponseObjectStringField(responseOutputItem, "id");
+  if (responseOutputItem.type !== "reasoning" || responseOutputItemId === undefined) {
     return undefined;
   }
 
-  const summaryParts = listOpenAiReasoningSummaryTextParts(responseOutputItem.summary);
+  const summaryParts = listOpenAiReasoningSummaryTextParts(readOpenAiResponseObjectArrayField(responseOutputItem, "summary"));
 
   const replayItem: OpenAiReasoningReplayItem = {
     type: "reasoning",
-    id: responseOutputItem.id,
+    id: responseOutputItemId,
     summary: summaryParts,
   };
 
-  if (typeof responseOutputItem.encrypted_content === "string" || responseOutputItem.encrypted_content === null) {
-    replayItem.encrypted_content = responseOutputItem.encrypted_content;
+  const encryptedContent = responseOutputItem["encrypted_content"];
+  if (typeof encryptedContent === "string" || encryptedContent === null) {
+    replayItem.encrypted_content = encryptedContent;
   }
 
   return replayItem;
@@ -285,11 +289,16 @@ function createReasoningReplayItem(responseOutputItem: OpenAiResponseObject): Op
 function createAssistantMessageInputItemFromResponseOutputItem(
   responseOutputItem: OpenAiResponseObject,
 ): OpenAiConversationMessageInputItem | undefined {
-  if (responseOutputItem.type !== "message" || responseOutputItem.role !== "assistant" || !Array.isArray(responseOutputItem.content)) {
+  const responseContent = readOpenAiResponseObjectArrayField(responseOutputItem, "content");
+  if (
+    responseOutputItem.type !== "message" ||
+    readOpenAiResponseObjectStringField(responseOutputItem, "role") !== "assistant" ||
+    responseContent === undefined
+  ) {
     return undefined;
   }
 
-  const assistantMessageText = responseOutputItem.content
+  const assistantMessageText = responseContent
     .flatMap((contentPart) => isOpenAiOutputTextContentPart(contentPart) ? [contentPart.text] : [])
     .join("");
 

@@ -6,6 +6,7 @@ import { AssistantMarkdownBlock } from "../primitives/AssistantMarkdownBlock.tsx
 export function AssistantTextPartView(props: {
   assistantTextConversationMessagePart: AssistantTextConversationMessagePart;
   horizontalRuleColor: string;
+  terminalColumnCount?: number | undefined;
 }): ReactNode {
   const markdownText = props.assistantTextConversationMessagePart.rawMarkdownText;
   const hasMarkdownText = markdownText.length > 0;
@@ -17,6 +18,7 @@ export function AssistantTextPartView(props: {
           markdownText={markdownText}
           isStreaming={props.assistantTextConversationMessagePart.partStatus === "streaming"}
           horizontalRuleColor={props.horizontalRuleColor}
+          terminalColumnCount={props.terminalColumnCount}
         />
       ) : null}
       {!hasMarkdownText ? (

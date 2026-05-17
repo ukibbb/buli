@@ -6,7 +6,7 @@ import {
 
 export type AssistantTextMessagePartBuilderState = {
   partId: string;
-  rawMarkdownText: string;
+  normalizedMarkdownTextChunks: string[];
 };
 
 function normalizeAssistantTextDeltaText(assistantTextDeltaText: string): string {
@@ -16,7 +16,7 @@ function normalizeAssistantTextDeltaText(assistantTextDeltaText: string): string
 export function createInitialAssistantTextMessagePartBuilder(partId: string): AssistantTextMessagePartBuilderState {
   return {
     partId,
-    rawMarkdownText: "",
+    normalizedMarkdownTextChunks: [],
   };
 }
 
@@ -24,11 +24,19 @@ export function appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
   assistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState,
   assistantTextDeltaText: string,
 ): AssistantTextMessagePartBuilderState {
-  return {
-    partId: assistantTextMessagePartBuilderState.partId,
-    rawMarkdownText:
-      assistantTextMessagePartBuilderState.rawMarkdownText + normalizeAssistantTextDeltaText(assistantTextDeltaText),
-  };
+  const normalizedAssistantTextDeltaText = normalizeAssistantTextDeltaText(assistantTextDeltaText);
+  if (normalizedAssistantTextDeltaText.length === 0) {
+    return assistantTextMessagePartBuilderState;
+  }
+
+  assistantTextMessagePartBuilderState.normalizedMarkdownTextChunks.push(normalizedAssistantTextDeltaText);
+  return assistantTextMessagePartBuilderState;
+}
+
+export function readAssistantTextMessagePartBuilderRawMarkdownText(
+  assistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState,
+): string {
+  return assistantTextMessagePartBuilderState.normalizedMarkdownTextChunks.join("");
 }
 
 export function buildStreamingAssistantTextConversationMessagePart(
@@ -51,6 +59,6 @@ export function buildAssistantTextConversationMessagePartWithStatus(
     id: assistantTextMessagePartBuilderState.partId,
     partKind: "assistant_text",
     partStatus,
-    rawMarkdownText: assistantTextMessagePartBuilderState.rawMarkdownText,
+    rawMarkdownText: readAssistantTextMessagePartBuilderRawMarkdownText(assistantTextMessagePartBuilderState),
   });
 }

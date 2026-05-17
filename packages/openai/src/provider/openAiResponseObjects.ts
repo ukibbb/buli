@@ -30,8 +30,25 @@ export function isOpenAiResponseObject(value: unknown): value is OpenAiResponseO
   );
 }
 
+export function readOpenAiResponseObjectStringField(
+  responseObject: OpenAiResponseObject,
+  fieldName: string,
+): string | undefined {
+  const fieldValue = responseObject[fieldName];
+  return typeof fieldValue === "string" ? fieldValue : undefined;
+}
+
+export function readOpenAiResponseObjectArrayField(
+  responseObject: OpenAiResponseObject,
+  fieldName: string,
+): unknown[] | undefined {
+  const fieldValue = responseObject[fieldName];
+  return Array.isArray(fieldValue) ? fieldValue : undefined;
+}
+
 export function isOpenAiReasoningSummaryTextPart(value: unknown): value is OpenAiReasoningSummaryTextPart {
-  return isOpenAiResponseObject(value) && value.type === "summary_text" && typeof value.text === "string";
+  return isOpenAiResponseObject(value) && value.type === "summary_text" &&
+    readOpenAiResponseObjectStringField(value, "text") !== undefined;
 }
 
 export function listOpenAiReasoningSummaryTextParts(value: unknown): OpenAiReasoningSummaryTextPart[] {
@@ -43,7 +60,8 @@ export function listOpenAiReasoningSummaryTextParts(value: unknown): OpenAiReaso
 }
 
 export function isOpenAiOutputTextContentPart(value: unknown): value is OpenAiOutputTextContentPart {
-  return isOpenAiResponseObject(value) && value.type === "output_text" && typeof value.text === "string";
+  return isOpenAiResponseObject(value) && value.type === "output_text" &&
+    readOpenAiResponseObjectStringField(value, "text") !== undefined;
 }
 
 export function listOpenAiOutputTextContentParts(value: unknown): OpenAiOutputTextContentPart[] {
@@ -59,26 +77,29 @@ export function readOpenAiFunctionCallOutputItem(value: unknown): OpenAiFunction
     return undefined;
   }
 
+  const itemId = readOpenAiResponseObjectStringField(value, "id");
+  const toolCallId = readOpenAiResponseObjectStringField(value, "call_id");
+  const toolName = readOpenAiResponseObjectStringField(value, "name");
   if (
-    typeof value.id !== "string" ||
-    value.id.length === 0 ||
-    typeof value.call_id !== "string" ||
-    value.call_id.length === 0 ||
-    typeof value.name !== "string" ||
-    value.name.length === 0
+    itemId === undefined ||
+    itemId.length === 0 ||
+    toolCallId === undefined ||
+    toolCallId.length === 0 ||
+    toolName === undefined ||
+    toolName.length === 0
   ) {
     return undefined;
   }
 
-  const argumentsText = value.arguments;
+  const argumentsText = value["arguments"];
   if (argumentsText !== undefined && argumentsText !== null && typeof argumentsText !== "string") {
     return undefined;
   }
 
   return {
-    itemId: value.id,
-    toolCallId: value.call_id,
-    toolName: value.name,
+    itemId,
+    toolCallId,
+    toolName,
     ...(typeof argumentsText === "string" ? { argumentsText } : {}),
   };
 }

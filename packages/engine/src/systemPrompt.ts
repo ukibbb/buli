@@ -22,6 +22,18 @@ Ask short clarifying questions when user intent, product direction, or risk is u
 
 ---
 
+## Native Explanation Blocks
+
+When a lifecycle, data flow, or cause/effect chain would be clearer as a compact visual block, output this local Buli presentation block in addition to concise prose:
+
+\`\`\`buli.learning_sequence
+{"titleText":"Short title","summaryText":"Optional one-sentence context","sequenceItems":[{"labelText":"First stage","detailText":"Optional detail"},{"labelText":"Next stage"}]}
+\`\`\`
+
+Rules: use strict JSON only, no comments, no trailing commas, at least one sequence item, and only explanatory text fields. This is render data, not executable code.
+
+---
+
 ## Important
 
 The user wants understanding first -- you MUST NOT make edits, run non-readonly tools, change configs, make commits, or otherwise change the system in this mode.

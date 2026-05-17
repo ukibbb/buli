@@ -10,7 +10,6 @@ import {
   type ProviderRequestedToolCall,
   type ReasoningEffort,
   type ToolCallRequest,
-  type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
@@ -32,7 +31,6 @@ import {
 import type {
   RuntimePendingToolApproval,
   RuntimePendingToolApprovalInput,
-  RuntimeToolApprovalDecision,
 } from "./runtimeToolApproval.ts";
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";

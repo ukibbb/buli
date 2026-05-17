@@ -284,6 +284,75 @@ test("renderConversationSessionHtmlDocument renders assistant text segments with
   expect(html).not.toContain("No assistant text was recorded.");
 });
 
+test("renderConversationSessionHtmlDocument renders assistant learning sequence segments without duplicating fallback text", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Explain runtime flow",
+        modelFacingPromptText: "Explain runtime flow",
+      },
+      {
+        entryKind: "assistant_learning_sequence_segment",
+        titleText: "Runtime flow",
+        summaryText: "The main stages in one turn.",
+        sequenceItems: [
+          { labelText: "Prompt accepted" },
+          { labelText: "Provider streams", detailText: "Chunks become assistant events." },
+        ],
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.\nPrompt accepted -> Provider streams\n\n- Provider streams: Chunks become assistant events.",
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-learning-sequence",
+  });
+
+  expect(html).toContain("learning sequence");
+  expect(html.match(/Runtime flow/g)).toHaveLength(1);
+  expect(html.match(/Prompt accepted/g)).toHaveLength(1);
+  expect(html).not.toContain("Prompt accepted -&gt; Provider streams");
+});
+
+test("renderConversationSessionHtmlDocument escapes assistant learning sequence text", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Explain safely",
+        modelFacingPromptText: "Explain safely",
+      },
+      {
+        entryKind: "assistant_learning_sequence_segment",
+        titleText: '<script>alert("title")</script>',
+        summaryText: '<img src=x onerror="alert(1)">',
+        sequenceItems: [
+          { labelText: 'javascript:alert("label")', detailText: '<a href="javascript:alert(1)">bad</a>' },
+        ],
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "fallback",
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-learning-sequence-escaping",
+  });
+
+  expect(html).toContain("&lt;script&gt;alert(&quot;title&quot;)&lt;/script&gt;");
+  expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+  expect(html).toContain("&lt;a href=&quot;javascript:alert(1)&quot;&gt;bad&lt;/a&gt;");
+  expect(html).not.toContain('<script>alert("title")</script>');
+  expect(html).not.toContain('<img src=x onerror="alert(1)">');
+  expect(html).not.toContain('<a href="javascript:alert(1)">bad</a>');
+});
+
 test("renderConversationSessionHtmlDocument omits mode labels for legacy user prompts", () => {
   const html = renderConversationSessionHtmlDocument({
     conversationSessionEntries: [

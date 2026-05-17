@@ -553,32 +553,33 @@ function parseRipgrepJsonMatchEvent(outputLine: string): RipgrepJsonMatchEvent |
   } catch {
     return undefined;
   }
-  if (!isJsonObjectRecord(parsedOutputLine) || parsedOutputLine.type !== "match") {
+  if (!isJsonObjectRecord(parsedOutputLine) || parsedOutputLine["type"] !== "match") {
     return undefined;
   }
 
-  const matchData = parsedOutputLine.data;
+  const matchData = parsedOutputLine["data"];
   if (!isJsonObjectRecord(matchData)) {
     return undefined;
   }
-  const matchPath = matchData.path;
-  const matchLines = matchData.lines;
-  if (!isJsonObjectRecord(matchPath) || typeof matchPath.text !== "string") {
+  const matchPath = matchData["path"];
+  const matchLines = matchData["lines"];
+  if (!isJsonObjectRecord(matchPath) || typeof matchPath["text"] !== "string") {
     return undefined;
   }
-  if (!isJsonObjectRecord(matchLines) || typeof matchLines.text !== "string") {
+  if (!isJsonObjectRecord(matchLines) || typeof matchLines["text"] !== "string") {
     return undefined;
   }
-  if (typeof matchData.line_number !== "number" || !Number.isInteger(matchData.line_number) || matchData.line_number < 1) {
+  const matchLineNumber = matchData["line_number"];
+  if (typeof matchLineNumber !== "number" || !Number.isInteger(matchLineNumber) || matchLineNumber < 1) {
     return undefined;
   }
 
   return {
     type: "match",
     data: {
-      path: { text: matchPath.text },
-      lines: { text: matchLines.text },
-      line_number: matchData.line_number,
+      path: { text: matchPath["text"] },
+      lines: { text: matchLines["text"] },
+      line_number: matchLineNumber,
     },
   };
 }

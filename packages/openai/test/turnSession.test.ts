@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ProviderStreamEvent } from "@buli/contracts";
+import type { BuliDiagnosticLogEvent, ProviderStreamEvent } from "@buli/contracts";
 import { OpenAiProviderConversationTurn } from "../src/provider/turnSession.ts";
 
 function createOpenAiStepResponse(eventFrames: readonly string[]): Response {
@@ -35,6 +35,15 @@ function createFetchImpl(queuedResponses: Response[], requestBodies: string[]): 
   );
 
   return fetchImpl;
+}
+
+async function collectProviderEvents(providerTurn: OpenAiProviderConversationTurn): Promise<ProviderStreamEvent[]> {
+  const providerEvents: ProviderStreamEvent[] = [];
+  for await (const providerEvent of providerTurn.streamProviderEvents()) {
+    providerEvents.push(providerEvent);
+  }
+
+  return providerEvents;
 }
 
 function createSignalRecordingFetchImpl(input: {
@@ -813,4 +822,47 @@ test("OpenAiProviderConversationTurn matches queued tool results by toolCallId a
       },
     ],
   });
+});
+
+test("OpenAiProviderConversationTurn redacts failed-response structured diagnostics", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      new Response(
+        JSON.stringify({
+          error: {
+            message: `proxy echoed Bearer secret-token and access_token=abc123 ${"x".repeat(600)}`,
+          },
+        }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json", "openai-request-id": "req_secret" },
+        },
+      ),
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Prompt containing private context"),
+    onStepRequestFailed: async () => new Error("request failed"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("request failed");
+
+  const failedRequestDiagnosticEvent = diagnosticEvents.find(
+    (diagnosticEvent) => diagnosticEvent.eventName === "response_step.request_failed",
+  );
+  const structuredErrorMessage = failedRequestDiagnosticEvent?.fields?.["structuredErrorMessage"];
+  expect(typeof structuredErrorMessage).toBe("string");
+  if (typeof structuredErrorMessage !== "string") {
+    throw new Error("expected structured error diagnostic message");
+  }
+  expect(structuredErrorMessage).toContain("Bearer [REDACTED]");
+  expect(structuredErrorMessage).toContain("access_token=[REDACTED]");
+  expect(structuredErrorMessage).toContain("chars omitted");
+  expect(structuredErrorMessage).not.toContain("secret-token");
+  expect(structuredErrorMessage).not.toContain("abc123");
 });

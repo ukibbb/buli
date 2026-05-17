@@ -4,6 +4,7 @@ import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
+import { LearningSequenceSchema } from "./learningSequence.ts";
 
 export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
 
@@ -75,6 +76,10 @@ export const AssistantTextSegmentConversationSessionEntrySchema = z
   })
   .strict();
 
+export const AssistantLearningSequenceSegmentConversationSessionEntrySchema = LearningSequenceSchema.extend({
+  entryKind: z.literal("assistant_learning_sequence_segment"),
+}).strict();
+
 export const ToolCallConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("tool_call"),
@@ -116,6 +121,7 @@ export const DeniedToolResultConversationSessionEntrySchema = ToolResultConversa
 export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
   AssistantTextSegmentConversationSessionEntrySchema,
+  AssistantLearningSequenceSegmentConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
   ConversationCompactionSummaryConversationSessionEntrySchema,
@@ -147,6 +153,12 @@ export type InterruptedAssistantMessageConversationSessionEntry = z.infer<
 >;
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
 export type AssistantTextSegmentConversationSessionEntry = z.infer<typeof AssistantTextSegmentConversationSessionEntrySchema>;
+export type AssistantLearningSequenceSegmentConversationSessionEntry = z.infer<
+  typeof AssistantLearningSequenceSegmentConversationSessionEntrySchema
+>;
+export type AssistantSegmentConversationSessionEntry =
+  | AssistantTextSegmentConversationSessionEntry
+  | AssistantLearningSequenceSegmentConversationSessionEntry;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;
 export type ConversationCompactionSummaryConversationSessionEntry = z.infer<
   typeof ConversationCompactionSummaryConversationSessionEntrySchema

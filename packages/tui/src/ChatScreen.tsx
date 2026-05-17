@@ -310,6 +310,7 @@ export function ChatScreen(props: ChatScreenProps) {
           inputPanelAccentColor={inputPanelAccentColor}
           availableCommandHelpModalRowCount={availableCommandHelpModalRowCount}
           terminalSizeTierForChatScreen={terminalSizeTierForChatScreen}
+          terminalColumnCount={columns}
           availableChatSlashCommands={availableChatSlashCommands}
           orderedConversationMessages={orderedConversationMessages}
           conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}

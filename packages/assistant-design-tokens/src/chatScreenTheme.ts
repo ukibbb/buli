@@ -9,6 +9,7 @@
 export const chatScreenTheme = {
   bg: "#000000",
   surfaceOne: "#000000",
+  learningSurfaceBg: "#050509",
   surfaceTwo: "#000000",
   surfaceThree: "#000000",
   border: "#2A2A3A",

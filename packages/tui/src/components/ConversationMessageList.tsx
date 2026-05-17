@@ -1,7 +1,7 @@
 import { memo, type ReactNode, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
-import { ConversationMessageRow } from "./ConversationMessageRow.tsx";
+import { ConversationMessageRow, type ConversationMessageRowProps } from "./ConversationMessageRow.tsx";
 
 export type ConversationMessageListProps = {
   conversationMessages: readonly ConversationMessage[];
@@ -9,9 +9,37 @@ export type ConversationMessageListProps = {
   resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   horizontalRuleColor: string;
+  terminalColumnCount?: number | undefined;
 };
 
-const MemoizedConversationMessageRow = memo(ConversationMessageRow);
+const MemoizedConversationMessageRow = memo(ConversationMessageRow, areConversationMessageRowPropsEqual);
+
+function areConversationMessageRowPropsEqual(
+  previousProps: ConversationMessageRowProps,
+  nextProps: ConversationMessageRowProps,
+): boolean {
+  return previousProps.conversationMessage === nextProps.conversationMessage &&
+    previousProps.isReasoningSummaryVisible === nextProps.isReasoningSummaryVisible &&
+    previousProps.horizontalRuleColor === nextProps.horizontalRuleColor &&
+    previousProps.terminalColumnCount === nextProps.terminalColumnCount &&
+    areConversationMessagePartReferencesEqual(
+      previousProps.conversationMessageParts,
+      nextProps.conversationMessageParts,
+    );
+}
+
+function areConversationMessagePartReferencesEqual(
+  previousConversationMessageParts: readonly ConversationMessagePart[],
+  nextConversationMessageParts: readonly ConversationMessagePart[],
+): boolean {
+  if (previousConversationMessageParts.length !== nextConversationMessageParts.length) {
+    return false;
+  }
+
+  return previousConversationMessageParts.every(
+    (conversationMessagePart, partIndex) => conversationMessagePart === nextConversationMessageParts[partIndex],
+  );
+}
 
 export function ConversationMessageList(props: ConversationMessageListProps): ReactNode {
   return (
@@ -34,6 +62,7 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
               conversationMessageParts={props.resolveConversationMessageParts(conversationMessage.id)}
               isReasoningSummaryVisible={props.isReasoningSummaryVisible}
               horizontalRuleColor={props.horizontalRuleColor}
+              terminalColumnCount={props.terminalColumnCount}
             />
           </box>
         ))}

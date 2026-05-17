@@ -25,6 +25,7 @@ import {
 import {
   extractStructuredOpenAiErrorMessage,
   getOpenAiRequestId,
+  sanitizeOpenAiErrorMessage,
   type OpenAiHttpErrorResponse,
 } from "./httpResponseDiagnostics.ts";
 import {
@@ -516,11 +517,12 @@ async function createFailedResponseDebugPayload(response: OpenAiHttpErrorRespons
   structuredErrorMessage: string | null;
 }> {
   const bodyText = await response.text();
+  const structuredErrorMessage = extractStructuredOpenAiErrorMessage(bodyText);
   return {
     status: response.status,
     requestId: getOpenAiRequestId(response.headers) ?? null,
     contentType: response.headers.get("content-type"),
     bodyTextLength: bodyText.length,
-    structuredErrorMessage: extractStructuredOpenAiErrorMessage(bodyText) ?? null,
+    structuredErrorMessage: structuredErrorMessage ? sanitizeOpenAiErrorMessage(structuredErrorMessage) : null,
   };
 }

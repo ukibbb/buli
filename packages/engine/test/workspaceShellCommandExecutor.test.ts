@@ -63,7 +63,7 @@ test("WorkspaceShellCommandExecutor runs commands with a scrubbed environment", 
   const workspaceShellCommandExecutor = new WorkspaceShellCommandExecutor({
     workspaceRootPath: temporaryDirectoryPath,
     environment: {
-      PATH: process.env.PATH,
+      PATH: process.env["PATH"],
       BULI_SECRET_TOKEN: "secret-token",
     },
   });
@@ -86,7 +86,7 @@ test("runApprovedBashToolCall rejects working directories that resolve outside t
   let didRunCommand = false;
   const workspaceShellCommandExecutor = {
     workspaceRootPath,
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand() {
       didRunCommand = true;
       return { exitCode: 0, stdoutText: "unsafe\n", stderrText: "" };
@@ -114,7 +114,7 @@ test("runApprovedBashToolCall clamps provider-requested timeout to the safety ca
   let receivedTimeoutMilliseconds: number | undefined;
   const workspaceShellCommandExecutor = {
     workspaceRootPath,
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand(input) {
       receivedTimeoutMilliseconds = input.timeoutMilliseconds;
       return { exitCode: 0, stdoutText: "ok\n", stderrText: "" };
@@ -141,7 +141,7 @@ test("runApprovedBashToolCall normalizes non-positive timeouts to one millisecon
   let receivedTimeoutMilliseconds: number | undefined;
   const workspaceShellCommandExecutor = {
     workspaceRootPath,
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand(input) {
       receivedTimeoutMilliseconds = input.timeoutMilliseconds;
       return { exitCode: 0, stdoutText: "ok\n", stderrText: "" };

@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "@buli/contracts";
 import { z } from "zod";
 
 const OpenAiErrorResponseBodySchema = z
@@ -53,7 +54,7 @@ export function extractHumanReadableOpenAiErrorMessage(responseBodyText: string)
     return undefined;
   }
 
-  return redactAndLimitOpenAiErrorMessage(
+  return sanitizeOpenAiErrorMessage(
     extractStructuredOpenAiErrorMessage(trimmedResponseBodyText)?.trim() ?? trimmedResponseBodyText,
   );
 }
@@ -75,17 +76,6 @@ function parseJsonResponseBody(responseBodyText: string): unknown {
   }
 }
 
-function redactAndLimitOpenAiErrorMessage(errorMessage: string): string {
-  const redactedErrorMessage = errorMessage
-    .replace(/(Bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, "$1[REDACTED]")
-    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "[REDACTED]")
-    .replace(/(access[_-]?token[=:]\s*)[^\s&]+/gi, "$1[REDACTED]")
-    .replace(/(refresh[_-]?token[=:]\s*)[^\s&]+/gi, "$1[REDACTED]");
-
-  if (redactedErrorMessage.length <= MAX_HUMAN_READABLE_ERROR_MESSAGE_LENGTH) {
-    return redactedErrorMessage;
-  }
-
-  const omittedCharacterCount = redactedErrorMessage.length - MAX_HUMAN_READABLE_ERROR_MESSAGE_LENGTH;
-  return `${redactedErrorMessage.slice(0, MAX_HUMAN_READABLE_ERROR_MESSAGE_LENGTH)}... (${omittedCharacterCount} chars omitted)`;
+export function sanitizeOpenAiErrorMessage(errorMessage: string): string {
+  return redactSensitiveText(errorMessage, { maxLength: MAX_HUMAN_READABLE_ERROR_MESSAGE_LENGTH });
 }

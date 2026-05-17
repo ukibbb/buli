@@ -7,7 +7,6 @@ import {
   type ConversationSessionEntry,
   type ConversationSessionEntryRecord,
   type ConversationSessionHeaderRecord,
-  type ConversationSessionSnapshot,
   type ConversationSessionSummary,
 } from "@buli/contracts";
 import {
@@ -243,7 +242,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       return undefined;
     }
 
-    const activeConversationSessionId = parsedPointer.activeConversationSessionId;
+    const activeConversationSessionId = parsedPointer["activeConversationSessionId"];
     return typeof activeConversationSessionId === "string" && activeConversationSessionId.length > 0
       ? activeConversationSessionId
       : undefined;

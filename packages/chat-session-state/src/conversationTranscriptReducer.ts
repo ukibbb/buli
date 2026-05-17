@@ -107,7 +107,7 @@ function buildHydratedConversationTranscript(
       };
     }
   };
-  const hasAssistantTextPart = (messageId: string): boolean => {
+  const hasAssistantRenderedContentPart = (messageId: string): boolean => {
     const conversationMessage = conversationMessagesById[messageId];
     if (!conversationMessage) {
       return false;
@@ -115,7 +115,8 @@ function buildHydratedConversationTranscript(
 
     return conversationMessage.partIds.some((partId) => {
       const conversationMessagePart = conversationMessagePartsById[partId];
-      return conversationMessagePart?.partKind === "assistant_text";
+      return conversationMessagePart?.partKind === "assistant_text" ||
+        conversationMessagePart?.partKind === "assistant_learning_sequence";
     });
   };
   const ensureAssistantConversationMessage = (entryIndex: number): string => {
@@ -256,6 +257,21 @@ function buildHydratedConversationTranscript(
       return;
     }
 
+    if (conversationSessionEntry.entryKind === "assistant_learning_sequence_segment") {
+      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      appendConversationMessagePart(assistantMessageId, {
+        id: `persisted-entry-${entryIndex}-assistant-learning-sequence`,
+        partKind: "assistant_learning_sequence",
+        titleText: conversationSessionEntry.titleText,
+        ...(conversationSessionEntry.summaryText !== undefined ? { summaryText: conversationSessionEntry.summaryText } : {}),
+        sequenceItems: conversationSessionEntry.sequenceItems.map((sequenceItem) => ({
+          labelText: sequenceItem.labelText,
+          ...(sequenceItem.detailText !== undefined ? { detailText: sequenceItem.detailText } : {}),
+        })),
+      });
+      return;
+    }
+
     if (conversationSessionEntry.entryKind === "tool_call") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       const toolCallPartId = `persisted-entry-${entryIndex}-tool-call`;
@@ -294,7 +310,7 @@ function buildHydratedConversationTranscript(
         };
       }
 
-      if (conversationSessionEntry.assistantMessageText.length > 0 && !hasAssistantTextPart(assistantMessageId)) {
+      if (conversationSessionEntry.assistantMessageText.length > 0 && !hasAssistantRenderedContentPart(assistantMessageId)) {
         appendConversationMessagePart(assistantMessageId, {
           id: `persisted-entry-${entryIndex}-assistant-text`,
           partKind: "assistant_text",

@@ -99,7 +99,7 @@ async function collectBashToolCallEvents(input: {
 function createSuccessfulWorkspaceShellCommandExecutor(stdoutText: string): WorkspaceShellCommandExecutor {
   return {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand() {
       return {
         exitCode: 0,
@@ -113,7 +113,7 @@ function createSuccessfulWorkspaceShellCommandExecutor(stdoutText: string): Work
 function createFailingWorkspaceShellCommandExecutor(): WorkspaceShellCommandExecutor {
   return {
     workspaceRootPath: process.cwd(),
-    shellExecutablePath: process.env.SHELL ?? "/bin/zsh",
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
     async runShellCommand() {
       throw new Error("executor failed");
     },

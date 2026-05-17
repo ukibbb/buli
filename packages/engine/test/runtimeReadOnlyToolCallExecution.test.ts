@@ -129,7 +129,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
     toolResultText: expect.stringContaining("2: beta"),
   });
   expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "assistant_response_event.emitted").map(
-    (diagnosticEvent) => diagnosticEvent.fields?.toolCallStatus,
+    (diagnosticEvent) => diagnosticEvent.fields?.["toolCallStatus"],
   )).toEqual(["running", "completed"]);
   expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.tool_result_submitted"))
     .toEqual([

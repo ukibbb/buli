@@ -93,6 +93,11 @@ function summarizeConversationMessagePartStatusForDiagnostics(
         planId: conversationMessagePart.planId,
         planStepCount: conversationMessagePart.planSteps.length,
       };
+    case "assistant_learning_sequence":
+      return {
+        learningSequenceItemCount: conversationMessagePart.sequenceItems.length,
+        titleTextLength: conversationMessagePart.titleText.length,
+      };
     case "assistant_rate_limit_notice":
       return {
         retryAfterSeconds: conversationMessagePart.retryAfterSeconds,

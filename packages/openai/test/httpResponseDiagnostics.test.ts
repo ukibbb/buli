@@ -4,6 +4,7 @@ import {
   extractHumanReadableOpenAiErrorMessage,
   extractStructuredOpenAiErrorMessage,
   getOpenAiRequestId,
+  sanitizeOpenAiErrorMessage,
 } from "../src/provider/httpResponseDiagnostics.ts";
 
 test("getOpenAiRequestId reads known OpenAI request id headers", () => {
@@ -37,6 +38,20 @@ test("extractHumanReadableOpenAiErrorMessage redacts and caps plaintext fallback
   expect(extractedMessage).toContain("chars omitted");
   expect(extractedMessage).not.toContain("secret-token");
   expect(extractedMessage).not.toContain("abc123");
+});
+
+test("sanitizeOpenAiErrorMessage redacts and caps structured provider messages", () => {
+  const sanitizedMessage = sanitizeOpenAiErrorMessage(
+    `provider echoed Bearer secret-token refresh_token=refresh123 sk-testsecret ${"x".repeat(600)}`,
+  );
+
+  expect(sanitizedMessage).toContain("Bearer [REDACTED]");
+  expect(sanitizedMessage).toContain("refresh_token=[REDACTED]");
+  expect(sanitizedMessage).toContain("[REDACTED]");
+  expect(sanitizedMessage).toContain("chars omitted");
+  expect(sanitizedMessage).not.toContain("secret-token");
+  expect(sanitizedMessage).not.toContain("refresh123");
+  expect(sanitizedMessage).not.toContain("sk-testsecret");
 });
 
 test("createOpenAiHttpRequestError includes status, message, and request id", async () => {

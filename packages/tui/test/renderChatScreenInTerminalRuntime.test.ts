@@ -165,10 +165,10 @@ test("renderChatScreenInTerminalWithRuntime unmounts React when OpenTUI destroys
 });
 
 test("renderChatScreenInTerminalWithRuntime disables OpenTUI console capture while console file logging is active", async () => {
-  const previousConsoleLogFilePath = process.env.BULI_CONSOLE_LOG_FILE;
-  const previousOpenTuiUseConsole = process.env.OTUI_USE_CONSOLE;
-  process.env.BULI_CONSOLE_LOG_FILE = "/tmp/buli-opentui-console.log";
-  process.env.OTUI_USE_CONSOLE = "true";
+  const previousConsoleLogFilePath = process.env["BULI_CONSOLE_LOG_FILE"];
+  const previousOpenTuiUseConsole = process.env["OTUI_USE_CONSOLE"];
+  process.env["BULI_CONSOLE_LOG_FILE"] = "/tmp/buli-opentui-console.log";
+  process.env["OTUI_USE_CONSOLE"] = "true";
 
   try {
     const runtimeHarness = createRuntimeHarness();
@@ -182,12 +182,12 @@ test("renderChatScreenInTerminalWithRuntime disables OpenTUI console capture whi
         consoleMode: "disabled",
       },
     ]);
-    expect(process.env.OTUI_USE_CONSOLE).toBe("false");
+    expect(process.env["OTUI_USE_CONSOLE"]).toBe("false");
 
     chatScreen.destroy();
     await chatScreen.waitUntilExit();
 
-    expect(process.env.OTUI_USE_CONSOLE).toBe("true");
+    expect(process.env["OTUI_USE_CONSOLE"]).toBe("true");
   } finally {
     restoreEnvironmentVariable("BULI_CONSOLE_LOG_FILE", previousConsoleLogFilePath);
     restoreEnvironmentVariable("OTUI_USE_CONSOLE", previousOpenTuiUseConsole);

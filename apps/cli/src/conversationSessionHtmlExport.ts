@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AssistantOperatingMode, ConversationSessionEntry, ToolCallDetail, ToolCallRequest } from "@buli/contracts";
+import type { AssistantOperatingMode, ConversationSessionEntry, LearningSequence, ToolCallDetail, ToolCallRequest } from "@buli/contracts";
 import { marked, Renderer, type Tokens } from "marked";
 
 export type ConversationSessionHtmlExportResult = {
@@ -138,16 +138,19 @@ export function renderConversationSessionHtmlDocument(input: {
 }
 
 function renderConversationSessionTranscriptEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): string {
-  let hasRenderedAssistantTextSegmentInCurrentTurn = false;
+  let hasRenderedAssistantSegmentInCurrentTurn = false;
 
   return conversationSessionEntries.flatMap((conversationSessionEntry, entryIndex) => {
     if (conversationSessionEntry.entryKind === "user_prompt" || conversationSessionEntry.entryKind === "conversation_compaction_summary") {
-      hasRenderedAssistantTextSegmentInCurrentTurn = false;
+      hasRenderedAssistantSegmentInCurrentTurn = false;
       return [renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex)];
     }
 
-    if (conversationSessionEntry.entryKind === "assistant_text_segment") {
-      hasRenderedAssistantTextSegmentInCurrentTurn = true;
+    if (
+      conversationSessionEntry.entryKind === "assistant_text_segment" ||
+      conversationSessionEntry.entryKind === "assistant_learning_sequence_segment"
+    ) {
+      hasRenderedAssistantSegmentInCurrentTurn = true;
       return [renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex)];
     }
 
@@ -155,9 +158,9 @@ function renderConversationSessionTranscriptEntries(conversationSessionEntries: 
       const renderedTranscriptEntry = renderConversationSessionTranscriptEntry(
         conversationSessionEntry,
         entryIndex,
-        { shouldOmitAssistantMessageText: hasRenderedAssistantTextSegmentInCurrentTurn },
+        { shouldOmitAssistantMessageText: hasRenderedAssistantSegmentInCurrentTurn },
       );
-      hasRenderedAssistantTextSegmentInCurrentTurn = false;
+      hasRenderedAssistantSegmentInCurrentTurn = false;
       return renderedTranscriptEntry ? [renderedTranscriptEntry] : [];
     }
 
@@ -192,6 +195,17 @@ function renderConversationSessionTranscriptEntry(
       entryClassName: "assistant",
       roleLabel: "Assistant",
       bodyHtml: renderAssistantMarkdownText(conversationSessionEntry.assistantTextSegmentText),
+    });
+  }
+
+  if (conversationSessionEntry.entryKind === "assistant_learning_sequence_segment") {
+    return renderConversationSessionTranscriptEntryShell({
+      entryAnchorId,
+      indexNumberLabel,
+      entryIndex,
+      entryClassName: "assistant",
+      roleLabel: "Assistant",
+      bodyHtml: renderLearningSequenceBlock(conversationSessionEntry),
     });
   }
 
@@ -334,6 +348,24 @@ function renderConversationCompactionSummaryBlock(
     `<p class="status-notice">Context compacted from ${conversationSessionEntry.compactedEntryCount} entries.</p>`,
     renderAssistantMarkdownText(conversationSessionEntry.summaryText),
   ].join("\n");
+}
+
+function renderLearningSequenceBlock(learningSequence: LearningSequence): string {
+  const summaryHtml = learningSequence.summaryText === undefined
+    ? ""
+    : `<p class="muted">${escapeHtml(learningSequence.summaryText)}</p>`;
+  const sequenceItemsHtml = learningSequence.sequenceItems.map((sequenceItem) => {
+    const detailHtml = sequenceItem.detailText === undefined
+      ? ""
+      : `<p class="muted">${escapeHtml(sequenceItem.detailText)}</p>`;
+    return `<li><strong>${escapeHtml(sequenceItem.labelText)}</strong>${detailHtml}</li>`;
+  }).join("\n");
+
+  return `<div class="tool-block learning-sequence-block">
+  <div class="tool-summary"><span class="tool-name">learning sequence</span><span class="tool-purpose">${escapeHtml(learningSequence.titleText)}</span></div>
+  ${summaryHtml}
+  <ol>${sequenceItemsHtml}</ol>
+</div>`;
 }
 
 function renderToolCallRequestBlock(toolCallRequest: ToolCallRequest): string {

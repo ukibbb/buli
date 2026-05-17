@@ -28,6 +28,11 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       assistantTextSegmentText: "Stored ",
     },
     {
+      entryKind: "assistant_learning_sequence_segment",
+      titleText: "Stored context flow",
+      sequenceItems: [{ labelText: "Read context" }],
+    },
+    {
       entryKind: "assistant_message",
       assistantMessageStatus: "incomplete",
       assistantMessageText: "Partial answer",

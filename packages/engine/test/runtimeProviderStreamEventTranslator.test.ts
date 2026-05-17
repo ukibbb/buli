@@ -27,7 +27,7 @@ function createRuntimeProviderStreamEventTranslator(input?: {
   });
 }
 
-test("RuntimeProviderStreamEventTranslator emits add then update events for streamed text", () => {
+test("RuntimeProviderStreamEventTranslator emits the first streamed text chunk then buffers small updates", () => {
   const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator();
 
   const addedTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
@@ -56,19 +56,45 @@ test("RuntimeProviderStreamEventTranslator emits add then update events for stre
       },
     },
   ]);
-  expect(updatedTextTranslation.assistantResponseEvents).toEqual([
-    {
-      type: "assistant_message_part_updated",
-      messageId: "assistant-message-1",
-      part: {
-        id: "assistant-text-1",
-        partKind: "assistant_text",
-        partStatus: "streaming",
-        rawMarkdownText: "Hello world",
-      },
-    },
-  ]);
+  expect(updatedTextTranslation.assistantResponseEvents).toEqual([]);
   expect(providerStreamEventTranslator.assistantMessageText).toBe("Hello world");
+});
+
+test("RuntimeProviderStreamEventTranslator coalesces many streamed text chunks and flushes exact terminal text", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 1_500 });
+  const assistantTextChunks = Array.from({ length: 40 }, (_, chunkIndex) => `${chunkIndex % 10}`);
+  const assistantTextEvents = assistantTextChunks.flatMap((assistantTextChunk) => {
+    const translation = providerStreamEventTranslator.translateProviderStreamEvent({
+      providerStreamEvent: { type: "text_chunk", text: assistantTextChunk },
+    });
+    if (translation.translationKind !== "assistant_response_events") {
+      throw new Error("expected assistant response events");
+    }
+
+    return translation.assistantResponseEvents;
+  });
+  const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "completed", usage: completedTokenUsage },
+  });
+
+  if (terminalTranslation.translationKind !== "terminal_assistant_response") {
+    throw new Error("expected terminal assistant response");
+  }
+
+  const assistantText = assistantTextChunks.join("");
+  expect(assistantTextEvents.length).toBeLessThan(assistantTextChunks.length);
+  expect(providerStreamEventTranslator.assistantMessageText).toBe(assistantText);
+  expect(terminalTranslation.assistantResponseEventsBeforeTerminalSessionEntry).toContainEqual({
+    type: "assistant_message_part_updated",
+    messageId: "assistant-message-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "completed",
+      rawMarkdownText: assistantText,
+    },
+  });
+  expect(terminalTranslation.terminalAssistantMessageSessionEntry.assistantMessageText).toBe(assistantText);
 });
 
 test("RuntimeProviderStreamEventTranslator emits reasoning summary lifecycle events", () => {
@@ -129,6 +155,52 @@ test("RuntimeProviderStreamEventTranslator emits reasoning summary lifecycle eve
         partKind: "assistant_reasoning",
         partStatus: "completed",
         reasoningSummaryText: "Need context.",
+        reasoningStartedAtMs: 1_100,
+        reasoningDurationMs: 42,
+      },
+    },
+  ]);
+});
+
+test("RuntimeProviderStreamEventTranslator coalesces reasoning summary chunks and completes exact text", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 1_100 });
+  const startedTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "reasoning_summary_started" },
+  });
+  const reasoningSummaryChunks = Array.from({ length: 32 }, (_, chunkIndex) => `${chunkIndex % 10}`);
+  const reasoningSummaryEvents = reasoningSummaryChunks.flatMap((reasoningSummaryChunk) => {
+    const translation = providerStreamEventTranslator.translateProviderStreamEvent({
+      providerStreamEvent: { type: "reasoning_summary_text_chunk", text: reasoningSummaryChunk },
+    });
+    if (translation.translationKind !== "assistant_response_events") {
+      throw new Error("expected assistant response events");
+    }
+
+    return translation.assistantResponseEvents;
+  });
+  const completedTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "reasoning_summary_completed", reasoningDurationMs: 42 },
+  });
+
+  if (startedTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (completedTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+
+  const reasoningSummaryText = reasoningSummaryChunks.join("");
+  expect(startedTranslation.assistantResponseEvents).toHaveLength(1);
+  expect(reasoningSummaryEvents.length).toBeLessThan(reasoningSummaryChunks.length);
+  expect(completedTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_updated",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-1",
+        partKind: "assistant_reasoning",
+        partStatus: "completed",
+        reasoningSummaryText,
         reasoningStartedAtMs: 1_100,
         reasoningDurationMs: 42,
       },
@@ -331,10 +403,12 @@ test("RuntimeProviderStreamEventTranslator segments assistant text around tool c
       },
     },
   ]);
-  expect(toolCallTranslation.assistantTextSegmentSessionEntryBeforeToolCall).toEqual({
-    entryKind: "assistant_text_segment",
-    assistantTextSegmentText: "Before tool. ",
-  });
+  expect(toolCallTranslation.assistantSegmentSessionEntriesBeforeToolCall).toEqual([
+    {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "Before tool. ",
+    },
+  ]);
   expect(afterToolTextTranslation.assistantResponseEvents).toEqual([
     {
       type: "assistant_message_part_added",
@@ -347,13 +421,122 @@ test("RuntimeProviderStreamEventTranslator segments assistant text around tool c
       },
     },
   ]);
-  expect(terminalTranslation.assistantTextSegmentSessionEntryBeforeTerminalSessionEntry).toEqual({
-    entryKind: "assistant_text_segment",
-    assistantTextSegmentText: "After tool.",
-  });
+  expect(terminalTranslation.assistantSegmentSessionEntriesBeforeTerminalSessionEntry).toEqual([
+    {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "After tool.",
+    },
+  ]);
   expect(terminalTranslation.terminalAssistantMessageSessionEntry).toMatchObject({
     entryKind: "assistant_message",
     assistantMessageStatus: "completed",
     assistantMessageText: "Before tool. After tool.",
   });
+});
+
+test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 2_500 });
+
+  const learningSequenceTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: {
+      type: "text_chunk",
+      text: [
+        "Intro.",
+        "```buli.learning_sequence",
+        JSON.stringify({
+          titleText: "Request flow",
+          summaryText: "How the request moves through the runtime.",
+          sequenceItems: [
+            { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
+            { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+          ],
+        }),
+        "```",
+        "Outro.",
+      ].join("\n"),
+    },
+  });
+  const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "completed", usage: completedTokenUsage },
+  });
+
+  if (learningSequenceTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (terminalTranslation.translationKind !== "terminal_assistant_response") {
+    throw new Error("expected terminal assistant response");
+  }
+
+  expect(learningSequenceTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_added",
+      messageId: "assistant-message-1",
+      part: {
+        id: "assistant-text-1",
+        partKind: "assistant_text",
+        partStatus: "streaming",
+        rawMarkdownText: "Intro.\n",
+      },
+    },
+    {
+      type: "assistant_message_part_updated",
+      messageId: "assistant-message-1",
+      part: {
+        id: "assistant-text-1",
+        partKind: "assistant_text",
+        partStatus: "completed",
+        rawMarkdownText: "Intro.\n",
+      },
+    },
+    {
+      type: "assistant_message_part_added",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-1",
+        partKind: "assistant_learning_sequence",
+        titleText: "Request flow",
+        summaryText: "How the request moves through the runtime.",
+        sequenceItems: [
+          { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
+          { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+        ],
+      },
+    },
+    {
+      type: "assistant_message_part_added",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-2",
+        partKind: "assistant_text",
+        partStatus: "streaming",
+        rawMarkdownText: "Outro.",
+      },
+    },
+  ]);
+  expect(learningSequenceTranslation.assistantSegmentSessionEntries).toEqual([
+    {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "Intro.\n",
+    },
+    {
+      entryKind: "assistant_learning_sequence_segment",
+      titleText: "Request flow",
+      summaryText: "How the request moves through the runtime.",
+      sequenceItems: [
+        { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
+        { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+      ],
+    },
+  ]);
+  expect(terminalTranslation.assistantSegmentSessionEntriesBeforeTerminalSessionEntry).toEqual([
+    {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "Outro.",
+    },
+  ]);
+  expect(terminalTranslation.terminalAssistantMessageSessionEntry.assistantMessageText).toBe([
+    "Intro.\n",
+    "**Request flow**\nHow the request moves through the runtime.\nPrompt accepted -> Provider streams\n\n- Prompt accepted: The user prompt is recorded.\n- Provider streams: Text chunks become assistant events.",
+    "Outro.",
+  ].join(""));
 });
