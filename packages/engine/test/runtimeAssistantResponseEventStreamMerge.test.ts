@@ -97,7 +97,11 @@ function createResolvedDoneIteratorResult(): Promise<IteratorResult<AssistantRes
   return Promise.resolve(createDoneIteratorResult());
 }
 
-test("mergeAssistantResponseEventStreams yields initial events in stream order before racing remaining events", async () => {
+function resolveValueAfterDelay<T>(value: T, delayMs: number): Promise<T> {
+  return new Promise((resolveValue) => setTimeout(() => resolveValue(value), delayMs));
+}
+
+test("mergeAssistantResponseEventStreams races initial events instead of waiting for every stream", async () => {
   const stream0InitialResult = new DeferredValue<IteratorResult<AssistantResponseEvent, void>>();
   const stream1InitialResult = new DeferredValue<IteratorResult<AssistantResponseEvent, void>>();
   const stream0RemainingResult = new DeferredValue<IteratorResult<AssistantResponseEvent, void>>();
@@ -123,10 +127,15 @@ test("mergeAssistantResponseEventStreams yields initial events in stream order b
 
   const firstMergedEventResult = mergedAssistantResponseEventStream.next();
   stream1InitialResult.resolve(createYieldIteratorResult(stream1InitialEvent));
+
+  expect(await Promise.race([firstMergedEventResult, resolveValueAfterDelay("timed out", 10)])).toEqual(
+    createYieldIteratorResult(stream1InitialEvent),
+  );
+
+  const secondMergedEventResult = mergedAssistantResponseEventStream.next();
   stream0InitialResult.resolve(createYieldIteratorResult(stream0InitialEvent));
 
-  expect(await firstMergedEventResult).toEqual(createYieldIteratorResult(stream0InitialEvent));
-  expect(await mergedAssistantResponseEventStream.next()).toEqual(createYieldIteratorResult(stream1InitialEvent));
+  expect(await secondMergedEventResult).toEqual(createYieldIteratorResult(stream0InitialEvent));
 
   const thirdMergedEventResult = mergedAssistantResponseEventStream.next();
   stream1RemainingResult.resolve(createYieldIteratorResult(stream1RemainingEvent));

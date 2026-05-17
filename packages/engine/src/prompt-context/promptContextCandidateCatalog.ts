@@ -55,7 +55,10 @@ export class PromptContextCandidateCatalog {
     }
 
     const promptContextPathScope = await this.resolvePromptContextPathScope();
-    const recursivePromptContextEntrySnapshot = await this.listFreshRecursivePromptContextEntrySnapshot(promptContextPathScope);
+    const recursivePromptContextEntrySnapshot = await this.listFreshRecursivePromptContextEntrySnapshot(
+      promptContextPathScope,
+      promptContextQueryText,
+    );
     return filterAndSortPromptContextEntries({
       promptContextEntries: recursivePromptContextEntrySnapshot.promptContextEntries,
       promptContextQueryText,
@@ -78,6 +81,7 @@ export class PromptContextCandidateCatalog {
 
   private async listFreshRecursivePromptContextEntrySnapshot(
     promptContextPathScope: Awaited<ReturnType<typeof resolvePromptContextPathScope>>,
+    promptContextQueryText: string,
   ): Promise<RecursivePromptContextEntrySnapshot> {
     const nowMs = this.nowMs();
     if (
@@ -88,6 +92,7 @@ export class PromptContextCandidateCatalog {
         recursiveSnapshotTimeToLiveMs: this.recursiveSnapshotTimeToLiveMs,
         promptContextBrowseRootPath: promptContextPathScope.promptContextBrowseRootPath,
         promptContextStartingDirectoryPath: promptContextPathScope.promptContextStartingDirectoryPath,
+        promptContextQueryText,
       })
     ) {
       return this.recursivePromptContextEntrySnapshot;
@@ -96,10 +101,12 @@ export class PromptContextCandidateCatalog {
     const promptContextEntries = await listFuzzyPromptContextEntries({
       promptContextPathScope,
       maximumSearchEntryCount: this.maximumSearchEntryCount,
+      promptContextQueryText,
     });
     this.recursivePromptContextEntrySnapshot = {
       promptContextBrowseRootPath: promptContextPathScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextPathScope.promptContextStartingDirectoryPath,
+      promptContextQueryText,
       promptContextEntries,
       scannedAtMs: nowMs,
     };

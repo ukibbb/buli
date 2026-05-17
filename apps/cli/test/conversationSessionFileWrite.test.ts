@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -115,4 +116,22 @@ test("runWithExclusiveConversationSessionFileWriteLock recovers stale locks from
 
   expect(writeResult).toBe("recovered-write");
   expect((await readdir(directoryPath)).includes("session-store.lock")).toBe(false);
+});
+
+test("runWithExclusiveConversationSessionFileWriteLock does not remove a lock that changed owner before release", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-file-write-stolen-lock-"));
+  const lockFilePath = join(directoryPath, "session-store.lock");
+  const replacementLockFile = {
+    processId: 99_999_999,
+    acquiredAtMs: 1234,
+    lockOwnerId: "replacement-owner",
+  };
+
+  const writeResult = runWithExclusiveConversationSessionFileWriteLock({ lockFilePath }, () => {
+    writeFileSync(lockFilePath, JSON.stringify(replacementLockFile) + "\n", "utf8");
+    return "release-with-changed-owner";
+  });
+
+  expect(writeResult).toBe("release-with-changed-owner");
+  expect(JSON.parse(await readFile(lockFilePath, "utf8")) as unknown).toEqual(replacementLockFile);
 });

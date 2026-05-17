@@ -82,6 +82,7 @@ type OpenTuiChatScreenHarness = {
   pressCtrlL(): Promise<string>;
   pressEnter(): Promise<string>;
   pressEscape(): Promise<string>;
+  clickMouse(column: number, row: number): Promise<string>;
   typeText(text: string): Promise<string>;
   waitForAssistantEvents(): Promise<string>;
 };
@@ -96,6 +97,12 @@ async function renderChatScreen(input: {
   switchConversationSession?: (conversationSessionId: string) => Promise<{
     conversationSessionId: string;
     conversationSessionEntries: readonly ConversationSessionEntry[];
+  }>;
+  deleteConversationSession?: (conversationSessionId: string) => Promise<{
+    deletedConversationSessionId: string;
+    activeConversationSessionId: string;
+    activeConversationSessionEntries: readonly ConversationSessionEntry[];
+    conversationSessions: readonly ConversationSessionSummary[];
   }>;
   exportCurrentConversationSession?: () => Promise<{ exportFilePath: string; exportFileUrl: string }>;
   compactCurrentConversationSession?: () => Promise<{ conversationSessionEntries: readonly ConversationSessionEntry[] }>;
@@ -114,6 +121,7 @@ async function renderChatScreen(input: {
       {...(input.initialConversationSessionId ? { initialConversationSessionId: input.initialConversationSessionId } : {})}
       {...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {})}
       {...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {})}
+      {...(input.deleteConversationSession ? { deleteConversationSession: input.deleteConversationSession } : {})}
       {...(input.exportCurrentConversationSession ? { exportCurrentConversationSession: input.exportCurrentConversationSession } : {})}
       {...(input.compactCurrentConversationSession ? { compactCurrentConversationSession: input.compactCurrentConversationSession } : {})}
       {...(input.autoCompactCurrentConversationSession
@@ -160,6 +168,12 @@ async function renderChatScreen(input: {
       });
       return captureFrame();
     },
+    async clickMouse(column: number, row: number): Promise<string> {
+      await act(async () => {
+        await renderedChatScreen.mockMouse.click(column, row);
+      });
+      return captureFrame();
+    },
     async typeText(text: string): Promise<string> {
       let frame = "";
       for (const character of text) {
@@ -187,6 +201,21 @@ function findRenderedRowContaining(renderedOutput: string, expectedText: string)
   }
 
   return renderedRow;
+}
+
+function findRenderedFrameTextPosition(renderedOutput: string, rowText: string, targetText: string): { column: number; row: number } {
+  const renderedRows = renderedOutput.split("\n");
+  const row = renderedRows.findIndex((renderedRow) => renderedRow.includes(rowText));
+  if (row === -1) {
+    throw new Error(`expected rendered output to contain a row with ${rowText}`);
+  }
+
+  const column = renderedRows[row]?.indexOf(targetText) ?? -1;
+  if (column === -1) {
+    throw new Error(`expected rendered row to contain ${targetText}`);
+  }
+
+  return { column, row };
 }
 
 test("ChatScreen shows user-facing slash commands after typing a bare slash", async () => {
@@ -461,6 +490,70 @@ test("ChatScreen hydrates the initial session and switches sessions through slas
   expect(switchedFrame).toContain("Switched prompt");
   expect(switchedFrame).toContain("Switched answer");
   expect(switchedFrame).not.toContain("Previous answer");
+});
+
+test("ChatScreen confirms and deletes sessions through slash command", async () => {
+  const activeConversationSessionEntries = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Previous prompt",
+      modelFacingPromptText: "Previous prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Previous answer",
+    },
+  ] as const satisfies readonly ConversationSessionEntry[];
+  let conversationSessions: ConversationSessionSummary[] = [
+    {
+      sessionId: "session-a",
+      title: "Previous prompt",
+      createdAtMs: 1000,
+      updatedAtMs: 2000,
+      conversationSessionEntryCount: 2,
+    },
+    {
+      sessionId: "session-b",
+      title: "Switched prompt",
+      createdAtMs: 3000,
+      updatedAtMs: 4000,
+      conversationSessionEntryCount: 2,
+    },
+  ];
+  const deletedConversationSessionIds: string[] = [];
+  const renderedChatScreen = await renderChatScreen({
+    initialConversationSessionId: "session-a",
+    initialConversationSessionEntries: activeConversationSessionEntries,
+    loadConversationSessions: async () => conversationSessions,
+    deleteConversationSession: async (conversationSessionId) => {
+      deletedConversationSessionIds.push(conversationSessionId);
+      conversationSessions = conversationSessions.filter(
+        (conversationSession) => conversationSession.sessionId !== conversationSessionId,
+      );
+      return {
+        deletedConversationSessionId: conversationSessionId,
+        activeConversationSessionId: "session-a",
+        activeConversationSessionEntries,
+        conversationSessions,
+      };
+    },
+  });
+
+  await renderedChatScreen.typeText("/sessions");
+  const sessionListFrame = await renderedChatScreen.pressEnter();
+  const deleteTarget = findRenderedFrameTextPosition(sessionListFrame, "Switched prompt", "x");
+
+  const confirmationFrame = await renderedChatScreen.clickMouse(deleteTarget.column, deleteTarget.row);
+  expect(confirmationFrame).toContain("confirm");
+  expect(deletedConversationSessionIds).toEqual([]);
+
+  const confirmTarget = findRenderedFrameTextPosition(confirmationFrame, "Switched prompt", "confirm");
+  const deletedFrame = await renderedChatScreen.clickMouse(confirmTarget.column, confirmTarget.row);
+  expect(deletedConversationSessionIds).toEqual(["session-b"]);
+  expect(deletedFrame).toContain("Previous prompt");
+  expect(deletedFrame).toContain("Previous answer");
+  expect(deletedFrame).not.toContain("Switched prompt");
 });
 
 test("ChatScreen opens command help through slash command instead of question mark shortcut", async () => {

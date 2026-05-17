@@ -220,6 +220,114 @@ test("FileConversationSessionStore imports a legacy snapshot into the active JSO
   ]);
 });
 
+test("FileConversationSessionStore lists sessions from metadata without validating full entry payloads", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-metadata-list-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    nowMs: () => 1000,
+  });
+  const activeConversationSession = conversationSessionStore.startNewConversationSession();
+  const headerRecordText = (await readFile(activeConversationSession.filePath, "utf8")).trim();
+  const firstEntryRecord = {
+    recordKind: "conversation_entry" as const,
+    sessionEntryId: "entry-1",
+    parentSessionEntryId: null,
+    recordedAtMs: 1001,
+    conversationSessionEntry: {
+      entryKind: "user_prompt" as const,
+      promptText: "Metadata title",
+      modelFacingPromptText: "Metadata title",
+    },
+  };
+  const invalidToolCallEntryRecord = {
+    recordKind: "conversation_entry" as const,
+    sessionEntryId: "entry-2",
+    parentSessionEntryId: "entry-1",
+    recordedAtMs: 1002,
+    conversationSessionEntry: {
+      entryKind: "tool_call",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+      },
+      unvalidatedLargePayloadText: "x".repeat(10_000),
+    },
+  };
+  await writeFile(
+    activeConversationSession.filePath,
+    [headerRecordText, JSON.stringify(firstEntryRecord), JSON.stringify(invalidToolCallEntryRecord), ""].join("\n"),
+    "utf8",
+  );
+
+  expect(conversationSessionStore.listConversationSessions()).toEqual([
+    {
+      sessionId: "session-1",
+      title: "Metadata title",
+      createdAtMs: 1000,
+      updatedAtMs: 1002,
+      conversationSessionEntryCount: 2,
+    },
+  ]);
+});
+
+test("FileConversationSessionStore deletes a session by header without validating entry payloads", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-metadata-delete-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: createQueuedStringFactory(["session-invalid", "session-active"]),
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createIncrementingClockMilliseconds(),
+  });
+  const invalidConversationSession = conversationSessionStore.startNewConversationSession();
+  const invalidSessionHeaderRecordText = (await readFile(invalidConversationSession.filePath, "utf8")).trim();
+  const invalidToolCallEntryRecord = {
+    recordKind: "conversation_entry" as const,
+    sessionEntryId: "entry-invalid",
+    parentSessionEntryId: null,
+    recordedAtMs: 2000,
+    conversationSessionEntry: {
+      entryKind: "tool_call",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+      },
+      unvalidatedLargePayloadText: "x".repeat(10_000),
+    },
+  };
+  await writeFile(
+    invalidConversationSession.filePath,
+    [invalidSessionHeaderRecordText, JSON.stringify(invalidToolCallEntryRecord), ""].join("\n"),
+    "utf8",
+  );
+  const activeConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Active prompt",
+    modelFacingPromptText: "Active prompt",
+  });
+
+  const activeConversationSessionAfterDelete = conversationSessionStore.deleteConversationSession(
+    invalidConversationSession.sessionId,
+  );
+
+  expect(activeConversationSessionAfterDelete).toMatchObject({
+    sessionId: activeConversationSession.sessionId,
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Active prompt",
+        modelFacingPromptText: "Active prompt",
+      },
+    ],
+  });
+  expect((await readdir(conversationSessionStore.sessionsDirectoryPath)).some((fileName) => fileName.includes("session-invalid"))).toBe(
+    false,
+  );
+});
+
 test("FileConversationSessionStore ignores a corrupt active-session pointer and recovers the latest session", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-corrupt-pointer-"));
   const conversationSessionStore = new FileConversationSessionStore({
@@ -244,6 +352,113 @@ test("FileConversationSessionStore ignores a corrupt active-session pointer and 
       },
     ],
   });
+});
+
+test("FileConversationSessionStore deletes an inactive session without changing the active session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-delete-inactive-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: createQueuedStringFactory(["session-a", "session-b"]),
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createIncrementingClockMilliseconds(),
+  });
+  const firstConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "First prompt",
+    modelFacingPromptText: "First prompt",
+  });
+  const secondConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Second prompt",
+    modelFacingPromptText: "Second prompt",
+  });
+
+  const activeConversationSessionAfterDelete = conversationSessionStore.deleteConversationSession(firstConversationSession.sessionId);
+
+  expect(activeConversationSessionAfterDelete).toMatchObject({
+    sessionId: secondConversationSession.sessionId,
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Second prompt",
+        modelFacingPromptText: "Second prompt",
+      },
+    ],
+  });
+  expect(conversationSessionStore.listConversationSessions().map((conversationSession) => conversationSession.sessionId)).toEqual([
+    secondConversationSession.sessionId,
+  ]);
+  expect((await readdir(conversationSessionStore.sessionsDirectoryPath)).some((fileName) => fileName.includes("session-a"))).toBe(false);
+});
+
+test("FileConversationSessionStore deletes the active session and switches to the latest remaining session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-delete-active-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: createQueuedStringFactory(["session-a", "session-b"]),
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createIncrementingClockMilliseconds(),
+  });
+  const firstConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "First prompt",
+    modelFacingPromptText: "First prompt",
+  });
+  const secondConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Second prompt",
+    modelFacingPromptText: "Second prompt",
+  });
+  conversationSessionStore.switchActiveConversationSession(firstConversationSession.sessionId);
+
+  const activeConversationSessionAfterDelete = conversationSessionStore.deleteConversationSession(firstConversationSession.sessionId);
+
+  expect(activeConversationSessionAfterDelete).toMatchObject({
+    sessionId: secondConversationSession.sessionId,
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Second prompt",
+        modelFacingPromptText: "Second prompt",
+      },
+    ],
+  });
+  expect(conversationSessionStore.loadActiveConversationSession().sessionId).toBe(secondConversationSession.sessionId);
+});
+
+test("FileConversationSessionStore creates a new empty active session after deleting the last session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-delete-last-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: createQueuedStringFactory(["session-a", "session-new"]),
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createIncrementingClockMilliseconds(),
+  });
+  const firstConversationSession = conversationSessionStore.startNewConversationSession();
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "First prompt",
+    modelFacingPromptText: "First prompt",
+  });
+
+  const activeConversationSessionAfterDelete = conversationSessionStore.deleteConversationSession(firstConversationSession.sessionId);
+
+  expect(activeConversationSessionAfterDelete).toMatchObject({
+    sessionId: "session-new",
+    conversationSessionEntries: [],
+  });
+  expect(conversationSessionStore.listConversationSessions()).toMatchObject([
+    {
+      sessionId: "session-new",
+      title: "New session",
+      conversationSessionEntryCount: 0,
+    },
+  ]);
+  expect((await readdir(conversationSessionStore.sessionsDirectoryPath)).some((fileName) => fileName.includes("session-a"))).toBe(false);
 });
 
 test("FileConversationSessionStore reloads history with safe model context after interrupted turns", async () => {
@@ -430,3 +645,28 @@ test("FileConversationSessionStore quarantines a corrupt middle JSONL suffix", a
   expect(corruptTailText).toContain("This suffix should not load.");
   expect(await readFile(activeConversationSession.filePath, "utf8")).not.toContain("This suffix should not load.");
 });
+
+function createQueuedStringFactory(queuedValues: readonly string[]): () => string {
+  let nextValueIndex = 0;
+  return () => {
+    const queuedValue = queuedValues[nextValueIndex];
+    nextValueIndex += 1;
+    return queuedValue ?? `queued-value-${nextValueIndex}`;
+  };
+}
+
+function createIncrementingEntryIdFactory(): () => string {
+  let nextEntryId = 0;
+  return () => {
+    nextEntryId += 1;
+    return `entry-${nextEntryId}`;
+  };
+}
+
+function createIncrementingClockMilliseconds(): () => number {
+  let nextTimestamp = 1000;
+  return () => {
+    nextTimestamp += 1;
+    return nextTimestamp;
+  };
+}

@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import {
   determinePromptContextQueryLoadStrategy,
   extractActivePromptContextQueryFromPromptDraft,
+  normalizePromptContextQueryText,
+  parsePromptContextPathQuery,
   reconcileSelectedPromptContextReferenceTextsWithPromptDraft,
   replaceActivePromptContextQueryWithSelectedReference,
 } from "../src/index.ts";
@@ -89,4 +91,19 @@ test("determinePromptContextQueryLoadStrategy classifies browse, path, and fuzzy
   expect(determinePromptContextQueryLoadStrategy("")).toBe("browse_current_directory");
   expect(determinePromptContextQueryLoadStrategy("packages/eng")).toBe("path_query");
   expect(determinePromptContextQueryLoadStrategy("runtime")).toBe("fuzzy_query");
+});
+
+test("normalizePromptContextQueryText removes leading quote and escaped query characters", () => {
+  expect(normalizePromptContextQueryText('"docs/My\\ File.md')).toBe("docs/My File.md");
+  expect(normalizePromptContextQueryText("src/\\\"quoted\\\"")).toBe('src/"quoted"');
+});
+
+test("parsePromptContextPathQuery returns the directory query and entry name query", () => {
+  expect(parsePromptContextPathQuery("~")).toEqual({ queryDirectoryPathText: "~/", entryNameQuery: "" });
+  expect(parsePromptContextPathQuery("~desk")).toEqual({ queryDirectoryPathText: "~/", entryNameQuery: "desk" });
+  expect(parsePromptContextPathQuery("../shared/notes")).toEqual({
+    queryDirectoryPathText: "../shared/",
+    entryNameQuery: "notes",
+  });
+  expect(parsePromptContextPathQuery("runtime")).toBeUndefined();
 });

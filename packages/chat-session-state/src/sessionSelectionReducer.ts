@@ -16,18 +16,25 @@ export function showAvailableConversationSessionsForSelection(
   chatSessionState: ChatSessionState,
   conversationSessions: readonly ConversationSessionSummary[],
   activeConversationSessionId: string | undefined,
+  options: { highlightedConversationSessionIndex?: number } = {},
 ): ChatSessionState {
   const activeConversationSessionIndex = activeConversationSessionId
     ? conversationSessions.findIndex((conversationSession) => conversationSession.sessionId === activeConversationSessionId)
     : -1;
+  const defaultHighlightedConversationSessionIndex = activeConversationSessionIndex === -1 ? 0 : activeConversationSessionIndex;
+  const highlightedConversationSessionIndex = clampConversationSessionSelectionIndex(
+    options.highlightedConversationSessionIndex ?? defaultHighlightedConversationSessionIndex,
+    conversationSessions.length,
+  );
 
   return {
     ...chatSessionState,
     conversationSessionSelectionState: {
       step: "showing_conversation_sessions",
       conversationSessions,
-      highlightedConversationSessionIndex: activeConversationSessionIndex === -1 ? 0 : activeConversationSessionIndex,
+      highlightedConversationSessionIndex,
       activeConversationSessionId,
+      pendingDeletionConversationSessionId: undefined,
     },
     promptContextSelectionState: { step: "hidden" },
     slashCommandSelectionState: { step: "hidden" },
@@ -77,6 +84,7 @@ export function moveHighlightedConversationSessionSelectionUp(chatSessionState: 
       highlightedConversationSessionIndex:
         (chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex - 1 + conversationSessionCount) %
         conversationSessionCount,
+      pendingDeletionConversationSessionId: undefined,
     },
   };
 }
@@ -97,6 +105,31 @@ export function moveHighlightedConversationSessionSelectionDown(chatSessionState
       ...chatSessionState.conversationSessionSelectionState,
       highlightedConversationSessionIndex:
         (chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex + 1) % conversationSessionCount,
+      pendingDeletionConversationSessionId: undefined,
+    },
+  };
+}
+
+export function requestConversationSessionDeletionConfirmation(
+  chatSessionState: ChatSessionState,
+  conversationSessionId: string,
+): ChatSessionState {
+  if (chatSessionState.conversationSessionSelectionState.step !== "showing_conversation_sessions") {
+    return chatSessionState;
+  }
+
+  const hasConversationSession = chatSessionState.conversationSessionSelectionState.conversationSessions.some(
+    (conversationSession) => conversationSession.sessionId === conversationSessionId,
+  );
+  if (!hasConversationSession) {
+    return chatSessionState;
+  }
+
+  return {
+    ...chatSessionState,
+    conversationSessionSelectionState: {
+      ...chatSessionState.conversationSessionSelectionState,
+      pendingDeletionConversationSessionId: conversationSessionId,
     },
   };
 }
@@ -126,4 +159,12 @@ export function selectHighlightedConversationSession(chatSessionState: ChatSessi
       promptDraftCursorOffset: 0,
     },
   };
+}
+
+function clampConversationSessionSelectionIndex(highlightedConversationSessionIndex: number, conversationSessionCount: number): number {
+  if (conversationSessionCount <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(highlightedConversationSessionIndex, conversationSessionCount - 1));
 }

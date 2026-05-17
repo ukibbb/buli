@@ -31,6 +31,7 @@ export type ChatScreenInputAreaProps = {
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
   onNativeClipboardPasteRequested: () => void | Promise<void>;
+  onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };
 
 export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode {
@@ -137,7 +138,11 @@ function renderConversationSessionSelectionPane(props: ChatScreenInputAreaProps)
         props.chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex
       }
       activeConversationSessionId={props.chatSessionState.conversationSessionSelectionState.activeConversationSessionId}
+      pendingDeletionConversationSessionId={
+        props.chatSessionState.conversationSessionSelectionState.pendingDeletionConversationSessionId
+      }
       accentColor={props.inputPanelAccentColor}
+      onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
     />
   ) : null;
 }

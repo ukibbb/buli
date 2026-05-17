@@ -1,9 +1,4 @@
-import type { PromptContextQueryLoadStrategy } from "./types.ts";
-
-type PromptContextPathQuery = {
-  queryDirectoryPathText: string;
-  entryNameQuery: string;
-};
+import type { PromptContextPathQuery, PromptContextQueryLoadStrategy } from "./types.ts";
 
 export function determinePromptContextQueryLoadStrategy(promptContextQueryText: string): PromptContextQueryLoadStrategy {
   const normalizedPromptContextQueryText = normalizePromptContextQueryText(promptContextQueryText);
@@ -14,7 +9,7 @@ export function determinePromptContextQueryLoadStrategy(promptContextQueryText: 
   return parsePromptContextPathQuery(normalizedPromptContextQueryText) ? "path_query" : "fuzzy_query";
 }
 
-function parsePromptContextPathQuery(promptContextQueryText: string): PromptContextPathQuery | undefined {
+export function parsePromptContextPathQuery(promptContextQueryText: string): PromptContextPathQuery | undefined {
   if (promptContextQueryText === "~") {
     return { queryDirectoryPathText: "~/", entryNameQuery: "" };
   }
@@ -51,7 +46,7 @@ function parsePromptContextPathQuery(promptContextQueryText: string): PromptCont
   };
 }
 
-function normalizePromptContextQueryText(promptContextQueryText: string): string {
+export function normalizePromptContextQueryText(promptContextQueryText: string): string {
   const queryWithoutLeadingQuote = promptContextQueryText.startsWith('"')
     ? promptContextQueryText.slice(1)
     : promptContextQueryText;

@@ -27,6 +27,7 @@ export type ChatScreenProps = {
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];
   switchConversationSession?: (conversationSessionId: string) => Promise<ConversationSessionSwitchResult> | ConversationSessionSwitchResult;
+  deleteConversationSession?: (conversationSessionId: string) => Promise<ConversationSessionDeleteResult> | ConversationSessionDeleteResult;
   exportCurrentConversationSession?: () => Promise<ConversationSessionExportResult> | ConversationSessionExportResult;
   compactCurrentConversationSession?: (
     input: ConversationCompactionRequest,
@@ -43,6 +44,13 @@ export type ChatScreenProps = {
 export type ConversationSessionSwitchResult = {
   conversationSessionId: string;
   conversationSessionEntries: readonly ConversationSessionEntry[];
+};
+
+export type ConversationSessionDeleteResult = {
+  deletedConversationSessionId: string;
+  activeConversationSessionId: string;
+  activeConversationSessionEntries: readonly ConversationSessionEntry[];
+  conversationSessions: readonly ConversationSessionSummary[];
 };
 
 export type ConversationSessionExportResult = {
@@ -69,6 +77,7 @@ export declare function renderChatScreenInTerminal(input: {
   loadPromptContextCandidates: ChatScreenProps["loadPromptContextCandidates"];
   loadConversationSessions?: ChatScreenProps["loadConversationSessions"];
   switchConversationSession?: ChatScreenProps["switchConversationSession"];
+  deleteConversationSession?: ChatScreenProps["deleteConversationSession"];
   exportCurrentConversationSession?: ChatScreenProps["exportCurrentConversationSession"];
   compactCurrentConversationSession?: ChatScreenProps["compactCurrentConversationSession"];
   autoCompactCurrentConversationSession?: ChatScreenProps["autoCompactCurrentConversationSession"];

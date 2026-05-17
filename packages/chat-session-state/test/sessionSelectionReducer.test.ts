@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import {
   createInitialChatSessionState,
   moveHighlightedConversationSessionSelectionDown,
+  moveHighlightedConversationSessionSelectionUp,
+  requestConversationSessionDeletionConfirmation,
   selectHighlightedConversationSession,
   showAvailableConversationSessionsForSelection,
 } from "../src/index.ts";
@@ -35,6 +37,7 @@ test("session selection highlights the active session when sessions are shown", 
     conversationSessions: conversationSessionSummaries,
     highlightedConversationSessionIndex: 1,
     activeConversationSessionId: "session-b",
+    pendingDeletionConversationSessionId: undefined,
   });
 });
 
@@ -51,4 +54,52 @@ test("session selection returns the highlighted session", () => {
 
   expect(selection.selectedConversationSession?.sessionId).toBe("session-b");
   expect(selection.nextChatSessionState.conversationSessionSelectionState).toEqual({ step: "hidden" });
+});
+
+test("session selection records the session waiting for delete confirmation", () => {
+  const chatSessionState = requestConversationSessionDeletionConfirmation(
+    showAvailableConversationSessionsForSelection(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      conversationSessionSummaries,
+      "session-a",
+    ),
+    "session-b",
+  );
+
+  expect(chatSessionState.conversationSessionSelectionState).toMatchObject({
+    step: "showing_conversation_sessions",
+    pendingDeletionConversationSessionId: "session-b",
+  });
+});
+
+test("session selection clears delete confirmation when the highlighted session changes", () => {
+  const chatSessionState = requestConversationSessionDeletionConfirmation(
+    showAvailableConversationSessionsForSelection(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      conversationSessionSummaries,
+      "session-a",
+    ),
+    "session-b",
+  );
+
+  const nextChatSessionState = moveHighlightedConversationSessionSelectionUp(chatSessionState);
+
+  expect(nextChatSessionState.conversationSessionSelectionState).toMatchObject({
+    step: "showing_conversation_sessions",
+    pendingDeletionConversationSessionId: undefined,
+  });
+});
+
+test("session selection can keep the highlighted row near a refreshed list", () => {
+  const chatSessionState = showAvailableConversationSessionsForSelection(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationSessionSummaries.slice(0, 1),
+    "session-a",
+    { highlightedConversationSessionIndex: 10 },
+  );
+
+  expect(chatSessionState.conversationSessionSelectionState).toMatchObject({
+    step: "showing_conversation_sessions",
+    highlightedConversationSessionIndex: 0,
+  });
 });

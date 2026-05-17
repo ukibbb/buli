@@ -3,6 +3,7 @@ import type { ConversationAutoCompactionRequest, ConversationAutoCompactionResul
 import {
   clearConversationTranscript,
   hydrateConversationTranscriptFromSessionEntries,
+  requestConversationSessionDeletionConfirmation,
   showAvailableConversationSessionsForSelection,
   showConversationSessionSelectionLoadingError,
   showConversationSessionSelectionLoadingState,
@@ -19,6 +20,13 @@ export type ConversationSessionSwitchResult = {
   conversationSessionEntries: readonly ConversationSessionEntry[];
 };
 
+export type ConversationSessionDeleteResult = {
+  deletedConversationSessionId: string;
+  activeConversationSessionId: string;
+  activeConversationSessionEntries: readonly ConversationSessionEntry[];
+  conversationSessions: readonly ConversationSessionSummary[];
+};
+
 export type ConversationSessionExportResult = {
   exportFilePath: string;
   exportFileUrl: string;
@@ -32,6 +40,9 @@ export type UseChatScreenConversationSessionActionsInput = {
   loadConversationSessions?: (() => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[]) | undefined;
   switchConversationSession?:
     | ((conversationSessionId: string) => Promise<ConversationSessionSwitchResult> | ConversationSessionSwitchResult)
+    | undefined;
+  deleteConversationSession?:
+    | ((conversationSessionId: string) => Promise<ConversationSessionDeleteResult> | ConversationSessionDeleteResult)
     | undefined;
   exportCurrentConversationSession?: (() => Promise<ConversationSessionExportResult> | ConversationSessionExportResult) | undefined;
   compactCurrentConversationSession?:
@@ -56,6 +67,7 @@ export type UseChatScreenConversationSessionActionsResult = {
   hydrateConversationSessionEntriesIntoChatScreen: (conversationSessionEntries: readonly ConversationSessionEntry[]) => void;
   loadConversationSessionsForSelection: () => Promise<void>;
   switchToConversationSession: (conversationSessionId: string) => Promise<void>;
+  requestConversationSessionDeletion: (conversationSessionId: string) => Promise<void>;
   exportCurrentConversationSession: () => Promise<void>;
   compactCurrentConversationSession: () => Promise<void>;
   autoCompactCurrentConversationSessionAfterAssistantTurn: () => Promise<void>;
@@ -139,6 +151,83 @@ export function useChatScreenConversationSessionActions(
       input.latestActiveConversationSessionIdRef.current = switchedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(switchedConversationSession.conversationSessionId);
       hydrateConversationSessionEntriesIntoChatScreen(switchedConversationSession.conversationSessionEntries);
+    } catch (error) {
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      startTransition(() => {
+        input.setChatSessionState((currentChatSessionState) =>
+          showConversationSessionSelectionLoadingError(currentChatSessionState, errorMessage),
+        );
+      });
+    }
+  });
+
+  const requestConversationSessionDeletion = useEffectEvent(async (conversationSessionId: string): Promise<void> => {
+    const currentConversationSessionSelectionState = input.latestChatSessionStateRef.current.conversationSessionSelectionState;
+    const isDeletionConfirmed = currentConversationSessionSelectionState.step === "showing_conversation_sessions" &&
+      currentConversationSessionSelectionState.pendingDeletionConversationSessionId === conversationSessionId;
+
+    if (!isDeletionConfirmed) {
+      input.setChatSessionState((currentChatSessionState) => {
+        const nextChatSessionState = requestConversationSessionDeletionConfirmation(
+          currentChatSessionState,
+          conversationSessionId,
+        );
+        input.latestChatSessionStateRef.current = nextChatSessionState;
+        return nextChatSessionState;
+      });
+      return;
+    }
+
+    if (!input.deleteConversationSession) {
+      input.setChatSessionState((currentChatSessionState) =>
+        showConversationSessionSelectionLoadingError(currentChatSessionState, "Session deletion is unavailable."),
+      );
+      return;
+    }
+
+    const deletedConversationSessionIndex = currentConversationSessionSelectionState.step === "showing_conversation_sessions"
+      ? currentConversationSessionSelectionState.conversationSessions.findIndex(
+        (conversationSession) => conversationSession.sessionId === conversationSessionId,
+      )
+      : 0;
+    const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
+    latestConversationSessionMutationRequestSequenceRef.current = requestSequence;
+    try {
+      const deletedConversationSession = await input.deleteConversationSession(conversationSessionId);
+      if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+        return;
+      }
+
+      const nextHighlightedConversationSessionIndex = clampConversationSessionSelectionIndex(
+        deletedConversationSessionIndex === -1 ? 0 : deletedConversationSessionIndex,
+        deletedConversationSession.conversationSessions.length,
+      );
+      input.latestActiveConversationSessionIdRef.current = deletedConversationSession.activeConversationSessionId;
+      input.setActiveConversationSessionId(deletedConversationSession.activeConversationSessionId);
+      startTransition(() => {
+        input.setChatSessionState((currentChatSessionState) => {
+          const hydratedChatSessionState = hydrateConversationTranscriptFromSessionEntries(
+            currentChatSessionState,
+            deletedConversationSession.activeConversationSessionEntries,
+          );
+          const nextChatSessionState = showAvailableConversationSessionsForSelection(
+            hydratedChatSessionState,
+            deletedConversationSession.conversationSessions,
+            deletedConversationSession.activeConversationSessionId,
+            { highlightedConversationSessionIndex: nextHighlightedConversationSessionIndex },
+          );
+          input.latestChatSessionStateRef.current = nextChatSessionState;
+          return nextChatSessionState;
+        });
+      });
+      logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.conversation_session_deleted", {
+        deletedConversationSessionId: deletedConversationSession.deletedConversationSessionId,
+        activeConversationSessionId: deletedConversationSession.activeConversationSessionId,
+        conversationSessionCount: deletedConversationSession.conversationSessions.length,
+      });
     } catch (error) {
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
         return;
@@ -277,9 +366,18 @@ export function useChatScreenConversationSessionActions(
     hydrateConversationSessionEntriesIntoChatScreen,
     loadConversationSessionsForSelection,
     switchToConversationSession,
+    requestConversationSessionDeletion,
     exportCurrentConversationSession,
     compactCurrentConversationSession,
     autoCompactCurrentConversationSessionAfterAssistantTurn,
     clearCurrentConversationSession,
   };
+}
+
+function clampConversationSessionSelectionIndex(conversationSessionIndex: number, conversationSessionCount: number): number {
+  if (conversationSessionCount <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(conversationSessionIndex, conversationSessionCount - 1));
 }

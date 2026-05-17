@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ConversationSessionSummary } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
@@ -9,7 +9,9 @@ export type ConversationSessionSelectionPaneProps = {
   conversationSessions: readonly ConversationSessionSummary[];
   highlightedConversationSessionIndex: number;
   activeConversationSessionId: string | undefined;
+  pendingDeletionConversationSessionId: string | undefined;
   accentColor: string;
+  onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };
 
 export function ConversationSessionSelectionPane(props: ConversationSessionSelectionPaneProps): ReactNode {
@@ -73,36 +75,83 @@ export function ConversationSessionSelectionPane(props: ConversationSessionSelec
             </text>
           </box>
         ) : (
-          <box
-            backgroundColor={
-              row.conversationSessionIndex === highlightedConversationSessionIndex
-                ? chatScreenTheme.borderSubtle
-                : chatScreenTheme.surfaceOne
-            }
-            flexDirection="row"
-            flexShrink={0}
-            height={1}
+          <ConversationSessionOptionRow
+            activeConversationSessionId={props.activeConversationSessionId}
+            conversationSession={row.conversationSession}
+            conversationSessionIndex={row.conversationSessionIndex}
+            highlightedConversationSessionIndex={highlightedConversationSessionIndex}
+            isAwaitingDeleteConfirmation={row.conversationSession.sessionId === props.pendingDeletionConversationSessionId}
             key={row.conversationSession.sessionId}
-            width="100%"
-          >
-            <text
-              fg={
-                row.conversationSessionIndex === highlightedConversationSessionIndex
-                  ? chatScreenTheme.textPrimary
-                  : chatScreenTheme.textSecondary
-              }
-              truncate={true}
-              wrapMode="none"
-            >
-              {formatConversationSessionOptionLabel(
-                row.conversationSession,
-                row.conversationSession.sessionId === props.activeConversationSessionId,
-              )}
-            </text>
-          </box>
+            onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
+          />
         ),
       )}
     </SelectionPaneFrame>
+  );
+}
+
+function ConversationSessionOptionRow(props: {
+  conversationSession: ConversationSessionSummary;
+  conversationSessionIndex: number;
+  highlightedConversationSessionIndex: number;
+  activeConversationSessionId: string | undefined;
+  isAwaitingDeleteConfirmation: boolean;
+  onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
+}): ReactNode {
+  const isHighlightedConversationSession = props.conversationSessionIndex === props.highlightedConversationSessionIndex;
+  return (
+    <box
+      backgroundColor={isHighlightedConversationSession ? chatScreenTheme.borderSubtle : chatScreenTheme.surfaceOne}
+      flexDirection="row"
+      flexShrink={0}
+      height={1}
+      width="100%"
+    >
+      <box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+        <text
+          fg={isHighlightedConversationSession ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+          truncate={true}
+          wrapMode="none"
+          width="100%"
+        >
+          {formatConversationSessionOptionLabel(
+            props.conversationSession,
+            props.conversationSession.sessionId === props.activeConversationSessionId,
+          )}
+        </text>
+      </box>
+      <ConversationSessionDeleteControl
+        conversationSessionId={props.conversationSession.sessionId}
+        isAwaitingDeleteConfirmation={props.isAwaitingDeleteConfirmation}
+        onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
+      />
+    </box>
+  );
+}
+
+function ConversationSessionDeleteControl(props: {
+  conversationSessionId: string;
+  isAwaitingDeleteConfirmation: boolean;
+  onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
+}): ReactNode {
+  const [isPointerHovering, setIsPointerHovering] = useState(false);
+  const deleteActionLabel = props.isAwaitingDeleteConfirmation ? "confirm" : "x";
+  const deleteActionColor = props.isAwaitingDeleteConfirmation
+    ? (isPointerHovering ? chatScreenTheme.accentRed : chatScreenTheme.accentAmber)
+    : (isPointerHovering ? chatScreenTheme.accentRed : chatScreenTheme.textDim);
+
+  return (
+    <box
+      flexShrink={0}
+      marginLeft={1}
+      onMouseDown={() => props.onConversationSessionDeletionRequested(props.conversationSessionId)}
+      onMouseOut={() => setIsPointerHovering(false)}
+      onMouseOver={() => setIsPointerHovering(true)}
+    >
+      <text fg={deleteActionColor} wrapMode="none">
+        {deleteActionLabel}
+      </text>
+    </box>
   );
 }
 

@@ -252,6 +252,38 @@ describe("AssistantMarkdownBlock", () => {
     expect(captureCharFrame()).toContain("╭─ ts · src/app.ts");
   });
 
+  test("renders_plain_text_fences_as_unlabeled_terminal_cards", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "near-term mantra:",
+          "",
+          "```text",
+          "Better tutor behavior.",
+          "Better context.",
+          "Better proposal review.",
+          "Visible evidence.",
+          "No silent durable mutation.",
+          "```",
+        ].join("\n")}
+      />,
+      { width: 96, height: 14 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("near-term mantra:");
+    expect(frame).toContain("Better tutor behavior.");
+    expect(frame).toContain("Better context.");
+    expect(frame).toContain("╭");
+    expect(frame).toContain("┃ Better tutor behavior.");
+    expect(frame).toContain("╰");
+    expect(frame).not.toContain("╭─ text");
+  });
+
   test("aligns_ordered_list_markers_by_digit_width", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock

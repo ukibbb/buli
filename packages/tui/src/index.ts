@@ -14,6 +14,7 @@ export { ChatScreen } from "./ChatScreen.tsx";
 export type {
   ChatScreenProps,
   ConversationSessionCompactionResult,
+  ConversationSessionDeleteResult,
   ConversationSessionExportResult,
   ConversationSessionSwitchResult,
 } from "./ChatScreen.tsx";
@@ -66,6 +67,7 @@ export type RenderChatScreenInTerminalInput = {
   loadPromptContextCandidates: ChatScreenProps["loadPromptContextCandidates"];
   loadConversationSessions?: ChatScreenProps["loadConversationSessions"];
   switchConversationSession?: ChatScreenProps["switchConversationSession"];
+  deleteConversationSession?: ChatScreenProps["deleteConversationSession"];
   exportCurrentConversationSession?: ChatScreenProps["exportCurrentConversationSession"];
   compactCurrentConversationSession?: ChatScreenProps["compactCurrentConversationSession"];
   autoCompactCurrentConversationSession?: ChatScreenProps["autoCompactCurrentConversationSession"];
@@ -215,6 +217,7 @@ export async function renderChatScreenInTerminalWithRuntime<
         loadPromptContextCandidates: input.loadPromptContextCandidates,
         ...(input.loadConversationSessions ? { loadConversationSessions: input.loadConversationSessions } : {}),
         ...(input.switchConversationSession ? { switchConversationSession: input.switchConversationSession } : {}),
+        ...(input.deleteConversationSession ? { deleteConversationSession: input.deleteConversationSession } : {}),
         ...(input.exportCurrentConversationSession
           ? { exportCurrentConversationSession: input.exportCurrentConversationSession }
           : {}),

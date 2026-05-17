@@ -18,13 +18,23 @@ import { basename, dirname, join, resolve } from "node:path";
 const defaultConversationSessionWriteLockWaitTimeoutMs = 5_000;
 const defaultConversationSessionWriteLockRetryDelayMs = 25;
 const defaultConversationSessionStaleLockAgeMs = 30 * 60 * 1000;
-const processHeldConversationSessionWriteLockCounts = new Map<string, number>();
+const processHeldConversationSessionWriteLocks = new Map<string, ProcessHeldConversationSessionWriteLock>();
 const privateConversationSessionDirectoryMode = 0o700;
 const privateConversationSessionFileMode = 0o600;
 
 type ConversationSessionWriteLockFile = {
   processId: number;
   acquiredAtMs: number;
+  rawLockFileText: string;
+  lockOwnerId?: string;
+};
+
+type AcquiredConversationSessionWriteLock = {
+  lockOwnerId: string;
+};
+
+type ProcessHeldConversationSessionWriteLock = AcquiredConversationSessionWriteLock & {
+  heldLockCount: number;
 };
 
 export function runWithExclusiveConversationSessionFileWriteLock<T>(
@@ -37,9 +47,9 @@ export function runWithExclusiveConversationSessionFileWriteLock<T>(
   writeConversationSessionFiles: () => T,
 ): T {
   const resolvedLockFilePath = resolve(input.lockFilePath);
-  const processHeldLockCount = processHeldConversationSessionWriteLockCounts.get(resolvedLockFilePath) ?? 0;
-  if (processHeldLockCount > 0) {
-    processHeldConversationSessionWriteLockCounts.set(resolvedLockFilePath, processHeldLockCount + 1);
+  const processHeldLock = processHeldConversationSessionWriteLocks.get(resolvedLockFilePath);
+  if (processHeldLock) {
+    processHeldLock.heldLockCount += 1;
     try {
       return writeConversationSessionFiles();
     } finally {
@@ -47,13 +57,16 @@ export function runWithExclusiveConversationSessionFileWriteLock<T>(
     }
   }
 
-  acquireConversationSessionWriteLock({
+  const acquiredConversationSessionWriteLock = acquireConversationSessionWriteLock({
     lockFilePath: resolvedLockFilePath,
     waitTimeoutMs: input.waitTimeoutMs ?? defaultConversationSessionWriteLockWaitTimeoutMs,
     retryDelayMs: input.retryDelayMs ?? defaultConversationSessionWriteLockRetryDelayMs,
     staleLockAgeMs: input.staleLockAgeMs ?? defaultConversationSessionStaleLockAgeMs,
   });
-  processHeldConversationSessionWriteLockCounts.set(resolvedLockFilePath, 1);
+  processHeldConversationSessionWriteLocks.set(resolvedLockFilePath, {
+    ...acquiredConversationSessionWriteLock,
+    heldLockCount: 1,
+  });
 
   try {
     return writeConversationSessionFiles();
@@ -114,16 +127,16 @@ function acquireConversationSessionWriteLock(input: {
   waitTimeoutMs: number;
   retryDelayMs: number;
   staleLockAgeMs: number;
-}): void {
+}): AcquiredConversationSessionWriteLock {
   ensurePrivateConversationSessionDirectory(dirname(input.lockFilePath));
   const waitStartedAtMs = Date.now();
   const lockWaitTimeoutMs = Math.max(0, input.waitTimeoutMs);
   const lockRetryDelayMs = Math.max(1, input.retryDelayMs);
 
   while (true) {
-    const wasLockAcquired = tryAcquireConversationSessionWriteLock(input.lockFilePath);
-    if (wasLockAcquired) {
-      return;
+    const acquiredConversationSessionWriteLock = tryAcquireConversationSessionWriteLock(input.lockFilePath);
+    if (acquiredConversationSessionWriteLock) {
+      return acquiredConversationSessionWriteLock;
     }
 
     if (tryRecoverStaleConversationSessionWriteLock({
@@ -156,13 +169,23 @@ function tryRecoverStaleConversationSessionWriteLock(input: {
     return false;
   }
 
+  const currentLockFile = readConversationSessionWriteLockFile(input.lockFilePath);
+  if (
+    !currentLockFile ||
+    currentLockFile.rawLockFileText !== lockFile.rawLockFileText ||
+    (lockFile.lockOwnerId !== undefined && currentLockFile.lockOwnerId !== lockFile.lockOwnerId)
+  ) {
+    return false;
+  }
+
   rmSync(input.lockFilePath, { force: true });
   return true;
 }
 
 function readConversationSessionWriteLockFile(lockFilePath: string): ConversationSessionWriteLockFile | undefined {
   try {
-    const parsedLockFile = JSON.parse(readFileSync(lockFilePath, "utf8")) as unknown;
+    const rawLockFileText = readFileSync(lockFilePath, "utf8");
+    const parsedLockFile = JSON.parse(rawLockFileText) as unknown;
     if (
       typeof parsedLockFile === "object" &&
       parsedLockFile !== null &&
@@ -174,9 +197,16 @@ function readConversationSessionWriteLockFile(lockFilePath: string): Conversatio
       typeof parsedLockFile.acquiredAtMs === "number" &&
       Number.isFinite(parsedLockFile.acquiredAtMs)
     ) {
+      const lockOwnerId = "lockOwnerId" in parsedLockFile ? parsedLockFile.lockOwnerId : undefined;
+      if (lockOwnerId !== undefined && (typeof lockOwnerId !== "string" || lockOwnerId.length === 0)) {
+        return undefined;
+      }
+
       return {
         processId: parsedLockFile.processId,
         acquiredAtMs: parsedLockFile.acquiredAtMs,
+        rawLockFileText,
+        ...(lockOwnerId !== undefined ? { lockOwnerId } : {}),
       };
     }
   } catch {
@@ -199,22 +229,23 @@ function isProcessAlive(processId: number): boolean {
   }
 }
 
-function tryAcquireConversationSessionWriteLock(lockFilePath: string): boolean {
+function tryAcquireConversationSessionWriteLock(lockFilePath: string): AcquiredConversationSessionWriteLock | undefined {
   let lockFileDescriptor: number | undefined;
+  const lockOwnerId = randomUUID();
   try {
     lockFileDescriptor = openSync(lockFilePath, "wx", privateConversationSessionFileMode);
     writeFileSync(
       lockFileDescriptor,
-      JSON.stringify({ processId: process.pid, acquiredAtMs: Date.now() }) + "\n",
+      JSON.stringify({ processId: process.pid, acquiredAtMs: Date.now(), lockOwnerId }) + "\n",
       "utf8",
     );
-    return true;
+    return { lockOwnerId };
   } catch (error) {
     if (lockFileDescriptor !== undefined) {
       rmSync(lockFilePath, { force: true });
     }
     if (isNodeErrorWithCode(error, "EEXIST")) {
-      return false;
+      return undefined;
     }
     throw error;
   } finally {
@@ -233,16 +264,24 @@ function releaseProcessHeldConversationSessionWriteLock(input: {
   lockFilePath: string;
   removeLockFile: boolean;
 }): void {
-  const processHeldLockCount = processHeldConversationSessionWriteLockCounts.get(input.lockFilePath) ?? 0;
-  if (processHeldLockCount > 1) {
-    processHeldConversationSessionWriteLockCounts.set(input.lockFilePath, processHeldLockCount - 1);
+  const processHeldLock = processHeldConversationSessionWriteLocks.get(input.lockFilePath);
+  if (!processHeldLock) {
     return;
   }
 
-  processHeldConversationSessionWriteLockCounts.delete(input.lockFilePath);
-  if (input.removeLockFile) {
+  if (processHeldLock.heldLockCount > 1) {
+    processHeldLock.heldLockCount -= 1;
+    return;
+  }
+
+  processHeldConversationSessionWriteLocks.delete(input.lockFilePath);
+  if (input.removeLockFile && isConversationSessionWriteLockOwnedBy(input.lockFilePath, processHeldLock.lockOwnerId)) {
     rmSync(input.lockFilePath, { force: true });
   }
+}
+
+function isConversationSessionWriteLockOwnedBy(lockFilePath: string, lockOwnerId: string): boolean {
+  return readConversationSessionWriteLockFile(lockFilePath)?.lockOwnerId === lockOwnerId;
 }
 
 function sleepSynchronously(delayMs: number): void {

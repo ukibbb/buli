@@ -92,6 +92,7 @@ export {
   hideConversationSessionSelection,
   moveHighlightedConversationSessionSelectionDown,
   moveHighlightedConversationSessionSelectionUp,
+  requestConversationSessionDeletionConfirmation,
   selectHighlightedConversationSession,
   showAvailableConversationSessionsForSelection,
   showConversationSessionSelectionLoadingError,

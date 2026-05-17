@@ -31,3 +31,8 @@ export type ActivePromptContextQuery = {
 };
 
 export type PromptContextQueryLoadStrategy = "browse_current_directory" | "path_query" | "fuzzy_query";
+
+export type PromptContextPathQuery = {
+  queryDirectoryPathText: string;
+  entryNameQuery: string;
+};

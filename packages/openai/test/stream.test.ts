@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { MAX_BASH_TOOL_TIMEOUT_MILLISECONDS } from "@buli/contracts";
 import { OpenAiAuthStore } from "../src/auth/store.ts";
 import { OpenAiProvider } from "../src/provider/client.ts";
 import { parseOpenAiStream } from "../src/provider/stream.ts";
@@ -631,8 +632,24 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(exploreToolDefinition?.description).toContain("read-only Explorer subagent");
   expect(exploreToolDefinition?.description).toContain("identify inspected files and remaining context gaps");
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
+  expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
   expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);
   expect(readToolDefinition?.parameters.properties["limit"]?.minimum).toBe(1);
+});
+
+test("parseOpenAiStream rejects typed tool calls that violate shared contracts", async () => {
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"sleep 999\\",\\"description\\":\\"Sleep too long\\",\\"timeout\\":${MAX_BASH_TOOL_TIMEOUT_MILLISECONDS + 1}}"}\n\n`,
+      `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"sleep 999\\",\\"description\\":\\"Sleep too long\\",\\"timeout\\":${MAX_BASH_TOOL_TIMEOUT_MILLISECONDS + 1}}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow(
+    "OpenAI function call for bash violates Buli tool contract: timeoutMilliseconds",
+  );
 });
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {

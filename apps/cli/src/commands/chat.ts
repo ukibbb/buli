@@ -1,4 +1,4 @@
-import { resolve, sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import {
   emitBuliDiagnosticLogEvent,
   type BuliDiagnosticLogFields,
@@ -52,11 +52,17 @@ type InteractiveChatEnvironment = Readonly<{
   [environmentVariableName: string]: string | undefined;
   BULI_BASH_APPROVAL_MODE?: string | undefined;
   BULI_AUTO_COMPACT_THRESHOLD?: string | undefined;
+  BULI_PROMPT_CONTEXT_ROOT?: string | undefined;
 }>;
 
 type AutoCompactionThresholdResolution =
   | { status: "resolved"; thresholdRatio: number }
   | { status: "invalid" };
+
+type PromptContextScopeResolution = {
+  promptContextBrowseRootPath: string;
+  promptContextStartingDirectoryPath: string;
+};
 
 export async function runInteractiveChat(input: {
   selectedModelId?: string;
@@ -98,6 +104,11 @@ export async function runInteractiveChat(input: {
     return "Interactive chat requires a TTY. Run `buli` in a terminal.";
   }
 
+  const workspaceRootPath = process.cwd();
+  const promptContextScope = resolveInteractiveChatPromptContextScope({
+    workspaceRootPath,
+    environment,
+  });
   const consoleFileLoggerInstallation = installConsoleFileLogger({ environment });
   const diagnosticLogger = consoleFileLoggerInstallation.logFilePath
     ? createDiagnosticFileLogger({ logFilePath: consoleFileLoggerInstallation.logFilePath })
@@ -107,7 +118,9 @@ export async function runInteractiveChat(input: {
     selectedModelDefaultReasoningEffort: selectedModelDefaultReasoningEffort ?? null,
     selectedReasoningEffort,
     bashToolApprovalMode,
-    workingDirectoryPath: process.cwd(),
+    workingDirectoryPath: workspaceRootPath,
+    promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
     logFilePath: consoleFileLoggerInstallation.logFilePath ?? null,
   });
   const conversationSessionStore = input.conversationSessionStore ?? new FileConversationSessionStore();
@@ -121,14 +134,9 @@ export async function runInteractiveChat(input: {
   });
 
   const provider = new OpenAiProvider({ store, diagnosticLogger });
-  const promptContextBrowseRootPath = process.cwd();
-  const promptContextStartingDirectoryPath = resolvePromptContextStartingDirectoryPath({
-    promptContextBrowseRootPath,
-    requestedStartingDirectoryPath: process.cwd(),
-  });
   const promptContextCandidateCatalog = new PromptContextCandidateCatalog({
-    promptContextBrowseRootPath,
-    promptContextStartingDirectoryPath,
+    promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
   });
   const conversationHistory = new InMemoryConversationHistory({
     initialConversationSessionEntries,
@@ -145,9 +153,9 @@ export async function runInteractiveChat(input: {
   });
   const assistantConversationRunner = new AssistantConversationRuntime({
     conversationTurnProvider: provider,
-    workspaceRootPath: process.cwd(),
-    promptContextBrowseRootPath,
-    promptContextStartingDirectoryPath,
+    workspaceRootPath,
+    promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
     conversationHistory,
     bashToolApprovalMode,
     ...(conversationSessionStore.promptCacheKey ? { promptCacheKey: conversationSessionStore.promptCacheKey } : {}),
@@ -173,6 +181,24 @@ export async function runInteractiveChat(input: {
         conversationSessionEntries: switchedConversationSession.conversationSessionEntries,
       };
     },
+    deleteConversationSession: async (conversationSessionId: string) => {
+      const activeConversationSessionAfterDelete = conversationSessionStore.deleteConversationSession(conversationSessionId);
+      activeConversationSessionId = activeConversationSessionAfterDelete.sessionId;
+      conversationHistory.replaceConversationSessionEntries(activeConversationSessionAfterDelete.conversationSessionEntries);
+      const conversationSessionsAfterDelete = conversationSessionStore.listConversationSessions();
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.deleted", {
+        deletedConversationSessionId: conversationSessionId,
+        activeConversationSessionId: activeConversationSessionAfterDelete.sessionId,
+        activeConversationSessionEntryCount: activeConversationSessionAfterDelete.conversationSessionEntries.length,
+        conversationSessionCount: conversationSessionsAfterDelete.length,
+      });
+      return {
+        deletedConversationSessionId: conversationSessionId,
+        activeConversationSessionId: activeConversationSessionAfterDelete.sessionId,
+        activeConversationSessionEntries: activeConversationSessionAfterDelete.conversationSessionEntries,
+        conversationSessions: conversationSessionsAfterDelete,
+      };
+    },
     onConversationCleared: () => {
       const newConversationSession = conversationSessionStore.startNewConversationSession();
       activeConversationSessionId = newConversationSession.sessionId;
@@ -189,7 +215,7 @@ export async function runInteractiveChat(input: {
     exportCurrentConversationSession: async () => {
       const exportResult = writeConversationSessionHtmlExport({
         conversationSessionEntries: conversationHistory.listConversationSessionEntries(),
-        workspaceRootPath: process.cwd(),
+        workspaceRootPath,
         conversationSessionId: activeConversationSessionId,
         exportDirectoryPath: input.conversationSessionExportDirectoryPath ?? defaultConversationSessionExportDirectoryPath(),
       });
@@ -316,6 +342,24 @@ function resolveConversationAutoCompactionThresholdRatio(input: {
   }
 
   return { status: "resolved", thresholdRatio };
+}
+
+function resolveInteractiveChatPromptContextScope(input: {
+  workspaceRootPath: string;
+  environment: InteractiveChatEnvironment;
+}): PromptContextScopeResolution {
+  const requestedPromptContextBrowseRootPath = input.environment.BULI_PROMPT_CONTEXT_ROOT?.trim();
+  const promptContextBrowseRootPath = requestedPromptContextBrowseRootPath
+    ? resolve(requestedPromptContextBrowseRootPath)
+    : dirname(resolve(input.workspaceRootPath));
+
+  return {
+    promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath: resolvePromptContextStartingDirectoryPath({
+      promptContextBrowseRootPath,
+      requestedStartingDirectoryPath: input.workspaceRootPath,
+    }),
+  };
 }
 
 function resolvePromptContextStartingDirectoryPath(input: {

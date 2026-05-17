@@ -1,4 +1,8 @@
-export { determinePromptContextQueryLoadStrategy } from "./determinePromptContextQueryLoadStrategy.ts";
+export {
+  determinePromptContextQueryLoadStrategy,
+  normalizePromptContextQueryText,
+  parsePromptContextPathQuery,
+} from "./determinePromptContextQueryLoadStrategy.ts";
 export { extractActivePromptContextQueryFromPromptDraft } from "./extractActivePromptContextQueryFromPromptDraft.ts";
 export { parsePromptContextReferencesFromPromptText } from "./parsePromptContextReferencesFromPromptText.ts";
 export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./reconcileSelectedPromptContextReferenceTextsWithPromptDraft.ts";
@@ -8,6 +12,7 @@ export type {
   ParsedPromptContextReference,
   PromptContextCandidate,
   PromptContextCandidateKind,
+  PromptContextPathQuery,
   PromptContextQueryLoadStrategy,
   PromptDraftDisplaySegment,
 } from "./types.ts";

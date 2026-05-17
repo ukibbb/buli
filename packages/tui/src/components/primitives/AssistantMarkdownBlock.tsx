@@ -1,6 +1,8 @@
 import { useCallback, useMemo, type ReactNode } from "react";
 import {
+  type CodeOptions,
   CodeRenderable,
+  type OptimizedBuffer,
   RGBA,
   SyntaxStyle,
   type MarkdownOptions,
@@ -166,6 +168,13 @@ const codeFenceFallbackFileLabelPattern = /(?:^|\s)(\S+\/\S+\.\S+)/;
 const incompleteStreamingFencePattern = /^\s*```[^`]*$/;
 const incompleteStreamingListMarkerPattern = /^\s*(?:[-*+]\s*|\d+\.\s*)$/;
 const incompleteStreamingHeadingPattern = /^\s*#{1,6}\s*$/;
+const assistantMarkdownGenericCodeFenceLanguageLabels = new Set(["code", "plain", "plaintext", "text", "txt"]);
+const assistantMarkdownCodeFenceHorizontalPaddingText = "  ";
+const assistantMarkdownCodeFenceBorderColor = RGBA.fromHex(chatScreenTheme.border);
+const assistantMarkdownPlainTextFenceBorderColor = RGBA.fromHex(chatScreenTheme.accentPrimary);
+const assistantMarkdownPlainTextFenceAccentRailColor = RGBA.fromHex(chatScreenTheme.accentCyan);
+const assistantMarkdownCodeFenceBackgroundColor = RGBA.fromHex(chatScreenTheme.surfaceOne);
+const transparentAssistantMarkdownCodeFenceBackgroundColor = RGBA.fromValues(0, 0, 0, 0);
 
 type AssistantMarkdownToken = Parameters<NonNullable<MarkdownOptions["renderNode"]>>[0];
 type AssistantMarkdownCodeToken = AssistantMarkdownToken & { type: "code"; text: string; lang?: string };
@@ -188,8 +197,91 @@ type AssistantMarkdownListToken = AssistantMarkdownToken & {
 type AssistantMarkdownCalloutKind = keyof typeof assistantMarkdownCalloutSyntaxStyleByKind;
 type AssistantMarkdownCodeFenceInfo = {
   codeLanguageLabel: string;
-  codeFenceDisplayLabel: string;
+  codeFenceDisplayLabel?: string | undefined;
 };
+
+type OpenTuiCodeRenderableContext = ConstructorParameters<typeof CodeRenderable>[0];
+
+type AssistantMarkdownCodeFenceRenderableOptions = CodeOptions & {
+  codeFenceCardTitle?: string | undefined;
+  codeFenceBorderColor: RGBA;
+  codeFenceAccentRailColor?: RGBA | undefined;
+};
+
+class AssistantMarkdownCodeFenceRenderable extends CodeRenderable {
+  private rawCodeFenceContent: string;
+  private readonly codeFenceCardTitle: string | undefined;
+  private readonly codeFenceBorderColor: RGBA;
+  private readonly codeFenceAccentRailColor: RGBA | undefined;
+
+  constructor(ctx: OpenTuiCodeRenderableContext, options: AssistantMarkdownCodeFenceRenderableOptions) {
+    const rawCodeFenceContent = options.content ?? "";
+    const { codeFenceAccentRailColor, codeFenceBorderColor, codeFenceCardTitle, ...codeRenderableOptions } = options;
+    super(ctx, {
+      ...codeRenderableOptions,
+      content: formatAssistantMarkdownCodeFenceCardContent(rawCodeFenceContent),
+    });
+    this.rawCodeFenceContent = rawCodeFenceContent;
+    this.codeFenceCardTitle = codeFenceCardTitle;
+    this.codeFenceBorderColor = codeFenceBorderColor;
+    this.codeFenceAccentRailColor = codeFenceAccentRailColor;
+  }
+
+  override get content(): string {
+    return this.rawCodeFenceContent;
+  }
+
+  override set content(value: string) {
+    this.rawCodeFenceContent = value;
+    super.content = formatAssistantMarkdownCodeFenceCardContent(value);
+  }
+
+  override render(buffer: OptimizedBuffer, deltaTime: number): void {
+    if (this.width <= 0 || this.height <= 0) {
+      super.render(buffer, deltaTime);
+      return;
+    }
+
+    buffer.drawBox({
+      x: this.screenX,
+      y: this.screenY,
+      width: this.width,
+      height: this.height,
+      border: false,
+      borderColor: this.codeFenceBorderColor,
+      backgroundColor: assistantMarkdownCodeFenceBackgroundColor,
+      shouldFill: true,
+    });
+    super.render(buffer, deltaTime);
+    buffer.drawBox({
+      x: this.screenX,
+      y: this.screenY,
+      width: this.width,
+      height: this.height,
+      borderStyle: "rounded",
+      border: true,
+      borderColor: this.codeFenceBorderColor,
+      backgroundColor: transparentAssistantMarkdownCodeFenceBackgroundColor,
+      shouldFill: false,
+      ...(this.codeFenceCardTitle
+        ? { title: ` ${this.codeFenceCardTitle} `, titleAlignment: "left" as const }
+        : {}),
+    });
+    this.renderCodeFenceAccentRail(buffer);
+  }
+
+  private renderCodeFenceAccentRail(buffer: OptimizedBuffer): void {
+    if (!this.codeFenceAccentRailColor || this.height <= 2) {
+      return;
+    }
+
+    const firstRailRow = this.screenY + 1;
+    const lastRailRow = this.screenY + this.height - 2;
+    for (let railRow = firstRailRow; railRow <= lastRailRow; railRow += 1) {
+      buffer.drawText("┃", this.screenX, railRow, this.codeFenceAccentRailColor, assistantMarkdownCodeFenceBackgroundColor);
+    }
+  }
+}
 
 function isAssistantMarkdownCodeToken(token: AssistantMarkdownToken): token is AssistantMarkdownCodeToken {
   return token.type === "code" && "text" in token && typeof token.text === "string";
@@ -273,10 +365,19 @@ function parseAssistantMarkdownCodeFenceInfo(codeFenceInfoString: string | undef
   const normalizedCodeFenceInfoString = codeFenceInfoString?.trim() ?? "";
   const codeLanguageLabel = normalizedCodeFenceInfoString.split(/\s+/)[0] || "code";
   const codeFenceFileLabel = resolveAssistantMarkdownCodeFenceFileLabel(normalizedCodeFenceInfoString);
+  const shouldShowCodeLanguageLabel = !isGenericAssistantMarkdownCodeFenceLanguageLabel(codeLanguageLabel);
   return {
     codeLanguageLabel,
-    codeFenceDisplayLabel: codeFenceFileLabel ? `${codeLanguageLabel} · ${codeFenceFileLabel}` : codeLanguageLabel,
+    ...(codeFenceFileLabel
+      ? { codeFenceDisplayLabel: shouldShowCodeLanguageLabel ? `${codeLanguageLabel} · ${codeFenceFileLabel}` : codeFenceFileLabel }
+      : shouldShowCodeLanguageLabel
+      ? { codeFenceDisplayLabel: codeLanguageLabel }
+      : {}),
   };
+}
+
+function isGenericAssistantMarkdownCodeFenceLanguageLabel(codeLanguageLabel: string): boolean {
+  return assistantMarkdownGenericCodeFenceLanguageLabels.has(codeLanguageLabel.toLowerCase());
 }
 
 function resolveAssistantMarkdownCodeFenceFileLabel(codeFenceInfoString: string): string | undefined {
@@ -299,21 +400,48 @@ function repeatAssistantMarkdownChromeRule(input: { availableColumnCount: number
   );
 }
 
-function formatAssistantMarkdownCodeFenceText(codeToken: AssistantMarkdownCodeToken, availableColumnCount: number): string {
-  const codeFenceInfo = parseAssistantMarkdownCodeFenceInfo(codeToken.lang);
-  if (codeFenceDiffLanguagePattern.test(codeFenceInfo.codeLanguageLabel)) {
-    return formatAssistantMarkdownDiffFenceText(codeToken.text, codeFenceInfo, availableColumnCount);
-  }
-
-  const topBorderPrefix = `╭─ ${codeFenceInfo.codeFenceDisplayLabel} `;
+function formatAssistantMarkdownCodeFenceCardContent(codeFenceContent: string): string {
   return [
-    topBorderPrefix + repeatAssistantMarkdownChromeRule({
-      availableColumnCount,
-      occupiedColumnCount: topBorderPrefix.length,
-    }),
-    codeToken.text,
-    "╰" + repeatAssistantMarkdownChromeRule({ availableColumnCount, occupiedColumnCount: 1 }),
+    "",
+    ...codeFenceContent.split("\n").map((codeFenceLine) => `${assistantMarkdownCodeFenceHorizontalPaddingText}${codeFenceLine}`),
+    "",
   ].join("\n");
+}
+
+function createAssistantMarkdownCodeFenceRenderable(input: {
+  defaultRenderable: CodeRenderable;
+  codeToken: AssistantMarkdownCodeToken;
+  codeFenceInfo: AssistantMarkdownCodeFenceInfo;
+}): AssistantMarkdownCodeFenceRenderable {
+  const isPlainTextFenceCard = input.codeFenceInfo.codeFenceDisplayLabel === undefined;
+  const defaultRenderableContext = input.defaultRenderable.ctx;
+  const defaultRenderableId = input.defaultRenderable.id;
+  const defaultRenderableFiletype = input.defaultRenderable.filetype;
+  const defaultRenderableSyntaxStyle = input.defaultRenderable.syntaxStyle;
+  const defaultRenderableConceal = input.defaultRenderable.conceal;
+  const defaultRenderableStreaming = input.defaultRenderable.streaming;
+  const defaultRenderableTreeSitterClient = input.defaultRenderable.treeSitterClient;
+  input.defaultRenderable.destroy();
+
+  return new AssistantMarkdownCodeFenceRenderable(defaultRenderableContext, {
+    id: defaultRenderableId,
+    content: input.codeToken.text,
+    ...(defaultRenderableFiletype !== undefined ? { filetype: defaultRenderableFiletype } : {}),
+    syntaxStyle: defaultRenderableSyntaxStyle,
+    fg: chatScreenTheme.textPrimary,
+    bg: chatScreenTheme.surfaceOne,
+    conceal: defaultRenderableConceal,
+    drawUnstyledText: true,
+    streaming: defaultRenderableStreaming,
+    treeSitterClient: defaultRenderableTreeSitterClient,
+    width: "100%",
+    marginBottom: 1,
+    codeFenceBorderColor: isPlainTextFenceCard ? assistantMarkdownPlainTextFenceBorderColor : assistantMarkdownCodeFenceBorderColor,
+    ...(isPlainTextFenceCard ? { codeFenceAccentRailColor: assistantMarkdownPlainTextFenceAccentRailColor } : {}),
+    ...(input.codeFenceInfo.codeFenceDisplayLabel
+      ? { codeFenceCardTitle: input.codeFenceInfo.codeFenceDisplayLabel }
+      : {}),
+  });
 }
 
 function formatAssistantMarkdownDiffFenceText(
@@ -323,7 +451,7 @@ function formatAssistantMarkdownDiffFenceText(
 ): string {
   const diffLines = diffText.split("\n").map((diffLine) => `│ ${diffLine}`.trimEnd());
   const diffFenceLabel = `${codeFenceInfo.codeLanguageLabel} changes${
-    codeFenceInfo.codeFenceDisplayLabel === codeFenceInfo.codeLanguageLabel
+    codeFenceInfo.codeFenceDisplayLabel === undefined || codeFenceInfo.codeFenceDisplayLabel === codeFenceInfo.codeLanguageLabel
       ? ""
       : ` · ${codeFenceInfo.codeFenceDisplayLabel.replace(`${codeFenceInfo.codeLanguageLabel} · `, "")}`
   }`;
@@ -441,13 +569,20 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       defaultRenderable.drawUnstyledText = true;
 
       if (isAssistantMarkdownCodeToken(token)) {
-        defaultRenderable.content = formatAssistantMarkdownCodeFenceText(token, markdownChromeColumnCount);
+        const codeFenceInfo = parseAssistantMarkdownCodeFenceInfo(token.lang);
         if (codeFenceDiffLanguagePattern.test(token.lang?.trim().split(/\s+/)[0] ?? "")) {
+          defaultRenderable.content = formatAssistantMarkdownDiffFenceText(token.text, codeFenceInfo, markdownChromeColumnCount);
           defaultRenderable.filetype = "text";
           defaultRenderable.onChunks = decorateAssistantMarkdownDiffFenceChunks;
+          defaultRenderable.wrapMode = "none";
+          return defaultRenderable;
         }
-        defaultRenderable.wrapMode = "none";
-        return defaultRenderable;
+
+        return createAssistantMarkdownCodeFenceRenderable({
+          defaultRenderable,
+          codeToken: token,
+          codeFenceInfo,
+        });
       }
 
       if (isAssistantMarkdownHeadingToken(token)) {

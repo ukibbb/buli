@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import { ConversationSessionSelectionPane } from "../../src/components/ConversationSessionSelectionPane.tsx";
 import { testRender } from "../testRenderWithCleanup.ts";
 
@@ -25,7 +26,9 @@ describe("ConversationSessionSelectionPane", () => {
         ]}
         highlightedConversationSessionIndex={1}
         activeConversationSessionId="session-2"
+        pendingDeletionConversationSessionId={undefined}
         accentColor="#00ff00"
+        onConversationSessionDeletionRequested={() => {}}
       />,
       { width: 80, height: 8 },
     );
@@ -38,6 +41,7 @@ describe("ConversationSessionSelectionPane", () => {
     expect(frame).toContain(new Date(updatedAtMs).toDateString());
     expect(frame).toContain("Planning session 3 entries");
     expect(frame).toContain("Implementation session 5 entries active");
+    expect(frame).toContain("x");
   });
 
   test("groups_sessions_by_updated_day", async () => {
@@ -66,7 +70,9 @@ describe("ConversationSessionSelectionPane", () => {
         ]}
         highlightedConversationSessionIndex={0}
         activeConversationSessionId={undefined}
+        pendingDeletionConversationSessionId={undefined}
         accentColor="#00ff00"
+        onConversationSessionDeletionRequested={() => {}}
       />,
       { width: 80, height: 8 },
     );
@@ -92,7 +98,9 @@ describe("ConversationSessionSelectionPane", () => {
         }))}
         highlightedConversationSessionIndex={8}
         activeConversationSessionId="session-1"
+        pendingDeletionConversationSessionId={undefined}
         accentColor="#00ff00"
+        onConversationSessionDeletionRequested={() => {}}
       />,
       { width: 80, height: 10 },
     );
@@ -103,4 +111,78 @@ describe("ConversationSessionSelectionPane", () => {
     expect(frame).toContain("Session 9 9 entries");
     expect(frame).not.toContain("Session 1 1 entries active");
   });
+
+  test("renders_confirm_for_the_session_waiting_for_delete_confirmation", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationSessionSelectionPane
+        conversationSessions={[
+          {
+            sessionId: "session-1",
+            title: "Planning session",
+            createdAtMs: 1,
+            updatedAtMs: new Date(2000, 0, 1, 12).getTime(),
+            conversationSessionEntryCount: 3,
+          },
+        ]}
+        highlightedConversationSessionIndex={0}
+        activeConversationSessionId="session-1"
+        pendingDeletionConversationSessionId="session-1"
+        accentColor="#00ff00"
+        onConversationSessionDeletionRequested={() => {}}
+      />,
+      { width: 80, height: 8 },
+    );
+
+    await renderOnce();
+
+    expect(captureCharFrame()).toContain("confirm");
+  });
+
+  test("requests_deletion_when_the_delete_control_is_clicked", async () => {
+    const requestedConversationSessionIds: string[] = [];
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <ConversationSessionSelectionPane
+        conversationSessions={[
+          {
+            sessionId: "session-1",
+            title: "Planning session",
+            createdAtMs: 1,
+            updatedAtMs: new Date(2000, 0, 1, 12).getTime(),
+            conversationSessionEntryCount: 3,
+          },
+        ]}
+        highlightedConversationSessionIndex={0}
+        activeConversationSessionId="session-1"
+        pendingDeletionConversationSessionId={undefined}
+        accentColor="#00ff00"
+        onConversationSessionDeletionRequested={(conversationSessionId) => {
+          requestedConversationSessionIds.push(conversationSessionId);
+        }}
+      />,
+      { width: 80, height: 8 },
+    );
+
+    await renderOnce();
+    const deleteTarget = findRenderedFrameTextPosition(captureCharFrame(), "Planning session", "x");
+    await act(async () => {
+      await mockMouse.click(deleteTarget.column, deleteTarget.row);
+    });
+
+    expect(requestedConversationSessionIds).toEqual(["session-1"]);
+  });
 });
+
+function findRenderedFrameTextPosition(renderedOutput: string, rowText: string, targetText: string): { column: number; row: number } {
+  const renderedRows = renderedOutput.split("\n");
+  const row = renderedRows.findIndex((renderedRow) => renderedRow.includes(rowText));
+  if (row === -1) {
+    throw new Error(`expected rendered output to contain a row with ${rowText}`);
+  }
+
+  const column = renderedRows[row]?.indexOf(targetText) ?? -1;
+  if (column === -1) {
+    throw new Error(`expected rendered row to contain ${targetText}`);
+  }
+
+  return { column, row };
+}

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
@@ -10,8 +10,11 @@ import {
   type ConversationSessionSummary,
 } from "@buli/contracts";
 import {
+  loadConversationSessionFileHeaderRecord,
   loadRecoverableConversationSessionFile,
-  type LoadedConversationSessionJsonlFile,
+  loadRecoverableConversationSessionFileMetadata,
+  type ConversationSessionEntryRecordMetadata,
+  type LoadedConversationSessionJsonlFileMetadata,
 } from "./conversationSessionJsonlFile.ts";
 import {
   appendConversationSessionTextFileLineAtomically,
@@ -35,6 +38,7 @@ export type ConversationSessionStore = {
   startNewConversationSession(): ActiveConversationSession;
   listConversationSessions(): readonly ConversationSessionSummary[];
   switchActiveConversationSession(sessionId: string): ActiveConversationSession;
+  deleteConversationSession(sessionId: string): ActiveConversationSession;
 };
 
 type ConversationSessionIdFactory = () => string;
@@ -167,6 +171,28 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       }
 
       return this.loadActiveConversationSessionFromFile(conversationSessionFilePath);
+    });
+  }
+
+  deleteConversationSession(sessionId: string): ActiveConversationSession {
+    return this.runWithConversationSessionWriteLock(() => {
+      const conversationSessionFilePath = this.findConversationSessionFilePathById(sessionId);
+      if (!conversationSessionFilePath) {
+        throw new Error(`Conversation session not found: ${sessionId}`);
+      }
+
+      rmSync(conversationSessionFilePath, { force: true });
+      const activeSessionFilePath = this.findConversationSessionFilePathById(this.readActiveConversationSessionId());
+      if (activeSessionFilePath) {
+        return this.loadActiveConversationSessionFromFile(activeSessionFilePath);
+      }
+
+      const mostRecentlyUpdatedSessionFilePath = this.listConversationSessionsWithFilePaths()[0]?.filePath;
+      if (mostRecentlyUpdatedSessionFilePath) {
+        return this.loadActiveConversationSessionFromFile(mostRecentlyUpdatedSessionFilePath);
+      }
+
+      return this.startNewConversationSessionWithoutLock();
     });
   }
 
@@ -320,10 +346,10 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   private listConversationSessionsWithFilePaths(): readonly { filePath: string; summary: ConversationSessionSummary }[] {
     return this.listConversationSessionFiles()
       .map((filePath) => {
-        const conversationSessionFile = loadRecoverableConversationSessionFile({ filePath, nowMs: this.nowMs });
+        const conversationSessionFile = loadRecoverableConversationSessionFileMetadata({ filePath, nowMs: this.nowMs });
         return {
           filePath,
-          summary: summarizeConversationSessionFile(conversationSessionFile),
+          summary: summarizeConversationSessionFileMetadata(conversationSessionFile),
         };
       })
       .toSorted((left, right) => right.summary.updatedAtMs - left.summary.updatedAtMs);
@@ -342,7 +368,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     }
 
     return this.listConversationSessionFiles().find(
-      (filePath) => loadRecoverableConversationSessionFile({ filePath, nowMs: this.nowMs }).headerRecord.sessionId === sessionId,
+      (filePath) => loadConversationSessionFileHeaderRecord({ filePath }).sessionId === sessionId,
     );
   }
 
@@ -353,14 +379,14 @@ export class FileConversationSessionStore implements ConversationSessionStore {
   }
 }
 
-function summarizeConversationSessionFile(conversationSessionFile: LoadedConversationSessionJsonlFile): ConversationSessionSummary {
+function summarizeConversationSessionFileMetadata(
+  conversationSessionFile: LoadedConversationSessionJsonlFileMetadata,
+): ConversationSessionSummary {
   const activeConversationSessionEntryRecords = listActiveConversationSessionEntryRecords(conversationSessionFile.entryRecords);
   const firstUserPromptEntry = activeConversationSessionEntryRecords.find(
-    (entryRecord) => entryRecord.conversationSessionEntry.entryKind === "user_prompt",
+    (entryRecord) => entryRecord.userPromptTitle !== undefined,
   );
-  const title = firstUserPromptEntry?.conversationSessionEntry.entryKind === "user_prompt"
-    ? firstUserPromptEntry.conversationSessionEntry.promptText.trim() || "New session"
-    : "New session";
+  const title = firstUserPromptEntry?.userPromptTitle?.trim() || "New session";
 
   return {
     sessionId: conversationSessionFile.headerRecord.sessionId,
@@ -371,9 +397,14 @@ function summarizeConversationSessionFile(conversationSessionFile: LoadedConvers
   };
 }
 
-function listActiveConversationSessionEntryRecords(
-  conversationSessionEntryRecords: readonly ConversationSessionEntryRecord[],
-): ConversationSessionEntryRecord[] {
+type ConversationSessionEntryRecordLink = Pick<
+  ConversationSessionEntryRecord | ConversationSessionEntryRecordMetadata,
+  "sessionEntryId" | "parentSessionEntryId"
+>;
+
+function listActiveConversationSessionEntryRecords<EntryRecord extends ConversationSessionEntryRecordLink>(
+  conversationSessionEntryRecords: readonly EntryRecord[],
+): EntryRecord[] {
   const leafEntryRecord = conversationSessionEntryRecords.at(-1);
   if (!leafEntryRecord) {
     return [];
@@ -382,8 +413,8 @@ function listActiveConversationSessionEntryRecords(
   const entryRecordById = new Map(
     conversationSessionEntryRecords.map((entryRecord) => [entryRecord.sessionEntryId, entryRecord] as const),
   );
-  const activeEntryRecords: ConversationSessionEntryRecord[] = [];
-  let currentEntryRecord: ConversationSessionEntryRecord | undefined = leafEntryRecord;
+  const activeEntryRecords: EntryRecord[] = [];
+  let currentEntryRecord: EntryRecord | undefined = leafEntryRecord;
   while (currentEntryRecord) {
     activeEntryRecords.unshift(currentEntryRecord);
     currentEntryRecord = currentEntryRecord.parentSessionEntryId

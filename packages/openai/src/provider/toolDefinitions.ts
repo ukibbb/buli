@@ -1,11 +1,14 @@
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
+  MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  ToolCallRequestSchema,
   isAssistantToolRequestName,
   type AssistantToolRequestName,
   type ProviderAvailableToolName,
   type ToolCallRequest,
   type ToolCallRequestByName,
 } from "@buli/contracts";
+import type { ZodIssue } from "zod";
 
 type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boolean" | "null";
 
@@ -13,6 +16,7 @@ type OpenAiToolParameterProperty = {
   readonly type: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
   readonly description: string;
   readonly minimum?: number;
+  readonly maximum?: number;
 };
 
 type OpenAiToolParameters = {
@@ -63,6 +67,7 @@ export function createBashToolDefinition(): OpenAiToolDefinition<"bash"> {
         timeout: {
           type: ["integer", "null"],
           minimum: 1,
+          maximum: MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
           description: "Timeout in milliseconds, or null to use the default timeout.",
         },
       },
@@ -290,7 +295,28 @@ export function createOpenAiToolCallRequest(input: {
     throw new Error(`Unsupported tool requested by OpenAI: ${input.toolName}`);
   }
 
-  return openAiToolAdapterByName[input.toolName].parseToolCallRequest(parsedArguments);
+  return parseOpenAiToolCallRequestContract({
+    toolName: input.toolName,
+    toolCallRequest: openAiToolAdapterByName[input.toolName].parseToolCallRequest(parsedArguments),
+  });
+}
+
+function parseOpenAiToolCallRequestContract(input: {
+  toolName: AssistantToolRequestName;
+  toolCallRequest: ToolCallRequest;
+}): ToolCallRequest {
+  const parsedToolCallRequest = ToolCallRequestSchema.safeParse(input.toolCallRequest);
+  if (parsedToolCallRequest.success) {
+    return parsedToolCallRequest.data;
+  }
+
+  const contractViolationText = parsedToolCallRequest.error.issues.map(formatToolCallContractViolation).join("; ");
+  throw new Error(`OpenAI function call for ${input.toolName} violates Buli tool contract: ${contractViolationText}`);
+}
+
+function formatToolCallContractViolation(issue: ZodIssue): string {
+  const fieldPath = issue.path.length > 0 ? issue.path.join(".") : "request";
+  return `${fieldPath}: ${issue.message}`;
 }
 
 function parseBashOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"bash"> {

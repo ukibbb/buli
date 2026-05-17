@@ -30,27 +30,41 @@ export async function* mergeAssistantResponseEventStreams(input: {
 
   let didFinishMergingAllStreams = false;
   try {
-    const initialAssistantResponseEventStreamResults = await Promise.all(
-      assistantResponseEventStreams.map((assistantResponseEventStream) =>
-        readNextAssistantResponseEventFromStream(assistantResponseEventStream)
-      ),
+    const pendingInitialAssistantResponseEventStreams: ActiveAssistantResponseEventStream[] = assistantResponseEventStreams.map(
+      (assistantResponseEventStream) => ({
+        ...assistantResponseEventStream,
+        nextEventPromise: readNextAssistantResponseEventFromStream(assistantResponseEventStream),
+      }),
     );
-    input.throwIfConversationTurnInterrupted();
 
     const assistantResponseEventStreamsWithRemainingEvents: AssistantResponseEventStream[] = [];
-    for (const initialAssistantResponseEventStreamResult of initialAssistantResponseEventStreamResults) {
-      const assistantResponseEventStream = assistantResponseEventStreams[initialAssistantResponseEventStreamResult.streamIndex];
-      if (!assistantResponseEventStream) {
-        throw new Error(`Missing assistant response stream at index ${initialAssistantResponseEventStreamResult.streamIndex}.`);
+    while (pendingInitialAssistantResponseEventStreams.length > 0) {
+      input.throwIfConversationTurnInterrupted();
+      const initialAssistantResponseEventStreamResult = await Promise.race(
+        pendingInitialAssistantResponseEventStreams.map((activeAssistantResponseEventStream) =>
+          activeAssistantResponseEventStream.nextEventPromise
+        ),
+      );
+
+      const initialStreamIndex = pendingInitialAssistantResponseEventStreams.findIndex((activeAssistantResponseEventStream) =>
+        activeAssistantResponseEventStream.streamIndex === initialAssistantResponseEventStreamResult.streamIndex
+      );
+      if (initialStreamIndex === -1) {
+        throw new Error(`Received an initial event from inactive assistant response stream ${initialAssistantResponseEventStreamResult.streamIndex}.`);
       }
 
+      const initialAssistantResponseEventStream = pendingInitialAssistantResponseEventStreams[initialStreamIndex];
+      if (!initialAssistantResponseEventStream) {
+        throw new Error(`Missing initial assistant response stream at index ${initialStreamIndex}.`);
+      }
+
+      pendingInitialAssistantResponseEventStreams.splice(initialStreamIndex, 1);
       if (initialAssistantResponseEventStreamResult.iteratorResult.done) {
         continue;
       }
 
-      assistantResponseEventStreamsWithRemainingEvents.push(assistantResponseEventStream);
+      assistantResponseEventStreamsWithRemainingEvents.push(initialAssistantResponseEventStream);
       yield initialAssistantResponseEventStreamResult.iteratorResult.value;
-      input.throwIfConversationTurnInterrupted();
     }
 
     const activeAssistantResponseEventStreams: ActiveAssistantResponseEventStream[] = assistantResponseEventStreamsWithRemainingEvents.map(
@@ -67,7 +81,6 @@ export async function* mergeAssistantResponseEventStreams(input: {
           activeAssistantResponseEventStream.nextEventPromise
         ),
       );
-      input.throwIfConversationTurnInterrupted();
 
       const activeStreamIndex = activeAssistantResponseEventStreams.findIndex((activeAssistantResponseEventStream) =>
         activeAssistantResponseEventStream.streamIndex === nextAssistantResponseEventStreamResult.streamIndex

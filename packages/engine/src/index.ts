@@ -54,6 +54,7 @@ export type {
   ParsedPromptContextReference,
   PromptContextCandidate,
   PromptContextCandidateKind,
+  PromptContextPathQuery,
   PromptDraftDisplaySegment,
   ActivePromptContextQuery,
 } from "./prompt-context/types.ts";

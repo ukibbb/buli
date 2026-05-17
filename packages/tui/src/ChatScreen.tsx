@@ -37,6 +37,7 @@ import { useChatScreenAssistantTurnActions } from "./behavior/useChatScreenAssis
 import {
   useChatScreenConversationSessionActions,
   type ConversationSessionCompactionResult,
+  type ConversationSessionDeleteResult,
   type ConversationSessionExportResult,
   type ConversationSessionSwitchResult,
 } from "./behavior/useChatScreenConversationSessionActions.ts";
@@ -55,6 +56,7 @@ export type ChatScreenProps = {
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];
   switchConversationSession?: (conversationSessionId: string) => Promise<ConversationSessionSwitchResult> | ConversationSessionSwitchResult;
+  deleteConversationSession?: (conversationSessionId: string) => Promise<ConversationSessionDeleteResult> | ConversationSessionDeleteResult;
   exportCurrentConversationSession?: () => Promise<ConversationSessionExportResult> | ConversationSessionExportResult;
   compactCurrentConversationSession?: (
     input: ConversationCompactionRequest,
@@ -71,6 +73,7 @@ export type ChatScreenProps = {
 
 export type {
   ConversationSessionCompactionResult,
+  ConversationSessionDeleteResult,
   ConversationSessionExportResult,
   ConversationSessionSwitchResult,
 } from "./behavior/useChatScreenConversationSessionActions.ts";
@@ -134,6 +137,7 @@ export function ChatScreen(props: ChatScreenProps) {
   const {
     loadConversationSessionsForSelection,
     switchToConversationSession,
+    requestConversationSessionDeletion,
     exportCurrentConversationSession,
     compactCurrentConversationSession,
     autoCompactCurrentConversationSessionAfterAssistantTurn,
@@ -141,6 +145,7 @@ export function ChatScreen(props: ChatScreenProps) {
   } = useChatScreenConversationSessionActions({
     loadConversationSessions: props.loadConversationSessions,
     switchConversationSession: props.switchConversationSession,
+    deleteConversationSession: props.deleteConversationSession,
     exportCurrentConversationSession: props.exportCurrentConversationSession,
     compactCurrentConversationSession: props.compactCurrentConversationSession,
     autoCompactCurrentConversationSession: props.autoCompactCurrentConversationSession,
@@ -342,6 +347,7 @@ export function ChatScreen(props: ChatScreenProps) {
         onPromptDraftEdited={applyPromptTextareaEditToChatScreen}
         onPromptSubmitted={submitPromptDraftFromPromptTextarea}
         onNativeClipboardPasteRequested={pasteClipboardImageAttachmentIntoPrompt}
+        onConversationSessionDeletionRequested={requestConversationSessionDeletion}
       />
     </box>
   );

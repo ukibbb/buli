@@ -1,8 +1,18 @@
+import type { Dirent } from "node:fs";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { PromptContextCandidate } from "@buli/prompt-context-core";
-export { determinePromptContextQueryLoadStrategy } from "@buli/prompt-context-core";
-export type { PromptContextQueryLoadStrategy } from "@buli/prompt-context-core";
+import {
+  normalizePromptContextQueryText,
+  parsePromptContextPathQuery,
+  type PromptContextCandidate,
+  type PromptContextPathQuery,
+} from "@buli/prompt-context-core";
+export {
+  determinePromptContextQueryLoadStrategy,
+  normalizePromptContextQueryText,
+  parsePromptContextPathQuery,
+} from "@buli/prompt-context-core";
+export type { PromptContextPathQuery, PromptContextQueryLoadStrategy } from "@buli/prompt-context-core";
 import { buildPromptContextReferenceTextFromDisplayPath } from "./buildPromptContextReferenceTextFromDisplayPath.ts";
 import {
   buildPromptContextDisplayPathFromAbsolutePath,
@@ -14,6 +24,26 @@ import {
 
 export const DEFAULT_MAXIMUM_PROMPT_CONTEXT_CANDIDATE_COUNT = 50;
 export const DEFAULT_MAXIMUM_PROMPT_CONTEXT_SEARCH_ENTRY_COUNT = 2_000;
+
+// Fuzzy search should not spend its limited traversal budget inside generated dependency trees.
+const RECURSIVE_PROMPT_CONTEXT_IGNORED_DIRECTORY_NAMES = new Set<string>([
+  ".cache",
+  ".git",
+  ".next",
+  ".nuxt",
+  ".parcel-cache",
+  ".svelte-kit",
+  ".turbo",
+  ".venv",
+  ".vite",
+  "__pycache__",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+  "target",
+  "venv",
+]);
 
 export async function listPromptContextCandidates(input: {
   promptContextBrowseRootPath: string;
@@ -44,6 +74,7 @@ export async function listPromptContextCandidates(input: {
       : await listFuzzyPromptContextEntries({
           promptContextPathScope,
           maximumSearchEntryCount,
+          promptContextQueryText: normalizedPromptContextQueryText,
         });
 
   return filterAndSortPromptContextEntries({
@@ -98,21 +129,40 @@ export async function listRecursivePromptContextEntries(input: {
   promptContextPathScope: PromptContextPathScope;
   maximumSearchEntryCount: number;
   recursiveSearchRootPath?: string;
+  promptContextQueryText?: string;
+  excludedDescendantDirectoryPaths?: readonly string[];
 }): Promise<PromptContextEntry[]> {
   const promptContextEntries: PromptContextEntry[] = [];
   const recursiveSearchRootPath = input.recursiveSearchRootPath ?? input.promptContextPathScope.promptContextBrowseRootPath;
+  const normalizedPromptContextQueryText = input.promptContextQueryText
+    ? normalizePromptContextQueryText(input.promptContextQueryText)
+    : "";
+  const normalizedPromptContextQueryTextLowerCase = normalizedPromptContextQueryText.toLowerCase();
+  const excludedDescendantDirectoryPaths = input.excludedDescendantDirectoryPaths ?? [];
+  let searchedPromptContextEntryCount = 0;
 
-  async function visitDirectory(currentDirectoryPath: string): Promise<void> {
-    if (promptContextEntries.length >= input.maximumSearchEntryCount) {
-      return;
+  const directoryPathsToVisit = [recursiveSearchRootPath];
+  let directoryVisitIndex = 0;
+
+  while (
+    directoryVisitIndex < directoryPathsToVisit.length && searchedPromptContextEntryCount < input.maximumSearchEntryCount
+  ) {
+    const currentDirectoryPath = directoryPathsToVisit[directoryVisitIndex];
+    directoryVisitIndex += 1;
+    if (!currentDirectoryPath) {
+      continue;
     }
 
-    const directoryEntries = await readdir(currentDirectoryPath, { withFileTypes: true });
+    const directoryEntries = await readPromptContextDirectoryEntriesIfAccessible(currentDirectoryPath);
+    if (!directoryEntries) {
+      continue;
+    }
+
     directoryEntries.sort((leftDirectoryEntry, rightDirectoryEntry) => leftDirectoryEntry.name.localeCompare(rightDirectoryEntry.name));
 
     for (const directoryEntry of directoryEntries) {
-      if (promptContextEntries.length >= input.maximumSearchEntryCount) {
-        return;
+      if (searchedPromptContextEntryCount >= input.maximumSearchEntryCount) {
+        return promptContextEntries;
       }
 
       if (directoryEntry.isSymbolicLink()) {
@@ -120,37 +170,63 @@ export async function listRecursivePromptContextEntries(input: {
       }
 
       const absolutePath = join(currentDirectoryPath, directoryEntry.name);
-      const displayPath = buildPromptContextDisplayPathFromAbsolutePath({
-        absolutePath,
-        promptContextStartingDirectoryPath: input.promptContextPathScope.promptContextStartingDirectoryPath,
-        isDirectory: directoryEntry.isDirectory(),
-      });
       if (directoryEntry.isFile() || directoryEntry.isDirectory()) {
-        promptContextEntries.push({
+        searchedPromptContextEntryCount += 1;
+        const displayPath = buildPromptContextDisplayPathFromAbsolutePath({
+          absolutePath,
+          promptContextStartingDirectoryPath: input.promptContextPathScope.promptContextStartingDirectoryPath,
+          isDirectory: directoryEntry.isDirectory(),
+        });
+        const promptContextEntry: PromptContextEntry = {
           kind: directoryEntry.isDirectory() ? "directory" : "file",
           absolutePath,
           displayPath,
-        });
+        };
+        if (
+          doesPromptContextEntryMatchQuery({
+            promptContextEntry,
+            normalizedPromptContextQueryTextLowerCase,
+          })
+        ) {
+          promptContextEntries.push(promptContextEntry);
+        }
       }
 
-      if (directoryEntry.isDirectory()) {
-        await visitDirectory(absolutePath);
+      if (
+        directoryEntry.isDirectory() && !shouldSkipRecursivePromptContextDirectoryDescendants({
+          directoryName: directoryEntry.name,
+          directoryPath: absolutePath,
+          excludedDescendantDirectoryPaths,
+        })
+      ) {
+        directoryPathsToVisit.push(absolutePath);
       }
     }
   }
 
-  await visitDirectory(recursiveSearchRootPath);
   return promptContextEntries;
+}
+
+async function readPromptContextDirectoryEntriesIfAccessible(directoryPath: string): Promise<Dirent[] | undefined> {
+  try {
+    return await readdir(directoryPath, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
 }
 
 export async function listFuzzyPromptContextEntries(input: {
   promptContextPathScope: PromptContextPathScope;
   maximumSearchEntryCount: number;
+  promptContextQueryText: string;
 }): Promise<PromptContextEntry[]> {
   const promptContextEntries: PromptContextEntry[] = [];
   const seenPromptContextAbsolutePaths = new Set<string>();
 
-  async function appendPromptContextEntriesFromRoot(recursiveSearchRootPath: string): Promise<void> {
+  async function appendPromptContextEntriesFromRoot(appendInput: {
+    recursiveSearchRootPath: string;
+    excludedDescendantDirectoryPaths?: readonly string[];
+  }): Promise<void> {
     if (promptContextEntries.length >= input.maximumSearchEntryCount) {
       return;
     }
@@ -158,7 +234,11 @@ export async function listFuzzyPromptContextEntries(input: {
     const candidatePromptContextEntries = await listRecursivePromptContextEntries({
       promptContextPathScope: input.promptContextPathScope,
       maximumSearchEntryCount: input.maximumSearchEntryCount - promptContextEntries.length,
-      recursiveSearchRootPath,
+      recursiveSearchRootPath: appendInput.recursiveSearchRootPath,
+      promptContextQueryText: input.promptContextQueryText,
+      ...(appendInput.excludedDescendantDirectoryPaths
+        ? { excludedDescendantDirectoryPaths: appendInput.excludedDescendantDirectoryPaths }
+        : {}),
     });
 
     for (const promptContextEntry of candidatePromptContextEntries) {
@@ -174,12 +254,37 @@ export async function listFuzzyPromptContextEntries(input: {
     }
   }
 
-  await appendPromptContextEntriesFromRoot(input.promptContextPathScope.promptContextStartingDirectoryPath);
+  await appendPromptContextEntriesFromRoot({
+    recursiveSearchRootPath: input.promptContextPathScope.promptContextStartingDirectoryPath,
+  });
   if (input.promptContextPathScope.promptContextStartingDirectoryPath !== input.promptContextPathScope.promptContextBrowseRootPath) {
-    await appendPromptContextEntriesFromRoot(input.promptContextPathScope.promptContextBrowseRootPath);
+    await appendPromptContextEntriesFromRoot({
+      recursiveSearchRootPath: input.promptContextPathScope.promptContextBrowseRootPath,
+      excludedDescendantDirectoryPaths: [input.promptContextPathScope.promptContextStartingDirectoryPath],
+    });
   }
 
   return promptContextEntries;
+}
+
+function doesPromptContextEntryMatchQuery(input: {
+  promptContextEntry: PromptContextEntry;
+  normalizedPromptContextQueryTextLowerCase: string;
+}): boolean {
+  if (input.normalizedPromptContextQueryTextLowerCase.length === 0) {
+    return true;
+  }
+
+  return input.promptContextEntry.displayPath.toLowerCase().includes(input.normalizedPromptContextQueryTextLowerCase);
+}
+
+function shouldSkipRecursivePromptContextDirectoryDescendants(input: {
+  directoryName: string;
+  directoryPath: string;
+  excludedDescendantDirectoryPaths: readonly string[];
+}): boolean {
+  return RECURSIVE_PROMPT_CONTEXT_IGNORED_DIRECTORY_NAMES.has(input.directoryName)
+    || input.excludedDescendantDirectoryPaths.includes(input.directoryPath);
 }
 
 async function listPromptContextPathQueryEntries(input: {
@@ -199,48 +304,6 @@ async function listPromptContextPathQueryEntries(input: {
     promptContextPathScope: input.promptContextPathScope,
     entryNameQuery: input.promptContextPathQuery.entryNameQuery,
   });
-}
-
-type PromptContextPathQuery = {
-  queryDirectoryPathText: string;
-  entryNameQuery: string;
-};
-
-function parsePromptContextPathQuery(promptContextQueryText: string): PromptContextPathQuery | undefined {
-  if (promptContextQueryText === "~") {
-    return { queryDirectoryPathText: "~/", entryNameQuery: "" };
-  }
-
-  if (promptContextQueryText.startsWith("~") && !promptContextQueryText.startsWith("~/")) {
-    return {
-      queryDirectoryPathText: "~/",
-      entryNameQuery: promptContextQueryText.slice(1),
-    };
-  }
-
-  if (promptContextQueryText === "." || promptContextQueryText === "..") {
-    return {
-      queryDirectoryPathText: `${promptContextQueryText}/`,
-      entryNameQuery: "",
-    };
-  }
-
-  if (!promptContextQueryText.includes("/")) {
-    return undefined;
-  }
-
-  if (promptContextQueryText.endsWith("/")) {
-    return {
-      queryDirectoryPathText: promptContextQueryText,
-      entryNameQuery: "",
-    };
-  }
-
-  const lastSlashIndex = promptContextQueryText.lastIndexOf("/");
-  return {
-    queryDirectoryPathText: promptContextQueryText.slice(0, lastSlashIndex + 1),
-    entryNameQuery: promptContextQueryText.slice(lastSlashIndex + 1),
-  };
 }
 
 async function resolvePromptContextQueryDirectoryRealPath(input: {
@@ -267,13 +330,6 @@ async function resolvePromptContextQueryDirectoryRealPath(input: {
   } catch {
     return undefined;
   }
-}
-
-function normalizePromptContextQueryText(promptContextQueryText: string): string {
-  const queryWithoutLeadingQuote = promptContextQueryText.startsWith('"')
-    ? promptContextQueryText.slice(1)
-    : promptContextQueryText;
-  return queryWithoutLeadingQuote.replace(/\\([\\"\s])/g, "$1");
 }
 
 export function filterAndSortPromptContextEntries(input: {
@@ -316,18 +372,6 @@ function comparePromptContextCandidates(
   normalizedPromptContextQueryText: string,
   promptContextStartingDirectoryPath: string,
 ): number {
-  const leftStartsInsideStartingDirectory = isPathInsidePromptContextBrowseRoot(
-    promptContextStartingDirectoryPath,
-    leftCandidate.absolutePath,
-  );
-  const rightStartsInsideStartingDirectory = isPathInsidePromptContextBrowseRoot(
-    promptContextStartingDirectoryPath,
-    rightCandidate.absolutePath,
-  );
-  if (leftStartsInsideStartingDirectory !== rightStartsInsideStartingDirectory) {
-    return leftStartsInsideStartingDirectory ? -1 : 1;
-  }
-
   const leftStartsWithQuery = normalizedPromptContextQueryText.length > 0
     && leftCandidate.displayPath.toLowerCase().startsWith(normalizedPromptContextQueryText.toLowerCase());
   const rightStartsWithQuery = normalizedPromptContextQueryText.length > 0
@@ -340,12 +384,6 @@ function comparePromptContextCandidates(
     return leftCandidate.kind === "directory" ? -1 : 1;
   }
 
-  const leftDepth = leftCandidate.displayPath.split("/").length;
-  const rightDepth = rightCandidate.displayPath.split("/").length;
-  if (leftDepth !== rightDepth) {
-    return leftDepth - rightDepth;
-  }
-
   const leftBaseName = basename(leftCandidate.displayPath.replace(/\/$/, ""));
   const rightBaseName = basename(rightCandidate.displayPath.replace(/\/$/, ""));
   const leftBaseNameStartsWithQuery = normalizedPromptContextQueryText.length > 0
@@ -354,6 +392,42 @@ function comparePromptContextCandidates(
     && rightBaseName.toLowerCase().startsWith(normalizedPromptContextQueryText.toLowerCase());
   if (leftBaseNameStartsWithQuery !== rightBaseNameStartsWithQuery) {
     return leftBaseNameStartsWithQuery ? -1 : 1;
+  }
+
+  const leftBaseNameIncludesQuery = normalizedPromptContextQueryText.length > 0
+    && leftBaseName.toLowerCase().includes(normalizedPromptContextQueryText.toLowerCase());
+  const rightBaseNameIncludesQuery = normalizedPromptContextQueryText.length > 0
+    && rightBaseName.toLowerCase().includes(normalizedPromptContextQueryText.toLowerCase());
+  if (leftBaseNameIncludesQuery !== rightBaseNameIncludesQuery) {
+    return leftBaseNameIncludesQuery ? -1 : 1;
+  }
+
+  const leftDepth = leftCandidate.displayPath.split("/").length;
+  const rightDepth = rightCandidate.displayPath.split("/").length;
+  if (leftBaseNameStartsWithQuery && rightBaseNameStartsWithQuery && leftDepth !== rightDepth) {
+    return leftDepth - rightDepth;
+  }
+
+  if (
+    leftBaseNameStartsWithQuery && rightBaseNameStartsWithQuery && leftBaseName.length !== rightBaseName.length
+  ) {
+    return leftBaseName.length - rightBaseName.length;
+  }
+
+  if (leftDepth !== rightDepth) {
+    return leftDepth - rightDepth;
+  }
+
+  const leftStartsInsideStartingDirectory = isPathInsidePromptContextBrowseRoot(
+    promptContextStartingDirectoryPath,
+    leftCandidate.absolutePath,
+  );
+  const rightStartsInsideStartingDirectory = isPathInsidePromptContextBrowseRoot(
+    promptContextStartingDirectoryPath,
+    rightCandidate.absolutePath,
+  );
+  if (leftStartsInsideStartingDirectory !== rightStartsInsideStartingDirectory) {
+    return leftStartsInsideStartingDirectory ? -1 : 1;
   }
 
   return leftCandidate.displayPath.localeCompare(rightCandidate.displayPath);

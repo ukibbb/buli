@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { ConversationSessionEntry, ReasoningEffort } from "@buli/contracts";
+import { dirname, join, resolve } from "node:path";
+import type { ConversationSessionEntry, ConversationSessionSummary, ReasoningEffort } from "@buli/contracts";
 import {
   AssistantConversationRuntime,
   type ConversationAutoCompactionRequest,
@@ -187,6 +187,44 @@ test("runInteractiveChat returns a clean message when auto-compaction threshold 
   );
 });
 
+test("runInteractiveChat uses the prompt-context root environment override", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-prompt-context-"));
+  const promptContextBrowseRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-root-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  let capturedConversationRuntime: AssistantConversationRuntime | undefined;
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: new FileConversationSessionStore({
+      filePath: join(dir, "conversation-session.json"),
+      sessionWorkspaceDirectoryPath: join(dir, "conversation-sessions"),
+      createSessionId: () => "session-a",
+      createSessionEntryId: () => "entry-a",
+      nowMs: () => 1_000,
+    }),
+    stdin: { isTTY: true },
+    environment: { BULI_PROMPT_CONTEXT_ROOT: promptContextBrowseRootPath },
+    renderChatScreen: async (renderInput) => {
+      capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(capturedConversationRuntime?.workspaceRootPath).toBe(process.cwd());
+  expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(resolve(promptContextBrowseRootPath));
+  expect(capturedConversationRuntime?.promptContextStartingDirectoryPath).toBe(resolve(promptContextBrowseRootPath));
+});
+
 test("runInteractiveChat passes the known default model reasoning effort to the renderer", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
@@ -302,6 +340,22 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     },
   ];
   const savedConversationSessionEntries: ConversationSessionEntry[][] = [];
+  let listedConversationSessions: ConversationSessionSummary[] = [
+    {
+      sessionId: "session-a",
+      title: "Previous prompt",
+      createdAtMs: 1000,
+      updatedAtMs: 2000,
+      conversationSessionEntryCount: 2,
+    },
+    {
+      sessionId: "session-b",
+      title: "Switched prompt",
+      createdAtMs: 3000,
+      updatedAtMs: 4000,
+      conversationSessionEntryCount: 1,
+    },
+  ];
   const conversationSessionStore = {
     filePath: join(dir, "conversation-session.json"),
     promptCacheKey: "buli:test-workspace",
@@ -322,22 +376,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       filePath: join(dir, "session-new.jsonl"),
       conversationSessionEntries: [],
     }),
-    listConversationSessions: () => [
-      {
-        sessionId: "session-a",
-        title: "Previous prompt",
-        createdAtMs: 1000,
-        updatedAtMs: 2000,
-        conversationSessionEntryCount: 2,
-      },
-      {
-        sessionId: "session-b",
-        title: "Switched prompt",
-        createdAtMs: 3000,
-        updatedAtMs: 4000,
-        conversationSessionEntryCount: 1,
-      },
-    ],
+    listConversationSessions: () => listedConversationSessions,
     switchActiveConversationSession: (sessionId) => ({
       sessionId,
       filePath: join(dir, `${sessionId}.jsonl`),
@@ -349,6 +388,16 @@ test("runInteractiveChat loads persisted session entries and saves when history 
         },
       ],
     }),
+    deleteConversationSession: (sessionId) => {
+      listedConversationSessions = listedConversationSessions.filter(
+        (conversationSession) => conversationSession.sessionId !== sessionId,
+      );
+      return {
+        sessionId: "session-a",
+        filePath: join(dir, "session-a.jsonl"),
+        conversationSessionEntries: initialConversationSessionEntries,
+      };
+    },
   } satisfies ConversationSessionStore;
   let capturedConversationRuntime: AssistantConversationRuntime | undefined;
   let capturedClearConversation: (() => void) | undefined;
@@ -356,6 +405,21 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     | ((conversationSessionId: string) =>
       | Promise<{ conversationSessionId: string; conversationSessionEntries: readonly ConversationSessionEntry[] }>
       | { conversationSessionId: string; conversationSessionEntries: readonly ConversationSessionEntry[] })
+    | undefined;
+  let capturedDeleteConversationSession:
+    | ((conversationSessionId: string) =>
+      | Promise<{
+        deletedConversationSessionId: string;
+        activeConversationSessionId: string;
+        activeConversationSessionEntries: readonly ConversationSessionEntry[];
+        conversationSessions: readonly ConversationSessionSummary[];
+      }>
+      | {
+        deletedConversationSessionId: string;
+        activeConversationSessionId: string;
+        activeConversationSessionEntries: readonly ConversationSessionEntry[];
+        conversationSessions: readonly ConversationSessionSummary[];
+      })
     | undefined;
   let capturedExportCurrentConversationSession:
     | (() => Promise<{ exportFilePath: string; exportFileUrl: string }> | { exportFilePath: string; exportFileUrl: string })
@@ -391,6 +455,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
       capturedClearConversation = renderInput.onConversationCleared;
       capturedSwitchConversationSession = renderInput.switchConversationSession;
+      capturedDeleteConversationSession = renderInput.deleteConversationSession;
       capturedExportCurrentConversationSession = renderInput.exportCurrentConversationSession;
       capturedCompactCurrentConversationSession = renderInput.compactCurrentConversationSession;
       capturedAutoCompactCurrentConversationSession = renderInput.autoCompactCurrentConversationSession;
@@ -402,10 +467,11 @@ test("runInteractiveChat loads persisted session entries and saves when history 
 
   expect(output).toBe("");
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
-  expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(process.cwd());
+  expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(dirname(process.cwd()));
   expect(capturedConversationRuntime?.promptContextStartingDirectoryPath).toBe(process.cwd());
   expect(capturedCompactCurrentConversationSession).toBeDefined();
   expect(capturedAutoCompactCurrentConversationSession).toBeDefined();
+  expect(capturedDeleteConversationSession).toBeDefined();
 
   capturedConversationRuntime?.conversationHistory.appendConversationSessionEntry({
     entryKind: "user_prompt",
@@ -504,6 +570,22 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       modelFacingPromptText: "Switched prompt",
     },
   ]);
+
+  await expect(Promise.resolve(capturedDeleteConversationSession?.("session-b"))).resolves.toEqual({
+    deletedConversationSessionId: "session-b",
+    activeConversationSessionId: "session-a",
+    activeConversationSessionEntries: initialConversationSessionEntries,
+    conversationSessions: [
+      {
+        sessionId: "session-a",
+        title: "Previous prompt",
+        createdAtMs: 1000,
+        updatedAtMs: 2000,
+        conversationSessionEntryCount: 2,
+      },
+    ],
+  });
+  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
 });
 
 test("FileConversationSessionStore uses a workspace-scoped default path and prompt cache key", () => {

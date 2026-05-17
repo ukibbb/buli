@@ -65,6 +65,74 @@ test("listPromptContextCandidates searches descendants and quotes paths with spa
   ]);
 });
 
+test("listPromptContextCandidates finds sibling project files from a parent browse root", async () => {
+  const projectsRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-sibling-"));
+  const currentProjectPath = join(projectsRootPath, "buli");
+  const siblingProjectPath = join(projectsRootPath, "novibe.space");
+  await mkdir(currentProjectPath);
+  await mkdir(siblingProjectPath);
+  await Promise.all([
+    writeFile(join(currentProjectPath, "alpha.txt"), "ignored", "utf8"),
+    writeFile(join(currentProjectPath, "beta.txt"), "ignored", "utf8"),
+    writeFile(join(currentProjectPath, "gamma.txt"), "ignored", "utf8"),
+    writeFile(join(currentProjectPath, "delta.txt"), "ignored", "utf8"),
+    writeFile(join(currentProjectPath, "epsilon.txt"), "ignored", "utf8"),
+    writeFile(join(siblingProjectPath, "VISION.md"), "vision", "utf8"),
+    writeFile(join(siblingProjectPath, "VISION_LEARNING_AGENTS.md"), "agents", "utf8"),
+  ]);
+  const realVisionFilePath = await realpath(join(siblingProjectPath, "VISION.md"));
+  const realVisionLearningAgentsFilePath = await realpath(join(siblingProjectPath, "VISION_LEARNING_AGENTS.md"));
+
+  await expect(
+    listPromptContextCandidates({
+      promptContextBrowseRootPath: projectsRootPath,
+      promptContextStartingDirectoryPath: currentProjectPath,
+      promptContextQueryText: "VISION",
+      maximumSearchEntryCount: 4,
+    }),
+  ).resolves.toEqual([
+    {
+      kind: "file",
+      displayPath: toPortablePath(realVisionFilePath),
+      promptReferenceText: `@${toPortablePath(realVisionFilePath)}`,
+    },
+    {
+      kind: "file",
+      displayPath: toPortablePath(realVisionLearningAgentsFilePath),
+      promptReferenceText: `@${toPortablePath(realVisionLearningAgentsFilePath)}`,
+    },
+  ]);
+});
+
+test("listPromptContextCandidates skips generated dependency trees during fuzzy search", async () => {
+  const projectRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-ignored-"));
+  const dependencyTreePath = join(projectRootPath, "node_modules", "large-package");
+  const sourceDirectoryPath = join(projectRootPath, "src");
+  await mkdir(dependencyTreePath, { recursive: true });
+  await mkdir(sourceDirectoryPath);
+  await Promise.all([
+    writeFile(join(dependencyTreePath, "alpha.txt"), "ignored", "utf8"),
+    writeFile(join(dependencyTreePath, "beta.txt"), "ignored", "utf8"),
+    writeFile(join(dependencyTreePath, "gamma.txt"), "ignored", "utf8"),
+    writeFile(join(sourceDirectoryPath, "needle.txt"), "found", "utf8"),
+  ]);
+  const realNeedleFilePath = await realpath(join(sourceDirectoryPath, "needle.txt"));
+
+  await expect(
+    listPromptContextCandidates({
+      promptContextBrowseRootPath: projectRootPath,
+      promptContextQueryText: "needle",
+      maximumSearchEntryCount: 3,
+    }),
+  ).resolves.toEqual([
+    {
+      kind: "file",
+      displayPath: toPortablePath(realNeedleFilePath),
+      promptReferenceText: `@${toPortablePath(realNeedleFilePath)}`,
+    },
+  ]);
+});
+
 test("listPromptContextCandidates starts from the configured directory and allows parent traversal within the root", async () => {
   const homeRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-scope-"));
   const repositoryPath = join(homeRootPath, "repo");

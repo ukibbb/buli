@@ -3,5 +3,6 @@ export type {
   ParsedPromptContextReference,
   PromptContextCandidate,
   PromptContextCandidateKind,
+  PromptContextPathQuery,
   PromptDraftDisplaySegment,
 } from "@buli/prompt-context-core";

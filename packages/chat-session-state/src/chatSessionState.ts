@@ -85,6 +85,7 @@ export type ConversationSessionSelectionState =
       conversationSessions: readonly ConversationSessionSummary[];
       highlightedConversationSessionIndex: number;
       activeConversationSessionId: string | undefined;
+      pendingDeletionConversationSessionId: string | undefined;
     };
 
 export type ChatSessionState = {
