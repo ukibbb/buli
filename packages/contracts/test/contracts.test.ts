@@ -3,7 +3,9 @@ import {
   ASSISTANT_TOOL_REQUEST_NAMES,
   ASSISTANT_PRESENTATION_FUNCTION_NAMES,
   AssistantOperatingModeSchema,
+  AssistantPrimaryAgentNameSchema,
   AssistantResponseEventSchema,
+  AssistantSubagentNameSchema,
   ConversationSessionEntrySchema,
   ConversationSessionSnapshotSchema,
   AssistantToolCallConversationMessagePartSchema,
@@ -27,7 +29,7 @@ import {
   emitBuliDiagnosticLogEvent,
   isAssistantToolRequestName,
   isAssistantPresentationFunctionName,
-  isExploreToolCallRequest,
+  isAssistantSubagentName,
   isFileMutationToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
   isWorkspaceInspectionToolCallRequest,
@@ -81,10 +83,14 @@ test("summarizeTokenUsageForDiagnostics reports normalized token counts", () => 
 });
 
 test("AssistantOperatingModeSchema parses understand, plan, and implementation modes", () => {
+  expect(AssistantPrimaryAgentNameSchema.options).toEqual(["understand", "plan", "implementation"]);
   expect(AssistantOperatingModeSchema.options).toEqual(["understand", "plan", "implementation"]);
   expect(AssistantOperatingModeSchema.parse("understand")).toBe("understand");
   expect(AssistantOperatingModeSchema.parse("plan")).toBe("plan");
   expect(AssistantOperatingModeSchema.parse("implementation")).toBe("implementation");
+  expect(AssistantSubagentNameSchema.options).toEqual(["explore"]);
+  expect(isAssistantSubagentName("explore")).toBe(true);
+  expect(isAssistantSubagentName("general")).toBe(false);
 });
 
 test("ConversationMessageSchema parses a completed user message", () => {
@@ -378,55 +384,58 @@ test("ConversationMessagePartSchema parses an assistant workspace patch part", (
   });
 });
 
-test("AssistantToolCallConversationMessagePartSchema parses an explore tool call", () => {
+test("AssistantToolCallConversationMessagePartSchema parses a task tool call", () => {
   const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
-    id: "tool-part-explore",
+    id: "tool-part-task",
     partKind: "assistant_tool_call",
-    toolCallId: "call-explore",
+    toolCallId: "call-task",
     toolCallStatus: "completed",
     toolCallStartedAtMs: 1,
     durationMs: 5,
     toolCallDetail: {
-      toolName: "explore",
-      explorationDescription: "map runtime flow",
-      explorationPrompt: "Inspect engine runtime files and summarize tool dispatch.",
-      explorationResultSummary: "runtime.ts delegates tool calls through runtimeToolCallExecution.ts",
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map runtime flow",
+      subagentPrompt: "Inspect engine runtime files and summarize tool dispatch.",
+      subagentResultSummary: "runtime.ts delegates tool calls through runtimeToolCallExecution.ts",
     },
   });
 
   expect(parsedMessagePart.toolCallDetail).toMatchObject({
-    toolName: "explore",
-    explorationDescription: "map runtime flow",
+    toolName: "task",
+    subagentName: "explore",
+    subagentDescription: "map runtime flow",
   });
 });
 
-test("AssistantToolCallConversationMessagePartSchema parses an explore tool call with child activity", () => {
+test("AssistantToolCallConversationMessagePartSchema parses a task tool call with subagent child activity", () => {
   const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
-    id: "tool-part-explore",
+    id: "tool-part-task",
     partKind: "assistant_tool_call",
-    toolCallId: "call-explore",
+    toolCallId: "call-task",
     toolCallStatus: "running",
     toolCallStartedAtMs: 1,
     toolCallDetail: {
-      toolName: "explore",
-      explorationDescription: "map docs",
-      explorationPrompt: "Read README.md and summarize it.",
-      explorationChildToolCalls: [
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map docs",
+      subagentPrompt: "Read README.md and summarize it.",
+      subagentChildToolCalls: [
         {
-          explorerChildToolCallId: "call-read-1",
-          explorerChildToolCallStatus: "running",
-          explorerChildToolCallStartedAtMs: 2,
-          explorerChildToolCallDetail: {
+          subagentChildToolCallId: "call-read-1",
+          subagentChildToolCallStatus: "running",
+          subagentChildToolCallStartedAtMs: 2,
+          subagentChildToolCallDetail: {
             toolName: "read",
             readFilePath: "README.md",
           },
         },
         {
-          explorerChildToolCallId: "call-grep-1",
-          explorerChildToolCallStatus: "completed",
-          explorerChildToolCallStartedAtMs: 3,
-          explorerChildToolCallDurationMs: 4,
-          explorerChildToolCallDetail: {
+          subagentChildToolCallId: "call-grep-1",
+          subagentChildToolCallStatus: "completed",
+          subagentChildToolCallStartedAtMs: 3,
+          subagentChildToolCallDurationMs: 4,
+          subagentChildToolCallDetail: {
             toolName: "grep",
             searchPattern: "Explorer",
             totalMatchCount: 1,
@@ -438,57 +447,59 @@ test("AssistantToolCallConversationMessagePartSchema parses an explore tool call
   });
 
   expect(parsedMessagePart.toolCallDetail).toMatchObject({
-    toolName: "explore",
-    explorationChildToolCalls: [
+    toolName: "task",
+    subagentChildToolCalls: [
       {
-        explorerChildToolCallId: "call-read-1",
-        explorerChildToolCallStatus: "running",
-        explorerChildToolCallDetail: { toolName: "read", readFilePath: "README.md" },
+        subagentChildToolCallId: "call-read-1",
+        subagentChildToolCallStatus: "running",
+        subagentChildToolCallDetail: { toolName: "read", readFilePath: "README.md" },
       },
       {
-        explorerChildToolCallId: "call-grep-1",
-        explorerChildToolCallStatus: "completed",
-        explorerChildToolCallDurationMs: 4,
-        explorerChildToolCallDetail: { toolName: "grep", searchPattern: "Explorer" },
+        subagentChildToolCallId: "call-grep-1",
+        subagentChildToolCallStatus: "completed",
+        subagentChildToolCallDurationMs: 4,
+        subagentChildToolCallDetail: { toolName: "grep", searchPattern: "Explorer" },
       },
     ],
   });
 });
 
-test("AssistantToolCallConversationMessagePartSchema parses denied Explorer child tool requests", () => {
+test("AssistantToolCallConversationMessagePartSchema parses denied subagent child tool requests", () => {
   const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
-    id: "tool-part-explore-denied-children",
+    id: "tool-part-task-denied-children",
     partKind: "assistant_tool_call",
-    toolCallId: "call-explore",
+    toolCallId: "call-task",
     toolCallStatus: "running",
     toolCallStartedAtMs: 1,
     toolCallDetail: {
-      toolName: "explore",
-      explorationDescription: "map runtime",
-      explorationPrompt: "Inspect runtime files.",
-      explorationChildToolCalls: [
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map runtime",
+      subagentPrompt: "Inspect runtime files.",
+      subagentChildToolCalls: [
         {
-          explorerChildToolCallId: "call-bash-1",
-          explorerChildToolCallStatus: "denied",
-          explorerChildToolCallStartedAtMs: 2,
-          explorerChildToolCallDurationMs: 1,
-          explorerChildToolCallDenialText: "Explorer is read-only and cannot use bash.",
-          explorerChildToolCallDetail: {
+          subagentChildToolCallId: "call-bash-1",
+          subagentChildToolCallStatus: "denied",
+          subagentChildToolCallStartedAtMs: 2,
+          subagentChildToolCallDurationMs: 1,
+          subagentChildToolCallDenialText: "Subagent is read-only and cannot use bash.",
+          subagentChildToolCallDetail: {
             toolName: "bash",
             commandLine: "pwd",
             commandDescription: "Print working directory",
           },
         },
         {
-          explorerChildToolCallId: "call-explore-child",
-          explorerChildToolCallStatus: "denied",
-          explorerChildToolCallStartedAtMs: 3,
-          explorerChildToolCallDurationMs: 1,
-          explorerChildToolCallDenialText: "Explorer cannot spawn another Explorer.",
-          explorerChildToolCallDetail: {
-            toolName: "explore",
-            explorationDescription: "nested",
-            explorationPrompt: "Try to spawn another Explorer.",
+          subagentChildToolCallId: "call-task-child",
+          subagentChildToolCallStatus: "denied",
+          subagentChildToolCallStartedAtMs: 3,
+          subagentChildToolCallDurationMs: 1,
+          subagentChildToolCallDenialText: "Subagents cannot spawn another subagent.",
+          subagentChildToolCallDetail: {
+            toolName: "task",
+            subagentName: "explore",
+            subagentDescription: "nested",
+            subagentPrompt: "Try to spawn another subagent.",
           },
         },
       ],
@@ -496,17 +507,17 @@ test("AssistantToolCallConversationMessagePartSchema parses denied Explorer chil
   });
 
   expect(parsedMessagePart.toolCallDetail).toMatchObject({
-    toolName: "explore",
-    explorationChildToolCalls: [
+    toolName: "task",
+    subagentChildToolCalls: [
       {
-        explorerChildToolCallId: "call-bash-1",
-        explorerChildToolCallStatus: "denied",
-        explorerChildToolCallDetail: { toolName: "bash", commandLine: "pwd" },
+        subagentChildToolCallId: "call-bash-1",
+        subagentChildToolCallStatus: "denied",
+        subagentChildToolCallDetail: { toolName: "bash", commandLine: "pwd" },
       },
       {
-        explorerChildToolCallId: "call-explore-child",
-        explorerChildToolCallStatus: "denied",
-        explorerChildToolCallDetail: { toolName: "explore", explorationDescription: "nested" },
+        subagentChildToolCallId: "call-task-child",
+        subagentChildToolCallStatus: "denied",
+        subagentChildToolCallDetail: { toolName: "task", subagentName: "explore", subagentDescription: "nested" },
       },
     ],
   });
@@ -662,29 +673,33 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
   });
   expect(
     ToolCallRequestSchema.parse({
-      toolName: "explore",
-      explorationDescription: "map runtime flow",
-      explorationPrompt: "Inspect runtime and provider flow.",
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map runtime flow",
+      subagentPrompt: "Inspect runtime and provider flow.",
     }),
   ).toEqual({
-    toolName: "explore",
-    explorationDescription: "map runtime flow",
-    explorationPrompt: "Inspect runtime and provider flow.",
+    toolName: "task",
+    subagentName: "explore",
+    subagentDescription: "map runtime flow",
+    subagentPrompt: "Inspect runtime and provider flow.",
   });
 });
 
 test("tool catalog lists assistant request tools by execution boundary", () => {
-  expect(ASSISTANT_TOOL_REQUEST_NAMES).toEqual(["bash", "read", "glob", "grep", "edit", "write", "explore"]);
+  expect(ASSISTANT_TOOL_REQUEST_NAMES).toEqual(["bash", "read", "glob", "grep", "edit", "write", "task"]);
   expect(ASSISTANT_PRESENTATION_FUNCTION_NAMES).toEqual(["present_learning_sequence"]);
   expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "write"]);
-  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "explore"]);
-  expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite", "task"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "task"]);
+  expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite"]);
 });
 
 test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("bash")).toBe(true);
-  expect(isAssistantToolRequestName("task")).toBe(false);
+  expect(isAssistantToolRequestName("task")).toBe(true);
+  expect(isAssistantToolRequestName("explore")).toBe(false);
+  expect(isAssistantToolRequestName("general")).toBe(false);
   expect(isAssistantPresentationFunctionName("present_learning_sequence")).toBe(true);
   expect(isAssistantPresentationFunctionName("bash")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
@@ -692,10 +707,8 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toBe(false);
   expect(isFileMutationToolCallRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toBe(true);
   expect(isFileMutationToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
-  expect(isExploreToolCallRequest({ toolName: "explore", explorationDescription: "map runtime", explorationPrompt: "Inspect runtime." })).toBe(true);
-  expect(isExploreToolCallRequest({ toolName: "glob", globPattern: "**/*.ts" })).toBe(false);
   expect(isReadOnlyAssistantModeToolRequestName("read")).toBe(true);
-  expect(isReadOnlyAssistantModeToolRequestName("explore")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("task")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
 });
 
@@ -735,13 +748,15 @@ test("createStartedToolCallDetailFromRequest maps requests to render details", (
     writtenFilePath: "generated.ts",
   });
   expect(createStartedToolCallDetailFromRequest({
-    toolName: "explore",
-    explorationDescription: "map runtime",
-    explorationPrompt: "Inspect runtime.",
+    toolName: "task",
+    subagentName: "explore",
+    subagentDescription: "map runtime",
+    subagentPrompt: "Inspect runtime.",
   })).toEqual({
-    toolName: "explore",
-    explorationDescription: "map runtime",
-    explorationPrompt: "Inspect runtime.",
+    toolName: "task",
+    subagentName: "explore",
+    subagentDescription: "map runtime",
+    subagentPrompt: "Inspect runtime.",
   });
 });
 

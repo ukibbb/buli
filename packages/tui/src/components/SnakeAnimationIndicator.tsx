@@ -12,8 +12,13 @@ import { areTuiAnimationTimersEnabled } from "./tuiAnimationTimerPolicy.ts";
 // The frame counter is driven by a plain useState + setInterval, same pattern
 // used by StreamingCursor.
 const SNAKE_CELL_COUNT = 6;
+const EATING_APPLE_TRACK_CELL_COUNT = 8;
 
-export function SnakeAnimationIndicator(): ReactNode {
+export type SnakeAnimationIndicatorProps = {
+  variant?: "sixCell" | "eatingApple";
+};
+
+export function SnakeAnimationIndicator(props: SnakeAnimationIndicatorProps = {}): ReactNode {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
@@ -27,8 +32,16 @@ export function SnakeAnimationIndicator(): ReactNode {
     return () => clearInterval(id);
   }, []);
 
-  const firstEllipseIndex = frame % SNAKE_CELL_COUNT;
-  const secondEllipseIndex = (frame + 1) % SNAKE_CELL_COUNT;
+  if (props.variant === "eatingApple") {
+    return <EatingAppleSnakeAnimationFrame frame={frame} />;
+  }
+
+  return <SixCellSnakeAnimationFrame frame={frame} />;
+}
+
+function SixCellSnakeAnimationFrame(props: { frame: number }): ReactNode {
+  const firstEllipseIndex = props.frame % SNAKE_CELL_COUNT;
+  const secondEllipseIndex = (props.frame + 1) % SNAKE_CELL_COUNT;
 
   return (
     <box flexDirection="row">
@@ -46,4 +59,39 @@ export function SnakeAnimationIndicator(): ReactNode {
       })}
     </box>
   );
+}
+
+function EatingAppleSnakeAnimationFrame(props: { frame: number }): ReactNode {
+  const headIndex = (props.frame + 2) % EATING_APPLE_TRACK_CELL_COUNT;
+  const snakeBodyIndexes = new Set([
+    (headIndex + EATING_APPLE_TRACK_CELL_COUNT - 2) % EATING_APPLE_TRACK_CELL_COUNT,
+    (headIndex + EATING_APPLE_TRACK_CELL_COUNT - 1) % EATING_APPLE_TRACK_CELL_COUNT,
+  ]);
+  const appleTargetIndex = resolveEatingAppleTargetIndex(props.frame);
+
+  return (
+    <box flexDirection="row">
+      {Array.from({ length: EATING_APPLE_TRACK_CELL_COUNT }, (_, cellIndex) => {
+        if (cellIndex === headIndex) {
+          return <text fg={chatScreenTheme.accentAmber} key={cellIndex}>{glyphs.snakeEllipse}</text>;
+        }
+
+        if (cellIndex === appleTargetIndex) {
+          return <text fg={chatScreenTheme.accentRed} key={cellIndex}>{glyphs.apple}</text>;
+        }
+
+        if (snakeBodyIndexes.has(cellIndex)) {
+          return <text fg={chatScreenTheme.accentGreen} key={cellIndex}>{glyphs.snakeRectangle}</text>;
+        }
+
+        return <text fg={chatScreenTheme.textDim} key={cellIndex}>{glyphs.snakeTrackEmpty}</text>;
+      })}
+    </box>
+  );
+}
+
+function resolveEatingAppleTargetIndex(frame: number): number {
+  const headIndex = (frame + 2) % EATING_APPLE_TRACK_CELL_COUNT;
+  const targetAheadDistance = 3 - (frame % 4);
+  return (headIndex + targetAheadDistance + EATING_APPLE_TRACK_CELL_COUNT) % EATING_APPLE_TRACK_CELL_COUNT;
 }

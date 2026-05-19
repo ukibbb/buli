@@ -13,4 +13,16 @@ describe("SnakeAnimationIndicator", () => {
     const frame = captureCharFrame();
     expect(frame.trim().length).toBeGreaterThan(0);
   });
+
+  test("renders_eating_apple_snake_glyphs", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <SnakeAnimationIndicator variant="eatingApple" />,
+      { width: 20, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("▰");
+    expect(frame).toContain("●");
+    expect(frame).toContain("◆");
+  });
 });

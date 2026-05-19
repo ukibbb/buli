@@ -4,6 +4,7 @@
 // "tool args as JSON" shape would collapse these concepts and lose the
 // rendering affordances the design depends on.
 import { z } from "zod";
+import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
 
 export const SyntaxHighlightSpanStyleSchema = z.enum([
   "keyword",
@@ -156,61 +157,54 @@ export const ToolCallTodoWriteDetailSchema = z
   .strict();
 export type ToolCallTodoWriteDetail = z.infer<typeof ToolCallTodoWriteDetailSchema>;
 
-export const ToolCallTaskDetailSchema = z
+export const SubagentChildTaskToolCallDetailSchema = z
   .object({
     toolName: z.literal("task"),
+    subagentName: AssistantSubagentNameSchema,
     subagentDescription: z.string().min(1),
     subagentPrompt: z.string().optional(),
-    subagentResultSummary: z.string().optional(),
   })
   .strict();
-export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
+export type SubagentChildTaskToolCallDetail = z.infer<typeof SubagentChildTaskToolCallDetailSchema>;
 
-export const ExplorerChildExploreToolCallDetailSchema = z
-  .object({
-    toolName: z.literal("explore"),
-    explorationDescription: z.string().min(1),
-    explorationPrompt: z.string().optional(),
-  })
-  .strict();
+export const SubagentChildToolCallStatusSchema = z.enum(["running", "completed", "failed", "denied", "interrupted"]);
+export type SubagentChildToolCallStatus = z.infer<typeof SubagentChildToolCallStatusSchema>;
 
-export const ExplorerChildToolCallStatusSchema = z.enum(["running", "completed", "failed", "denied", "interrupted"]);
-export type ExplorerChildToolCallStatus = z.infer<typeof ExplorerChildToolCallStatusSchema>;
-
-export const ExplorerChildToolCallDetailSchema = z.discriminatedUnion("toolName", [
+export const SubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallEditDetailSchema,
   ToolCallWriteDetailSchema,
-  ExplorerChildExploreToolCallDetailSchema,
+  SubagentChildTaskToolCallDetailSchema,
 ]);
-export type ExplorerChildToolCallDetail = z.infer<typeof ExplorerChildToolCallDetailSchema>;
+export type SubagentChildToolCallDetail = z.infer<typeof SubagentChildToolCallDetailSchema>;
 
-export const ExplorerChildToolCallSchema = z
+export const SubagentChildToolCallSchema = z
   .object({
-    explorerChildToolCallId: z.string().min(1),
-    explorerChildToolCallStatus: ExplorerChildToolCallStatusSchema,
-    explorerChildToolCallStartedAtMs: z.number().int().nonnegative(),
-    explorerChildToolCallDetail: ExplorerChildToolCallDetailSchema,
-    explorerChildToolCallDurationMs: z.number().int().nonnegative().optional(),
-    explorerChildToolCallErrorText: z.string().min(1).optional(),
-    explorerChildToolCallDenialText: z.string().min(1).optional(),
+    subagentChildToolCallId: z.string().min(1),
+    subagentChildToolCallStatus: SubagentChildToolCallStatusSchema,
+    subagentChildToolCallStartedAtMs: z.number().int().nonnegative(),
+    subagentChildToolCallDetail: SubagentChildToolCallDetailSchema,
+    subagentChildToolCallDurationMs: z.number().int().nonnegative().optional(),
+    subagentChildToolCallErrorText: z.string().min(1).optional(),
+    subagentChildToolCallDenialText: z.string().min(1).optional(),
   })
   .strict();
-export type ExplorerChildToolCall = z.infer<typeof ExplorerChildToolCallSchema>;
+export type SubagentChildToolCall = z.infer<typeof SubagentChildToolCallSchema>;
 
-export const ToolCallExploreDetailSchema = z
+export const ToolCallTaskDetailSchema = z
   .object({
-    toolName: z.literal("explore"),
-    explorationDescription: z.string().min(1),
-    explorationPrompt: z.string().optional(),
-    explorationChildToolCalls: z.array(ExplorerChildToolCallSchema).optional(),
-    explorationResultSummary: z.string().optional(),
+    toolName: z.literal("task"),
+    subagentName: AssistantSubagentNameSchema,
+    subagentDescription: z.string().min(1),
+    subagentPrompt: z.string().optional(),
+    subagentChildToolCalls: z.array(SubagentChildToolCallSchema).optional(),
+    subagentResultSummary: z.string().optional(),
   })
   .strict();
-export type ToolCallExploreDetail = z.infer<typeof ToolCallExploreDetailSchema>;
+export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 
 export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
@@ -221,6 +215,5 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallBashDetailSchema,
   ToolCallTodoWriteDetailSchema,
   ToolCallTaskDetailSchema,
-  ToolCallExploreDetailSchema,
 ]);
 export type ToolCallDetail = z.infer<typeof ToolCallDetailSchema>;

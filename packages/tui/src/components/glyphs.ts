@@ -10,6 +10,8 @@ export const glyphs = {
   statusDot: "●",
   snakeRectangle: "▰",
   snakeEllipse: "●",
+  snakeTrackEmpty: "·",
+  apple: "◆",
   progressFill: "▓",
   progressEmpty: "░",
 } as const;

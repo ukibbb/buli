@@ -140,6 +140,7 @@ describe("ToolCallEntryView", () => {
         renderState="completed"
         toolCallDetail={{
           toolName: "task",
+          subagentName: "explore",
           subagentDescription: "Run analysis",
           subagentResultSummary: "Analysis complete.",
         }}
@@ -153,23 +154,4 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("Analysis complete.");
   });
 
-  test("dispatches_explore", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallEntryView
-        renderState="completed"
-        toolCallDetail={{
-          toolName: "explore",
-          explorationDescription: "Map runtime",
-          explorationResultSummary: "Runtime flow mapped.",
-        }}
-      />,
-      { width: 80, height: 15 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("returned");
-    expect(frame).toContain("Explorer details: result");
-    expect(frame).toContain("click to show content");
-    expect(frame).not.toContain("Runtime flow mapped.");
-  });
 });

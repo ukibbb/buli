@@ -2,20 +2,20 @@ import type {
   ToolCallBashDetail,
   ToolCallDetail,
   ToolCallEditDetail,
-  ToolCallExploreDetail,
   ToolCallGlobDetail,
   ToolCallGrepDetail,
   ToolCallReadDetail,
+  ToolCallTaskDetail,
   ToolCallWriteDetail,
 } from "./toolCallDetail.ts";
 import type { ToolCallRequest } from "./toolCallRequest.ts";
 
-export const ASSISTANT_TOOL_REQUEST_NAMES = ["bash", "read", "glob", "grep", "edit", "write", "explore"] as const satisfies readonly ToolCallRequest["toolName"][];
+export const ASSISTANT_TOOL_REQUEST_NAMES = ["bash", "read", "glob", "grep", "edit", "write", "task"] as const satisfies readonly ToolCallRequest["toolName"][];
 export const ASSISTANT_PRESENTATION_FUNCTION_NAMES = ["present_learning_sequence"] as const;
 export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "write"] as const satisfies readonly AssistantToolRequestName[];
-export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "explore"] as const satisfies readonly AssistantToolRequestName[];
-export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite", "task"] as const satisfies readonly ToolCallDetailName[];
+export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "task"] as const satisfies readonly AssistantToolRequestName[];
+export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite"] as const satisfies readonly ToolCallDetailName[];
 
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
 export type AssistantPresentationFunctionName = (typeof ASSISTANT_PRESENTATION_FUNCTION_NAMES)[number];
@@ -66,10 +66,10 @@ export function isFileMutationToolCallRequest(
   return FILE_MUTATION_TOOL_REQUEST_NAME_SET.has(toolCallRequest.toolName);
 }
 
-export function isExploreToolCallRequest(
+export function isTaskToolCallRequest(
   toolCallRequest: ToolCallRequest,
-): toolCallRequest is ToolCallRequestByName<"explore"> {
-  return toolCallRequest.toolName === "explore";
+): toolCallRequest is ToolCallRequestByName<"task"> {
+  return toolCallRequest.toolName === "task";
 }
 
 export function isReadOnlyAssistantModeToolRequestName(
@@ -100,8 +100,8 @@ export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCall
   if (toolCallRequest.toolName === "write") {
     return createStartedWriteToolCallDetail(toolCallRequest);
   }
-  if (toolCallRequest.toolName === "explore") {
-    return createStartedExploreToolCallDetail(toolCallRequest);
+  if (toolCallRequest.toolName === "task") {
+    return createStartedTaskToolCallDetail(toolCallRequest);
   }
 
   return assertUnhandledToolCallRequest(toolCallRequest);
@@ -153,11 +153,12 @@ function createStartedWriteToolCallDetail(toolCallRequest: ToolCallRequestByName
   };
 }
 
-function createStartedExploreToolCallDetail(toolCallRequest: ToolCallRequestByName<"explore">): ToolCallExploreDetail {
+function createStartedTaskToolCallDetail(toolCallRequest: ToolCallRequestByName<"task">): ToolCallTaskDetail {
   return {
-    toolName: "explore",
-    explorationDescription: toolCallRequest.explorationDescription,
-    explorationPrompt: toolCallRequest.explorationPrompt,
+    toolName: "task",
+    subagentName: toolCallRequest.subagentName,
+    subagentDescription: toolCallRequest.subagentDescription,
+    subagentPrompt: toolCallRequest.subagentPrompt,
   };
 }
 

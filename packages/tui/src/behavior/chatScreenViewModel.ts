@@ -89,10 +89,10 @@ export function buildChatScreenViewModel(input: {
 
 function formatAssistantOperatingModeLabel(assistantOperatingMode: AssistantOperatingMode): string {
   return assistantOperatingMode === "understand"
-    ? "Understand"
+    ? "Understand Agent"
     : assistantOperatingMode === "plan"
-    ? "Plan"
-    : "Implementation";
+    ? "Plan Agent"
+    : "Implementation Agent";
 }
 
 function resolveAssistantOperatingModeAccentColor(
@@ -107,8 +107,8 @@ function resolveAssistantOperatingModeAccentColor(
 
 function resolveAssistantOperatingModePromptHint(assistantOperatingMode: AssistantOperatingMode): string | undefined {
   return assistantOperatingMode === "understand"
-    ? "read-only understanding mode · tab to Plan"
+    ? "read-only understand agent · tab to Plan Agent"
     : assistantOperatingMode === "plan"
-    ? "read-only planning mode · tab to Implementation"
-    : "implementation mode · tab to Understand";
+    ? "read-only plan agent · tab to Implementation Agent"
+    : "implementation agent · tab to Understand Agent";
 }

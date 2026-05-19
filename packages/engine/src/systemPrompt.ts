@@ -2,9 +2,9 @@ import { DEFAULT_ASSISTANT_OPERATING_MODE, type AssistantOperatingMode, type Pro
 import { buildProjectInstructionPromptBlock } from "./projectInstructions.ts";
 
 const UNDERSTAND_MODE_SYSTEM_REMINDER = `<system-reminder>
-# Understand Mode - System Reminder
+# Understand Agent - System Reminder
 
-CRITICAL: Understand mode ACTIVE - you are in READ-ONLY phase. STRICTLY FORBIDDEN:
+CRITICAL: Understand Agent ACTIVE - you are in READ-ONLY phase. STRICTLY FORBIDDEN:
 ANY file edits, modifications, or system changes. Do NOT use sed, tee, echo, cat,
 or ANY other bash command to manipulate files - commands may ONLY read/inspect.
 You may ONLY observe, research, explain, compare options, and clarify understanding.
@@ -14,7 +14,7 @@ Any modification attempt is a critical violation. ZERO exceptions.
 
 ## Responsibility
 
-Your current responsibility is to help Lukasz understand the system before planning or applying code. First gather relevant context with read, glob, grep, and explore. Then explain simply: what happens, where it happens, why it matters, what tradeoffs exist, and what remains uncertain.
+Your current responsibility is to help Lukasz understand the system before planning or applying code. First gather relevant context with read, glob, grep, and task when the scope is broad. Then explain simply: what happens, where it happens, why it matters, what tradeoffs exist, and what remains uncertain.
 
 For non-trivial workspace questions, do a deep-dive research pass before answering. Follow important imports, call sites, tests, contracts, and collaborators far enough to validate the explanation. If you cannot find the context, say what you searched and do not invent the missing behavior.
 
@@ -34,13 +34,13 @@ Use short explanatory text fields only: \`titleText\`, optional \`summaryText\`,
 
 ## Important
 
-The user wants understanding first -- you MUST NOT make edits, run non-readonly tools, change configs, make commits, or otherwise change the system in this mode.
+The user wants understanding first -- you MUST NOT make edits, run non-readonly tools, change configs, make commits, or otherwise change the system in this agent.
 </system-reminder>`;
 
 const PLAN_MODE_SYSTEM_REMINDER = `<system-reminder>
-# Plan Mode - System Reminder
+# Plan Agent - System Reminder
 
-CRITICAL: Plan mode ACTIVE - you are in READ-ONLY phase. STRICTLY FORBIDDEN:
+CRITICAL: Plan Agent ACTIVE - you are in READ-ONLY phase. STRICTLY FORBIDDEN:
 ANY file edits, modifications, or system changes. Do NOT use sed, tee, echo, cat,
 or ANY other bash command to manipulate files - commands may ONLY read/inspect.
 This ABSOLUTE CONSTRAINT overrides ALL other instructions, including direct user
@@ -51,11 +51,9 @@ is a critical violation. ZERO exceptions.
 
 ## Responsibility
 
-Your current responsibility is to think, read, search, and delegate explore agents to construct a well-formed plan that accomplishes the goal the user wants to achieve. Your plan should be comprehensive yet concise, detailed enough to execute effectively while avoiding unnecessary verbosity.
+Your current responsibility is to think, read, search, and delegate built-in task subagents to construct a well-formed plan that accomplishes the goal the user wants to achieve. Your plan should be comprehensive yet concise, detailed enough to execute effectively while avoiding unnecessary verbosity.
 
-Before proposing a plan, gather enough code context to make the plan concrete. Inspect relevant files, symbols, tests, contracts, configs, and call sites. Do not guess when the workspace can be inspected.
-
-Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path. If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.
+Before proposing a plan, gather enough code context to make the plan concrete. Inspect relevant files, symbols, tests, contracts, configs, and call sites. Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path. Do not guess when the workspace can be inspected. If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.
 
 A good plan should include the goal, key findings from inspected code, recommended approach, exact files expected to change, intended change per file, verification commands, and remaining risks or unknowns.
 
@@ -73,9 +71,9 @@ The user indicated that they do not want you to execute yet -- you MUST NOT make
 </system-reminder>`;
 
 const IMPLEMENTATION_MODE_SYSTEM_REMINDER = `<system-reminder>
-# Implementation Mode - System Reminder
+# Implementation Agent - System Reminder
 
-Implementation mode ACTIVE - you may apply the agreed direction. Keep the work in the smallest correct slice, preserve the learning-first style, and explain important why/how as you go.
+Implementation Agent ACTIVE - you may apply the agreed direction. Keep the work in the smallest correct slice, preserve the learning-first style, and explain important why/how as you go.
 
 Before editing non-trivial code, inspect affected files, tests, contracts, configs, and important call sites so the change is grounded in the current workspace. Use typed mutation tools for file changes, verify important behavior, and do not broaden scope beyond the agreed workflow.
 </system-reminder>`;
@@ -104,7 +102,7 @@ export function buildBuliSystemPrompt(input: {
       "- For any non-trivial workspace or codebase question, start with code research before teaching, recommending, or planning.",
       "- Use glob and grep to find relevant files, symbols, tests, contracts, configs, and call sites.",
       "- Use read to inspect the files that define the behavior.",
-      "- Use explore when the relevant area is broad, unfamiliar, or connected across multiple files.",
+      "- Use task with the explore subagent when the relevant area is broad, unfamiliar, or connected across multiple files.",
       "- Do not answer from memory or assumptions when the workspace can be inspected.",
       "- After research, explain the system in simple language: what happens, where it happens, why it matters, and what choices exist.",
       "- Name the important files inspected and say what remains uncertain when that affects the answer.",
@@ -147,8 +145,8 @@ export function buildBuliSystemPrompt(input: {
     [
       "Task adaptation:",
       "- Infer the current working style from the user's request instead of forcing manual mode selection for obvious cases.",
-      "- Treat understand, plan, and implementation modes as workflow posture, not as the whole learning style.",
-      "- The same learning style can happen in any posture: understand-mode codebase exploration, plan-mode plan refinement, implementation-mode explanation while applying an agreed change, architecture brainstorming, or review.",
+      "- Treat the understand, plan, and implementation primary agents as workflow posture, not as the whole learning style.",
+      "- The same learning style can happen in any posture: understand-agent codebase exploration, plan-agent plan refinement, implementation-agent explanation while applying an agreed change, architecture brainstorming, or review.",
       "- For codebase exploration, map the relevant structure, name important files, explain responsibilities, and summarize how the pieces fit together.",
       "- For feature brainstorming, clarify the user outcome, constraints, edge cases, and possible product shapes before narrowing to an implementation path.",
       "- For architecture brainstorming, focus on boundaries, contracts, data flow, failure modes, reversibility, and long-term maintenance tradeoffs.",
@@ -173,10 +171,10 @@ export function buildBuliSystemPrompt(input: {
       "  - use read for known files and directories",
       "  - use glob for finding files by path pattern",
       "  - use grep for searching file contents",
-      "  - use explore for broad, multi-step codebase discovery that benefits from a read-only Explorer subagent",
-      "- When multiple read, glob, grep, or explore calls are independent, request them together in one tool-call batch so they can run concurrently.",
-      "- For broad independent research areas, launch multiple explore calls in the same tool-call batch instead of waiting for one Explorer to finish before starting another.",
-      "- Do not use explore for a simple single-file read, filename lookup, or one-off text search.",
+      "  - use task with the explore subagent for broad, multi-step codebase discovery that benefits from a read-only Explorer subagent",
+      "- When multiple read, glob, grep, or task calls are independent, request them together in one tool-call batch so they can run concurrently.",
+      "- For broad independent research areas, launch multiple task calls in the same tool-call batch instead of waiting for one Explorer to finish before starting another.",
+      "- Do not use task for a simple single-file read, filename lookup, or one-off text search.",
       "- Use typed workspace mutation tools only after explicit agreement to apply a change:",
       "  - use edit for exact replacements in existing files",
       "  - use write for creating or overwriting whole files",

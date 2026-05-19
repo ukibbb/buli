@@ -1,8 +1,8 @@
 import {
-  isExploreToolCallRequest,
+  isTaskToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
-  type ExploreToolCallRequest,
   type ProviderRequestedToolCall,
+  type TaskToolCallRequest,
   type ToolCallRequest,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
@@ -12,7 +12,7 @@ export type AutoApprovedReadOnlyRequestedToolCall = {
   toolCallRequest: WorkspaceInspectionToolCallRequest;
 };
 
-export type AutoConcurrentToolCallRequest = WorkspaceInspectionToolCallRequest | ExploreToolCallRequest;
+export type AutoConcurrentToolCallRequest = WorkspaceInspectionToolCallRequest | TaskToolCallRequest;
 
 export type AutoConcurrentRequestedToolCall = {
   toolCallId: string;
@@ -92,5 +92,5 @@ function appendAutoConcurrentRequestedToolCallGroup(
 }
 
 export function isAutoConcurrentToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is AutoConcurrentToolCallRequest {
-  return isWorkspaceInspectionToolCallRequest(toolCallRequest) || isExploreToolCallRequest(toolCallRequest);
+  return isWorkspaceInspectionToolCallRequest(toolCallRequest) || isTaskToolCallRequest(toolCallRequest);
 }

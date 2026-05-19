@@ -25,10 +25,12 @@ export function ToolCallHeaderLeft(props: ToolCallHeaderLeftProps): ReactNode {
 }
 
 export type ToolCallHeaderRightProps = {
-  statusLabel: string;
   statusColor: string;
   statusKind: "success" | "error" | "pending";
-};
+} & (
+  { statusLabel: string; statusContent?: undefined } |
+  { statusContent: ReactNode; statusLabel?: undefined }
+);
 
 export function ToolCallHeaderRight(props: ToolCallHeaderRightProps): ReactNode {
   const statusGlyph =
@@ -41,9 +43,11 @@ export function ToolCallHeaderRight(props: ToolCallHeaderRightProps): ReactNode 
   return (
     <box flexDirection="row" alignItems="center" flexShrink={1} justifyContent="flex-end" minWidth={0} overflow="hidden">
       <box flexShrink={1} minWidth={0} overflow="hidden">
-        <text wrapMode="none" width="100%">
-          <b fg={props.statusColor}>{props.statusLabel}</b>
-        </text>
+        {props.statusContent ?? (
+          <text wrapMode="none" width="100%">
+            <b fg={props.statusColor}>{props.statusLabel}</b>
+          </text>
+        )}
       </box>
       <box flexShrink={0} marginLeft={1}>
         <text fg={props.statusColor}>{statusGlyph}</text>

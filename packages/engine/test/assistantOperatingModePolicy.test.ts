@@ -7,16 +7,16 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "glob", "grep", "explore"] });
+  ).toEqual({ availableToolNames: ["read", "glob", "grep", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
   expect(
     resolveAvailableToolNamesForAssistantOperatingMode({
       assistantOperatingMode: "plan",
-      requestedAvailableToolNames: ["bash", "read", "write", "grep", "explore"],
+      requestedAvailableToolNames: ["bash", "read", "write", "grep", "task"],
     }),
-  ).toEqual({ availableToolNames: ["read", "grep", "explore"] });
+  ).toEqual({ availableToolNames: ["read", "grep", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode preserves requested tools in implementation mode", () => {
@@ -28,11 +28,11 @@ test("resolveAvailableToolNamesForAssistantOperatingMode preserves requested too
   ).toEqual({ availableToolNames: ["bash", "read", "write"] });
 });
 
-test("resolveAvailableToolNamesForAssistantOperatingMode leaves implementation tools unrestricted by default", () => {
+test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation agent tools by default", () => {
   expect(
     resolveAvailableToolNamesForAssistantOperatingMode({
       assistantOperatingMode: "implementation",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({});
+  ).toEqual({ availableToolNames: ["bash", "read", "glob", "grep", "edit", "write", "task"] });
 });

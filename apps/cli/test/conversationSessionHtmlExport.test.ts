@@ -157,20 +157,56 @@ const conversationSessionEntries = [
     entryKind: "tool_call",
     toolCallId: "call-5",
     toolCallRequest: {
-      toolName: "explore",
-      explorationDescription: "map runtime",
-      explorationPrompt: "Inspect runtime dispatch.",
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map runtime",
+      subagentPrompt: "Inspect runtime dispatch.",
     },
   },
   {
     entryKind: "completed_tool_result",
     toolCallId: "call-5",
     toolCallDetail: {
-      toolName: "explore",
-      explorationDescription: "map runtime",
-      explorationResultSummary: "Runtime dispatches tool calls.",
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map runtime",
+      subagentPrompt: "Inspect runtime dispatch.",
+      subagentChildToolCalls: [
+        {
+          subagentChildToolCallId: "call-child-read-1",
+          subagentChildToolCallStatus: "completed",
+          subagentChildToolCallStartedAtMs: 1,
+          subagentChildToolCallDurationMs: 5,
+          subagentChildToolCallDetail: {
+            toolName: "read",
+            readFilePath: "packages/engine/src/runtime.ts",
+          },
+        },
+      ],
+      subagentResultSummary: "Runtime dispatches tool calls.",
     },
     toolResultText: "Runtime dispatches tool calls.",
+  },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-6",
+    toolCallRequest: {
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map contracts",
+      subagentPrompt: "Inspect contract files.",
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-6",
+    toolCallDetail: {
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map contracts",
+      subagentResultSummary: "Contracts expose task requests.",
+    },
+    toolResultText: "Contracts expose task requests.",
   },
 ] satisfies ConversationSessionEntry[];
 
@@ -187,7 +223,7 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).not.toContain("fonts.gstatic.com");
   expect(html).toContain("Session ");
   expect(html).toContain(">session-a<");
-  expect(html).toContain("Mode: Understand");
+  expect(html).toContain("Agent: Understand Agent");
   expect(html).toContain("Render &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
   expect(html).toContain('src="data:image/png;base64,aGVsbG8="');
   expect(html).toContain("clipboard.png · image/png");
@@ -204,7 +240,13 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("+1 -0");
   expect(html).toContain("map runtime");
   expect(html).toContain("Inspect runtime dispatch.");
+  expect(html).toContain("Subagent: explore");
+  expect(html).toContain("Subagent activity");
+  expect(html).toContain("packages/engine/src/runtime.ts");
   expect(html).toContain("Runtime dispatches tool calls.");
+  expect(html).toContain("explore: map contracts");
+  expect(html).toContain("Inspect contract files.");
+  expect(html).toContain("Contracts expose task requests.");
   expect(html).toContain("<h1>Done</h1>");
   expect(html).toContain("&lt;script&gt;alert(&#39;assistant&#39;)&lt;/script&gt;");
   expect(html).not.toContain("<script>alert('assistant')</script>");

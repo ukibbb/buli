@@ -146,19 +146,19 @@ test("streamAssistantResponseEventsForBashToolCall blocks mutating bash commands
     part: {
       partKind: "assistant_tool_call",
       toolCallStatus: "denied",
-      denialText: expect.stringContaining("Plan mode is read-only"),
+      denialText: expect.stringContaining("Plan Agent is read-only"),
     },
   });
   expect(providerConversationTurn.submittedToolResults).toEqual([
     {
       toolCallId: "call_bash_1",
-      toolResultText: expect.stringContaining("Plan mode is read-only"),
+      toolResultText: expect.stringContaining("Plan Agent is read-only"),
     },
   ]);
   expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
     entryKind: "denied_tool_result",
     toolCallId: "call_bash_1",
-    toolResultText: expect.stringContaining("Plan mode is read-only"),
+    toolResultText: expect.stringContaining("Plan Agent is read-only"),
   });
   expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.tool_result_submitted"))
     .toEqual([

@@ -66,7 +66,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly bashToolApprovalMode: BashToolApprovalMode;
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
-  readonly canSpawnExplorer: boolean;
+  readonly canSpawnSubagent: boolean;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
@@ -83,7 +83,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     bashToolApprovalMode?: BashToolApprovalMode;
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
-    canSpawnExplorer?: boolean;
+    canSpawnSubagent?: boolean;
     projectInstructionTracker?: ProjectInstructionTracker;
     autoCompactionThresholdRatio?: number | undefined;
     autoCompactionReservedTokenCount?: number | undefined;
@@ -101,7 +101,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.bashToolApprovalMode = input.bashToolApprovalMode ?? DEFAULT_BASH_TOOL_APPROVAL_MODE;
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
-    this.canSpawnExplorer = input.canSpawnExplorer ?? true;
+    this.canSpawnSubagent = input.canSpawnSubagent ?? true;
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
     });
@@ -165,7 +165,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       bashToolApprovalMode: this.bashToolApprovalMode,
       promptCacheKey: this.promptCacheKey,
       availableToolNames: this.availableToolNames,
-      canSpawnExplorer: this.canSpawnExplorer,
+      canSpawnSubagent: this.canSpawnSubagent,
       projectInstructionTracker: this.projectInstructionTracker,
       onConversationTurnFinished: () => {
         if (this.currentPendingConversationTurn === runtimeConversationTurn) {
@@ -201,7 +201,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly bashToolApprovalMode: BashToolApprovalMode;
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
-  readonly canSpawnExplorer: boolean;
+  readonly canSpawnSubagent: boolean;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly onConversationTurnFinished: () => void;
   readonly pendingToolApprovalController: RuntimePendingToolApprovalController;
@@ -221,7 +221,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     bashToolApprovalMode: BashToolApprovalMode;
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
-    canSpawnExplorer: boolean;
+    canSpawnSubagent: boolean;
     projectInstructionTracker: ProjectInstructionTracker;
     onConversationTurnFinished: () => void;
   }) {
@@ -238,7 +238,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.bashToolApprovalMode = input.bashToolApprovalMode;
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
-    this.canSpawnExplorer = input.canSpawnExplorer;
+    this.canSpawnSubagent = input.canSpawnSubagent;
     this.projectInstructionTracker = input.projectInstructionTracker;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
     this.pendingToolApprovalController = new RuntimePendingToolApprovalController({
@@ -432,7 +432,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
       conversationHistory: this.conversationHistory,
       abortSignal: this.conversationTurnLifecycle.abortSignal,
-      canSpawnExplorer: this.canSpawnExplorer,
+      canSpawnSubagent: this.canSpawnSubagent,
       createPendingToolApproval: (pendingToolApprovalInput) => this.createPendingToolApproval(pendingToolApprovalInput),
       throwIfConversationTurnInterrupted: () => {
         this.throwIfConversationTurnInterrupted();

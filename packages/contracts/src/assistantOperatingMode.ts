@@ -1,6 +1,10 @@
-import { z } from "zod";
+import {
+  AssistantPrimaryAgentNameSchema,
+  DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME,
+  type AssistantPrimaryAgentName,
+} from "./assistantAgent.ts";
 
-export const AssistantOperatingModeSchema = z.enum(["understand", "plan", "implementation"]);
-export type AssistantOperatingMode = z.infer<typeof AssistantOperatingModeSchema>;
+export const AssistantOperatingModeSchema = AssistantPrimaryAgentNameSchema;
+export type AssistantOperatingMode = AssistantPrimaryAgentName;
 
-export const DEFAULT_ASSISTANT_OPERATING_MODE: AssistantOperatingMode = "understand";
+export const DEFAULT_ASSISTANT_OPERATING_MODE: AssistantOperatingMode = DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME;

@@ -5,7 +5,9 @@ import {
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   ToolCallRequestSchema,
   isAssistantPresentationFunctionName,
+  isAssistantSubagentName,
   isAssistantToolRequestName,
+  type AssistantSubagentName,
   type AssistantPresentationFunctionName,
   type AssistantToolRequestName,
   type LearningSequence,
@@ -241,24 +243,28 @@ export function createWriteToolDefinition(): OpenAiToolDefinition<"write"> {
   };
 }
 
-export function createExploreToolDefinition(): OpenAiToolDefinition<"explore"> {
+export function createTaskToolDefinition(): OpenAiToolDefinition<"task"> {
   return {
     type: "function",
-    name: "explore",
-    description: "Ask a read-only Explorer subagent to inspect the codebase with read, glob, and grep, then return a concise report. Use this for broad or multi-step discovery before deciding what to explain or change. Ask it to identify inspected files and remaining context gaps.",
+    name: "task",
+    description: "Launch a built-in Buli subagent and return its concise result. Use this for broad, independent codebase investigation that benefits from a separate read-only agent. Currently available subagent: explore.",
     parameters: {
       type: "object",
       properties: {
+        subagent: {
+          type: "string",
+          description: "Built-in subagent to run. Currently only explore is available.",
+        },
         description: {
           type: "string",
-          description: "Short description of what the Explorer should investigate.",
+          description: "Short description of the subagent task.",
         },
         prompt: {
           type: "string",
-          description: "Detailed exploration instructions, including what files, patterns, flows, or questions to answer.",
+          description: "Detailed subagent instructions, including what files, patterns, flows, or questions to answer.",
         },
       },
-      required: ["description", "prompt"],
+      required: ["subagent", "description", "prompt"],
       additionalProperties: false,
     },
     strict: true,
@@ -341,10 +347,10 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     definition: createWriteToolDefinition(),
     parseToolCallRequest: parseWriteOpenAiToolCallRequest,
   },
-  explore: {
-    toolName: "explore",
-    definition: createExploreToolDefinition(),
-    parseToolCallRequest: parseExploreOpenAiToolCallRequest,
+  task: {
+    toolName: "task",
+    definition: createTaskToolDefinition(),
+    parseToolCallRequest: parseTaskOpenAiToolCallRequest,
   },
 };
 
@@ -560,11 +566,12 @@ function parseWriteOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Too
   };
 }
 
-function parseExploreOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"explore"> {
+function parseTaskOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"task"> {
   return {
-    toolName: "explore",
-    explorationDescription: readRequiredStringToolArgument(parsedArguments, "description", "explore"),
-    explorationPrompt: readRequiredStringToolArgument(parsedArguments, "prompt", "explore"),
+    toolName: "task",
+    subagentName: readRequiredAssistantSubagentNameToolArgument(parsedArguments, "subagent", "task"),
+    subagentDescription: readRequiredStringToolArgument(parsedArguments, "description", "task"),
+    subagentPrompt: readRequiredStringToolArgument(parsedArguments, "prompt", "task"),
   };
 }
 
@@ -613,6 +620,19 @@ function readRequiredStringToolArgument(
   }
 
   return argumentValue;
+}
+
+function readRequiredAssistantSubagentNameToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): AssistantSubagentName {
+  const argumentValue = readRequiredStringToolArgument(parsedArguments, argumentName, toolName);
+  if (isAssistantSubagentName(argumentValue)) {
+    return argumentValue;
+  }
+
+  throw new Error(`OpenAI function call for ${toolName} has unsupported subagent argument: ${argumentName}`);
 }
 
 function readRequiredTextToolArgument(

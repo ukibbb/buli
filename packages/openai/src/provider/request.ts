@@ -424,12 +424,13 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "explore") {
+  if (conversationSessionEntry.toolCallRequest.toolName === "task") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
-      "Tool: explore",
-      `Description: ${conversationSessionEntry.toolCallRequest.explorationDescription}`,
-      `Prompt: ${conversationSessionEntry.toolCallRequest.explorationPrompt}`,
+      "Tool: task",
+      `Subagent: ${conversationSessionEntry.toolCallRequest.subagentName}`,
+      `Description: ${conversationSessionEntry.toolCallRequest.subagentDescription}`,
+      `Prompt: ${conversationSessionEntry.toolCallRequest.subagentPrompt}`,
     ].join("\n");
   }
 

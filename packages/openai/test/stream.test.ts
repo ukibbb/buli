@@ -635,12 +635,13 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
       },
     },
     {
-      toolName: "explore",
-      argumentsText: '{"description":"map runtime","prompt":"Inspect engine runtime flow."}',
+      toolName: "task",
+      argumentsText: '{"subagent":"explore","description":"map runtime","prompt":"Inspect engine runtime flow."}',
       expectedToolCallRequest: {
-        toolName: "explore",
-        explorationDescription: "map runtime",
-        explorationPrompt: "Inspect engine runtime flow.",
+        toolName: "task",
+        subagentName: "explore",
+        subagentDescription: "map runtime",
+        subagentPrompt: "Inspect engine runtime flow.",
       },
     },
   ] as const;
@@ -747,7 +748,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
-  const exploreToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "explore");
+  const taskToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "task");
   const presentLearningSequenceDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "present_learning_sequence");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
@@ -757,8 +758,10 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
-  expect(exploreToolDefinition?.description).toContain("read-only Explorer subagent");
-  expect(exploreToolDefinition?.description).toContain("identify inspected files and remaining context gaps");
+  const openAiToolDefinitionNames: string[] = openAiToolDefinitions.map((toolDefinition) => toolDefinition.name);
+  expect(openAiToolDefinitionNames).not.toContain("explore");
+  expect(taskToolDefinition?.description).toContain("Launch a built-in Buli subagent");
+  expect(taskToolDefinition?.description).toContain("Currently available subagent: explore");
   expect(presentLearningSequenceDefinition?.description).toContain("Render a structured, non-executable learning sequence");
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
@@ -821,14 +824,14 @@ test("parseOpenAiStream rejects malformed typed tool argument fields clearly", a
 test("parseOpenAiStream rejects unsupported tool names clearly", async () => {
   const response = new Response(
     [
-      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"task","arguments":""}}\n\n',
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"explore","arguments":""}}\n\n',
       'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{}"}\n\n',
-      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"task","arguments":"{}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"explore","arguments":"{}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
     ].join(""),
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported function requested by OpenAI: task");
+  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported function requested by OpenAI: explore");
 });
 
 test("parseOpenAiStream repairs tool-turn output when response.completed omits the function_call item", async () => {
@@ -1523,7 +1526,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       "grep",
       "edit",
       "write",
-      "explore",
+      "task",
       "present_learning_sequence",
     ]);
     expect(emittedEvents).toEqual([

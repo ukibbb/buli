@@ -494,7 +494,7 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant learnin
   ]);
 });
 
-test("hydrateConversationTranscriptFromSessionEntries preserves Explorer child activity", () => {
+test("hydrateConversationTranscriptFromSessionEntries preserves task subagent child activity", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     [
@@ -507,26 +507,28 @@ test("hydrateConversationTranscriptFromSessionEntries preserves Explorer child a
         entryKind: "tool_call",
         toolCallId: "call-explore",
         toolCallRequest: {
-          toolName: "explore",
-          explorationDescription: "map docs",
-          explorationPrompt: "Read README.md and summarize it.",
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs",
+          subagentPrompt: "Read README.md and summarize it.",
         },
       },
       {
         entryKind: "completed_tool_result",
         toolCallId: "call-explore",
         toolCallDetail: {
-          toolName: "explore",
-          explorationDescription: "map docs",
-          explorationPrompt: "Read README.md and summarize it.",
-          explorationResultSummary: "README.md explains the project.",
-          explorationChildToolCalls: [
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs",
+          subagentPrompt: "Read README.md and summarize it.",
+          subagentResultSummary: "README.md explains the project.",
+          subagentChildToolCalls: [
             {
-              explorerChildToolCallId: "call-read-1",
-              explorerChildToolCallStatus: "completed",
-              explorerChildToolCallStartedAtMs: 2,
-              explorerChildToolCallDurationMs: 3,
-              explorerChildToolCallDetail: {
+              subagentChildToolCallId: "call-read-1",
+              subagentChildToolCallStatus: "completed",
+              subagentChildToolCallStartedAtMs: 2,
+              subagentChildToolCallDurationMs: 3,
+              subagentChildToolCallDetail: {
                 toolName: "read",
                 readFilePath: "README.md",
                 readLineCount: 2,
@@ -551,21 +553,21 @@ test("hydrateConversationTranscriptFromSessionEntries preserves Explorer child a
     throw new Error("expected assistant message");
   }
 
-  const explorerToolCallPart = listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id).find(
+  const taskToolCallPart = listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id).find(
     (conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call",
   );
-  if (!explorerToolCallPart || explorerToolCallPart.partKind !== "assistant_tool_call") {
-    throw new Error("expected Explorer tool call part");
+  if (!taskToolCallPart || taskToolCallPart.partKind !== "assistant_tool_call") {
+    throw new Error("expected task tool call part");
   }
 
-  expect(explorerToolCallPart.toolCallDetail).toMatchObject({
-    toolName: "explore",
-    explorationChildToolCalls: [
+  expect(taskToolCallPart.toolCallDetail).toMatchObject({
+    toolName: "task",
+    subagentChildToolCalls: [
       {
-        explorerChildToolCallId: "call-read-1",
-        explorerChildToolCallStatus: "completed",
-        explorerChildToolCallDurationMs: 3,
-        explorerChildToolCallDetail: { toolName: "read", readFilePath: "README.md", readLineCount: 2 },
+        subagentChildToolCallId: "call-read-1",
+        subagentChildToolCallStatus: "completed",
+        subagentChildToolCallDurationMs: 3,
+        subagentChildToolCallDetail: { toolName: "read", readFilePath: "README.md", readLineCount: 2 },
       },
     ],
   });
@@ -628,9 +630,10 @@ test("hydrateConversationTranscriptFromSessionEntries creates tool details from 
         entryKind: "tool_call",
         toolCallId: "call-explore",
         toolCallRequest: {
-          toolName: "explore",
-          explorationDescription: "map runtime",
-          explorationPrompt: "Inspect runtime dispatch.",
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map runtime",
+          subagentPrompt: "Inspect runtime dispatch.",
         },
       },
     ],
@@ -667,9 +670,10 @@ test("hydrateConversationTranscriptFromSessionEntries creates tool details from 
     {
       partKind: "assistant_tool_call",
       toolCallDetail: {
-        toolName: "explore",
-        explorationDescription: "map runtime",
-        explorationPrompt: "Inspect runtime dispatch.",
+        toolName: "task",
+        subagentName: "explore",
+        subagentDescription: "map runtime",
+        subagentPrompt: "Inspect runtime dispatch.",
       },
     },
     {

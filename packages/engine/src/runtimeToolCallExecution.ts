@@ -1,6 +1,6 @@
 import {
-  isExploreToolCallRequest,
   isFileMutationToolCallRequest,
+  isTaskToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
   type AssistantOperatingMode,
   type AssistantResponseEvent,
@@ -22,7 +22,7 @@ import {
   type AutoConcurrentRequestedToolCall,
 } from "./runtimeRequestedToolCallExecutionGroups.ts";
 import { streamAssistantResponseEventsForBashToolCall } from "./runtimeBashToolCallExecution.ts";
-import { streamAssistantResponseEventsForExploreToolCall } from "./runtimeExplorerToolCallExecution.ts";
+import { streamAssistantResponseEventsForTaskToolCall } from "./runtimeTaskToolCallExecution.ts";
 import { streamAssistantResponseEventsForFileMutationToolCall } from "./runtimeFileMutationToolCallExecution.ts";
 import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
@@ -61,7 +61,7 @@ export type RuntimeToolCallExecutionContext = {
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   conversationHistory: InMemoryConversationHistory;
   abortSignal: AbortSignal;
-  canSpawnExplorer: boolean;
+  canSpawnSubagent: boolean;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -90,7 +90,7 @@ const requestedToolCallExecutorByName = {
   read: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   glob: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   grep: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
-  explore: streamAssistantResponseEventsForExploreRequestedToolCall,
+  task: streamAssistantResponseEventsForTaskRequestedToolCall,
   edit: streamAssistantResponseEventsForFileMutationRequestedToolCall,
   write: streamAssistantResponseEventsForFileMutationRequestedToolCall,
   bash: streamAssistantResponseEventsForBashRequestedToolCall,
@@ -249,26 +249,26 @@ async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(
   });
 }
 
-async function* streamAssistantResponseEventsForExploreRequestedToolCall(
+async function* streamAssistantResponseEventsForTaskRequestedToolCall(
   input: RuntimeRequestedToolCallExecutorInput,
 ): AsyncGenerator<AssistantResponseEvent> {
-  if (!isExploreToolCallRequest(input.toolCallRequest)) {
-    throw new Error(`Explorer tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
+  if (!isTaskToolCallRequest(input.toolCallRequest)) {
+    throw new Error(`Task tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
   }
 
-  yield* streamAssistantResponseEventsForExploreToolCall({
+  yield* streamAssistantResponseEventsForTaskToolCall({
     assistantResponseMessageId: input.assistantResponseMessageId,
     providerConversationTurn: input.providerConversationTurn,
     conversationTurnProvider: input.conversationTurnProvider,
     toolCallId: input.toolCallId,
-    exploreToolCallRequest: input.toolCallRequest,
+    taskToolCallRequest: input.toolCallRequest,
     selectedModelId: input.selectedModelId,
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
     workspaceRootPath: input.workspaceRootPath,
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     abortSignal: input.abortSignal,
-    canSpawnExplorer: input.canSpawnExplorer,
+    canSpawnSubagent: input.canSpawnSubagent,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,
   });

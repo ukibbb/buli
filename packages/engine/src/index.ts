@@ -22,6 +22,8 @@ export { parsePromptContextReferencesFromPromptText } from "./prompt-context/par
 export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./prompt-context/reconcileSelectedPromptContextReferenceTextsWithPromptDraft.ts";
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
+export { resolveBuiltInPrimaryAssistantAgent, resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
+export type { BuiltInPrimaryAssistantAgent, BuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 export {
   defaultPrivateGitWorkspaceSnapshotDirectoryPath,
   PrivateGitWorkspaceSnapshotStore,

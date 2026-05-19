@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
 
 export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 300_000;
 
@@ -55,11 +56,12 @@ export const WriteToolCallRequestSchema = z
   })
   .strict();
 
-export const ExploreToolCallRequestSchema = z
+export const TaskToolCallRequestSchema = z
   .object({
-    toolName: z.literal("explore"),
-    explorationDescription: z.string().min(1),
-    explorationPrompt: z.string().min(1),
+    toolName: z.literal("task"),
+    subagentName: AssistantSubagentNameSchema,
+    subagentDescription: z.string().min(1),
+    subagentPrompt: z.string().min(1),
   })
   .strict();
 
@@ -70,7 +72,7 @@ export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   GrepToolCallRequestSchema,
   EditToolCallRequestSchema,
   WriteToolCallRequestSchema,
-  ExploreToolCallRequestSchema,
+  TaskToolCallRequestSchema,
 ]);
 
 export type BashToolCallRequest = z.infer<typeof BashToolCallRequestSchema>;
@@ -79,5 +81,5 @@ export type GlobToolCallRequest = z.infer<typeof GlobToolCallRequestSchema>;
 export type GrepToolCallRequest = z.infer<typeof GrepToolCallRequestSchema>;
 export type EditToolCallRequest = z.infer<typeof EditToolCallRequestSchema>;
 export type WriteToolCallRequest = z.infer<typeof WriteToolCallRequestSchema>;
-export type ExploreToolCallRequest = z.infer<typeof ExploreToolCallRequestSchema>;
+export type TaskToolCallRequest = z.infer<typeof TaskToolCallRequestSchema>;
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;

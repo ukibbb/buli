@@ -1,4 +1,15 @@
 export {
+  AssistantPrimaryAgentNameSchema,
+  AssistantSubagentNameSchema,
+  BUILT_IN_ASSISTANT_SUBAGENT_NAMES,
+  DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME,
+  isAssistantSubagentName,
+} from "./assistantAgent.ts";
+export type {
+  AssistantPrimaryAgentName,
+  AssistantSubagentName,
+} from "./assistantAgent.ts";
+export {
   AssistantOperatingModeSchema,
   DEFAULT_ASSISTANT_OPERATING_MODE,
 } from "./assistantOperatingMode.ts";
@@ -169,9 +180,9 @@ export {
   createStartedToolCallDetailFromRequest,
   isAssistantPresentationFunctionName,
   isAssistantToolRequestName,
-  isExploreToolCallRequest,
   isFileMutationToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
+  isTaskToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
 } from "./toolCatalog.ts";
 export type {
@@ -288,9 +299,10 @@ export type {
   TokenUsage,
 } from "./provider.ts";
 export {
-  ExplorerChildToolCallDetailSchema,
-  ExplorerChildToolCallSchema,
-  ExplorerChildToolCallStatusSchema,
+  SubagentChildToolCallDetailSchema,
+  SubagentChildToolCallSchema,
+  SubagentChildToolCallStatusSchema,
+  SubagentChildTaskToolCallDetailSchema,
   SyntaxHighlightSpanSchema,
   SyntaxHighlightSpanStyleSchema,
   ToolCallBashDetailSchema,
@@ -298,7 +310,6 @@ export {
   ToolCallBashOutputLineSchema,
   ToolCallDetailSchema,
   ToolCallEditDetailSchema,
-  ToolCallExploreDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallGrepMatchSchema,
@@ -312,9 +323,10 @@ export {
   UnifiedDiffTextSchema,
 } from "./toolCallDetail.ts";
 export type {
-  ExplorerChildToolCall,
-  ExplorerChildToolCallDetail,
-  ExplorerChildToolCallStatus,
+  SubagentChildToolCall,
+  SubagentChildToolCallDetail,
+  SubagentChildToolCallStatus,
+  SubagentChildTaskToolCallDetail,
   SyntaxHighlightSpan,
   SyntaxHighlightSpanStyle,
   ToolCallBashDetail,
@@ -322,7 +334,6 @@ export type {
   ToolCallBashOutputLineKind,
   ToolCallDetail,
   ToolCallEditDetail,
-  ToolCallExploreDetail,
   ToolCallGlobDetail,
   ToolCallGrepDetail,
   ToolCallGrepMatch,
@@ -338,21 +349,21 @@ export type {
 export {
   BashToolCallRequestSchema,
   EditToolCallRequestSchema,
-  ExploreToolCallRequestSchema,
   GlobToolCallRequestSchema,
   GrepToolCallRequestSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   ReadToolCallRequestSchema,
+  TaskToolCallRequestSchema,
   ToolCallRequestSchema,
   WriteToolCallRequestSchema,
 } from "./toolCallRequest.ts";
 export type {
   BashToolCallRequest,
   EditToolCallRequest,
-  ExploreToolCallRequest,
   GlobToolCallRequest,
   GrepToolCallRequest,
   ReadToolCallRequest,
+  TaskToolCallRequest,
   ToolCallRequest,
   WriteToolCallRequest,
 } from "./toolCallRequest.ts";

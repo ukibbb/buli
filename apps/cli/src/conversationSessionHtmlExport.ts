@@ -2,7 +2,15 @@ import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AssistantOperatingMode, ConversationSessionEntry, LearningSequence, ToolCallDetail, ToolCallRequest } from "@buli/contracts";
+import type {
+  AssistantOperatingMode,
+  ConversationSessionEntry,
+  LearningSequence,
+  SubagentChildToolCall,
+  SubagentChildToolCallDetail,
+  ToolCallDetail,
+  ToolCallRequest,
+} from "@buli/contracts";
 import { marked, Renderer, type Tokens } from "marked";
 
 export type ConversationSessionHtmlExportResult = {
@@ -310,7 +318,7 @@ function renderConversationSessionTranscriptEntryShell(input: {
 function renderUserPromptBlock(conversationSessionEntry: Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>): string {
   const imageAttachments = conversationSessionEntry.imageAttachments ?? [];
   const assistantOperatingModeHtml = conversationSessionEntry.assistantOperatingMode
-    ? `<p class="status-notice">Mode: ${escapeHtml(formatAssistantOperatingModeDisplayName(conversationSessionEntry.assistantOperatingMode))}</p>`
+    ? `<p class="status-notice">Agent: ${escapeHtml(formatAssistantOperatingModeDisplayName(conversationSessionEntry.assistantOperatingMode))}</p>`
     : "";
   const promptTextHtml = conversationSessionEntry.promptText.length > 0
     ? `<p>${escapeHtml(conversationSessionEntry.promptText)}</p>`
@@ -346,10 +354,10 @@ function isSafeConversationSessionExportImageAttachment(
 
 function formatAssistantOperatingModeDisplayName(assistantOperatingMode: AssistantOperatingMode): string {
   return assistantOperatingMode === "understand"
-    ? "Understand"
+    ? "Understand Agent"
     : assistantOperatingMode === "plan"
-    ? "Plan"
-    : "Implementation";
+    ? "Plan Agent"
+    : "Implementation Agent";
 }
 
 function renderConversationCompactionSummaryBlock(
@@ -431,8 +439,8 @@ function renderToolCallRequestBlock(toolCallRequest: ToolCallRequest): string {
   }
 
   return `<div class="tool-block">
-  <div class="tool-summary"><span class="tool-name">explore</span><span class="tool-purpose">${escapeHtml(toolCallRequest.explorationDescription)}</span></div>
-  <pre class="tool-cmd">${escapeHtml(toolCallRequest.explorationPrompt)}</pre>
+  <div class="tool-summary"><span class="tool-name">task</span><span class="tool-purpose">${escapeHtml(toolCallRequest.subagentName)}: ${escapeHtml(toolCallRequest.subagentDescription)}</span></div>
+  <pre class="tool-cmd">${escapeHtml(toolCallRequest.subagentPrompt)}</pre>
 </div>`;
 }
 
@@ -443,6 +451,9 @@ function renderToolResultBlock(
   >,
 ): string {
   const summaryHtml = renderToolDetailSummary(conversationSessionEntry.toolCallDetail);
+  const taskDetailHtml = conversationSessionEntry.toolCallDetail.toolName === "task"
+    ? renderTaskToolDetailBlock(conversationSessionEntry.toolCallDetail)
+    : "";
   const outputHtml = conversationSessionEntry.toolResultText.length > 0
     ? `<pre class="tool-output">${escapeHtml(conversationSessionEntry.toolResultText)}</pre>`
     : "";
@@ -453,8 +464,9 @@ function renderToolResultBlock(
     ? `<p class="tool-notice tool-notice-warn">${escapeHtml(conversationSessionEntry.denialExplanation)}</p>`
     : "";
 
-  return `<div class="tool-block">
+return `<div class="tool-block">
   ${summaryHtml}
+  ${taskDetailHtml}
   ${outputHtml}
   ${failureNoticeHtml}
   ${denialNoticeHtml}
@@ -514,10 +526,83 @@ function renderToolDetailSummary(toolCallDetail: ToolCallDetail): string {
     const lineChangeHtml = renderToolDetailLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
     return `<div class="tool-summary"><span class="tool-name">write</span><span class="tool-purpose">${escapeHtml(toolCallDetail.writtenFilePath)}</span>${lineChangeHtml}</div>`;
   }
-  if (toolCallDetail.toolName === "explore") {
-    return `<div class="tool-summary"><span class="tool-name">explore</span><span class="tool-purpose">${escapeHtml(toolCallDetail.explorationDescription)}</span></div>`;
+  if (toolCallDetail.toolName === "task") {
+    return `<div class="tool-summary"><span class="tool-name">task</span><span class="tool-purpose">${escapeHtml(`${toolCallDetail.subagentName}: ${toolCallDetail.subagentDescription}`)}</span></div>`;
   }
   return `<div class="tool-summary"><span class="tool-name">${escapeHtml(toolCallDetail.toolName)}</span></div>`;
+}
+
+function renderTaskToolDetailBlock(toolCallDetail: Extract<ToolCallDetail, { toolName: "task" }>): string {
+  const promptHtml = toolCallDetail.subagentPrompt
+    ? `<p class="muted">Subagent prompt</p><pre class="tool-cmd">${escapeHtml(toolCallDetail.subagentPrompt)}</pre>`
+    : "";
+  const childActivityHtml = toolCallDetail.subagentChildToolCalls && toolCallDetail.subagentChildToolCalls.length > 0
+    ? `<p class="muted">Subagent activity</p>${renderSubagentChildToolCallsBlock(toolCallDetail.subagentChildToolCalls)}`
+    : "";
+  const resultHtml = toolCallDetail.subagentResultSummary
+    ? `<p class="muted">Subagent result</p>${renderAssistantMarkdownText(toolCallDetail.subagentResultSummary)}`
+    : "";
+
+  return [
+    `<p class="status-notice">Subagent: ${escapeHtml(toolCallDetail.subagentName)}</p>`,
+    promptHtml,
+    childActivityHtml,
+    resultHtml,
+  ].filter((htmlSegment) => htmlSegment.length > 0).join("\n");
+}
+
+function renderSubagentChildToolCallsBlock(subagentChildToolCalls: readonly SubagentChildToolCall[]): string {
+  const childToolCallsHtml = subagentChildToolCalls.map((subagentChildToolCall) => {
+    const durationHtml = subagentChildToolCall.subagentChildToolCallDurationMs === undefined
+      ? ""
+      : `<span class="tool-purpose">${formatDurationMs(subagentChildToolCall.subagentChildToolCallDurationMs)}</span>`;
+    const errorHtml = subagentChildToolCall.subagentChildToolCallErrorText
+      ? `<p class="tool-notice tool-notice-error">${escapeHtml(subagentChildToolCall.subagentChildToolCallErrorText)}</p>`
+      : "";
+    const denialHtml = subagentChildToolCall.subagentChildToolCallDenialText
+      ? `<p class="tool-notice tool-notice-warn">${escapeHtml(subagentChildToolCall.subagentChildToolCallDenialText)}</p>`
+      : "";
+    return `<li>
+  <div class="tool-summary"><span class="tool-name">${escapeHtml(subagentChildToolCall.subagentChildToolCallStatus)}</span>${durationHtml}</div>
+  ${renderSubagentChildToolCallDetailSummary(subagentChildToolCall.subagentChildToolCallDetail)}
+  ${errorHtml}
+  ${denialHtml}
+</li>`;
+  }).join("\n");
+
+  return `<ul>${childToolCallsHtml}</ul>`;
+}
+
+function renderSubagentChildToolCallDetailSummary(subagentChildToolCallDetail: SubagentChildToolCallDetail): string {
+  if (subagentChildToolCallDetail.toolName === "read") {
+    return `<div class="tool-summary"><span class="tool-name">read</span><span class="tool-purpose">${escapeHtml(subagentChildToolCallDetail.readFilePath)}</span></div>`;
+  }
+  if (subagentChildToolCallDetail.toolName === "glob") {
+    const countHtml = subagentChildToolCallDetail.matchedPathCount === undefined
+      ? ""
+      : `<span class="tool-purpose">${subagentChildToolCallDetail.matchedPathCount} paths</span>`;
+    return `<div class="tool-summary"><span class="tool-name">glob</span>${countHtml}<span class="tool-purpose">${escapeHtml(subagentChildToolCallDetail.globPattern)}</span></div>`;
+  }
+  if (subagentChildToolCallDetail.toolName === "grep") {
+    const countHtml = subagentChildToolCallDetail.totalMatchCount === undefined
+      ? ""
+      : `<span class="tool-purpose">${subagentChildToolCallDetail.totalMatchCount} matches</span>`;
+    return `<div class="tool-summary"><span class="tool-name">grep</span>${countHtml}<span class="tool-purpose">${escapeHtml(subagentChildToolCallDetail.searchPattern)}</span></div>`;
+  }
+  if (subagentChildToolCallDetail.toolName === "bash") {
+    const purposeHtml = subagentChildToolCallDetail.commandDescription
+      ? `<span class="tool-purpose">${escapeHtml(subagentChildToolCallDetail.commandDescription)}</span>`
+      : "";
+    return `<div class="tool-summary"><span class="tool-name">bash</span>${purposeHtml}</div><pre class="tool-cmd">${escapeHtml(subagentChildToolCallDetail.commandLine)}</pre>`;
+  }
+  if (subagentChildToolCallDetail.toolName === "edit") {
+    return `<div class="tool-summary"><span class="tool-name">edit</span><span class="tool-purpose">${escapeHtml(subagentChildToolCallDetail.editedFilePath)}</span></div>`;
+  }
+  if (subagentChildToolCallDetail.toolName === "write") {
+    return `<div class="tool-summary"><span class="tool-name">write</span><span class="tool-purpose">${escapeHtml(subagentChildToolCallDetail.writtenFilePath)}</span></div>`;
+  }
+
+  return `<div class="tool-summary"><span class="tool-name">task</span><span class="tool-purpose">${escapeHtml(`${subagentChildToolCallDetail.subagentName}: ${subagentChildToolCallDetail.subagentDescription}`)}</span></div>`;
 }
 
 function renderToolDetailLineChangeSummary(
@@ -582,6 +667,13 @@ function formatExportedDateTimeForDisplay(epochMs: number): string {
   const hh = paddedTwoDigitNumberLabel(exportedDate.getHours());
   const mm = paddedTwoDigitNumberLabel(exportedDate.getMinutes());
   return `${formatExportedDateForDisplay(epochMs)} ${hh}:${mm}`;
+}
+
+function formatDurationMs(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+  return `${(durationMs / 1000).toFixed(1)}s`;
 }
 
 function escapeHtml(value: string): string {

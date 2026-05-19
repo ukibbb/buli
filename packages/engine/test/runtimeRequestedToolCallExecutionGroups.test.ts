@@ -31,29 +31,31 @@ const editRequestedToolCall = {
   },
 } as const satisfies ProviderRequestedToolCall;
 
-const exploreRequestedToolCall = {
-  toolCallId: "call_explore_1",
+const taskRequestedToolCall = {
+  toolCallId: "call_task_1",
   toolCallRequest: {
-    toolName: "explore",
-    explorationDescription: "Map runtime",
-    explorationPrompt: "Inspect engine runtime flow.",
+    toolName: "task",
+    subagentName: "explore",
+    subagentDescription: "Map docs",
+    subagentPrompt: "Inspect documentation flow.",
   },
 } as const satisfies ProviderRequestedToolCall;
 
-const secondExploreRequestedToolCall = {
-  toolCallId: "call_explore_2",
+const secondTaskRequestedToolCall = {
+  toolCallId: "call_task_2",
   toolCallRequest: {
-    toolName: "explore",
-    explorationDescription: "Map TUI",
-    explorationPrompt: "Inspect TUI rendering flow.",
+    toolName: "task",
+    subagentName: "explore",
+    subagentDescription: "Map TUI",
+    subagentPrompt: "Inspect TUI rendering flow.",
   },
 } as const satisfies ProviderRequestedToolCall;
 
 test("groupRequestedToolCallsForExecution groups adjacent read-only calls", () => {
-  expect(groupRequestedToolCallsForExecution([readRequestedToolCall, grepRequestedToolCall])).toEqual([
+  expect(groupRequestedToolCallsForExecution([readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall])).toEqual([
     {
       groupKind: "auto_concurrent",
-      requestedToolCalls: [readRequestedToolCall, grepRequestedToolCall],
+      requestedToolCalls: [readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall],
     },
   ]);
 });
@@ -75,16 +77,16 @@ test("groupRequestedToolCallsForExecution preserves serial barriers around bash 
   ]);
 });
 
-test("groupRequestedToolCallsForExecution preserves mutation barriers between Explorer groups", () => {
+test("groupRequestedToolCallsForExecution preserves mutation barriers between task groups", () => {
   expect(groupRequestedToolCallsForExecution([
-    exploreRequestedToolCall,
+    taskRequestedToolCall,
     readRequestedToolCall,
     editRequestedToolCall,
-    secondExploreRequestedToolCall,
+    secondTaskRequestedToolCall,
   ])).toEqual([
     {
       groupKind: "auto_concurrent",
-      requestedToolCalls: [exploreRequestedToolCall, readRequestedToolCall],
+      requestedToolCalls: [taskRequestedToolCall, readRequestedToolCall],
     },
     {
       groupKind: "serial",
@@ -92,7 +94,7 @@ test("groupRequestedToolCallsForExecution preserves mutation barriers between Ex
     },
     {
       groupKind: "serial",
-      requestedToolCall: secondExploreRequestedToolCall,
+      requestedToolCall: secondTaskRequestedToolCall,
     },
   ]);
 });
@@ -101,8 +103,8 @@ test("groupRequestedToolCallsForExecution keeps single auto-concurrent calls ser
   expect(groupRequestedToolCallsForExecution([readRequestedToolCall])).toEqual([
     { groupKind: "serial", requestedToolCall: readRequestedToolCall },
   ]);
-  expect(groupRequestedToolCallsForExecution([exploreRequestedToolCall])).toEqual([
-    { groupKind: "serial", requestedToolCall: exploreRequestedToolCall },
+  expect(groupRequestedToolCallsForExecution([taskRequestedToolCall])).toEqual([
+    { groupKind: "serial", requestedToolCall: taskRequestedToolCall },
   ]);
 });
 

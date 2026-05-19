@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { ToolCallDetail } from "@buli/contracts";
 import { BashToolCallCard } from "./BashToolCallCard.tsx";
 import { EditToolCallCard } from "./EditToolCallCard.tsx";
-import { ExplorerToolCallCard } from "./ExplorerToolCallCard.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
 import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
@@ -86,16 +85,6 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   if (toolCallDetail.toolName === "todowrite") {
     return (
       <TodoWriteToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "explore") {
-    return (
-      <ExplorerToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}

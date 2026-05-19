@@ -36,7 +36,7 @@ test("uses file-by-file apply plans for non-trivial work", () => {
   );
   expect(systemPromptText).toContain("Use read to inspect the files that define the behavior.");
   expect(systemPromptText).toContain(
-    "Use explore when the relevant area is broad, unfamiliar, or connected across multiple files.",
+    "Use task with the explore subagent when the relevant area is broad, unfamiliar, or connected across multiple files.",
   );
   expect(systemPromptText).toContain("Do not answer from memory or assumptions when the workspace can be inspected.");
   expect(systemPromptText).toContain(
@@ -99,14 +99,15 @@ test("prefers typed workspace tools over bash for normal inspection", () => {
   expect(systemPromptText).toContain("use read for known files and directories");
   expect(systemPromptText).toContain("use glob for finding files by path pattern");
   expect(systemPromptText).toContain("use grep for searching file contents");
-  expect(systemPromptText).toContain("use explore for broad, multi-step codebase discovery");
+  expect(systemPromptText).toContain("use task with the explore subagent for broad, multi-step codebase discovery");
+  expect(systemPromptText).not.toContain("use explore as a compatibility shortcut");
   expect(systemPromptText).toContain(
-    "When multiple read, glob, grep, or explore calls are independent, request them together in one tool-call batch so they can run concurrently.",
+    "When multiple read, glob, grep, or task calls are independent, request them together in one tool-call batch so they can run concurrently.",
   );
   expect(systemPromptText).toContain(
-    "For broad independent research areas, launch multiple explore calls in the same tool-call batch instead of waiting for one Explorer to finish before starting another.",
+    "For broad independent research areas, launch multiple task calls in the same tool-call batch instead of waiting for one Explorer to finish before starting another.",
   );
-  expect(systemPromptText).toContain("Do not use explore for a simple single-file read");
+  expect(systemPromptText).toContain("Do not use task for a simple single-file read");
   expect(systemPromptText).toContain("Do not use bash for simple file reads, file discovery, or text search.");
 });
 
@@ -132,8 +133,8 @@ test("understand mode is read-only and explains before planning", () => {
     assistantOperatingMode: "understand",
   });
 
-  expect(systemPromptText).toContain("Understand Mode - System Reminder");
-  expect(systemPromptText).toContain("Understand mode ACTIVE - you are in READ-ONLY phase");
+  expect(systemPromptText).toContain("Understand Agent - System Reminder");
+  expect(systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
   expect(systemPromptText).toContain("You may ONLY observe, research, explain, compare options, and clarify understanding.");
   expect(systemPromptText).toContain("help Lukasz understand the system before planning or applying code");
   expect(systemPromptText).toContain("For non-trivial workspace questions, do a deep-dive research pass before answering.");
@@ -152,7 +153,7 @@ test("plan mode points inspection toward typed read and search tools", () => {
   expect(systemPromptText).toContain(
     "or ANY other bash command to manipulate files - commands may ONLY read/inspect.",
   );
-  expect(systemPromptText).toContain("delegate explore agents to construct a well-formed plan");
+  expect(systemPromptText).toContain("delegate built-in task subagents to construct a well-formed plan");
   expect(systemPromptText).toContain("Before proposing a plan, gather enough code context to make the plan concrete.");
   expect(systemPromptText).toContain("Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path.");
   expect(systemPromptText).toContain("If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.");
@@ -169,8 +170,8 @@ test("implementation mode reminds the assistant to apply the agreed direction", 
     assistantOperatingMode: "implementation",
   });
 
-  expect(systemPromptText).toContain("Implementation Mode - System Reminder");
-  expect(systemPromptText).toContain("Implementation mode ACTIVE - you may apply the agreed direction.");
+  expect(systemPromptText).toContain("Implementation Agent - System Reminder");
+  expect(systemPromptText).toContain("Implementation Agent ACTIVE - you may apply the agreed direction.");
   expect(systemPromptText).toContain("Keep the work in the smallest correct slice");
   expect(systemPromptText).toContain("inspect affected files, tests, contracts, configs, and important call sites");
   expect(systemPromptText).toContain("verify important behavior");
@@ -277,16 +278,16 @@ test("keeps task style independent from mutation posture", () => {
   });
 
   expect(implementationPromptText).toContain(
-    "Treat understand, plan, and implementation modes as workflow posture, not as the whole learning style.",
+    "Treat the understand, plan, and implementation primary agents as workflow posture, not as the whole learning style.",
   );
   expect(implementationPromptText).toContain(
-    "The same learning style can happen in any posture: understand-mode codebase exploration, plan-mode plan refinement, implementation-mode explanation while applying an agreed change, architecture brainstorming, or review.",
+    "The same learning style can happen in any posture: understand-agent codebase exploration, plan-agent plan refinement, implementation-agent explanation while applying an agreed change, architecture brainstorming, or review.",
   );
   expect(planPromptText).toContain(
-    "Treat understand, plan, and implementation modes as workflow posture, not as the whole learning style.",
+    "Treat the understand, plan, and implementation primary agents as workflow posture, not as the whole learning style.",
   );
   expect(understandPromptText).toContain(
-    "Treat understand, plan, and implementation modes as workflow posture, not as the whole learning style.",
+    "Treat the understand, plan, and implementation primary agents as workflow posture, not as the whole learning style.",
   );
 });
 
