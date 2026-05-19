@@ -1,3 +1,4 @@
+import { listModelVisibleConversationSessionEntries } from "@buli/contracts";
 import type { ConversationSessionEntry, ModelContextItem, UserPromptConversationSessionEntry } from "@buli/contracts";
 
 type ToolCallConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "tool_call" }>;
@@ -58,9 +59,7 @@ export function projectConversationSessionEntryToModelContextItems(
 export function projectConversationSessionEntriesToModelContextItems(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): ModelContextItem[] {
-  const effectiveConversationSessionEntries = sliceConversationSessionEntriesFromLatestCompactionSummary(
-    conversationSessionEntries,
-  );
+  const effectiveConversationSessionEntries = listModelVisibleConversationSessionEntries(conversationSessionEntries);
   const modelContextItems: ModelContextItem[] = [];
   let pendingConversationSessionTurn: ConversationSessionTurn | undefined;
 
@@ -95,18 +94,6 @@ export function projectConversationSessionEntriesToModelContextItems(
   }
 
   return modelContextItems;
-}
-
-function sliceConversationSessionEntriesFromLatestCompactionSummary(
-  conversationSessionEntries: readonly ConversationSessionEntry[],
-): readonly ConversationSessionEntry[] {
-  const latestCompactionSummaryEntryIndex = conversationSessionEntries.findLastIndex(
-    (conversationSessionEntry) => conversationSessionEntry.entryKind === "conversation_compaction_summary",
-  );
-
-  return latestCompactionSummaryEntryIndex === -1
-    ? conversationSessionEntries
-    : conversationSessionEntries.slice(latestCompactionSummaryEntryIndex);
 }
 
 function projectConversationSessionTurnToModelContextItems(

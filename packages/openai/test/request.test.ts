@@ -163,6 +163,7 @@ test("createOpenAiResponsesInputItems starts at the latest compaction summary", 
         entryKind: "conversation_compaction_summary",
         summaryText: "Goal: continue the compaction implementation.",
         compactedEntryCount: 2,
+        retainedRecentConversationSessionEntryCount: 0,
       },
       {
         entryKind: "user_prompt",
@@ -180,6 +181,67 @@ test("createOpenAiResponsesInputItems starts at the latest compaction summary", 
         "Goal: continue the compaction implementation.",
         "</conversation_compaction_summary>",
       ].join("\n"),
+    },
+    {
+      role: "user",
+      content: "Next prompt",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems keeps retained recent entries after compaction summary", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Old prompt",
+        modelFacingPromptText: "Old prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Old answer",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Retained prompt",
+        modelFacingPromptText: "Retained prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Retained answer",
+      },
+      {
+        entryKind: "conversation_compaction_summary",
+        summaryText: "Goal: continue the compaction implementation.",
+        compactedEntryCount: 2,
+        retainedRecentConversationSessionEntryCount: 2,
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: [
+        "<conversation_compaction_summary>",
+        "The earlier conversation was compacted. Continue from this summary:",
+        "",
+        "Goal: continue the compaction implementation.",
+        "</conversation_compaction_summary>",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: "Retained prompt",
+    },
+    {
+      role: "assistant",
+      content: "Retained answer",
     },
     {
       role: "user",

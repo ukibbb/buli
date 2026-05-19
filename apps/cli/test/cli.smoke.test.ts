@@ -506,38 +506,57 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     didCompact: false,
     decision: {
       shouldCompact: false,
-      reason: "context_usage_below_threshold",
+      reason: "context_usage_below_reserved_token_limit",
     },
   });
 
-  conversationRuntime.compactConversationSession = async (compactionRequest: ConversationCompactionRequest) => {
-    expect(compactionRequest).toEqual({ selectedModelId: "gpt-5.5" });
+  conversationRuntime.autoCompactConversationSession = async (autoCompactionRequest) => {
+    expect(autoCompactionRequest).toEqual({
+      selectedModelId: "gpt-5.5",
+      latestTokenUsage: { total: 390_000, input: 390_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    });
     const compactedEntryCount = conversationRuntime.conversationHistory.listConversationSessionEntries().length;
     conversationRuntime.conversationHistory.appendConversationSessionEntry({
       entryKind: "conversation_compaction_summary",
       summaryText: "Goal: continue after automatic compaction.",
       compactedEntryCount,
+      retainedRecentConversationSessionEntryCount: 0,
     });
+    const conversationSessionEntries = conversationRuntime.conversationHistory.listConversationSessionEntries();
     return {
-      summaryText: "Goal: continue after automatic compaction.",
-      compactedEntryCount,
+      didCompact: true,
+      decision: {
+        shouldCompact: true,
+        reason: "context_usage_reserved_token_limit_reached",
+        selectedModelId: "gpt-5.5",
+        contextTokensUsed: 390_000,
+        contextUsageRatio: 390_000 / 400_000,
+        contextWindowTokenCapacity: 400_000,
+        contextCompactionTriggerTokenCount: 380_000,
+        reservedTokenCount: 20_000,
+        thresholdRatio: undefined,
+        triggerKind: "reserved_token_count",
+        sessionEntryCountAfterLatestCompactionSummary: 3,
+      },
+      conversationSessionEntries,
     };
   };
   const completedAutoCompactionResult = await Promise.resolve(
     autoCompactCurrentConversationSession({
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: { total: 300_000, input: 300_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      latestTokenUsage: { total: 390_000, input: 390_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     }),
   );
   if (!completedAutoCompactionResult.didCompact) {
     throw new Error("expected auto-compaction to run");
   }
 
-  expect(completedAutoCompactionResult.decision.reason).toBe("context_usage_threshold_reached");
+  expect(completedAutoCompactionResult.decision.reason).toBe("context_usage_reserved_token_limit_reached");
   expect(completedAutoCompactionResult.conversationSessionEntries).toContainEqual({
     entryKind: "conversation_compaction_summary",
     summaryText: "Goal: continue after automatic compaction.",
     compactedEntryCount: 3,
+    retainedRecentConversationSessionEntryCount: 0,
   });
 
   const exportResult = await Promise.resolve(capturedExportCurrentConversationSession?.());

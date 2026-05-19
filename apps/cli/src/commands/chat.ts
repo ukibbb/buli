@@ -8,10 +8,8 @@ import {
 import {
   AssistantConversationRuntime,
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
-  DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO,
   InMemoryConversationHistory,
   PromptContextCandidateCatalog,
-  decideConversationAutoCompaction,
   parseBashToolApprovalMode,
   type BashToolApprovalMode,
   type ConversationAutoCompactionRequest,
@@ -56,7 +54,7 @@ type InteractiveChatEnvironment = Readonly<{
 }>;
 
 type AutoCompactionThresholdResolution =
-  | { status: "resolved"; thresholdRatio: number }
+  | { status: "resolved"; thresholdRatio?: number }
   | { status: "invalid" };
 
 type PromptContextScopeResolution = {
@@ -160,6 +158,7 @@ export async function runInteractiveChat(input: {
     bashToolApprovalMode,
     ...(conversationSessionStore.promptCacheKey ? { promptCacheKey: conversationSessionStore.promptCacheKey } : {}),
     diagnosticLogger,
+    ...(autoCompactionThresholdRatio !== undefined ? { autoCompactionThresholdRatio } : {}),
   });
   const renderArgs = {
     assistantConversationRunner,
@@ -238,15 +237,8 @@ export async function runInteractiveChat(input: {
     autoCompactCurrentConversationSession: async (
       autoCompactionRequest: ConversationAutoCompactionRequest,
     ): Promise<ConversationAutoCompactionResult> => {
-      // CLI owns user configuration and persistence, while the engine owns the
-      // pure decision. This keeps auto-compaction on the same append-only
-      // runtime path as manual /compact instead of creating a second history
-      // mutation path.
-      const autoCompactionDecision = decideConversationAutoCompaction({
-        ...autoCompactionRequest,
-        conversationSessionEntries: conversationHistory.listConversationSessionEntries(),
-        thresholdRatio: autoCompactionThresholdRatio,
-      });
+      const autoCompactionResult = await assistantConversationRunner.autoCompactConversationSession(autoCompactionRequest);
+      const autoCompactionDecision = autoCompactionResult.decision;
       logCliDiagnosticEvent(diagnosticLogger, "conversation_session.auto_compaction_decided", {
         conversationSessionId: activeConversationSessionId,
         shouldCompact: autoCompactionDecision.shouldCompact,
@@ -254,33 +246,28 @@ export async function runInteractiveChat(input: {
         selectedModelId: autoCompactionDecision.selectedModelId,
         contextTokensUsed: autoCompactionDecision.contextTokensUsed,
         contextWindowTokenCapacity: autoCompactionDecision.contextWindowTokenCapacity ?? null,
+        contextCompactionTriggerTokenCount: autoCompactionDecision.contextCompactionTriggerTokenCount ?? null,
         contextUsageRatio: autoCompactionDecision.contextUsageRatio ?? null,
-        thresholdRatio: autoCompactionDecision.thresholdRatio,
+        reservedTokenCount: autoCompactionDecision.reservedTokenCount ?? null,
+        thresholdRatio: autoCompactionDecision.thresholdRatio ?? null,
+        triggerKind: autoCompactionDecision.triggerKind ?? null,
         sessionEntryCountAfterLatestCompactionSummary:
           autoCompactionDecision.sessionEntryCountAfterLatestCompactionSummary,
       });
-      if (!autoCompactionDecision.shouldCompact) {
-        return { didCompact: false, decision: autoCompactionDecision };
+      if (!autoCompactionResult.didCompact) {
+        return autoCompactionResult;
       }
 
-      await assistantConversationRunner.compactConversationSession({
-        selectedModelId: autoCompactionRequest.selectedModelId,
-        ...(autoCompactionRequest.selectedReasoningEffort
-          ? { selectedReasoningEffort: autoCompactionRequest.selectedReasoningEffort }
-          : {}),
-      });
-      const conversationSessionEntries = conversationHistory.listConversationSessionEntries();
       logCliDiagnosticEvent(diagnosticLogger, "conversation_session.auto_compacted", {
         conversationSessionId: activeConversationSessionId,
-        conversationSessionEntryCount: conversationSessionEntries.length,
+        conversationSessionEntryCount: autoCompactionResult.conversationSessionEntries.length,
         contextTokensUsed: autoCompactionDecision.contextTokensUsed,
-        thresholdRatio: autoCompactionDecision.thresholdRatio,
+        contextCompactionTriggerTokenCount: autoCompactionDecision.contextCompactionTriggerTokenCount ?? null,
+        reservedTokenCount: autoCompactionDecision.reservedTokenCount ?? null,
+        thresholdRatio: autoCompactionDecision.thresholdRatio ?? null,
+        triggerKind: autoCompactionDecision.triggerKind ?? null,
       });
-      return {
-        didCompact: true,
-        decision: autoCompactionDecision,
-        conversationSessionEntries,
-      };
+      return autoCompactionResult;
     },
     initialConversationSessionId: activeConversationSession.sessionId,
     initialConversationSessionEntries,
@@ -333,7 +320,7 @@ function resolveConversationAutoCompactionThresholdRatio(input: {
 }): AutoCompactionThresholdResolution {
   const environmentThresholdRatio = input.environment.BULI_AUTO_COMPACT_THRESHOLD?.trim();
   if (!environmentThresholdRatio) {
-    return { status: "resolved", thresholdRatio: DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO };
+    return { status: "resolved" };
   }
 
   const thresholdRatio = Number(environmentThresholdRatio);

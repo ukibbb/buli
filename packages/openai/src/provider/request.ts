@@ -6,6 +6,7 @@ import type {
   OpenAiProviderTurnReplayInputItem,
   UserPromptImageAttachment,
 } from "@buli/contracts";
+import { listModelVisibleConversationSessionEntries } from "@buli/contracts";
 import {
   isOpenAiOutputTextContentPart,
   isOpenAiResponseObject,
@@ -69,14 +70,12 @@ type ConversationSessionTurn = {
 
 // This is the OpenAI model-context boundary. Session entries remain the
 // canonical history, but each request is rebuilt from the latest compaction
-// summary plus valid terminal turns after it. Replay items stay paired with
-// their tool results so OpenAI can validate function_call_output.call_id.
+// summary, its retained recent tail, and valid terminal turns after it. Replay
+// items stay paired with tool results so OpenAI can validate call_id values.
 export function createOpenAiResponsesInputItems(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): OpenAiConversationInputItem[] {
-  const effectiveConversationSessionEntries = sliceConversationSessionEntriesFromLatestCompactionSummary(
-    conversationSessionEntries,
-  );
+  const effectiveConversationSessionEntries = listModelVisibleConversationSessionEntries(conversationSessionEntries);
   const openAiInputItems: OpenAiConversationInputItem[] = [];
   let pendingConversationSessionTurn: ConversationSessionTurn | undefined;
 
@@ -111,18 +110,6 @@ export function createOpenAiResponsesInputItems(
   }
 
   return openAiInputItems;
-}
-
-function sliceConversationSessionEntriesFromLatestCompactionSummary(
-  conversationSessionEntries: readonly ConversationSessionEntry[],
-): readonly ConversationSessionEntry[] {
-  const latestCompactionSummaryEntryIndex = conversationSessionEntries.findLastIndex(
-    (conversationSessionEntry) => conversationSessionEntry.entryKind === "conversation_compaction_summary",
-  );
-
-  return latestCompactionSummaryEntryIndex === -1
-    ? conversationSessionEntries
-    : conversationSessionEntries.slice(latestCompactionSummaryEntryIndex);
 }
 
 function appendOpenAiInputItemsForConversationSessionTurn(

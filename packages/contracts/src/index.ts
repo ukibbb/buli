@@ -141,6 +141,11 @@ export type {
   ConversationSessionSummary,
 } from "./conversationSessionRecord.ts";
 export {
+  findLatestConversationCompactionBoundary,
+  listModelVisibleConversationSessionEntries,
+} from "./conversationCompactionProjection.ts";
+export type { LatestConversationCompactionBoundary } from "./conversationCompactionProjection.ts";
+export {
   ASSISTANT_PRESENTATION_FUNCTION_NAMES,
   ASSISTANT_TOOL_REQUEST_NAMES,
   FILE_MUTATION_TOOL_REQUEST_NAMES,

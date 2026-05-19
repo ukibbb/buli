@@ -63,6 +63,7 @@ const conversationSessionEntries = [
     entryKind: "conversation_compaction_summary",
     summaryText: "Goal: continue the exported session from compacted context.",
     compactedEntryCount: 4,
+    retainedRecentConversationSessionEntryCount: 0,
   },
   {
     entryKind: "tool_call",

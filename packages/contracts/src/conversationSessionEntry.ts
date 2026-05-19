@@ -93,6 +93,7 @@ export const ConversationCompactionSummaryConversationSessionEntrySchema = z
     entryKind: z.literal("conversation_compaction_summary"),
     summaryText: z.string().min(1),
     compactedEntryCount: z.number().int().nonnegative(),
+    retainedRecentConversationSessionEntryCount: z.number().int().nonnegative().default(0),
   })
   .strict();
 

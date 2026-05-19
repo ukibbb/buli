@@ -54,6 +54,7 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       entryKind: "conversation_compaction_summary",
       summaryText: "Goal: continue from compacted context.",
       compactedEntryCount: 10,
+      retainedRecentConversationSessionEntryCount: 0,
     },
     {
       entryKind: "tool_call",
@@ -388,6 +389,7 @@ test("projectConversationSessionEntriesToModelContextItems starts at the latest 
       entryKind: "conversation_compaction_summary",
       summaryText: "Goal: continue the compaction implementation.",
       compactedEntryCount: 2,
+      retainedRecentConversationSessionEntryCount: 0,
     },
     {
       entryKind: "user_prompt",
@@ -401,6 +403,52 @@ test("projectConversationSessionEntriesToModelContextItems starts at the latest 
       itemKind: "compaction_summary",
       summaryText: "Goal: continue the compaction implementation.",
     },
+    { itemKind: "user_message", messageText: "Next prompt" },
+  ]);
+});
+
+test("projectConversationSessionEntriesToModelContextItems keeps retained recent entries after compaction summary", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Old prompt",
+      modelFacingPromptText: "Old prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Old answer",
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Retained prompt",
+      modelFacingPromptText: "Retained prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Retained answer",
+    },
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue the compaction implementation.",
+      compactedEntryCount: 2,
+      retainedRecentConversationSessionEntryCount: 2,
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Next prompt",
+      modelFacingPromptText: "Next prompt",
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "compaction_summary",
+      summaryText: "Goal: continue the compaction implementation.",
+    },
+    { itemKind: "user_message", messageText: "Retained prompt" },
+    { itemKind: "assistant_message", messageText: "Retained answer" },
     { itemKind: "user_message", messageText: "Next prompt" },
   ]);
 });

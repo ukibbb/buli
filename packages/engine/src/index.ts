@@ -23,11 +23,18 @@ export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./p
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
 export {
-  DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO,
+  DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT,
+  DEFAULT_UNKNOWN_GPT_5_CONTEXT_WINDOW_TOKEN_CAPACITY,
   DEFAULT_MINIMUM_SESSION_ENTRY_COUNT_AFTER_LATEST_COMPACTION_SUMMARY,
   calculateContextTokensUsedFromTokenUsage,
   decideConversationAutoCompaction,
-} from "./conversationAutoCompactionPolicy.ts";
+  isGpt5ModelIdentifier,
+} from "./conversationCompaction/conversationAutoCompactionPolicy.ts";
+export { ConversationSessionCompactor } from "./conversationCompaction/ConversationSessionCompactor.ts";
+export {
+  DEFAULT_RETAINED_RECENT_CONVERSATION_TURN_COUNT,
+  selectConversationEntriesForCompaction,
+} from "./conversationCompaction/selectConversationEntriesForCompaction.ts";
 export { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
 export {
   buildProjectInstructionPromptBlock,
@@ -76,7 +83,9 @@ export type {
 export type {
   ConversationAutoCompactionDecision,
   ConversationAutoCompactionDecisionReason,
+  ConversationAutoCompactionTriggerKind,
   ConversationAutoCompactionPolicyInput,
   ConversationAutoCompactionRequest,
   ConversationAutoCompactionResult,
-} from "./conversationAutoCompactionPolicy.ts";
+} from "./conversationCompaction/conversationAutoCompactionPolicy.ts";
+export type { ConversationEntriesForCompactionSelection } from "./conversationCompaction/selectConversationEntriesForCompaction.ts";

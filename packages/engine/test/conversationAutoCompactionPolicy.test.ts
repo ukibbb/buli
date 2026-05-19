@@ -29,11 +29,46 @@ function createTokenUsage(totalTokenCount: number): TokenUsage {
 }
 
 describe("decideConversationAutoCompaction", () => {
-  test("compacts when known context usage reaches the configured threshold", () => {
+  test("compacts gpt-5 models when context usage reaches the reserved-token limit", () => {
+    const decision = decideConversationAutoCompaction({
+      conversationSessionEntries: completedConversationTurnEntries,
+      selectedModelId: "gpt-5.5",
+      latestTokenUsage: createTokenUsage(380_000),
+    });
+
+    expect(decision).toMatchObject({
+      shouldCompact: true,
+      reason: "context_usage_reserved_token_limit_reached",
+      contextTokensUsed: 380_000,
+      contextWindowTokenCapacity: 400_000,
+      contextUsageRatio: 0.95,
+      contextCompactionTriggerTokenCount: 380_000,
+      reservedTokenCount: 20_000,
+      triggerKind: "reserved_token_count",
+      sessionEntryCountAfterLatestCompactionSummary: 2,
+    });
+  });
+
+  test("skips gpt-5 compaction below the reserved-token limit", () => {
+    const decision = decideConversationAutoCompaction({
+      conversationSessionEntries: completedConversationTurnEntries,
+      selectedModelId: "gpt-5.5",
+      latestTokenUsage: createTokenUsage(379_999),
+    });
+
+    expect(decision).toMatchObject({
+      shouldCompact: false,
+      reason: "context_usage_below_reserved_token_limit",
+      contextWindowTokenCapacity: 400_000,
+    });
+  });
+
+  test("honors an explicit threshold override", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5.5",
       latestTokenUsage: createTokenUsage(300_000),
+      thresholdRatio: 0.75,
     });
 
     expect(decision).toMatchObject({
@@ -42,26 +77,14 @@ describe("decideConversationAutoCompaction", () => {
       contextTokensUsed: 300_000,
       contextWindowTokenCapacity: 400_000,
       contextUsageRatio: 0.75,
+      contextCompactionTriggerTokenCount: 300_000,
       thresholdRatio: 0.75,
+      triggerKind: "threshold_ratio",
       sessionEntryCountAfterLatestCompactionSummary: 2,
     });
   });
 
-  test("skips compaction below the usage threshold", () => {
-    const decision = decideConversationAutoCompaction({
-      conversationSessionEntries: completedConversationTurnEntries,
-      selectedModelId: "gpt-5.5",
-      latestTokenUsage: createTokenUsage(299_999),
-    });
-
-    expect(decision).toMatchObject({
-      shouldCompact: false,
-      reason: "context_usage_below_threshold",
-      contextWindowTokenCapacity: 400_000,
-    });
-  });
-
-  test("skips compaction for unknown model context windows", () => {
+  test("skips compaction for non-gpt-5 models", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "unknown-model",
@@ -70,9 +93,24 @@ describe("decideConversationAutoCompaction", () => {
 
     expect(decision).toMatchObject({
       shouldCompact: false,
-      reason: "unknown_context_window",
+      reason: "model_not_eligible_for_auto_compaction",
       contextWindowTokenCapacity: undefined,
       contextUsageRatio: undefined,
+    });
+  });
+
+  test("uses a conservative fallback context window for unknown gpt-5 model ids", () => {
+    const decision = decideConversationAutoCompaction({
+      conversationSessionEntries: completedConversationTurnEntries,
+      selectedModelId: "gpt-5-future",
+      latestTokenUsage: createTokenUsage(236_000),
+    });
+
+    expect(decision).toMatchObject({
+      shouldCompact: true,
+      reason: "context_usage_reserved_token_limit_reached",
+      contextWindowTokenCapacity: 256_000,
+      contextCompactionTriggerTokenCount: 236_000,
     });
   });
 
@@ -98,6 +136,7 @@ describe("decideConversationAutoCompaction", () => {
           entryKind: "conversation_compaction_summary",
           summaryText: "Goal: continue from compacted context.",
           compactedEntryCount: 2,
+          retainedRecentConversationSessionEntryCount: 0,
         },
       ],
       selectedModelId: "gpt-5.5",
@@ -119,6 +158,7 @@ describe("decideConversationAutoCompaction", () => {
           entryKind: "conversation_compaction_summary",
           summaryText: "Goal: continue from compacted context.",
           compactedEntryCount: 2,
+          retainedRecentConversationSessionEntryCount: 0,
         },
         {
           entryKind: "user_prompt",

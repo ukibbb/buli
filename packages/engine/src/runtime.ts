@@ -5,12 +5,15 @@ import {
   type AssistantOperatingMode,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
-  type ConversationSessionEntry,
   type ProviderAvailableToolName,
-  type ProviderStreamEvent,
   type ProjectInstructionSnapshot,
   redactSensitiveText,
 } from "@buli/contracts";
+import { ConversationSessionCompactor } from "./conversationCompaction/ConversationSessionCompactor.ts";
+import type {
+  ConversationAutoCompactionRequest,
+  ConversationAutoCompactionResult,
+} from "./conversationCompaction/conversationAutoCompactionPolicy.ts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type {
   ActiveConversationTurn,
@@ -29,7 +32,6 @@ import { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExec
 import {
   logEngineDiagnosticEvent,
   summarizeAssistantResponseEventForDiagnostics,
-  summarizeProviderStreamEventForDiagnostics,
 } from "./runtimeDiagnostics.ts";
 import {
   type RuntimePendingToolApproval,
@@ -51,15 +53,6 @@ import {
   finalizeProviderStreamEndedBeforeCompletion,
 } from "./runtimeConversationTurnTerminalFinalizer.ts";
 
-const CONVERSATION_COMPACTION_PROMPT_TEXT = [
-  "Create a compact continuation summary for the next assistant turn.",
-  "Preserve only information needed to continue the current session correctly.",
-  "Include the user's goal, constraints and preferences, completed work, in-progress work, blockers, key decisions, next steps, and critical technical context.",
-  "Preserve exact file paths, commands, errors, identifiers, and user-approved decisions when they matter.",
-  "Do not answer the user, do not ask questions, and do not introduce new plans beyond summarizing the current continuation state.",
-  "Return Markdown only.",
-].join("\n");
-
 export class AssistantConversationRuntime implements AssistantConversationRunner {
   readonly conversationTurnProvider: ConversationTurnProvider;
   readonly workspaceRootPath: string;
@@ -73,8 +66,8 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly canSpawnExplorer: boolean;
   readonly projectInstructionTracker: ProjectInstructionTracker;
+  readonly conversationSessionCompactor: ConversationSessionCompactor;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
-  isCompactingConversationSession = false;
 
   constructor(input: {
     conversationTurnProvider: ConversationTurnProvider;
@@ -89,6 +82,9 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     canSpawnExplorer?: boolean;
     projectInstructionTracker?: ProjectInstructionTracker;
+    autoCompactionThresholdRatio?: number | undefined;
+    autoCompactionReservedTokenCount?: number | undefined;
+    retainedRecentConversationTurnCount?: number | undefined;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.workspaceRootPath = input.workspaceRootPath;
@@ -105,11 +101,28 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
     });
+    this.conversationSessionCompactor = new ConversationSessionCompactor({
+      conversationTurnProvider: this.conversationTurnProvider,
+      conversationHistory: this.conversationHistory,
+      workspaceRootPath: this.workspaceRootPath,
+      ...(this.diagnosticLogger ? { diagnosticLogger: this.diagnosticLogger } : {}),
+      ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
+      isConversationTurnRunning: () => Boolean(this.currentPendingConversationTurn && !this.currentPendingConversationTurn.hasFinishedTurn()),
+      ...(input.autoCompactionThresholdRatio !== undefined
+        ? { autoCompactionThresholdRatio: input.autoCompactionThresholdRatio }
+        : {}),
+      ...(input.autoCompactionReservedTokenCount !== undefined
+        ? { autoCompactionReservedTokenCount: input.autoCompactionReservedTokenCount }
+        : {}),
+      ...(input.retainedRecentConversationTurnCount !== undefined
+        ? { retainedRecentConversationTurnCount: input.retainedRecentConversationTurnCount }
+        : {}),
+    });
   }
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
     const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
-    if (this.isCompactingConversationSession) {
+    if (this.conversationSessionCompactor.isCompactingCurrentConversationSession()) {
       throw new Error("Cannot start a conversation turn while compaction is running.");
     }
 
@@ -161,145 +174,12 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   }
 
   async compactConversationSession(input: ConversationCompactionRequest): Promise<ConversationCompactionResult> {
-    const conversationSessionEntriesBeforeCompaction = this.conversationHistory.listConversationSessionEntries();
-    if (conversationSessionEntriesBeforeCompaction.length === 0) {
-      throw new Error("Nothing to compact yet.");
-    }
-
-    if (this.currentPendingConversationTurn && !this.currentPendingConversationTurn.hasFinishedTurn()) {
-      throw new Error("Cannot compact while a conversation turn is running.");
-    }
-
-    if (this.isCompactingConversationSession) {
-      throw new Error("Conversation compaction is already running.");
-    }
-
-    this.isCompactingConversationSession = true;
-    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.started", {
-      selectedModelId: input.selectedModelId,
-      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
-      conversationSessionEntryCount: conversationSessionEntriesBeforeCompaction.length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
-    });
-
-    try {
-      const compactionPromptEntry = createConversationCompactionPromptSessionEntry();
-      const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
-        systemPromptText: buildConversationCompactionSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
-        conversationSessionEntries: [...conversationSessionEntriesBeforeCompaction, compactionPromptEntry],
-        selectedModelId: input.selectedModelId,
-        ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
-        ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
-        availableToolNames: [],
-        availablePresentationFunctionNames: [],
-        ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-      });
-      const summaryText = await collectConversationCompactionSummaryText({
-        providerConversationTurn,
-        diagnosticLogger: this.diagnosticLogger,
-      });
-      const compactionResult: ConversationCompactionResult = {
-        summaryText,
-        compactedEntryCount: conversationSessionEntriesBeforeCompaction.length,
-      };
-      this.conversationHistory.appendConversationSessionEntry({
-        entryKind: "conversation_compaction_summary",
-        summaryText: compactionResult.summaryText,
-        compactedEntryCount: compactionResult.compactedEntryCount,
-      });
-      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.completed", {
-        compactedEntryCount: compactionResult.compactedEntryCount,
-        summaryTextLength: compactionResult.summaryText.length,
-        conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-        modelContextItemCount: this.conversationHistory.listModelContextItems().length,
-      });
-      return compactionResult;
-    } catch (error) {
-      const errorText = error instanceof Error ? error.message : String(error);
-      const sanitizedErrorText = sanitizeRuntimeFailureExplanation(errorText);
-      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.failed", {
-        errorTextLength: sanitizedErrorText.length,
-        rawErrorTextLength: errorText.length,
-      });
-      throw error;
-    } finally {
-      this.isCompactingConversationSession = false;
-    }
-  }
-}
-
-function buildConversationCompactionSystemPrompt(input: { workspaceRootPath: string }): string {
-  return [
-    "You are buli's conversation compaction worker.",
-    `Current workspace root: ${input.workspaceRootPath}`,
-    "Summarize the prior conversation for continuation by the same assistant.",
-    "Use only the provided conversation context. Do not call tools.",
-  ].join("\n");
-}
-
-function createConversationCompactionPromptSessionEntry(): ConversationSessionEntry {
-  return {
-    entryKind: "user_prompt",
-    promptText: CONVERSATION_COMPACTION_PROMPT_TEXT,
-    modelFacingPromptText: CONVERSATION_COMPACTION_PROMPT_TEXT,
-  };
-}
-
-async function collectConversationCompactionSummaryText(input: {
-  providerConversationTurn: ProviderConversationTurn;
-  diagnosticLogger: BuliDiagnosticLogger | undefined;
-}): Promise<string> {
-  let summaryText = "";
-
-  for await (const providerStreamEvent of input.providerConversationTurn.streamProviderEvents()) {
-    logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_compaction.provider_event_received", {
-      eventType: providerStreamEvent.type,
-      ...summarizeProviderStreamEventForDiagnostics(providerStreamEvent),
-    });
-
-    if (providerStreamEvent.type === "text_chunk") {
-      summaryText += providerStreamEvent.text;
-      continue;
-    }
-
-    if (providerStreamEvent.type === "completed") {
-      const trimmedSummaryText = summaryText.trim();
-      if (trimmedSummaryText.length === 0) {
-        throw new Error("Conversation compaction produced an empty summary.");
-      }
-
-      return trimmedSummaryText;
-    }
-
-    throwIfProviderEventCannotAppearDuringCompaction(providerStreamEvent);
+    return this.conversationSessionCompactor.compactCurrentConversationSession(input);
   }
 
-  throw new Error("Conversation compaction provider stream ended before completion.");
-}
-
-function throwIfProviderEventCannotAppearDuringCompaction(providerStreamEvent: ProviderStreamEvent): void {
-  if (
-    providerStreamEvent.type === "reasoning_summary_started" ||
-    providerStreamEvent.type === "reasoning_summary_text_chunk" ||
-    providerStreamEvent.type === "reasoning_summary_completed" ||
-    providerStreamEvent.type === "rate_limit_pending"
-  ) {
-    return;
+  async autoCompactConversationSession(input: ConversationAutoCompactionRequest): Promise<ConversationAutoCompactionResult> {
+    return this.conversationSessionCompactor.autoCompactCurrentConversationSession(input);
   }
-
-  if (providerStreamEvent.type === "incomplete") {
-    throw new Error(`Conversation compaction ended incomplete: ${providerStreamEvent.incompleteReason}`);
-  }
-
-  if (providerStreamEvent.type === "tool_call_requested") {
-    throw new Error(`Conversation compaction unexpectedly requested tool ${providerStreamEvent.toolCallRequest.toolName}.`);
-  }
-
-  if (providerStreamEvent.type === "tool_calls_requested") {
-    throw new Error(`Conversation compaction unexpectedly requested ${providerStreamEvent.requestedToolCalls.length} tools.`);
-  }
-
-  throw new Error("Conversation compaction unexpectedly produced a plan proposal.");
 }
 
 class RuntimeConversationTurn implements ActiveConversationTurn {

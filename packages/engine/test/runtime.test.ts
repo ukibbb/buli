@@ -2217,6 +2217,7 @@ test("AssistantConversationRuntime compacts the current session into an append-o
       entryKind: "conversation_compaction_summary",
       summaryText: "Goal: continue the runtime compaction implementation.",
       compactedEntryCount: 2,
+      retainedRecentConversationSessionEntryCount: 0,
     },
   ]);
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
@@ -2225,6 +2226,141 @@ test("AssistantConversationRuntime compacts the current session into an append-o
       summaryText: "Goal: continue the runtime compaction implementation.",
     },
   ]);
+});
+
+test("AssistantConversationRuntime compacts old context while retaining recent turns", async () => {
+  const firstTurnEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "First answer",
+    },
+  ];
+  const retainedConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Second prompt",
+      modelFacingPromptText: "Second prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Second answer",
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Third prompt",
+      modelFacingPromptText: "Third prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Third answer",
+    },
+  ];
+  const initialConversationSessionEntries = [...firstTurnEntries, ...retainedConversationSessionEntries];
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Goal: continue after retaining recent turns." },
+      { type: "completed", usage: { total: 10, input: 8, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({ initialConversationSessionEntries });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory,
+  });
+
+  await expect(runtime.compactConversationSession({ selectedModelId: "gpt-5.4" })).resolves.toEqual({
+    summaryText: "Goal: continue after retaining recent turns.",
+    compactedEntryCount: 2,
+  });
+
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toEqual([
+    ...firstTurnEntries,
+    {
+      entryKind: "user_prompt",
+      promptText: expect.stringContaining("Create a compact continuation summary"),
+      modelFacingPromptText: expect.stringContaining("Create a compact continuation summary"),
+    },
+  ]);
+  expect(conversationHistory.listConversationSessionEntries()).toEqual<ConversationSessionEntry[]>([
+    ...initialConversationSessionEntries,
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue after retaining recent turns.",
+      compactedEntryCount: 2,
+      retainedRecentConversationSessionEntryCount: 4,
+    },
+  ]);
+  expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "compaction_summary",
+      summaryText: "Goal: continue after retaining recent turns.",
+    },
+    { itemKind: "user_message", messageText: "Second prompt" },
+    { itemKind: "assistant_message", messageText: "Second answer" },
+    { itemKind: "user_message", messageText: "Third prompt" },
+    { itemKind: "assistant_message", messageText: "Third answer" },
+  ]);
+});
+
+test("AssistantConversationRuntime auto-compacts gpt-5 sessions at the reserved-token limit", async () => {
+  const initialConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "First prompt",
+      modelFacingPromptText: "First prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "First answer",
+    },
+  ];
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Goal: continue after auto compaction." },
+      { type: "completed", usage: { total: 10, input: 8, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({ initialConversationSessionEntries });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory,
+  });
+
+  await expect(
+    runtime.autoCompactConversationSession({
+      selectedModelId: "gpt-5.5",
+      latestTokenUsage: { total: 380_000, input: 380_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    }),
+  ).resolves.toMatchObject({
+    didCompact: true,
+    decision: {
+      reason: "context_usage_reserved_token_limit_reached",
+      contextCompactionTriggerTokenCount: 380_000,
+    },
+  });
+
+  expect(provider.startedTurnRequests).toHaveLength(1);
+  expect(conversationHistory.listConversationSessionEntries()).toContainEqual({
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: continue after auto compaction.",
+    compactedEntryCount: 2,
+    retainedRecentConversationSessionEntryCount: 0,
+  });
 });
 
 test("AssistantConversationRuntime leaves the session unchanged when compaction fails", async () => {

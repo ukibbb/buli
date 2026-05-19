@@ -31,6 +31,7 @@ import {
   isFileMutationToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
   isWorkspaceInspectionToolCallRequest,
+  listModelVisibleConversationSessionEntries,
   UserPromptImageAttachmentSchema,
 } from "../src/index.ts";
 
@@ -877,7 +878,55 @@ test("ConversationSessionEntrySchema parses a conversation compaction summary", 
     entryKind: "conversation_compaction_summary",
     summaryText: "Goal: continue the implementation.",
     compactedEntryCount: 12,
+    retainedRecentConversationSessionEntryCount: 0,
   });
+});
+
+test("ConversationSessionEntrySchema parses a conversation compaction summary with retained recent entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue the implementation.",
+      compactedEntryCount: 12,
+      retainedRecentConversationSessionEntryCount: 4,
+    }),
+  ).toEqual({
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: continue the implementation.",
+    compactedEntryCount: 12,
+    retainedRecentConversationSessionEntryCount: 4,
+  });
+});
+
+test("listModelVisibleConversationSessionEntries keeps latest summary, retained recent entries, and new entries", () => {
+  const oldPrompt = { entryKind: "user_prompt", promptText: "Old prompt", modelFacingPromptText: "Old prompt" } as const;
+  const retainedPrompt = {
+    entryKind: "user_prompt",
+    promptText: "Retained prompt",
+    modelFacingPromptText: "Retained prompt",
+  } as const;
+  const retainedAnswer = {
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Retained answer",
+  } as const;
+  const compactionSummary = {
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: continue from compacted context.",
+    compactedEntryCount: 1,
+    retainedRecentConversationSessionEntryCount: 2,
+  } as const;
+  const nextPrompt = { entryKind: "user_prompt", promptText: "Next prompt", modelFacingPromptText: "Next prompt" } as const;
+
+  expect(
+    listModelVisibleConversationSessionEntries([
+      oldPrompt,
+      retainedPrompt,
+      retainedAnswer,
+      compactionSummary,
+      nextPrompt,
+    ]),
+  ).toEqual([compactionSummary, retainedPrompt, retainedAnswer, nextPrompt]);
 });
 
 test("ModelContextItemSchema parses a compaction summary", () => {

@@ -323,6 +323,7 @@ test("ChatScreen compacts the current session through slash command", async () =
             entryKind: "conversation_compaction_summary",
             summaryText: "Goal: continue the manual compaction implementation.",
             compactedEntryCount: 2,
+            retainedRecentConversationSessionEntryCount: 0,
           },
         ],
       };
@@ -382,7 +383,10 @@ test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
     contextTokensUsed: 800_000,
     contextUsageRatio: 800_000 / 1_050_000,
     contextWindowTokenCapacity: 1_050_000,
+    contextCompactionTriggerTokenCount: 787_500,
+    reservedTokenCount: undefined,
     sessionEntryCountAfterLatestCompactionSummary: 2,
+    triggerKind: "threshold_ratio",
   } satisfies ConversationAutoCompactionDecision;
   const renderedChatScreen = await renderChatScreen({
     assistantConversationRunner,
@@ -406,6 +410,7 @@ test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
             entryKind: "conversation_compaction_summary",
             summaryText: "Goal: continue after automatic compaction.",
             compactedEntryCount: 2,
+            retainedRecentConversationSessionEntryCount: 0,
           },
         ],
       };
