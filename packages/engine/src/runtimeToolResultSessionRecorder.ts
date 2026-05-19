@@ -1,4 +1,4 @@
-import type { BuliDiagnosticLogger, ToolCallDetail } from "@buli/contracts";
+import type { BuliDiagnosticLogger, ToolCallDetail, WorkspacePatch } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 
@@ -14,6 +14,10 @@ type FailedToolResultSessionEntryInput = CompletedToolResultSessionEntryInput & 
 
 type DeniedToolResultSessionEntryInput = CompletedToolResultSessionEntryInput & {
   denialExplanation: string;
+};
+
+type WorkspacePatchSessionEntryInput = {
+  workspacePatch: WorkspacePatch;
 };
 
 export class RuntimeToolResultSessionRecorder {
@@ -74,6 +78,21 @@ export class RuntimeToolResultSessionRecorder {
       entryKind: "denied_tool_result",
       toolCallId: input.toolCallId,
       toolResultTextLength: input.toolResultText.length,
+      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
+      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+    });
+  }
+
+  appendWorkspacePatchSessionEntry(input: WorkspacePatchSessionEntryInput): void {
+    this.conversationHistory.appendConversationSessionEntry({
+      entryKind: "workspace_patch",
+      workspacePatch: input.workspacePatch,
+    });
+    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      entryKind: "workspace_patch",
+      toolCallId: input.workspacePatch.toolCallId,
+      workspacePatchId: input.workspacePatch.workspacePatchId,
+      changedFileCount: input.workspacePatch.changedFileCount,
       conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });

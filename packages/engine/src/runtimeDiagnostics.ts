@@ -134,6 +134,13 @@ export function summarizeAssistantResponseEventForDiagnostics(
             toolName: assistantResponseEvent.part.toolCallDetail.toolName,
           }
         : {}),
+      ...(assistantResponseEvent.part.partKind === "assistant_workspace_patch"
+        ? {
+            workspacePatchId: assistantResponseEvent.part.workspacePatch.workspacePatchId,
+            toolCallId: assistantResponseEvent.part.workspacePatch.toolCallId,
+            changedFileCount: assistantResponseEvent.part.workspacePatch.changedFileCount,
+          }
+        : {}),
     };
   }
 

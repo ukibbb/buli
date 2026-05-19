@@ -35,6 +35,7 @@ import type {
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
+import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export type {
   RuntimePendingToolApproval,
@@ -53,6 +54,7 @@ export type RuntimeToolCallExecutionContext = {
   assistantOperatingMode: AssistantOperatingMode;
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
+  workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   projectInstructionTracker: ProjectInstructionTracker;
   promptContextBrowseRootPath: string;
   promptContextStartingDirectoryPath: string;
@@ -286,6 +288,7 @@ async function* streamAssistantResponseEventsForFileMutationRequestedToolCall(
     fileMutationToolCallRequest: input.toolCallRequest,
     assistantOperatingMode: input.assistantOperatingMode,
     workspaceRootPath: input.workspaceRootPath,
+    workspaceSnapshotStore: input.workspaceSnapshotStore,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     abortSignal: input.abortSignal,
     createPendingToolApproval: input.createPendingToolApproval,
@@ -309,6 +312,7 @@ async function* streamAssistantResponseEventsForBashRequestedToolCall(
     assistantOperatingMode: input.assistantOperatingMode,
     bashToolApprovalMode: input.bashToolApprovalMode,
     workspaceRootPath: input.workspaceRootPath,
+    workspaceSnapshotStore: input.workspaceSnapshotStore,
     workspaceShellCommandExecutor: input.workspaceShellCommandExecutor,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     abortSignal: input.abortSignal,

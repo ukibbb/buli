@@ -264,6 +264,17 @@ function renderConversationSessionTranscriptEntry(
     });
   }
 
+  if (conversationSessionEntry.entryKind === "workspace_patch") {
+    return renderConversationSessionTranscriptEntryShell({
+      entryAnchorId,
+      indexNumberLabel,
+      entryIndex,
+      entryClassName: "tool workspace-patch",
+      roleLabel: "Workspace · patch",
+      bodyHtml: renderWorkspacePatchBlock(conversationSessionEntry),
+    });
+  }
+
   const isFailedToolResult = conversationSessionEntry.entryKind === "failed_tool_result";
   const isDeniedToolResult = conversationSessionEntry.entryKind === "denied_tool_result";
   const variantClassName = isFailedToolResult ? "failed" : isDeniedToolResult ? "denied" : "tool-result";
@@ -447,6 +458,29 @@ function renderToolResultBlock(
   ${outputHtml}
   ${failureNoticeHtml}
   ${denialNoticeHtml}
+</div>`;
+}
+
+function renderWorkspacePatchBlock(
+  conversationSessionEntry: Extract<ConversationSessionEntry, { entryKind: "workspace_patch" }>,
+): string {
+  const workspacePatch = conversationSessionEntry.workspacePatch;
+  const changedFilesHtml = workspacePatch.changedFiles.map((changedFile) => {
+    const changeKindLabel = changedFile.changeKind === "added" ? "A" : changedFile.changeKind === "deleted" ? "D" : "M";
+    return `<li><span class="tool-name">${escapeHtml(changeKindLabel)}</span> ${escapeHtml(changedFile.filePath)} <span class="tool-purpose">+${changedFile.addedLineCount} -${changedFile.removedLineCount}</span></li>`;
+  }).join("\n");
+  const unifiedDiffText = workspacePatch.changedFiles
+    .map((changedFile) => changedFile.unifiedDiffText)
+    .filter((value): value is string => value !== undefined && value.length > 0)
+    .join("\n");
+  const unifiedDiffHtml = unifiedDiffText.length > 0
+    ? `<pre class="tool-output">${escapeHtml(unifiedDiffText)}</pre>`
+    : "";
+
+  return `<div class="tool-block">
+  <div class="tool-summary"><span class="tool-name">workspace patch</span><span class="tool-purpose">${workspacePatch.changedFileCount} files · +${workspacePatch.addedLineCount} -${workspacePatch.removedLineCount}</span></div>
+  <ul>${changedFilesHtml}</ul>
+  ${unifiedDiffHtml}
 </div>`;
 }
 

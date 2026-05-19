@@ -12,6 +12,7 @@ import { AssistantLearningSequencePartView } from "./messageParts/AssistantLearn
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
+import { WorkspacePatchPartView } from "./messageParts/WorkspacePatchPartView.tsx";
 
 function ConversationMessagePartView(props: {
   conversationMessagePart: ConversationMessagePart;
@@ -45,6 +46,9 @@ function ConversationMessagePartView(props: {
   }
   if (conversationMessagePart.partKind === "assistant_tool_call") {
     return <ToolCallPartView assistantToolCallConversationMessagePart={conversationMessagePart} />;
+  }
+  if (conversationMessagePart.partKind === "assistant_workspace_patch") {
+    return <WorkspacePatchPartView assistantWorkspacePatchConversationMessagePart={conversationMessagePart} />;
   }
   if (conversationMessagePart.partKind === "assistant_plan_proposal") {
     return <PlanProposalBlock planTitle={conversationMessagePart.planTitle} planSteps={conversationMessagePart.planSteps} />;

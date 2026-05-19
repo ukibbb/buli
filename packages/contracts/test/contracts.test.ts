@@ -306,6 +306,78 @@ test("AssistantToolCallConversationMessagePartSchema parses a write tool call wi
   });
 });
 
+test("ConversationSessionEntrySchema parses a workspace patch entry", () => {
+  const parsedEntry = ConversationSessionEntrySchema.parse({
+    entryKind: "workspace_patch",
+    workspacePatch: {
+      workspacePatchId: "patch-1",
+      toolCallId: "call-bash-1",
+      capturedAtMs: 10,
+      baselineSnapshotHash: "before-tree",
+      resultingSnapshotHash: "after-tree",
+      changedFileCount: 1,
+      addedLineCount: 1,
+      removedLineCount: 0,
+      changedFiles: [
+        {
+          filePath: "notes.txt",
+          changeKind: "modified",
+          addedLineCount: 1,
+          removedLineCount: 0,
+          unifiedDiffText: [
+            "diff --git a/notes.txt b/notes.txt",
+            "--- a/notes.txt",
+            "+++ b/notes.txt",
+            "@@ -1 +1,2 @@",
+            " alpha",
+            "+beta",
+            "",
+          ].join("\n"),
+        },
+      ],
+    },
+  });
+
+  expect(parsedEntry).toMatchObject({
+    entryKind: "workspace_patch",
+    workspacePatch: {
+      workspacePatchId: "patch-1",
+      changedFileCount: 1,
+      changedFiles: [{ filePath: "notes.txt", changeKind: "modified" }],
+    },
+  });
+});
+
+test("ConversationMessagePartSchema parses an assistant workspace patch part", () => {
+  const parsedPart = ConversationMessagePartSchema.parse({
+    id: "workspace-patch-part-1",
+    partKind: "assistant_workspace_patch",
+    workspacePatch: {
+      workspacePatchId: "patch-1",
+      toolCallId: "call-bash-1",
+      capturedAtMs: 10,
+      baselineSnapshotHash: "before-tree",
+      resultingSnapshotHash: "after-tree",
+      changedFileCount: 1,
+      addedLineCount: 1,
+      removedLineCount: 0,
+      changedFiles: [
+        {
+          filePath: "notes.txt",
+          changeKind: "added",
+          addedLineCount: 1,
+          removedLineCount: 0,
+        },
+      ],
+    },
+  });
+
+  expect(parsedPart).toMatchObject({
+    partKind: "assistant_workspace_patch",
+    workspacePatch: { workspacePatchId: "patch-1" },
+  });
+});
+
 test("AssistantToolCallConversationMessagePartSchema parses an explore tool call", () => {
   const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
     id: "tool-part-explore",

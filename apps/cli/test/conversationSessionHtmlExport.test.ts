@@ -125,6 +125,35 @@ const conversationSessionEntries = [
     toolResultText: "Wrote file: notes/new-file.txt",
   },
   {
+    entryKind: "workspace_patch",
+    workspacePatch: {
+      workspacePatchId: "patch-1",
+      toolCallId: "call-4",
+      capturedAtMs: 100,
+      baselineSnapshotHash: "before-tree",
+      resultingSnapshotHash: "after-tree",
+      changedFileCount: 1,
+      addedLineCount: 1,
+      removedLineCount: 0,
+      changedFiles: [
+        {
+          filePath: "notes/new-file.txt",
+          changeKind: "added",
+          addedLineCount: 1,
+          removedLineCount: 0,
+          unifiedDiffText: [
+            "diff --git a/notes/new-file.txt b/notes/new-file.txt",
+            "--- /dev/null",
+            "+++ b/notes/new-file.txt",
+            "@@ -0,0 +1 @@",
+            "+hello from write",
+            "",
+          ].join("\n"),
+        },
+      ],
+    },
+  },
+  {
     entryKind: "tool_call",
     toolCallId: "call-5",
     toolCallRequest: {
@@ -170,6 +199,9 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("const title = &quot;old&quot;;");
   expect(html).toContain("notes/new-file.txt");
   expect(html).toContain("hello from write");
+  expect(html).toContain("Workspace · patch");
+  expect(html).toContain("workspace patch");
+  expect(html).toContain("+1 -0");
   expect(html).toContain("map runtime");
   expect(html).toContain("Inspect runtime dispatch.");
   expect(html).toContain("Runtime dispatches tool calls.");

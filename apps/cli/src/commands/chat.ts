@@ -9,6 +9,7 @@ import {
   AssistantConversationRuntime,
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
   InMemoryConversationHistory,
+  PrivateGitWorkspaceSnapshotStore,
   PromptContextCandidateCatalog,
   parseBashToolApprovalMode,
   type BashToolApprovalMode,
@@ -132,6 +133,7 @@ export async function runInteractiveChat(input: {
   });
 
   const provider = new OpenAiProvider({ store, diagnosticLogger });
+  const workspaceSnapshotStore = new PrivateGitWorkspaceSnapshotStore({ workspaceRootPath });
   const promptContextCandidateCatalog = new PromptContextCandidateCatalog({
     promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
     promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
@@ -155,6 +157,7 @@ export async function runInteractiveChat(input: {
     promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
     promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
     conversationHistory,
+    workspaceSnapshotStore,
     bashToolApprovalMode,
     ...(conversationSessionStore.promptCacheKey ? { promptCacheKey: conversationSessionStore.promptCacheKey } : {}),
     diagnosticLogger,

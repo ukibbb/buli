@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AssistantOperatingMode, AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
 import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../src/provider.ts";
@@ -7,6 +10,8 @@ import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
 import type { BashToolApprovalMode } from "../src/tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "../src/tools/workspaceShellCommandExecutor.ts";
+import { PrivateGitWorkspaceSnapshotStore } from "../src/workspaceSnapshot/privateGitWorkspaceSnapshotStore.ts";
+import type { WorkspaceSnapshotStore } from "../src/workspaceSnapshot/workspaceSnapshotStore.ts";
 
 class RecordingProviderConversationTurn implements ProviderConversationTurn {
   readonly submittedToolResults: ProviderToolResultSubmission[] = [];
@@ -47,6 +52,8 @@ async function collectBashToolCallEvents(input: {
   shellCommand: string;
   assistantOperatingMode?: AssistantOperatingMode | undefined;
   bashToolApprovalMode?: BashToolApprovalMode | undefined;
+  workspaceRootPath?: string | undefined;
+  workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   workspaceShellCommandExecutor?: WorkspaceShellCommandExecutor | undefined;
   createPendingToolApproval?: ((input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval) | undefined;
   providerConversationTurn?: RecordingProviderConversationTurn | undefined;
@@ -59,6 +66,7 @@ async function collectBashToolCallEvents(input: {
 }> {
   const providerConversationTurn = input.providerConversationTurn ?? new RecordingProviderConversationTurn();
   const conversationHistory = input.conversationHistory ?? createConversationHistoryWithToolCall(input.shellCommand);
+  const workspaceRootPath = input.workspaceRootPath ?? process.cwd();
   const workspaceShellCommandExecutor = input.workspaceShellCommandExecutor ?? createSuccessfulWorkspaceShellCommandExecutor("ok\n");
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
   const assistantResponseEvents: AssistantResponseEvent[] = [];
@@ -74,7 +82,8 @@ async function collectBashToolCallEvents(input: {
     },
     assistantOperatingMode: input.assistantOperatingMode ?? "implementation",
     bashToolApprovalMode: input.bashToolApprovalMode ?? "trusted",
-    workspaceRootPath: process.cwd(),
+    workspaceRootPath,
+    workspaceSnapshotStore: input.workspaceSnapshotStore,
     workspaceShellCommandExecutor,
     toolResultSessionRecorder,
     abortSignal: new AbortController().signal,
@@ -252,6 +261,55 @@ test("streamAssistantResponseEventsForBashToolCall records auto-run bash success
       exitCode: 0,
     },
   });
+});
+
+test("streamAssistantResponseEventsForBashToolCall records workspace patches from bash side effects", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-bash-workspace-patch-"));
+  const privateGitDirectoryPath = await mkdtemp(join(tmpdir(), "buli-bash-workspace-patch-git-"));
+  const workspaceSnapshotStore = new PrivateGitWorkspaceSnapshotStore({
+    workspaceRootPath,
+    privateGitDirectoryPath,
+    createWorkspacePatchId: () => "patch-1",
+    nowMs: () => 1234,
+  });
+  const workspaceShellCommandExecutor = {
+    workspaceRootPath,
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+    async runShellCommand() {
+      await writeFile(join(workspaceRootPath, "generated.txt"), "hello\n", "utf8");
+      return {
+        exitCode: 0,
+        stdoutText: "created\n",
+        stderrText: "",
+      };
+    },
+  } satisfies WorkspaceShellCommandExecutor;
+
+  const { assistantResponseEvents, providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
+    shellCommand: "printf hello > generated.txt",
+    workspaceRootPath,
+    workspaceSnapshotStore,
+    workspaceShellCommandExecutor,
+  });
+
+  expect(assistantResponseEvents).toContainEqual(expect.objectContaining({
+    type: "assistant_message_part_added",
+    part: expect.objectContaining({
+      partKind: "assistant_workspace_patch",
+      workspacePatch: expect.objectContaining({
+        workspacePatchId: "patch-1",
+        toolCallId: "call_bash_1",
+        changedFileCount: 1,
+        changedFiles: [expect.objectContaining({ filePath: "generated.txt", changeKind: "added" })],
+      }),
+    }),
+  }));
+  expect(conversationHistory.listConversationSessionEntries()).toContainEqual(expect.objectContaining({
+    entryKind: "workspace_patch",
+    workspacePatch: expect.objectContaining({ workspacePatchId: "patch-1" }),
+  }));
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Workspace changes:");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("added generated.txt");
 });
 
 test("streamAssistantResponseEventsForBashToolCall records failed bash execution", async () => {

@@ -16,12 +16,18 @@ import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
+import {
+  beginRuntimeWorkspacePatchCapture,
+  recordWorkspacePatchAndCreateAssistantEvent,
+} from "./runtimeWorkspacePatchCapture.ts";
 import { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
 import {
   classifyBashToolApprovalRequirement,
   type BashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
+import { appendWorkspacePatchSummaryToToolResultText } from "./workspaceSnapshot/workspacePatchSummary.ts";
+import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export type StreamAssistantResponseEventsForBashToolCallInput = {
   assistantResponseMessageId: string;
@@ -31,6 +37,7 @@ export type StreamAssistantResponseEventsForBashToolCallInput = {
   assistantOperatingMode: AssistantOperatingMode;
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
+  workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
@@ -200,6 +207,12 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   }
 
   input.throwIfConversationTurnInterrupted();
+  const workspacePatchCapture = await beginRuntimeWorkspacePatchCapture({
+    workspaceSnapshotStore: input.workspaceSnapshotStore,
+    toolCallId: input.toolCallId,
+    abortSignal: input.abortSignal,
+    diagnosticLogger: input.diagnosticLogger,
+  });
   const bashToolCallOutcome = await runApprovedBashToolCall({
     bashToolCallRequest: input.bashToolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
@@ -207,13 +220,18 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     diagnosticLogger: input.diagnosticLogger,
     abortSignal: input.abortSignal,
   });
+  const workspacePatch = await workspacePatchCapture?.captureWorkspacePatch();
   input.throwIfConversationTurnInterrupted();
 
   if (bashToolCallOutcome.outcomeKind === "completed") {
+    const completedToolResultText = appendWorkspacePatchSummaryToToolResultText({
+      toolResultText: bashToolCallOutcome.toolResultText,
+      workspacePatch,
+    });
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: bashToolCallOutcome.toolCallDetail,
-      toolResultText: bashToolCallOutcome.toolResultText,
+      toolResultText: completedToolResultText,
     });
     yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
       type: "assistant_message_part_updated",
@@ -228,20 +246,32 @@ export async function* streamAssistantResponseEventsForBashToolCall(
         durationMs: bashToolCallOutcome.durationMilliseconds,
       }),
     }));
+    const workspacePatchEvent = recordWorkspacePatchAndCreateAssistantEvent({
+      workspacePatch,
+      assistantResponseMessageId: input.assistantResponseMessageId,
+      toolResultSessionRecorder: input.toolResultSessionRecorder,
+    });
+    if (workspacePatchEvent) {
+      yield logAssistantResponseEventEmitted(input.diagnosticLogger, workspacePatchEvent);
+    }
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
-      toolResultText: bashToolCallOutcome.toolResultText,
+      toolResultText: completedToolResultText,
       toolResultKind: "completed",
       diagnosticLogger: input.diagnosticLogger,
     });
     return;
   }
 
+  const failedToolResultText = appendWorkspacePatchSummaryToToolResultText({
+    toolResultText: bashToolCallOutcome.toolResultText,
+    workspacePatch,
+  });
   input.toolResultSessionRecorder.appendFailedToolResultSessionEntry({
     toolCallId: input.toolCallId,
     toolCallDetail: bashToolCallOutcome.toolCallDetail,
-    toolResultText: bashToolCallOutcome.toolResultText,
+    toolResultText: failedToolResultText,
     failureExplanation: bashToolCallOutcome.failureExplanation,
   });
   yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
@@ -258,10 +288,18 @@ export async function* streamAssistantResponseEventsForBashToolCall(
       durationMs: bashToolCallOutcome.durationMilliseconds,
     }),
   }));
+  const workspacePatchEvent = recordWorkspacePatchAndCreateAssistantEvent({
+    workspacePatch,
+    assistantResponseMessageId: input.assistantResponseMessageId,
+    toolResultSessionRecorder: input.toolResultSessionRecorder,
+  });
+  if (workspacePatchEvent) {
+    yield logAssistantResponseEventEmitted(input.diagnosticLogger, workspacePatchEvent);
+  }
   await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
     toolCallId: input.toolCallId,
-    toolResultText: bashToolCallOutcome.toolResultText,
+    toolResultText: failedToolResultText,
     toolResultKind: "failed",
     diagnosticLogger: input.diagnosticLogger,
   });

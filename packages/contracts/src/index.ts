@@ -28,6 +28,7 @@ export {
   AssistantToolCallConversationMessagePartSchema,
   AssistantToolCallPartStatusSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
+  AssistantWorkspacePatchConversationMessagePartSchema,
   ConversationMessagePartSchema,
   UserImageAttachmentConversationMessagePartSchema,
   UserTextConversationMessagePartSchema,
@@ -47,6 +48,7 @@ export type {
   AssistantToolCallConversationMessagePart,
   AssistantToolCallPartStatus,
   AssistantTurnSummaryConversationMessagePart,
+  AssistantWorkspacePatchConversationMessagePart,
   ConversationMessagePart,
   UserImageAttachmentConversationMessagePart,
   UserTextConversationMessagePart,
@@ -106,7 +108,13 @@ export {
   ProjectInstructionSnapshotSchema,
   ToolCallConversationSessionEntrySchema,
   UserPromptConversationSessionEntrySchema,
+  WorkspacePatchConversationSessionEntrySchema,
 } from "./conversationSessionEntry.ts";
+export {
+  WorkspacePatchFileChangeKindSchema,
+  WorkspacePatchFileDiffSchema,
+  WorkspacePatchSchema,
+} from "./workspacePatch.ts";
 export {
   ConversationSessionEntryRecordSchema,
   ConversationSessionHeaderRecordSchema,
@@ -133,7 +141,13 @@ export type {
   ProjectInstructionSnapshot,
   ToolCallConversationSessionEntry,
   UserPromptConversationSessionEntry,
+  WorkspacePatchConversationSessionEntry,
 } from "./conversationSessionEntry.ts";
+export type {
+  WorkspacePatch,
+  WorkspacePatchFileChangeKind,
+  WorkspacePatchFileDiff,
+} from "./workspacePatch.ts";
 export type {
   ConversationSessionEntryRecord,
   ConversationSessionHeaderRecord,

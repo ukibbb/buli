@@ -4,6 +4,7 @@ import { TokenUsageSchema } from "./provider.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { LearningSequenceSchema } from "./learningSequence.ts";
+import { WorkspacePatchSchema } from "./workspacePatch.ts";
 
 export const AssistantTextPartStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed", "interrupted"]);
 export const AssistantReasoningPartStatusSchema = z.enum(["streaming", "completed", "interrupted"]);
@@ -112,6 +113,14 @@ export const AssistantToolCallConversationMessagePartSchema = z.discriminatedUni
   AssistantInterruptedToolCallConversationMessagePartSchema,
 ]);
 
+export const AssistantWorkspacePatchConversationMessagePartSchema = z
+  .object({
+    id: z.string().min(1),
+    partKind: z.literal("assistant_workspace_patch"),
+    workspacePatch: WorkspacePatchSchema,
+  })
+  .strict();
+
 export const AssistantPlanProposalConversationMessagePartSchema = z
   .object({
     id: z.string().min(1),
@@ -177,6 +186,7 @@ export const ConversationMessagePartSchema = z.union([
   AssistantTextConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
+  AssistantWorkspacePatchConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
   AssistantLearningSequenceConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
@@ -190,6 +200,7 @@ export const AssistantConversationMessagePartSchema = z.union([
   AssistantTextConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
+  AssistantWorkspacePatchConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
   AssistantLearningSequenceConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
@@ -206,6 +217,9 @@ export type UserTextConversationMessagePart = z.infer<typeof UserTextConversatio
 export type AssistantTextConversationMessagePart = z.infer<typeof AssistantTextConversationMessagePartSchema>;
 export type AssistantReasoningConversationMessagePart = z.infer<typeof AssistantReasoningConversationMessagePartSchema>;
 export type AssistantToolCallConversationMessagePart = z.infer<typeof AssistantToolCallConversationMessagePartSchema>;
+export type AssistantWorkspacePatchConversationMessagePart = z.infer<
+  typeof AssistantWorkspacePatchConversationMessagePartSchema
+>;
 export type AssistantConversationMessagePart = z.infer<typeof AssistantConversationMessagePartSchema>;
 export type AssistantPlanProposalConversationMessagePart = z.infer<typeof AssistantPlanProposalConversationMessagePartSchema>;
 export type AssistantLearningSequenceConversationMessagePart = z.infer<

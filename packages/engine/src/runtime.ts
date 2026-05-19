@@ -52,6 +52,7 @@ import {
   finalizeInterruptedConversationTurn,
   finalizeProviderStreamEndedBeforeCompletion,
 } from "./runtimeConversationTurnTerminalFinalizer.ts";
+import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export class AssistantConversationRuntime implements AssistantConversationRunner {
   readonly conversationTurnProvider: ConversationTurnProvider;
@@ -59,6 +60,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly promptContextBrowseRootPath: string;
   readonly promptContextStartingDirectoryPath: string;
   readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
+  readonly workspaceSnapshotStore: WorkspaceSnapshotStore | undefined;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
@@ -75,6 +77,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     promptContextBrowseRootPath: string;
     promptContextStartingDirectoryPath?: string;
     workspaceShellCommandExecutor?: WorkspaceShellCommandExecutor;
+    workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
     conversationHistory?: InMemoryConversationHistory;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode?: BashToolApprovalMode;
@@ -92,6 +95,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath ?? input.promptContextBrowseRootPath;
     this.workspaceShellCommandExecutor =
       input.workspaceShellCommandExecutor ?? new WorkspaceShellCommandExecutor({ workspaceRootPath: input.workspaceRootPath });
+    this.workspaceSnapshotStore = input.workspaceSnapshotStore;
     this.conversationHistory = input.conversationHistory ?? new InMemoryConversationHistory();
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode ?? DEFAULT_BASH_TOOL_APPROVAL_MODE;
@@ -156,6 +160,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       promptContextBrowseRootPath: this.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
+      workspaceSnapshotStore: this.workspaceSnapshotStore,
       diagnosticLogger: this.diagnosticLogger,
       bashToolApprovalMode: this.bashToolApprovalMode,
       promptCacheKey: this.promptCacheKey,
@@ -191,6 +196,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly promptContextBrowseRootPath: string;
   readonly promptContextStartingDirectoryPath: string;
   readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
+  readonly workspaceSnapshotStore: WorkspaceSnapshotStore | undefined;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
   readonly promptCacheKey: string | undefined;
@@ -210,6 +216,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     promptContextBrowseRootPath: string;
     promptContextStartingDirectoryPath: string;
     workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
+    workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode: BashToolApprovalMode;
     promptCacheKey?: string | undefined;
@@ -226,6 +233,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
     this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath;
     this.workspaceShellCommandExecutor = input.workspaceShellCommandExecutor;
+    this.workspaceSnapshotStore = input.workspaceSnapshotStore;
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode;
     this.promptCacheKey = input.promptCacheKey;
@@ -417,6 +425,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       assistantOperatingMode: this.assistantOperatingMode,
       bashToolApprovalMode: this.bashToolApprovalMode,
       workspaceRootPath: this.workspaceRootPath,
+      workspaceSnapshotStore: this.workspaceSnapshotStore,
       projectInstructionTracker: this.projectInstructionTracker,
       promptContextBrowseRootPath: this.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,

@@ -300,6 +300,16 @@ function buildHydratedConversationTranscript(
       return;
     }
 
+    if (conversationSessionEntry.entryKind === "workspace_patch") {
+      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      appendConversationMessagePart(assistantMessageId, {
+        id: `persisted-entry-${entryIndex}-workspace-patch`,
+        partKind: "assistant_workspace_patch",
+        workspacePatch: conversationSessionEntry.workspacePatch,
+      });
+      return;
+    }
+
     if (conversationSessionEntry.entryKind === "assistant_message") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       const existingAssistantMessage = conversationMessagesById[assistantMessageId];

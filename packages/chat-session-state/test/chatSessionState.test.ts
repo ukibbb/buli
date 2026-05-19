@@ -243,6 +243,49 @@ test("hydrateConversationTranscriptFromSessionEntries restores user image attach
   );
 });
 
+test("hydrateConversationTranscriptFromSessionEntries restores workspace patch parts", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Create a file",
+        modelFacingPromptText: "Create a file",
+      },
+      {
+        entryKind: "workspace_patch",
+        workspacePatch: {
+          workspacePatchId: "patch-1",
+          toolCallId: "call-bash-1",
+          capturedAtMs: 10,
+          baselineSnapshotHash: "before-tree",
+          resultingSnapshotHash: "after-tree",
+          changedFileCount: 1,
+          addedLineCount: 1,
+          removedLineCount: 0,
+          changedFiles: [
+            {
+              filePath: "generated.txt",
+              changeKind: "added",
+              addedLineCount: 1,
+              removedLineCount: 0,
+            },
+          ],
+        },
+      },
+    ],
+  );
+
+  expect(Object.values(chatSessionState.conversationMessagePartsById)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        partKind: "assistant_workspace_patch",
+        workspacePatch: expect.objectContaining({ workspacePatchId: "patch-1" }),
+      }),
+    ]),
+  );
+});
+
 test("applyChatSessionKeyboardInputToChatSessionState moves the prompt cursor with Home and End", () => {
   let chatSessionState = insertTextIntoPromptDraftAtCursor(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

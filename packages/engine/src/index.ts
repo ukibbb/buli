@@ -23,6 +23,15 @@ export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./p
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
 export {
+  defaultPrivateGitWorkspaceSnapshotDirectoryPath,
+  PrivateGitWorkspaceSnapshotStore,
+  WorkspacePatchRevertConflictError,
+} from "./workspaceSnapshot/privateGitWorkspaceSnapshotStore.ts";
+export {
+  appendWorkspacePatchSummaryToToolResultText,
+  formatWorkspacePatchSummaryForToolResult,
+} from "./workspaceSnapshot/workspacePatchSummary.ts";
+export {
   DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT,
   DEFAULT_UNKNOWN_GPT_5_CONTEXT_WINDOW_TOKEN_CAPACITY,
   DEFAULT_MINIMUM_SESSION_ENTRY_COUNT_AFTER_LATEST_COMPACTION_SUMMARY,
@@ -68,6 +77,7 @@ export type {
 export type { PromptContextQueryLoadStrategy } from "./prompt-context/listPromptContextCandidates.ts";
 export type { ProjectInstructionFile } from "./projectInstructions.ts";
 export type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
+export type { CaptureWorkspacePatchInput, WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 export type {
   ActiveConversationTurn,
   AssistantConversationRunner,

@@ -20,6 +20,10 @@ import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnosti
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import {
+  beginRuntimeWorkspacePatchCapture,
+  recordWorkspacePatchAndCreateAssistantEvent,
+} from "./runtimeWorkspacePatchCapture.ts";
+import {
   prepareEditToolCall,
   runPreparedEditToolCall,
   type PreparedEditToolCall,
@@ -30,6 +34,7 @@ import {
   runPreparedWriteToolCall,
   type PreparedWriteToolCall,
 } from "./tools/writeTool.ts";
+import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export type FileMutationToolCallRequest = ContractFileMutationToolCallRequest;
 
@@ -44,6 +49,7 @@ export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   fileMutationToolCallRequest: FileMutationToolCallRequest;
   assistantOperatingMode: AssistantOperatingMode;
   workspaceRootPath: string;
+  workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
@@ -210,11 +216,18 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
   }));
 
   input.throwIfConversationTurnInterrupted();
+  const workspacePatchCapture = await beginRuntimeWorkspacePatchCapture({
+    workspaceSnapshotStore: input.workspaceSnapshotStore,
+    toolCallId: input.toolCallId,
+    abortSignal: input.abortSignal,
+    diagnosticLogger: input.diagnosticLogger,
+  });
   const toolCallOutcome = await runPreparedFileMutationToolCall({
     preparedFileMutationToolCall,
     workspaceRootPath: input.workspaceRootPath,
     abortSignal: input.abortSignal,
   });
+  const workspacePatch = await workspacePatchCapture?.captureWorkspacePatch();
   input.throwIfConversationTurnInterrupted();
 
   if (toolCallOutcome.outcomeKind === "completed") {
@@ -236,6 +249,14 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
         durationMs: toolCallOutcome.durationMilliseconds,
       }),
     }));
+    const workspacePatchEvent = recordWorkspacePatchAndCreateAssistantEvent({
+      workspacePatch,
+      assistantResponseMessageId: input.assistantResponseMessageId,
+      toolResultSessionRecorder: input.toolResultSessionRecorder,
+    });
+    if (workspacePatchEvent) {
+      yield logAssistantResponseEventEmitted(input.diagnosticLogger, workspacePatchEvent);
+    }
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       toolCallId: input.toolCallId,
@@ -266,6 +287,14 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
       durationMs: toolCallOutcome.durationMilliseconds,
     }),
   }));
+  const workspacePatchEvent = recordWorkspacePatchAndCreateAssistantEvent({
+    workspacePatch,
+    assistantResponseMessageId: input.assistantResponseMessageId,
+    toolResultSessionRecorder: input.toolResultSessionRecorder,
+  });
+  if (workspacePatchEvent) {
+    yield logAssistantResponseEventEmitted(input.diagnosticLogger, workspacePatchEvent);
+  }
   await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
     toolCallId: input.toolCallId,

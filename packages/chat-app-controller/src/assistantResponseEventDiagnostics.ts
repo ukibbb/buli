@@ -88,6 +88,12 @@ function summarizeConversationMessagePartStatusForDiagnostics(
         toolCallStatus: conversationMessagePart.toolCallStatus,
         toolName: conversationMessagePart.toolCallDetail.toolName,
       };
+    case "assistant_workspace_patch":
+      return {
+        workspacePatchId: conversationMessagePart.workspacePatch.workspacePatchId,
+        toolCallId: conversationMessagePart.workspacePatch.toolCallId,
+        changedFileCount: conversationMessagePart.workspacePatch.changedFileCount,
+      };
     case "assistant_plan_proposal":
       return {
         planId: conversationMessagePart.planId,

@@ -5,6 +5,7 @@ import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
 import { LearningSequenceSchema } from "./learningSequence.ts";
+import { WorkspacePatchSchema } from "./workspacePatch.ts";
 
 export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
 
@@ -119,6 +120,13 @@ export const DeniedToolResultConversationSessionEntrySchema = ToolResultConversa
   denialExplanation: z.string().min(1),
 });
 
+export const WorkspacePatchConversationSessionEntrySchema = z
+  .object({
+    entryKind: z.literal("workspace_patch"),
+    workspacePatch: WorkspacePatchSchema,
+  })
+  .strict();
+
 export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
   AssistantTextSegmentConversationSessionEntrySchema,
@@ -129,6 +137,7 @@ export const ConversationSessionEntrySchema = z.union([
   CompletedToolResultConversationSessionEntrySchema,
   FailedToolResultConversationSessionEntrySchema,
   DeniedToolResultConversationSessionEntrySchema,
+  WorkspacePatchConversationSessionEntrySchema,
 ]);
 
 export const ConversationSessionSnapshotSchema = z
@@ -167,5 +176,6 @@ export type ConversationCompactionSummaryConversationSessionEntry = z.infer<
 export type CompletedToolResultConversationSessionEntry = z.infer<typeof CompletedToolResultConversationSessionEntrySchema>;
 export type FailedToolResultConversationSessionEntry = z.infer<typeof FailedToolResultConversationSessionEntrySchema>;
 export type DeniedToolResultConversationSessionEntry = z.infer<typeof DeniedToolResultConversationSessionEntrySchema>;
+export type WorkspacePatchConversationSessionEntry = z.infer<typeof WorkspacePatchConversationSessionEntrySchema>;
 export type ConversationSessionEntry = z.infer<typeof ConversationSessionEntrySchema>;
 export type ConversationSessionSnapshot = z.infer<typeof ConversationSessionSnapshotSchema>;
