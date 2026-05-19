@@ -10,18 +10,16 @@ import {
   refreshChatSlashCommandSelectionForCurrentState,
   removeLastPromptImageAttachmentFromDraft,
   replacePromptDraftFromEditor,
-  showAvailableAssistantModelsForSelection,
-  showModelSelectionLoadingError,
-  showModelSelectionLoadingState,
   type ChatSessionKeyboardEffect,
   type ChatSessionKeyboardInput,
   type ChatSessionState,
   type ChatSlashCommandApplicationEffect,
   type PromptContextQueryIdentity,
 } from "@buli/chat-session-state";
+import { useChatAppModelSelectionActions } from "@buli/chat-app-controller";
 import { type KeyEvent, type PasteEvent } from "@opentui/core";
 import { useKeyboard, usePaste } from "@opentui/react";
-import { startTransition, useEffect, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { readNativeClipboardImageAttachment } from "../clipboard/readNativeClipboardImageAttachment.ts";
 import type { PromptTextareaEdit } from "../components/PromptTextarea.tsx";
 import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
@@ -72,7 +70,12 @@ export type UseChatScreenKeyboardInputActionsResult = {
 export function useChatScreenKeyboardInputActions(
   input: UseChatScreenKeyboardInputActionsInput,
 ): UseChatScreenKeyboardInputActionsResult {
-  const latestModelSelectionLoadRequestSequenceRef = useRef(0);
+  const { loadAvailableModelsForSelection } = useChatAppModelSelectionActions({
+    loadAvailableAssistantModels: input.loadAvailableAssistantModels,
+    latestChatSessionStateRef: input.latestChatSessionStateRef,
+    setChatSessionState: input.setChatSessionState,
+    diagnosticLogger: input.diagnosticLogger,
+  });
 
   useEffect(() => {
     input.setChatSessionState((currentChatSessionState) =>
@@ -89,51 +92,6 @@ export function useChatScreenKeyboardInputActions(
     input.chatSessionState.isReasoningSummaryVisible,
     input.chatSessionState.selectedAssistantOperatingMode,
   ]);
-
-  const loadAvailableModelsForSelection = useEffectEvent(async () => {
-    const requestSequence = latestModelSelectionLoadRequestSequenceRef.current + 1;
-    latestModelSelectionLoadRequestSequenceRef.current = requestSequence;
-    logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_started", {
-      currentSelectedModelId: input.latestChatSessionStateRef.current.selectedModelId,
-      requestSequence,
-    });
-    input.setChatSessionState((currentChatSessionState) => showModelSelectionLoadingState(currentChatSessionState));
-
-    try {
-      const availableAssistantModels = await input.loadAvailableAssistantModels();
-      if (requestSequence !== latestModelSelectionLoadRequestSequenceRef.current) {
-        logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_discarded", {
-          requestSequence,
-          activeRequestSequence: latestModelSelectionLoadRequestSequenceRef.current,
-          availableModelCount: availableAssistantModels.length,
-        });
-        return;
-      }
-      logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_completed", {
-        availableModelCount: availableAssistantModels.length,
-        requestSequence,
-      });
-      startTransition(() => {
-        input.setChatSessionState((currentChatSessionState) =>
-          showAvailableAssistantModelsForSelection(currentChatSessionState, availableAssistantModels),
-        );
-      });
-    } catch (error) {
-      if (requestSequence !== latestModelSelectionLoadRequestSequenceRef.current) {
-        return;
-      }
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_load_failed", {
-        errorMessage,
-        requestSequence,
-      });
-      startTransition(() => {
-        input.setChatSessionState((currentChatSessionState) =>
-          showModelSelectionLoadingError(currentChatSessionState, errorMessage),
-        );
-      });
-    }
-  });
 
   const applyChatSlashCommandApplicationEffectToChatScreen = useEffectEvent(
     (chatSlashCommandApplicationEffect: ChatSlashCommandApplicationEffect | undefined) => {

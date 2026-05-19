@@ -26,6 +26,19 @@
     "packages/assistant-design-tokens": {
       "name": "@buli/assistant-design-tokens",
     },
+    "packages/chat-app-controller": {
+      "name": "@buli/chat-app-controller",
+      "dependencies": {
+        "@buli/chat-session-state": "workspace:*",
+        "@buli/contracts": "workspace:*",
+        "@buli/engine": "workspace:*",
+        "@buli/prompt-context-core": "workspace:*",
+        "react": "^19.2.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19.2.2",
+      },
+    },
     "packages/chat-session-fixtures": {
       "name": "@buli/chat-session-fixtures",
       "dependencies": {
@@ -70,6 +83,7 @@
       "name": "@buli/tui",
       "dependencies": {
         "@buli/assistant-design-tokens": "workspace:*",
+        "@buli/chat-app-controller": "workspace:*",
         "@buli/chat-session-state": "workspace:*",
         "@buli/contracts": "workspace:*",
         "@buli/engine": "workspace:*",
@@ -88,6 +102,8 @@
   },
   "packages": {
     "@buli/assistant-design-tokens": ["@buli/assistant-design-tokens@workspace:packages/assistant-design-tokens"],
+
+    "@buli/chat-app-controller": ["@buli/chat-app-controller@workspace:packages/chat-app-controller"],
 
     "@buli/chat-session-fixtures": ["@buli/chat-session-fixtures@workspace:packages/chat-session-fixtures"],
 

@@ -47,9 +47,10 @@ The current chat app is split across these packages.
 | `apps/cli` | Command-line entrypoints and composition root. |
 | `packages/contracts` | Shared typed shapes for messages, parts, events, usage, tools, and history. |
 | `packages/chat-session-state` | Reducers and selectors for local UI/session state. |
+| `packages/chat-app-controller` | Renderer-neutral chat app actions: assistant turn relay, active turn interruption, tool approval, session/model loading, prompt-context refresh, and session compaction/export orchestration. |
 | `packages/engine` | Provider-independent assistant runtime, in-memory history, prompt-context expansion, bash execution, and tool approval. |
 | `packages/openai` | Auth, model discovery, Responses API request building, SSE parsing, and tool-continuation loop. |
-| `packages/tui` | OpenTUI React renderer, chat screen, keyboard behavior, transcript rendering, and component dispatch. |
+| `packages/tui` | OpenTUI React renderer, chat screen, renderer-specific keyboard/paste behavior, transcript rendering, and component dispatch. |
 
 ## Mental Model
 

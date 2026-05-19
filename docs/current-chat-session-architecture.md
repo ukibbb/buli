@@ -56,6 +56,19 @@ Important files:
 
 This package owns normalized conversation state, persisted transcript hydration, prompt editing, prompt-context picker state and refresh decisions, slash-command state decisions, session selection, model selection, reasoning-effort selection, and pending tool approval state.
 
+### `@buli/chat-app-controller`
+
+Important files:
+
+- `packages/chat-app-controller/src/useChatAppAssistantTurnActions.ts`
+- `packages/chat-app-controller/src/useChatAppConversationSessionActions.ts`
+- `packages/chat-app-controller/src/useChatAppModelSelectionActions.ts`
+- `packages/chat-app-controller/src/useChatAppPromptContextSelectionRefresh.ts`
+- `packages/chat-app-controller/src/relayAssistantResponseRunnerEvents.ts`
+- `packages/chat-app-controller/src/activeConversationTurnShutdown.ts`
+
+This package owns renderer-neutral chat app orchestration: assistant turn submission, streamed event batching, active turn interruption, tool approval decisions, model/session loading actions, conversation session mutations, prompt-context refresh timing, and compaction/export status. Renderers use it as the shared UI-use-case layer instead of duplicating that behavior.
+
 ### `@buli/tui`
 
 Important files:
@@ -67,7 +80,7 @@ Important files:
 - `packages/tui/src/components/ConversationMessageRow.tsx`
 - `packages/tui/src/components/messageParts/*`
 
-This is the OpenTUI-backed renderer. It owns the fullscreen chat shell, follow-bottom transcript behavior through OpenTUI scrollbox mechanics, renderer-specific keyboard normalization, viewport-derived render data, and visible component composition. Domain state transitions stay in `@buli/chat-session-state`.
+This is the OpenTUI-backed renderer. It owns the fullscreen chat shell, follow-bottom transcript behavior through OpenTUI scrollbox mechanics, renderer-specific keyboard normalization, paste handling, viewport-derived render data, and visible component composition. Domain state transitions stay in `@buli/chat-session-state`; UI-use-case orchestration lives in `@buli/chat-app-controller`.
 
 ## What A Streaming Turn Looks Like
 
