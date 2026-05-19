@@ -17,13 +17,18 @@ export class OpenAiReasoningSummaryStreamProjector {
     this.readCurrentTimeInMilliseconds = input.readCurrentTimeInMilliseconds ?? (() => performance.now());
   }
 
-  appendReasoningSummaryTextDelta(input: OpenAiReasoningSummaryTextDelta): ProviderStreamEvent[] {
-    const providerEvents: ProviderStreamEvent[] = [];
-    if (!this.isReasoningSummaryInProgress) {
-      this.reasoningStartedAtMs = this.readCurrentTimeInMilliseconds();
-      this.isReasoningSummaryInProgress = true;
-      providerEvents.push({ type: "reasoning_summary_started" });
+  beginReasoningSummary(): ProviderStreamEvent[] {
+    if (this.isReasoningSummaryInProgress) {
+      return [];
     }
+
+    this.reasoningStartedAtMs = this.readCurrentTimeInMilliseconds();
+    this.isReasoningSummaryInProgress = true;
+    return [{ type: "reasoning_summary_started" }];
+  }
+
+  appendReasoningSummaryTextDelta(input: OpenAiReasoningSummaryTextDelta): ProviderStreamEvent[] {
+    const providerEvents: ProviderStreamEvent[] = [...this.beginReasoningSummary()];
 
     const reasoningSummaryPartKey = `${input.itemId}:${input.summaryIndex}`;
     if (this.reasoningPartSeparatorPending || (this.lastReasoningSummaryPartKey && this.lastReasoningSummaryPartKey !== reasoningSummaryPartKey)) {

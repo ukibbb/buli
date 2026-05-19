@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
+  ASSISTANT_PRESENTATION_FUNCTION_NAMES,
   AssistantOperatingModeSchema,
   AssistantResponseEventSchema,
   ConversationSessionEntrySchema,
@@ -25,6 +26,7 @@ import {
   createStartedToolCallDetailFromRequest,
   emitBuliDiagnosticLogEvent,
   isAssistantToolRequestName,
+  isAssistantPresentationFunctionName,
   isExploreToolCallRequest,
   isFileMutationToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
@@ -600,6 +602,7 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
 
 test("tool catalog lists assistant request tools by execution boundary", () => {
   expect(ASSISTANT_TOOL_REQUEST_NAMES).toEqual(["bash", "read", "glob", "grep", "edit", "write", "explore"]);
+  expect(ASSISTANT_PRESENTATION_FUNCTION_NAMES).toEqual(["present_learning_sequence"]);
   expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "write"]);
   expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "explore"]);
@@ -609,6 +612,8 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
 test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("bash")).toBe(true);
   expect(isAssistantToolRequestName("task")).toBe(false);
+  expect(isAssistantPresentationFunctionName("present_learning_sequence")).toBe(true);
+  expect(isAssistantPresentationFunctionName("bash")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toBe(false);
@@ -729,6 +734,19 @@ test("ProviderStreamEventSchema parses ordered batched tool-call requests", () =
       ],
     }).type,
   ).toBe("tool_calls_requested");
+});
+
+test("ProviderStreamEventSchema parses learning sequence presentation events", () => {
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "learning_sequence_presented",
+      presentationCallId: "call-learning-sequence-1",
+      learningSequence: {
+        titleText: "Request flow",
+        sequenceItems: [{ labelText: "Prompt accepted" }],
+      },
+    }).type,
+  ).toBe("learning_sequence_presented");
 });
 
 test("AssistantResponseEventSchema parses assistant_message_interrupted", () => {

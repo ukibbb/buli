@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { ToolCallTaskDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { AssistantMarkdownBlock } from "../primitives/AssistantMarkdownBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
 import { BracketedTarget } from "./BracketedTarget.tsx";
 import {
@@ -92,7 +93,11 @@ function buildTaskBodyContent(props: TaskToolCallCardProps): ReactNode {
       ) : null}
       {subagentPrompt ? (
         <box width="100%">
-          <TaskTextSection foregroundColor={chatScreenTheme.textSecondary} taskSectionText={subagentPrompt} />
+          <TaskTextSection
+            foregroundColor={chatScreenTheme.textSecondary}
+            presentation="plain"
+            taskSectionText={subagentPrompt}
+          />
         </box>
       ) : null}
       {subagentResultSummary ? (
@@ -102,21 +107,37 @@ function buildTaskBodyContent(props: TaskToolCallCardProps): ReactNode {
       ) : null}
       {subagentResultSummary ? (
         <box width="100%">
-          <TaskTextSection foregroundColor={chatScreenTheme.textPrimary} taskSectionText={subagentResultSummary} />
+          <TaskTextSection
+            horizontalRuleColor={resolveTaskResultMarkdownRuleColor(props.renderState)}
+            presentation="markdown"
+            taskSectionText={subagentResultSummary}
+          />
         </box>
       ) : null}
     </box>
   );
 }
 
-function TaskTextSection(props: {
-  foregroundColor: string;
+type TaskTextSectionProps = {
   taskSectionText: string;
-}): ReactNode {
+} & (
+  { presentation: "plain"; foregroundColor: string } |
+  { presentation: "markdown"; horizontalRuleColor: string }
+);
+
+function TaskTextSection(props: TaskTextSectionProps): ReactNode {
   const visibleTaskSectionText = buildVisibleTaskSectionText(props.taskSectionText);
   return (
     <box flexDirection="column" width="100%">
-      <text fg={props.foregroundColor} wrapMode="word">{visibleTaskSectionText.visibleText}</text>
+      {props.presentation === "plain" ? (
+        <text fg={props.foregroundColor} wrapMode="word">{visibleTaskSectionText.visibleText}</text>
+      ) : (
+        <AssistantMarkdownBlock
+          horizontalRuleColor={props.horizontalRuleColor}
+          isStreaming={false}
+          markdownText={visibleTaskSectionText.visibleText}
+        />
+      )}
       {visibleTaskSectionText.truncationSummaryText ? (
         <box width="100%">
           <text fg={chatScreenTheme.textMuted}>{visibleTaskSectionText.truncationSummaryText}</text>
@@ -124,6 +145,14 @@ function TaskTextSection(props: {
       ) : null}
     </box>
   );
+}
+
+function resolveTaskResultMarkdownRuleColor(renderState: TaskToolCallCardProps["renderState"]): string {
+  if (renderState === "streaming") {
+    return chatScreenTheme.accentAmber;
+  }
+
+  return chatScreenTheme.accentGreen;
 }
 
 function buildVisibleTaskSectionText(taskSectionText: string): VisibleTaskSectionText {

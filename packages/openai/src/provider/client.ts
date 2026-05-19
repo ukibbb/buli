@@ -2,6 +2,7 @@ import type {
   AvailableAssistantModel,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
+  ProviderAvailablePresentationFunctionName,
   ProviderAvailableToolName,
   ReasoningEffort,
 } from "@buli/contracts";
@@ -21,6 +22,7 @@ export type OpenAiConversationTurnRequest = {
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+  availablePresentationFunctionNames?: readonly ProviderAvailablePresentationFunctionName[] | undefined;
   abortSignal?: AbortSignal;
 };
 
@@ -140,6 +142,9 @@ export class OpenAiProvider {
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
       ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),
+      ...(input.availablePresentationFunctionNames
+        ? { availablePresentationFunctionNames: input.availablePresentationFunctionNames }
+        : {}),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       systemPromptText: input.systemPromptText,
       conversationSessionEntries: input.conversationSessionEntries,

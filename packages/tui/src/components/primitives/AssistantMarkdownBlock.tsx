@@ -32,6 +32,7 @@ const assistantMarkdownSyntaxStyle = SyntaxStyle.fromStyles({
   "markup.heading.3": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
   "punctuation.definition.heading": { fg: RGBA.fromHex(chatScreenTheme.textDim), bold: true },
   "markup.italic": { fg: RGBA.fromHex(chatScreenTheme.textPrimary), italic: true },
+  "markup.bold": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
   "markup.strong": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
   "markup.strikethrough": { fg: RGBA.fromHex(chatScreenTheme.textDim), dim: true },
   "markup.link": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
@@ -52,6 +53,7 @@ const assistantMarkdownSyntaxStyle = SyntaxStyle.fromStyles({
   "markup.quote.marker": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted), bold: true },
   "punctuation.definition.quote": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted), bold: true },
   "markup.raw": { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
+  "markup.raw.inline": { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
   "markup.raw.block": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
   "markup.fenced_code.block": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
   "markup.table": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
@@ -316,6 +318,15 @@ function isAssistantMarkdownDashOnlyParagraphToken(
   );
 }
 
+function formatAssistantMarkdownInlineTextForPlainText(inlineMarkdownText: string): string {
+  return inlineMarkdownText
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/__([^_\n]+)__/g, "$1")
+    .replace(/~~([^~\n]+)~~/g, "$1")
+    .replace(/!?\[([^\]\n]+)\]\([^\n)]+\)/g, "$1");
+}
+
 function resolveAssistantMarkdownHeadingSyntaxStyle(depth: number): SyntaxStyle {
   if (depth === 1) return assistantMarkdownHeadingSyntaxStyleByDepth[1];
   if (depth === 2) return assistantMarkdownHeadingSyntaxStyleByDepth[2];
@@ -324,19 +335,20 @@ function resolveAssistantMarkdownHeadingSyntaxStyle(depth: number): SyntaxStyle 
 }
 
 function formatAssistantMarkdownHeadingText(headingText: string, depth: number): string {
+  const visibleHeadingText = formatAssistantMarkdownInlineTextForPlainText(headingText);
   if (depth === 1) {
-    return `\n▌ ${headingText}`;
+    return `\n▌ ${visibleHeadingText}`;
   }
 
   if (depth === 2) {
-    return `\n◆ ${headingText}`;
+    return `\n◆ ${visibleHeadingText}`;
   }
 
   if (depth === 3) {
-    return `\n${headingText}`;
+    return `\n${visibleHeadingText}`;
   }
 
-  return `\n• ${headingText}`;
+  return `\n• ${visibleHeadingText}`;
 }
 
 function parseAssistantMarkdownCallout(inputText: string): { calloutKind: AssistantMarkdownCalloutKind; bodyText: string } | undefined {
@@ -353,12 +365,12 @@ function parseAssistantMarkdownCallout(inputText: string): { calloutKind: Assist
 
 function formatAssistantMarkdownQuoteText(quoteText: string): string {
   const quoteLines = quoteText.trim().split("\n");
-  return quoteLines.map((quoteLine) => `│ ${quoteLine}`).join("\n");
+  return quoteLines.map((quoteLine) => `│ ${formatAssistantMarkdownInlineTextForPlainText(quoteLine)}`).join("\n");
 }
 
 function formatAssistantMarkdownCalloutText(input: { calloutKind: AssistantMarkdownCalloutKind; bodyText: string }): string {
   const bodyLines = input.bodyText.trim().length > 0 ? input.bodyText.trim().split("\n") : [];
-  return [`▌ ${input.calloutKind}`, "├" + "─".repeat(Math.max(12, input.calloutKind.length + 2)), ...bodyLines.map((bodyLine) => `│ ${bodyLine}`)].join("\n");
+  return [`▌ ${input.calloutKind}`, "├" + "─".repeat(Math.max(12, input.calloutKind.length + 2)), ...bodyLines.map((bodyLine) => `│ ${formatAssistantMarkdownInlineTextForPlainText(bodyLine)}`)].join("\n");
 }
 
 function parseAssistantMarkdownCodeFenceInfo(codeFenceInfoString: string | undefined): AssistantMarkdownCodeFenceInfo {
@@ -515,7 +527,7 @@ function resolveAssistantMarkdownListItemMarker(input: {
 
 function resolveAssistantMarkdownListItemText(listItem: AssistantMarkdownListItemToken): string {
   const paragraphText = (listItem.tokens ?? []).find(isAssistantMarkdownParagraphToken)?.text;
-  return (paragraphText ?? listItem.text ?? "").replace(/\n+/g, " ").trim();
+  return formatAssistantMarkdownInlineTextForPlainText((paragraphText ?? listItem.text ?? "").replace(/\n+/g, " ").trim());
 }
 
 function resolveAssistantMarkdownChildListTokens(listItem: AssistantMarkdownListItemToken): AssistantMarkdownListToken[] {
@@ -560,12 +572,10 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
     [props.horizontalRuleColor],
   );
 
-  const renderMarkdownNodeWithImmediatePlainTextFallback = useCallback<NonNullable<MarkdownOptions["renderNode"]>>((token, context) => {
+  const renderMarkdownNodeWithBuliChromeEnhancements = useCallback<NonNullable<MarkdownOptions["renderNode"]>>((token, context) => {
     const defaultRenderable = context.defaultRender();
 
     if (defaultRenderable instanceof CodeRenderable) {
-      // OpenTUI renders prose through an internal markdown CodeRenderable. Keep that
-      // default path, but avoid a blank first frame while Tree-sitter highlighting runs.
       defaultRenderable.drawUnstyledText = true;
 
       if (isAssistantMarkdownCodeToken(token)) {
@@ -625,6 +635,13 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         return defaultRenderable;
       }
 
+      if (isAssistantMarkdownParagraphToken(token)) {
+        defaultRenderable.content = formatAssistantMarkdownInlineTextForPlainText(token.text);
+        defaultRenderable.filetype = "text";
+        defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
+        return defaultRenderable;
+      }
+
       defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
     }
 
@@ -638,7 +655,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       concealCode={false}
       content={preparedMarkdownText}
       fg={chatScreenTheme.textPrimary}
-      renderNode={renderMarkdownNodeWithImmediatePlainTextFallback}
+      renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
       streaming={props.isStreaming}
       syntaxStyle={assistantMarkdownSyntaxStyle}
       tableOptions={{

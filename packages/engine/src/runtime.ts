@@ -191,6 +191,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
         ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
         availableToolNames: [],
+        availablePresentationFunctionNames: [],
         ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       });
       const summaryText = await collectConversationCompactionSummaryText({

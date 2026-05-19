@@ -71,6 +71,14 @@ export function summarizeProviderStreamEventForDiagnostics(
     };
   }
 
+  if (providerStreamEvent.type === "learning_sequence_presented") {
+    return {
+      presentationCallId: providerStreamEvent.presentationCallId,
+      learningSequenceTitleLength: providerStreamEvent.learningSequence.titleText.length,
+      learningSequenceItemCount: providerStreamEvent.learningSequence.sequenceItems.length,
+    };
+  }
+
   if (providerStreamEvent.type === "rate_limit_pending") {
     return {
       retryAfterSeconds: providerStreamEvent.retryAfterSeconds,

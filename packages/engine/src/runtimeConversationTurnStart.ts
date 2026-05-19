@@ -4,6 +4,7 @@ import type {
   ProviderAvailableToolName,
   ProjectInstructionSnapshot,
 } from "@buli/contracts";
+import { ASSISTANT_PRESENTATION_FUNCTION_NAMES } from "@buli/contracts";
 import type {
   ConversationTurnProvider,
   ConversationTurnRequest,
@@ -88,6 +89,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       assistantOperatingMode: input.assistantOperatingMode,
       requestedAvailableToolNames: input.availableToolNames,
     }),
+    availablePresentationFunctionNames: ASSISTANT_PRESENTATION_FUNCTION_NAMES,
     abortSignal: input.abortSignal,
   });
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.started", {

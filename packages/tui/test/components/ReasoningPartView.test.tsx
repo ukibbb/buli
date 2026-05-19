@@ -25,7 +25,7 @@ describe("ReasoningPartView", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("_Thinking:_");
+    expect(frame).toContain("_Thought:_");
     expect(frame).toContain("I checked the route before answering.");
     expect(frame).toContain("42 reasoning tok");
   });
@@ -41,7 +41,7 @@ describe("ReasoningPartView", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("Thought");
     expect(frame).toContain("42 reasoning tok");
     expect(frame).not.toContain("I checked the route before answering.");
   });

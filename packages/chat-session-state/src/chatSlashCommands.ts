@@ -26,7 +26,7 @@ export function buildChatSlashCommands(input: {
     {
       name: "thinking",
       value: "thinking",
-      description: input.isReasoningSummaryVisible ? "Hide reasoning summaries" : "Show reasoning summaries",
+      description: input.isReasoningSummaryVisible ? "Collapse thinking" : "Expand thinking",
     },
   ] as const satisfies readonly ChatSlashCommand[];
 }

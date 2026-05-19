@@ -20,6 +20,7 @@ import {
   type ProviderToolCallsRequestedEvent,
   type ProviderTurnReplay,
   type TokenUsage,
+  formatLearningSequenceAsMarkdownText,
 } from "@buli/contracts";
 import {
   appendAssistantTextDeltaToAssistantTextMessagePartBuilder,
@@ -29,10 +30,6 @@ import {
   readAssistantTextMessagePartBuilderRawMarkdownText,
   type AssistantTextMessagePartBuilderState,
 } from "./assistantTextMessagePartBuilder.ts";
-import {
-  AssistantPresentationBlockStreamParser,
-  type AssistantPresentationStreamSegment,
-} from "./assistantPresentationBlockParser.ts";
 
 export type RuntimeProviderStreamAssistantEventsTranslation = {
   translationKind: "assistant_response_events";
@@ -73,11 +70,6 @@ export type RuntimeAssistantTextSegmentFlush = {
   assistantSegmentSessionEntries?: readonly AssistantSegmentConversationSessionEntry[];
 };
 
-type RuntimeAssistantPresentationSegmentTranslation = {
-  assistantResponseEvents: AssistantResponseEvent[];
-  assistantSegmentSessionEntries: AssistantSegmentConversationSessionEntry[];
-};
-
 type RuntimeProviderStreamEventTranslatorInput = {
   assistantResponseMessageId: string;
   assistantTextPartId: string;
@@ -89,7 +81,7 @@ type RuntimeProviderStreamEventTranslatorInput = {
 
 const streamedAssistantTextUpdateChunkThreshold = 12;
 const streamedAssistantTextUpdateCharacterThreshold = 96;
-const streamedReasoningSummaryUpdateChunkThreshold = 12;
+const streamedReasoningSummaryUpdateChunkThreshold = 1;
 const streamedReasoningSummaryUpdateCharacterThreshold = 96;
 
 export class RuntimeProviderStreamEventTranslator {
@@ -106,7 +98,6 @@ export class RuntimeProviderStreamEventTranslator {
   private completedAssistantTextSegmentTexts: string[] = [];
   private hasObservedToolCallBoundary = false;
   private hasObservedAssistantSegmentBoundary = false;
-  private readonly assistantPresentationBlockStreamParser = new AssistantPresentationBlockStreamParser();
   private currentReasoningPartId: string | undefined;
   private currentReasoningSummaryTextChunks: string[] = [];
   private currentReasoningStartedAtMs: number | undefined;
@@ -151,9 +142,13 @@ export class RuntimeProviderStreamEventTranslator {
       return this.translateTextChunkProviderStreamEvent(input.providerStreamEvent.text);
     }
 
+    if (input.providerStreamEvent.type === "learning_sequence_presented") {
+      return this.translateLearningSequencePresentedProviderStreamEvent(input.providerStreamEvent.learningSequence);
+    }
+
     if (input.providerStreamEvent.type === "tool_call_requested") {
       this.hasObservedToolCallBoundary = true;
-      const assistantSegmentFlush = this.flushPendingAssistantPresentationAndTextSegments({
+      const assistantSegmentFlush = this.flushCurrentAssistantTextSegmentForBoundary({
         partStatus: "completed",
         shouldEmitPartUpdatedEvent: true,
         shouldRecordSessionEntry: true,
@@ -172,7 +167,7 @@ export class RuntimeProviderStreamEventTranslator {
 
     if (input.providerStreamEvent.type === "tool_calls_requested") {
       this.hasObservedToolCallBoundary = true;
-      const assistantSegmentFlush = this.flushPendingAssistantPresentationAndTextSegments({
+      const assistantSegmentFlush = this.flushCurrentAssistantTextSegmentForBoundary({
         partStatus: "completed",
         shouldEmitPartUpdatedEvent: true,
         shouldRecordSessionEntry: true,
@@ -320,61 +315,48 @@ export class RuntimeProviderStreamEventTranslator {
   }
 
   private translateTextChunkProviderStreamEvent(assistantTextDelta: string): RuntimeProviderStreamAssistantEventsTranslation {
-    const assistantPresentationSegmentTranslation = this.translateAssistantPresentationStreamSegments(
-      this.assistantPresentationBlockStreamParser.appendAssistantText(assistantTextDelta),
-    );
-
     return {
       translationKind: "assistant_response_events",
-      assistantResponseEvents: assistantPresentationSegmentTranslation.assistantResponseEvents,
-      ...(assistantPresentationSegmentTranslation.assistantSegmentSessionEntries.length > 0
-        ? { assistantSegmentSessionEntries: assistantPresentationSegmentTranslation.assistantSegmentSessionEntries }
-        : {}),
+      assistantResponseEvents: this.appendPlainTextToCurrentAssistantTextPart(assistantTextDelta),
     };
   }
 
-  private translateAssistantPresentationStreamSegments(
-    assistantPresentationStreamSegments: readonly AssistantPresentationStreamSegment[],
-  ): RuntimeAssistantPresentationSegmentTranslation {
-    const assistantResponseEvents: AssistantResponseEvent[] = [];
-    const assistantSegmentSessionEntries: AssistantSegmentConversationSessionEntry[] = [];
-
-    for (const assistantPresentationStreamSegment of assistantPresentationStreamSegments) {
-      if (assistantPresentationStreamSegment.segmentKind === "plain_text") {
-        assistantResponseEvents.push(...this.appendPlainTextToCurrentAssistantTextPart(assistantPresentationStreamSegment.text));
-        continue;
-      }
-
-      const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
-        partStatus: "completed",
-        shouldEmitPartUpdatedEvent: true,
-        shouldRecordSessionEntry: true,
-      });
-      assistantResponseEvents.push(...(assistantTextSegmentFlush?.assistantResponseEvents ?? []));
-      assistantSegmentSessionEntries.push(...(assistantTextSegmentFlush?.assistantSegmentSessionEntries ?? []));
-
-      const assistantLearningSequencePart = AssistantLearningSequenceConversationMessagePartSchema.parse({
-        id: this.createConversationMessagePartId(),
-        partKind: "assistant_learning_sequence",
-        titleText: assistantPresentationStreamSegment.learningSequence.titleText,
-        ...(assistantPresentationStreamSegment.learningSequence.summaryText !== undefined
-          ? { summaryText: assistantPresentationStreamSegment.learningSequence.summaryText }
-          : {}),
-        sequenceItems: assistantPresentationStreamSegment.learningSequence.sequenceItems,
-      });
-      assistantResponseEvents.push(AssistantMessagePartAddedEventSchema.parse({
+  private translateLearningSequencePresentedProviderStreamEvent(
+    learningSequence: LearningSequence,
+  ): RuntimeProviderStreamAssistantEventsTranslation {
+    const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
+      partStatus: "completed",
+      shouldEmitPartUpdatedEvent: true,
+      shouldRecordSessionEntry: true,
+    });
+    const assistantLearningSequencePart = AssistantLearningSequenceConversationMessagePartSchema.parse({
+      id: this.createConversationMessagePartId(),
+      partKind: "assistant_learning_sequence",
+      titleText: learningSequence.titleText,
+      ...(learningSequence.summaryText !== undefined ? { summaryText: learningSequence.summaryText } : {}),
+      sequenceItems: learningSequence.sequenceItems,
+    });
+    const assistantResponseEvents = [
+      ...(assistantTextSegmentFlush?.assistantResponseEvents ?? []),
+      AssistantMessagePartAddedEventSchema.parse({
         type: "assistant_message_part_added",
         messageId: this.assistantResponseMessageId,
         part: assistantLearningSequencePart,
-      }));
-      assistantSegmentSessionEntries.push(createAssistantLearningSequenceSegmentSessionEntry(
-        assistantPresentationStreamSegment.learningSequence,
-      ));
-      this.completedAssistantTextSegmentTexts.push(assistantPresentationStreamSegment.fallbackMarkdownText);
-      this.hasObservedAssistantSegmentBoundary = true;
-    }
+      }),
+    ];
+    const assistantSegmentSessionEntries = [
+      ...(assistantTextSegmentFlush?.assistantSegmentSessionEntries ?? []),
+      createAssistantLearningSequenceSegmentSessionEntry(learningSequence),
+    ];
 
-    return { assistantResponseEvents, assistantSegmentSessionEntries };
+    this.completedAssistantTextSegmentTexts.push(formatLearningSequenceAsMarkdownText(learningSequence));
+    this.hasObservedAssistantSegmentBoundary = true;
+
+    return {
+      translationKind: "assistant_response_events",
+      assistantResponseEvents,
+      assistantSegmentSessionEntries,
+    };
   }
 
   private appendPlainTextToCurrentAssistantTextPart(assistantTextDelta: string): AssistantResponseEvent[] {
@@ -420,7 +402,7 @@ export class RuntimeProviderStreamEventTranslator {
   }
 
   flushCurrentAssistantTextSegmentBeforeFailedTerminal(): RuntimeAssistantTextSegmentFlush | undefined {
-    return this.flushPendingAssistantPresentationAndTextSegments({
+    return this.flushCurrentAssistantTextSegmentForBoundary({
       partStatus: "failed",
       shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.shouldRecordAssistantTextSegmentSessionEntries(),
@@ -428,30 +410,21 @@ export class RuntimeProviderStreamEventTranslator {
   }
 
   flushCurrentAssistantTextSegmentBeforeInterruptedTerminal(): RuntimeAssistantTextSegmentFlush | undefined {
-    return this.flushPendingAssistantPresentationAndTextSegments({
+    return this.flushCurrentAssistantTextSegmentForBoundary({
       partStatus: "interrupted",
       shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.shouldRecordAssistantTextSegmentSessionEntries(),
     });
   }
 
-  private flushPendingAssistantPresentationAndTextSegments(input: {
+  private flushCurrentAssistantTextSegmentForBoundary(input: {
     partStatus: AssistantTextPartStatus;
     shouldEmitPartUpdatedEvent: boolean;
     shouldRecordSessionEntry: boolean;
   }): RuntimeAssistantTextSegmentFlush | undefined {
-    const assistantPresentationSegmentTranslation = this.translateAssistantPresentationStreamSegments(
-      this.assistantPresentationBlockStreamParser.flushPendingAssistantText(),
-    );
     const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment(input);
-    const assistantResponseEvents = [
-      ...assistantPresentationSegmentTranslation.assistantResponseEvents,
-      ...(assistantTextSegmentFlush?.assistantResponseEvents ?? []),
-    ];
-    const assistantSegmentSessionEntries = [
-      ...assistantPresentationSegmentTranslation.assistantSegmentSessionEntries,
-      ...(assistantTextSegmentFlush?.assistantSegmentSessionEntries ?? []),
-    ];
+    const assistantResponseEvents = assistantTextSegmentFlush?.assistantResponseEvents ?? [];
+    const assistantSegmentSessionEntries = assistantTextSegmentFlush?.assistantSegmentSessionEntries ?? [];
 
     if (assistantResponseEvents.length === 0 && assistantSegmentSessionEntries.length === 0) {
       return undefined;
@@ -586,7 +559,7 @@ export class RuntimeProviderStreamEventTranslator {
     usage: TokenUsage;
     providerTurnReplay?: ProviderTurnReplay | undefined;
   }): RuntimeProviderStreamTerminalAssistantResponseTranslation {
-    const assistantSegmentFlush = this.flushPendingAssistantPresentationAndTextSegments({
+    const assistantSegmentFlush = this.flushCurrentAssistantTextSegmentForBoundary({
       partStatus: "incomplete",
       shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.shouldRecordAssistantTextSegmentSessionEntries(),
@@ -621,7 +594,7 @@ export class RuntimeProviderStreamEventTranslator {
     usage: TokenUsage;
     providerTurnReplay?: ProviderTurnReplay | undefined;
   }): RuntimeProviderStreamTerminalAssistantResponseTranslation {
-    const assistantSegmentFlush = this.flushPendingAssistantPresentationAndTextSegments({
+    const assistantSegmentFlush = this.flushCurrentAssistantTextSegmentForBoundary({
       partStatus: "completed",
       shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.shouldRecordAssistantTextSegmentSessionEntries(),

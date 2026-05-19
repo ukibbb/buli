@@ -1,9 +1,15 @@
 import {
+  ASSISTANT_PRESENTATION_FUNCTION_NAMES,
   ASSISTANT_TOOL_REQUEST_NAMES,
+  LearningSequenceSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   ToolCallRequestSchema,
+  isAssistantPresentationFunctionName,
   isAssistantToolRequestName,
+  type AssistantPresentationFunctionName,
   type AssistantToolRequestName,
+  type LearningSequence,
+  type ProviderAvailablePresentationFunctionName,
   type ProviderAvailableToolName,
   type ToolCallRequest,
   type ToolCallRequestByName,
@@ -12,11 +18,18 @@ import type { ZodIssue } from "zod";
 
 type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boolean" | "null";
 
+type OpenAiProviderFunctionName = AssistantToolRequestName | AssistantPresentationFunctionName;
+
 type OpenAiToolParameterProperty = {
   readonly type: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
   readonly description: string;
   readonly minimum?: number;
   readonly maximum?: number;
+  readonly minItems?: number;
+  readonly items?: OpenAiToolParameterProperty;
+  readonly properties?: Record<string, OpenAiToolParameterProperty>;
+  readonly required?: readonly string[];
+  readonly additionalProperties?: false;
 };
 
 type OpenAiToolParameters = {
@@ -26,9 +39,9 @@ type OpenAiToolParameters = {
   readonly additionalProperties: false;
 };
 
-export type OpenAiToolDefinition<ToolName extends AssistantToolRequestName = AssistantToolRequestName> = {
+export type OpenAiToolDefinition<FunctionName extends OpenAiProviderFunctionName = OpenAiProviderFunctionName> = {
   readonly type: "function";
-  readonly name: ToolName;
+  readonly name: FunctionName;
   readonly description: string;
   readonly parameters: OpenAiToolParameters;
   readonly strict: true;
@@ -37,6 +50,22 @@ export type OpenAiToolDefinition<ToolName extends AssistantToolRequestName = Ass
 type JsonObjectRecord = {
   readonly [fieldName: string]: unknown;
 };
+
+export type OpenAiExecutableToolCallIntent = {
+  readonly intentKind: "executable_tool";
+  readonly functionCallId: string;
+  readonly toolCallRequest: ToolCallRequest;
+};
+
+export type OpenAiLearningSequencePresentationFunctionCallIntent = {
+  readonly intentKind: "learning_sequence_presentation";
+  readonly functionCallId: string;
+  readonly learningSequence: LearningSequence;
+};
+
+export type OpenAiProviderFunctionCallIntent =
+  | OpenAiExecutableToolCallIntent
+  | OpenAiLearningSequencePresentationFunctionCallIntent;
 
 type OpenAiToolAdapter<ToolName extends AssistantToolRequestName> = {
   readonly toolName: ToolName;
@@ -236,6 +265,51 @@ export function createExploreToolDefinition(): OpenAiToolDefinition<"explore"> {
   };
 }
 
+export function createPresentLearningSequenceToolDefinition(): OpenAiToolDefinition<"present_learning_sequence"> {
+  return {
+    type: "function",
+    name: "present_learning_sequence",
+    description: "Render a structured, non-executable learning sequence in the Buli UI. Use this instead of Markdown code fences when a lifecycle, data flow, or cause/effect chain would be clearer as a compact visual block.",
+    parameters: {
+      type: "object",
+      properties: {
+        titleText: {
+          type: "string",
+          description: "Short title for the learning sequence.",
+        },
+        summaryText: {
+          type: ["string", "null"],
+          description: "Optional one-sentence context, or null when no summary is needed.",
+        },
+        sequenceItems: {
+          type: "array",
+          minItems: 1,
+          description: "Ordered sequence items to render.",
+          items: {
+            type: "object",
+            description: "One stage in the sequence.",
+            properties: {
+              labelText: {
+                type: "string",
+                description: "Short label for this stage.",
+              },
+              detailText: {
+                type: ["string", "null"],
+                description: "Optional detail for this stage, or null when no detail is needed.",
+              },
+            },
+            required: ["labelText", "detailText"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["titleText", "summaryText", "sequenceItems"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
 const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]: OpenAiToolAdapter<ToolName> } = {
   bash: {
     toolName: "bash",
@@ -274,23 +348,84 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
   },
 };
 
+const openAiPresentationFunctionDefinitionByName: {
+  readonly [FunctionName in AssistantPresentationFunctionName]: OpenAiToolDefinition<FunctionName>;
+} = {
+  present_learning_sequence: createPresentLearningSequenceToolDefinition(),
+};
+
 export function createOpenAiToolDefinitions(input: {
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+  availablePresentationFunctionNames?: readonly ProviderAvailablePresentationFunctionName[] | undefined;
 } = {}): OpenAiToolDefinition[] {
   const availableToolNameSet = input.availableToolNames
     ? new Set<ProviderAvailableToolName>(input.availableToolNames)
     : undefined;
+  const availablePresentationFunctionNameSet = input.availablePresentationFunctionNames
+    ? new Set<ProviderAvailablePresentationFunctionName>(input.availablePresentationFunctionNames)
+    : undefined;
 
-  return ASSISTANT_TOOL_REQUEST_NAMES
+  const executableToolDefinitions = ASSISTANT_TOOL_REQUEST_NAMES
     .filter((toolName) => !availableToolNameSet || availableToolNameSet.has(toolName))
     .map((toolName) => openAiToolAdapterByName[toolName].definition);
+  const presentationFunctionDefinitions = ASSISTANT_PRESENTATION_FUNCTION_NAMES
+    .filter((functionName) => !availablePresentationFunctionNameSet || availablePresentationFunctionNameSet.has(functionName))
+    .map((functionName) => openAiPresentationFunctionDefinitionByName[functionName]);
+
+  return [...executableToolDefinitions, ...presentationFunctionDefinitions];
+}
+
+export function isOpenAiExecutableToolCallIntent(
+  providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
+): providerFunctionCallIntent is OpenAiExecutableToolCallIntent {
+  return providerFunctionCallIntent.intentKind === "executable_tool";
+}
+
+export function isOpenAiLearningSequencePresentationFunctionCallIntent(
+  providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
+): providerFunctionCallIntent is OpenAiLearningSequencePresentationFunctionCallIntent {
+  return providerFunctionCallIntent.intentKind === "learning_sequence_presentation";
+}
+
+export function createOpenAiProviderFunctionCallIntent(input: {
+  functionCallId: string;
+  functionName: string;
+  argumentsText: string;
+}): OpenAiProviderFunctionCallIntent {
+  const parsedArguments = parseOpenAiFunctionArguments({
+    functionName: input.functionName,
+    argumentsText: input.argumentsText,
+  });
+  if (isAssistantToolRequestName(input.functionName)) {
+    return {
+      intentKind: "executable_tool",
+      functionCallId: input.functionCallId,
+      toolCallRequest: parseOpenAiToolCallRequestContract({
+        toolName: input.functionName,
+        toolCallRequest: openAiToolAdapterByName[input.functionName].parseToolCallRequest(parsedArguments),
+      }),
+    };
+  }
+
+  if (isAssistantPresentationFunctionName(input.functionName)) {
+    return parseOpenAiPresentationFunctionCallIntent({
+      functionCallId: input.functionCallId,
+      functionName: input.functionName,
+      parsedArguments,
+    });
+  }
+
+  throw new Error(`Unsupported function requested by OpenAI: ${input.functionName}`);
 }
 
 export function createOpenAiToolCallRequest(input: {
   toolName: string;
   argumentsText: string;
 }): ToolCallRequest {
-  const parsedArguments = parseOpenAiToolArguments(input);
+  const parsedArguments = parseOpenAiFunctionArguments({
+    functionName: input.toolName,
+    argumentsText: input.argumentsText,
+  });
   if (!isAssistantToolRequestName(input.toolName)) {
     throw new Error(`Unsupported tool requested by OpenAI: ${input.toolName}`);
   }
@@ -312,6 +447,52 @@ function parseOpenAiToolCallRequestContract(input: {
 
   const contractViolationText = parsedToolCallRequest.error.issues.map(formatToolCallContractViolation).join("; ");
   throw new Error(`OpenAI function call for ${input.toolName} violates Buli tool contract: ${contractViolationText}`);
+}
+
+function parseOpenAiPresentationFunctionCallIntent(input: {
+  functionCallId: string;
+  functionName: AssistantPresentationFunctionName;
+  parsedArguments: JsonObjectRecord;
+}): OpenAiProviderFunctionCallIntent {
+  if (input.functionName === "present_learning_sequence") {
+    return {
+      intentKind: "learning_sequence_presentation",
+      functionCallId: input.functionCallId,
+      learningSequence: parseLearningSequencePresentationFunctionArguments(input.parsedArguments),
+    };
+  }
+
+  return assertUnhandledPresentationFunctionName(input.functionName);
+}
+
+function parseLearningSequencePresentationFunctionArguments(parsedArguments: JsonObjectRecord): LearningSequence {
+  const summaryText = readOptionalStringToolArgument(parsedArguments, "summaryText", "present_learning_sequence");
+  const learningSequenceCandidate = {
+    titleText: readRequiredStringToolArgument(parsedArguments, "titleText", "present_learning_sequence"),
+    ...(summaryText !== undefined ? { summaryText } : {}),
+    sequenceItems: readRequiredObjectArrayFunctionArgument(
+      parsedArguments,
+      "sequenceItems",
+      "present_learning_sequence",
+    ).map((sequenceItemArguments) => {
+      const detailText = readOptionalStringToolArgument(sequenceItemArguments, "detailText", "present_learning_sequence");
+      return {
+        labelText: readRequiredStringToolArgument(sequenceItemArguments, "labelText", "present_learning_sequence"),
+        ...(detailText !== undefined ? { detailText } : {}),
+      };
+    }),
+  };
+  const parsedLearningSequence = LearningSequenceSchema.safeParse(learningSequenceCandidate);
+  if (parsedLearningSequence.success) {
+    return parsedLearningSequence.data;
+  }
+
+  const contractViolationText = parsedLearningSequence.error.issues.map(formatToolCallContractViolation).join("; ");
+  throw new Error(`OpenAI function call for present_learning_sequence violates Buli learning sequence contract: ${contractViolationText}`);
+}
+
+function assertUnhandledPresentationFunctionName(functionName: never): never {
+  throw new Error(`Unhandled presentation function: ${functionName}`);
 }
 
 function formatToolCallContractViolation(issue: ZodIssue): string {
@@ -387,19 +568,38 @@ function parseExploreOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): T
   };
 }
 
-function parseOpenAiToolArguments(input: { toolName: string; argumentsText: string }): JsonObjectRecord {
+function parseOpenAiFunctionArguments(input: { functionName: string; argumentsText: string }): JsonObjectRecord {
   let parsedArguments: unknown;
   try {
     parsedArguments = JSON.parse(input.argumentsText) as unknown;
   } catch (error) {
     const parsingFailureExplanation = error instanceof Error ? error.message : String(error);
-    throw new Error(`OpenAI function call for ${input.toolName} has malformed JSON arguments: ${parsingFailureExplanation}`);
+    throw new Error(`OpenAI function call for ${input.functionName} has malformed JSON arguments: ${parsingFailureExplanation}`);
   }
   if (typeof parsedArguments !== "object" || parsedArguments === null || Array.isArray(parsedArguments)) {
-    throw new Error(`OpenAI function call for ${input.toolName} has non-object arguments`);
+    throw new Error(`OpenAI function call for ${input.functionName} has non-object arguments`);
   }
 
   return parsedArguments as JsonObjectRecord;
+}
+
+function readRequiredObjectArrayFunctionArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  functionName: string,
+): JsonObjectRecord[] {
+  const argumentValue = parsedArguments[argumentName];
+  if (!Array.isArray(argumentValue)) {
+    throw new Error(`OpenAI function call for ${functionName} is missing required object array argument: ${argumentName}`);
+  }
+
+  return argumentValue.map((arrayItem, arrayItemIndex) => {
+    if (typeof arrayItem !== "object" || arrayItem === null || Array.isArray(arrayItem)) {
+      throw new Error(`OpenAI function call for ${functionName} has invalid object at ${argumentName}[${arrayItemIndex}]`);
+    }
+
+    return arrayItem as JsonObjectRecord;
+  });
 }
 
 function readRequiredStringToolArgument(

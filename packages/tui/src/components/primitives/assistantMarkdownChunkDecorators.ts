@@ -15,6 +15,10 @@ const filePathForegroundColor = RGBA.fromHex(chatScreenTheme.accentCyan);
 const filePathTextAttributes = createTextAttributes({ underline: true });
 const shellCommandForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
 const shellCommandTextAttributes = createTextAttributes({ bold: true });
+const inlineCodeForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
+const inlineCodeTextAttributes = createTextAttributes({ bold: true });
+const strongForegroundColor = RGBA.fromHex(chatScreenTheme.accentAmber);
+const strongTextAttributes = createTextAttributes({ bold: true });
 const listMarkerTextAttributes = createTextAttributes({ bold: true });
 const diffMetadataTextAttributes = createTextAttributes({ bold: true });
 const diffAdditionForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
@@ -46,6 +50,9 @@ const diagnosticReferencePattern = new RegExp(
 );
 const shellCommandPattern = /(^|[\s({["'`])((?:bun|npm|pnpm|yarn)\s+(?:(?:run\s+)?[A-Za-z0-9:_-]+)(?:\s+--?[A-Za-z0-9:._=/-]+)*|git\s+(?:status|diff|log|show|add|commit|push|pull|checkout|switch|branch|restore|merge|rebase)(?:\s+--?[A-Za-z0-9:._=/-]+)*|gh\s+(?:pr|issue|repo|api|workflow|run|release)\s+[A-Za-z0-9:_-]+(?:\s+--?[A-Za-z0-9:._=/-]+)*)(?=$|[\s)\]},.;:'"`!?])/g;
 const listMarkerPattern = /(^|\n)(\s*)((?:☑|☐|[•◦▪▫]|\d+\.))(?=\s)/g;
+const inlineCodeSpanPattern = /`([^`\n]+)`/g;
+const strongAsteriskSpanPattern = /\*\*([^*\n]+)\*\*/g;
+const strongUnderscoreSpanPattern = /__([^_\n]+)__/g;
 
 function cloneTextChunkWithText(textChunk: TextChunk, text: string): TextChunk {
   return { ...textChunk, text };
@@ -177,6 +184,72 @@ function splitTextChunkByShellCommands(textChunk: TextChunk): TextChunk[] {
     plainTextStartIndex: nextPlainTextStartIndex,
   });
   return textChunks;
+}
+
+function isInlineCodeTextChunk(textChunk: TextChunk): boolean {
+  return textChunk.fg === inlineCodeForegroundColor && textChunk.attributes === inlineCodeTextAttributes;
+}
+
+function splitTextChunkByInlineMarkdownPattern(
+  textChunk: TextChunk,
+  inlineMarkdownPattern: RegExp,
+  style: AssistantMarkdownTextChunkStyle,
+): TextChunk[] {
+  if (isInlineCodeTextChunk(textChunk)) {
+    return [textChunk];
+  }
+
+  const textChunks: TextChunk[] = [];
+  let nextPlainTextStartIndex = 0;
+
+  for (const inlineMarkdownMatch of textChunk.text.matchAll(inlineMarkdownPattern)) {
+    const visibleInlineText = inlineMarkdownMatch[1] ?? "";
+    const matchStartIndex = inlineMarkdownMatch.index;
+    if (matchStartIndex === undefined || visibleInlineText.length === 0) {
+      continue;
+    }
+
+    pushPlainTextBeforeMatch({
+      outputTextChunks: textChunks,
+      sourceTextChunk: textChunk,
+      plainTextStartIndex: nextPlainTextStartIndex,
+      styledTextStartIndex: matchStartIndex,
+    });
+    textChunks.push(styleTextChunk(textChunk, visibleInlineText, style));
+    nextPlainTextStartIndex = matchStartIndex + inlineMarkdownMatch[0].length;
+  }
+
+  if (textChunks.length === 0) {
+    return [textChunk];
+  }
+
+  pushRemainingPlainText({
+    outputTextChunks: textChunks,
+    sourceTextChunk: textChunk,
+    plainTextStartIndex: nextPlainTextStartIndex,
+  });
+  return textChunks;
+}
+
+function splitTextChunkByInlineCodeSpans(textChunk: TextChunk): TextChunk[] {
+  return splitTextChunkByInlineMarkdownPattern(textChunk, inlineCodeSpanPattern, {
+    fg: inlineCodeForegroundColor,
+    attributes: inlineCodeTextAttributes,
+  });
+}
+
+function splitTextChunkByStrongAsteriskSpans(textChunk: TextChunk): TextChunk[] {
+  return splitTextChunkByInlineMarkdownPattern(textChunk, strongAsteriskSpanPattern, {
+    fg: strongForegroundColor,
+    attributes: strongTextAttributes,
+  });
+}
+
+function splitTextChunkByStrongUnderscoreSpans(textChunk: TextChunk): TextChunk[] {
+  return splitTextChunkByInlineMarkdownPattern(textChunk, strongUnderscoreSpanPattern, {
+    fg: strongForegroundColor,
+    attributes: strongTextAttributes,
+  });
 }
 
 function resolveDiagnosticSeverityStyle(diagnosticSeverityText: string): AssistantMarkdownTextChunkStyle {
@@ -375,11 +448,20 @@ function splitTextChunkByDiffLines(textChunk: TextChunk): TextChunk[] {
   return textChunks.length > 0 ? textChunks : [textChunk];
 }
 
-export function decorateAssistantMarkdownProseTextChunks(textChunks: TextChunk[]): TextChunk[] {
+function decorateAssistantMarkdownReferenceTextChunks(textChunks: TextChunk[]): TextChunk[] {
   return Array.from(textChunks)
     .flatMap(splitTextChunkByDiagnostics)
     .flatMap(splitTextChunkByShellCommands)
     .flatMap(splitTextChunkByFilePathReferences);
+}
+
+export function decorateAssistantMarkdownProseTextChunks(textChunks: TextChunk[]): TextChunk[] {
+  return decorateAssistantMarkdownReferenceTextChunks(
+    Array.from(textChunks)
+      .flatMap(splitTextChunkByInlineCodeSpans)
+      .flatMap(splitTextChunkByStrongAsteriskSpans)
+      .flatMap(splitTextChunkByStrongUnderscoreSpans),
+  );
 }
 
 export function decorateAssistantMarkdownListTextChunks(textChunks: TextChunk[]): TextChunk[] {
@@ -389,7 +471,7 @@ export function decorateAssistantMarkdownListTextChunks(textChunks: TextChunk[])
 }
 
 export function decorateAssistantMarkdownDiffFenceTextChunks(textChunks: TextChunk[]): TextChunk[] {
-  return decorateAssistantMarkdownProseTextChunks(
+  return decorateAssistantMarkdownReferenceTextChunks(
     Array.from(textChunks).flatMap(splitTextChunkByDiffLines),
   );
 }

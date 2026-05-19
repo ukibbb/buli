@@ -12,13 +12,17 @@ export function ReasoningPartView(props: {
   const visibleReasoningSummaryText = normalizeVisibleReasoningSummaryText(
     props.assistantReasoningConversationMessagePart.reasoningSummaryText,
   );
+  const reasoningSummaryTitle = readReasoningSummaryTitle(visibleReasoningSummaryText);
 
   if (
     props.assistantReasoningConversationMessagePart.partStatus === "streaming" &&
     (!props.isReasoningSummaryVisible || !visibleReasoningSummaryText)
   ) {
     return (
-      <ThinkingStatusLine thinkingStartedAtMs={props.assistantReasoningConversationMessagePart.reasoningStartedAtMs} />
+      <ThinkingStatusLine
+        thinkingStartedAtMs={props.assistantReasoningConversationMessagePart.reasoningStartedAtMs}
+        thinkingTopicText={reasoningSummaryTitle ?? undefined}
+      />
     );
   }
 
@@ -27,7 +31,10 @@ export function ReasoningPartView(props: {
       <box flexDirection="column" width="100%">
         {props.assistantReasoningConversationMessagePart.partStatus === "streaming" ? (
           <box marginBottom={1}>
-            <ThinkingStatusLine thinkingStartedAtMs={props.assistantReasoningConversationMessagePart.reasoningStartedAtMs} />
+            <ThinkingStatusLine
+              thinkingStartedAtMs={props.assistantReasoningConversationMessagePart.reasoningStartedAtMs}
+              thinkingTopicText={reasoningSummaryTitle ?? undefined}
+            />
           </box>
         ) : null}
         <ReasoningSummaryBlock
@@ -42,12 +49,19 @@ export function ReasoningPartView(props: {
     <ReasoningCollapsedChip
       reasoningDurationMs={props.assistantReasoningConversationMessagePart.reasoningDurationMs ?? 0}
       reasoningTokenCount={props.assistantReasoningConversationMessagePart.reasoningTokenCount}
+      reasoningSummaryTitle={reasoningSummaryTitle ?? undefined}
     />
   );
 }
 
 function normalizeVisibleReasoningSummaryText(reasoningSummaryText: string): string {
   return reasoningSummaryText.replaceAll("[REDACTED]", "").trim();
+}
+
+function readReasoningSummaryTitle(visibleReasoningSummaryText: string): string | undefined {
+  const titleMatch = visibleReasoningSummaryText.trimStart().match(/^\*\*([^*\n]+)\*\*/);
+  const titleText = titleMatch?.[1]?.trim();
+  return titleText && titleText.length > 0 ? titleText : undefined;
 }
 
 function ReasoningSummaryBlock(props: {
@@ -60,7 +74,7 @@ function ReasoningSummaryBlock(props: {
       borderColor={chatScreenTheme.borderSubtle}
       headerLeft={
         <text>
-          <i fg={chatScreenTheme.textMuted}>{"_Thinking:_"}</i>
+          <i fg={chatScreenTheme.textMuted}>{formatReasoningSummaryHeading(props.assistantReasoningConversationMessagePart)}</i>
         </text>
       }
       headerRight={
@@ -71,6 +85,12 @@ function ReasoningSummaryBlock(props: {
       bodyContent={<ReasoningSummaryTextLines visibleReasoningSummaryText={props.visibleReasoningSummaryText} />}
     />
   );
+}
+
+function formatReasoningSummaryHeading(
+  assistantReasoningConversationMessagePart: AssistantReasoningConversationMessagePart,
+): string {
+  return assistantReasoningConversationMessagePart.partStatus === "streaming" ? "_Thinking:_" : "_Thought:_";
 }
 
 function formatReasoningSummaryMetadata(

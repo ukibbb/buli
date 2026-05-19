@@ -1,5 +1,6 @@
 import type {
   BuliDiagnosticLogFields,
+  ProviderAvailablePresentationFunctionName,
   ProviderAvailableToolName,
   ReasoningEffort,
 } from "@buli/contracts";
@@ -16,6 +17,7 @@ export type CreateOpenAiResponsesHttpRequestBodyInput = {
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+  availablePresentationFunctionNames?: readonly ProviderAvailablePresentationFunctionName[] | undefined;
   systemPromptText: string;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 };
@@ -37,7 +39,10 @@ export function createOpenAiResponsesHttpRequestBody(
   input: CreateOpenAiResponsesHttpRequestBodyInput,
 ): OpenAiResponsesHttpRequestBody {
   const reasoningRequest = createReasoningRequest(input);
-  const toolDefinitions = createOpenAiToolDefinitions({ availableToolNames: input.availableToolNames });
+  const toolDefinitions = createOpenAiToolDefinitions({
+    availableToolNames: input.availableToolNames,
+    availablePresentationFunctionNames: input.availablePresentationFunctionNames,
+  });
   return {
     model: input.selectedModelId,
     instructions: input.systemPromptText,

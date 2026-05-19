@@ -15,8 +15,8 @@ export type OpenAiOutputTextContentPart = {
 
 export type OpenAiFunctionCallOutputItem = {
   itemId: string;
-  toolCallId: string;
-  toolName: string;
+  functionCallId: string;
+  functionName: string;
   argumentsText?: string | undefined;
 };
 
@@ -78,15 +78,15 @@ export function readOpenAiFunctionCallOutputItem(value: unknown): OpenAiFunction
   }
 
   const itemId = readOpenAiResponseObjectStringField(value, "id");
-  const toolCallId = readOpenAiResponseObjectStringField(value, "call_id");
-  const toolName = readOpenAiResponseObjectStringField(value, "name");
+  const functionCallId = readOpenAiResponseObjectStringField(value, "call_id");
+  const functionName = readOpenAiResponseObjectStringField(value, "name");
   if (
     itemId === undefined ||
     itemId.length === 0 ||
-    toolCallId === undefined ||
-    toolCallId.length === 0 ||
-    toolName === undefined ||
-    toolName.length === 0
+    functionCallId === undefined ||
+    functionCallId.length === 0 ||
+    functionName === undefined ||
+    functionName.length === 0
   ) {
     return undefined;
   }
@@ -98,8 +98,8 @@ export function readOpenAiFunctionCallOutputItem(value: unknown): OpenAiFunction
 
   return {
     itemId,
-    toolCallId,
-    toolName,
+    functionCallId,
+    functionName,
     ...(typeof argumentsText === "string" ? { argumentsText } : {}),
   };
 }

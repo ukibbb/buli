@@ -10,10 +10,10 @@ test("buildChatSlashCommands_describes_current_reasoning_summary_visibility", ()
   });
 
   expect(visibleReasoningSlashCommands.find((slashCommand) => slashCommand.value === "thinking")?.description).toBe(
-    "Hide reasoning summaries",
+    "Collapse thinking",
   );
   expect(hiddenReasoningSlashCommands.find((slashCommand) => slashCommand.value === "thinking")?.description).toBe(
-    "Show reasoning summaries",
+    "Expand thinking",
   );
 });
 

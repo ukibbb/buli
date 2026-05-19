@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { TaskToolCallCard } from "../../../src/components/toolCalls/TaskToolCallCard.tsx";
 
+async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Promise<void> {
+  await renderOnce();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await renderOnce();
+}
+
 describe("TaskToolCallCard (opentui)", () => {
   test("streaming renders Task label, bracketed description, and running status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
@@ -14,7 +20,7 @@ describe("TaskToolCallCard (opentui)", () => {
       />,
       { width: 120, height: 8 },
     );
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
     expect(frame).toContain("Task");
     expect(frame).toContain("[fetch release notes]");
@@ -28,20 +34,23 @@ describe("TaskToolCallCard (opentui)", () => {
           toolName: "task",
           subagentDescription: "summarize the indexer doc",
           subagentPrompt: "Summarize docs/atlas-indexer.md in 3 bullet points.",
-          subagentResultSummary: "Walks the project tree, extracts module nodes, upserts to Neo4j.",
+          subagentResultSummary: "Use `read`, then **summarize** the project tree.",
         }}
         renderState="completed"
         durationMs={1200}
       />,
       { width: 120, height: 14 },
     );
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
     expect(frame).toContain("Task");
     expect(frame).toContain("[summarize the indexer doc]");
     expect(frame).toContain("Summarize");
     expect(frame).toContain("result");
-    expect(frame).toContain("Walks");
+    expect(frame).toContain("read");
+    expect(frame).toContain("summarize");
+    expect(frame).not.toContain("`read`");
+    expect(frame).not.toContain("**summarize**");
     expect(frame).toContain("1.2s");
   });
 
@@ -60,7 +69,7 @@ describe("TaskToolCallCard (opentui)", () => {
       />,
       { width: 120, height: 70 },
     );
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
 
     expect(frame).toContain("prompt line 24");

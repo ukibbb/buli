@@ -1,4 +1,8 @@
 import type { ProviderRequestedToolCall, TokenUsage, ToolCallRequest } from "@buli/contracts";
+import {
+  isOpenAiExecutableToolCallIntent,
+  type OpenAiProviderFunctionCallIntent,
+} from "./toolDefinitions.ts";
 
 export type OpenAiResponseStepToolCallRequestedState = {
   terminalKind: "tool_call_requested";
@@ -15,6 +19,13 @@ export type OpenAiResponseStepToolCallsRequestedState = {
   usage: TokenUsage;
 };
 
+export type OpenAiResponseStepProviderFunctionCallsRequestedState = {
+  terminalKind: "provider_function_calls_requested";
+  providerFunctionCallIntents: OpenAiProviderFunctionCallIntent[];
+  responseOutputItems: unknown[];
+  usage: TokenUsage;
+};
+
 export type OpenAiResponseStepCompletedState = {
   terminalKind: "completed";
 };
@@ -26,12 +37,17 @@ export type OpenAiResponseStepIncompleteState = {
 export type OpenAiResponseStepTerminalState =
   | OpenAiResponseStepToolCallRequestedState
   | OpenAiResponseStepToolCallsRequestedState
+  | OpenAiResponseStepProviderFunctionCallsRequestedState
   | OpenAiResponseStepCompletedState
   | OpenAiResponseStepIncompleteState;
 
 export type OpenAiResponseStepToolCallTerminalState =
   | OpenAiResponseStepToolCallRequestedState
   | OpenAiResponseStepToolCallsRequestedState;
+
+export type OpenAiResponseStepProviderFunctionCallTerminalState =
+  | OpenAiResponseStepToolCallTerminalState
+  | OpenAiResponseStepProviderFunctionCallsRequestedState;
 
 export type OpenAiResponseStepTerminalKind = OpenAiResponseStepTerminalState["terminalKind"];
 
@@ -63,10 +79,44 @@ export function createOpenAiResponseStepToolCallTerminalState(input: {
   };
 }
 
+export function createOpenAiResponseStepProviderFunctionCallTerminalState(input: {
+  providerFunctionCallIntents: readonly OpenAiProviderFunctionCallIntent[];
+  responseOutputItems: unknown[];
+  usage: TokenUsage;
+}): OpenAiResponseStepProviderFunctionCallTerminalState {
+  const requestedToolCalls = input.providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
+    isOpenAiExecutableToolCallIntent(providerFunctionCallIntent)
+      ? [{
+          toolCallId: providerFunctionCallIntent.functionCallId,
+          toolCallRequest: providerFunctionCallIntent.toolCallRequest,
+        }]
+      : []
+  );
+  if (requestedToolCalls.length === input.providerFunctionCallIntents.length) {
+    return createOpenAiResponseStepToolCallTerminalState({
+      requestedToolCalls,
+      responseOutputItems: input.responseOutputItems,
+      usage: input.usage,
+    });
+  }
+
+  return {
+    terminalKind: "provider_function_calls_requested",
+    providerFunctionCallIntents: [...input.providerFunctionCallIntents],
+    responseOutputItems: input.responseOutputItems,
+    usage: input.usage,
+  };
+}
+
 export function chooseOpenAiResponseStepTerminalKind(input: {
   requestedToolCallCount: number;
+  presentationFunctionCallCount?: number | undefined;
   fallbackTerminalKind: "completed" | "incomplete";
 }): OpenAiResponseStepTerminalKind {
+  if ((input.presentationFunctionCallCount ?? 0) > 0) {
+    return "provider_function_calls_requested";
+  }
+
   if (input.requestedToolCallCount > 1) {
     return "tool_calls_requested";
   }

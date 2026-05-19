@@ -6,7 +6,8 @@ import {
   type UserPromptImageAttachment,
 } from "@buli/contracts";
 import type { AssistantConversationRunner } from "@buli/engine";
-import { ChatScreen, type ChatScreenProps } from "./ChatScreen.tsx";
+import type { ChatScreenProps } from "./ChatScreen.tsx";
+import { TerminalChatScreenApp } from "./TerminalChatScreenApp.tsx";
 import { restoreConsoleTimeStampAfterOpentuiActivation } from "./restoreConsoleTimeStampAfterOpentuiActivation.ts";
 import { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 import { logTuiDiagnosticEvent } from "./diagnostics/logTuiDiagnosticEvent.ts";
@@ -107,7 +108,7 @@ export async function renderChatScreenInTerminal(input: RenderChatScreenInTermin
   return renderChatScreenInTerminalWithRuntime(input, {
     createTerminalRenderer: createCliRenderer,
     createChatScreenRoot: createRoot,
-    createChatScreenElement: (chatScreenProps) => React.createElement(ChatScreen, chatScreenProps),
+    createChatScreenElement: (chatScreenProps) => React.createElement(TerminalChatScreenApp, chatScreenProps),
   });
 }
 

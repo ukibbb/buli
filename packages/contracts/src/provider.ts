@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { LearningSequenceSchema } from "./learningSequence.ts";
 import { PlanStepSchema } from "./planProposal.ts";
-import type { AssistantToolRequestName } from "./toolCatalog.ts";
+import type { AssistantPresentationFunctionName, AssistantToolRequestName } from "./toolCatalog.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 
 export const ReasoningEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]);
 export type ProviderAvailableToolName = AssistantToolRequestName;
+export type ProviderAvailablePresentationFunctionName = AssistantPresentationFunctionName;
 
 export const AvailableAssistantModelSchema = z
   .object({
@@ -99,6 +101,14 @@ export const ProviderToolCallsRequestedEventSchema = z
   })
   .strict();
 
+export const ProviderLearningSequencePresentedEventSchema = z
+  .object({
+    type: z.literal("learning_sequence_presented"),
+    presentationCallId: z.string().min(1),
+    learningSequence: LearningSequenceSchema,
+  })
+  .strict();
+
 export const ProviderRateLimitPendingEventSchema = z
   .object({
     type: z.literal("rate_limit_pending"),
@@ -123,6 +133,7 @@ export const ProviderStreamEventSchema = z.discriminatedUnion("type", [
   ProviderReasoningSummaryStartedEventSchema,
   ProviderReasoningSummaryTextChunkEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
+  ProviderLearningSequencePresentedEventSchema,
   ProviderToolCallRequestedEventSchema,
   ProviderToolCallsRequestedEventSchema,
   ProviderRateLimitPendingEventSchema,
@@ -138,6 +149,7 @@ export type ProviderIncompleteEvent = z.infer<typeof ProviderIncompleteEventSche
 export type ProviderReasoningSummaryStartedEvent = z.infer<typeof ProviderReasoningSummaryStartedEventSchema>;
 export type ProviderReasoningSummaryTextChunkEvent = z.infer<typeof ProviderReasoningSummaryTextChunkEventSchema>;
 export type ProviderReasoningSummaryCompletedEvent = z.infer<typeof ProviderReasoningSummaryCompletedEventSchema>;
+export type ProviderLearningSequencePresentedEvent = z.infer<typeof ProviderLearningSequencePresentedEventSchema>;
 export type ProviderRequestedToolCall = z.infer<typeof ProviderRequestedToolCallSchema>;
 export type ProviderToolCallRequestedEvent = z.infer<typeof ProviderToolCallRequestedEventSchema>;
 export type ProviderToolCallsRequestedEvent = z.infer<typeof ProviderToolCallsRequestedEventSchema>;

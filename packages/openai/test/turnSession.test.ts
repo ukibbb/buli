@@ -100,6 +100,8 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
   }
 
   expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "reasoning_summary_started",
+    "reasoning_summary_completed",
     "tool_call_requested",
     "text_chunk",
     "completed",
@@ -234,6 +236,92 @@ test("OpenAiProviderConversationTurn captures replay items for a completed typed
         type: "function_call_output",
         call_id: "call_read_1",
         output: "<path>README.md</path>\n1: # buli",
+      },
+    ],
+  });
+});
+
+test("OpenAiProviderConversationTurn auto-continues after a learning sequence presentation call", async () => {
+  const requestBodies: string[] = [];
+  const learningSequenceArgumentsText = JSON.stringify({
+    titleText: "Request flow",
+    summaryText: "How the request moves through Buli.",
+    sequenceItems: [
+      { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
+      { labelText: "Provider streams", detailText: "Provider events become assistant parts." },
+    ],
+  });
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_present_1","name":"present_learning_sequence","arguments":""}}\n\n',
+      `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":${JSON.stringify(learningSequenceArgumentsText)}}\n\n`,
+      `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_present_1","name":"present_learning_sequence","arguments":${JSON.stringify(learningSequenceArgumentsText)}}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
+    ]),
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Explain request flow"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  const emittedEvents = await collectProviderEvents(providerTurn);
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "learning_sequence_presented",
+    "text_chunk",
+    "completed",
+  ]);
+  expect(emittedEvents[0]).toEqual({
+    type: "learning_sequence_presented",
+    presentationCallId: "call_present_1",
+    learningSequence: {
+      titleText: "Request flow",
+      summaryText: "How the request moves through Buli.",
+      sequenceItems: [
+        { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
+        { labelText: "Provider streams", detailText: "Provider events become assistant parts." },
+      ],
+    },
+  });
+  expect(providerTurn.getProviderTurnReplay()).toEqual({
+    provider: "openai",
+    inputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_present_1",
+        name: "present_learning_sequence",
+        arguments: learningSequenceArgumentsText,
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_present_1",
+        output: "Rendered learning sequence: Request flow",
+      },
+    ],
+  });
+  expect(JSON.parse(requestBodies[1] ?? "{}")).toMatchObject({
+    input: [
+      { role: "user", content: "Explain request flow" },
+      {
+        id: "fc_1",
+        type: "function_call",
+        call_id: "call_present_1",
+        name: "present_learning_sequence",
+        arguments: learningSequenceArgumentsText,
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_present_1",
+        output: "Rendered learning sequence: Request flow",
       },
     ],
   });
@@ -482,6 +570,7 @@ test("OpenAiProviderConversationTurn restricts tool definitions when availableTo
     systemPromptText: "You are Buli Explorer.",
     conversationSessionEntries: createConversationSessionEntries("Explore runtime"),
     availableToolNames: ["read", "glob", "grep"],
+    availablePresentationFunctionNames: [],
     onStepRequestFailed: async () => new Error("unexpected request failure"),
   });
 

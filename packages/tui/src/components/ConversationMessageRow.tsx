@@ -101,6 +101,7 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
       {props.conversationMessageParts.map((conversationMessagePart, index) => (
         <box
           flexDirection="column"
+          flexShrink={0}
           key={conversationMessagePart.id}
           marginTop={index === 0 ? 0 : 1}
           width="100%"

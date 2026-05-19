@@ -11,12 +11,14 @@ import type {
 import type { ToolCallRequest } from "./toolCallRequest.ts";
 
 export const ASSISTANT_TOOL_REQUEST_NAMES = ["bash", "read", "glob", "grep", "edit", "write", "explore"] as const satisfies readonly ToolCallRequest["toolName"][];
+export const ASSISTANT_PRESENTATION_FUNCTION_NAMES = ["present_learning_sequence"] as const;
 export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "write"] as const satisfies readonly AssistantToolRequestName[];
 export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "explore"] as const satisfies readonly AssistantToolRequestName[];
 export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite", "task"] as const satisfies readonly ToolCallDetailName[];
 
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
+export type AssistantPresentationFunctionName = (typeof ASSISTANT_PRESENTATION_FUNCTION_NAMES)[number];
 export type ToolCallDetailName = ToolCallDetail["toolName"];
 export type ToolCallRequestByName<ToolName extends AssistantToolRequestName> = Extract<
   ToolCallRequest,
@@ -39,12 +41,17 @@ export type ReadOnlyAssistantModeToolRequestName = (typeof READ_ONLY_ASSISTANT_M
 export type RenderOnlyToolDetailName = (typeof RENDER_ONLY_TOOL_DETAIL_NAMES)[number];
 
 const ASSISTANT_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(ASSISTANT_TOOL_REQUEST_NAMES);
+const ASSISTANT_PRESENTATION_FUNCTION_NAME_SET: ReadonlySet<string> = new Set(ASSISTANT_PRESENTATION_FUNCTION_NAMES);
 const WORKSPACE_INSPECTION_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES);
 const FILE_MUTATION_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(FILE_MUTATION_TOOL_REQUEST_NAMES);
 const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES);
 
 export function isAssistantToolRequestName(toolName: string): toolName is AssistantToolRequestName {
   return ASSISTANT_TOOL_REQUEST_NAME_SET.has(toolName);
+}
+
+export function isAssistantPresentationFunctionName(functionName: string): functionName is AssistantPresentationFunctionName {
+  return ASSISTANT_PRESENTATION_FUNCTION_NAME_SET.has(functionName);
 }
 
 export function isWorkspaceInspectionToolCallRequest(

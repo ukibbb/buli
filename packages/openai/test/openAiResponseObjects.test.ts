@@ -57,8 +57,8 @@ test("readOpenAiFunctionCallOutputItem reads valid function calls and rejects ma
     }),
   ).toEqual({
     itemId: "fc_1",
-    toolCallId: "call_1",
-    toolName: "bash",
+    functionCallId: "call_1",
+    functionName: "bash",
     argumentsText: "{\"command\":\"pwd\"}",
   });
   expect(readOpenAiFunctionCallOutputItem({ type: "function_call", id: "", call_id: "call_1", name: "bash", arguments: "{}" })).toBeUndefined();

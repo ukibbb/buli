@@ -231,7 +231,7 @@ test("ChatScreen shows user-facing slash commands after typing a bare slash", as
   expect(frame).toContain("/sessions");
   expect(frame).toContain("/export-session");
   expect(frame).toContain("/thinking");
-  expect(frame).toContain("Hide reasoning summaries");
+  expect(frame).toContain("Collapse thinking");
   expect(frame).not.toContain("/understand");
   expect(frame).not.toContain("/plan");
   expect(frame).not.toContain("/implementation");
@@ -568,7 +568,7 @@ test("ChatScreen opens command help through slash command instead of question ma
   expect(helpFrame).toContain("/clear");
   expect(helpFrame).toContain("/compact");
   expect(helpFrame).toContain("/thinking");
-  expect(helpFrame).toContain("Hide reasoning summaries");
+  expect(helpFrame).toContain("Collapse thinking");
   expect(helpFrame).not.toContain("/understand");
   expect(helpFrame).not.toContain("/plan");
   expect(helpFrame).not.toContain("/implementation");
@@ -650,18 +650,18 @@ test("ChatScreen toggles reasoning summary visibility through thinking slash com
   await renderedChatScreen.typeText("Answer with reasoning");
   await renderedChatScreen.pressEnter();
   const visibleReasoningFrame = await renderedChatScreen.waitForAssistantEvents();
-  expect(visibleReasoningFrame).toContain("_Thinking:_");
+  expect(visibleReasoningFrame).toContain("_Thought:_");
   expect(visibleReasoningFrame).toContain("I inspected the available context before answering.");
 
   await renderedChatScreen.typeText("/thinking");
   const hiddenReasoningFrame = await renderedChatScreen.pressEnter();
-  expect(hiddenReasoningFrame).toContain("Thinking");
+  expect(hiddenReasoningFrame).toContain("Thought");
   expect(hiddenReasoningFrame).toContain("7 reasoning tok");
   expect(hiddenReasoningFrame).not.toContain("I inspected the available context before answering.");
 
   const slashMenuFrame = await renderedChatScreen.typeText("/");
   expect(slashMenuFrame).toContain("/thinking");
-  expect(slashMenuFrame).toContain("Show reasoning summaries");
+  expect(slashMenuFrame).toContain("Expand thinking");
 });
 
 test("ChatScreen clears transcript and persisted history through clear slash command", async () => {

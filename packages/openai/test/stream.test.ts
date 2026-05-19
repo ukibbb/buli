@@ -110,6 +110,32 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
   ]);
 });
 
+test("parseOpenAiStream accepts valid SSE streams with a missing content-type", async () => {
+  const response = new Response(
+    new Blob([
+      [
+        'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Hello without header"}\n\n',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\n\n',
+      ].join(""),
+    ]).stream(),
+  );
+
+  expect(response.headers.get("content-type")).toBeNull();
+  expect(await collectParsedEvents(response)).toEqual([
+    { type: "text_chunk", text: "Hello without header" },
+    {
+      type: "completed",
+      usage: {
+        total: 15,
+        input: 10,
+        output: 5,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
 test("parseOpenAiStream rejects non-SSE content types", async () => {
   const response = new Response("<html>not an event stream</html>", {
     headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -205,6 +231,34 @@ test("parseOpenAiStream emits reasoning_summary_completed before the first non-r
     "reasoning_summary_text_chunk",
     "reasoning_summary_completed",
     "text_chunk",
+    "completed",
+  ]);
+});
+
+test("parseOpenAiStream emits reasoning lifecycle for reasoning items without summary text", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "reasoning", id: "rs_1", summary: [], encrypted_content: "encrypted-reasoning" },
+      }),
+      createSseDataFrame({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: { type: "reasoning", id: "rs_1", summary: [], encrypted_content: "encrypted-reasoning" },
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect((await collectParsedEvents(response)).map((emittedEvent) => emittedEvent.type)).toEqual([
+    "reasoning_summary_started",
+    "reasoning_summary_completed",
     "completed",
   ]);
 });
@@ -612,6 +666,79 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
   }
 });
 
+test("parseOpenAiStream emits learning sequence presentation events without tool-call events", async () => {
+  const learningSequenceArgumentsText = JSON.stringify({
+    titleText: "Request flow",
+    summaryText: null,
+    sequenceItems: [
+      { labelText: "Prompt accepted", detailText: null },
+      { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+    ],
+  });
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_present_1", name: "present_learning_sequence", arguments: "" },
+      }),
+      createSseDataFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_1",
+        arguments: learningSequenceArgumentsText,
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: {
+          output: [
+            {
+              id: "fc_1",
+              type: "function_call",
+              call_id: "call_present_1",
+              name: "present_learning_sequence",
+              arguments: learningSequenceArgumentsText,
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([
+    {
+      type: "learning_sequence_presented",
+      presentationCallId: "call_present_1",
+      learningSequence: {
+        titleText: "Request flow",
+        sequenceItems: [
+          { labelText: "Prompt accepted" },
+          { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+        ],
+      },
+    },
+  ]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "provider_function_calls_requested",
+    providerFunctionCallIntents: [
+      {
+        intentKind: "learning_sequence_presentation",
+        functionCallId: "call_present_1",
+        learningSequence: {
+          titleText: "Request flow",
+          sequenceItems: [
+            { labelText: "Prompt accepted" },
+            { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+          ],
+        },
+      },
+    ],
+  });
+});
+
 test("createOpenAiToolDefinitions instructs inspection through typed tools", () => {
   const openAiToolDefinitions = createOpenAiToolDefinitions();
   const bashToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "bash");
@@ -621,6 +748,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
   const exploreToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "explore");
+  const presentLearningSequenceDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "present_learning_sequence");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
@@ -631,6 +759,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
   expect(exploreToolDefinition?.description).toContain("read-only Explorer subagent");
   expect(exploreToolDefinition?.description).toContain("identify inspected files and remaining context gaps");
+  expect(presentLearningSequenceDefinition?.description).toContain("Render a structured, non-executable learning sequence");
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
   expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);
@@ -653,7 +782,10 @@ test("parseOpenAiStream rejects typed tool calls that violate shared contracts",
 });
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
-  const explorerToolDefinitions = createOpenAiToolDefinitions({ availableToolNames: ["read", "glob", "grep"] });
+  const explorerToolDefinitions = createOpenAiToolDefinitions({
+    availableToolNames: ["read", "glob", "grep"],
+    availablePresentationFunctionNames: [],
+  });
 
   expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep"]);
 });
@@ -696,7 +828,7 @@ test("parseOpenAiStream rejects unsupported tool names clearly", async () => {
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported tool requested by OpenAI: task");
+  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported function requested by OpenAI: task");
 });
 
 test("parseOpenAiStream repairs tool-turn output when response.completed omits the function_call item", async () => {
@@ -1384,7 +1516,16 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       reasoning: { summary: "auto" },
       stream: true,
     });
-    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["bash", "read", "glob", "grep", "edit", "write", "explore"]);
+    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual([
+      "bash",
+      "read",
+      "glob",
+      "grep",
+      "edit",
+      "write",
+      "explore",
+      "present_learning_sequence",
+    ]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },
       {
@@ -1550,6 +1691,8 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
     }
 
     expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+      "reasoning_summary_started",
+      "reasoning_summary_completed",
       "tool_call_requested",
       "text_chunk",
       "completed",

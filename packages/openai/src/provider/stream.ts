@@ -84,7 +84,7 @@ export async function* parseOpenAiStream(
   }
 
   const contentType = response.headers.get("content-type");
-  if (contentType?.toLowerCase().split(";")[0]?.trim() !== "text/event-stream") {
+  if (contentType !== null && contentType.toLowerCase().split(";")[0]?.trim() !== "text/event-stream") {
     throw new Error(`OpenAI stream response must be text/event-stream, received ${contentType ?? "missing content-type"}`);
   }
 

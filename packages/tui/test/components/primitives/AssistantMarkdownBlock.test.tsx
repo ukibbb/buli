@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { AssistantMarkdownBlock } from "../../../src/components/primitives/AssistantMarkdownBlock.tsx";
 import { testRender } from "../../testRenderWithCleanup.ts";
 
+async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Promise<void> {
+  await renderOnce();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await renderOnce();
+}
+
 describe("AssistantMarkdownBlock", () => {
   test("renders_heading_paragraph_list_and_code_fence_with_OpenTUI_markdown", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
@@ -24,7 +30,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 80, height: 20 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("▌");
@@ -48,7 +54,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 72, height: 12 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("▌ Done");
@@ -64,9 +70,45 @@ describe("AssistantMarkdownBlock", () => {
       { width: 60, height: 8 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     expect(captureCharFrame()).toContain("Still");
+  });
+
+  test("conceals_inline_code_and_bold_inside_list_items", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["- Use `read` for files", "1. **Prompt-only tightening**"].join("\n")}
+      />,
+      { width: 80, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("read");
+    expect(frame).toContain("Prompt-only tightening");
+    expect(frame).not.toContain("`read`");
+    expect(frame).not.toContain("**Prompt-only tightening**");
+  });
+
+  test("conceals_inline_code_inside_blockquotes", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText="> Use `read` before answering."
+      />,
+      { width: 80, height: 8 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("read");
+    expect(frame).not.toContain("`read`");
   });
 
   test("hides_incomplete_streaming_structural_markers", async () => {
@@ -79,7 +121,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 60, height: 8 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("Ready");
@@ -102,7 +144,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 72, height: 10 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("Intro");
@@ -121,7 +163,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 72, height: 10 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("│ Keep this constraint visible.");
@@ -138,7 +180,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 72, height: 10 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("▌ WARNING");
@@ -156,7 +198,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 72, height: 10 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("☑ Read the file");
@@ -182,7 +224,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 80, height: 20 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     const renderedRows = frame.split("\n");
@@ -210,7 +252,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 72, height: 10 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("• parent");
@@ -228,7 +270,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 96, height: 12 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("╭─ diff changes");
@@ -247,7 +289,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 96, height: 10 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     expect(captureCharFrame()).toContain("╭─ ts · src/app.ts");
   });
@@ -272,7 +314,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 96, height: 14 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("near-term mantra:");
@@ -294,7 +336,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 72, height: 8 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain(" 9. ninth");
@@ -319,7 +361,7 @@ describe("AssistantMarkdownBlock", () => {
       { width: 32, height: 16 },
     );
 
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("Narrow");

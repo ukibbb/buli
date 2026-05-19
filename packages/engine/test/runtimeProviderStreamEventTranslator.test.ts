@@ -162,7 +162,7 @@ test("RuntimeProviderStreamEventTranslator emits reasoning summary lifecycle eve
   ]);
 });
 
-test("RuntimeProviderStreamEventTranslator coalesces reasoning summary chunks and completes exact text", () => {
+test("RuntimeProviderStreamEventTranslator streams each reasoning summary chunk and completes exact text", () => {
   const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 1_100 });
   const startedTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
     providerStreamEvent: { type: "reasoning_summary_started" },
@@ -191,7 +191,18 @@ test("RuntimeProviderStreamEventTranslator coalesces reasoning summary chunks an
 
   const reasoningSummaryText = reasoningSummaryChunks.join("");
   expect(startedTranslation.assistantResponseEvents).toHaveLength(1);
-  expect(reasoningSummaryEvents.length).toBeLessThan(reasoningSummaryChunks.length);
+  expect(reasoningSummaryEvents).toHaveLength(reasoningSummaryChunks.length);
+  expect(reasoningSummaryEvents.at(-1)).toEqual({
+    type: "assistant_message_part_updated",
+    messageId: "assistant-message-1",
+    part: {
+      id: "generated-part-1",
+      partKind: "assistant_reasoning",
+      partStatus: "streaming",
+      reasoningSummaryText,
+      reasoningStartedAtMs: 1_100,
+    },
+  });
   expect(completedTranslation.assistantResponseEvents).toEqual([
     {
       type: "assistant_message_part_updated",
@@ -436,38 +447,50 @@ test("RuntimeProviderStreamEventTranslator segments assistant text around tool c
 
 test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts", () => {
   const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 2_500 });
+  const learningSequence = {
+    titleText: "Request flow",
+    summaryText: "How the request moves through the runtime.",
+    sequenceItems: [
+      { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
+      { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+    ],
+  };
 
+  const introTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "Intro.\n" },
+  });
   const learningSequenceTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
     providerStreamEvent: {
-      type: "text_chunk",
-      text: [
-        "Intro.",
-        "```buli.learning_sequence",
-        JSON.stringify({
-          titleText: "Request flow",
-          summaryText: "How the request moves through the runtime.",
-          sequenceItems: [
-            { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
-            { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
-          ],
-        }),
-        "```",
-        "Outro.",
-      ].join("\n"),
+      type: "learning_sequence_presented",
+      presentationCallId: "call_learning_sequence_1",
+      learningSequence,
     },
+  });
+  const outroTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "Outro." },
   });
   const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
     providerStreamEvent: { type: "completed", usage: completedTokenUsage },
   });
 
+  if (introTextTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
   if (learningSequenceTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (outroTextTranslation.translationKind !== "assistant_response_events") {
     throw new Error("expected assistant response events");
   }
   if (terminalTranslation.translationKind !== "terminal_assistant_response") {
     throw new Error("expected terminal assistant response");
   }
 
-  expect(learningSequenceTranslation.assistantResponseEvents).toEqual([
+  expect([
+    ...introTextTranslation.assistantResponseEvents,
+    ...learningSequenceTranslation.assistantResponseEvents,
+    ...outroTextTranslation.assistantResponseEvents,
+  ]).toEqual([
     {
       type: "assistant_message_part_added",
       messageId: "assistant-message-1",

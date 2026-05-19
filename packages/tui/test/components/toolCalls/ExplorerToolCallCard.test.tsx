@@ -3,6 +3,12 @@ import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { ExplorerToolCallCard } from "../../../src/components/toolCalls/ExplorerToolCallCard.tsx";
 
+async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Promise<void> {
+  await renderOnce();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await renderOnce();
+}
+
 describe("ExplorerToolCallCard (opentui)", () => {
   test("streaming renders Explorer label, bracketed description, and exploring status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
@@ -15,7 +21,7 @@ describe("ExplorerToolCallCard (opentui)", () => {
       />,
       { width: 120, height: 8 },
     );
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
     expect(frame).toContain("Explorer");
     expect(frame).toContain("[map runtime]");
@@ -44,7 +50,7 @@ describe("ExplorerToolCallCard (opentui)", () => {
       />,
       { width: 120, height: 16 },
     );
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
     expect(frame).toContain("Explorer details: activity");
     expect(frame).toContain("click to show content");
@@ -73,7 +79,7 @@ describe("ExplorerToolCallCard (opentui)", () => {
       />,
       { width: 120, height: 20 },
     );
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
     const collapsedFrame = captureCharFrame();
     expect(collapsedFrame).toContain("Explorer");
     expect(collapsedFrame).toContain("Explorer details: prompt, result");
@@ -85,7 +91,7 @@ describe("ExplorerToolCallCard (opentui)", () => {
     await act(async () => {
       await mockMouse.click(6, 3);
     });
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const expandedFrame = captureCharFrame();
     expect(expandedFrame).toContain("click to hide content");
@@ -96,6 +102,7 @@ describe("ExplorerToolCallCard (opentui)", () => {
     expect(expandedFrame).toContain("dispatches");
     expect(expandedFrame).toContain("• Child activity is summarized.");
     expect(expandedFrame).not.toContain("## Findings");
+    expect(expandedFrame).not.toContain("**dispatches**");
     expect(expandedFrame).not.toContain("- Child activity is summarized.");
   });
 

@@ -5,13 +5,14 @@ import { readOpenAiFunctionCallOutputItem } from "../src/provider/openAiResponse
 function readFunctionCallItem(input: {
   itemId: string;
   toolCallId: string;
+  functionName?: string;
   argumentsText?: string;
 }) {
   const functionCallItem = readOpenAiFunctionCallOutputItem({
     type: "function_call",
     id: input.itemId,
     call_id: input.toolCallId,
-    name: "bash",
+    name: input.functionName ?? "bash",
     arguments: input.argumentsText ?? "",
   });
   if (!functionCallItem) {
@@ -119,5 +120,35 @@ test("OpenAiFunctionCallStreamAccumulator preserves response output order", () =
   expect(functionCallStreamAccumulator.listPendingRequestedToolCalls().map((requestedToolCall) => requestedToolCall.toolCallId)).toEqual([
     "call_1",
     "call_2",
+  ]);
+});
+
+test("OpenAiFunctionCallStreamAccumulator records presentation calls separately from tool calls", () => {
+  const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator();
+
+  functionCallStreamAccumulator.observeFunctionCallOutputItem({
+    functionCallItem: readFunctionCallItem({
+      itemId: "fc_1",
+      toolCallId: "call_present_1",
+      functionName: "present_learning_sequence",
+      argumentsText: JSON.stringify({
+        titleText: "Request flow",
+        summaryText: null,
+        sequenceItems: [{ labelText: "Prompt accepted", detailText: null }],
+      }),
+    }),
+    shouldRecordRequestedToolCallIfReady: true,
+  });
+
+  expect(functionCallStreamAccumulator.listPendingRequestedToolCalls()).toEqual([]);
+  expect(functionCallStreamAccumulator.listPendingProviderFunctionCallIntents()).toEqual([
+    {
+      intentKind: "learning_sequence_presentation",
+      functionCallId: "call_present_1",
+      learningSequence: {
+        titleText: "Request flow",
+        sequenceItems: [{ labelText: "Prompt accepted" }],
+      },
+    },
   ]);
 });

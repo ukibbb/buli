@@ -2,6 +2,7 @@ import type {
   AssistantOperatingMode,
   AssistantResponseEvent,
   ConversationSessionEntry,
+  ProviderAvailablePresentationFunctionName,
   ProviderAvailableToolName,
   ProviderStreamEvent,
   ProviderTurnReplay,
@@ -39,6 +40,7 @@ export type ProviderConversationTurnRequest = {
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
   availableToolNames?: readonly ProviderAvailableToolName[];
+  availablePresentationFunctionNames?: readonly ProviderAvailablePresentationFunctionName[];
   abortSignal?: AbortSignal;
 };
 

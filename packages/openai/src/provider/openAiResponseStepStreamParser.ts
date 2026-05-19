@@ -35,9 +35,14 @@ import {
 } from "./openAiResponseStreamEvents.ts";
 import {
   chooseOpenAiResponseStepTerminalKind,
-  createOpenAiResponseStepToolCallTerminalState,
+  createOpenAiResponseStepProviderFunctionCallTerminalState,
   type OpenAiResponseStepTerminalState,
 } from "./openAiResponseStepTerminalStateBuilder.ts";
+import {
+  isOpenAiExecutableToolCallIntent,
+  isOpenAiLearningSequencePresentationFunctionCallIntent,
+  type OpenAiProviderFunctionCallIntent,
+} from "./toolDefinitions.ts";
 
 export type { OpenAiResponseStepTerminalState } from "./openAiResponseStepTerminalStateBuilder.ts";
 
@@ -67,6 +72,43 @@ function createProviderToolCallsRequestedEvent(requestedToolCalls: readonly Prov
     type: "tool_calls_requested",
     requestedToolCalls: [...requestedToolCalls],
   };
+}
+
+function createProviderLearningSequencePresentedEvent(
+  providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
+): ProviderStreamEvent {
+  if (!isOpenAiLearningSequencePresentationFunctionCallIntent(providerFunctionCallIntent)) {
+    throw new Error("OpenAI stream tried to emit a non-presentation function call as a learning sequence.");
+  }
+
+  return {
+    type: "learning_sequence_presented",
+    presentationCallId: providerFunctionCallIntent.functionCallId,
+    learningSequence: providerFunctionCallIntent.learningSequence,
+  };
+}
+
+function createProviderFunctionCallIntentEvents(
+  providerFunctionCallIntents: readonly OpenAiProviderFunctionCallIntent[],
+): ProviderStreamEvent[] {
+  const learningSequencePresentedEvents = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
+    isOpenAiLearningSequencePresentationFunctionCallIntent(providerFunctionCallIntent)
+      ? [createProviderLearningSequencePresentedEvent(providerFunctionCallIntent)]
+      : []
+  );
+  const requestedToolCalls = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
+    isOpenAiExecutableToolCallIntent(providerFunctionCallIntent)
+      ? [{
+          toolCallId: providerFunctionCallIntent.functionCallId,
+          toolCallRequest: providerFunctionCallIntent.toolCallRequest,
+        }]
+      : []
+  );
+
+  return [
+    ...learningSequencePresentedEvents,
+    ...(requestedToolCalls.length > 0 ? [createProviderToolCallsRequestedEvent(requestedToolCalls)] : []),
+  ];
 }
 
 function createProviderCompletedEvent(usage: TokenUsage): ProviderStreamEvent {
@@ -290,6 +332,9 @@ export class OpenAiResponseStepStreamParser {
           outputItemType: outputItemAdded.item.type,
           trackedOutputItemCount: this.outputItemTracker.trackedOutputItemCount,
         });
+        const providerEvents = isOpenAiReasoningOutputItem(outputItemAdded.item)
+          ? this.reasoningSummaryStreamProjector.beginReasoningSummary()
+          : [];
         const functionCallItem = readOpenAiFunctionCallOutputItem(outputItemAdded.item);
         if (functionCallItem) {
           if (functionCallItem.argumentsText && functionCallItem.argumentsText.length > 0) {
@@ -300,7 +345,7 @@ export class OpenAiResponseStepStreamParser {
             shouldRecordRequestedToolCallIfReady: false,
           });
         }
-        return [];
+        return providerEvents;
       }
 
       case "response.function_call_arguments.done": {
@@ -353,6 +398,9 @@ export class OpenAiResponseStepStreamParser {
             shouldRecordRequestedToolCallIfReady: true,
           });
         }
+        if (isOpenAiReasoningOutputItem(outputItemDone.item)) {
+          return this.createPendingReasoningCompletedEvents();
+        }
         return [];
       }
 
@@ -362,22 +410,25 @@ export class OpenAiResponseStepStreamParser {
         this.finished = true;
         const responseUsage = normalizeOpenAiUsage(completedResponse.response.usage);
         const responseOutputItems = this.outputItemTracker.createTrackedBackedResponseOutputItems(completedResponse.response.output);
-        this.functionCallStreamAccumulator.recordRequestedToolCallsFromResponseOutputItems(responseOutputItems);
+        this.functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
+        const pendingProviderFunctionCallIntents = this.functionCallStreamAccumulator.listPendingProviderFunctionCallIntents();
         const pendingRequestedToolCalls = this.functionCallStreamAccumulator.listPendingRequestedToolCalls();
+        const pendingPresentationFunctionCallCount = pendingProviderFunctionCallIntents.length - pendingRequestedToolCalls.length;
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_observed", {
           terminalKind: chooseOpenAiResponseStepTerminalKind({
             requestedToolCallCount: pendingRequestedToolCalls.length,
+            presentationFunctionCallCount: pendingPresentationFunctionCallCount,
             fallbackTerminalKind: "completed",
           }),
           ...summarizeTokenUsageForDiagnostics(responseUsage),
         });
-        if (pendingRequestedToolCalls.length > 0) {
-          this.terminalState = createOpenAiResponseStepToolCallTerminalState({
-            requestedToolCalls: pendingRequestedToolCalls,
+        if (pendingProviderFunctionCallIntents.length > 0) {
+          this.terminalState = createOpenAiResponseStepProviderFunctionCallTerminalState({
+            providerFunctionCallIntents: pendingProviderFunctionCallIntents,
             responseOutputItems,
             usage: responseUsage,
           });
-          providerEvents.push(createProviderToolCallsRequestedEvent(pendingRequestedToolCalls));
+          providerEvents.push(...createProviderFunctionCallIntentEvents(pendingProviderFunctionCallIntents));
           return providerEvents;
         }
         this.terminalState = { terminalKind: "completed" };
@@ -391,23 +442,26 @@ export class OpenAiResponseStepStreamParser {
         this.finished = true;
         const responseUsage = normalizeOpenAiUsage(incompleteResponse.response.usage);
         const responseOutputItems = this.outputItemTracker.createTrackedBackedResponseOutputItems(incompleteResponse.response.output);
-        this.functionCallStreamAccumulator.recordRequestedToolCallsFromResponseOutputItems(responseOutputItems);
+        this.functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
+        const pendingProviderFunctionCallIntents = this.functionCallStreamAccumulator.listPendingProviderFunctionCallIntents();
         const pendingRequestedToolCalls = this.functionCallStreamAccumulator.listPendingRequestedToolCalls();
+        const pendingPresentationFunctionCallCount = pendingProviderFunctionCallIntents.length - pendingRequestedToolCalls.length;
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_observed", {
           terminalKind: chooseOpenAiResponseStepTerminalKind({
             requestedToolCallCount: pendingRequestedToolCalls.length,
+            presentationFunctionCallCount: pendingPresentationFunctionCallCount,
             fallbackTerminalKind: "incomplete",
           }),
           incompleteReason: incompleteResponse.response.incomplete_details?.reason ?? "unknown",
           ...summarizeTokenUsageForDiagnostics(responseUsage),
         });
-        if (pendingRequestedToolCalls.length > 0) {
-          this.terminalState = createOpenAiResponseStepToolCallTerminalState({
-            requestedToolCalls: pendingRequestedToolCalls,
+        if (pendingProviderFunctionCallIntents.length > 0) {
+          this.terminalState = createOpenAiResponseStepProviderFunctionCallTerminalState({
+            providerFunctionCallIntents: pendingProviderFunctionCallIntents,
             responseOutputItems,
             usage: responseUsage,
           });
-          providerEvents.push(createProviderToolCallsRequestedEvent(pendingRequestedToolCalls));
+          providerEvents.push(...createProviderFunctionCallIntentEvents(pendingProviderFunctionCallIntents));
           return providerEvents;
         }
         this.terminalState = { terminalKind: "incomplete" };
@@ -483,4 +537,8 @@ export class OpenAiResponseStepStreamParser {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isOpenAiReasoningOutputItem(value: unknown): boolean {
+  return isOpenAiResponseObject(value) && value.type === "reasoning";
 }

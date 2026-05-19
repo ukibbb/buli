@@ -11,7 +11,7 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("Thought for 2.5s");
     expect(frame).toContain("2.5s");
     expect(frame).toContain("reasoning tokens pending");
   });
@@ -23,8 +23,19 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("Thought");
     expect(frame).toContain("512 reasoning tok");
+  });
+
+  test("renders_summary_title_when_provided", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ReasoningCollapsedChip reasoningDurationMs={1000} reasoningTokenCount={512} reasoningSummaryTitle="Inspecting files" />,
+      { width: 80, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Thought: Inspecting files");
+    expect(frame).toContain("1.0s");
   });
 
   test("renders_duration_in_textMuted_and_token_count_in_textDim", async () => {
@@ -34,7 +45,7 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("Thought");
     expect(frame).toContain("3.2s");
     expect(frame).toContain("1248 reasoning tok");
     expect(chatScreenTheme.textMuted).toBe("#64748B");

@@ -320,8 +320,8 @@ function createFunctionCallInputItemFromResponseOutputItem(
   return {
     type: "function_call",
     id: functionCallOutputItem.itemId,
-    call_id: functionCallOutputItem.toolCallId,
-    name: functionCallOutputItem.toolName,
+    call_id: functionCallOutputItem.functionCallId,
+    name: functionCallOutputItem.functionName,
     arguments: functionCallOutputItem.argumentsText,
   };
 }

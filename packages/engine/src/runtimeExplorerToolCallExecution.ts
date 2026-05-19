@@ -276,6 +276,7 @@ async function* streamExplorerConversationProgress(input: {
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       availableToolNames: EXPLORER_AVAILABLE_TOOL_NAMES,
+      availablePresentationFunctionNames: [],
       abortSignal: input.abortSignal,
     });
 

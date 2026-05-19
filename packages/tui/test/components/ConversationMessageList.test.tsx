@@ -98,7 +98,7 @@ describe("ConversationMessageList", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("Inspect the repo");
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("Thought");
     expect(frame).toContain("Thinking through the repo layout.");
     expect(frame).toContain("Done");
     expect(frame).toContain("Read");
@@ -142,9 +142,49 @@ describe("ConversationMessageList", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("Thought");
     expect(frame).toContain("12 reasoning tok");
     expect(frame).not.toContain("Hidden chain summary.");
+  });
+
+  test("renders Thought for completed reasoning without summary text", async () => {
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "completed",
+        createdAtMs: 2,
+        partIds: ["reasoning-1"],
+      },
+    ];
+    const conversationMessagePartsByMessageId: Record<string, ConversationMessagePart[]> = {
+      "assistant-1": [
+        {
+          id: "reasoning-1",
+          partKind: "assistant_reasoning",
+          partStatus: "completed",
+          reasoningSummaryText: "",
+          reasoningStartedAtMs: 2,
+          reasoningDurationMs: 800,
+          reasoningTokenCount: 12,
+        },
+      ],
+    };
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        conversationMessages={conversationMessages}
+        isReasoningSummaryVisible={true}
+        resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+      />,
+      { width: 100, height: 8 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Thought");
+    expect(frame).toContain("12 reasoning tok");
   });
 
   test("lets the OpenTUI scrollbox own mouse wheel scrolling", async () => {

@@ -52,11 +52,12 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
         scrollX={false}
         stickyScroll={true}
         stickyStart="bottom"
+        viewportOptions={{ paddingRight: 0 }}
         verticalScrollbarOptions={{ visible: false, showArrows: false }}
         horizontalScrollbarOptions={{ visible: false, showArrows: false }}
       >
         {props.conversationMessages.map((conversationMessage, index) => (
-          <box flexDirection="column" key={conversationMessage.id} marginTop={index === 0 ? 0 : 1} width="100%">
+          <box flexDirection="column" flexShrink={0} key={conversationMessage.id} marginTop={index === 0 ? 0 : 1} width="100%">
             <MemoizedConversationMessageRow
               conversationMessage={conversationMessage}
               conversationMessageParts={props.resolveConversationMessageParts(conversationMessage.id)}

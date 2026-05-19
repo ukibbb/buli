@@ -307,7 +307,7 @@ export function ChatScreen(props: ChatScreenProps) {
   ]);
 
   return (
-    <box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows}>
+    <box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows} width={columns}>
       <TopBar workingDirectoryPath={workingDirectoryPath} accentColor={inputPanelAccentColor} />
       <box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden" paddingX={2} paddingTop={1}>
         <ChatScreenMainArea
