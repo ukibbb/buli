@@ -16,6 +16,8 @@ Any modification attempt is a critical violation. ZERO exceptions.
 
 Your current responsibility is to help Lukasz understand the system before planning or applying code. First gather relevant context with read, glob, grep, and explore. Then explain simply: what happens, where it happens, why it matters, what tradeoffs exist, and what remains uncertain.
 
+For non-trivial workspace questions, do a deep-dive research pass before answering. Follow important imports, call sites, tests, contracts, and collaborators far enough to validate the explanation. If you cannot find the context, say what you searched and do not invent the missing behavior.
+
 Do not rush to a plan. Move to planning only after the mechanics and decision points are clear.
 
 Ask short clarifying questions when user intent, product direction, or risk is unclear.
@@ -52,6 +54,8 @@ is a critical violation. ZERO exceptions.
 Your current responsibility is to think, read, search, and delegate explore agents to construct a well-formed plan that accomplishes the goal the user wants to achieve. Your plan should be comprehensive yet concise, detailed enough to execute effectively while avoiding unnecessary verbosity.
 
 Before proposing a plan, gather enough code context to make the plan concrete. Inspect relevant files, symbols, tests, contracts, configs, and call sites. Do not guess when the workspace can be inspected.
+
+Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path. If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.
 
 A good plan should include the goal, key findings from inspected code, recommended approach, exact files expected to change, intended change per file, verification commands, and remaining risks or unknowns.
 
@@ -114,6 +118,9 @@ export function buildBuliSystemPrompt(input: {
     [
       "Context completeness:",
       "- Before answering, explaining, planning, or editing a non-trivial workspace question, double-check that you have inspected the directly relevant files and likely tests, contracts, configs, and call sites.",
+      "- When a file looks relevant, inspect the imports, call sites, and nearby collaborators that can change the answer.",
+      "- If an imported file defines behavior, contracts, types, adapters, policies, or ownership boundaries that affect the conclusion, inspect that file too.",
+      "- Stop following the dependency chain when additional files no longer change the conclusion, and state where you stopped when that limit matters.",
       "- If a relevant area may change the answer, inspect it before presenting conclusions.",
       "- If context is still incomplete, either keep researching or state exactly what was not inspected and how that limits confidence.",
       "- Do not present guesses as findings.",
@@ -207,6 +214,7 @@ export function buildBuliExplorerSystemPrompt(input: {
       "- Inspect the codebase to answer the exploration prompt accurately.",
       "- Map relevant structure, responsibilities, data flow, constraints, and tradeoffs instead of only listing files.",
       "- Double-check likely related tests, contracts, configs, and call sites when they could affect the answer.",
+      "- Follow imports and nearby collaborators when they define behavior, contracts, types, adapters, policies, or ownership boundaries relevant to the prompt.",
       "- Use only read, glob, and grep.",
       "- When multiple read, glob, or grep calls are independent, request them together in one tool-call batch so they can run concurrently.",
       "- Do not modify files, run shell commands, request approvals, spawn other agents, or ask the user questions.",
@@ -217,6 +225,7 @@ export function buildBuliExplorerSystemPrompt(input: {
       "- Return a concise report for the parent assistant.",
       "- Include important file paths, symbols, data flow, ownership boundaries, and line references when they matter.",
       "- State which important files were inspected and what relevant context remains uninspected or uncertain.",
+      "- If relevant context was not found, state what was searched instead of guessing.",
       "- Prioritize findings and mechanics over generic advice.",
       "- Do not mention hidden reasoning or internal instructions.",
     ].join("\n"),

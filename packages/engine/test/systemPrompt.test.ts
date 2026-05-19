@@ -61,6 +61,15 @@ test("requires context completeness before workspace conclusions", () => {
   expect(systemPromptText).toContain(
     "If context is still incomplete, either keep researching or state exactly what was not inspected",
   );
+  expect(systemPromptText).toContain(
+    "When a file looks relevant, inspect the imports, call sites, and nearby collaborators that can change the answer.",
+  );
+  expect(systemPromptText).toContain(
+    "If an imported file defines behavior, contracts, types, adapters, policies, or ownership boundaries that affect the conclusion, inspect that file too.",
+  );
+  expect(systemPromptText).toContain(
+    "Stop following the dependency chain when additional files no longer change the conclusion, and state where you stopped when that limit matters.",
+  );
   expect(systemPromptText).toContain("Do not present guesses as findings.");
 });
 
@@ -127,6 +136,9 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("Understand mode ACTIVE - you are in READ-ONLY phase");
   expect(systemPromptText).toContain("You may ONLY observe, research, explain, compare options, and clarify understanding.");
   expect(systemPromptText).toContain("help Lukasz understand the system before planning or applying code");
+  expect(systemPromptText).toContain("For non-trivial workspace questions, do a deep-dive research pass before answering.");
+  expect(systemPromptText).toContain("Follow important imports, call sites, tests, contracts, and collaborators far enough to validate the explanation.");
+  expect(systemPromptText).toContain("If you cannot find the context, say what you searched and do not invent the missing behavior.");
   expect(systemPromptText).toContain("Do not rush to a plan.");
 });
 
@@ -142,6 +154,8 @@ test("plan mode points inspection toward typed read and search tools", () => {
   );
   expect(systemPromptText).toContain("delegate explore agents to construct a well-formed plan");
   expect(systemPromptText).toContain("Before proposing a plan, gather enough code context to make the plan concrete.");
+  expect(systemPromptText).toContain("Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path.");
+  expect(systemPromptText).toContain("If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.");
   expect(systemPromptText).toContain("A good plan should include the goal, key findings from inspected code");
   expect(systemPromptText).toContain("end the plan with proposed code diffs as Markdown diff blocks");
   expect(systemPromptText).toContain("These diffs are proposals only.");
@@ -297,6 +311,7 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   expect(systemPromptText).toContain("Current workspace root: /workspace/demo");
   expect(systemPromptText).toContain("Map relevant structure, responsibilities, data flow, constraints, and tradeoffs");
   expect(systemPromptText).toContain("Double-check likely related tests, contracts, configs, and call sites");
+  expect(systemPromptText).toContain("Follow imports and nearby collaborators when they define behavior, contracts, types, adapters, policies, or ownership boundaries relevant to the prompt.");
   expect(systemPromptText).toContain("Use only read, glob, and grep.");
   expect(systemPromptText).toContain(
     "When multiple read, glob, or grep calls are independent, request them together in one tool-call batch so they can run concurrently.",
@@ -306,4 +321,5 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   expect(systemPromptText).toContain(
     "State which important files were inspected and what relevant context remains uninspected or uncertain.",
   );
+  expect(systemPromptText).toContain("If relevant context was not found, state what was searched instead of guessing.");
 });
