@@ -9,6 +9,7 @@ export type ConversationMessageListProps = {
   resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   horizontalRuleColor: string;
+  userMessageBorderColor: string;
   terminalColumnCount?: number | undefined;
 };
 
@@ -21,6 +22,7 @@ function areConversationMessageRowPropsEqual(
   return previousProps.conversationMessage === nextProps.conversationMessage &&
     previousProps.isReasoningSummaryVisible === nextProps.isReasoningSummaryVisible &&
     previousProps.horizontalRuleColor === nextProps.horizontalRuleColor &&
+    previousProps.userMessageBorderColor === nextProps.userMessageBorderColor &&
     previousProps.terminalColumnCount === nextProps.terminalColumnCount &&
     areConversationMessagePartReferencesEqual(
       previousProps.conversationMessageParts,
@@ -63,6 +65,7 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
               conversationMessageParts={props.resolveConversationMessageParts(conversationMessage.id)}
               isReasoningSummaryVisible={props.isReasoningSummaryVisible}
               horizontalRuleColor={props.horizontalRuleColor}
+              userMessageBorderColor={props.userMessageBorderColor}
               terminalColumnCount={props.terminalColumnCount}
             />
           </box>

@@ -18,11 +18,17 @@ function ConversationMessagePartView(props: {
   conversationMessagePart: ConversationMessagePart;
   isReasoningSummaryVisible: boolean;
   horizontalRuleColor: string;
+  userMessageBorderColor: string;
   terminalColumnCount?: number | undefined;
 }): ReactNode {
   const { conversationMessagePart } = props;
   if (conversationMessagePart.partKind === "user_text") {
-    return <UserPromptBlock promptText={conversationMessagePart.text} />;
+    return (
+      <UserPromptBlock
+        promptText={conversationMessagePart.text}
+        userPromptBorderColor={props.userMessageBorderColor}
+      />
+    );
   }
   if (conversationMessagePart.partKind === "user_image_attachment") {
     return <UserImageAttachmentBlock attachment={conversationMessagePart.attachment} />;
@@ -88,6 +94,7 @@ export type ConversationMessageRowProps = {
   conversationMessageParts: readonly ConversationMessagePart[];
   isReasoningSummaryVisible: boolean;
   horizontalRuleColor: string;
+  userMessageBorderColor: string;
   terminalColumnCount?: number | undefined;
 };
 
@@ -114,6 +121,7 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
             conversationMessagePart={conversationMessagePart}
             isReasoningSummaryVisible={props.isReasoningSummaryVisible}
             horizontalRuleColor={props.horizontalRuleColor}
+            userMessageBorderColor={props.userMessageBorderColor}
             terminalColumnCount={props.terminalColumnCount}
           />
         </box>

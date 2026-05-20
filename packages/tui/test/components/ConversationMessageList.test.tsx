@@ -23,6 +23,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={() => []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        userMessageBorderColor="#10B981"
       />,
       { width: 80, height: 8 },
     );
@@ -91,6 +92,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 24 },
     );
@@ -98,6 +100,7 @@ describe("ConversationMessageList", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("Inspect the repo");
+    expect(frame).toContain("└");
     expect(frame).toContain("Thought");
     expect(frame).toContain("Thinking through the repo layout.");
     expect(frame).toContain("Done");
@@ -136,6 +139,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 8 },
     );
@@ -177,6 +181,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 8 },
     );
@@ -206,6 +211,7 @@ describe("ConversationMessageList", () => {
         }]}
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
         horizontalRuleColor="#10B981"
+        userMessageBorderColor="#10B981"
       />,
       { width: 80, height: 20 },
     );
@@ -239,6 +245,7 @@ describe("ConversationMessageList", () => {
         }]}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        userMessageBorderColor="#10B981"
       />,
       { width: 40, height: 10 },
     );

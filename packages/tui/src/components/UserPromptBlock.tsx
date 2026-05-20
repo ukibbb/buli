@@ -1,18 +1,36 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { glyphs } from "./glyphs.ts";
 
-// Pen component GgP0q: single-chevron caret in accent cyan followed by the
-// prompt text in the primary text color, one cell of gap between them.
 export type UserPromptBlockProps = {
   promptText: string;
+  userPromptBorderColor: string;
 };
+
+const userPromptFrameBorderChars = {
+  topLeft: "",
+  bottomLeft: "└",
+  vertical: "│",
+  topRight: "",
+  bottomRight: "─",
+  horizontal: "─",
+  bottomT: "",
+  topT: "",
+  cross: "",
+  leftT: "",
+  rightT: "",
+} as const;
 
 export function UserPromptBlock(props: UserPromptBlockProps): ReactNode {
   return (
-    <box flexDirection="row" gap={1}>
-      <text fg={chatScreenTheme.accentCyan}>{glyphs.userPromptCaret}</text>
-      <text fg={chatScreenTheme.textPrimary}>{props.promptText}</text>
+    <box
+      border={["left", "bottom"]}
+      borderColor={props.userPromptBorderColor}
+      customBorderChars={userPromptFrameBorderChars}
+      flexDirection="column"
+      paddingLeft={1}
+      width="100%"
+    >
+      <text fg={chatScreenTheme.textPrimary} width="100%">{props.promptText}</text>
     </box>
   );
 }

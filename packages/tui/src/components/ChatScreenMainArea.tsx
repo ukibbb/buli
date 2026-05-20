@@ -40,6 +40,7 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
       resolveConversationMessageParts={props.resolveConversationMessageParts}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       horizontalRuleColor={props.inputPanelAccentColor}
+      userMessageBorderColor={props.inputPanelAccentColor}
       terminalColumnCount={props.terminalColumnCount}
     />
   );
