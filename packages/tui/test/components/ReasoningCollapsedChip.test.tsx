@@ -4,16 +4,17 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ReasoningCollapsedChip } from "../../src/components/ReasoningCollapsedChip.tsx";
 
 describe("ReasoningCollapsedChip", () => {
-  test("renders_pending_token_label_when_token_count_is_unavailable", async () => {
+  test("renders_unavailable_token_label_when_token_count_is_unavailable", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningCollapsedChip reasoningDurationMs={2500} reasoningTokenCount={undefined} />,
       { width: 60, height: 3 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Thought for 2.5s");
+    expect(frame).toContain("[+]");
+    expect(frame).toContain("Thought");
     expect(frame).toContain("2.5s");
-    expect(frame).toContain("reasoning tokens pending");
+    expect(frame).toContain("reasoning tokens unavailable");
   });
 
   test("renders_token_count_when_provided", async () => {
@@ -23,8 +24,18 @@ describe("ReasoningCollapsedChip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Thought");
     expect(frame).toContain("512 reasoning tok");
+  });
+
+  test("renders_expanded_disclosure_when_expanded", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ReasoningCollapsedChip reasoningDurationMs={1000} reasoningTokenCount={512} isReasoningExpanded={true} />,
+      { width: 60, height: 3 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("[-]");
   });
 
   test("renders_summary_title_when_provided", async () => {

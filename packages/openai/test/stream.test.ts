@@ -667,13 +667,32 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
   }
 });
 
-test("parseOpenAiStream emits learning sequence presentation events without tool-call events", async () => {
-  const learningSequenceArgumentsText = JSON.stringify({
+test("parseOpenAiStream emits code execution walkthrough presentation events without tool-call events", async () => {
+  const codeExecutionWalkthroughArgumentsText = JSON.stringify({
     titleText: "Request flow",
     summaryText: null,
-    sequenceItems: [
-      { labelText: "Prompt accepted", detailText: null },
-      { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+    walkthroughKind: "source_walkthrough",
+    steps: [
+      {
+        stepTitle: "Prompt accepted",
+        whenText: null,
+        whatHappensText: "The accepted prompt is recorded.",
+        dataStateText: null,
+        decisionText: null,
+        stateChangeText: null,
+        nextStepText: "Provider streams next.",
+        codeExamples: [
+          {
+            sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
+            sourceSymbolName: "startAcceptedRuntimeConversationTurn",
+            startLineNumber: 64,
+            endLineNumber: 67,
+            languageLabel: "ts",
+            codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
+            explanationText: null,
+          },
+        ],
+      },
     ],
   });
   const response = new Response(
@@ -681,12 +700,12 @@ test("parseOpenAiStream emits learning sequence presentation events without tool
       createSseDataFrame({
         type: "response.output_item.added",
         output_index: 0,
-        item: { type: "function_call", id: "fc_1", call_id: "call_present_1", name: "present_learning_sequence", arguments: "" },
+        item: { type: "function_call", id: "fc_1", call_id: "call_present_1", name: "present_code_execution_walkthrough", arguments: "" },
       }),
       createSseDataFrame({
         type: "response.function_call_arguments.done",
         item_id: "fc_1",
-        arguments: learningSequenceArgumentsText,
+        arguments: codeExecutionWalkthroughArgumentsText,
       }),
       createSseDataFrame({
         type: "response.completed",
@@ -696,8 +715,8 @@ test("parseOpenAiStream emits learning sequence presentation events without tool
               id: "fc_1",
               type: "function_call",
               call_id: "call_present_1",
-              name: "present_learning_sequence",
-              arguments: learningSequenceArgumentsText,
+              name: "present_code_execution_walkthrough",
+              arguments: codeExecutionWalkthroughArgumentsText,
             },
           ],
           usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
@@ -710,29 +729,57 @@ test("parseOpenAiStream emits learning sequence presentation events without tool
   const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
 
   expect(parsedEvents).toEqual([
-    {
-      type: "learning_sequence_presented",
-      presentationCallId: "call_present_1",
-      learningSequence: {
-        titleText: "Request flow",
-        sequenceItems: [
-          { labelText: "Prompt accepted" },
-          { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
-        ],
+      {
+        type: "code_execution_walkthrough_presented",
+        presentationCallId: "call_present_1",
+        codeExecutionWalkthrough: {
+          titleText: "Request flow",
+          walkthroughKind: "source_walkthrough",
+          steps: [
+            {
+              stepTitle: "Prompt accepted",
+              whatHappensText: "The accepted prompt is recorded.",
+              nextStepText: "Provider streams next.",
+              codeExamples: [
+                {
+                  sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
+                  sourceSymbolName: "startAcceptedRuntimeConversationTurn",
+                  startLineNumber: 64,
+                  endLineNumber: 67,
+                  languageLabel: "ts",
+                  codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
+                },
+              ],
+            },
+          ],
+        },
       },
-    },
   ]);
   expect(terminalState).toMatchObject({
     terminalKind: "provider_function_calls_requested",
     providerFunctionCallIntents: [
       {
-        intentKind: "learning_sequence_presentation",
+        intentKind: "code_execution_walkthrough_presentation",
         functionCallId: "call_present_1",
-        learningSequence: {
+        codeExecutionWalkthrough: {
           titleText: "Request flow",
-          sequenceItems: [
-            { labelText: "Prompt accepted" },
-            { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+          walkthroughKind: "source_walkthrough",
+          steps: [
+            {
+              stepTitle: "Prompt accepted",
+              whatHappensText: "The accepted prompt is recorded.",
+              nextStepText: "Provider streams next.",
+              codeExamples: [
+                {
+                  sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
+                  sourceSymbolName: "startAcceptedRuntimeConversationTurn",
+                  startLineNumber: 64,
+                  endLineNumber: 67,
+                  languageLabel: "ts",
+                  codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
+                },
+              ],
+            },
           ],
         },
       },
@@ -749,7 +796,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
   const taskToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "task");
-  const presentLearningSequenceDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "present_learning_sequence");
+  const presentCodeExecutionWalkthroughDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "present_code_execution_walkthrough");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
@@ -762,7 +809,8 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(openAiToolDefinitionNames).not.toContain("explore");
   expect(taskToolDefinition?.description).toContain("Launch a built-in Buli subagent");
   expect(taskToolDefinition?.description).toContain("Currently available subagent: explore");
-  expect(presentLearningSequenceDefinition?.description).toContain("Render a structured, non-executable learning sequence");
+  expect(presentCodeExecutionWalkthroughDefinition?.description).toContain("Render a structured, non-executable debug walkthrough");
+  expect(presentCodeExecutionWalkthroughDefinition?.description).toContain("exact file path, line range, and code text");
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
   expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);
@@ -1527,7 +1575,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       "edit",
       "write",
       "task",
-      "present_learning_sequence",
+      "present_code_execution_walkthrough",
     ]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },

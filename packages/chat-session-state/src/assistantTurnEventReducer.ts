@@ -389,16 +389,40 @@ function backfillCompletedReasoningPartTokenCountForMessage(
   messageId: string,
   reasoningTokenCount: number,
 ): ChatSessionState {
-  return updateConversationMessageParts({
-    chatSessionState,
-    messageId,
-    updateConversationMessagePart: (conversationMessagePart) =>
-      conversationMessagePart.partKind === "assistant_reasoning" && conversationMessagePart.partStatus === "completed"
-        ? {
-            ...conversationMessagePart,
-            reasoningTokenCount,
-          }
-        : conversationMessagePart,
+  const completedReasoningPartIds = listCompletedReasoningPartIdsForMessage(chatSessionState, messageId);
+  if (completedReasoningPartIds.length !== 1) {
+    return chatSessionState;
+  }
+
+  const completedReasoningPartId = completedReasoningPartIds[0];
+  const completedReasoningPart = completedReasoningPartId
+    ? chatSessionState.conversationMessagePartsById[completedReasoningPartId]
+    : undefined;
+  if (!completedReasoningPart || completedReasoningPart.partKind !== "assistant_reasoning") {
+    return chatSessionState;
+  }
+
+  return {
+    ...chatSessionState,
+    conversationMessagePartsById: {
+      ...chatSessionState.conversationMessagePartsById,
+      [completedReasoningPart.id]: {
+        ...completedReasoningPart,
+        reasoningTokenCount,
+      },
+    },
+  };
+}
+
+function listCompletedReasoningPartIdsForMessage(chatSessionState: ChatSessionState, messageId: string): string[] {
+  const conversationMessage = chatSessionState.conversationMessagesById[messageId];
+  if (!conversationMessage) {
+    return [];
+  }
+
+  return conversationMessage.partIds.filter((partId) => {
+    const conversationMessagePart = chatSessionState.conversationMessagePartsById[partId];
+    return conversationMessagePart?.partKind === "assistant_reasoning" && conversationMessagePart.partStatus === "completed";
   });
 }
 

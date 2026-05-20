@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   AssistantOperatingMode,
+  CodeExecutionCodeExample,
+  CodeExecutionWalkthrough,
   ConversationSessionEntry,
-  LearningSequence,
   SubagentChildToolCall,
   SubagentChildToolCallDetail,
   ToolCallDetail,
@@ -156,7 +157,7 @@ function renderConversationSessionTranscriptEntries(conversationSessionEntries: 
 
     if (
       conversationSessionEntry.entryKind === "assistant_text_segment" ||
-      conversationSessionEntry.entryKind === "assistant_learning_sequence_segment"
+      conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment"
     ) {
       hasRenderedAssistantSegmentInCurrentTurn = true;
       return [renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex)];
@@ -206,14 +207,14 @@ function renderConversationSessionTranscriptEntry(
     });
   }
 
-  if (conversationSessionEntry.entryKind === "assistant_learning_sequence_segment") {
+  if (conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment") {
     return renderConversationSessionTranscriptEntryShell({
       entryAnchorId,
       indexNumberLabel,
       entryIndex,
       entryClassName: "assistant",
       roleLabel: "Assistant",
-      bodyHtml: renderLearningSequenceBlock(conversationSessionEntry),
+      bodyHtml: renderCodeExecutionWalkthroughBlock(conversationSessionEntry),
     });
   }
 
@@ -369,22 +370,67 @@ function renderConversationCompactionSummaryBlock(
   ].join("\n");
 }
 
-function renderLearningSequenceBlock(learningSequence: LearningSequence): string {
-  const summaryHtml = learningSequence.summaryText === undefined
+function renderCodeExecutionWalkthroughBlock(codeExecutionWalkthrough: CodeExecutionWalkthrough): string {
+  const summaryHtml = codeExecutionWalkthrough.summaryText === undefined
     ? ""
-    : `<p class="muted">${escapeHtml(learningSequence.summaryText)}</p>`;
-  const sequenceItemsHtml = learningSequence.sequenceItems.map((sequenceItem) => {
-    const detailHtml = sequenceItem.detailText === undefined
+    : `<p class="muted">${escapeHtml(codeExecutionWalkthrough.summaryText)}</p>`;
+  const walkthroughStepsHtml = codeExecutionWalkthrough.steps.map((walkthroughStep) => {
+    const whenHtml = walkthroughStep.whenText === undefined
       ? ""
-      : `<p class="muted">${escapeHtml(sequenceItem.detailText)}</p>`;
-    return `<li><strong>${escapeHtml(sequenceItem.labelText)}</strong>${detailHtml}</li>`;
+      : `<p class="muted"><strong>when:</strong> ${escapeHtml(walkthroughStep.whenText)}</p>`;
+    const dataStateHtml = walkthroughStep.dataStateText === undefined
+      ? ""
+      : `<p class="muted"><strong>data/state:</strong> ${escapeHtml(walkthroughStep.dataStateText)}</p>`;
+    const decisionHtml = walkthroughStep.decisionText === undefined
+      ? ""
+      : `<p class="muted"><strong>decision:</strong> ${escapeHtml(walkthroughStep.decisionText)}</p>`;
+    const stateChangeHtml = walkthroughStep.stateChangeText === undefined
+      ? ""
+      : `<p class="muted"><strong>state change:</strong> ${escapeHtml(walkthroughStep.stateChangeText)}</p>`;
+    const nextStepHtml = walkthroughStep.nextStepText === undefined
+      ? ""
+      : `<p class="muted"><strong>next:</strong> ${escapeHtml(walkthroughStep.nextStepText)}</p>`;
+    const codeExamplesHtml = walkthroughStep.codeExamples.map(renderCodeExecutionCodeExampleBlock).join("\n");
+    return `<li>
+      <strong>${escapeHtml(walkthroughStep.stepTitle)}</strong>
+      ${whenHtml}
+      <p>${escapeHtml(walkthroughStep.whatHappensText)}</p>
+      ${dataStateHtml}
+      ${decisionHtml}
+      ${stateChangeHtml}
+      ${nextStepHtml}
+      ${codeExamplesHtml}
+    </li>`;
   }).join("\n");
 
-  return `<div class="tool-block learning-sequence-block">
-  <div class="tool-summary"><span class="tool-name">learning sequence</span><span class="tool-purpose">${escapeHtml(learningSequence.titleText)}</span></div>
+  return `<div class="tool-block code-execution-walkthrough-block">
+  <div class="tool-summary"><span class="tool-name">debug walkthrough</span><span class="tool-purpose">${escapeHtml(codeExecutionWalkthrough.titleText)}</span></div>
+  <p class="muted">${escapeHtml(formatCodeExecutionWalkthroughKindDisplayName(codeExecutionWalkthrough.walkthroughKind))}</p>
   ${summaryHtml}
-  <ol>${sequenceItemsHtml}</ol>
+  <ol>${walkthroughStepsHtml}</ol>
 </div>`;
+}
+
+function renderCodeExecutionCodeExampleBlock(codeExample: CodeExecutionCodeExample): string {
+  const sourceSymbolHtml = codeExample.sourceSymbolName === undefined ? "" : ` · ${escapeHtml(codeExample.sourceSymbolName)}`;
+  const explanationHtml = codeExample.explanationText === undefined ? "" : `<p class="muted">${escapeHtml(codeExample.explanationText)}</p>`;
+  const languageAttribute = codeExample.languageLabel ? ` data-lang="${escapeHtmlAttribute(codeExample.languageLabel)}"` : "";
+  return `<div class="tool-block">
+    <div class="tool-summary"><span class="tool-name">source</span><span class="tool-purpose">${escapeHtml(formatCodeExampleSourceRange(codeExample))}${sourceSymbolHtml}</span></div>
+    ${explanationHtml}
+    <pre${languageAttribute}><code>${escapeHtml(codeExample.codeText)}</code></pre>
+  </div>`;
+}
+
+function formatCodeExecutionWalkthroughKindDisplayName(walkthroughKind: CodeExecutionWalkthrough["walkthroughKind"]): string {
+  return walkthroughKind === "observed_runtime_trace" ? "observed runtime trace" : "source walkthrough";
+}
+
+function formatCodeExampleSourceRange(codeExample: CodeExecutionCodeExample): string {
+  const lineRange = codeExample.startLineNumber === codeExample.endLineNumber
+    ? `${codeExample.startLineNumber}`
+    : `${codeExample.startLineNumber}-${codeExample.endLineNumber}`;
+  return `${codeExample.sourceFilePath}:${lineRange}`;
 }
 
 function renderToolCallRequestBlock(toolCallRequest: ToolCallRequest): string {

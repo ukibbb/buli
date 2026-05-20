@@ -18,17 +18,30 @@ test("logEngineDiagnosticEvent emits an engine diagnostic event", () => {
   ]);
 });
 
-test("summarizeProviderStreamEventForDiagnostics summarizes learning sequence presentation events", () => {
+test("summarizeProviderStreamEventForDiagnostics summarizes code execution walkthrough presentation events", () => {
   expect(summarizeProviderStreamEventForDiagnostics({
-    type: "learning_sequence_presented",
-    presentationCallId: "call_learning_sequence_1",
-    learningSequence: {
+    type: "code_execution_walkthrough_presented",
+    presentationCallId: "call_code_walkthrough_1",
+    codeExecutionWalkthrough: {
       titleText: "Request flow",
-      sequenceItems: [{ labelText: "Prompt accepted" }, { labelText: "Provider streams" }],
+      walkthroughKind: "source_walkthrough",
+      steps: [
+        {
+          stepTitle: "Prompt accepted",
+          whatHappensText: "The prompt is recorded.",
+          codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "recordPrompt();" }],
+        },
+        {
+          stepTitle: "Provider streams",
+          whatHappensText: "Chunks are translated.",
+          codeExamples: [{ sourceFilePath: "src/stream.ts", startLineNumber: 2, endLineNumber: 3, codeText: "translateChunk();" }],
+        },
+      ],
     },
   })).toEqual({
-    presentationCallId: "call_learning_sequence_1",
-    learningSequenceTitleLength: "Request flow".length,
-    learningSequenceItemCount: 2,
+    presentationCallId: "call_code_walkthrough_1",
+    codeExecutionWalkthroughTitleLength: "Request flow".length,
+    codeExecutionWalkthroughStepCount: 2,
+    codeExecutionWalkthroughCodeExampleCount: 2,
   });
 });

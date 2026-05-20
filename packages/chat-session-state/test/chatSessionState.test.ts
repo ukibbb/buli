@@ -447,7 +447,7 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant text se
   ]);
 });
 
-test("hydrateConversationTranscriptFromSessionEntries restores assistant learning sequence segments", () => {
+test("hydrateConversationTranscriptFromSessionEntries restores assistant code execution walkthrough segments", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     [
@@ -457,18 +457,27 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant learnin
         modelFacingPromptText: "Explain the runtime flow",
       },
       {
-        entryKind: "assistant_learning_sequence_segment",
+        entryKind: "assistant_code_execution_walkthrough_segment",
         titleText: "Runtime flow",
         summaryText: "The main stages in one turn.",
-        sequenceItems: [
-          { labelText: "Prompt accepted" },
-          { labelText: "Provider streams", detailText: "Chunks become assistant events." },
+        walkthroughKind: "source_walkthrough",
+        steps: [
+          {
+            stepTitle: "Prompt accepted",
+            whatHappensText: "The user prompt is recorded.",
+            codeExamples: [{ sourceFilePath: "packages/engine/src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "recordPrompt();" }],
+          },
+          {
+            stepTitle: "Provider streams",
+            whatHappensText: "Chunks become assistant events.",
+            codeExamples: [{ sourceFilePath: "packages/engine/src/stream.ts", startLineNumber: 2, endLineNumber: 3, codeText: "translateChunk();" }],
+          },
         ],
       },
       {
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
-        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.\nPrompt accepted -> Provider streams\n\n- Provider streams: Chunks become assistant events.",
+        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.",
       },
     ],
   );
@@ -482,13 +491,22 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant learnin
 
   expect(listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id)).toEqual([
     {
-      id: "persisted-entry-1-assistant-learning-sequence",
-      partKind: "assistant_learning_sequence",
+      id: "persisted-entry-1-assistant-code-execution-walkthrough",
+      partKind: "assistant_code_execution_walkthrough",
       titleText: "Runtime flow",
       summaryText: "The main stages in one turn.",
-      sequenceItems: [
-        { labelText: "Prompt accepted" },
-        { labelText: "Provider streams", detailText: "Chunks become assistant events." },
+      walkthroughKind: "source_walkthrough",
+      steps: [
+        {
+          stepTitle: "Prompt accepted",
+          whatHappensText: "The user prompt is recorded.",
+          codeExamples: [{ sourceFilePath: "packages/engine/src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "recordPrompt();" }],
+        },
+        {
+          stepTitle: "Provider streams",
+          whatHappensText: "Chunks become assistant events.",
+          codeExamples: [{ sourceFilePath: "packages/engine/src/stream.ts", startLineNumber: 2, endLineNumber: 3, codeText: "translateChunk();" }],
+        },
       ],
     },
   ]);
@@ -768,6 +786,67 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
         reasoning: 2,
         cache: { read: 0, write: 0 },
       },
+    },
+  ]);
+});
+
+test("assistant_message_completed does not copy total reasoning tokens onto multiple reasoning parts", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  for (const reasoningPartId of ["reasoning-1", "reasoning-2"]) {
+    chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+      type: "assistant_message_part_added",
+      messageId: "assistant-1",
+      part: {
+        id: reasoningPartId,
+        partKind: "assistant_reasoning",
+        partStatus: "completed",
+        reasoningSummaryText: `Thinking ${reasoningPartId}`,
+        reasoningStartedAtMs: 1,
+        reasoningDurationMs: 500,
+      },
+    });
+  }
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_completed",
+    messageId: "assistant-1",
+    usage: {
+      total: 12,
+      input: 5,
+      output: 5,
+      reasoning: 2,
+      cache: { read: 0, write: 0 },
+    },
+  });
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
+  if (!assistantConversationMessage) {
+    throw new Error("expected assistant message");
+  }
+
+  const reasoningParts = listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id).filter(
+    (conversationMessagePart) => conversationMessagePart.partKind === "assistant_reasoning",
+  );
+  expect(reasoningParts).toEqual([
+    {
+      id: "reasoning-1",
+      partKind: "assistant_reasoning",
+      partStatus: "completed",
+      reasoningSummaryText: "Thinking reasoning-1",
+      reasoningStartedAtMs: 1,
+      reasoningDurationMs: 500,
+    },
+    {
+      id: "reasoning-2",
+      partKind: "assistant_reasoning",
+      partStatus: "completed",
+      reasoningSummaryText: "Thinking reasoning-2",
+      reasoningStartedAtMs: 1,
+      reasoningDurationMs: 500,
     },
   ]);
 });

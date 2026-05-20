@@ -3,12 +3,7 @@ import type { ToolCallGrepDetail, ToolCallGrepMatch } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { BracketedTarget } from "./BracketedTarget.tsx";
-import {
-  ToolCallHeaderLeft,
-  ToolCallHeaderRight,
-} from "./ToolCallCardHeaderSlots.tsx";
-import { ToolCallResultDisclosureControl } from "./ToolCallResultDisclosureControl.tsx";
+import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
 
 export type GrepToolCallCardProps = {
   toolCallDetail: ToolCallGrepDetail;
@@ -39,31 +34,31 @@ export function GrepToolCallCard(props: GrepToolCallCardProps): ReactNode {
       : props.renderState === "failed"
         ? "error"
         : "pending";
+  const hasGrepResultContent = props.renderState !== "failed" && (props.toolCallDetail.matchHits?.length ?? 0) > 0;
   return (
     <SurfaceCard
       accentColor={accentColor}
+      density="compact"
       headerLeft={
-        <ToolCallHeaderLeft
-          toolNameLabel="Grep"
-          toolTargetContent={
-            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.searchPattern} />
-          }
-        />
-      }
-      headerRight={
-        <ToolCallHeaderRight
+        <ToolCallCompactHeader
+          accentColor={accentColor}
+          disclosureState={hasGrepResultContent
+            ? {
+                isContentExpandable: true,
+                isContentExpanded: isGrepResultExpanded,
+                onContentExpansionToggle: () => {
+                  setIsGrepResultExpanded((currentGrepResultExpanded) => !currentGrepResultExpanded);
+                },
+              }
+            : { isContentExpandable: false }}
           statusColor={accentColor}
           statusKind={statusKind}
           statusLabel={buildGrepStatusLabel(props)}
+          toolNameLabel="Grep"
+          toolTargetText={props.toolCallDetail.searchPattern}
         />
       }
-      bodyContent={buildGrepBodyContent({
-        grepToolCallCardProps: props,
-        isGrepResultExpanded,
-        onGrepResultExpansionToggle: () => {
-          setIsGrepResultExpanded((currentGrepResultExpanded) => !currentGrepResultExpanded);
-        },
-      })}
+      bodyContent={hasGrepResultContent && isGrepResultExpanded ? buildGrepBodyContent(props) : undefined}
     />
   );
 }
@@ -78,39 +73,20 @@ function buildGrepStatusLabel(props: GrepToolCallCardProps): string {
   const matchCount = props.toolCallDetail.totalMatchCount;
   const returnedMatchHitCount = props.toolCallDetail.returnedMatchHitCount;
   const fileCount = props.toolCallDetail.matchedFileCount;
-  const truncationLabel = props.toolCallDetail.wasTruncated || props.toolCallDetail.wasLongLineTruncated
-    ? " · truncated"
-    : "";
   if (matchCount !== undefined && fileCount !== undefined) {
     if (returnedMatchHitCount !== undefined && returnedMatchHitCount !== matchCount) {
-      return `${returnedMatchHitCount} of ${matchCount} matches · truncated`;
+      return `${returnedMatchHitCount}/${matchCount} matches · ${fileCount} ${fileCount === 1 ? "file" : "files"}`;
     }
     const matchCountLabel = `${matchCount} matches`;
-    return `${matchCountLabel} · ${fileCount} ${fileCount === 1 ? "file" : "files"}${truncationLabel}`;
+    return `${matchCountLabel} · ${fileCount} ${fileCount === 1 ? "file" : "files"}`;
   }
   if (matchCount !== undefined) {
-    return `${matchCount} matches${truncationLabel}`;
+    return `${matchCount} matches`;
   }
   return "done";
 }
 
-type GrepBodyContentInput = {
-  grepToolCallCardProps: GrepToolCallCardProps;
-  isGrepResultExpanded: boolean;
-  onGrepResultExpansionToggle: () => void;
-};
-
-function buildGrepBodyContent(input: GrepBodyContentInput): ReactNode {
-  const props = input.grepToolCallCardProps;
-  if (props.renderState === "failed") {
-    if (props.errorText !== undefined) {
-      // Status header already carries errorText; suppress body to avoid duplicating it.
-      return undefined;
-    }
-    return (
-      <text fg={chatScreenTheme.accentRed}>{"grep failed to run"}</text>
-    );
-  }
+function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
   const matchHits = props.toolCallDetail.matchHits;
   if (!matchHits || matchHits.length === 0) {
     return undefined;
@@ -118,30 +94,23 @@ function buildGrepBodyContent(input: GrepBodyContentInput): ReactNode {
   const grepMatchFileSections = groupGrepMatchesByFile(matchHits);
   return (
     <box flexDirection="column" width="100%">
-      <ToolCallResultDisclosureControl
-        isResultExpanded={input.isGrepResultExpanded}
-        onResultExpansionToggle={input.onGrepResultExpansionToggle}
-        resultSummaryText={buildGrepResultSummaryText(props.toolCallDetail)}
-      />
-      {input.isGrepResultExpanded ? (
-        <box flexDirection="column" marginTop={1} paddingX={1} width="100%">
-          {grepMatchFileSections.map((grepMatchFileSection, index) => (
-            <box
-              key={grepMatchFileSection.matchFilePath}
-              flexDirection="column"
-              width="100%"
-              {...(index > 0 ? { marginTop: 1 } : {})}
-            >
-              <GrepMatchFileHeading matchFilePath={grepMatchFileSection.matchFilePath} />
-              <FencedCodeBlock
-                variant="embedded"
-                filePath={grepMatchFileSection.matchFilePath}
-                codeLines={grepMatchFileSection.matchLines}
-              />
-            </box>
-          ))}
-        </box>
-      ) : null}
+      <box flexDirection="column" paddingX={1} width="100%">
+        {grepMatchFileSections.map((grepMatchFileSection, index) => (
+          <box
+            key={grepMatchFileSection.matchFilePath}
+            flexDirection="column"
+            width="100%"
+            {...(index > 0 ? { marginTop: 1 } : {})}
+          >
+            <GrepMatchFileHeading matchFilePath={grepMatchFileSection.matchFilePath} />
+            <FencedCodeBlock
+              variant="embedded"
+              filePath={grepMatchFileSection.matchFilePath}
+              codeLines={grepMatchFileSection.matchLines}
+            />
+          </box>
+        ))}
+      </box>
     </box>
   );
 }
@@ -176,23 +145,8 @@ function groupGrepMatchesByFile(matchHits: readonly ToolCallGrepMatch[]): GrepMa
 
 function GrepMatchFileHeading(props: { matchFilePath: string }): ReactNode {
   return (
-    <text fg={chatScreenTheme.textSecondary} wrapMode="none" width="100%">
+    <text fg={chatScreenTheme.textSecondary} wrapMode="char" width="100%">
       {props.matchFilePath}
     </text>
   );
-}
-
-function buildGrepResultSummaryText(toolCallDetail: ToolCallGrepDetail): string {
-  const returnedMatchHitCount = toolCallDetail.matchHits?.length ?? toolCallDetail.returnedMatchHitCount ?? 0;
-  const totalMatchCount = toolCallDetail.totalMatchCount;
-  const matchCountText = totalMatchCount !== undefined && totalMatchCount !== returnedMatchHitCount
-    ? `${returnedMatchHitCount} of ${totalMatchCount}`
-    : String(returnedMatchHitCount);
-  const matchCountForPlural = totalMatchCount ?? returnedMatchHitCount;
-  const matchCountLabel = matchCountForPlural === 1 ? "matched line" : "matched lines";
-  const fileCountText = toolCallDetail.matchedFileCount === undefined
-    ? ""
-    : ` across ${toolCallDetail.matchedFileCount} ${toolCallDetail.matchedFileCount === 1 ? "file" : "files"}`;
-
-  return `${matchCountText} ${matchCountLabel}${fileCountText} for ${toolCallDetail.searchPattern}`;
 }

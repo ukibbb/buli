@@ -11,7 +11,7 @@ import type {
 import type { ToolCallRequest } from "./toolCallRequest.ts";
 
 export const ASSISTANT_TOOL_REQUEST_NAMES = ["bash", "read", "glob", "grep", "edit", "write", "task"] as const satisfies readonly ToolCallRequest["toolName"][];
-export const ASSISTANT_PRESENTATION_FUNCTION_NAMES = ["present_learning_sequence"] as const;
+export const ASSISTANT_PRESENTATION_FUNCTION_NAMES = ["present_code_execution_walkthrough"] as const;
 export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "write"] as const satisfies readonly AssistantToolRequestName[];
 export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "task"] as const satisfies readonly AssistantToolRequestName[];

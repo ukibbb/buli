@@ -4,7 +4,7 @@ import { BashToolCallCard } from "../../../src/components/toolCalls/BashToolCall
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("BashToolCallCard (opentui)", () => {
-  test("streaming uses amber accent and renders [command] with running status", async () => {
+  test("streaming uses amber accent and renders [command] with only the snake status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
         toolCallDetail={{ toolName: "bash", commandLine: "bun test" }}
@@ -14,9 +14,11 @@ describe("BashToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Bash");
     expect(frame).toContain("[bun test]");
-    expect(frame).toContain("running");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("running");
     expect(chatScreenTheme.accentAmber).toBe("#F59E0B");
   });
 
@@ -31,6 +33,7 @@ describe("BashToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[ls]");
     expect(frame).toContain("exit 0");
     expect(chatScreenTheme.accentGreen).toBe("#10B981");
@@ -47,6 +50,7 @@ describe("BashToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[bun run build]");
     expect(frame).toContain("exit 1");
     expect(chatScreenTheme.accentRed).toBe("#EF4444");
@@ -63,6 +67,7 @@ describe("BashToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[false]");
     expect(frame).toContain("Permission denied");
   });

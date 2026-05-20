@@ -3,12 +3,7 @@ import type { ToolCallReadDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { BracketedTarget } from "./BracketedTarget.tsx";
-import {
-  ToolCallHeaderLeft,
-  ToolCallHeaderRight,
-} from "./ToolCallCardHeaderSlots.tsx";
-import { ToolCallResultDisclosureControl } from "./ToolCallResultDisclosureControl.tsx";
+import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
 
 export type ReadToolCallCardProps = {
   toolCallDetail: ToolCallReadDetail;
@@ -31,31 +26,31 @@ export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
       : props.renderState === "failed"
         ? "error"
         : "pending";
+  const hasReadPreviewContent = props.renderState !== "failed" && (props.toolCallDetail.previewLines?.length ?? 0) > 0;
   return (
     <SurfaceCard
       accentColor={accentColor}
+      density="compact"
       headerLeft={
-        <ToolCallHeaderLeft
-          toolNameLabel="Read"
-          toolTargetContent={
-            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.readFilePath} />
-          }
-        />
-      }
-      headerRight={
-        <ToolCallHeaderRight
+        <ToolCallCompactHeader
+          accentColor={accentColor}
+          disclosureState={hasReadPreviewContent
+            ? {
+                isContentExpandable: true,
+                isContentExpanded: isReadPreviewExpanded,
+                onContentExpansionToggle: () => {
+                  setIsReadPreviewExpanded((currentReadPreviewExpanded) => !currentReadPreviewExpanded);
+                },
+              }
+            : { isContentExpandable: false }}
           statusColor={accentColor}
           statusKind={statusKind}
           statusLabel={buildReadStatusLabel(props)}
+          toolNameLabel="Read"
+          toolTargetText={props.toolCallDetail.readFilePath}
         />
       }
-      bodyContent={buildReadBodyContent({
-        isReadPreviewExpanded,
-        onReadPreviewExpansionToggle: () => {
-          setIsReadPreviewExpanded((currentReadPreviewExpanded) => !currentReadPreviewExpanded);
-        },
-        readToolCallCardProps: props,
-      })}
+      bodyContent={hasReadPreviewContent && isReadPreviewExpanded ? buildReadBodyContent(props) : undefined}
     />
   );
 }
@@ -69,117 +64,36 @@ function buildReadStatusLabel(props: ReadToolCallCardProps): string {
   }
   const lineCount = props.toolCallDetail.readLineCount;
   const returnedLineCount = props.toolCallDetail.returnedLineCount;
-  const byteCount = props.toolCallDetail.readByteCount;
-  const truncationLabel = props.toolCallDetail.wasLineCountTruncated || props.toolCallDetail.wasLongLineTruncated
-    ? " · truncated"
-    : "";
-  if (lineCount !== undefined && returnedLineCount !== undefined && returnedLineCount !== lineCount) {
-    return `${returnedLineCount} of ${lineCount} lines${truncationLabel}`;
+  const visibleLineCount = returnedLineCount ?? lineCount;
+  if (lineCount === 0 || visibleLineCount === 0) {
+    return `0:${lineCount ?? "?"}`;
   }
-  if (lineCount !== undefined && byteCount !== undefined) {
-    return `${lineCount} lines · ${formatByteCount(byteCount)}${truncationLabel}`;
-  }
-  if (lineCount !== undefined) {
-    return `${lineCount} lines${truncationLabel}`;
+  if (visibleLineCount !== undefined) {
+    const firstVisibleLineNumber = props.toolCallDetail.previewLines?.at(0)?.lineNumber ?? 1;
+    const lastVisibleLineNumber = firstVisibleLineNumber + visibleLineCount - 1;
+    return `${firstVisibleLineNumber}-${lastVisibleLineNumber}:${lineCount ?? "?"}`;
   }
   return "read";
 }
 
-type ReadBodyContentInput = {
-  readToolCallCardProps: ReadToolCallCardProps;
-  isReadPreviewExpanded: boolean;
-  onReadPreviewExpansionToggle: () => void;
-};
-
-function buildReadBodyContent(input: ReadBodyContentInput): ReactNode {
-  const props = input.readToolCallCardProps;
-  if (props.renderState === "failed") {
-    if (props.errorText !== undefined) {
-      // Status header already carries errorText; suppress body to avoid duplicating it.
-      return undefined;
-    }
-    return (
-      <text fg={chatScreenTheme.accentRed}>{"The file could not be read."}</text>
-    );
-  }
+function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
   const previewLines = props.toolCallDetail.previewLines;
   if (!previewLines || previewLines.length === 0) {
     return undefined;
   }
   return (
-    <box flexDirection="column" width="100%">
-      <ReadPreviewDisclosureControl
-        isReadPreviewExpanded={input.isReadPreviewExpanded}
-        onReadPreviewExpansionToggle={input.onReadPreviewExpansionToggle}
-        readPreviewSummaryText={buildReadPreviewSummaryText(props.toolCallDetail)}
+    <box width="100%">
+      <FencedCodeBlock
+        variant="embedded"
+        filePath={props.toolCallDetail.readFilePath}
+        codeLines={previewLines.map((previewLine) => ({
+          lineNumber: previewLine.lineNumber,
+          lineText: previewLine.lineText,
+          ...(previewLine.syntaxHighlightSpans
+            ? { syntaxHighlightSpans: previewLine.syntaxHighlightSpans }
+            : {}),
+        }))}
       />
-      {input.isReadPreviewExpanded ? (
-        <box marginTop={1} width="100%">
-          <FencedCodeBlock
-            variant="embedded"
-            filePath={props.toolCallDetail.readFilePath}
-            codeLines={previewLines.map((previewLine) => ({
-              lineNumber: previewLine.lineNumber,
-              lineText: previewLine.lineText,
-              ...(previewLine.syntaxHighlightSpans
-                ? { syntaxHighlightSpans: previewLine.syntaxHighlightSpans }
-                : {}),
-            }))}
-          />
-        </box>
-      ) : null}
     </box>
   );
-}
-
-function ReadPreviewDisclosureControl(props: {
-  readPreviewSummaryText: string;
-  isReadPreviewExpanded: boolean;
-  onReadPreviewExpansionToggle: () => void;
-}): ReactNode {
-  return (
-    <ToolCallResultDisclosureControl
-      isResultExpanded={props.isReadPreviewExpanded}
-      onResultExpansionToggle={props.onReadPreviewExpansionToggle}
-      resultSummaryText={props.readPreviewSummaryText}
-    />
-  );
-}
-
-function buildReadPreviewSummaryText(toolCallDetail: ToolCallReadDetail): string {
-  const previewLines = toolCallDetail.previewLines ?? [];
-  const firstReturnedLineNumber = previewLines.at(0)?.lineNumber;
-  const returnedLineCount = toolCallDetail.returnedLineCount ?? previewLines.length;
-  const totalReadLineCountText = toolCallDetail.readLineCount !== undefined ? ` of ${toolCallDetail.readLineCount}` : "";
-
-  return `Read ${buildReadLineRangeText({
-    firstReturnedLineNumber,
-    returnedLineCount,
-  })}${totalReadLineCountText} from ${toolCallDetail.readFilePath}`;
-}
-
-function buildReadLineRangeText(input: {
-  firstReturnedLineNumber: number | undefined;
-  returnedLineCount: number;
-}): string {
-  if (input.firstReturnedLineNumber === undefined || input.returnedLineCount <= 0) {
-    return "content";
-  }
-
-  const lastReturnedLineNumber = input.firstReturnedLineNumber + input.returnedLineCount - 1;
-  if (input.firstReturnedLineNumber === lastReturnedLineNumber) {
-    return `line ${input.firstReturnedLineNumber}`;
-  }
-
-  return `lines ${input.firstReturnedLineNumber}-${lastReturnedLineNumber}`;
-}
-
-function formatByteCount(byteCount: number): string {
-  if (byteCount < 1024) {
-    return `${byteCount} B`;
-  }
-  if (byteCount < 1024 * 1024) {
-    return `${(byteCount / 1024).toFixed(1)} KB`;
-  }
-  return `${(byteCount / (1024 * 1024)).toFixed(1)} MB`;
 }

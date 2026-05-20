@@ -5,7 +5,7 @@ import { testRender } from "../testRenderWithCleanup.ts";
 import { ConversationMessageList } from "../../src/components/ConversationMessageList.tsx";
 
 describe("ConversationMessageList", () => {
-  test("renders Thinking for an empty streaming assistant message", async () => {
+  test("renders only the snake for an empty streaming assistant message", async () => {
     const conversationMessages: ConversationMessage[] = [
       {
         id: "assistant-1",
@@ -29,7 +29,9 @@ describe("ConversationMessageList", () => {
     );
 
     await renderOnce();
-    expect(captureCharFrame()).toContain("Thinking");
+    const frame = captureCharFrame();
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("Thinking");
   });
 
   test("renders user, reasoning, assistant text, tool call, and turn summary parts", async () => {

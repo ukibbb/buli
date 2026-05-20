@@ -19,8 +19,25 @@ test("createOpenAiResponsesHttpRequestBody builds a streaming reasoning-model re
     parallel_tool_calls: true,
     include: ["reasoning.encrypted_content"],
     reasoning: { summary: "auto" },
+    text: { verbosity: "low" },
     stream: true,
   });
+});
+
+test("createOpenAiResponsesHttpRequestBody omits low verbosity for Codex and chat models", () => {
+  const codexRequestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.5-codex",
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Run pwd" }],
+  });
+  const chatRequestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.5-chat-latest",
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Say hello" }],
+  });
+
+  expect(codexRequestBody.text).toBeUndefined();
+  expect(chatRequestBody.text).toBeUndefined();
 });
 
 test("createOpenAiResponsesHttpRequestBody disables encrypted reasoning include for none effort", () => {
@@ -82,6 +99,7 @@ test("summarizeOpenAiResponsesRequestForDiagnostics reports counts without raw c
     responseStepIndex: 2,
     model: "gpt-5.4",
     reasoningSummary: "auto",
+    textVerbosity: "low",
     includesReasoningEncryptedContent: true,
     inputItemCount: 3,
     userMessageInputItemCount: 1,

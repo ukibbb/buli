@@ -67,11 +67,12 @@ test("createOpenAiResponseStepProviderFunctionCallTerminalState keeps presentati
   expect(createOpenAiResponseStepProviderFunctionCallTerminalState({
     providerFunctionCallIntents: [
       {
-        intentKind: "learning_sequence_presentation",
+        intentKind: "code_execution_walkthrough_presentation",
         functionCallId: "call_present_1",
-        learningSequence: {
+        codeExecutionWalkthrough: {
           titleText: "Request flow",
-          sequenceItems: [{ labelText: "Prompt accepted" }],
+          walkthroughKind: "source_walkthrough",
+          steps: [{ stepTitle: "Prompt accepted", whatHappensText: "The accepted prompt is recorded.", codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }] }],
         },
       },
     ],
@@ -81,11 +82,12 @@ test("createOpenAiResponseStepProviderFunctionCallTerminalState keeps presentati
     terminalKind: "provider_function_calls_requested",
     providerFunctionCallIntents: [
       {
-        intentKind: "learning_sequence_presentation",
+        intentKind: "code_execution_walkthrough_presentation",
         functionCallId: "call_present_1",
-        learningSequence: {
+        codeExecutionWalkthrough: {
           titleText: "Request flow",
-          sequenceItems: [{ labelText: "Prompt accepted" }],
+          walkthroughKind: "source_walkthrough",
+          steps: [{ stepTitle: "Prompt accepted", whatHappensText: "The accepted prompt is recorded.", codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }] }],
         },
       },
     ],

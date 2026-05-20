@@ -101,8 +101,12 @@ export class RuntimeConversationTurnSessionRecorder {
     }
 
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
-      entryKind: "assistant_learning_sequence_segment",
-      learningSequenceItemCount: assistantSegmentConversationSessionEntry.sequenceItems.length,
+      entryKind: "assistant_code_execution_walkthrough_segment",
+      codeExecutionWalkthroughStepCount: assistantSegmentConversationSessionEntry.steps.length,
+      codeExecutionWalkthroughCodeExampleCount: assistantSegmentConversationSessionEntry.steps.reduce(
+        (codeExampleCount, walkthroughStep) => codeExampleCount + walkthroughStep.codeExamples.length,
+        0,
+      ),
       conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });

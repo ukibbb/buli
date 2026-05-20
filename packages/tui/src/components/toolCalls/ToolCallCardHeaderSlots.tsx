@@ -1,6 +1,82 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "../glyphs.ts";
+import { InlineSnakeAnimationIndicator, SnakeAnimationIndicator } from "../SnakeAnimationIndicator.tsx";
+
+export type ToolCallCompactDisclosureState =
+  | { isContentExpandable: false }
+  | {
+      isContentExpandable: true;
+      isContentExpanded: boolean;
+      onContentExpansionToggle: () => void;
+    };
+
+export type ToolCallCompactHeaderProps = {
+  accentColor: string;
+  disclosureState: ToolCallCompactDisclosureState;
+  statusColor: string;
+  statusKind: "success" | "error" | "pending";
+  statusLabel?: string;
+  pendingSnakeVariant?: "sixCell" | "eatingApple";
+  toolNameLabel: string;
+  toolTargetText?: string;
+};
+
+export function ToolCallCompactHeader(props: ToolCallCompactHeaderProps): ReactNode {
+  const disclosureText = props.disclosureState.isContentExpandable && props.disclosureState.isContentExpanded
+    ? "[-]"
+    : "[+]";
+  const toggleProps = props.disclosureState.isContentExpandable
+    ? { onMouseDown: props.disclosureState.onContentExpansionToggle }
+    : {};
+
+  return (
+    <box
+      {...toggleProps}
+      minWidth={0}
+      width="100%"
+    >
+      <text wrapMode="char" width="100%">
+        {props.statusKind === "pending" ? (
+          <>
+            <InlineSnakeAnimationIndicator variant={props.pendingSnakeVariant ?? "sixCell"} />
+            <span fg={props.accentColor}>{` ${disclosureText}`}</span>
+          </>
+        ) : (
+          <span fg={props.accentColor}>{disclosureText}</span>
+        )}
+        <span fg={chatScreenTheme.textPrimary}>{` ${props.toolNameLabel}`}</span>
+        {props.toolTargetText ? (
+          <>
+            <span fg={props.accentColor}>{" ["}</span>
+            <span fg={chatScreenTheme.textMuted}>{props.toolTargetText}</span>
+            <span fg={props.accentColor}>{"]"}</span>
+          </>
+        ) : null}
+        <ToolCallCompactStatus
+          statusColor={props.statusColor}
+          statusKind={props.statusKind}
+          statusLabel={props.statusLabel}
+        />
+      </text>
+    </box>
+  );
+}
+
+function ToolCallCompactStatus(props: {
+  statusColor: string;
+  statusKind: "success" | "error" | "pending";
+  statusLabel: string | undefined;
+}): ReactNode {
+  if (props.statusKind === "pending") {
+    return null;
+  }
+
+  const statusGlyph = props.statusKind === "success" ? glyphs.checkMark : glyphs.close;
+  return (
+    <span fg={props.statusColor}>{` ${props.statusLabel ?? (props.statusKind === "success" ? "done" : "failed")} ${statusGlyph}`}</span>
+  );
+}
 
 export type ToolCallHeaderLeftProps = {
   toolNameLabel: string;
@@ -12,7 +88,7 @@ export function ToolCallHeaderLeft(props: ToolCallHeaderLeftProps): ReactNode {
     <box flexDirection="row" alignItems="center" flexShrink={1} minWidth={0} overflow="hidden" width="100%">
       <box flexShrink={0}>
         <text wrapMode="none">
-          <b fg={chatScreenTheme.textPrimary}>{props.toolNameLabel}</b>
+          <span fg={chatScreenTheme.textPrimary}>{props.toolNameLabel}</span>
         </text>
       </box>
       {props.toolTargetContent ? (
@@ -33,19 +109,21 @@ export type ToolCallHeaderRightProps = {
 );
 
 export function ToolCallHeaderRight(props: ToolCallHeaderRightProps): ReactNode {
+  if (props.statusKind === "pending") {
+    return props.statusContent ?? <SnakeAnimationIndicator />;
+  }
+
   const statusGlyph =
     props.statusKind === "success"
       ? glyphs.checkMark
-      : props.statusKind === "error"
-        ? glyphs.close
-        : glyphs.statusDot;
+      : glyphs.close;
 
   return (
     <box flexDirection="row" alignItems="center" flexShrink={1} justifyContent="flex-end" minWidth={0} overflow="hidden">
       <box flexShrink={1} minWidth={0} overflow="hidden">
         {props.statusContent ?? (
           <text wrapMode="none" width="100%">
-            <b fg={props.statusColor}>{props.statusLabel}</b>
+            <span fg={props.statusColor}>{props.statusLabel}</span>
           </text>
         )}
       </box>

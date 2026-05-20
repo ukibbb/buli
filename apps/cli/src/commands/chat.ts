@@ -29,7 +29,7 @@ import { FileConversationSessionStore, type ConversationSessionStore } from "../
 import { createDiagnosticFileLogger } from "../diagnosticFileLogger.ts";
 
 const DEFAULT_MODEL_ID = "gpt-5.5";
-const DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
+const DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
 const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
 

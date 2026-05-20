@@ -7,6 +7,7 @@ export type SurfaceCardProps = {
   headerRight?: ReactNode;
   bodyContent?: ReactNode;
   borderColor?: string;
+  density?: "comfortable" | "compact";
 };
 
 const leftRailBorderChars = {
@@ -24,6 +25,7 @@ const leftRailBorderChars = {
 } as const;
 
 export function SurfaceCard(props: SurfaceCardProps): ReactNode {
+  const isCompact = props.density === "compact";
   return (
     <box
       borderColor={props.borderColor ?? props.accentColor}
@@ -33,20 +35,31 @@ export function SurfaceCard(props: SurfaceCardProps): ReactNode {
       width="100%"
     >
       <box backgroundColor={chatScreenTheme.surfaceOne} flexDirection="column" flexGrow={1} width="100%">
-        <box
-          flexDirection="row"
-          alignItems="center"
-          justifyContent="space-between"
-          overflow="hidden"
-          paddingX={2}
-          paddingY={1}
-          width="100%"
-        >
-          <box flexShrink={1} minWidth={0} overflow="hidden">{props.headerLeft}</box>
-          {props.headerRight ? <box flexShrink={0} marginLeft={1}>{props.headerRight}</box> : null}
-        </box>
+        {isCompact ? (
+          <box flexDirection="row" alignItems="flex-start" paddingX={1} paddingY={0} width="100%">
+            <box minWidth={0} width="100%">{props.headerLeft}</box>
+          </box>
+        ) : (
+          <box
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="space-between"
+            overflow="hidden"
+            paddingX={2}
+            paddingY={1}
+            width="100%"
+          >
+            <box flexShrink={1} minWidth={0} overflow="hidden">{props.headerLeft}</box>
+            {props.headerRight ? <box flexShrink={0} marginLeft={1}>{props.headerRight}</box> : null}
+          </box>
+        )}
         {props.bodyContent ? (
-          <box flexDirection="column" paddingBottom={1} paddingX={2} width="100%">
+          <box
+            flexDirection="column"
+            paddingBottom={isCompact ? 0 : 1}
+            paddingX={isCompact ? 1 : 2}
+            width="100%"
+          >
             {props.bodyContent}
           </box>
         ) : null}

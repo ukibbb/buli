@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { TodoWriteToolCallCard } from "../../../src/components/toolCalls/TodoWriteToolCallCard.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("TodoWriteToolCallCard (opentui)", () => {
-  test("streaming: renders TodoWrite label, bracketed item count, and updating status", async () => {
+  test("streaming: renders TodoWrite label, bracketed item count, and only the snake status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TodoWriteToolCallCard
         toolCallDetail={{
@@ -20,14 +21,16 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("TodoWrite");
     expect(frame).toMatch(/\[\d+ items/);
-    expect(frame).toContain("updating");
-    expect(frame).toContain("draft palette");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("updating");
+    expect(frame).not.toContain("draft palette");
   });
 
-  test("completed: renders TodoWrite label, bracketed item count, and updated status", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
+  test("completed: renders one-line summary and expands checklist when clicked", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <TodoWriteToolCallCard
         toolCallDetail={{
           toolName: "todowrite",
@@ -42,12 +45,23 @@ describe("TodoWriteToolCallCard (opentui)", () => {
       { width: 120, height: 15 },
     );
     await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("TodoWrite");
-    expect(frame).toMatch(/\[\d+ items/);
-    expect(frame).toContain("updated");
-    expect(frame).toContain("palette");
-    expect(frame).toContain("gallery");
+    const collapsedFrame = captureCharFrame();
+    expect(collapsedFrame).toContain("[+]");
+    expect(collapsedFrame).toContain("TodoWrite");
+    expect(collapsedFrame).toMatch(/\[\d+ items/);
+    expect(collapsedFrame).toContain("updated");
+    expect(collapsedFrame).not.toContain("palette");
+    expect(collapsedFrame).not.toContain("gallery");
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("[-]");
+    expect(expandedFrame).toContain("palette");
+    expect(expandedFrame).toContain("gallery");
     expect(chatScreenTheme.accentGreen).toBeDefined();
   });
 
@@ -61,6 +75,7 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("TodoWrite");
     expect(frame).not.toContain("☐");
     expect(frame).toContain("[0 items]");
@@ -78,6 +93,7 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("TodoWrite");
     expect(frame).toContain("storage");
     expect(frame).toContain("offline");

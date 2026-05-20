@@ -8,7 +8,7 @@ import { TurnFooter } from "./TurnFooter.tsx";
 import { ThinkingStatusLine } from "./ThinkingStatusLine.tsx";
 import { UserImageAttachmentBlock } from "./UserImageAttachmentBlock.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
-import { AssistantLearningSequencePartView } from "./messageParts/AssistantLearningSequencePartView.tsx";
+import { AssistantCodeExecutionWalkthroughPartView } from "./messageParts/AssistantCodeExecutionWalkthroughPartView.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
@@ -59,8 +59,8 @@ function ConversationMessagePartView(props: {
   if (conversationMessagePart.partKind === "assistant_plan_proposal") {
     return <PlanProposalBlock planTitle={conversationMessagePart.planTitle} planSteps={conversationMessagePart.planSteps} />;
   }
-  if (conversationMessagePart.partKind === "assistant_learning_sequence") {
-    return <AssistantLearningSequencePartView assistantLearningSequenceConversationMessagePart={conversationMessagePart} />;
+  if (conversationMessagePart.partKind === "assistant_code_execution_walkthrough") {
+    return <AssistantCodeExecutionWalkthroughPartView assistantCodeExecutionWalkthroughConversationMessagePart={conversationMessagePart} />;
   }
   if (conversationMessagePart.partKind === "assistant_rate_limit_notice") {
     return (
@@ -98,6 +98,14 @@ export type ConversationMessageRowProps = {
   terminalColumnCount?: number | undefined;
 };
 
+function shouldUseCompactSpacingBetweenParts(input: {
+  currentConversationMessagePart: ConversationMessagePart;
+  previousConversationMessagePart: ConversationMessagePart | undefined;
+}): boolean {
+  return input.currentConversationMessagePart.partKind === "assistant_tool_call" &&
+    input.previousConversationMessagePart?.partKind === "assistant_tool_call";
+}
+
 export function ConversationMessageRow(props: ConversationMessageRowProps): ReactNode {
   const shouldShowEmptyAssistantThinkingLine =
     props.conversationMessage.role === "assistant" &&
@@ -114,7 +122,12 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
           flexDirection="column"
           flexShrink={0}
           key={conversationMessagePart.id}
-          marginTop={index === 0 ? 0 : 1}
+          marginTop={index === 0 || shouldUseCompactSpacingBetweenParts({
+              currentConversationMessagePart: conversationMessagePart,
+              previousConversationMessagePart: props.conversationMessageParts[index - 1],
+            })
+            ? 0
+            : 1}
           width="100%"
         >
           <ConversationMessagePartView

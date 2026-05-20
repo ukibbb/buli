@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   AssistantMessageCompletedEventSchema,
   AssistantMessageIncompleteEventSchema,
-  AssistantLearningSequenceConversationMessagePartSchema,
+  AssistantCodeExecutionWalkthroughConversationMessagePartSchema,
   AssistantMessagePartAddedEventSchema,
   AssistantMessagePartUpdatedEventSchema,
   AssistantPlanProposalConversationMessagePartSchema,
@@ -13,14 +13,14 @@ import {
   type AssistantSegmentConversationSessionEntry,
   type AssistantMessageConversationSessionEntry,
   type AssistantResponseEvent,
-  type LearningSequence,
+  type CodeExecutionWalkthrough,
   type ProviderPlanProposedEvent,
   type ProviderStreamEvent,
   type ProviderToolCallRequestedEvent,
   type ProviderToolCallsRequestedEvent,
   type ProviderTurnReplay,
   type TokenUsage,
-  formatLearningSequenceAsMarkdownText,
+  formatCodeExecutionWalkthroughAsMarkdownText,
 } from "@buli/contracts";
 import {
   appendAssistantTextDeltaToAssistantTextMessagePartBuilder,
@@ -142,8 +142,8 @@ export class RuntimeProviderStreamEventTranslator {
       return this.translateTextChunkProviderStreamEvent(input.providerStreamEvent.text);
     }
 
-    if (input.providerStreamEvent.type === "learning_sequence_presented") {
-      return this.translateLearningSequencePresentedProviderStreamEvent(input.providerStreamEvent.learningSequence);
+    if (input.providerStreamEvent.type === "code_execution_walkthrough_presented") {
+      return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);
     }
 
     if (input.providerStreamEvent.type === "tool_call_requested") {
@@ -321,35 +321,33 @@ export class RuntimeProviderStreamEventTranslator {
     };
   }
 
-  private translateLearningSequencePresentedProviderStreamEvent(
-    learningSequence: LearningSequence,
+  private translateCodeExecutionWalkthroughPresentedProviderStreamEvent(
+    codeExecutionWalkthrough: CodeExecutionWalkthrough,
   ): RuntimeProviderStreamAssistantEventsTranslation {
     const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
       partStatus: "completed",
       shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: true,
     });
-    const assistantLearningSequencePart = AssistantLearningSequenceConversationMessagePartSchema.parse({
+    const assistantCodeExecutionWalkthroughPart = AssistantCodeExecutionWalkthroughConversationMessagePartSchema.parse({
       id: this.createConversationMessagePartId(),
-      partKind: "assistant_learning_sequence",
-      titleText: learningSequence.titleText,
-      ...(learningSequence.summaryText !== undefined ? { summaryText: learningSequence.summaryText } : {}),
-      sequenceItems: learningSequence.sequenceItems,
+      partKind: "assistant_code_execution_walkthrough",
+      ...codeExecutionWalkthrough,
     });
     const assistantResponseEvents = [
       ...(assistantTextSegmentFlush?.assistantResponseEvents ?? []),
       AssistantMessagePartAddedEventSchema.parse({
         type: "assistant_message_part_added",
         messageId: this.assistantResponseMessageId,
-        part: assistantLearningSequencePart,
+        part: assistantCodeExecutionWalkthroughPart,
       }),
     ];
     const assistantSegmentSessionEntries = [
       ...(assistantTextSegmentFlush?.assistantSegmentSessionEntries ?? []),
-      createAssistantLearningSequenceSegmentSessionEntry(learningSequence),
+      createAssistantCodeExecutionWalkthroughSegmentSessionEntry(codeExecutionWalkthrough),
     ];
 
-    this.completedAssistantTextSegmentTexts.push(formatLearningSequenceAsMarkdownText(learningSequence));
+    this.completedAssistantTextSegmentTexts.push(formatCodeExecutionWalkthroughAsMarkdownText(codeExecutionWalkthrough));
     this.hasObservedAssistantSegmentBoundary = true;
 
     return {
@@ -638,16 +636,11 @@ export class RuntimeProviderStreamEventTranslator {
   }
 }
 
-function createAssistantLearningSequenceSegmentSessionEntry(
-  learningSequence: LearningSequence,
+function createAssistantCodeExecutionWalkthroughSegmentSessionEntry(
+  codeExecutionWalkthrough: CodeExecutionWalkthrough,
 ): AssistantSegmentConversationSessionEntry {
   return {
-    entryKind: "assistant_learning_sequence_segment",
-    titleText: learningSequence.titleText,
-    ...(learningSequence.summaryText !== undefined ? { summaryText: learningSequence.summaryText } : {}),
-    sequenceItems: learningSequence.sequenceItems.map((sequenceItem) => ({
-      labelText: sequenceItem.labelText,
-      ...(sequenceItem.detailText !== undefined ? { detailText: sequenceItem.detailText } : {}),
-    })),
+    entryKind: "assistant_code_execution_walkthrough_segment",
+    ...codeExecutionWalkthrough,
   };
 }

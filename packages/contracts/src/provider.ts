@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LearningSequenceSchema } from "./learningSequence.ts";
+import { CodeExecutionWalkthroughSchema } from "./codeExecutionWalkthrough.ts";
 import { PlanStepSchema } from "./planProposal.ts";
 import type { AssistantPresentationFunctionName, AssistantToolRequestName } from "./toolCatalog.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
@@ -101,11 +101,11 @@ export const ProviderToolCallsRequestedEventSchema = z
   })
   .strict();
 
-export const ProviderLearningSequencePresentedEventSchema = z
+export const ProviderCodeExecutionWalkthroughPresentedEventSchema = z
   .object({
-    type: z.literal("learning_sequence_presented"),
+    type: z.literal("code_execution_walkthrough_presented"),
     presentationCallId: z.string().min(1),
-    learningSequence: LearningSequenceSchema,
+    codeExecutionWalkthrough: CodeExecutionWalkthroughSchema,
   })
   .strict();
 
@@ -133,7 +133,7 @@ export const ProviderStreamEventSchema = z.discriminatedUnion("type", [
   ProviderReasoningSummaryStartedEventSchema,
   ProviderReasoningSummaryTextChunkEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
-  ProviderLearningSequencePresentedEventSchema,
+  ProviderCodeExecutionWalkthroughPresentedEventSchema,
   ProviderToolCallRequestedEventSchema,
   ProviderToolCallsRequestedEventSchema,
   ProviderRateLimitPendingEventSchema,
@@ -149,7 +149,7 @@ export type ProviderIncompleteEvent = z.infer<typeof ProviderIncompleteEventSche
 export type ProviderReasoningSummaryStartedEvent = z.infer<typeof ProviderReasoningSummaryStartedEventSchema>;
 export type ProviderReasoningSummaryTextChunkEvent = z.infer<typeof ProviderReasoningSummaryTextChunkEventSchema>;
 export type ProviderReasoningSummaryCompletedEvent = z.infer<typeof ProviderReasoningSummaryCompletedEventSchema>;
-export type ProviderLearningSequencePresentedEvent = z.infer<typeof ProviderLearningSequencePresentedEventSchema>;
+export type ProviderCodeExecutionWalkthroughPresentedEvent = z.infer<typeof ProviderCodeExecutionWalkthroughPresentedEventSchema>;
 export type ProviderRequestedToolCall = z.infer<typeof ProviderRequestedToolCallSchema>;
 export type ProviderToolCallRequestedEvent = z.infer<typeof ProviderToolCallRequestedEventSchema>;
 export type ProviderToolCallsRequestedEvent = z.infer<typeof ProviderToolCallsRequestedEventSchema>;

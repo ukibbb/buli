@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { EditToolCallCard } from "../../../src/components/toolCalls/EditToolCallCard.tsx";
 
 describe("EditToolCallCard", () => {
   test("completed_shows_file_path_and_diff", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <EditToolCallCard
         renderState="completed"
         toolCallDetail={{
@@ -26,12 +27,22 @@ describe("EditToolCallCard", () => {
       { width: 80, height: 20 },
     );
     await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("Edit");
-    expect(frame).toContain("[/src/utils.ts]");
-    expect(frame).toContain("+3");
-    expect(frame).toContain("−1");
-    expect(frame).toContain("const newer");
+    const collapsedFrame = captureCharFrame();
+    expect(collapsedFrame).toContain("[+]");
+    expect(collapsedFrame).toContain("Edit");
+    expect(collapsedFrame).toContain("[/src/utils.ts]");
+    expect(collapsedFrame).toContain("+3");
+    expect(collapsedFrame).toContain("−1");
+    expect(collapsedFrame).not.toContain("const newer");
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("[-]");
+    expect(expandedFrame).toContain("const newer");
   });
 
   test("streaming_shows_amber_state", async () => {
@@ -47,9 +58,11 @@ describe("EditToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Edit");
     expect(frame).toContain("[/src/foo.ts]");
-    expect(frame).toContain("editing");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("editing");
   });
 
   test("failed_shows_error_state", async () => {
@@ -66,6 +79,7 @@ describe("EditToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[/src/locked.ts]");
     expect(frame).toContain("permission denied");
   });

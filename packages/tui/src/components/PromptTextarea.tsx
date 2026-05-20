@@ -53,6 +53,24 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       return;
     }
 
+    if (props.isFocused) {
+      if (!promptTextarea.focused) {
+        promptTextarea.focus();
+      }
+      return;
+    }
+
+    if (promptTextarea.focused) {
+      promptTextarea.blur();
+    }
+  }, [props.isFocused]);
+
+  useEffect(() => {
+    const promptTextarea = promptTextareaRef.current;
+    if (!promptTextarea) {
+      return;
+    }
+
     const nextCursorOffset = clampPromptDraftCursorOffset(props.promptDraft, props.promptDraftCursorOffset);
     if (promptTextarea.plainText === props.promptDraft && promptTextarea.cursorOffset === nextCursorOffset) {
       return;
@@ -92,7 +110,6 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       ref={promptTextareaRef}
       backgroundColor={chatScreenTheme.bg}
       cursorColor={chatScreenTheme.textPrimary}
-      focused={props.isFocused}
       focusedBackgroundColor={chatScreenTheme.bg}
       focusedTextColor={chatScreenTheme.textPrimary}
       {...promptTextareaRowSizing}
@@ -119,7 +136,6 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       selectable={true}
       selectionBg={chatScreenTheme.accentPrimary}
       selectionFg={chatScreenTheme.textPrimary}
-      showCursor={props.isFocused}
       textColor={chatScreenTheme.textPrimary}
       width="100%"
       wrapMode="word"

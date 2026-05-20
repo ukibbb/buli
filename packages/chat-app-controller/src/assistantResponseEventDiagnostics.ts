@@ -99,9 +99,13 @@ function summarizeConversationMessagePartStatusForDiagnostics(
         planId: conversationMessagePart.planId,
         planStepCount: conversationMessagePart.planSteps.length,
       };
-    case "assistant_learning_sequence":
+    case "assistant_code_execution_walkthrough":
       return {
-        learningSequenceItemCount: conversationMessagePart.sequenceItems.length,
+        codeExecutionWalkthroughStepCount: conversationMessagePart.steps.length,
+        codeExecutionWalkthroughCodeExampleCount: conversationMessagePart.steps.reduce(
+          (codeExampleCount, walkthroughStep) => codeExampleCount + walkthroughStep.codeExamples.length,
+          0,
+        ),
         titleTextLength: conversationMessagePart.titleText.length,
       };
     case "assistant_rate_limit_notice":

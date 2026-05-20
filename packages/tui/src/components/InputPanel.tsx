@@ -13,7 +13,7 @@ import {
 import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Pen frame HOeet. Owns a header strip with mode + model chips, a body with
-// the prompt draft and caret, and a footer that shows the working indicator
+// the prompt draft and caret, and a footer that shows the activity indicator
 // while streaming, a contextual override message when one is supplied, or only
 // the context meter when idle.
 //
@@ -46,12 +46,6 @@ export function InputPanel(props: InputPanelProps): ReactNode {
   const pendingPromptImageAttachmentCount = props.pendingPromptImageAttachments?.length ?? 0;
   const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
     props.assistantResponseStatus === "waiting_for_tool_approval";
-  const activeTurnStatusText = props.isActiveTurnInterruptConfirmationArmed
-    ? "esc again to stop"
-    : props.assistantResponseStatus === "waiting_for_tool_approval"
-    ? "approval needed · esc esc to stop"
-    : "working… esc esc to stop";
-
   return (
     <box
       borderStyle="rounded"
@@ -115,7 +109,6 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         {isAssistantTurnActive ? (
           <box flexDirection="row" gap={1} minWidth={0} overflow="hidden">
             <SnakeAnimationIndicator />
-            <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">{activeTurnStatusText}</text>
           </box>
         ) : pendingPromptImageAttachmentCount > 0 ? (
           <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">

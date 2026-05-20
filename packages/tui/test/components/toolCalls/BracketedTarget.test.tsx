@@ -14,37 +14,22 @@ describe("BracketedTarget (opentui)", () => {
     expect(frame).toContain("[bun test]");
   });
 
-  test("clips long plain-text targets without rendering ellipses", async () => {
+  test("wraps long plain-text targets without rendering ellipses", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BracketedTarget
         accentColor={chatScreenTheme.accentGreen}
         targetText="packages/tui/src/components/ConversationMessageList.tsx"
       />,
-      { width: 34, height: 4 },
+      { width: 24, height: 5 },
     );
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("[");
     expect(frame).toContain("]");
+    expect(frame.replace(/\s/g, "")).toContain("packages/tui/src/components/ConversationMessageList.tsx");
+    expect(frame.split("\n").filter((line) => line.trim().length > 0).length).toBeGreaterThan(1);
     expect(frame).not.toContain("...");
     expect(frame).not.toContain("…");
-    expect(frame).not.toContain("ConversationMessageList.tsx");
-  });
-
-  test("applies the explicit maximum target text character count", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <BracketedTarget
-        accentColor={chatScreenTheme.accentGreen}
-        maximumTargetTextCharacterCount={12}
-        targetText="abcdefghijklmnopqrst"
-      />,
-      { width: 40, height: 3 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-
-    expect(frame).toContain("[abcdefghijkl]");
-    expect(frame).not.toContain("mnop");
   });
 
   test("accepts a ReactNode as target for rich content", async () => {

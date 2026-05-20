@@ -655,13 +655,16 @@ test("ChatScreen toggles reasoning summary visibility through thinking slash com
   await renderedChatScreen.typeText("Answer with reasoning");
   await renderedChatScreen.pressEnter();
   const visibleReasoningFrame = await renderedChatScreen.waitForAssistantEvents();
-  expect(visibleReasoningFrame).toContain("_Thought:_");
+  expect(visibleReasoningFrame).toContain("[-]");
+  expect(visibleReasoningFrame).toContain("Thought");
   expect(visibleReasoningFrame).toContain("I inspected the available context before answering.");
 
   await renderedChatScreen.typeText("/thinking");
   const hiddenReasoningFrame = await renderedChatScreen.pressEnter();
+  expect(hiddenReasoningFrame).toContain("[+]");
   expect(hiddenReasoningFrame).toContain("Thought");
   expect(hiddenReasoningFrame).toContain("7 reasoning tok");
+  expect(hiddenReasoningFrame).toContain("click to show content");
   expect(hiddenReasoningFrame).not.toContain("I inspected the available context before answering.");
 
   const slashMenuFrame = await renderedChatScreen.typeText("/");

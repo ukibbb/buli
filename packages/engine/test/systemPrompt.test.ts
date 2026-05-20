@@ -143,6 +143,25 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("Do not rush to a plan.");
 });
 
+test("understand mode uses debug walkthrough blocks for code behavior", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "understand",
+  });
+
+  expect(systemPromptText).toContain("Debug Walkthrough Blocks");
+  expect(systemPromptText).toContain("present_code_execution_walkthrough");
+  expect(systemPromptText).toContain("Walk through the code like a debugging session");
+  expect(systemPromptText).toContain("what data/state exists");
+  expect(systemPromptText).toContain("which condition or branch decides the next path");
+  expect(systemPromptText).toContain("sourceFilePath");
+  expect(systemPromptText).toContain("startLineNumber");
+  expect(systemPromptText).toContain("endLineNumber");
+  expect(systemPromptText).toContain("exact `codeText`");
+  expect(systemPromptText).toContain("source_walkthrough");
+  expect(systemPromptText).toContain("observed_runtime_trace");
+});
+
 test("plan mode points inspection toward typed read and search tools", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",

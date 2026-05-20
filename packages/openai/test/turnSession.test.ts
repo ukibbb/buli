@@ -8,6 +8,42 @@ function createOpenAiStepResponse(eventFrames: readonly string[]): Response {
   });
 }
 
+function createOpenAiSseFrame(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function createOpenAiReadToolStepResponse(stepNumber: number): Response {
+  const responseFunctionCallItemId = `fc_${stepNumber}`;
+  const functionCallId = `call_${stepNumber}`;
+  const argumentsText = JSON.stringify({ filePath: `file-${stepNumber}.txt` });
+
+  return createOpenAiStepResponse([
+    createOpenAiSseFrame({
+      type: "response.output_item.added",
+      output_index: 0,
+      item: {
+        type: "function_call",
+        id: responseFunctionCallItemId,
+        call_id: functionCallId,
+        name: "read",
+        arguments: "",
+      },
+    }),
+    createOpenAiSseFrame({
+      type: "response.function_call_arguments.done",
+      item_id: responseFunctionCallItemId,
+      arguments: argumentsText,
+    }),
+    createOpenAiSseFrame({
+      type: "response.completed",
+      response: {
+        output: [{ id: responseFunctionCallItemId, type: "function_call", call_id: functionCallId, name: "read", arguments: argumentsText }],
+        usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+      },
+    }),
+  ]);
+}
+
 function createConversationSessionEntries(userPromptText: string) {
   return [
     {
@@ -241,21 +277,40 @@ test("OpenAiProviderConversationTurn captures replay items for a completed typed
   });
 });
 
-test("OpenAiProviderConversationTurn auto-continues after a learning sequence presentation call", async () => {
+test("OpenAiProviderConversationTurn auto-continues after a code execution walkthrough presentation call", async () => {
   const requestBodies: string[] = [];
-  const learningSequenceArgumentsText = JSON.stringify({
+  const codeExecutionWalkthroughArgumentsText = JSON.stringify({
     titleText: "Request flow",
     summaryText: "How the request moves through Buli.",
-    sequenceItems: [
-      { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
-      { labelText: "Provider streams", detailText: "Provider events become assistant parts." },
+    walkthroughKind: "source_walkthrough",
+    steps: [
+      {
+        stepTitle: "Prompt accepted",
+        whenText: null,
+        whatHappensText: "The user prompt is recorded.",
+        dataStateText: "The request carries the accepted prompt text.",
+        decisionText: null,
+        stateChangeText: null,
+        nextStepText: "Provider turn starts next.",
+        codeExamples: [
+          {
+            sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
+            sourceSymbolName: "startAcceptedRuntimeConversationTurn",
+            startLineNumber: 64,
+            endLineNumber: 67,
+            languageLabel: "ts",
+            codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
+            explanationText: null,
+          },
+        ],
+      },
     ],
   });
   const queuedResponses = [
     createOpenAiStepResponse([
-      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_present_1","name":"present_learning_sequence","arguments":""}}\n\n',
-      `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":${JSON.stringify(learningSequenceArgumentsText)}}\n\n`,
-      `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_present_1","name":"present_learning_sequence","arguments":${JSON.stringify(learningSequenceArgumentsText)}}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_present_1","name":"present_code_execution_walkthrough","arguments":""}}\n\n',
+      `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":${JSON.stringify(codeExecutionWalkthroughArgumentsText)}}\n\n`,
+      `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_present_1","name":"present_code_execution_walkthrough","arguments":${JSON.stringify(codeExecutionWalkthroughArgumentsText)}}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
     ]),
     createOpenAiStepResponse([
       'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
@@ -275,19 +330,34 @@ test("OpenAiProviderConversationTurn auto-continues after a learning sequence pr
   const emittedEvents = await collectProviderEvents(providerTurn);
 
   expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
-    "learning_sequence_presented",
+    "code_execution_walkthrough_presented",
     "text_chunk",
     "completed",
   ]);
   expect(emittedEvents[0]).toEqual({
-    type: "learning_sequence_presented",
+    type: "code_execution_walkthrough_presented",
     presentationCallId: "call_present_1",
-    learningSequence: {
+    codeExecutionWalkthrough: {
       titleText: "Request flow",
       summaryText: "How the request moves through Buli.",
-      sequenceItems: [
-        { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
-        { labelText: "Provider streams", detailText: "Provider events become assistant parts." },
+      walkthroughKind: "source_walkthrough",
+      steps: [
+        {
+          stepTitle: "Prompt accepted",
+          whatHappensText: "The user prompt is recorded.",
+          dataStateText: "The request carries the accepted prompt text.",
+          nextStepText: "Provider turn starts next.",
+          codeExamples: [
+            {
+              sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
+              sourceSymbolName: "startAcceptedRuntimeConversationTurn",
+              startLineNumber: 64,
+              endLineNumber: 67,
+              languageLabel: "ts",
+              codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
+            },
+          ],
+        },
       ],
     },
   });
@@ -298,13 +368,13 @@ test("OpenAiProviderConversationTurn auto-continues after a learning sequence pr
         type: "function_call",
         id: "fc_1",
         call_id: "call_present_1",
-        name: "present_learning_sequence",
-        arguments: learningSequenceArgumentsText,
+        name: "present_code_execution_walkthrough",
+        arguments: codeExecutionWalkthroughArgumentsText,
       },
       {
         type: "function_call_output",
         call_id: "call_present_1",
-        output: "Rendered learning sequence: Request flow",
+        output: "Rendered code execution walkthrough: Request flow",
       },
     ],
   });
@@ -315,13 +385,13 @@ test("OpenAiProviderConversationTurn auto-continues after a learning sequence pr
         id: "fc_1",
         type: "function_call",
         call_id: "call_present_1",
-        name: "present_learning_sequence",
-        arguments: learningSequenceArgumentsText,
+        name: "present_code_execution_walkthrough",
+        arguments: codeExecutionWalkthroughArgumentsText,
       },
       {
         type: "function_call_output",
         call_id: "call_present_1",
-        output: "Rendered learning sequence: Request flow",
+        output: "Rendered code execution walkthrough: Request flow",
       },
     ],
   });
@@ -432,7 +502,7 @@ test("OpenAiProviderConversationTurn continues with ordered outputs for a batche
   });
 });
 
-test("OpenAiProviderConversationTurn stops before exceeding the response-step limit", async () => {
+test("OpenAiProviderConversationTurn honors a configured response-step limit", async () => {
   const requestBodies: string[] = [];
   const providerTurn = new OpenAiProviderConversationTurn({
     endpoint: "https://example.test/v1/responses",
@@ -468,7 +538,46 @@ test("OpenAiProviderConversationTurn stops before exceeding the response-step li
   expect(requestBodies).toHaveLength(1);
 });
 
-test("OpenAiProviderConversationTurn stops when a tool batch exceeds the per-turn tool-call limit", async () => {
+test("OpenAiProviderConversationTurn lets the agent finish after more than twenty response steps by default", async () => {
+  const requestBodies: string[] = [];
+  const toolStepCount = 21;
+  const queuedResponses = [
+    ...Array.from({ length: toolStepCount }, (_value, index) => createOpenAiReadToolStepResponse(index + 1)),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done after extended inspection" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Inspect all files"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+  const emittedEvents: ProviderStreamEvent[] = [];
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    emittedEvents.push(emittedEvent);
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: `<path>${emittedEvent.toolCallId}.txt</path>\n1: inspected`,
+      });
+    }
+  }
+
+  expect(emittedEvents.filter((emittedEvent) => emittedEvent.type === "tool_call_requested")).toHaveLength(toolStepCount);
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type).slice(-2)).toEqual(["text_chunk", "completed"]);
+  expect(requestBodies).toHaveLength(toolStepCount + 1);
+});
+
+test("OpenAiProviderConversationTurn honors a configured per-turn tool-call limit", async () => {
   const providerTurn = new OpenAiProviderConversationTurn({
     endpoint: "https://example.test/v1/responses",
     fetchImpl: createFetchImpl([

@@ -130,11 +130,33 @@ test("OpenAiFunctionCallStreamAccumulator records presentation calls separately 
     functionCallItem: readFunctionCallItem({
       itemId: "fc_1",
       toolCallId: "call_present_1",
-      functionName: "present_learning_sequence",
+      functionName: "present_code_execution_walkthrough",
       argumentsText: JSON.stringify({
         titleText: "Request flow",
         summaryText: null,
-        sequenceItems: [{ labelText: "Prompt accepted", detailText: null }],
+        walkthroughKind: "source_walkthrough",
+        steps: [
+          {
+            stepTitle: "Prompt accepted",
+            whenText: null,
+            whatHappensText: "The accepted prompt is recorded.",
+            dataStateText: null,
+            decisionText: null,
+            stateChangeText: null,
+            nextStepText: null,
+            codeExamples: [
+              {
+                sourceFilePath: "packages/engine/src/runtime.ts",
+                sourceSymbolName: null,
+                startLineNumber: 1,
+                endLineNumber: 1,
+                languageLabel: "ts",
+                codeText: "start();",
+                explanationText: null,
+              },
+            ],
+          },
+        ],
       }),
     }),
     shouldRecordRequestedToolCallIfReady: true,
@@ -143,11 +165,26 @@ test("OpenAiFunctionCallStreamAccumulator records presentation calls separately 
   expect(functionCallStreamAccumulator.listPendingRequestedToolCalls()).toEqual([]);
   expect(functionCallStreamAccumulator.listPendingProviderFunctionCallIntents()).toEqual([
     {
-      intentKind: "learning_sequence_presentation",
+      intentKind: "code_execution_walkthrough_presentation",
       functionCallId: "call_present_1",
-      learningSequence: {
+      codeExecutionWalkthrough: {
         titleText: "Request flow",
-        sequenceItems: [{ labelText: "Prompt accepted" }],
+        walkthroughKind: "source_walkthrough",
+        steps: [
+          {
+            stepTitle: "Prompt accepted",
+            whatHappensText: "The accepted prompt is recorded.",
+            codeExamples: [
+              {
+                sourceFilePath: "packages/engine/src/runtime.ts",
+                startLineNumber: 1,
+                endLineNumber: 1,
+                languageLabel: "ts",
+                codeText: "start();",
+              },
+            ],
+          },
+        ],
       },
     },
   ]);

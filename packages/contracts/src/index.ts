@@ -28,7 +28,7 @@ export {
   AssistantErrorNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantInterruptedNoticeConversationMessagePartSchema,
-  AssistantLearningSequenceConversationMessagePartSchema,
+  AssistantCodeExecutionWalkthroughConversationMessagePartSchema,
   AssistantConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
@@ -48,7 +48,7 @@ export type {
   AssistantErrorNoticeConversationMessagePart,
   AssistantIncompleteNoticeConversationMessagePart,
   AssistantInterruptedNoticeConversationMessagePart,
-  AssistantLearningSequenceConversationMessagePart,
+  AssistantCodeExecutionWalkthroughConversationMessagePart,
   AssistantConversationMessagePart,
   AssistantPlanProposalConversationMessagePart,
   AssistantRateLimitNoticeConversationMessagePart,
@@ -65,11 +65,18 @@ export type {
   UserTextConversationMessagePart,
 } from "./conversationMessagePart.ts";
 export {
-  formatLearningSequenceAsMarkdownText,
-  LearningSequenceItemSchema,
-  LearningSequenceSchema,
-} from "./learningSequence.ts";
-export type { LearningSequence, LearningSequenceItem } from "./learningSequence.ts";
+  CodeExecutionCodeExampleSchema,
+  CodeExecutionWalkthroughKindSchema,
+  CodeExecutionWalkthroughSchema,
+  CodeExecutionWalkthroughStepSchema,
+  formatCodeExecutionWalkthroughAsMarkdownText,
+} from "./codeExecutionWalkthrough.ts";
+export type {
+  CodeExecutionCodeExample,
+  CodeExecutionWalkthrough,
+  CodeExecutionWalkthroughKind,
+  CodeExecutionWalkthroughStep,
+} from "./codeExecutionWalkthrough.ts";
 export {
   UserPromptImageAttachmentMimeTypeSchema,
   UserPromptImageAttachmentSchema,
@@ -102,7 +109,7 @@ export { CalloutSeveritySchema, ChecklistItemSchema } from "./presentationPrimit
 export type { CalloutSeverity, ChecklistItem } from "./presentationPrimitives.ts";
 export {
   AssistantMessageConversationSessionEntrySchema,
-  AssistantLearningSequenceSegmentConversationSessionEntrySchema,
+  AssistantCodeExecutionWalkthroughSegmentConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntryStatusSchema,
   AssistantTextSegmentConversationSessionEntrySchema,
   CompletedAssistantMessageConversationSessionEntrySchema,
@@ -134,7 +141,7 @@ export {
 } from "./conversationSessionRecord.ts";
 export type {
   AssistantMessageConversationSessionEntry,
-  AssistantLearningSequenceSegmentConversationSessionEntry,
+  AssistantCodeExecutionWalkthroughSegmentConversationSessionEntry,
   AssistantSegmentConversationSessionEntry,
   AssistantMessageConversationSessionEntryStatus,
   AssistantTextSegmentConversationSessionEntry,
@@ -264,7 +271,7 @@ export {
   AvailableAssistantModelSchema,
   ProviderCompletedEventSchema,
   ProviderIncompleteEventSchema,
-  ProviderLearningSequencePresentedEventSchema,
+  ProviderCodeExecutionWalkthroughPresentedEventSchema,
   ProviderPlanProposedEventSchema,
   ProviderRateLimitPendingEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
@@ -282,7 +289,7 @@ export type {
   AvailableAssistantModel,
   ProviderCompletedEvent,
   ProviderIncompleteEvent,
-  ProviderLearningSequencePresentedEvent,
+  ProviderCodeExecutionWalkthroughPresentedEvent,
   ProviderPlanProposedEvent,
   ProviderRateLimitPendingEvent,
   ProviderReasoningSummaryCompletedEvent,

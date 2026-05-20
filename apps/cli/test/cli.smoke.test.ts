@@ -260,8 +260,8 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
   expect(output).toBe("");
   expect(receivedSelection).toEqual({
     selectedModelId: "gpt-5.5",
-    selectedModelDefaultReasoningEffort: "xhigh",
-    selectedReasoningEffort: "xhigh",
+    selectedModelDefaultReasoningEffort: "medium",
+    selectedReasoningEffort: "medium",
   });
 });
 

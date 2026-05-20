@@ -18,7 +18,7 @@ describe("ToolCallEntryView", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("/src/index.ts");
-    expect(frame).toContain("10 lines");
+    expect(frame).toContain("1-10:10");
   });
 
   test("dispatches_grep", async () => {
@@ -130,8 +130,10 @@ describe("ToolCallEntryView", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Step one");
-    expect(frame).toContain("Step two");
+    expect(frame).toContain("[+]");
+    expect(frame).toContain("2 items");
+    expect(frame).not.toContain("Step one");
+    expect(frame).not.toContain("Step two");
   });
 
   test("dispatches_task", async () => {
@@ -149,9 +151,9 @@ describe("ToolCallEntryView", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    // description may be truncated at narrow width; assert card renders via status + result body
     expect(frame).toContain("returned");
-    expect(frame).toContain("Analysis complete.");
+    expect(frame).toContain("[+]");
+    expect(frame).not.toContain("Analysis complete.");
   });
 
 });

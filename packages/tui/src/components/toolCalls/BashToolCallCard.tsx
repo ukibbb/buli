@@ -1,13 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ToolCallBashDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ShellBlock } from "../primitives/ShellBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { BracketedTarget } from "./BracketedTarget.tsx";
-import {
-  ToolCallHeaderLeft,
-  ToolCallHeaderRight,
-} from "./ToolCallCardHeaderSlots.tsx";
+import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
 
 export type BashToolCallCardProps = {
   toolCallDetail: ToolCallBashDetail;
@@ -19,6 +15,7 @@ export type BashToolCallCardProps = {
 const MAX_VISIBLE_BASH_OUTPUT_LINES = 24;
 
 export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
+  const [isBashOutputExpanded, setIsBashOutputExpanded] = useState(false);
   const accentColor = deriveBashAccentColor(props);
   const statusKind =
     props.renderState === "completed" &&
@@ -27,25 +24,31 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
       : props.renderState === "completed" || props.renderState === "failed"
         ? "error"
         : "pending";
+  const hasBashOutputContent = props.renderState !== "failed" && (props.toolCallDetail.outputLines?.length ?? 0) > 0;
   return (
     <SurfaceCard
       accentColor={accentColor}
+      density="compact"
       headerLeft={
-        <ToolCallHeaderLeft
-          toolNameLabel="Bash"
-          toolTargetContent={
-            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.commandLine} />
-          }
-        />
-      }
-      headerRight={
-        <ToolCallHeaderRight
+        <ToolCallCompactHeader
+          accentColor={accentColor}
+          disclosureState={hasBashOutputContent
+            ? {
+                isContentExpandable: true,
+                isContentExpanded: isBashOutputExpanded,
+                onContentExpansionToggle: () => {
+                  setIsBashOutputExpanded((currentBashOutputExpanded) => !currentBashOutputExpanded);
+                },
+              }
+            : { isContentExpandable: false }}
           statusColor={accentColor}
           statusKind={statusKind}
           statusLabel={buildBashStatusLabel(props)}
+          toolNameLabel="Bash"
+          toolTargetText={props.toolCallDetail.commandLine}
         />
       }
-      bodyContent={buildBashBodyContent(props)}
+      bodyContent={hasBashOutputContent && isBashOutputExpanded ? buildBashBodyContent(props) : undefined}
     />
   );
 }
@@ -80,15 +83,6 @@ function buildBashStatusLabel(props: BashToolCallCardProps): string {
 }
 
 function buildBashBodyContent(props: BashToolCallCardProps): ReactNode {
-  if (props.renderState === "failed") {
-    if (props.errorText !== undefined) {
-      // Status header already carries errorText; suppress body to avoid duplicating it.
-      return undefined;
-    }
-    return (
-      <text fg={chatScreenTheme.accentRed}>{"Command did not run."}</text>
-    );
-  }
   const outputLines = props.toolCallDetail.outputLines;
   if (!outputLines || outputLines.length === 0) {
     return undefined;

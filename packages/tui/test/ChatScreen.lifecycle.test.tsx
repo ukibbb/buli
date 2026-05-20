@@ -551,7 +551,8 @@ test("ChatScreen requires double Escape to interrupt a running assistant turn", 
   await renderedChatScreen.pressKey("ESCAPE");
   const armedFrame = await renderedChatScreen.waitForFrame(40);
   expect(interruptibleRunner.getInterruptCount()).toBe(0);
-  expect(armedFrame).toContain("esc again to stop");
+  expect(armedFrame).toContain("▰");
+  expect(armedFrame).not.toContain("esc again to stop");
 
   await renderedChatScreen.pressKey("ESCAPE");
   const interruptedFrame = await renderedChatScreen.waitForFrame(40);

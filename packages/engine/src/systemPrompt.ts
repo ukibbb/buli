@@ -24,11 +24,13 @@ Ask short clarifying questions when user intent, product direction, or risk is u
 
 ---
 
-## Native Explanation Blocks
+## Debug Walkthrough Blocks
 
-When a lifecycle, data flow, or cause/effect chain would be clearer as a compact visual block, call the \`present_learning_sequence\` presentation function in addition to concise prose.
+When explaining code behavior over time, call the \`present_code_execution_walkthrough\` presentation function after inspecting the relevant source files.
 
-Use short explanatory text fields only: \`titleText\`, optional \`summaryText\`, and ordered \`sequenceItems\` with \`labelText\` plus optional \`detailText\`. Do not output Markdown code fences for Buli presentation blocks.
+Walk through the code like a debugging session: what happens now, what data/state exists, which condition or branch decides the next path, what changes, and where execution goes next.
+
+Every code example must be copied from an inspected file and include \`sourceFilePath\`, \`startLineNumber\`, \`endLineNumber\`, and exact \`codeText\`. Use \`source_walkthrough\` for source-level explanations and \`observed_runtime_trace\` only when values were observed from execution, tests, logs, or debugger output. Do not invent runtime values or code snippets.
 
 ---
 

@@ -359,7 +359,7 @@ test("renderConversationSessionHtmlDocument renders assistant text segments with
   expect(html).not.toContain("No assistant text was recorded.");
 });
 
-test("renderConversationSessionHtmlDocument renders assistant learning sequence segments without duplicating fallback text", () => {
+test("renderConversationSessionHtmlDocument renders assistant code execution walkthrough segments without duplicating fallback text", () => {
   const html = renderConversationSessionHtmlDocument({
     conversationSessionEntries: [
       {
@@ -368,32 +368,42 @@ test("renderConversationSessionHtmlDocument renders assistant learning sequence 
         modelFacingPromptText: "Explain runtime flow",
       },
       {
-        entryKind: "assistant_learning_sequence_segment",
+        entryKind: "assistant_code_execution_walkthrough_segment",
         titleText: "Runtime flow",
         summaryText: "The main stages in one turn.",
-        sequenceItems: [
-          { labelText: "Prompt accepted" },
-          { labelText: "Provider streams", detailText: "Chunks become assistant events." },
+        walkthroughKind: "source_walkthrough",
+        steps: [
+          {
+            stepTitle: "Prompt accepted",
+            whatHappensText: "The prompt is recorded.",
+            codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "recordPrompt();" }],
+          },
+          {
+            stepTitle: "Provider streams",
+            whatHappensText: "Chunks become assistant events.",
+            codeExamples: [{ sourceFilePath: "src/stream.ts", startLineNumber: 2, endLineNumber: 3, codeText: "translateChunk();" }],
+          },
         ],
       },
       {
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
-        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.\nPrompt accepted -> Provider streams\n\n- Provider streams: Chunks become assistant events.",
+        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.",
       },
     ],
     exportedAtMs: 1700000000000,
     workspaceRootPath: "/tmp/project",
-    conversationSessionId: "session-learning-sequence",
+    conversationSessionId: "session-code-execution-walkthrough",
   });
 
-  expect(html).toContain("learning sequence");
+  expect(html).toContain("debug walkthrough");
+  expect(html).toContain("source walkthrough");
   expect(html.match(/Runtime flow/g)).toHaveLength(1);
   expect(html.match(/Prompt accepted/g)).toHaveLength(1);
-  expect(html).not.toContain("Prompt accepted -&gt; Provider streams");
+  expect(html).not.toContain("**Runtime flow**");
 });
 
-test("renderConversationSessionHtmlDocument escapes assistant learning sequence text", () => {
+test("renderConversationSessionHtmlDocument escapes assistant code execution walkthrough text", () => {
   const html = renderConversationSessionHtmlDocument({
     conversationSessionEntries: [
       {
@@ -402,11 +412,23 @@ test("renderConversationSessionHtmlDocument escapes assistant learning sequence 
         modelFacingPromptText: "Explain safely",
       },
       {
-        entryKind: "assistant_learning_sequence_segment",
+        entryKind: "assistant_code_execution_walkthrough_segment",
         titleText: '<script>alert("title")</script>',
         summaryText: '<img src=x onerror="alert(1)">',
-        sequenceItems: [
-          { labelText: 'javascript:alert("label")', detailText: '<a href="javascript:alert(1)">bad</a>' },
+        walkthroughKind: "source_walkthrough",
+        steps: [
+          {
+            stepTitle: 'javascript:alert("label")',
+            whatHappensText: '<a href="javascript:alert(1)">bad</a>',
+            codeExamples: [
+              {
+                sourceFilePath: "src/example.ts",
+                startLineNumber: 1,
+                endLineNumber: 1,
+                codeText: '<script>alert("code")</script>',
+              },
+            ],
+          },
         ],
       },
       {
@@ -417,15 +439,17 @@ test("renderConversationSessionHtmlDocument escapes assistant learning sequence 
     ],
     exportedAtMs: 1700000000000,
     workspaceRootPath: "/tmp/project",
-    conversationSessionId: "session-learning-sequence-escaping",
+    conversationSessionId: "session-code-execution-walkthrough-escaping",
   });
 
   expect(html).toContain("&lt;script&gt;alert(&quot;title&quot;)&lt;/script&gt;");
   expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
   expect(html).toContain("&lt;a href=&quot;javascript:alert(1)&quot;&gt;bad&lt;/a&gt;");
+  expect(html).toContain("&lt;script&gt;alert(&quot;code&quot;)&lt;/script&gt;");
   expect(html).not.toContain('<script>alert("title")</script>');
   expect(html).not.toContain('<img src=x onerror="alert(1)">');
   expect(html).not.toContain('<a href="javascript:alert(1)">bad</a>');
+  expect(html).not.toContain('<script>alert("code")</script>');
 });
 
 test("renderConversationSessionHtmlDocument omits mode labels for legacy user prompts", () => {

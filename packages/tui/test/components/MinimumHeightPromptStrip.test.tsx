@@ -26,7 +26,7 @@ describe("MinimumHeightPromptStrip", () => {
     expect(frame).toContain("hello world");
   });
 
-  test("renders_working_label_when_streaming_assistant_response", async () => {
+  test("renders_only_the_snake_when_streaming_assistant_response", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <MinimumHeightPromptStrip
         promptDraft="anything"
@@ -41,7 +41,8 @@ describe("MinimumHeightPromptStrip", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("working");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("working");
     expect(frame).not.toContain("anything");
   });
 

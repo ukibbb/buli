@@ -10,7 +10,7 @@ async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Prom
 }
 
 describe("TaskToolCallCard (opentui)", () => {
-  test("streaming renders Explore Agent label, bracketed description, animation, and starting stage", async () => {
+  test("streaming renders Explore Agent label, bracketed description, and only the snake status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TaskToolCallCard
         toolCallDetail={{
@@ -24,10 +24,11 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Explore Agent");
     expect(frame).toContain("[explore: fetch release notes]");
-    expect(frame).toContain("starting explore agent");
     expect(frame).toContain("◆");
+    expect(frame).not.toContain("starting explore agent");
     expect(frame).not.toContain("running");
   });
 
@@ -56,14 +57,16 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
-    expect(frame).toContain("Task details: activity");
-    expect(frame).toContain("click to show content");
+    expect(frame).toContain("[+]");
+    expect(frame).not.toContain("Task details: activity");
+    expect(frame).not.toContain("click to show content");
     expect(frame).not.toContain("Read");
-    expect(frame).toContain("reading README.md");
+    expect(frame).toContain("◆");
+    expect(frame).not.toContain("reading README.md");
     expect(frame).not.toContain("running");
   });
 
-  test("streaming Explore Agent status follows current glob and grep stages", async () => {
+  test("streaming Explore Agent status hides child activity text", async () => {
     const globStageRender = await testRender(
       <TaskToolCallCard
         toolCallDetail={{
@@ -87,7 +90,8 @@ describe("TaskToolCallCard (opentui)", () => {
       { width: 140, height: 16 },
     );
     await renderSettledMarkdownFrame(globStageRender.renderOnce);
-    expect(globStageRender.captureCharFrame()).toContain("finding packages/**/*.ts");
+    expect(globStageRender.captureCharFrame()).toContain("◆");
+    expect(globStageRender.captureCharFrame()).not.toContain("finding packages/**/*.ts");
 
     const grepStageRender = await testRender(
       <TaskToolCallCard
@@ -121,7 +125,8 @@ describe("TaskToolCallCard (opentui)", () => {
       { width: 140, height: 16 },
     );
     await renderSettledMarkdownFrame(grepStageRender.renderOnce);
-    expect(grepStageRender.captureCharFrame()).toContain("searching TaskToolCallCard");
+    expect(grepStageRender.captureCharFrame()).toContain("◆");
+    expect(grepStageRender.captureCharFrame()).not.toContain("searching TaskToolCallCard");
   });
 
   test("completed renders Task label, bracketed description, prompt, result, and duration", async () => {
@@ -141,12 +146,12 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Task");
     expect(frame).toContain("[explore: summarize the indexer doc]");
-    expect(frame).toContain("Summarize");
-    expect(frame).toContain("result");
-    expect(frame).toContain("read");
-    expect(frame).toContain("summarize");
+    expect(frame).not.toContain("Summarize docs/atlas-indexer.md");
+    expect(frame).not.toContain("result");
+    expect(frame).not.toContain("read");
     expect(frame).not.toContain("`read`");
     expect(frame).not.toContain("**summarize**");
     expect(frame).toContain("1.2s");
@@ -155,7 +160,7 @@ describe("TaskToolCallCard (opentui)", () => {
   test("completed limits long prompt and result sections", async () => {
     const longSubagentPrompt = Array.from({ length: 30 }, (_, index) => `prompt line ${index + 1}`).join("\n");
     const longSubagentResultSummary = Array.from({ length: 30 }, (_, index) => `result line ${index + 1}`).join("\n");
-    const { captureCharFrame, renderOnce } = await testRender(
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <TaskToolCallCard
         toolCallDetail={{
           toolName: "task",
@@ -169,8 +174,15 @@ describe("TaskToolCallCard (opentui)", () => {
       { width: 120, height: 70 },
     );
     await renderSettledMarkdownFrame(renderOnce);
+    expect(captureCharFrame()).not.toContain("prompt line 24");
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
 
+    expect(frame).toContain("[-]");
     expect(frame).toContain("prompt line 24");
     expect(frame).toContain("result line 24");
     expect(frame).toContain("showing first 24 of 30 lines");
@@ -193,6 +205,7 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Task");
     expect(frame).toContain("[explore: quick check]");
     expect(frame).toContain("42ms");
@@ -259,17 +272,19 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const collapsedFrame = captureCharFrame();
-    expect(collapsedFrame).toContain("Task details: prompt, activity, result");
-    expect(collapsedFrame).toContain("click to show content");
+    expect(collapsedFrame).toContain("[+]");
+    expect(collapsedFrame).not.toContain("Task details: prompt, activity, result");
+    expect(collapsedFrame).not.toContain("click to show content");
     expect(collapsedFrame).not.toContain("// activity");
     expect(collapsedFrame).not.toContain("Read");
 
     await act(async () => {
-      await mockMouse.click(6, 3);
+      await mockMouse.click(3, 0);
     });
     await renderSettledMarkdownFrame(renderOnce);
 
     const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("[-]");
     expect(expandedFrame).toContain("activity");
     expect(expandedFrame).toContain("Read");
     expect(expandedFrame).toContain("Glob");
@@ -291,6 +306,7 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Task");
     expect(frame).toContain("[explore: run migration]");
     expect(frame).toContain("crashed");

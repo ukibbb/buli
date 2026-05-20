@@ -3,10 +3,11 @@ import type { ConversationTurnStatus, UserPromptImageAttachment } from "@buli/co
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { PromptDraftText } from "./PromptDraftText.tsx";
 import { PromptTextarea, type PromptTextareaEdit } from "./PromptTextarea.tsx";
+import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // Single-row degraded replacement for InputPanel used at minimumTerminalSizeTier.
 // Drops every secondary element (mode chip, model chip, help footer, context
-// meter, snake spinner) so the prompt caret and draft stay visible even when
+// meter) so the prompt caret and draft stay visible even when
 // the terminal collapses to ~6 rows.
 //
 // Exported row count is the source of truth for ChatScreen's responsive
@@ -39,9 +40,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
         flexShrink={0}
         width="100%"
       >
-        <text fg={chatScreenTheme.textMuted}>
-          {props.isActiveTurnInterruptConfirmationArmed ? "esc again to stop" : "… working · esc esc to stop"}
-        </text>
+        <SnakeAnimationIndicator />
       </box>
     );
   }

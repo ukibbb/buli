@@ -22,10 +22,13 @@ describe("ReadToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[/src/app.ts]");
-    expect(frame).toContain("42 lines");
-    expect(frame).toContain("Read line 1 of 42 from /src/app.ts");
-    expect(frame).toContain("click to show content");
+    expect(frame).toContain("1-42:42");
+    expect(frame).not.toContain("lines");
+    expect(frame).not.toContain("1.0 KB");
+    expect(frame).not.toContain("Read line 1 of 42 from /src/app.ts");
+    expect(frame).not.toContain("click to show content");
     expect(frame).not.toContain("import React");
   });
 
@@ -47,16 +50,18 @@ describe("ReadToolCallCard", () => {
       { width: 90, height: 20 },
     );
     await renderOnce();
-    expect(captureCharFrame()).toContain("Read lines 2-3 of 42 from /src/app.ts");
+    expect(captureCharFrame()).toContain("[+]");
     expect(captureCharFrame()).not.toContain("import React");
 
     await act(async () => {
-      await mockMouse.click(6, 3);
+      await mockMouse.click(3, 0);
     });
     await renderOnce();
 
     const frame = captureCharFrame();
-    expect(frame).toContain("click to hide content");
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("2-3:42");
+    expect(frame).not.toContain("click to hide content");
     expect(frame).toContain("import React");
     expect(frame).toContain("export function App");
   });
@@ -82,11 +87,12 @@ describe("ReadToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("2 of 3 lines");
-    expect(frame).toContain("truncated");
+    expect(frame).toContain("1-2:3");
+    expect(frame).not.toContain("lines");
+    expect(frame).not.toContain("truncated");
   });
 
-  test("streaming_renders_bracketed_path_and_reading_status", async () => {
+  test("streaming_renders_bracketed_path_and_only_the_snake_status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReadToolCallCard
         renderState="streaming"
@@ -99,11 +105,13 @@ describe("ReadToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[packages/tui/src/App.tsx]");
-    expect(frame).toContain("reading");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("reading");
   });
 
-  test("streaming_keeps_long_path_on_the_header_row_without_wrapping", async () => {
+  test("streaming_wraps_long_path_when_the_terminal_is_narrow", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReadToolCallCard
         renderState="streaming"
@@ -116,13 +124,11 @@ describe("ReadToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    const identityLine = frame.split("\n").find((line) => line.includes("Read"));
-    expect(identityLine).toBeDefined();
-    expect(identityLine ?? "").toContain("packages/");
-    expect(identityLine ?? "").not.toContain("ConversationMessageList.tsx");
-    expect(frame.split("\n").filter((line) => line.includes("packages/"))).toHaveLength(1);
+    expect(frame.replace(/[\s┃]/g, "")).toContain("packages/tui/src/components/ConversationMessageList.tsx");
+    expect(frame.split("\n").filter((line) => line.trim().length > 0).length).toBeGreaterThan(1);
     expect(frame).not.toContain("...");
-    expect(frame).toContain("reading");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("reading");
   });
 
   test("failed_shows_error_state", async () => {
@@ -139,6 +145,7 @@ describe("ReadToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[/missing.ts]");
     expect(frame).toContain("file not found");
   });

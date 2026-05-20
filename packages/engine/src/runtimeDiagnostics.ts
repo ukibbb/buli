@@ -71,11 +71,15 @@ export function summarizeProviderStreamEventForDiagnostics(
     };
   }
 
-  if (providerStreamEvent.type === "learning_sequence_presented") {
+  if (providerStreamEvent.type === "code_execution_walkthrough_presented") {
     return {
       presentationCallId: providerStreamEvent.presentationCallId,
-      learningSequenceTitleLength: providerStreamEvent.learningSequence.titleText.length,
-      learningSequenceItemCount: providerStreamEvent.learningSequence.sequenceItems.length,
+      codeExecutionWalkthroughTitleLength: providerStreamEvent.codeExecutionWalkthrough.titleText.length,
+      codeExecutionWalkthroughStepCount: providerStreamEvent.codeExecutionWalkthrough.steps.length,
+      codeExecutionWalkthroughCodeExampleCount: providerStreamEvent.codeExecutionWalkthrough.steps.reduce(
+        (codeExampleCount, walkthroughStep) => codeExampleCount + walkthroughStep.codeExamples.length,
+        0,
+      ),
     };
   }
 

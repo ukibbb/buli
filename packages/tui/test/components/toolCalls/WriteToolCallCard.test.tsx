@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { WriteToolCallCard } from "../../../src/components/toolCalls/WriteToolCallCard.tsx";
 
 describe("WriteToolCallCard", () => {
   test("completed_shows_file_path_and_diff", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <WriteToolCallCard
         renderState="completed"
         toolCallDetail={{
@@ -26,11 +27,21 @@ describe("WriteToolCallCard", () => {
       { width: 80, height: 20 },
     );
     await renderOnce();
-    const frame = captureCharFrame();
+    const collapsedFrame = captureCharFrame();
 
-    expect(frame).toContain("Write");
-    expect(frame).toContain("[/src/generated.ts]");
-    expect(frame).toContain("+2");
-    expect(frame).toContain("export const first");
+    expect(collapsedFrame).toContain("[+]");
+    expect(collapsedFrame).toContain("Write");
+    expect(collapsedFrame).toContain("[/src/generated.ts]");
+    expect(collapsedFrame).toContain("+2");
+    expect(collapsedFrame).not.toContain("export const first");
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("[-]");
+    expect(expandedFrame).toContain("export const first");
   });
 });

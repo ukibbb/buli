@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { act } from "react";
 import type { AssistantReasoningConversationMessagePart } from "@buli/contracts";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { ReasoningPartView } from "../../src/components/messageParts/ReasoningPartView.tsx";
@@ -25,7 +26,8 @@ describe("ReasoningPartView", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("_Thought:_");
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("Thought");
     expect(frame).toContain("I checked the route before answering.");
     expect(frame).toContain("42 reasoning tok");
   });
@@ -41,9 +43,33 @@ describe("ReasoningPartView", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("Thought");
     expect(frame).toContain("42 reasoning tok");
     expect(frame).not.toContain("I checked the route before answering.");
+  });
+
+  test("expands_collapsed_reasoning_summary_when_clicked", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <ReasoningPartView
+        assistantReasoningConversationMessagePart={completedReasoningPart}
+        isReasoningSummaryVisible={false}
+      />,
+      { width: 90, height: 8 },
+    );
+
+    await renderOnce();
+    expect(captureCharFrame()).toContain("click to show content");
+    expect(captureCharFrame()).not.toContain("I checked the route before answering.");
+
+    await act(async () => {
+      await mockMouse.click(6, 1);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("click to hide content");
+    expect(frame).toContain("I checked the route before answering.");
   });
 
   test("renders_streaming_reasoning_summary_text_when_visible", async () => {
@@ -65,7 +91,8 @@ describe("ReasoningPartView", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("Thinking");
     expect(frame).toContain("Reading the relevant files.");
   });
 });

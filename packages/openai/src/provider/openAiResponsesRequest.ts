@@ -12,6 +12,10 @@ type OpenAiReasoningRequest = {
   summary?: "auto";
 };
 
+type OpenAiTextRequest = {
+  verbosity: "low";
+};
+
 export type CreateOpenAiResponsesHttpRequestBodyInput = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -32,6 +36,7 @@ export type OpenAiResponsesHttpRequestBody = {
   parallel_tool_calls?: true;
   include?: readonly ["reasoning.encrypted_content"];
   reasoning?: OpenAiReasoningRequest;
+  text?: OpenAiTextRequest;
   stream: true;
 };
 
@@ -52,6 +57,7 @@ export function createOpenAiResponsesHttpRequestBody(
     ...(toolDefinitions.length > 0 ? { tools: toolDefinitions, parallel_tool_calls: true as const } : {}),
     ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] as const } : {}),
     ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
+    ...(shouldRequestLowTextVerbosity(input.selectedModelId) ? { text: { verbosity: "low" as const } } : {}),
     stream: true,
   };
 }
@@ -66,6 +72,7 @@ export function summarizeOpenAiResponsesRequestForDiagnostics(input: {
     model: input.requestBody.model,
     reasoningEffort: input.requestBody.reasoning?.effort ?? null,
     reasoningSummary: input.requestBody.reasoning?.summary ?? null,
+    textVerbosity: input.requestBody.text?.verbosity ?? null,
     includesReasoningEncryptedContent: input.requestBody.include?.includes("reasoning.encrypted_content") ?? false,
     hasPromptCacheKey: input.requestBody.prompt_cache_key !== undefined,
     toolDefinitionCount: input.requestBody.tools?.length ?? 0,
@@ -117,6 +124,15 @@ function createReasoningRequest(input: {
 
 function shouldRequestReasoningSummary(selectedModelId: string): boolean {
   return isOpenAiReasoningModel(selectedModelId);
+}
+
+function shouldRequestLowTextVerbosity(selectedModelId: string): boolean {
+  const normalizedSelectedModelId = selectedModelId.toLowerCase();
+  return (
+    normalizedSelectedModelId.includes("gpt-5.") &&
+    !normalizedSelectedModelId.includes("codex") &&
+    !normalizedSelectedModelId.includes("-chat")
+  );
 }
 
 function isOpenAiReasoningModel(selectedModelId: string): boolean {

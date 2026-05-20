@@ -1,96 +1,134 @@
 import { describe, expect, test } from "bun:test";
+import { useState } from "react";
+import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
-import {
-  ToolCallHeaderLeft,
-  ToolCallHeaderRight,
-} from "../../../src/components/toolCalls/ToolCallCardHeaderSlots.tsx";
-import { BracketedTarget } from "../../../src/components/toolCalls/BracketedTarget.tsx";
+import { ToolCallCompactHeader } from "../../../src/components/toolCalls/ToolCallCardHeaderSlots.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
+function extractRenderedNonEmptyLineIndexes(frame: string): number[] {
+  return frame
+    .split("\n")
+    .flatMap((line, lineIndex) => line.trim().length > 0 ? [lineIndex] : []);
+}
+
 describe("ToolCallCardHeaderSlots (opentui)", () => {
-  test("ToolCallHeaderLeft keeps the label and target on the identity row", async () => {
+  test("ToolCallCompactHeader renders disclosure, label, target, and status on one row", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallHeaderLeft
+      <ToolCallCompactHeader
+        accentColor={chatScreenTheme.accentAmber}
+        disclosureState={{ isContentExpandable: false }}
+        statusColor={chatScreenTheme.accentGreen}
+        statusKind="success"
+        statusLabel="exit 0"
         toolNameLabel="Bash"
-        toolTargetContent={<text fg={chatScreenTheme.textMuted}>bun test</text>}
+        toolTargetText="bun test"
       />,
       { width: 80, height: 3 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    const singleHeaderLine = frame.split("\n").find((line) => line.includes("Bash"));
-    expect(singleHeaderLine).toBeDefined();
-    expect(frame).toContain("bun test");
-  });
-
-  test("ToolCallHeaderLeft keeps long targets on the tool identity row", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallHeaderLeft
-        toolNameLabel="Read"
-        toolTargetContent={
-          <BracketedTarget
-            accentColor={chatScreenTheme.accentAmber}
-            targetText="packages/tui/src/components/ConversationMessageList.tsx"
-          />
-        }
-      />,
-      { width: 60, height: 4 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    const identityLine = frame.split("\n").find((line) => line.includes("Read"));
-    expect(identityLine).toBeDefined();
-    expect(identityLine ?? "").not.toContain("≡");
-    expect(identityLine ?? "").toContain("[");
-    expect(identityLine ?? "").toContain("packages/");
-    expect(frame.split("\n").filter((line) => line.includes("packages/"))).toHaveLength(1);
-    expect(frame).not.toContain("...");
-    expect(frame).not.toContain("…");
-  });
-
-  test("ToolCallHeaderLeft omits the target slot when no target content is provided", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallHeaderLeft
-        toolNameLabel="TodoWrite"
-      />,
-      { width: 40, height: 3 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("TodoWrite");
-    expect(frame).not.toContain("☐");
-    expect(frame).not.toContain("·");
-  });
-
-  test("ToolCallHeaderRight renders status label and ✓ on success", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallHeaderRight
-        statusColor={chatScreenTheme.accentGreen}
-        statusKind="success"
-        statusLabel="exit 0 · 620ms"
-      />,
-      { width: 30, height: 3 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("exit 0 · 620ms");
+    expect(frame).toContain("[+]");
+    expect(frame).toContain("Bash");
+    expect(frame).toContain("[bun test]");
+    expect(frame).toContain("exit 0");
     expect(frame).toContain("✓");
   });
 
-  test("ToolCallHeaderRight clips long status labels without rendering ellipses", async () => {
+  test("ToolCallCompactHeader wraps long targets instead of clipping them", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallHeaderRight
-        statusColor={chatScreenTheme.accentRed}
-        statusKind="error"
-        statusLabel="The user denied this edit because the patch touched an unsafe file path"
+      <ToolCallCompactHeader
+        accentColor={chatScreenTheme.accentAmber}
+        disclosureState={{ isContentExpandable: false }}
+        statusColor={chatScreenTheme.accentGreen}
+        statusKind="success"
+        statusLabel="1-52:52"
+        toolNameLabel="Read"
+        toolTargetText="packages/tui/src/components/ConversationMessageList.tsx"
       />,
-      { width: 34, height: 4 },
+      { width: 32, height: 6 },
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame.replace(/\s/g, "")).toContain("packages/tui/src/components/ConversationMessageList.tsx");
+    expect(frame.split("\n").filter((line) => line.trim().length > 0).length).toBeGreaterThan(1);
     expect(frame).not.toContain("...");
     expect(frame).not.toContain("…");
-    expect(frame).toContain("×");
-    expect(frame).not.toContain("unsafe file path");
+    expect(frame).toContain("1-52:52");
+  });
+
+  test("ToolCallCompactHeader does not leave blank rows inside a wrapped row", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallCompactHeader
+        accentColor={chatScreenTheme.accentAmber}
+        disclosureState={{ isContentExpandable: false }}
+        statusColor={chatScreenTheme.accentGreen}
+        statusKind="success"
+        statusLabel="1-110:199"
+        toolNameLabel="Read"
+        toolTargetText="packages/tui/src/components/behavior/useChatScreenAssistantTurnActions.ts"
+      />,
+      { width: 54, height: 6 },
+    );
+    await renderOnce();
+    const renderedLineIndexes = extractRenderedNonEmptyLineIndexes(captureCharFrame());
+    const firstLineIndex = renderedLineIndexes.at(0);
+    const lastLineIndex = renderedLineIndexes.at(-1);
+    expect(firstLineIndex).toBeDefined();
+    expect(lastLineIndex).toBeDefined();
+    expect(renderedLineIndexes).toHaveLength((lastLineIndex ?? 0) - (firstLineIndex ?? 0) + 1);
+  });
+
+  test("ToolCallCompactHeader toggles the inline disclosure marker", async () => {
+    function ExpandableHeaderFixture() {
+      const [isExpanded, setIsExpanded] = useState(false);
+      return (
+        <ToolCallCompactHeader
+          accentColor={chatScreenTheme.accentAmber}
+          disclosureState={{
+            isContentExpandable: true,
+            isContentExpanded: isExpanded,
+            onContentExpansionToggle: () => setIsExpanded((currentExpanded) => !currentExpanded),
+          }}
+          statusColor={chatScreenTheme.accentGreen}
+          statusKind="success"
+          statusLabel="2 paths"
+          toolNameLabel="Glob"
+          toolTargetText="*.ts"
+        />
+      );
+    }
+
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(<ExpandableHeaderFixture />, {
+      width: 80,
+      height: 3,
+    });
+    await renderOnce();
+    expect(captureCharFrame()).toContain("[+]");
+
+    await act(async () => {
+      await mockMouse.click(2, 0);
+    });
+    await renderOnce();
+    expect(captureCharFrame()).toContain("[-]");
+  });
+
+  test("ToolCallCompactHeader renders pending snake before disclosure marker", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallCompactHeader
+        accentColor={chatScreenTheme.accentAmber}
+        disclosureState={{ isContentExpandable: false }}
+        statusColor={chatScreenTheme.accentAmber}
+        statusKind="pending"
+        statusLabel="running…"
+        toolNameLabel="Read"
+        toolTargetText="README.md"
+      />,
+      { width: 80, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("▰");
+    expect(frame.indexOf("▰")).toBeLessThan(frame.indexOf("[+]"));
+    expect(frame).not.toContain("running");
   });
 });

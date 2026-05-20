@@ -1,13 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ToolCallWriteDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { DiffBlock } from "../primitives/DiffBlock.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { BracketedTarget } from "./BracketedTarget.tsx";
-import {
-  ToolCallHeaderLeft,
-  ToolCallHeaderRight,
-} from "./ToolCallCardHeaderSlots.tsx";
+import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
 
 export type WriteToolCallCardProps = {
   toolCallDetail: ToolCallWriteDetail;
@@ -19,6 +15,7 @@ export type WriteToolCallCardProps = {
 const MAX_VISIBLE_WRITE_DIFF_LINES = 80;
 
 export function WriteToolCallCard(props: WriteToolCallCardProps): ReactNode {
+  const [isWriteDiffExpanded, setIsWriteDiffExpanded] = useState(false);
   const accentColor =
     props.renderState === "failed"
       ? chatScreenTheme.accentRed
@@ -31,25 +28,31 @@ export function WriteToolCallCard(props: WriteToolCallCardProps): ReactNode {
       : props.renderState === "failed"
         ? "error"
         : "pending";
+  const hasWriteDiffContent = props.renderState !== "failed" && Boolean(props.toolCallDetail.unifiedDiffText);
   return (
     <SurfaceCard
       accentColor={accentColor}
+      density="compact"
       headerLeft={
-        <ToolCallHeaderLeft
-          toolNameLabel="Write"
-          toolTargetContent={
-            <BracketedTarget accentColor={accentColor} targetText={props.toolCallDetail.writtenFilePath} />
-          }
-        />
-      }
-      headerRight={
-        <ToolCallHeaderRight
+        <ToolCallCompactHeader
+          accentColor={accentColor}
+          disclosureState={hasWriteDiffContent
+            ? {
+                isContentExpandable: true,
+                isContentExpanded: isWriteDiffExpanded,
+                onContentExpansionToggle: () => {
+                  setIsWriteDiffExpanded((currentWriteDiffExpanded) => !currentWriteDiffExpanded);
+                },
+              }
+            : { isContentExpandable: false }}
           statusColor={accentColor}
           statusKind={statusKind}
           statusLabel={buildWriteStatusLabel(props)}
+          toolNameLabel="Write"
+          toolTargetText={props.toolCallDetail.writtenFilePath}
         />
       }
-      bodyContent={buildWriteBodyContent(props)}
+      bodyContent={hasWriteDiffContent && isWriteDiffExpanded ? buildWriteBodyContent(props) : undefined}
     />
   );
 }
@@ -74,9 +77,6 @@ function buildWriteStatusLabel(props: WriteToolCallCardProps): string {
 }
 
 function buildWriteBodyContent(props: WriteToolCallCardProps): ReactNode {
-  if (props.renderState === "failed") {
-    return undefined;
-  }
   const unifiedDiffText = props.toolCallDetail.unifiedDiffText;
   if (!unifiedDiffText) {
     return undefined;

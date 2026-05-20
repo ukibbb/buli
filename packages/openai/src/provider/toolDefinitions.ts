@@ -1,7 +1,8 @@
 import {
   ASSISTANT_PRESENTATION_FUNCTION_NAMES,
   ASSISTANT_TOOL_REQUEST_NAMES,
-  LearningSequenceSchema,
+  CodeExecutionWalkthroughKindSchema,
+  CodeExecutionWalkthroughSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   ToolCallRequestSchema,
   isAssistantPresentationFunctionName,
@@ -10,7 +11,8 @@ import {
   type AssistantSubagentName,
   type AssistantPresentationFunctionName,
   type AssistantToolRequestName,
-  type LearningSequence,
+  type CodeExecutionWalkthrough,
+  type CodeExecutionWalkthroughKind,
   type ProviderAvailablePresentationFunctionName,
   type ProviderAvailableToolName,
   type ToolCallRequest,
@@ -28,6 +30,7 @@ type OpenAiToolParameterProperty = {
   readonly minimum?: number;
   readonly maximum?: number;
   readonly minItems?: number;
+  readonly enum?: readonly string[];
   readonly items?: OpenAiToolParameterProperty;
   readonly properties?: Record<string, OpenAiToolParameterProperty>;
   readonly required?: readonly string[];
@@ -59,15 +62,15 @@ export type OpenAiExecutableToolCallIntent = {
   readonly toolCallRequest: ToolCallRequest;
 };
 
-export type OpenAiLearningSequencePresentationFunctionCallIntent = {
-  readonly intentKind: "learning_sequence_presentation";
+export type OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent = {
+  readonly intentKind: "code_execution_walkthrough_presentation";
   readonly functionCallId: string;
-  readonly learningSequence: LearningSequence;
+  readonly codeExecutionWalkthrough: CodeExecutionWalkthrough;
 };
 
 export type OpenAiProviderFunctionCallIntent =
   | OpenAiExecutableToolCallIntent
-  | OpenAiLearningSequencePresentationFunctionCallIntent;
+  | OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent;
 
 type OpenAiToolAdapter<ToolName extends AssistantToolRequestName> = {
   readonly toolName: ToolName;
@@ -271,45 +274,130 @@ export function createTaskToolDefinition(): OpenAiToolDefinition<"task"> {
   };
 }
 
-export function createPresentLearningSequenceToolDefinition(): OpenAiToolDefinition<"present_learning_sequence"> {
+export function createPresentCodeExecutionWalkthroughToolDefinition(): OpenAiToolDefinition<"present_code_execution_walkthrough"> {
   return {
     type: "function",
-    name: "present_learning_sequence",
-    description: "Render a structured, non-executable learning sequence in the Buli UI. Use this instead of Markdown code fences when a lifecycle, data flow, or cause/effect chain would be clearer as a compact visual block.",
+    name: "present_code_execution_walkthrough",
+    description: "Render a structured, non-executable debug walkthrough in the Buli UI. Use this after inspecting source files when code behavior should be explained over time: what happens now, what data/state exists, which branch or condition decides the next path, what changes, and where execution goes next. Every code example must be copied from inspected source and include exact file path, line range, and code text.",
     parameters: {
       type: "object",
       properties: {
         titleText: {
           type: "string",
-          description: "Short title for the learning sequence.",
+          description: "Short title for the debug walkthrough.",
         },
         summaryText: {
           type: ["string", "null"],
           description: "Optional one-sentence context, or null when no summary is needed.",
         },
-        sequenceItems: {
+        walkthroughKind: {
+          type: "string",
+          enum: [...CodeExecutionWalkthroughKindSchema.options],
+          description: "Use source_walkthrough when explaining inspected code statically; use observed_runtime_trace only when actual runtime values were observed from execution, tests, logs, or debugger output.",
+        },
+        steps: {
           type: "array",
           minItems: 1,
-          description: "Ordered sequence items to render.",
+          description: "Ordered moments in time, as if stepping through the code during debugging.",
           items: {
             type: "object",
-            description: "One stage in the sequence.",
+            description: "One moment in the code walkthrough.",
             properties: {
-              labelText: {
+              stepTitle: {
                 type: "string",
-                description: "Short label for this stage.",
+                description: "Short title for this moment.",
               },
-              detailText: {
+              whenText: {
                 type: ["string", "null"],
-                description: "Optional detail for this stage, or null when no detail is needed.",
+                description: "Optional timing/trigger context for this moment, or null when no extra timing context is needed.",
+              },
+              whatHappensText: {
+                type: "string",
+                description: "Plain explanation of what the code does at this moment.",
+              },
+              dataStateText: {
+                type: ["string", "null"],
+                description: "Optional description of the relevant data/state that exists now, or null when not useful.",
+              },
+              decisionText: {
+                type: ["string", "null"],
+                description: "Optional branch/condition/decision that controls the next path, or null when this step has no important branch.",
+              },
+              stateChangeText: {
+                type: ["string", "null"],
+                description: "Optional state mutation/result caused by this step, or null when no state changes.",
+              },
+              nextStepText: {
+                type: ["string", "null"],
+                description: "Optional explanation of where execution/data goes next, or null when not needed.",
+              },
+              codeExamples: {
+                type: "array",
+                minItems: 1,
+                description: "Exact source snippets that prove this step. Each snippet must come from an inspected file.",
+                items: {
+                  type: "object",
+                  description: "One exact source snippet for this walkthrough step.",
+                  properties: {
+                    sourceFilePath: {
+                      type: "string",
+                      description: "Workspace-relative source file path for this snippet.",
+                    },
+                    sourceSymbolName: {
+                      type: ["string", "null"],
+                      description: "Optional function, class, method, or component name containing the snippet, or null when not useful.",
+                    },
+                    startLineNumber: {
+                      type: "integer",
+                      minimum: 1,
+                      description: "1-indexed first source line included in codeText.",
+                    },
+                    endLineNumber: {
+                      type: "integer",
+                      minimum: 1,
+                      description: "1-indexed final source line included in codeText.",
+                    },
+                    languageLabel: {
+                      type: ["string", "null"],
+                      description: "Optional language label such as ts, tsx, js, py, or null when unknown.",
+                    },
+                    codeText: {
+                      type: "string",
+                      description: "Exact code copied from the inspected source lines. Preserve indentation.",
+                    },
+                    explanationText: {
+                      type: ["string", "null"],
+                      description: "Optional short explanation of why this snippet matters for the current step, or null when the step text already explains it.",
+                    },
+                  },
+                  required: [
+                    "sourceFilePath",
+                    "sourceSymbolName",
+                    "startLineNumber",
+                    "endLineNumber",
+                    "languageLabel",
+                    "codeText",
+                    "explanationText",
+                  ],
+                  additionalProperties: false,
+                },
               },
             },
-            required: ["labelText", "detailText"],
+            required: [
+              "stepTitle",
+              "whenText",
+              "whatHappensText",
+              "dataStateText",
+              "decisionText",
+              "stateChangeText",
+              "nextStepText",
+              "codeExamples",
+            ],
             additionalProperties: false,
           },
         },
       },
-      required: ["titleText", "summaryText", "sequenceItems"],
+      required: ["titleText", "summaryText", "walkthroughKind", "steps"],
       additionalProperties: false,
     },
     strict: true,
@@ -357,7 +445,7 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
 const openAiPresentationFunctionDefinitionByName: {
   readonly [FunctionName in AssistantPresentationFunctionName]: OpenAiToolDefinition<FunctionName>;
 } = {
-  present_learning_sequence: createPresentLearningSequenceToolDefinition(),
+  present_code_execution_walkthrough: createPresentCodeExecutionWalkthroughToolDefinition(),
 };
 
 export function createOpenAiToolDefinitions(input: {
@@ -387,10 +475,10 @@ export function isOpenAiExecutableToolCallIntent(
   return providerFunctionCallIntent.intentKind === "executable_tool";
 }
 
-export function isOpenAiLearningSequencePresentationFunctionCallIntent(
+export function isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(
   providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
-): providerFunctionCallIntent is OpenAiLearningSequencePresentationFunctionCallIntent {
-  return providerFunctionCallIntent.intentKind === "learning_sequence_presentation";
+): providerFunctionCallIntent is OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent {
+  return providerFunctionCallIntent.intentKind === "code_execution_walkthrough_presentation";
 }
 
 export function createOpenAiProviderFunctionCallIntent(input: {
@@ -460,41 +548,62 @@ function parseOpenAiPresentationFunctionCallIntent(input: {
   functionName: AssistantPresentationFunctionName;
   parsedArguments: JsonObjectRecord;
 }): OpenAiProviderFunctionCallIntent {
-  if (input.functionName === "present_learning_sequence") {
+  if (input.functionName === "present_code_execution_walkthrough") {
     return {
-      intentKind: "learning_sequence_presentation",
+      intentKind: "code_execution_walkthrough_presentation",
       functionCallId: input.functionCallId,
-      learningSequence: parseLearningSequencePresentationFunctionArguments(input.parsedArguments),
+      codeExecutionWalkthrough: parseCodeExecutionWalkthroughPresentationFunctionArguments(input.parsedArguments),
     };
   }
 
   return assertUnhandledPresentationFunctionName(input.functionName);
 }
 
-function parseLearningSequencePresentationFunctionArguments(parsedArguments: JsonObjectRecord): LearningSequence {
-  const summaryText = readOptionalStringToolArgument(parsedArguments, "summaryText", "present_learning_sequence");
-  const learningSequenceCandidate = {
-    titleText: readRequiredStringToolArgument(parsedArguments, "titleText", "present_learning_sequence"),
+function parseCodeExecutionWalkthroughPresentationFunctionArguments(parsedArguments: JsonObjectRecord): CodeExecutionWalkthrough {
+  const functionName = "present_code_execution_walkthrough";
+  const summaryText = readOptionalStringToolArgument(parsedArguments, "summaryText", functionName);
+  const codeExecutionWalkthroughCandidate = {
+    titleText: readRequiredStringToolArgument(parsedArguments, "titleText", functionName),
     ...(summaryText !== undefined ? { summaryText } : {}),
-    sequenceItems: readRequiredObjectArrayFunctionArgument(
-      parsedArguments,
-      "sequenceItems",
-      "present_learning_sequence",
-    ).map((sequenceItemArguments) => {
-      const detailText = readOptionalStringToolArgument(sequenceItemArguments, "detailText", "present_learning_sequence");
+    walkthroughKind: readRequiredCodeExecutionWalkthroughKindArgument(parsedArguments, "walkthroughKind", functionName),
+    steps: readRequiredObjectArrayFunctionArgument(parsedArguments, "steps", functionName).map((stepArguments) => {
+      const whenText = readOptionalStringToolArgument(stepArguments, "whenText", functionName);
+      const dataStateText = readOptionalStringToolArgument(stepArguments, "dataStateText", functionName);
+      const decisionText = readOptionalStringToolArgument(stepArguments, "decisionText", functionName);
+      const stateChangeText = readOptionalStringToolArgument(stepArguments, "stateChangeText", functionName);
+      const nextStepText = readOptionalStringToolArgument(stepArguments, "nextStepText", functionName);
       return {
-        labelText: readRequiredStringToolArgument(sequenceItemArguments, "labelText", "present_learning_sequence"),
-        ...(detailText !== undefined ? { detailText } : {}),
+        stepTitle: readRequiredStringToolArgument(stepArguments, "stepTitle", functionName),
+        ...(whenText !== undefined ? { whenText } : {}),
+        whatHappensText: readRequiredStringToolArgument(stepArguments, "whatHappensText", functionName),
+        ...(dataStateText !== undefined ? { dataStateText } : {}),
+        ...(decisionText !== undefined ? { decisionText } : {}),
+        ...(stateChangeText !== undefined ? { stateChangeText } : {}),
+        ...(nextStepText !== undefined ? { nextStepText } : {}),
+        codeExamples: readRequiredObjectArrayFunctionArgument(stepArguments, "codeExamples", functionName).map((codeExampleArguments) => {
+          const sourceSymbolName = readOptionalStringToolArgument(codeExampleArguments, "sourceSymbolName", functionName);
+          const languageLabel = readOptionalStringToolArgument(codeExampleArguments, "languageLabel", functionName);
+          const explanationText = readOptionalStringToolArgument(codeExampleArguments, "explanationText", functionName);
+          return {
+            sourceFilePath: readRequiredStringToolArgument(codeExampleArguments, "sourceFilePath", functionName),
+            ...(sourceSymbolName !== undefined ? { sourceSymbolName } : {}),
+            startLineNumber: readRequiredPositiveIntegerToolArgument(codeExampleArguments, "startLineNumber", functionName),
+            endLineNumber: readRequiredPositiveIntegerToolArgument(codeExampleArguments, "endLineNumber", functionName),
+            ...(languageLabel !== undefined ? { languageLabel } : {}),
+            codeText: readRequiredStringToolArgument(codeExampleArguments, "codeText", functionName),
+            ...(explanationText !== undefined ? { explanationText } : {}),
+          };
+        }),
       };
     }),
   };
-  const parsedLearningSequence = LearningSequenceSchema.safeParse(learningSequenceCandidate);
-  if (parsedLearningSequence.success) {
-    return parsedLearningSequence.data;
+  const parsedCodeExecutionWalkthrough = CodeExecutionWalkthroughSchema.safeParse(codeExecutionWalkthroughCandidate);
+  if (parsedCodeExecutionWalkthrough.success) {
+    return parsedCodeExecutionWalkthrough.data;
   }
 
-  const contractViolationText = parsedLearningSequence.error.issues.map(formatToolCallContractViolation).join("; ");
-  throw new Error(`OpenAI function call for present_learning_sequence violates Buli learning sequence contract: ${contractViolationText}`);
+  const contractViolationText = parsedCodeExecutionWalkthrough.error.issues.map(formatToolCallContractViolation).join("; ");
+  throw new Error(`OpenAI function call for present_code_execution_walkthrough violates Buli code execution walkthrough contract: ${contractViolationText}`);
 }
 
 function assertUnhandledPresentationFunctionName(functionName: never): never {
@@ -635,6 +744,19 @@ function readRequiredAssistantSubagentNameToolArgument(
   throw new Error(`OpenAI function call for ${toolName} has unsupported subagent argument: ${argumentName}`);
 }
 
+function readRequiredCodeExecutionWalkthroughKindArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  functionName: string,
+): CodeExecutionWalkthroughKind {
+  const argumentValue = readRequiredStringToolArgument(parsedArguments, argumentName, functionName);
+  if (CodeExecutionWalkthroughKindSchema.options.includes(argumentValue as CodeExecutionWalkthroughKind)) {
+    return argumentValue as CodeExecutionWalkthroughKind;
+  }
+
+  throw new Error(`OpenAI function call for ${functionName} has unsupported walkthrough kind argument: ${argumentName}`);
+}
+
 function readRequiredTextToolArgument(
   parsedArguments: JsonObjectRecord,
   argumentName: string,
@@ -662,6 +784,19 @@ function readOptionalStringToolArgument(
   }
 
   throw new Error(`OpenAI function call for ${toolName} has invalid string argument: ${argumentName}`);
+}
+
+function readRequiredPositiveIntegerToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): number {
+  const argumentValue = parsedArguments[argumentName];
+  if (typeof argumentValue === "number" && Number.isInteger(argumentValue) && argumentValue > 0) {
+    return argumentValue;
+  }
+
+  throw new Error(`OpenAI function call for ${toolName} is missing required positive integer argument: ${argumentName}`);
 }
 
 function readOptionalPositiveIntegerToolArgument(

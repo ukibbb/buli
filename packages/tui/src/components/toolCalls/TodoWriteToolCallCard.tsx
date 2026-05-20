@@ -1,13 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ToolCallTodoWriteDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Checklist } from "../primitives/Checklist.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { BracketedTarget } from "./BracketedTarget.tsx";
-import {
-  ToolCallHeaderLeft,
-  ToolCallHeaderRight,
-} from "./ToolCallCardHeaderSlots.tsx";
+import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
 
 export type TodoWriteToolCallCardProps = {
   toolCallDetail: ToolCallTodoWriteDetail;
@@ -17,6 +13,7 @@ export type TodoWriteToolCallCardProps = {
 };
 
 export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactNode {
+  const [isTodoListExpanded, setIsTodoListExpanded] = useState(false);
   const accentColor =
     props.renderState === "failed"
       ? chatScreenTheme.accentRed
@@ -29,37 +26,36 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
       : props.renderState === "failed"
         ? "error"
         : "pending";
+  const hasTodoListContent = props.renderState !== "failed" && props.toolCallDetail.todoItems.length > 0;
   return (
     <SurfaceCard
       accentColor={accentColor}
+      density="compact"
       headerLeft={
-        <ToolCallHeaderLeft
-          toolNameLabel="TodoWrite"
-          toolTargetContent={
-            <BracketedTarget accentColor={accentColor} targetText={buildTodoTargetText(props)} />
-          }
-        />
-      }
-      headerRight={
-        <ToolCallHeaderRight
+        <ToolCallCompactHeader
+          accentColor={accentColor}
+          disclosureState={hasTodoListContent
+            ? {
+                isContentExpandable: true,
+                isContentExpanded: isTodoListExpanded,
+                onContentExpansionToggle: () => {
+                  setIsTodoListExpanded((currentTodoListExpanded) => !currentTodoListExpanded);
+                },
+              }
+            : { isContentExpandable: false }}
           statusColor={accentColor}
           statusKind={statusKind}
           statusLabel={buildTodoStatusLabel(props)}
+          toolNameLabel="TodoWrite"
+          toolTargetText={buildTodoTargetText(props)}
         />
       }
-      bodyContent={buildTodoBodyContent(props)}
+      bodyContent={hasTodoListContent && isTodoListExpanded ? buildTodoBodyContent(props) : undefined}
     />
   );
 }
 
 function buildTodoBodyContent(props: TodoWriteToolCallCardProps): ReactNode {
-  if (props.renderState === "failed") {
-    return (
-      <text fg={chatScreenTheme.accentRed}>
-        {props.errorText ?? "Failed to update plan."}
-      </text>
-    );
-  }
   if (props.toolCallDetail.todoItems.length === 0) {
     return undefined;
   }

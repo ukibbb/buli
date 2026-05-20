@@ -40,7 +40,7 @@ import {
 } from "./openAiResponseStepTerminalStateBuilder.ts";
 import {
   isOpenAiExecutableToolCallIntent,
-  isOpenAiLearningSequencePresentationFunctionCallIntent,
+  isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
   type OpenAiProviderFunctionCallIntent,
 } from "./toolDefinitions.ts";
 
@@ -74,26 +74,26 @@ function createProviderToolCallsRequestedEvent(requestedToolCalls: readonly Prov
   };
 }
 
-function createProviderLearningSequencePresentedEvent(
+function createProviderCodeExecutionWalkthroughPresentedEvent(
   providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
 ): ProviderStreamEvent {
-  if (!isOpenAiLearningSequencePresentationFunctionCallIntent(providerFunctionCallIntent)) {
-    throw new Error("OpenAI stream tried to emit a non-presentation function call as a learning sequence.");
+  if (!isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent)) {
+    throw new Error("OpenAI stream tried to emit a non-presentation function call as a code execution walkthrough.");
   }
 
   return {
-    type: "learning_sequence_presented",
+    type: "code_execution_walkthrough_presented",
     presentationCallId: providerFunctionCallIntent.functionCallId,
-    learningSequence: providerFunctionCallIntent.learningSequence,
+    codeExecutionWalkthrough: providerFunctionCallIntent.codeExecutionWalkthrough,
   };
 }
 
 function createProviderFunctionCallIntentEvents(
   providerFunctionCallIntents: readonly OpenAiProviderFunctionCallIntent[],
 ): ProviderStreamEvent[] {
-  const learningSequencePresentedEvents = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-    isOpenAiLearningSequencePresentationFunctionCallIntent(providerFunctionCallIntent)
-      ? [createProviderLearningSequencePresentedEvent(providerFunctionCallIntent)]
+  const codeExecutionWalkthroughPresentedEvents = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
+    isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent)
+      ? [createProviderCodeExecutionWalkthroughPresentedEvent(providerFunctionCallIntent)]
       : []
   );
   const requestedToolCalls = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
@@ -106,7 +106,7 @@ function createProviderFunctionCallIntentEvents(
   );
 
   return [
-    ...learningSequencePresentedEvents,
+    ...codeExecutionWalkthroughPresentedEvents,
     ...(requestedToolCalls.length > 0 ? [createProviderToolCallsRequestedEvent(requestedToolCalls)] : []),
   ];
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { TokenUsage } from "@buli/contracts";
+import { formatCodeExecutionWalkthroughAsMarkdownText, type CodeExecutionWalkthrough, type TokenUsage } from "@buli/contracts";
 import { RuntimeProviderStreamEventTranslator } from "../src/runtimeProviderStreamEventTranslator.ts";
 
 const completedTokenUsage: TokenUsage = {
@@ -445,25 +445,53 @@ test("RuntimeProviderStreamEventTranslator segments assistant text around tool c
   });
 });
 
-test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts", () => {
+test("RuntimeProviderStreamEventTranslator emits typed code execution walkthrough parts", () => {
   const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 2_500 });
-  const learningSequence = {
+  const codeExecutionWalkthrough: CodeExecutionWalkthrough = {
     titleText: "Request flow",
     summaryText: "How the request moves through the runtime.",
-    sequenceItems: [
-      { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
-      { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+    walkthroughKind: "source_walkthrough",
+    steps: [
+      {
+        stepTitle: "Prompt accepted",
+        whatHappensText: "The user prompt is recorded.",
+        nextStepText: "Provider streams next.",
+        codeExamples: [
+          {
+            sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
+            sourceSymbolName: "startAcceptedRuntimeConversationTurn",
+            startLineNumber: 64,
+            endLineNumber: 67,
+            languageLabel: "ts",
+            codeText: "recordPrompt();",
+            explanationText: "This records the prompt before streaming starts.",
+          },
+        ],
+      },
+      {
+        stepTitle: "Provider streams",
+        whatHappensText: "Text chunks become assistant events.",
+        codeExamples: [
+          {
+            sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
+            startLineNumber: 145,
+            endLineNumber: 147,
+            languageLabel: "ts",
+            codeText: "translateChunk();",
+          },
+        ],
+      },
     ],
   };
 
   const introTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
     providerStreamEvent: { type: "text_chunk", text: "Intro.\n" },
   });
-  const learningSequenceTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+  const codeExecutionWalkthroughTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
     providerStreamEvent: {
-      type: "learning_sequence_presented",
-      presentationCallId: "call_learning_sequence_1",
-      learningSequence,
+      type: "code_execution_walkthrough_presented",
+      presentationCallId: "call_code_walkthrough_1",
+      codeExecutionWalkthrough,
     },
   });
   const outroTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
@@ -476,7 +504,7 @@ test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts",
   if (introTextTranslation.translationKind !== "assistant_response_events") {
     throw new Error("expected assistant response events");
   }
-  if (learningSequenceTranslation.translationKind !== "assistant_response_events") {
+  if (codeExecutionWalkthroughTranslation.translationKind !== "assistant_response_events") {
     throw new Error("expected assistant response events");
   }
   if (outroTextTranslation.translationKind !== "assistant_response_events") {
@@ -488,7 +516,7 @@ test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts",
 
   expect([
     ...introTextTranslation.assistantResponseEvents,
-    ...learningSequenceTranslation.assistantResponseEvents,
+    ...codeExecutionWalkthroughTranslation.assistantResponseEvents,
     ...outroTextTranslation.assistantResponseEvents,
   ]).toEqual([
     {
@@ -516,12 +544,40 @@ test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts",
       messageId: "assistant-message-1",
       part: {
         id: "generated-part-1",
-        partKind: "assistant_learning_sequence",
+        partKind: "assistant_code_execution_walkthrough",
         titleText: "Request flow",
         summaryText: "How the request moves through the runtime.",
-        sequenceItems: [
-          { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
-          { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
+        walkthroughKind: "source_walkthrough",
+        steps: [
+          {
+            stepTitle: "Prompt accepted",
+            whatHappensText: "The user prompt is recorded.",
+            nextStepText: "Provider streams next.",
+            codeExamples: [
+              {
+                sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
+                sourceSymbolName: "startAcceptedRuntimeConversationTurn",
+                startLineNumber: 64,
+                endLineNumber: 67,
+                languageLabel: "ts",
+                codeText: "recordPrompt();",
+                explanationText: "This records the prompt before streaming starts.",
+              },
+            ],
+          },
+          {
+            stepTitle: "Provider streams",
+            whatHappensText: "Text chunks become assistant events.",
+            codeExamples: [
+              {
+                sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
+                startLineNumber: 145,
+                endLineNumber: 147,
+                languageLabel: "ts",
+                codeText: "translateChunk();",
+              },
+            ],
+          },
         ],
       },
     },
@@ -536,19 +592,17 @@ test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts",
       },
     },
   ]);
-  expect(learningSequenceTranslation.assistantSegmentSessionEntries).toEqual([
+  expect(codeExecutionWalkthroughTranslation.assistantSegmentSessionEntries).toEqual([
     {
       entryKind: "assistant_text_segment",
       assistantTextSegmentText: "Intro.\n",
     },
     {
-      entryKind: "assistant_learning_sequence_segment",
+      entryKind: "assistant_code_execution_walkthrough_segment",
       titleText: "Request flow",
       summaryText: "How the request moves through the runtime.",
-      sequenceItems: [
-        { labelText: "Prompt accepted", detailText: "The user prompt is recorded." },
-        { labelText: "Provider streams", detailText: "Text chunks become assistant events." },
-      ],
+      walkthroughKind: "source_walkthrough",
+      steps: codeExecutionWalkthrough.steps,
     },
   ]);
   expect(terminalTranslation.assistantSegmentSessionEntriesBeforeTerminalSessionEntry).toEqual([
@@ -559,7 +613,7 @@ test("RuntimeProviderStreamEventTranslator emits typed learning sequence parts",
   ]);
   expect(terminalTranslation.terminalAssistantMessageSessionEntry.assistantMessageText).toBe([
     "Intro.\n",
-    "**Request flow**\nHow the request moves through the runtime.\nPrompt accepted -> Provider streams\n\n- Prompt accepted: The user prompt is recorded.\n- Provider streams: Text chunks become assistant events.",
+    formatCodeExecutionWalkthroughAsMarkdownText(codeExecutionWalkthrough),
     "Outro.",
   ].join(""));
 });

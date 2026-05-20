@@ -40,7 +40,7 @@ export function projectConversationSessionEntryToModelContextItems(
     ];
   }
 
-  if (conversationSessionEntry.entryKind === "assistant_learning_sequence_segment") {
+  if (conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment") {
     return [];
   }
 

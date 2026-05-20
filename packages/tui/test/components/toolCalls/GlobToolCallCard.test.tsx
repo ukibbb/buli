@@ -17,8 +17,10 @@ describe("GlobToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[**/*.ts]");
-    expect(frame).toContain("searching");
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("searching");
   });
 
   test("completed_starts_collapsed_with_match_summary", async () => {
@@ -36,10 +38,11 @@ describe("GlobToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[*.ts]");
     expect(frame).toContain("2 paths");
-    expect(frame).toContain("2 matched paths for *.ts");
-    expect(frame).toContain("click to show content");
+    expect(frame).not.toContain("2 matched paths for *.ts");
+    expect(frame).not.toContain("click to show content");
     expect(frame).not.toContain("src/app.ts");
   });
 
@@ -60,12 +63,13 @@ describe("GlobToolCallCard", () => {
     expect(captureCharFrame()).not.toContain("src/app.ts");
 
     await act(async () => {
-      await mockMouse.click(6, 3);
+      await mockMouse.click(3, 0);
     });
     await renderOnce();
 
     const frame = captureCharFrame();
-    expect(frame).toContain("click to hide content");
+    expect(frame).toContain("[-]");
+    expect(frame).not.toContain("click to hide content");
     expect(frame).toContain("src/app.ts");
     expect(frame).toContain("src/index.ts");
   });
@@ -87,8 +91,8 @@ describe("GlobToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("100 of 105 paths");
-    expect(frame).toContain("truncated");
+    expect(frame).toContain("100/105 paths");
+    expect(frame).not.toContain("truncated");
   });
 
   test("failed_shows_error", async () => {
@@ -105,6 +109,7 @@ describe("GlobToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
+    expect(frame).toContain("[+]");
     expect(frame).toContain("[**/*.ts]");
     expect(frame).toContain("glob failed");
   });

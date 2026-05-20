@@ -13,8 +13,8 @@ import {
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
   FILE_MUTATION_TOOL_REQUEST_NAMES,
-  formatLearningSequenceAsMarkdownText,
-  LearningSequenceSchema,
+  CodeExecutionWalkthroughSchema,
+  formatCodeExecutionWalkthroughAsMarkdownText,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   ModelContextItemSchema,
   PendingToolApprovalRequestSchema,
@@ -125,73 +125,161 @@ test("ConversationMessagePartSchema parses an assistant text part with an open s
   });
 });
 
-test("ConversationMessagePartSchema parses an assistant learning sequence part", () => {
+test("ConversationMessagePartSchema parses an assistant code execution walkthrough part", () => {
   expect(
     ConversationMessagePartSchema.parse({
-      id: "assistant-learning-sequence-1",
-      partKind: "assistant_learning_sequence",
+      id: "assistant-code-execution-walkthrough-1",
+      partKind: "assistant_code_execution_walkthrough",
       titleText: "Request flow",
       summaryText: "How a turn moves through the runtime.",
-      sequenceItems: [
-        { labelText: "Prompt accepted", detailText: "The prompt is recorded." },
-        { labelText: "Provider streams" },
+      walkthroughKind: "source_walkthrough",
+      steps: [
+        {
+          stepTitle: "Provider event arrives",
+          whatHappensText: "The engine branches on the provider event type.",
+          codeExamples: [
+            {
+              sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
+              sourceSymbolName: "translateProviderStreamEvent",
+              startLineNumber: 145,
+              endLineNumber: 147,
+              languageLabel: "ts",
+              codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
+              explanationText: "This branch chooses the walkthrough translation path.",
+            },
+          ],
+        },
       ],
     }),
   ).toEqual({
-    id: "assistant-learning-sequence-1",
-    partKind: "assistant_learning_sequence",
+    id: "assistant-code-execution-walkthrough-1",
+    partKind: "assistant_code_execution_walkthrough",
     titleText: "Request flow",
     summaryText: "How a turn moves through the runtime.",
-    sequenceItems: [
-      { labelText: "Prompt accepted", detailText: "The prompt is recorded." },
-      { labelText: "Provider streams" },
+    walkthroughKind: "source_walkthrough",
+    steps: [
+      {
+        stepTitle: "Provider event arrives",
+        whatHappensText: "The engine branches on the provider event type.",
+        codeExamples: [
+          {
+            sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
+            sourceSymbolName: "translateProviderStreamEvent",
+            startLineNumber: 145,
+            endLineNumber: 147,
+            languageLabel: "ts",
+            codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
+            explanationText: "This branch chooses the walkthrough translation path.",
+          },
+        ],
+      },
     ],
   });
 });
 
-test("LearningSequenceSchema formats model-readable fallback text", () => {
-  const learningSequence = LearningSequenceSchema.parse({
+test("CodeExecutionWalkthroughSchema formats model-readable fallback text", () => {
+  const codeExecutionWalkthrough = CodeExecutionWalkthroughSchema.parse({
     titleText: "Runtime flow",
-    sequenceItems: [
-      { labelText: "Translate event", detailText: "The stream event becomes a message part." },
-      { labelText: "Render part" },
+    walkthroughKind: "source_walkthrough",
+    steps: [
+      {
+        stepTitle: "Translate event",
+        whatHappensText: "The stream event becomes a message part.",
+        dataStateText: "providerStreamEvent carries the walkthrough payload.",
+        codeExamples: [
+          {
+            sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
+            startLineNumber: 145,
+            endLineNumber: 147,
+            languageLabel: "ts",
+            codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
+          },
+        ],
+      },
     ],
   });
 
-  expect(formatLearningSequenceAsMarkdownText(learningSequence)).toBe([
+  expect(formatCodeExecutionWalkthroughAsMarkdownText(codeExecutionWalkthrough)).toBe([
     "**Runtime flow**",
-    "Translate event -> Render part",
+    "Walkthrough kind: source walkthrough",
     "",
-    "- Translate event: The stream event becomes a message part.",
+    "1. Translate event",
+    "What happens: The stream event becomes a message part.",
+    "Data/state: providerStreamEvent carries the walkthrough payload.",
+    "",
+    "Source: packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147",
+    "```ts path=\"packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147\"",
+    "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {",
+    "  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);",
+    "}",
+    "```",
+    "",
   ].join("\n"));
 });
 
-test("LearningSequenceSchema rejects whitespace-only text fields", () => {
+test("CodeExecutionWalkthroughSchema rejects whitespace-only text fields and invalid line ranges", () => {
   expect(() =>
-    LearningSequenceSchema.parse({
+    CodeExecutionWalkthroughSchema.parse({
       titleText: "   ",
-      sequenceItems: [{ labelText: "Valid stage" }],
+      walkthroughKind: "source_walkthrough",
+      steps: [{ stepTitle: "Valid stage", whatHappensText: "Valid text", codeExamples: [{ sourceFilePath: "src/a.ts", startLineNumber: 1, endLineNumber: 1, codeText: "const a = 1;" }] }],
     })
   ).toThrow();
   expect(() =>
-    LearningSequenceSchema.parse({
+    CodeExecutionWalkthroughSchema.parse({
       titleText: "Runtime flow",
-      sequenceItems: [{ labelText: "\t" }],
+      walkthroughKind: "source_walkthrough",
+      steps: [{ stepTitle: "\t", whatHappensText: "Valid text", codeExamples: [{ sourceFilePath: "src/a.ts", startLineNumber: 1, endLineNumber: 1, codeText: "const a = 1;" }] }],
+    })
+  ).toThrow();
+  expect(() =>
+    CodeExecutionWalkthroughSchema.parse({
+      titleText: "Runtime flow",
+      walkthroughKind: "source_walkthrough",
+      steps: [{ stepTitle: "Valid stage", whatHappensText: "Valid text", codeExamples: [{ sourceFilePath: "src/a.ts", startLineNumber: 3, endLineNumber: 2, codeText: "const a = 1;" }] }],
     })
   ).toThrow();
 });
 
-test("LearningSequenceSchema trims accepted text fields", () => {
+test("CodeExecutionWalkthroughSchema trims prose fields while preserving code text", () => {
   expect(
-    LearningSequenceSchema.parse({
+    CodeExecutionWalkthroughSchema.parse({
       titleText: " Runtime flow ",
       summaryText: " Summary ",
-      sequenceItems: [{ labelText: " Prompt accepted ", detailText: " Recorded " }],
+      walkthroughKind: "source_walkthrough",
+      steps: [
+        {
+          stepTitle: " Prompt accepted ",
+          whatHappensText: " Recorded ",
+          codeExamples: [
+            {
+              sourceFilePath: " src/a.ts ",
+              startLineNumber: 1,
+              endLineNumber: 1,
+              codeText: "  const a = 1;  ",
+            },
+          ],
+        },
+      ],
     }),
   ).toEqual({
     titleText: "Runtime flow",
     summaryText: "Summary",
-    sequenceItems: [{ labelText: "Prompt accepted", detailText: "Recorded" }],
+    walkthroughKind: "source_walkthrough",
+    steps: [
+      {
+        stepTitle: "Prompt accepted",
+        whatHappensText: "Recorded",
+        codeExamples: [
+          {
+            sourceFilePath: "src/a.ts",
+            startLineNumber: 1,
+            endLineNumber: 1,
+            codeText: "  const a = 1;  ",
+          },
+        ],
+      },
+    ],
   });
 });
 
@@ -688,7 +776,7 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
 
 test("tool catalog lists assistant request tools by execution boundary", () => {
   expect(ASSISTANT_TOOL_REQUEST_NAMES).toEqual(["bash", "read", "glob", "grep", "edit", "write", "task"]);
-  expect(ASSISTANT_PRESENTATION_FUNCTION_NAMES).toEqual(["present_learning_sequence"]);
+  expect(ASSISTANT_PRESENTATION_FUNCTION_NAMES).toEqual(["present_code_execution_walkthrough"]);
   expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "write"]);
   expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "task"]);
@@ -700,7 +788,7 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("task")).toBe(true);
   expect(isAssistantToolRequestName("explore")).toBe(false);
   expect(isAssistantToolRequestName("general")).toBe(false);
-  expect(isAssistantPresentationFunctionName("present_learning_sequence")).toBe(true);
+  expect(isAssistantPresentationFunctionName("present_code_execution_walkthrough")).toBe(true);
   expect(isAssistantPresentationFunctionName("bash")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toBe(true);
@@ -824,17 +912,24 @@ test("ProviderStreamEventSchema parses ordered batched tool-call requests", () =
   ).toBe("tool_calls_requested");
 });
 
-test("ProviderStreamEventSchema parses learning sequence presentation events", () => {
+test("ProviderStreamEventSchema parses code execution walkthrough presentation events", () => {
   expect(
     ProviderStreamEventSchema.parse({
-      type: "learning_sequence_presented",
-      presentationCallId: "call-learning-sequence-1",
-      learningSequence: {
+      type: "code_execution_walkthrough_presented",
+      presentationCallId: "call-code-walkthrough-1",
+      codeExecutionWalkthrough: {
         titleText: "Request flow",
-        sequenceItems: [{ labelText: "Prompt accepted" }],
+        walkthroughKind: "source_walkthrough",
+        steps: [
+          {
+            stepTitle: "Prompt accepted",
+            whatHappensText: "The accepted prompt is recorded.",
+            codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }],
+          },
+        ],
       },
     }).type,
-  ).toBe("learning_sequence_presented");
+  ).toBe("code_execution_walkthrough_presented");
 });
 
 test("AssistantResponseEventSchema parses assistant_message_interrupted", () => {
@@ -877,22 +972,30 @@ test("ConversationSessionEntrySchema parses assistant text segment history entri
   });
 });
 
-test("ConversationSessionEntrySchema parses assistant learning sequence segment history entries", () => {
+test("ConversationSessionEntrySchema parses assistant code execution walkthrough segment history entries", () => {
   expect(
     ConversationSessionEntrySchema.parse({
-      entryKind: "assistant_learning_sequence_segment",
+      entryKind: "assistant_code_execution_walkthrough_segment",
       titleText: "Request flow",
-      sequenceItems: [
-        { labelText: "Prompt accepted" },
-        { labelText: "Provider streams", detailText: "Streaming chunks update the transcript." },
+      walkthroughKind: "source_walkthrough",
+      steps: [
+        {
+          stepTitle: "Prompt accepted",
+          whatHappensText: "The accepted prompt is recorded.",
+          codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }],
+        },
       ],
     }),
   ).toEqual({
-    entryKind: "assistant_learning_sequence_segment",
+    entryKind: "assistant_code_execution_walkthrough_segment",
     titleText: "Request flow",
-    sequenceItems: [
-      { labelText: "Prompt accepted" },
-      { labelText: "Provider streams", detailText: "Streaming chunks update the transcript." },
+    walkthroughKind: "source_walkthrough",
+    steps: [
+      {
+        stepTitle: "Prompt accepted",
+        whatHappensText: "The accepted prompt is recorded.",
+        codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }],
+      },
     ],
   });
 });

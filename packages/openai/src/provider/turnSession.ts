@@ -36,8 +36,8 @@ import {
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
 import {
   isOpenAiExecutableToolCallIntent,
-  isOpenAiLearningSequencePresentationFunctionCallIntent,
-  type OpenAiLearningSequencePresentationFunctionCallIntent,
+  isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
+  type OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
   type OpenAiProviderFunctionCallIntent,
 } from "./toolDefinitions.ts";
 
@@ -57,9 +57,6 @@ type OpenAiResponseStepToolCallTerminalState = Extract<
   OpenAiResponseStepTerminalState,
   { terminalKind: "tool_call_requested" | "tool_calls_requested" | "provider_function_calls_requested" }
 >;
-
-const DEFAULT_MAX_OPENAI_RESPONSE_STEPS_PER_TURN = 20;
-const DEFAULT_MAX_OPENAI_TOOL_CALLS_PER_TURN = 100;
 
 function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenUsage: TokenUsage): TokenUsage {
   if (!accumulatedTokenUsage) {
@@ -95,8 +92,8 @@ export class OpenAiProviderConversationTurn {
   readonly systemPromptText: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
-  readonly maxResponseStepsPerTurn: number;
-  readonly maxToolCallsPerTurn: number;
+  readonly maxResponseStepsPerTurn: number | undefined;
+  readonly maxToolCallsPerTurn: number | undefined;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
@@ -132,14 +129,8 @@ export class OpenAiProviderConversationTurn {
     this.systemPromptText = input.systemPromptText;
     this.diagnosticLogger = input.diagnosticLogger;
     this.onStepRequestFailed = input.onStepRequestFailed;
-    this.maxResponseStepsPerTurn = normalizePositiveIntegerLimit(
-      input.maxResponseStepsPerTurn,
-      DEFAULT_MAX_OPENAI_RESPONSE_STEPS_PER_TURN,
-    );
-    this.maxToolCallsPerTurn = normalizePositiveIntegerLimit(
-      input.maxToolCallsPerTurn,
-      DEFAULT_MAX_OPENAI_TOOL_CALLS_PER_TURN,
-    );
+    this.maxResponseStepsPerTurn = normalizeOptionalPositiveIntegerLimit(input.maxResponseStepsPerTurn);
+    this.maxToolCallsPerTurn = normalizeOptionalPositiveIntegerLimit(input.maxToolCallsPerTurn);
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
@@ -189,7 +180,7 @@ export class OpenAiProviderConversationTurn {
 
     while (true) {
       responseStepIndex += 1;
-      if (responseStepIndex > this.maxResponseStepsPerTurn) {
+      if (this.maxResponseStepsPerTurn !== undefined && responseStepIndex > this.maxResponseStepsPerTurn) {
         throw new Error(`OpenAI response step limit exceeded after ${this.maxResponseStepsPerTurn} steps.`);
       }
       const responseStepStartedAtMs = Date.now();
@@ -287,11 +278,11 @@ export class OpenAiProviderConversationTurn {
             : []
         );
         const presentationFunctionCallIntents = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-          isOpenAiLearningSequencePresentationFunctionCallIntent(providerFunctionCallIntent) ? [providerFunctionCallIntent] : []
+          isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent) ? [providerFunctionCallIntent] : []
         );
         const onlyRequestedToolCall = requestedToolCalls.length === 1 ? requestedToolCalls[0] : undefined;
         requestedToolCallCount += requestedToolCalls.length;
-        if (requestedToolCallCount > this.maxToolCallsPerTurn) {
+        if (this.maxToolCallsPerTurn !== undefined && requestedToolCallCount > this.maxToolCallsPerTurn) {
           throw new Error(
             `OpenAI tool-call limit exceeded: requested ${requestedToolCallCount} tool calls (max ${this.maxToolCallsPerTurn}).`,
           );
@@ -342,10 +333,10 @@ export class OpenAiProviderConversationTurn {
           toolResultSubmissions.map((toolResultSubmission) => [toolResultSubmission.toolCallId, toolResultSubmission]),
         );
         const functionCallOutputInputItems = providerFunctionCallIntents.map((providerFunctionCallIntent) => {
-          if (isOpenAiLearningSequencePresentationFunctionCallIntent(providerFunctionCallIntent)) {
+          if (isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent)) {
             return createFunctionCallOutputInputItem(
               providerFunctionCallIntent.functionCallId,
-              createLearningSequencePresentationFunctionOutputText(providerFunctionCallIntent),
+              createCodeExecutionWalkthroughPresentationFunctionOutputText(providerFunctionCallIntent),
             );
           }
 
@@ -465,9 +456,9 @@ export class OpenAiProviderConversationTurn {
   }
 }
 
-function normalizePositiveIntegerLimit(requestedLimit: number | undefined, defaultLimit: number): number {
+function normalizeOptionalPositiveIntegerLimit(requestedLimit: number | undefined): number | undefined {
   if (requestedLimit === undefined || !Number.isFinite(requestedLimit)) {
-    return defaultLimit;
+    return undefined;
   }
 
   return Math.max(1, Math.floor(requestedLimit));
@@ -553,11 +544,15 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
     };
   }
 
-  if (providerStreamEvent.type === "learning_sequence_presented") {
+  if (providerStreamEvent.type === "code_execution_walkthrough_presented") {
     return {
       presentationCallId: providerStreamEvent.presentationCallId,
-      learningSequenceTitleLength: providerStreamEvent.learningSequence.titleText.length,
-      learningSequenceItemCount: providerStreamEvent.learningSequence.sequenceItems.length,
+      codeExecutionWalkthroughTitleLength: providerStreamEvent.codeExecutionWalkthrough.titleText.length,
+      codeExecutionWalkthroughStepCount: providerStreamEvent.codeExecutionWalkthrough.steps.length,
+      codeExecutionWalkthroughCodeExampleCount: providerStreamEvent.codeExecutionWalkthrough.steps.reduce(
+        (codeExampleCount, walkthroughStep) => codeExampleCount + walkthroughStep.codeExamples.length,
+        0,
+      ),
     };
   }
 
@@ -586,10 +581,10 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
   return summarizeTokenUsageForDiagnostics(providerStreamEvent.usage);
 }
 
-function createLearningSequencePresentationFunctionOutputText(
-  presentationFunctionCallIntent: OpenAiLearningSequencePresentationFunctionCallIntent,
+function createCodeExecutionWalkthroughPresentationFunctionOutputText(
+  presentationFunctionCallIntent: OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
 ): string {
-  return `Rendered learning sequence: ${presentationFunctionCallIntent.learningSequence.titleText}`;
+  return `Rendered code execution walkthrough: ${presentationFunctionCallIntent.codeExecutionWalkthrough.titleText}`;
 }
 
 async function createFailedResponseDebugPayload(response: OpenAiHttpErrorResponse): Promise<{

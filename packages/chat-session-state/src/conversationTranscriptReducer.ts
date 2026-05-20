@@ -116,7 +116,7 @@ function buildHydratedConversationTranscript(
     return conversationMessage.partIds.some((partId) => {
       const conversationMessagePart = conversationMessagePartsById[partId];
       return conversationMessagePart?.partKind === "assistant_text" ||
-        conversationMessagePart?.partKind === "assistant_learning_sequence";
+        conversationMessagePart?.partKind === "assistant_code_execution_walkthrough";
     });
   };
   const ensureAssistantConversationMessage = (entryIndex: number): string => {
@@ -257,16 +257,31 @@ function buildHydratedConversationTranscript(
       return;
     }
 
-    if (conversationSessionEntry.entryKind === "assistant_learning_sequence_segment") {
+    if (conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       appendConversationMessagePart(assistantMessageId, {
-        id: `persisted-entry-${entryIndex}-assistant-learning-sequence`,
-        partKind: "assistant_learning_sequence",
+        id: `persisted-entry-${entryIndex}-assistant-code-execution-walkthrough`,
+        partKind: "assistant_code_execution_walkthrough",
         titleText: conversationSessionEntry.titleText,
         ...(conversationSessionEntry.summaryText !== undefined ? { summaryText: conversationSessionEntry.summaryText } : {}),
-        sequenceItems: conversationSessionEntry.sequenceItems.map((sequenceItem) => ({
-          labelText: sequenceItem.labelText,
-          ...(sequenceItem.detailText !== undefined ? { detailText: sequenceItem.detailText } : {}),
+        walkthroughKind: conversationSessionEntry.walkthroughKind,
+        steps: conversationSessionEntry.steps.map((walkthroughStep) => ({
+          stepTitle: walkthroughStep.stepTitle,
+          ...(walkthroughStep.whenText !== undefined ? { whenText: walkthroughStep.whenText } : {}),
+          whatHappensText: walkthroughStep.whatHappensText,
+          ...(walkthroughStep.dataStateText !== undefined ? { dataStateText: walkthroughStep.dataStateText } : {}),
+          ...(walkthroughStep.decisionText !== undefined ? { decisionText: walkthroughStep.decisionText } : {}),
+          ...(walkthroughStep.stateChangeText !== undefined ? { stateChangeText: walkthroughStep.stateChangeText } : {}),
+          ...(walkthroughStep.nextStepText !== undefined ? { nextStepText: walkthroughStep.nextStepText } : {}),
+          codeExamples: walkthroughStep.codeExamples.map((codeExample) => ({
+            sourceFilePath: codeExample.sourceFilePath,
+            ...(codeExample.sourceSymbolName !== undefined ? { sourceSymbolName: codeExample.sourceSymbolName } : {}),
+            startLineNumber: codeExample.startLineNumber,
+            endLineNumber: codeExample.endLineNumber,
+            ...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {}),
+            codeText: codeExample.codeText,
+            ...(codeExample.explanationText !== undefined ? { explanationText: codeExample.explanationText } : {}),
+          })),
         })),
       });
       return;
