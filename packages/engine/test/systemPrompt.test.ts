@@ -73,6 +73,27 @@ test("requires context completeness before workspace conclusions", () => {
   expect(systemPromptText).toContain("Do not present guesses as findings.");
 });
 
+test("requires evidence labels before project opinions and reviews", () => {
+  const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain("Evidence standard:");
+  expect(systemPromptText).toContain(
+    "Before giving an opinion, review, recommendation, or quality judgment about the current workspace, state what evidence the judgment is based on",
+  );
+  expect(systemPromptText).toContain(
+    "Do not infer implementation quality from README files, plans, PRDs, architecture docs, or roadmaps alone.",
+  );
+  expect(systemPromptText).toContain(
+    "If only documentation was inspected, clearly label the answer as documentation/product-direction feedback and say that source code has not been inspected yet.",
+  );
+  expect(systemPromptText).toContain(
+    "For codebase-quality opinions, inspect representative source files, tests, contracts, and important call sites before concluding.",
+  );
+  expect(systemPromptText).toContain(
+    "If the user asks a broad question like \"what do you think about this project?\", either ask what angle they want or give separate sections for documentation/product direction versus code evidence.",
+  );
+});
+
 test("includes project instructions below buli's learning-first behavior", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
@@ -177,8 +198,9 @@ test("plan mode points inspection toward typed read and search tools", () => {
   expect(systemPromptText).toContain("Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path.");
   expect(systemPromptText).toContain("If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.");
   expect(systemPromptText).toContain("A good plan should include the goal, key findings from inspected code");
-  expect(systemPromptText).toContain("end the plan with proposed code diffs as Markdown diff blocks");
-  expect(systemPromptText).toContain("These diffs are proposals only.");
+  expect(systemPromptText).toContain("Prefer concise file-by-file plans over full patch dumps.");
+  expect(systemPromptText).toContain("Include full proposed diffs only when Lukasz explicitly asks for patch text.");
+  expect(systemPromptText).not.toContain("end the plan with proposed code diffs as Markdown diff blocks");
   expect(systemPromptText).toContain("Only Implementation mode may write to files.");
   expect(systemPromptText).toContain("The goal is to present a well researched plan to the user");
 });

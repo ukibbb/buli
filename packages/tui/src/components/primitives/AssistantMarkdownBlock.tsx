@@ -1,18 +1,21 @@
 import { useCallback, useMemo, type ReactNode } from "react";
 import {
-  type CodeOptions,
   CodeRenderable,
-  type OptimizedBuffer,
   RGBA,
   SyntaxStyle,
   type MarkdownOptions,
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
-  decorateAssistantMarkdownDiffFenceChunks,
   decorateAssistantMarkdownListChunks,
   decorateAssistantMarkdownProseChunks,
 } from "./assistantMarkdownChunkDecorators.ts";
+import {
+  assistantMarkdownSyntaxStyle,
+  githubLikeTerminalCodeColors,
+} from "./codeRenderingTheme.ts";
+import { DiffBlock } from "./DiffBlock.tsx";
+import { FencedCodeBlock } from "./FencedCodeBlock.tsx";
 import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.ts";
 
 export type AssistantMarkdownBlockProps = {
@@ -21,116 +24,6 @@ export type AssistantMarkdownBlockProps = {
   horizontalRuleColor: string;
   terminalColumnCount?: number | undefined;
 };
-
-const assistantMarkdownSyntaxStyle = SyntaxStyle.fromStyles({
-  default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  conceal: { fg: RGBA.fromHex(chatScreenTheme.borderSubtle) },
-
-  "markup.heading": { fg: RGBA.fromHex(chatScreenTheme.textPrimary), bold: true },
-  "markup.heading.1": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
-  "markup.heading.2": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.heading.3": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "punctuation.definition.heading": { fg: RGBA.fromHex(chatScreenTheme.textDim), bold: true },
-  "markup.italic": { fg: RGBA.fromHex(chatScreenTheme.textPrimary), italic: true },
-  "markup.bold": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.strong": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.strikethrough": { fg: RGBA.fromHex(chatScreenTheme.textDim), dim: true },
-  "markup.link": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  "markup.link.bracket.close": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  "markup.link.label": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), underline: true },
-  "markup.link.url": { fg: RGBA.fromHex(chatScreenTheme.textSecondary), dim: true },
-  "markup.list": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.list.bullet": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.list.enumeration": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.list.marker": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.list.numbered": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.list.ordered": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.list.unordered": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "punctuation.definition.list": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
-  "markup.list.checked": { fg: RGBA.fromHex(chatScreenTheme.accentGreen) },
-  "markup.list.unchecked": { fg: RGBA.fromHex(chatScreenTheme.textDim) },
-  "markup.quote": { fg: RGBA.fromHex(chatScreenTheme.textSecondary), italic: true },
-  "markup.quote.marker": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted), bold: true },
-  "punctuation.definition.quote": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted), bold: true },
-  "markup.raw": { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
-  "markup.raw.inline": { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
-  "markup.raw.block": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  "markup.fenced_code.block": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  "markup.table": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  "markup.table.header": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
-  "punctuation.separator.table": { fg: RGBA.fromHex(chatScreenTheme.borderSubtle) },
-  "diff.plus": { fg: RGBA.fromHex(chatScreenTheme.accentGreen) },
-  "diff.minus": { fg: RGBA.fromHex(chatScreenTheme.accentRed) },
-  "diff.delta": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
-  "punctuation.definition.inserted": { fg: RGBA.fromHex(chatScreenTheme.accentGreen) },
-  "punctuation.definition.deleted": { fg: RGBA.fromHex(chatScreenTheme.accentRed) },
-
-  character: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  "character.special": { fg: RGBA.fromHex(chatScreenTheme.accentPink) },
-  label: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-  import: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-
-  keyword: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.conditional": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.conditional.ternary": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.coroutine": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.directive": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.exception": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.function": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.import": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.modifier": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.operator": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.repeat": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.return": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.type": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-
-  string: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  "string.escape": { fg: RGBA.fromHex(chatScreenTheme.accentPink) },
-  "string.regexp": { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  "string.special": { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  "string.special.url": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), underline: true },
-
-  comment: { fg: RGBA.fromHex(chatScreenTheme.textDim), italic: true },
-  "comment.documentation": { fg: RGBA.fromHex(chatScreenTheme.textDim), italic: true },
-
-  number: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  "number.float": { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  boolean: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  constant: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  "constant.builtin": { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-
-  constructor: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  function: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  "function.builtin": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  "function.call": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  "function.method": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  "function.method.call": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-
-  type: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  "type.builtin": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-
-  property: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-  variable: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  "variable.builtin": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-  "variable.member": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-  "variable.parameter": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  parameter: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-
-  operator: { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  punctuation: { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  "punctuation.bracket": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  "punctuation.delimiter": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  "punctuation.special": { fg: RGBA.fromHex(chatScreenTheme.accentPink) },
-
-  tag: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  attribute: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  decorator: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  namespace: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-  module: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-  "module.builtin": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-
-  escape: { fg: RGBA.fromHex(chatScreenTheme.accentPink) },
-});
 
 const assistantMarkdownHeadingSyntaxStyleByDepth = {
   1: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true } }),
@@ -165,18 +58,34 @@ const defaultAssistantMarkdownTerminalColumnCount = 80;
 const dashOnlyParagraphPattern = /^[-*_\s]{3,}$/;
 const calloutMarkerPattern = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n?([\s\S]*)$/i;
 const codeFenceDiffLanguagePattern = /^(?:diff|patch)$/i;
+const codeFenceShellLanguagePattern = /^(?:bash|sh|shell|zsh)$/i;
 const codeFenceFileLabelPattern = /(?:^|\s)(?:title|filename|file|path)=("[^"]+"|'[^']+'|[^\s]+)/i;
 const codeFenceFallbackFileLabelPattern = /(?:^|\s)(\S+\/\S+\.\S+)/;
+const fencedCodeBlockStartPattern = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 const incompleteStreamingFencePattern = /^\s*```[^`]*$/;
 const incompleteStreamingListMarkerPattern = /^\s*(?:[-*+]\s*|\d+\.\s*)$/;
 const incompleteStreamingHeadingPattern = /^\s*#{1,6}\s*$/;
 const assistantMarkdownGenericCodeFenceLanguageLabels = new Set(["code", "plain", "plaintext", "text", "txt"]);
-const assistantMarkdownCodeFenceHorizontalPaddingText = "  ";
-const assistantMarkdownCodeFenceBorderColor = RGBA.fromHex(chatScreenTheme.border);
-const assistantMarkdownPlainTextFenceBorderColor = RGBA.fromHex(chatScreenTheme.accentPrimary);
-const assistantMarkdownPlainTextFenceAccentRailColor = RGBA.fromHex(chatScreenTheme.accentCyan);
-const assistantMarkdownCodeFenceBackgroundColor = RGBA.fromHex(chatScreenTheme.surfaceOne);
-const transparentAssistantMarkdownCodeFenceBackgroundColor = RGBA.fromValues(0, 0, 0, 0);
+const unifiedDiffFileHeaderPattern = /^diff --git a\/(.+) b\/(.+)$/;
+const quotedUnifiedDiffFileHeaderPattern = /^diff --git "a\/(.+)" "b\/(.+)"$/;
+const unifiedDiffHunkHeaderPattern = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+const unifiedDiffMetadataLinePrefixes = [
+  "index ",
+  "old mode ",
+  "new mode ",
+  "deleted file mode ",
+  "new file mode ",
+  "similarity index ",
+  "dissimilarity index ",
+  "rename from ",
+  "rename to ",
+  "copy from ",
+  "copy to ",
+  "--- ",
+  "+++ ",
+  "Binary files ",
+  "GIT binary patch",
+] as const;
 
 type AssistantMarkdownToken = Parameters<NonNullable<MarkdownOptions["renderNode"]>>[0];
 type AssistantMarkdownCodeToken = AssistantMarkdownToken & { type: "code"; text: string; lang?: string };
@@ -202,88 +111,45 @@ type AssistantMarkdownCodeFenceInfo = {
   codeFenceDisplayLabel?: string | undefined;
 };
 
-type OpenTuiCodeRenderableContext = ConstructorParameters<typeof CodeRenderable>[0];
+type AssistantMarkdownRenderSection =
+  | { sectionKind: "markdown"; markdownText: string }
+  | { sectionKind: "codeFence"; codeFenceText: string; codeFenceInfo: AssistantMarkdownCodeFenceInfo }
+  | { sectionKind: "unifiedDiff"; unifiedDiffText: string }
+  | { sectionKind: "shellSnippet"; shellSnippetText: string }
+  | { sectionKind: "diffSnippet"; diffSnippetText: string };
 
-type AssistantMarkdownCodeFenceRenderableOptions = CodeOptions & {
-  codeFenceCardTitle?: string | undefined;
-  codeFenceBorderColor: RGBA;
-  codeFenceAccentRailColor?: RGBA | undefined;
+type AssistantMarkdownFencedCodeBlock = {
+  fenceInfoString: string;
+  fencedContentLines: string[];
+  hasClosingFence: boolean;
+  nextLineIndex: number;
 };
 
-class AssistantMarkdownCodeFenceRenderable extends CodeRenderable {
-  private rawCodeFenceContent: string;
-  private readonly codeFenceCardTitle: string | undefined;
-  private readonly codeFenceBorderColor: RGBA;
-  private readonly codeFenceAccentRailColor: RGBA | undefined;
+type AssistantMarkdownUnifiedDiffBlock = {
+  unifiedDiffLines: string[];
+  nextLineIndex: number;
+};
 
-  constructor(ctx: OpenTuiCodeRenderableContext, options: AssistantMarkdownCodeFenceRenderableOptions) {
-    const rawCodeFenceContent = options.content ?? "";
-    const { codeFenceAccentRailColor, codeFenceBorderColor, codeFenceCardTitle, ...codeRenderableOptions } = options;
-    super(ctx, {
-      ...codeRenderableOptions,
-      content: formatAssistantMarkdownCodeFenceCardContent(rawCodeFenceContent),
-    });
-    this.rawCodeFenceContent = rawCodeFenceContent;
-    this.codeFenceCardTitle = codeFenceCardTitle;
-    this.codeFenceBorderColor = codeFenceBorderColor;
-    this.codeFenceAccentRailColor = codeFenceAccentRailColor;
-  }
+type AssistantMarkdownRawDiffSnippetBlock = {
+  diffSnippetLines: string[];
+  nextLineIndex: number;
+};
 
-  override get content(): string {
-    return this.rawCodeFenceContent;
-  }
+type AssistantUnifiedDiffExpectedHunkLineCounts = {
+  oldLineCount: number;
+  newLineCount: number;
+};
 
-  override set content(value: string) {
-    this.rawCodeFenceContent = value;
-    super.content = formatAssistantMarkdownCodeFenceCardContent(value);
-  }
+type AssistantUnifiedDiffActualHunkLineCounts = {
+  oldLineCount: number;
+  newLineCount: number;
+};
 
-  override render(buffer: OptimizedBuffer, deltaTime: number): void {
-    if (this.width <= 0 || this.height <= 0) {
-      super.render(buffer, deltaTime);
-      return;
-    }
-
-    buffer.drawBox({
-      x: this.screenX,
-      y: this.screenY,
-      width: this.width,
-      height: this.height,
-      border: false,
-      borderColor: this.codeFenceBorderColor,
-      backgroundColor: assistantMarkdownCodeFenceBackgroundColor,
-      shouldFill: true,
-    });
-    super.render(buffer, deltaTime);
-    buffer.drawBox({
-      x: this.screenX,
-      y: this.screenY,
-      width: this.width,
-      height: this.height,
-      borderStyle: "rounded",
-      border: true,
-      borderColor: this.codeFenceBorderColor,
-      backgroundColor: transparentAssistantMarkdownCodeFenceBackgroundColor,
-      shouldFill: false,
-      ...(this.codeFenceCardTitle
-        ? { title: ` ${this.codeFenceCardTitle} `, titleAlignment: "left" as const }
-        : {}),
-    });
-    this.renderCodeFenceAccentRail(buffer);
-  }
-
-  private renderCodeFenceAccentRail(buffer: OptimizedBuffer): void {
-    if (!this.codeFenceAccentRailColor || this.height <= 2) {
-      return;
-    }
-
-    const firstRailRow = this.screenY + 1;
-    const lastRailRow = this.screenY + this.height - 2;
-    for (let railRow = firstRailRow; railRow <= lastRailRow; railRow += 1) {
-      buffer.drawText("┃", this.screenX, railRow, this.codeFenceAccentRailColor, assistantMarkdownCodeFenceBackgroundColor);
-    }
-  }
-}
+type AssistantUnifiedDiffFileSummary = {
+  filePath: string;
+  addedLineCount: number;
+  removedLineCount: number;
+};
 
 function isAssistantMarkdownCodeToken(token: AssistantMarkdownToken): token is AssistantMarkdownCodeToken {
   return token.type === "code" && "text" in token && typeof token.text === "string";
@@ -412,72 +278,6 @@ function repeatAssistantMarkdownChromeRule(input: { availableColumnCount: number
   );
 }
 
-function formatAssistantMarkdownCodeFenceCardContent(codeFenceContent: string): string {
-  return [
-    "",
-    ...codeFenceContent.split("\n").map((codeFenceLine) => `${assistantMarkdownCodeFenceHorizontalPaddingText}${codeFenceLine}`),
-    "",
-  ].join("\n");
-}
-
-function createAssistantMarkdownCodeFenceRenderable(input: {
-  defaultRenderable: CodeRenderable;
-  codeToken: AssistantMarkdownCodeToken;
-  codeFenceInfo: AssistantMarkdownCodeFenceInfo;
-}): AssistantMarkdownCodeFenceRenderable {
-  const isPlainTextFenceCard = input.codeFenceInfo.codeFenceDisplayLabel === undefined;
-  const defaultRenderableContext = input.defaultRenderable.ctx;
-  const defaultRenderableId = input.defaultRenderable.id;
-  const defaultRenderableFiletype = input.defaultRenderable.filetype;
-  const defaultRenderableSyntaxStyle = input.defaultRenderable.syntaxStyle;
-  const defaultRenderableConceal = input.defaultRenderable.conceal;
-  const defaultRenderableStreaming = input.defaultRenderable.streaming;
-  const defaultRenderableTreeSitterClient = input.defaultRenderable.treeSitterClient;
-  input.defaultRenderable.destroy();
-
-  return new AssistantMarkdownCodeFenceRenderable(defaultRenderableContext, {
-    id: defaultRenderableId,
-    content: input.codeToken.text,
-    ...(defaultRenderableFiletype !== undefined ? { filetype: defaultRenderableFiletype } : {}),
-    syntaxStyle: defaultRenderableSyntaxStyle,
-    fg: chatScreenTheme.textPrimary,
-    bg: chatScreenTheme.surfaceOne,
-    conceal: defaultRenderableConceal,
-    drawUnstyledText: true,
-    streaming: defaultRenderableStreaming,
-    treeSitterClient: defaultRenderableTreeSitterClient,
-    width: "100%",
-    marginBottom: 1,
-    codeFenceBorderColor: isPlainTextFenceCard ? assistantMarkdownPlainTextFenceBorderColor : assistantMarkdownCodeFenceBorderColor,
-    ...(isPlainTextFenceCard ? { codeFenceAccentRailColor: assistantMarkdownPlainTextFenceAccentRailColor } : {}),
-    ...(input.codeFenceInfo.codeFenceDisplayLabel
-      ? { codeFenceCardTitle: input.codeFenceInfo.codeFenceDisplayLabel }
-      : {}),
-  });
-}
-
-function formatAssistantMarkdownDiffFenceText(
-  diffText: string,
-  codeFenceInfo: AssistantMarkdownCodeFenceInfo,
-  availableColumnCount: number,
-): string {
-  const diffLines = diffText.split("\n").map((diffLine) => `│ ${diffLine}`.trimEnd());
-  const diffFenceLabel = `${codeFenceInfo.codeLanguageLabel} changes${
-    codeFenceInfo.codeFenceDisplayLabel === undefined || codeFenceInfo.codeFenceDisplayLabel === codeFenceInfo.codeLanguageLabel
-      ? ""
-      : ` · ${codeFenceInfo.codeFenceDisplayLabel.replace(`${codeFenceInfo.codeLanguageLabel} · `, "")}`
-  }`;
-  const topBorderPrefix = `╭─ ${diffFenceLabel} `;
-  return [
-    topBorderPrefix + repeatAssistantMarkdownChromeRule({
-      availableColumnCount,
-      occupiedColumnCount: topBorderPrefix.length,
-    }),
-    ...diffLines,
-    "╰" + repeatAssistantMarkdownChromeRule({ availableColumnCount, occupiedColumnCount: 1 }),
-  ].join("\n");
-}
-
 function formatAssistantMarkdownListText(listToken: AssistantMarkdownListToken, depth = 0): string {
   const orderedListStartNumber = typeof listToken.start === "number" ? listToken.start : 1;
   const listItems = listToken.items ?? [];
@@ -556,6 +356,555 @@ function prepareAssistantMarkdownTextForRendering(markdownText: string, isStream
   return markdownText;
 }
 
+function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): AssistantMarkdownRenderSection[] {
+  const markdownLines = markdownText.split("\n");
+  const renderSections: AssistantMarkdownRenderSection[] = [];
+  let pendingMarkdownLines: string[] = [];
+
+  const flushPendingMarkdownLines = () => {
+    const markdownSectionLines = trimAssistantMarkdownSectionBoundaryBlankLines(pendingMarkdownLines);
+    pendingMarkdownLines = [];
+    if (markdownSectionLines.length === 0) {
+      return;
+    }
+
+    renderSections.push({
+      sectionKind: "markdown",
+      markdownText: markdownSectionLines.join("\n"),
+    });
+  };
+
+  let lineIndex = 0;
+  while (lineIndex < markdownLines.length) {
+    const fencedCodeBlock = readAssistantMarkdownFencedCodeBlock(markdownLines, lineIndex);
+    if (fencedCodeBlock) {
+      const fencedUnifiedDiffText = resolveFencedUnifiedDiffText(fencedCodeBlock);
+      if (fencedUnifiedDiffText) {
+        flushPendingMarkdownLines();
+        renderSections.push({ sectionKind: "unifiedDiff", unifiedDiffText: fencedUnifiedDiffText });
+      } else if (isAssistantMarkdownDiffFence(fencedCodeBlock)) {
+        flushPendingMarkdownLines();
+        renderSections.push({
+          sectionKind: "diffSnippet",
+          diffSnippetText: formatAssistantUnifiedDiffText(fencedCodeBlock.fencedContentLines),
+        });
+      } else if (isAssistantMarkdownShellFence(fencedCodeBlock)) {
+        flushPendingMarkdownLines();
+        renderSections.push({
+          sectionKind: "shellSnippet",
+          shellSnippetText: formatAssistantCodeFenceText(fencedCodeBlock.fencedContentLines),
+        });
+      } else {
+        flushPendingMarkdownLines();
+        renderSections.push({
+          sectionKind: "codeFence",
+          codeFenceInfo: parseAssistantMarkdownCodeFenceInfo(fencedCodeBlock.fenceInfoString),
+          codeFenceText: formatAssistantCodeFenceText(fencedCodeBlock.fencedContentLines),
+        });
+      }
+      lineIndex = fencedCodeBlock.nextLineIndex;
+      continue;
+    }
+
+    const unifiedDiffBlock = readAssistantMarkdownUnifiedDiffBlock(markdownLines, lineIndex);
+    if (unifiedDiffBlock) {
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "unifiedDiff",
+        unifiedDiffText: formatAssistantUnifiedDiffText(unifiedDiffBlock.unifiedDiffLines),
+      });
+      lineIndex = unifiedDiffBlock.nextLineIndex;
+      continue;
+    }
+
+    const rawDiffSnippetBlock = readAssistantMarkdownRawDiffSnippetBlock(markdownLines, lineIndex);
+    if (rawDiffSnippetBlock) {
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "diffSnippet",
+        diffSnippetText: formatAssistantUnifiedDiffText(rawDiffSnippetBlock.diffSnippetLines),
+      });
+      lineIndex = rawDiffSnippetBlock.nextLineIndex;
+      continue;
+    }
+
+    pendingMarkdownLines.push(markdownLines[lineIndex] ?? "");
+    lineIndex += 1;
+  }
+
+  flushPendingMarkdownLines();
+  return renderSections;
+}
+
+function isAssistantMarkdownDiffFence(fencedCodeBlock: AssistantMarkdownFencedCodeBlock): boolean {
+  return codeFenceDiffLanguagePattern.test(fencedCodeBlock.fenceInfoString.split(/\s+/)[0] ?? "");
+}
+
+function isAssistantMarkdownShellFence(fencedCodeBlock: AssistantMarkdownFencedCodeBlock): boolean {
+  return codeFenceShellLanguagePattern.test(fencedCodeBlock.fenceInfoString.split(/\s+/)[0] ?? "");
+}
+
+function formatAssistantCodeFenceText(codeFenceLines: readonly string[]): string {
+  return codeFenceLines.join("\n").replace(/\n*$/, "");
+}
+
+function trimAssistantMarkdownSectionBoundaryBlankLines(markdownLines: string[]): string[] {
+  let firstNonBlankLineIndex = 0;
+  let lastNonBlankLineExclusiveIndex = markdownLines.length;
+  while (
+    firstNonBlankLineIndex < lastNonBlankLineExclusiveIndex &&
+    (markdownLines[firstNonBlankLineIndex] ?? "").trim().length === 0
+  ) {
+    firstNonBlankLineIndex += 1;
+  }
+  while (
+    lastNonBlankLineExclusiveIndex > firstNonBlankLineIndex &&
+    (markdownLines[lastNonBlankLineExclusiveIndex - 1] ?? "").trim().length === 0
+  ) {
+    lastNonBlankLineExclusiveIndex -= 1;
+  }
+  return markdownLines.slice(firstNonBlankLineIndex, lastNonBlankLineExclusiveIndex);
+}
+
+function readAssistantMarkdownFencedCodeBlock(
+  markdownLines: readonly string[],
+  startLineIndex: number,
+): AssistantMarkdownFencedCodeBlock | undefined {
+  const openingFenceMatch = fencedCodeBlockStartPattern.exec(markdownLines[startLineIndex] ?? "");
+  const openingFenceMarker = openingFenceMatch?.[2];
+  if (!openingFenceMarker) {
+    return undefined;
+  }
+
+  const fenceCharacter = openingFenceMarker[0] ?? "`";
+  for (let lineIndex = startLineIndex + 1; lineIndex < markdownLines.length; lineIndex += 1) {
+    if (isFencedCodeBlockClosingLine(markdownLines[lineIndex] ?? "", fenceCharacter, openingFenceMarker.length)) {
+      return {
+        fenceInfoString: openingFenceMatch[3]?.trim() ?? "",
+        fencedContentLines: markdownLines.slice(startLineIndex + 1, lineIndex),
+        hasClosingFence: true,
+        nextLineIndex: lineIndex + 1,
+      };
+    }
+  }
+
+  return {
+    fenceInfoString: openingFenceMatch[3]?.trim() ?? "",
+    fencedContentLines: markdownLines.slice(startLineIndex + 1),
+    hasClosingFence: false,
+    nextLineIndex: markdownLines.length,
+  };
+}
+
+function isFencedCodeBlockClosingLine(
+  markdownLine: string,
+  fenceCharacter: string,
+  minimumFenceLength: number,
+): boolean {
+  return new RegExp(`^ {0,3}${fenceCharacter}{${minimumFenceLength},}\\s*$`).test(markdownLine);
+}
+
+function resolveFencedUnifiedDiffText(fencedCodeBlock: AssistantMarkdownFencedCodeBlock): string | undefined {
+  if (!fencedCodeBlock.hasClosingFence || !codeFenceDiffLanguagePattern.test(fencedCodeBlock.fenceInfoString.split(/\s+/)[0] ?? "")) {
+    return undefined;
+  }
+
+  const candidateUnifiedDiffLines = trimAssistantMarkdownSectionBoundaryBlankLines(fencedCodeBlock.fencedContentLines);
+  const unifiedDiffBlock = readAssistantMarkdownUnifiedDiffBlock(candidateUnifiedDiffLines, 0);
+  if (!unifiedDiffBlock || unifiedDiffBlock.nextLineIndex !== candidateUnifiedDiffLines.length) {
+    return undefined;
+  }
+
+  return formatAssistantUnifiedDiffText(unifiedDiffBlock.unifiedDiffLines);
+}
+
+function readAssistantMarkdownUnifiedDiffBlock(
+  markdownLines: readonly string[],
+  startLineIndex: number,
+): AssistantMarkdownUnifiedDiffBlock | undefined {
+  if (!parseAssistantUnifiedDiffFileHeader(markdownLines[startLineIndex] ?? "")) {
+    return undefined;
+  }
+
+  const unifiedDiffLines: string[] = [];
+  let lineIndex = startLineIndex;
+  let hasHunkHeader = false;
+  while (lineIndex < markdownLines.length) {
+    const markdownLine = markdownLines[lineIndex] ?? "";
+    if (markdownLine.length === 0) {
+      break;
+    }
+    if (parseAssistantUnifiedDiffFileHeader(markdownLine) || isUnifiedDiffMetadataLine(markdownLine)) {
+      unifiedDiffLines.push(markdownLine);
+      lineIndex += 1;
+      continue;
+    }
+    if (unifiedDiffHunkHeaderPattern.test(markdownLine)) {
+      unifiedDiffLines.push(markdownLine);
+      hasHunkHeader = true;
+      lineIndex += 1;
+      continue;
+    }
+    if (hasHunkHeader && isUnifiedDiffHunkBodyLine(markdownLine)) {
+      unifiedDiffLines.push(markdownLine);
+      lineIndex += 1;
+      continue;
+    }
+    break;
+  }
+
+  if (!hasHunkHeader || !hasValidAssistantUnifiedDiffHunkLineCounts(unifiedDiffLines)) {
+    return undefined;
+  }
+  return { unifiedDiffLines, nextLineIndex: lineIndex };
+}
+
+function readAssistantMarkdownRawDiffSnippetBlock(
+  markdownLines: readonly string[],
+  startLineIndex: number,
+): AssistantMarkdownRawDiffSnippetBlock | undefined {
+  if (!parseAssistantUnifiedDiffFileHeader(markdownLines[startLineIndex] ?? "")) {
+    return undefined;
+  }
+
+  const diffSnippetLines: string[] = [];
+  let lineIndex = startLineIndex;
+  while (lineIndex < markdownLines.length) {
+    const markdownLine = markdownLines[lineIndex] ?? "";
+    if (markdownLine.length === 0) {
+      break;
+    }
+    if (isRawDiffSnippetLine(markdownLine)) {
+      diffSnippetLines.push(markdownLine);
+      lineIndex += 1;
+      continue;
+    }
+    break;
+  }
+
+  return diffSnippetLines.length > 0 ? { diffSnippetLines, nextLineIndex: lineIndex } : undefined;
+}
+
+function isRawDiffSnippetLine(markdownLine: string): boolean {
+  return (
+    parseAssistantUnifiedDiffFileHeader(markdownLine) !== undefined ||
+    isUnifiedDiffMetadataLine(markdownLine) ||
+    markdownLine.startsWith("@@") ||
+    isUnifiedDiffHunkBodyLine(markdownLine)
+  );
+}
+
+function hasValidAssistantUnifiedDiffHunkLineCounts(unifiedDiffLines: readonly string[]): boolean {
+  let expectedHunkLineCounts: AssistantUnifiedDiffExpectedHunkLineCounts | undefined;
+  let actualHunkLineCounts: AssistantUnifiedDiffActualHunkLineCounts = { oldLineCount: 0, newLineCount: 0 };
+  let hasHunkHeader = false;
+
+  const finishCurrentHunk = () => {
+    if (!expectedHunkLineCounts) {
+      return true;
+    }
+    const isValidHunk =
+      actualHunkLineCounts.oldLineCount === expectedHunkLineCounts.oldLineCount &&
+      actualHunkLineCounts.newLineCount === expectedHunkLineCounts.newLineCount;
+    expectedHunkLineCounts = undefined;
+    actualHunkLineCounts = { oldLineCount: 0, newLineCount: 0 };
+    return isValidHunk;
+  };
+
+  for (const unifiedDiffLine of unifiedDiffLines) {
+    const hunkHeaderLineCounts = parseAssistantUnifiedDiffHunkHeaderLineCounts(unifiedDiffLine);
+    if (hunkHeaderLineCounts) {
+      if (!finishCurrentHunk()) {
+        return false;
+      }
+      expectedHunkLineCounts = hunkHeaderLineCounts;
+      hasHunkHeader = true;
+      continue;
+    }
+
+    if (parseAssistantUnifiedDiffFileHeader(unifiedDiffLine)) {
+      if (!finishCurrentHunk()) {
+        return false;
+      }
+      continue;
+    }
+
+    if (!expectedHunkLineCounts || unifiedDiffLine.startsWith("\\")) {
+      continue;
+    }
+    if (unifiedDiffLine.startsWith(" ")) {
+      actualHunkLineCounts.oldLineCount += 1;
+      actualHunkLineCounts.newLineCount += 1;
+      continue;
+    }
+    if (unifiedDiffLine.startsWith("-") && !unifiedDiffLine.startsWith("---")) {
+      actualHunkLineCounts.oldLineCount += 1;
+      continue;
+    }
+    if (unifiedDiffLine.startsWith("+") && !unifiedDiffLine.startsWith("+++")) {
+      actualHunkLineCounts.newLineCount += 1;
+    }
+  }
+
+  return hasHunkHeader && finishCurrentHunk();
+}
+
+function parseAssistantUnifiedDiffHunkHeaderLineCounts(
+  unifiedDiffLine: string,
+): AssistantUnifiedDiffExpectedHunkLineCounts | undefined {
+  const hunkHeaderMatch = unifiedDiffHunkHeaderPattern.exec(unifiedDiffLine);
+  if (!hunkHeaderMatch) {
+    return undefined;
+  }
+  return {
+    oldLineCount: hunkHeaderMatch[2] === undefined ? 1 : Number(hunkHeaderMatch[2]),
+    newLineCount: hunkHeaderMatch[4] === undefined ? 1 : Number(hunkHeaderMatch[4]),
+  };
+}
+
+function parseAssistantUnifiedDiffFileHeader(markdownLine: string): { beforePath: string; afterPath: string } | undefined {
+  const unquotedFileHeaderMatch = unifiedDiffFileHeaderPattern.exec(markdownLine);
+  if (unquotedFileHeaderMatch) {
+    return {
+      beforePath: unquotedFileHeaderMatch[1] ?? "",
+      afterPath: unquotedFileHeaderMatch[2] ?? "",
+    };
+  }
+
+  const quotedFileHeaderMatch = quotedUnifiedDiffFileHeaderPattern.exec(markdownLine);
+  if (!quotedFileHeaderMatch) {
+    return undefined;
+  }
+  return {
+    beforePath: quotedFileHeaderMatch[1] ?? "",
+    afterPath: quotedFileHeaderMatch[2] ?? "",
+  };
+}
+
+function isUnifiedDiffMetadataLine(markdownLine: string): boolean {
+  return unifiedDiffMetadataLinePrefixes.some((metadataLinePrefix) => markdownLine.startsWith(metadataLinePrefix));
+}
+
+function isUnifiedDiffHunkBodyLine(markdownLine: string): boolean {
+  return markdownLine.startsWith(" ") || markdownLine.startsWith("+") || markdownLine.startsWith("-") || markdownLine.startsWith("\\");
+}
+
+function formatAssistantUnifiedDiffText(unifiedDiffLines: readonly string[]): string {
+  return `${unifiedDiffLines.join("\n").replace(/\n*$/, "")}\n`;
+}
+
+function summarizeAssistantUnifiedDiffFiles(unifiedDiffText: string): AssistantUnifiedDiffFileSummary[] {
+  const fileSummaries: AssistantUnifiedDiffFileSummary[] = [];
+  let currentFileSummary: AssistantUnifiedDiffFileSummary | undefined;
+
+  for (const unifiedDiffLine of unifiedDiffText.replace(/\n$/, "").split("\n")) {
+    const fileHeader = parseAssistantUnifiedDiffFileHeader(unifiedDiffLine);
+    if (fileHeader) {
+      if (currentFileSummary) {
+        fileSummaries.push(currentFileSummary);
+      }
+      currentFileSummary = {
+        filePath: fileHeader.afterPath || fileHeader.beforePath,
+        addedLineCount: 0,
+        removedLineCount: 0,
+      };
+      continue;
+    }
+
+    if (!currentFileSummary) {
+      continue;
+    }
+    if (unifiedDiffLine.startsWith("+") && !unifiedDiffLine.startsWith("+++")) {
+      currentFileSummary.addedLineCount += 1;
+      continue;
+    }
+    if (unifiedDiffLine.startsWith("-") && !unifiedDiffLine.startsWith("---")) {
+      currentFileSummary.removedLineCount += 1;
+    }
+  }
+
+  if (currentFileSummary) {
+    fileSummaries.push(currentFileSummary);
+  }
+  return fileSummaries;
+}
+
+function summarizeAssistantDiffSnippet(diffSnippetText: string): string {
+  const fileSummaries = summarizeAssistantUnifiedDiffFiles(diffSnippetText);
+  if (fileSummaries.length === 1) {
+    const fileSummary = fileSummaries[0]!;
+    return `patch ${fileSummary.filePath} +${fileSummary.addedLineCount} -${fileSummary.removedLineCount}`;
+  }
+
+  if (fileSummaries.length > 1) {
+    const addedLineCount = fileSummaries.reduce((sum, fileSummary) => sum + fileSummary.addedLineCount, 0);
+    const removedLineCount = fileSummaries.reduce((sum, fileSummary) => sum + fileSummary.removedLineCount, 0);
+    return `patch ${fileSummaries.length} files +${addedLineCount} -${removedLineCount}`;
+  }
+
+  const snippetLineCounts = countAssistantDiffSnippetChangedLines(diffSnippetText);
+  const changedLineSummary = snippetLineCounts.addedLineCount > 0 || snippetLineCounts.removedLineCount > 0
+    ? ` +${snippetLineCounts.addedLineCount} -${snippetLineCounts.removedLineCount}`
+    : "";
+  return `patch snippet${changedLineSummary}`;
+}
+
+function countAssistantDiffSnippetChangedLines(diffSnippetText: string): { addedLineCount: number; removedLineCount: number } {
+  let addedLineCount = 0;
+  let removedLineCount = 0;
+  for (const diffSnippetLine of diffSnippetText.replace(/\n$/, "").split("\n")) {
+    if (diffSnippetLine.startsWith("+") && !diffSnippetLine.startsWith("+++")) {
+      addedLineCount += 1;
+      continue;
+    }
+    if (diffSnippetLine.startsWith("-") && !diffSnippetLine.startsWith("---")) {
+      removedLineCount += 1;
+    }
+  }
+  return { addedLineCount, removedLineCount };
+}
+
+function listVisibleAssistantDiffSnippetLines(diffSnippetText: string): string[] {
+  return diffSnippetText
+    .replace(/\n$/, "")
+    .split("\n")
+    .filter(shouldRenderAssistantDiffSnippetBodyLine);
+}
+
+function shouldRenderAssistantDiffSnippetBodyLine(diffSnippetLine: string): boolean {
+  if (parseAssistantUnifiedDiffFileHeader(diffSnippetLine)) {
+    return false;
+  }
+  if (isUnifiedDiffMetadataLine(diffSnippetLine)) {
+    return false;
+  }
+  if (diffSnippetLine.trim() === "@@") {
+    return false;
+  }
+  return true;
+}
+
+function resolveAssistantDiffSnippetLineColor(diffSnippetLine: string): string {
+  if (diffSnippetLine.startsWith("+") && !diffSnippetLine.startsWith("+++")) {
+    return githubLikeTerminalCodeColors.diffAddition;
+  }
+  if (diffSnippetLine.startsWith("-") && !diffSnippetLine.startsWith("---")) {
+    return githubLikeTerminalCodeColors.diffRemoval;
+  }
+  if (diffSnippetLine.startsWith("@@")) {
+    return githubLikeTerminalCodeColors.diffMetadata;
+  }
+  return githubLikeTerminalCodeColors.foreground;
+}
+
+function applyAssistantMarkdownFlowSpacing(defaultRenderable: CodeRenderable): void {
+  defaultRenderable.marginBottom = 1;
+}
+
+function AssistantUnifiedDiffBlock(props: { unifiedDiffText: string }): ReactNode {
+  const fileSummaries = summarizeAssistantUnifiedDiffFiles(props.unifiedDiffText);
+  const singleDiffFilePath = fileSummaries.length === 1 ? fileSummaries[0]?.filePath : undefined;
+  return (
+    <box flexDirection="column" marginBottom={1} width="100%">
+      {fileSummaries.length > 0 ? (
+        <box flexDirection="column" paddingX={1} width="100%">
+          {fileSummaries.map((fileSummary) => (
+            <box gap={1} key={fileSummary.filePath} width="100%">
+              <text fg={chatScreenTheme.textMuted}>patch</text>
+              <text fg={chatScreenTheme.accentCyan}>{fileSummary.filePath}</text>
+              <text fg={chatScreenTheme.accentGreen}>{`+${fileSummary.addedLineCount}`}</text>
+              <text fg={chatScreenTheme.accentRed}>{`-${fileSummary.removedLineCount}`}</text>
+            </box>
+          ))}
+        </box>
+      ) : null}
+      <DiffBlock
+        unifiedDiffText={props.unifiedDiffText}
+        {...(singleDiffFilePath !== undefined ? { filePath: singleDiffFilePath } : {})}
+      />
+    </box>
+  );
+}
+
+function AssistantSnippetFrame(props: {
+  accentColor?: string | undefined;
+  children: ReactNode;
+  headerText?: string | undefined;
+}): ReactNode {
+  return (
+    <box flexDirection="column" marginBottom={1} width="100%">
+      <box
+        border={["left"]}
+        borderColor={props.accentColor ?? chatScreenTheme.borderSubtle}
+        flexDirection="column"
+        paddingX={1}
+        width="100%"
+      >
+        {props.headerText ? (
+          <box width="100%">
+            <text fg={chatScreenTheme.textDim}>{props.headerText}</text>
+          </box>
+        ) : null}
+        {props.children}
+      </box>
+    </box>
+  );
+}
+
+function AssistantDiffSnippetBlock(props: { diffSnippetText: string }): ReactNode {
+  const diffSnippetLines = listVisibleAssistantDiffSnippetLines(props.diffSnippetText);
+  return (
+    <AssistantSnippetFrame accentColor={chatScreenTheme.accentPrimaryMuted} headerText={summarizeAssistantDiffSnippet(props.diffSnippetText)}>
+      {diffSnippetLines.map((diffSnippetLine, index) => (
+        <box key={`assistant-diff-snippet-line-${index}`} width="100%">
+          <text fg={resolveAssistantDiffSnippetLineColor(diffSnippetLine)} wrapMode="none">
+            {diffSnippetLine}
+          </text>
+        </box>
+      ))}
+    </AssistantSnippetFrame>
+  );
+}
+
+function AssistantShellSnippetBlock(props: { shellSnippetText: string }): ReactNode {
+  const shellSnippetLines = props.shellSnippetText.split("\n");
+  return (
+    <AssistantSnippetFrame accentColor={chatScreenTheme.accentGreen}>
+      {shellSnippetLines.map((shellSnippetLine, index) => (
+        <box key={`assistant-shell-snippet-line-${index}`} width="100%">
+          <text wrapMode="none">
+            {shellSnippetLine.trim().length > 0 ? (
+              <>
+                <span fg={chatScreenTheme.accentGreen}>$ </span>
+                <span fg={githubLikeTerminalCodeColors.foreground}>{shellSnippetLine}</span>
+              </>
+            ) : ""}
+          </text>
+        </box>
+      ))}
+    </AssistantSnippetFrame>
+  );
+}
+
+function AssistantCodeFenceBlock(props: {
+  codeFenceInfo: AssistantMarkdownCodeFenceInfo;
+  codeFenceText: string;
+}): ReactNode {
+  const codeFenceLines = props.codeFenceText.split("\n");
+  const visibleCodeFenceLines = codeFenceLines.length === 1 && codeFenceLines[0] === "" ? [] : codeFenceLines;
+  return (
+    <AssistantSnippetFrame headerText={props.codeFenceInfo.codeFenceDisplayLabel}>
+      <FencedCodeBlock
+        variant="embedded"
+        codeLines={visibleCodeFenceLines.map((lineText) => ({ lineText }))}
+        languageLabel={props.codeFenceInfo.codeLanguageLabel}
+        showLabel={false}
+        wrapMode="none"
+      />
+    </AssistantSnippetFrame>
+  );
+}
+
 export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): ReactNode {
   const terminalColumnCount = props.terminalColumnCount ?? defaultAssistantMarkdownTerminalColumnCount;
   const markdownChromeColumnCount = Math.max(20, terminalColumnCount - 4);
@@ -566,6 +915,10 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
   const preparedMarkdownText = useMemo(
     () => prepareAssistantMarkdownTextForRendering(props.markdownText, props.isStreaming),
     [props.isStreaming, props.markdownText],
+  );
+  const assistantMarkdownRenderSections = useMemo(
+    () => splitAssistantMarkdownTextIntoRenderSections(preparedMarkdownText),
+    [preparedMarkdownText],
   );
   const horizontalRuleSyntaxStyle = useMemo(
     () => SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(props.horizontalRuleColor) } }),
@@ -579,20 +932,8 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       defaultRenderable.drawUnstyledText = true;
 
       if (isAssistantMarkdownCodeToken(token)) {
-        const codeFenceInfo = parseAssistantMarkdownCodeFenceInfo(token.lang);
-        if (codeFenceDiffLanguagePattern.test(token.lang?.trim().split(/\s+/)[0] ?? "")) {
-          defaultRenderable.content = formatAssistantMarkdownDiffFenceText(token.text, codeFenceInfo, markdownChromeColumnCount);
-          defaultRenderable.filetype = "text";
-          defaultRenderable.onChunks = decorateAssistantMarkdownDiffFenceChunks;
-          defaultRenderable.wrapMode = "none";
-          return defaultRenderable;
-        }
-
-        return createAssistantMarkdownCodeFenceRenderable({
-          defaultRenderable,
-          codeToken: token,
-          codeFenceInfo,
-        });
+        applyAssistantMarkdownFlowSpacing(defaultRenderable);
+        return defaultRenderable;
       }
 
       if (isAssistantMarkdownHeadingToken(token)) {
@@ -600,6 +941,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         defaultRenderable.content = formatAssistantMarkdownHeadingText(token.text, token.depth);
         defaultRenderable.filetype = "text";
         defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
+        applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.syntaxStyle = resolveAssistantMarkdownHeadingSyntaxStyle(token.depth);
         return defaultRenderable;
       }
@@ -611,6 +953,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
           : formatAssistantMarkdownQuoteText(token.text);
         defaultRenderable.filetype = "text";
         defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
+        applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.syntaxStyle = assistantMarkdownCallout
           ? assistantMarkdownCalloutSyntaxStyleByKind[assistantMarkdownCallout.calloutKind]
           : assistantMarkdownQuoteSyntaxStyle;
@@ -621,6 +964,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         defaultRenderable.content = formatAssistantMarkdownListText(token);
         defaultRenderable.filetype = "text";
         defaultRenderable.onChunks = decorateAssistantMarkdownListChunks;
+        applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.syntaxStyle = assistantMarkdownTaskListSyntaxStyle;
         return defaultRenderable;
       }
@@ -631,6 +975,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         defaultRenderable.content = horizontalRuleText;
         defaultRenderable.filetype = "text";
         defaultRenderable.syntaxStyle = horizontalRuleSyntaxStyle;
+        applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.wrapMode = "none";
         return defaultRenderable;
       }
@@ -639,6 +984,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         defaultRenderable.content = formatAssistantMarkdownInlineTextForPlainText(token.text);
         defaultRenderable.filetype = "text";
         defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
+        applyAssistantMarkdownFlowSpacing(defaultRenderable);
         return defaultRenderable;
       }
 
@@ -646,32 +992,60 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
     }
 
     return defaultRenderable;
-  }, [horizontalRuleSyntaxStyle, horizontalRuleText, markdownChromeColumnCount]);
+  }, [horizontalRuleSyntaxStyle, horizontalRuleText]);
 
   return (
-    <markdown
-      bg={chatScreenTheme.bg}
-      conceal={true}
-      concealCode={false}
-      content={preparedMarkdownText}
-      fg={chatScreenTheme.textPrimary}
-      renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
-      streaming={props.isStreaming}
-      syntaxStyle={assistantMarkdownSyntaxStyle}
-      tableOptions={{
-        borders: true,
-        borderColor: chatScreenTheme.borderSubtle,
-        borderStyle: "single",
-        cellPadding: 0,
-        columnFitter: "balanced",
-        outerBorder: true,
-        selectable: true,
-        style: "grid",
-        widthMode: "content",
-        wrapMode: "word",
-      }}
-      treeSitterClient={openTuiSharedTreeSitterClient}
-      width="100%"
-    />
+    <box flexDirection="column" width="100%">
+      {assistantMarkdownRenderSections.map((assistantMarkdownRenderSection, index) => (
+        assistantMarkdownRenderSection.sectionKind === "markdown" ? (
+          <markdown
+            bg={chatScreenTheme.bg}
+            conceal={true}
+            concealCode={false}
+            content={assistantMarkdownRenderSection.markdownText}
+            fg={githubLikeTerminalCodeColors.foreground}
+            key={`assistant-markdown-section-${index}`}
+            renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
+            streaming={props.isStreaming}
+            syntaxStyle={assistantMarkdownSyntaxStyle}
+            tableOptions={{
+              borders: true,
+              borderColor: chatScreenTheme.borderSubtle,
+              borderStyle: "single",
+              cellPadding: 0,
+              columnFitter: "balanced",
+              outerBorder: true,
+              selectable: true,
+              style: "grid",
+              widthMode: "content",
+              wrapMode: "word",
+            }}
+            treeSitterClient={openTuiSharedTreeSitterClient}
+            width="100%"
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "codeFence" ? (
+          <AssistantCodeFenceBlock
+            codeFenceInfo={assistantMarkdownRenderSection.codeFenceInfo}
+            codeFenceText={assistantMarkdownRenderSection.codeFenceText}
+            key={`assistant-code-fence-section-${index}`}
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "unifiedDiff" ? (
+          <AssistantUnifiedDiffBlock
+            key={`assistant-unified-diff-section-${index}`}
+            unifiedDiffText={assistantMarkdownRenderSection.unifiedDiffText}
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "shellSnippet" ? (
+          <AssistantShellSnippetBlock
+            key={`assistant-shell-snippet-section-${index}`}
+            shellSnippetText={assistantMarkdownRenderSection.shellSnippetText}
+          />
+        ) : (
+          <AssistantDiffSnippetBlock
+            diffSnippetText={assistantMarkdownRenderSection.diffSnippetText}
+            key={`assistant-diff-snippet-section-${index}`}
+          />
+        )
+      ))}
+    </box>
   );
 }

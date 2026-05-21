@@ -1,58 +1,37 @@
-import { useState, type ReactNode } from "react";
-import type { ToolCallWriteDetail } from "@buli/contracts";
+import type { ReactNode } from "react";
+import type { ToolCallWriteDetail, WorkspacePatch } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { DiffBlock } from "../primitives/DiffBlock.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
+import {
+  formatWorkspacePatchCompactSummary,
+  WorkspacePatchChangedFilesView,
+} from "../workspacePatch/WorkspacePatchChangedFilesView.tsx";
+import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type WriteToolCallCardProps = {
   toolCallDetail: ToolCallWriteDetail;
   renderState: "streaming" | "completed" | "failed";
   durationMs?: number;
   errorText?: string;
+  workspacePatch?: WorkspacePatch;
 };
 
-const MAX_VISIBLE_WRITE_DIFF_LINES = 80;
-
 export function WriteToolCallCard(props: WriteToolCallCardProps): ReactNode {
-  const [isWriteDiffExpanded, setIsWriteDiffExpanded] = useState(false);
-  const accentColor =
-    props.renderState === "failed"
-      ? chatScreenTheme.accentRed
-      : props.renderState === "streaming"
-        ? chatScreenTheme.accentAmber
-        : chatScreenTheme.accentGreen;
-  const statusKind =
-    props.renderState === "completed"
-      ? "success"
-      : props.renderState === "failed"
-        ? "error"
-        : "pending";
-  const hasWriteDiffContent = props.renderState !== "failed" && Boolean(props.toolCallDetail.unifiedDiffText);
+  const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
+  const accentColor = props.workspacePatch && props.renderState === "completed"
+    ? chatScreenTheme.accentPrimary
+    : toolCallPresentation.accentColor;
+  const hasWriteDiffContent = Boolean(props.workspacePatch) ||
+    (props.renderState !== "failed" && Boolean(props.toolCallDetail.unifiedDiffText));
   return (
-    <SurfaceCard
+    <ExpandableToolCallCard
       accentColor={accentColor}
-      density="compact"
-      headerLeft={
-        <ToolCallCompactHeader
-          accentColor={accentColor}
-          disclosureState={hasWriteDiffContent
-            ? {
-                isContentExpandable: true,
-                isContentExpanded: isWriteDiffExpanded,
-                onContentExpansionToggle: () => {
-                  setIsWriteDiffExpanded((currentWriteDiffExpanded) => !currentWriteDiffExpanded);
-                },
-              }
-            : { isContentExpandable: false }}
-          statusColor={accentColor}
-          statusKind={statusKind}
-          statusLabel={buildWriteStatusLabel(props)}
-          toolNameLabel="Write"
-          toolTargetText={props.toolCallDetail.writtenFilePath}
-        />
-      }
-      bodyContent={hasWriteDiffContent && isWriteDiffExpanded ? buildWriteBodyContent(props) : undefined}
+      hasExpandableContent={hasWriteDiffContent}
+      renderExpandedContent={() => buildWriteBodyContent(props)}
+      statusKind={toolCallPresentation.statusKind}
+      statusLabel={buildWriteStatusLabel(props)}
+      toolNameLabel="Write"
+      toolTargetText={props.toolCallDetail.writtenFilePath}
     />
   );
 }
@@ -63,6 +42,9 @@ function buildWriteStatusLabel(props: WriteToolCallCardProps): string {
   }
   if (props.renderState === "streaming") {
     return "writing…";
+  }
+  if (props.workspacePatch) {
+    return formatWorkspacePatchCompactSummary(props.workspacePatch);
   }
   const addedLineCount = props.toolCallDetail.addedLineCount;
   const removedLineCount = props.toolCallDetail.removedLineCount;
@@ -77,9 +59,13 @@ function buildWriteStatusLabel(props: WriteToolCallCardProps): string {
 }
 
 function buildWriteBodyContent(props: WriteToolCallCardProps): ReactNode {
+  if (props.workspacePatch) {
+    return <WorkspacePatchChangedFilesView workspacePatch={props.workspacePatch} />;
+  }
+
   const unifiedDiffText = props.toolCallDetail.unifiedDiffText;
   if (!unifiedDiffText) {
     return undefined;
   }
-  return <DiffBlock maximumVisibleLineCount={MAX_VISIBLE_WRITE_DIFF_LINES} unifiedDiffText={unifiedDiffText} />;
+  return <DiffBlock filePath={props.toolCallDetail.writtenFilePath} unifiedDiffText={unifiedDiffText} />;
 }

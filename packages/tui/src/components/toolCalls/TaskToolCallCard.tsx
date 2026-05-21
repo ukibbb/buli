@@ -1,15 +1,18 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { SubagentChildToolCall, ToolCallTaskDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { AssistantMarkdownBlock } from "../primitives/AssistantMarkdownBlock.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { BashToolCallCard } from "./BashToolCallCard.tsx";
-import { EditToolCallCard } from "./EditToolCallCard.tsx";
-import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
-import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
-import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
-import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
-import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
+import { limitVisibleItems, VisibleContentLimitNotice } from "../primitives/VisibleContentLimit.tsx";
+import {
+  ExpandableToolCallCard,
+  formatToolCallDurationMs,
+  resolveDefaultToolCallRenderStatePresentation,
+  type ToolCallRenderState,
+} from "./ExpandableToolCallCard.tsx";
+import { ToolCallEntryView } from "./ToolCallEntryView.tsx";
+
+const MAX_EXPANDED_TASK_TEXT_LINE_COUNT = 50;
+const MAX_EXPANDED_SUBAGENT_CHILD_TOOL_CALL_COUNT = 50;
 
 export type TaskToolCallCardProps = {
   toolCallDetail: ToolCallTaskDetail;
@@ -18,59 +21,21 @@ export type TaskToolCallCardProps = {
   errorText?: string;
 };
 
-const MAX_VISIBLE_TASK_SECTION_LINES = 24;
-const MAX_VISIBLE_TASK_SECTION_CHARACTERS = 4_000;
-
-type VisibleTaskSectionText = {
-  visibleText: string;
-  truncationSummaryText?: string;
-};
-
 export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
-  const [isSubagentContentExpanded, setIsSubagentContentExpanded] = useState(false);
-  const accentColor =
-    props.renderState === "failed"
-      ? chatScreenTheme.accentRed
-      : props.renderState === "streaming"
-        ? chatScreenTheme.accentAmber
-        : chatScreenTheme.accentGreen;
-  const statusKind =
-    props.renderState === "completed"
-      ? "success"
-      : props.renderState === "failed"
-        ? "error"
-        : "pending";
+  const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
   const hasSubagentContent = hasTaskBodyContent(props);
   return (
-    <SurfaceCard
-      accentColor={accentColor}
-      density="compact"
-      headerLeft={
-        <ToolCallCompactHeader
-          accentColor={accentColor}
-          disclosureState={hasSubagentContent
-            ? {
-                isContentExpandable: true,
-                isContentExpanded: isSubagentContentExpanded,
-                onContentExpansionToggle: () => {
-                  setIsSubagentContentExpanded((currentSubagentContentExpanded) => !currentSubagentContentExpanded);
-                },
-              }
-            : { isContentExpandable: false }}
-          statusColor={accentColor}
-          statusKind={statusKind}
-          pendingSnakeVariant={isStreamingExploreAgentTask(props) ? "eatingApple" : "sixCell"}
-          statusLabel={buildTaskStatusLabel(props)}
-          toolNameLabel={formatTaskToolNameLabel(props)}
-          toolTargetText={formatTaskTargetText(props.toolCallDetail)}
-        />
-      }
-      bodyContent={hasSubagentContent && isSubagentContentExpanded
-        ? buildTaskBodyContent({
-            accentColor,
-            taskToolCallCardProps: props,
-          })
-        : undefined}
+    <ExpandableToolCallCard
+      accentColor={toolCallPresentation.accentColor}
+      hasExpandableContent={hasSubagentContent}
+      renderExpandedContent={() => buildTaskBodyContent({
+        accentColor: toolCallPresentation.accentColor,
+        taskToolCallCardProps: props,
+      })}
+      statusKind={toolCallPresentation.statusKind}
+      statusLabel={buildTaskStatusLabel(props)}
+      toolNameLabel={formatTaskToolNameLabel(props)}
+      toolTargetText={formatTaskTargetText(props.toolCallDetail)}
     />
   );
 }
@@ -103,7 +68,7 @@ function buildTaskStatusLabel(props: TaskToolCallCardProps): string {
     return "running…";
   }
   const durationLabel =
-    props.durationMs === undefined ? "" : ` · ${formatDurationMs(props.durationMs)}`;
+    props.durationMs === undefined ? "" : ` · ${formatToolCallDurationMs(props.durationMs)}`;
   return `returned${durationLabel}`;
 }
 
@@ -125,6 +90,10 @@ function buildTaskBodyContent(input: TaskBodyContentInput): ReactNode {
   }
 
   if (hasSubagentChildToolCalls) {
+    const limitedSubagentChildToolCalls = limitVisibleItems({
+      items: subagentChildToolCalls,
+      maximumVisibleItemCount: MAX_EXPANDED_SUBAGENT_CHILD_TOOL_CALL_COUNT,
+    });
     return (
       <box flexDirection="column" width="100%">
         <box flexDirection="column" paddingX={1} width="100%">
@@ -146,7 +115,12 @@ function buildTaskBodyContent(input: TaskBodyContentInput): ReactNode {
             <text fg={chatScreenTheme.textMuted}>{"// activity"}</text>
           </box>
           <box flexDirection="column" width="100%">
-            {subagentChildToolCalls.map((subagentChildToolCall) => (
+            <VisibleContentLimitNotice
+              visibleItemCount={limitedSubagentChildToolCalls.visibleItems.length}
+              totalItemCount={limitedSubagentChildToolCalls.totalItemCount}
+              itemLabelPlural="tool calls"
+            />
+            {limitedSubagentChildToolCalls.visibleItems.map((subagentChildToolCall) => (
               <box
                 key={subagentChildToolCall.subagentChildToolCallId}
                 flexDirection="column"
@@ -221,74 +195,8 @@ function SubagentChildToolCallCard(props: { subagentChildToolCall: SubagentChild
   const errorProps = subagentChildToolCallErrorText !== undefined ? { errorText: subagentChildToolCallErrorText } : {};
   const subagentChildToolCallDetail = props.subagentChildToolCall.subagentChildToolCallDetail;
 
-  if (subagentChildToolCallDetail.toolName === "read") {
-    return (
-      <ReadToolCallCard
-        renderState={subagentChildToolCallRenderState}
-        toolCallDetail={subagentChildToolCallDetail}
-        {...durationProps}
-        {...errorProps}
-      />
-    );
-  }
-
-  if (subagentChildToolCallDetail.toolName === "glob") {
-    return (
-      <GlobToolCallCard
-        renderState={subagentChildToolCallRenderState}
-        toolCallDetail={subagentChildToolCallDetail}
-        {...durationProps}
-        {...errorProps}
-      />
-    );
-  }
-
-  if (subagentChildToolCallDetail.toolName === "grep") {
-    return (
-      <GrepToolCallCard
-        renderState={subagentChildToolCallRenderState}
-        toolCallDetail={subagentChildToolCallDetail}
-        {...durationProps}
-        {...errorProps}
-      />
-    );
-  }
-
-  if (subagentChildToolCallDetail.toolName === "bash") {
-    return (
-      <BashToolCallCard
-        renderState={subagentChildToolCallRenderState}
-        toolCallDetail={subagentChildToolCallDetail}
-        {...durationProps}
-        {...errorProps}
-      />
-    );
-  }
-
-  if (subagentChildToolCallDetail.toolName === "edit") {
-    return (
-      <EditToolCallCard
-        renderState={subagentChildToolCallRenderState}
-        toolCallDetail={subagentChildToolCallDetail}
-        {...durationProps}
-        {...errorProps}
-      />
-    );
-  }
-
-  if (subagentChildToolCallDetail.toolName === "write") {
-    return (
-      <WriteToolCallCard
-        renderState={subagentChildToolCallRenderState}
-        toolCallDetail={subagentChildToolCallDetail}
-        {...durationProps}
-        {...errorProps}
-      />
-    );
-  }
-
   return (
-    <TaskToolCallCard
+    <ToolCallEntryView
       renderState={subagentChildToolCallRenderState}
       toolCallDetail={subagentChildToolCallDetail}
       {...durationProps}
@@ -299,7 +207,7 @@ function SubagentChildToolCallCard(props: { subagentChildToolCall: SubagentChild
 
 function resolveSubagentChildToolCallRenderState(
   subagentChildToolCallStatus: SubagentChildToolCall["subagentChildToolCallStatus"],
-): TaskToolCallCardProps["renderState"] {
+): ToolCallRenderState {
   if (subagentChildToolCallStatus === "completed") {
     return "completed";
   }
@@ -323,25 +231,34 @@ type TaskTextSectionProps = {
 );
 
 function TaskTextSection(props: TaskTextSectionProps): ReactNode {
-  const visibleTaskSectionText = buildVisibleTaskSectionText(props.taskSectionText);
+  const limitedTaskSectionLines = limitVisibleItems({
+    items: splitTaskSectionTextIntoLines(props.taskSectionText),
+    maximumVisibleItemCount: MAX_EXPANDED_TASK_TEXT_LINE_COUNT,
+  });
+  const visibleTaskSectionText = limitedTaskSectionLines.visibleItems.join("\n");
+
   return (
     <box flexDirection="column" width="100%">
       {props.presentation === "plain" ? (
-        <text fg={props.foregroundColor} wrapMode="word">{visibleTaskSectionText.visibleText}</text>
+        <text fg={props.foregroundColor} wrapMode="word">{visibleTaskSectionText}</text>
       ) : (
         <AssistantMarkdownBlock
           horizontalRuleColor={props.horizontalRuleColor}
           isStreaming={false}
-          markdownText={visibleTaskSectionText.visibleText}
+          markdownText={visibleTaskSectionText}
         />
       )}
-      {visibleTaskSectionText.truncationSummaryText ? (
-        <box width="100%">
-          <text fg={chatScreenTheme.textMuted}>{visibleTaskSectionText.truncationSummaryText}</text>
-        </box>
-      ) : null}
+      <VisibleContentLimitNotice
+        visibleItemCount={limitedTaskSectionLines.visibleItems.length}
+        totalItemCount={limitedTaskSectionLines.totalItemCount}
+        itemLabelPlural="lines"
+      />
     </box>
   );
+}
+
+function splitTaskSectionTextIntoLines(taskSectionText: string): string[] {
+  return taskSectionText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 }
 
 function resolveTaskResultMarkdownRuleColor(renderState: TaskToolCallCardProps["renderState"]): string {
@@ -350,38 +267,4 @@ function resolveTaskResultMarkdownRuleColor(renderState: TaskToolCallCardProps["
   }
 
   return chatScreenTheme.accentGreen;
-}
-
-function buildVisibleTaskSectionText(taskSectionText: string): VisibleTaskSectionText {
-  const taskSectionLines = taskSectionText.split("\n");
-  const lineLimitedTaskSectionText = taskSectionLines.slice(0, MAX_VISIBLE_TASK_SECTION_LINES).join("\n");
-  const isLineLimited = taskSectionLines.length > MAX_VISIBLE_TASK_SECTION_LINES;
-  const isCharacterLimited = lineLimitedTaskSectionText.length > MAX_VISIBLE_TASK_SECTION_CHARACTERS;
-  const visibleText = isCharacterLimited
-    ? lineLimitedTaskSectionText.slice(0, MAX_VISIBLE_TASK_SECTION_CHARACTERS)
-    : lineLimitedTaskSectionText;
-
-  if (isLineLimited) {
-    const visibleLineCount = visibleText.length === 0 ? 0 : visibleText.split("\n").length;
-    return {
-      visibleText,
-      truncationSummaryText: `... showing first ${visibleLineCount} of ${taskSectionLines.length} lines`,
-    };
-  }
-
-  if (isCharacterLimited) {
-    return {
-      visibleText,
-      truncationSummaryText: "... content truncated",
-    };
-  }
-
-  return { visibleText };
-}
-
-function formatDurationMs(durationMs: number): string {
-  if (durationMs < 1000) {
-    return `${durationMs}ms`;
-  }
-  return `${(durationMs / 1000).toFixed(1)}s`;
 }

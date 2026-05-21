@@ -1,9 +1,7 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { ToolCallReadDetail } from "@buli/contracts";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
+import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type ReadToolCallCardProps = {
   toolCallDetail: ToolCallReadDetail;
@@ -13,44 +11,17 @@ export type ReadToolCallCardProps = {
 };
 
 export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
-  const [isReadPreviewExpanded, setIsReadPreviewExpanded] = useState(false);
-  const accentColor =
-    props.renderState === "failed"
-      ? chatScreenTheme.accentRed
-      : props.renderState === "streaming"
-        ? chatScreenTheme.accentAmber
-        : chatScreenTheme.accentGreen;
-  const statusKind =
-    props.renderState === "completed"
-      ? "success"
-      : props.renderState === "failed"
-        ? "error"
-        : "pending";
+  const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
   const hasReadPreviewContent = props.renderState !== "failed" && (props.toolCallDetail.previewLines?.length ?? 0) > 0;
   return (
-    <SurfaceCard
-      accentColor={accentColor}
-      density="compact"
-      headerLeft={
-        <ToolCallCompactHeader
-          accentColor={accentColor}
-          disclosureState={hasReadPreviewContent
-            ? {
-                isContentExpandable: true,
-                isContentExpanded: isReadPreviewExpanded,
-                onContentExpansionToggle: () => {
-                  setIsReadPreviewExpanded((currentReadPreviewExpanded) => !currentReadPreviewExpanded);
-                },
-              }
-            : { isContentExpandable: false }}
-          statusColor={accentColor}
-          statusKind={statusKind}
-          statusLabel={buildReadStatusLabel(props)}
-          toolNameLabel="Read"
-          toolTargetText={props.toolCallDetail.readFilePath}
-        />
-      }
-      bodyContent={hasReadPreviewContent && isReadPreviewExpanded ? buildReadBodyContent(props) : undefined}
+    <ExpandableToolCallCard
+      accentColor={toolCallPresentation.accentColor}
+      hasExpandableContent={hasReadPreviewContent}
+      renderExpandedContent={() => buildReadBodyContent(props)}
+      statusKind={toolCallPresentation.statusKind}
+      statusLabel={buildReadStatusLabel(props)}
+      toolNameLabel="Read"
+      toolTargetText={props.toolCallDetail.readFilePath}
     />
   );
 }
@@ -86,6 +57,7 @@ function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
       <FencedCodeBlock
         variant="embedded"
         filePath={props.toolCallDetail.readFilePath}
+        wrapMode="char"
         codeLines={previewLines.map((previewLine) => ({
           lineNumber: previewLine.lineNumber,
           lineText: previewLine.lineText,

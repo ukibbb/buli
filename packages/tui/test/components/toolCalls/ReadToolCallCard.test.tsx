@@ -66,7 +66,7 @@ describe("ReadToolCallCard", () => {
     expect(frame).toContain("export function App");
   });
 
-  test("completed_shows_truncation_state", async () => {
+  test("completed_shows_returned_read_range", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReadToolCallCard
         renderState="completed"
@@ -76,9 +76,8 @@ describe("ReadToolCallCard", () => {
           readLineCount: 3,
           returnedLineCount: 2,
           wasLineCountTruncated: true,
-          wasLongLineTruncated: true,
           previewLines: [
-            { lineNumber: 1, lineText: "x".repeat(20), wasLineTruncated: true },
+            { lineNumber: 1, lineText: "x".repeat(20) },
             { lineNumber: 2, lineText: "second" },
           ],
         }}
@@ -107,7 +106,7 @@ describe("ReadToolCallCard", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("[+]");
     expect(frame).toContain("[packages/tui/src/App.tsx]");
-    expect(frame).toContain("▰");
+    expect(frame).toContain("◆");
     expect(frame).not.toContain("reading");
   });
 
@@ -127,7 +126,7 @@ describe("ReadToolCallCard", () => {
     expect(frame.replace(/[\s┃]/g, "")).toContain("packages/tui/src/components/ConversationMessageList.tsx");
     expect(frame.split("\n").filter((line) => line.trim().length > 0).length).toBeGreaterThan(1);
     expect(frame).not.toContain("...");
-    expect(frame).toContain("▰");
+    expect(frame).toContain("◆");
     expect(frame).not.toContain("reading");
   });
 

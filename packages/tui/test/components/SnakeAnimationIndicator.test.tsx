@@ -11,7 +11,8 @@ describe("SnakeAnimationIndicator", () => {
     await renderOnce();
     // First frame always renders some combination of rectangle and ellipse cells.
     const frame = captureCharFrame();
-    expect(frame.trim().length).toBeGreaterThan(0);
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("◆");
   });
 
   test("renders_eating_apple_snake_glyphs", async () => {

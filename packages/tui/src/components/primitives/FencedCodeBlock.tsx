@@ -1,13 +1,17 @@
 import { useCallback, useMemo, type ReactNode } from "react";
-import type { SyntaxHighlightSpan, SyntaxHighlightSpanStyle } from "@buli/contracts";
+import type { SyntaxHighlightSpan } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
   infoStringToFiletype,
   pathToFiletype,
-  RGBA,
-  SyntaxStyle,
   type TextChunk,
 } from "@opentui/core";
+import {
+  codeBlockSyntaxStyle,
+  codeLineNumberGutterForegroundColor,
+  githubLikeTerminalCodeColors,
+  syntaxHighlightSpanForegroundColors,
+} from "./codeRenderingTheme.ts";
 import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.ts";
 
 export type FencedCodeBlockLine = {
@@ -23,45 +27,18 @@ export type FencedCodeBlockVariant = "standalone" | "embedded";
 export type FencedCodeBlockProps = {
   variant?: FencedCodeBlockVariant;
   languageLabel?: string;
+  displayLabel?: string;
+  showLabel?: boolean;
   filePath?: string;
   codeLines: FencedCodeBlockLine[];
+  wrapMode?: "char" | "none" | "word";
 };
-
-const syntaxStyleColors: Record<SyntaxHighlightSpanStyle, string> = {
-  keyword: chatScreenTheme.accentPurple,
-  identifier: chatScreenTheme.textPrimary,
-  string: chatScreenTheme.accentAmber,
-  comment: chatScreenTheme.textDim,
-  module: chatScreenTheme.accentPrimaryMuted,
-  type: chatScreenTheme.accentCyan,
-  number: chatScreenTheme.accentAmber,
-  symbol: chatScreenTheme.textSecondary,
-  self: chatScreenTheme.accentPrimaryMuted,
-  decorator: chatScreenTheme.accentAmber,
-};
-
-const openTuiCodeSyntaxStyle = SyntaxStyle.fromStyles({
-  keyword: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "keyword.import": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  string: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  comment: { fg: RGBA.fromHex(chatScreenTheme.textDim), italic: true },
-  number: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  boolean: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
-  function: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  "function.call": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  type: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
-  property: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
-  variable: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  operator: { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  punctuation: { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
-  default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-});
-
-const gutterChunkForegroundColor = RGBA.fromHex(chatScreenTheme.textDim);
 
 export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
   const variant: FencedCodeBlockVariant = props.variant ?? "standalone";
   const isStandalone = variant === "standalone";
+  const codeWrapMode = props.wrapMode ?? "none";
+  const visibleLabel = props.showLabel === false ? undefined : props.displayLabel ?? props.languageLabel;
   const hasAnyPreSuppliedSyntaxHighlightSpans = props.codeLines.some(
     (codeLine) => codeLine.syntaxHighlightSpans && codeLine.syntaxHighlightSpans.length > 0,
   );
@@ -69,7 +46,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
     <box
       {...(isStandalone
         ? {
-            backgroundColor: chatScreenTheme.surfaceOne,
+            backgroundColor: githubLikeTerminalCodeColors.canvas,
             borderColor: chatScreenTheme.borderSubtle,
             borderStyle: "rounded" as const,
             border: true,
@@ -80,18 +57,19 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
       paddingY={0}
       width="100%"
     >
-      {props.languageLabel ? (
+      {visibleLabel ? (
         <box width="100%">
-          <text fg={chatScreenTheme.textDim}>{`// ${props.languageLabel}`}</text>
+          <text fg={chatScreenTheme.textDim}>{`// ${visibleLabel}`}</text>
         </box>
       ) : null}
       {hasAnyPreSuppliedSyntaxHighlightSpans ? (
-        <FencedCodeBlockPreSuppliedSpanContent codeLines={props.codeLines} />
+        <FencedCodeBlockPreSuppliedSpanContent codeLines={props.codeLines} wrapMode={codeWrapMode} />
       ) : (
         <OpenTuiFencedCodeContent
           codeLines={props.codeLines}
           filePath={props.filePath}
           languageLabel={props.languageLabel}
+          wrapMode={codeWrapMode}
         />
       )}
     </box>
@@ -102,6 +80,7 @@ function OpenTuiFencedCodeContent(props: {
   codeLines: FencedCodeBlockLine[];
   filePath: string | undefined;
   languageLabel: string | undefined;
+  wrapMode: "char" | "none" | "word";
 }): ReactNode {
   const codeText = props.codeLines.map((codeLine) => codeLine.lineText).join("\n");
   const codeFiletype = resolveOpenTuiCodeFiletype(props.filePath, props.languageLabel);
@@ -129,27 +108,29 @@ function OpenTuiFencedCodeContent(props: {
     return (
       <code
         content={codeText}
+        bg={githubLikeTerminalCodeColors.canvas}
         drawUnstyledText={true}
         filetype={codeFiletype}
         selectable={true}
-        syntaxStyle={openTuiCodeSyntaxStyle}
+        syntaxStyle={codeBlockSyntaxStyle}
         treeSitterClient={openTuiSharedTreeSitterClient}
         width="100%"
-        wrapMode="none"
+        wrapMode={props.wrapMode}
       />
     );
   }
   return (
     <code
       content={codeText}
+      bg={githubLikeTerminalCodeColors.canvas}
       drawUnstyledText={true}
       filetype={codeFiletype}
       onChunks={handleOpenTuiCodeChunks}
       selectable={true}
-      syntaxStyle={openTuiCodeSyntaxStyle}
+      syntaxStyle={codeBlockSyntaxStyle}
       treeSitterClient={openTuiSharedTreeSitterClient}
       width="100%"
-      wrapMode="none"
+      wrapMode={props.wrapMode}
     />
   );
 }
@@ -216,7 +197,7 @@ function injectGutterChunksBeforeEachSourceLine(
       transformedChunks.push({
         __isChunk: true,
         text: gutterChunkText,
-        fg: gutterChunkForegroundColor,
+        fg: codeLineNumberGutterForegroundColor,
       });
     }
     currentSourceLineNeedsGutterChunk = false;
@@ -249,6 +230,7 @@ function injectGutterChunksBeforeEachSourceLine(
 // a flex-row gutter + text fallback to preserve the existing contract.
 function FencedCodeBlockPreSuppliedSpanContent(props: {
   codeLines: FencedCodeBlockLine[];
+  wrapMode: "char" | "none" | "word";
 }): ReactNode {
   const lineNumberGutterWidth = computeLineNumberGutterWidth(props.codeLines);
   return (
@@ -262,12 +244,12 @@ function FencedCodeBlockPreSuppliedSpanContent(props: {
           width="100%"
         >
           <box flexShrink={0} marginRight={1} width={lineNumberGutterWidth}>
-            <text fg={chatScreenTheme.textDim}>
+            <text fg={githubLikeTerminalCodeColors.muted}>
               {formatLineNumberGutterCell(codeLine.lineNumber, lineNumberGutterWidth)}
             </text>
           </box>
           <box flexShrink={1} minWidth={0} overflow="hidden" width="100%">
-            <FencedCodeBlockLineContent fencedCodeBlockLine={codeLine} />
+            <FencedCodeBlockLineContent fencedCodeBlockLine={codeLine} wrapMode={props.wrapMode} />
           </box>
         </box>
       ))}
@@ -275,19 +257,28 @@ function FencedCodeBlockPreSuppliedSpanContent(props: {
   );
 }
 
-function FencedCodeBlockLineContent(props: { fencedCodeBlockLine: FencedCodeBlockLine }): ReactNode {
+function FencedCodeBlockLineContent(props: {
+  fencedCodeBlockLine: FencedCodeBlockLine;
+  wrapMode: "char" | "none" | "word";
+}): ReactNode {
   const { fencedCodeBlockLine } = props;
+  const shouldTruncateLine = props.wrapMode === "none";
   if (!fencedCodeBlockLine.syntaxHighlightSpans || fencedCodeBlockLine.syntaxHighlightSpans.length === 0) {
     return (
-      <text fg={chatScreenTheme.textPrimary} truncate={true} wrapMode="none" width="100%">
+      <text
+        fg={githubLikeTerminalCodeColors.foreground}
+        truncate={shouldTruncateLine}
+        wrapMode={props.wrapMode}
+        width="100%"
+      >
         {fencedCodeBlockLine.lineText}
       </text>
     );
   }
   return (
-    <text truncate={true} wrapMode="none" width="100%">
+    <text truncate={shouldTruncateLine} wrapMode={props.wrapMode} width="100%">
       {fencedCodeBlockLine.syntaxHighlightSpans.map((syntaxHighlightSpan, index) => (
-        <span fg={syntaxStyleColors[syntaxHighlightSpan.spanStyle]} key={index}>
+        <span fg={syntaxHighlightSpanForegroundColors[syntaxHighlightSpan.spanStyle]} key={index}>
           {syntaxHighlightSpan.spanText}
         </span>
       ))}

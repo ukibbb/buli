@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ConversationTurnStatus, UserPromptImageAttachment } from "@buli/contracts";
+import type { ConversationTurnStatus } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { PromptDraftText } from "./PromptDraftText.tsx";
 import { PromptTextarea, type PromptTextareaEdit } from "./PromptTextarea.tsx";
@@ -17,7 +17,7 @@ export const MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT = 1;
 export type MinimumHeightPromptStripProps = {
   promptDraft: string;
   promptDraftCursorOffset: number;
-  pendingPromptImageAttachments?: readonly UserPromptImageAttachment[];
+  promptImageAttachmentPlaceholderTexts?: readonly string[] | undefined;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
   accentColor: string;
@@ -40,7 +40,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
         flexShrink={0}
         width="100%"
       >
-        <SnakeAnimationIndicator />
+        <SnakeAnimationIndicator variant="sixCell" />
       </box>
     );
   }
@@ -58,11 +58,6 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
       <text fg={props.accentColor}>
         <b>{">"}</b>
       </text>
-      {props.pendingPromptImageAttachments?.map((attachment, attachmentIndex) => (
-        <text fg={chatScreenTheme.accentCyan} key={attachment.attachmentId}>
-          {`[Image ${attachmentIndex + 1}]`}
-        </text>
-      ))}
       <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
         {props.isPromptInputDisabled ? (
           <PromptDraftText
@@ -76,6 +71,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
           <PromptTextarea
             promptDraft={props.promptDraft}
             promptDraftCursorOffset={props.promptDraftCursorOffset}
+            promptImageAttachmentPlaceholderTexts={props.promptImageAttachmentPlaceholderTexts}
             isFocused={true}
             rowCount={MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT}
             onPromptDraftEdited={props.onPromptDraftEdited}

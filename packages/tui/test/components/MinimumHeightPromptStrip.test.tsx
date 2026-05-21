@@ -42,6 +42,7 @@ describe("MinimumHeightPromptStrip", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("▰");
+    expect(frame).not.toContain("◆");
     expect(frame).not.toContain("working");
     expect(frame).not.toContain("anything");
   });

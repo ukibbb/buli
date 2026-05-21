@@ -157,7 +157,7 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(frame).toContain("1.2s");
   });
 
-  test("completed limits long prompt and result sections", async () => {
+  test("completed renders full long prompt and result sections", async () => {
     const longSubagentPrompt = Array.from({ length: 30 }, (_, index) => `prompt line ${index + 1}`).join("\n");
     const longSubagentResultSummary = Array.from({ length: 30 }, (_, index) => `result line ${index + 1}`).join("\n");
     const { captureCharFrame, mockMouse, renderOnce } = await testRender(
@@ -183,11 +183,76 @@ describe("TaskToolCallCard (opentui)", () => {
     const frame = captureCharFrame();
 
     expect(frame).toContain("[-]");
-    expect(frame).toContain("prompt line 24");
-    expect(frame).toContain("result line 24");
-    expect(frame).toContain("showing first 24 of 30 lines");
-    expect(frame).not.toContain("prompt line 25");
-    expect(frame).not.toContain("result line 25");
+    expect(frame).toContain("prompt line 30");
+    expect(frame).toContain("result line 30");
+    expect(frame).not.toContain("showing first");
+  });
+
+  test("completed limits very long prompt and result sections", async () => {
+    const longSubagentPrompt = Array.from({ length: 55 }, (_, index) => `prompt line ${index + 1}`).join("\n");
+    const longSubagentResultSummary = Array.from({ length: 55 }, (_, index) => `result line ${index + 1}`).join("\n");
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "large subagent result",
+          subagentPrompt: longSubagentPrompt,
+          subagentResultSummary: longSubagentResultSummary,
+        }}
+        renderState="completed"
+      />,
+      { width: 120, height: 130 },
+    );
+    await renderSettledMarkdownFrame(renderOnce);
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderSettledMarkdownFrame(renderOnce);
+    const frame = captureCharFrame();
+
+    expect(frame).toContain("prompt line 50");
+    expect(frame).not.toContain("prompt line 51");
+    expect(frame).toContain("result line 50");
+    expect(frame).not.toContain("result line 51");
+    expect(frame.split("showing first 50 of 55 lines").length - 1).toBe(2);
+  });
+
+  test("completed limits large subagent child activity", async () => {
+    const subagentChildToolCalls = Array.from({ length: 55 }, (_value, index) => ({
+      subagentChildToolCallId: `call-read-${index + 1}`,
+      subagentChildToolCallStatus: "completed" as const,
+      subagentChildToolCallStartedAtMs: index + 1,
+      subagentChildToolCallDetail: {
+        toolName: "read" as const,
+        readFilePath: `file-${index + 1}.ts`,
+      },
+    }));
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "large subagent activity",
+          subagentChildToolCalls,
+        }}
+        renderState="completed"
+      />,
+      { width: 120, height: 90 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame).toContain("showing first 50 of 55 tool calls");
+    expect(frame).toContain("file-1.ts");
+    expect(frame).toContain("file-50.ts");
+    expect(frame).not.toContain("file-51.ts");
   });
 
   test("completed with sub-1000ms duration shows ms suffix", async () => {

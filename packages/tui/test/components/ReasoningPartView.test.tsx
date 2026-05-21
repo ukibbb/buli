@@ -15,7 +15,7 @@ const completedReasoningPart = {
 } as const satisfies AssistantReasoningConversationMessagePart;
 
 describe("ReasoningPartView", () => {
-  test("renders_completed_reasoning_summary_when_visible", async () => {
+  test("renders_expanded_completed_reasoning_summary", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={completedReasoningPart}
@@ -28,11 +28,14 @@ describe("ReasoningPartView", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("[-]");
     expect(frame).toContain("Thought");
+    expect(frame).toContain("2.4s");
     expect(frame).toContain("I checked the route before answering.");
-    expect(frame).toContain("42 reasoning tok");
+    expect(frame).not.toContain("42 reasoning tok");
+    expect(frame).not.toContain("reasoning tokens unavailable");
+    expect(frame).not.toContain("click to");
   });
 
-  test("renders_collapsed_reasoning_chip_when_hidden", async () => {
+  test("renders_nothing_when_reasoning_summaries_are_hidden", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={completedReasoningPart}
@@ -43,33 +46,40 @@ describe("ReasoningPartView", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("[+]");
-    expect(frame).toContain("Thought");
-    expect(frame).toContain("42 reasoning tok");
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("Thought");
     expect(frame).not.toContain("I checked the route before answering.");
   });
 
-  test("expands_collapsed_reasoning_summary_when_clicked", async () => {
+  test("toggles_reasoning_summary_content_when_clicked", async () => {
     const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={completedReasoningPart}
-        isReasoningSummaryVisible={false}
+        isReasoningSummaryVisible={true}
       />,
       { width: 90, height: 8 },
     );
 
     await renderOnce();
-    expect(captureCharFrame()).toContain("click to show content");
-    expect(captureCharFrame()).not.toContain("I checked the route before answering.");
+    expect(captureCharFrame()).toContain("I checked the route before answering.");
 
     await act(async () => {
-      await mockMouse.click(6, 1);
+      await mockMouse.click(3, 1);
     });
     await renderOnce();
+    const collapsedFrame = captureCharFrame();
+    expect(collapsedFrame).toContain("[+]");
+    expect(collapsedFrame).toContain("Thought");
+    expect(collapsedFrame).not.toContain("I checked the route before answering.");
+    expect(collapsedFrame).not.toContain("click to");
 
-    const frame = captureCharFrame();
-    expect(frame).toContain("click to hide content");
-    expect(frame).toContain("I checked the route before answering.");
+    await act(async () => {
+      await mockMouse.click(3, 1);
+    });
+    await renderOnce();
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("[-]");
+    expect(expandedFrame).toContain("I checked the route before answering.");
   });
 
   test("renders_streaming_reasoning_summary_text_when_visible", async () => {
@@ -91,8 +101,50 @@ describe("ReasoningPartView", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("▰");
-    expect(frame).not.toContain("Thinking");
+    expect(frame).toContain("◆");
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("Thinking");
     expect(frame).toContain("Reading the relevant files.");
+    expect(frame).not.toContain("click to");
+  });
+
+  test("renders_nothing_for_empty_or_redacted_reasoning_summary_text", async () => {
+    const emptyReasoningPart = {
+      ...completedReasoningPart,
+      reasoningSummaryText: "[REDACTED]",
+    } satisfies AssistantReasoningConversationMessagePart;
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ReasoningPartView
+        assistantReasoningConversationMessagePart={emptyReasoningPart}
+        isReasoningSummaryVisible={true}
+      />,
+      { width: 90, height: 4 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("Thought");
+    expect(frame).not.toContain("[REDACTED]");
+  });
+
+  test("wraps_long_reasoning_title_without_truncation", async () => {
+    const longTitleReasoningPart = {
+      ...completedReasoningPart,
+      reasoningSummaryText: "**Considering the parser state before rendering the final transcript row**\nThe row should stay readable.",
+    } satisfies AssistantReasoningConversationMessagePart;
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ReasoningPartView
+        assistantReasoningConversationMessagePart={longTitleReasoningPart}
+        isReasoningSummaryVisible={true}
+      />,
+      { width: 44, height: 12 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Considering the parser");
+    expect(frame).toContain("final transcript row");
+    expect(frame).not.toContain("...");
+    expect(frame).not.toContain("…");
   });
 });

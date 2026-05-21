@@ -1,9 +1,7 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { ToolCallTodoWriteDetail } from "@buli/contracts";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { Checklist } from "../primitives/Checklist.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
+import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type TodoWriteToolCallCardProps = {
   toolCallDetail: ToolCallTodoWriteDetail;
@@ -13,44 +11,17 @@ export type TodoWriteToolCallCardProps = {
 };
 
 export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactNode {
-  const [isTodoListExpanded, setIsTodoListExpanded] = useState(false);
-  const accentColor =
-    props.renderState === "failed"
-      ? chatScreenTheme.accentRed
-      : props.renderState === "streaming"
-        ? chatScreenTheme.accentAmber
-        : chatScreenTheme.accentGreen;
-  const statusKind =
-    props.renderState === "completed"
-      ? "success"
-      : props.renderState === "failed"
-        ? "error"
-        : "pending";
+  const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
   const hasTodoListContent = props.renderState !== "failed" && props.toolCallDetail.todoItems.length > 0;
   return (
-    <SurfaceCard
-      accentColor={accentColor}
-      density="compact"
-      headerLeft={
-        <ToolCallCompactHeader
-          accentColor={accentColor}
-          disclosureState={hasTodoListContent
-            ? {
-                isContentExpandable: true,
-                isContentExpanded: isTodoListExpanded,
-                onContentExpansionToggle: () => {
-                  setIsTodoListExpanded((currentTodoListExpanded) => !currentTodoListExpanded);
-                },
-              }
-            : { isContentExpandable: false }}
-          statusColor={accentColor}
-          statusKind={statusKind}
-          statusLabel={buildTodoStatusLabel(props)}
-          toolNameLabel="TodoWrite"
-          toolTargetText={buildTodoTargetText(props)}
-        />
-      }
-      bodyContent={hasTodoListContent && isTodoListExpanded ? buildTodoBodyContent(props) : undefined}
+    <ExpandableToolCallCard
+      accentColor={toolCallPresentation.accentColor}
+      hasExpandableContent={hasTodoListContent}
+      renderExpandedContent={() => buildTodoBodyContent(props)}
+      statusKind={toolCallPresentation.statusKind}
+      statusLabel={buildTodoStatusLabel(props)}
+      toolNameLabel="TodoWrite"
+      toolTargetText={buildTodoTargetText(props)}
     />
   );
 }

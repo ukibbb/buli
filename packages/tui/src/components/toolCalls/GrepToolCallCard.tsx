@@ -1,9 +1,11 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { ToolCallGrepDetail, ToolCallGrepMatch } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
+import { limitVisibleItems, VisibleContentLimitNotice } from "../primitives/VisibleContentLimit.tsx";
+import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+
+const MAX_EXPANDED_GREP_MATCH_HIT_COUNT = 50;
 
 export type GrepToolCallCardProps = {
   toolCallDetail: ToolCallGrepDetail;
@@ -21,44 +23,17 @@ type GrepMatchFileSection = {
 };
 
 export function GrepToolCallCard(props: GrepToolCallCardProps): ReactNode {
-  const [isGrepResultExpanded, setIsGrepResultExpanded] = useState(false);
-  const accentColor =
-    props.renderState === "failed"
-      ? chatScreenTheme.accentRed
-      : props.renderState === "streaming"
-        ? chatScreenTheme.accentAmber
-        : chatScreenTheme.accentGreen;
-  const statusKind =
-    props.renderState === "completed"
-      ? "success"
-      : props.renderState === "failed"
-        ? "error"
-        : "pending";
+  const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
   const hasGrepResultContent = props.renderState !== "failed" && (props.toolCallDetail.matchHits?.length ?? 0) > 0;
   return (
-    <SurfaceCard
-      accentColor={accentColor}
-      density="compact"
-      headerLeft={
-        <ToolCallCompactHeader
-          accentColor={accentColor}
-          disclosureState={hasGrepResultContent
-            ? {
-                isContentExpandable: true,
-                isContentExpanded: isGrepResultExpanded,
-                onContentExpansionToggle: () => {
-                  setIsGrepResultExpanded((currentGrepResultExpanded) => !currentGrepResultExpanded);
-                },
-              }
-            : { isContentExpandable: false }}
-          statusColor={accentColor}
-          statusKind={statusKind}
-          statusLabel={buildGrepStatusLabel(props)}
-          toolNameLabel="Grep"
-          toolTargetText={props.toolCallDetail.searchPattern}
-        />
-      }
-      bodyContent={hasGrepResultContent && isGrepResultExpanded ? buildGrepBodyContent(props) : undefined}
+    <ExpandableToolCallCard
+      accentColor={toolCallPresentation.accentColor}
+      hasExpandableContent={hasGrepResultContent}
+      renderExpandedContent={() => buildGrepBodyContent(props)}
+      statusKind={toolCallPresentation.statusKind}
+      statusLabel={buildGrepStatusLabel(props)}
+      toolNameLabel="Grep"
+      toolTargetText={props.toolCallDetail.searchPattern}
     />
   );
 }
@@ -91,10 +66,19 @@ function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
   if (!matchHits || matchHits.length === 0) {
     return undefined;
   }
-  const grepMatchFileSections = groupGrepMatchesByFile(matchHits);
+  const limitedMatchHits = limitVisibleItems({
+    items: matchHits,
+    maximumVisibleItemCount: MAX_EXPANDED_GREP_MATCH_HIT_COUNT,
+  });
+  const grepMatchFileSections = groupGrepMatchesByFile(limitedMatchHits.visibleItems);
   return (
     <box flexDirection="column" width="100%">
       <box flexDirection="column" paddingX={1} width="100%">
+        <VisibleContentLimitNotice
+          visibleItemCount={limitedMatchHits.visibleItems.length}
+          totalItemCount={limitedMatchHits.totalItemCount}
+          itemLabelPlural="matches"
+        />
         {grepMatchFileSections.map((grepMatchFileSection, index) => (
           <box
             key={grepMatchFileSection.matchFilePath}
@@ -106,6 +90,7 @@ function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
             <FencedCodeBlock
               variant="embedded"
               filePath={grepMatchFileSection.matchFilePath}
+              wrapMode="char"
               codeLines={grepMatchFileSection.matchLines}
             />
           </box>

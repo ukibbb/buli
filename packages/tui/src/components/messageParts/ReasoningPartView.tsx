@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { AssistantReasoningConversationMessagePart } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { SnakeAnimationIndicator } from "../SnakeAnimationIndicator.tsx";
-import { ThinkingStatusLine } from "../ThinkingStatusLine.tsx";
+import { InlineSnakeAnimationIndicator } from "../SnakeAnimationIndicator.tsx";
+import { createClickableControlMouseDownHandler } from "../primitives/clickableControl.ts";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
+import { normalizeVisibleReasoningSummaryText, readReasoningSummaryTitle } from "./reasoningSummaryText.ts";
 
 export function ReasoningPartView(props: {
   assistantReasoningConversationMessagePart: AssistantReasoningConversationMessagePart;
@@ -19,16 +20,8 @@ export function ReasoningPartView(props: {
     setIsReasoningSummaryExpanded(props.isReasoningSummaryVisible);
   }, [props.assistantReasoningConversationMessagePart.id, props.isReasoningSummaryVisible]);
 
-  if (
-    props.assistantReasoningConversationMessagePart.partStatus === "streaming" &&
-    (!isReasoningSummaryExpanded || !visibleReasoningSummaryText)
-  ) {
-    return (
-      <ThinkingStatusLine
-        thinkingStartedAtMs={props.assistantReasoningConversationMessagePart.reasoningStartedAtMs}
-        thinkingTopicText={reasoningSummaryTitle ?? undefined}
-      />
-    );
+  if (!props.isReasoningSummaryVisible || visibleReasoningSummaryText.length === 0) {
+    return null;
   }
 
   return (
@@ -36,26 +29,12 @@ export function ReasoningPartView(props: {
       assistantReasoningConversationMessagePart={props.assistantReasoningConversationMessagePart}
       isReasoningSummaryExpanded={isReasoningSummaryExpanded}
       onReasoningSummaryExpansionToggle={() => {
-        if (visibleReasoningSummaryText.length === 0) {
-          return;
-        }
-
         setIsReasoningSummaryExpanded((currentIsReasoningSummaryExpanded) => !currentIsReasoningSummaryExpanded);
       }}
       reasoningSummaryTitle={reasoningSummaryTitle ?? undefined}
       visibleReasoningSummaryText={visibleReasoningSummaryText}
     />
   );
-}
-
-function normalizeVisibleReasoningSummaryText(reasoningSummaryText: string): string {
-  return reasoningSummaryText.replaceAll("[REDACTED]", "").trim();
-}
-
-function readReasoningSummaryTitle(visibleReasoningSummaryText: string): string | undefined {
-  const titleMatch = visibleReasoningSummaryText.trimStart().match(/^\*\*([^*\n]+)\*\*/);
-  const titleText = titleMatch?.[1]?.trim();
-  return titleText && titleText.length > 0 ? titleText : undefined;
 }
 
 function ReasoningSummaryCard(props: {
@@ -65,7 +44,6 @@ function ReasoningSummaryCard(props: {
   reasoningSummaryTitle?: string | undefined;
   visibleReasoningSummaryText: string;
 }): ReactNode {
-  const hasVisibleReasoningSummaryText = props.visibleReasoningSummaryText.length > 0;
   return (
     <SurfaceCard
       accentColor={chatScreenTheme.textDim}
@@ -73,21 +51,13 @@ function ReasoningSummaryCard(props: {
       headerLeft={
         <ReasoningSummaryDisclosureHeader
           assistantReasoningConversationMessagePart={props.assistantReasoningConversationMessagePart}
-          hasVisibleReasoningSummaryText={hasVisibleReasoningSummaryText}
           isReasoningSummaryExpanded={props.isReasoningSummaryExpanded}
           onReasoningSummaryExpansionToggle={props.onReasoningSummaryExpansionToggle}
           reasoningSummaryTitle={props.reasoningSummaryTitle}
         />
       }
-      headerRight={props.assistantReasoningConversationMessagePart.partStatus === "streaming"
-        ? undefined
-        : (
-          <text fg={chatScreenTheme.textDim} wrapMode="none">
-            {formatReasoningSummaryMetadata(props.assistantReasoningConversationMessagePart)}
-          </text>
-        )}
       bodyContent={
-        props.isReasoningSummaryExpanded && hasVisibleReasoningSummaryText
+        props.isReasoningSummaryExpanded
           ? <ReasoningSummaryTextLines visibleReasoningSummaryText={props.visibleReasoningSummaryText} />
           : undefined
       }
@@ -97,31 +67,25 @@ function ReasoningSummaryCard(props: {
 
 function ReasoningSummaryDisclosureHeader(props: {
   assistantReasoningConversationMessagePart: AssistantReasoningConversationMessagePart;
-  hasVisibleReasoningSummaryText: boolean;
   isReasoningSummaryExpanded: boolean;
   onReasoningSummaryExpansionToggle: () => void;
   reasoningSummaryTitle?: string | undefined;
 }): ReactNode {
-  if (props.assistantReasoningConversationMessagePart.partStatus === "streaming") {
-    return (
-      <box onMouseDown={() => props.onReasoningSummaryExpansionToggle()}>
-        <SnakeAnimationIndicator />
-      </box>
-    );
-  }
-
   const disclosureText = props.isReasoningSummaryExpanded ? "[-]" : "[+]";
-  const actionHintText = props.isReasoningSummaryExpanded ? "click to hide content" : "click to show content";
+  const metadataLabel = formatReasoningSummaryMetadata(props.assistantReasoningConversationMessagePart);
+  const isStreamingReasoning = props.assistantReasoningConversationMessagePart.partStatus === "streaming";
   return (
     <box
       flexDirection="row"
-      onMouseDown={() => props.onReasoningSummaryExpansionToggle()}
+      onMouseDown={createClickableControlMouseDownHandler(props.onReasoningSummaryExpansionToggle)}
       width="100%"
     >
-      <text truncate={true} wrapMode="none" width="100%">
-        {props.hasVisibleReasoningSummaryText ? <span fg={chatScreenTheme.accentCyan}>{disclosureText}</span> : null}
-        <span fg={chatScreenTheme.textMuted}>{`${props.hasVisibleReasoningSummaryText ? " " : ""}${formatReasoningSummaryTitle(props)}`}</span>
-        {props.hasVisibleReasoningSummaryText ? <span fg={chatScreenTheme.textDim}>{` - ${actionHintText}`}</span> : null}
+      <text selectable={false} wrapMode="word" width="100%">
+        {isStreamingReasoning ? <InlineSnakeAnimationIndicator variant="eatingApple" /> : null}
+        {isStreamingReasoning ? <span fg={chatScreenTheme.textDim}> </span> : null}
+        <span fg={chatScreenTheme.accentCyan}>{disclosureText}</span>
+        <span fg={chatScreenTheme.textMuted}>{` ${formatReasoningSummaryTitle(props)}`}</span>
+        {metadataLabel ? <span fg={chatScreenTheme.textDim}>{` · ${metadataLabel}`}</span> : null}
       </text>
     </box>
   );
@@ -137,16 +101,16 @@ function formatReasoningSummaryTitle(input: {
 
 function formatReasoningSummaryMetadata(
   assistantReasoningConversationMessagePart: AssistantReasoningConversationMessagePart,
-): string {
-  const durationOrStatusLabel = assistantReasoningConversationMessagePart.partStatus === "interrupted"
-    ? "interrupted"
-    : `${((assistantReasoningConversationMessagePart.reasoningDurationMs ?? 0) / 1000).toFixed(1)}s`;
-  return [
-    durationOrStatusLabel,
-    assistantReasoningConversationMessagePart.reasoningTokenCount === undefined
-      ? "reasoning tokens unavailable"
-      : `${assistantReasoningConversationMessagePart.reasoningTokenCount} reasoning tok`,
-  ].join(" · ");
+): string | undefined {
+  if (assistantReasoningConversationMessagePart.partStatus === "interrupted") {
+    return "interrupted";
+  }
+
+  if (assistantReasoningConversationMessagePart.reasoningDurationMs === undefined) {
+    return undefined;
+  }
+
+  return `${(assistantReasoningConversationMessagePart.reasoningDurationMs / 1000).toFixed(1)}s`;
 }
 
 function ReasoningSummaryTextLines(props: { visibleReasoningSummaryText: string }): ReactNode {
@@ -156,7 +120,7 @@ function ReasoningSummaryTextLines(props: { visibleReasoningSummaryText: string 
         reasoningSummaryLineText === "" ? (
           <box key={`reasoning-blank-${index}`} height={1} />
         ) : (
-          <text fg={chatScreenTheme.textMuted} key={`reasoning-line-${index}`}>{reasoningSummaryLineText}</text>
+          <text fg={chatScreenTheme.textMuted} key={`reasoning-line-${index}`} wrapMode="word" width="100%">{reasoningSummaryLineText}</text>
         ),
       )}
     </box>

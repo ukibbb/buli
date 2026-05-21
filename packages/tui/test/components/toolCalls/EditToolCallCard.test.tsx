@@ -45,6 +45,77 @@ describe("EditToolCallCard", () => {
     expect(expandedFrame).toContain("const newer");
   });
 
+  test("completed_prefers_actual_workspace_patch_over_prepared_diff", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <EditToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "edit",
+          editedFilePath: "/src/utils.ts",
+          addedLineCount: 99,
+          removedLineCount: 88,
+          unifiedDiffText: [
+            "diff --git a/src/utils.ts b/src/utils.ts",
+            "--- a/src/utils.ts",
+            "+++ b/src/utils.ts",
+            "@@ -1,1 +1,1 @@",
+            "-const fallbackOld = 1;",
+            "+const fallbackNew = 2;",
+            "",
+          ].join("\n"),
+        }}
+        workspacePatch={{
+          workspacePatchId: "patch-1",
+          toolCallId: "call-edit-1",
+          capturedAtMs: 1,
+          baselineSnapshotHash: "before",
+          resultingSnapshotHash: "after",
+          changedFileCount: 1,
+          addedLineCount: 1,
+          removedLineCount: 1,
+          changedFiles: [
+            {
+              filePath: "/src/utils.ts",
+              changeKind: "modified",
+              addedLineCount: 1,
+              removedLineCount: 1,
+              unifiedDiffText: [
+                "diff --git a/src/utils.ts b/src/utils.ts",
+                "--- a/src/utils.ts",
+                "+++ b/src/utils.ts",
+                "@@ -1,1 +1,1 @@",
+                "-const actualOld = 1;",
+                "+const actualNew = 2;",
+                "",
+              ].join("\n"),
+            },
+          ],
+        }}
+      />,
+      { width: 90, height: 20 },
+    );
+
+    await renderOnce();
+    const collapsedFrame = captureCharFrame();
+    expect(collapsedFrame).toContain("[+]");
+    expect(collapsedFrame).toContain("+1");
+    expect(collapsedFrame).toContain("-1");
+    expect(collapsedFrame).not.toContain("+99");
+    expect(collapsedFrame).not.toContain("−88");
+    expect(collapsedFrame).not.toContain("actualNew");
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("[-]");
+    expect(expandedFrame).toContain("M /src/utils.ts (+1 -1)");
+    expect(expandedFrame).toContain("actualNew");
+    expect(expandedFrame).not.toContain("fallbackNew");
+  });
+
   test("streaming_shows_amber_state", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <EditToolCallCard
@@ -61,7 +132,7 @@ describe("EditToolCallCard", () => {
     expect(frame).toContain("[+]");
     expect(frame).toContain("Edit");
     expect(frame).toContain("[/src/foo.ts]");
-    expect(frame).toContain("▰");
+    expect(frame).toContain("◆");
     expect(frame).not.toContain("editing");
   });
 

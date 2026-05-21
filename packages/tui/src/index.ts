@@ -280,7 +280,6 @@ export { InputPanel } from "./components/InputPanel.tsx";
 export { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
 export { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";
 export { PromptDraftText } from "./components/PromptDraftText.tsx";
-export { ReasoningCollapsedChip } from "./components/ReasoningCollapsedChip.tsx";
 export { SlashCommandSelectionPane } from "./components/SlashCommandSelectionPane.tsx";
 export { ThinkingStatusLine } from "./components/ThinkingStatusLine.tsx";
 export { TopBar } from "./components/TopBar.tsx";

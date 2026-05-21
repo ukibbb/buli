@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
-import { DiffBlock } from "../../../src/components/primitives/DiffBlock.tsx";
+import { DiffBlock, resolveOpenTuiDiffFiletype } from "../../../src/components/primitives/DiffBlock.tsx";
 
 function joinUnifiedDiffLines(unifiedDiffLines: readonly string[]): string {
   return unifiedDiffLines.join("\n");
@@ -92,10 +92,9 @@ describe("DiffBlock", () => {
     expect(frame).not.toContain("components/ConversationMessageList.tsx");
   });
 
-  test("limits_visible_diff_rows_and_reports_hidden_rows", async () => {
+  test("renders_all_diff_rows", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <DiffBlock
-        maximumVisibleLineCount={2}
         unifiedDiffText={
           joinUnifiedDiffLines([
             "diff --git a/src/example.ts b/src/example.ts",
@@ -117,8 +116,39 @@ describe("DiffBlock", () => {
 
     expect(frame).toContain("visible one");
     expect(frame).toContain("visible two");
-    expect(frame).toContain("showing first 2 of 4 diff rows");
-    expect(frame).not.toContain("hidden one");
-    expect(frame).not.toContain("hidden two");
+    expect(frame).toContain("hidden one");
+    expect(frame).toContain("hidden two");
+    expect(frame).not.toContain("showing first");
+  });
+
+  test("limits_large_diff_blocks_with_a_visible_notice", async () => {
+    const addedDiffLines = Array.from({ length: 55 }, (_, index) => `+diff-line-${String(index + 1).padStart(3, "0")}`);
+    const { captureCharFrame, renderOnce } = await testRender(
+      <DiffBlock
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/example.ts b/src/example.ts",
+            "--- a/src/example.ts",
+            "+++ b/src/example.ts",
+            "@@ -0,0 +1,55 @@",
+            ...addedDiffLines,
+            "",
+          ])
+        }
+      />,
+      { width: 80, height: 60 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame).toContain("showing first 50 of 55 diff lines");
+    expect(frame).toContain("diff-line-050");
+    expect(frame).not.toContain("diff-line-051");
+  });
+
+  test("resolves_filetype_from_changed_file_path_for_syntax_highlighting", () => {
+    expect(resolveOpenTuiDiffFiletype("packages/tui/src/components/App.tsx")).toBe("typescriptreact");
+    expect(resolveOpenTuiDiffFiletype("Dockerfile")).toBe("dockerfile");
+    expect(resolveOpenTuiDiffFiletype(undefined)).toBe("text");
   });
 });

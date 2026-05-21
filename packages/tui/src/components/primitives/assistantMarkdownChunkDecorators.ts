@@ -5,6 +5,14 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import {
+  assistantMarkdownDiffAdditionForegroundColor,
+  assistantMarkdownDiffChromeForegroundColor,
+  assistantMarkdownDiffMetadataForegroundColor,
+  assistantMarkdownDiffRemovalForegroundColor,
+  assistantMarkdownInlineCodeForegroundColor,
+  assistantMarkdownStrongForegroundColor,
+} from "./codeRenderingTheme.ts";
 
 type AssistantMarkdownTextChunkStyle = {
   fg: RGBA;
@@ -15,16 +23,16 @@ const filePathForegroundColor = RGBA.fromHex(chatScreenTheme.accentCyan);
 const filePathTextAttributes = createTextAttributes({ underline: true });
 const shellCommandForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
 const shellCommandTextAttributes = createTextAttributes({ bold: true });
-const inlineCodeForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
+const inlineCodeForegroundColor = assistantMarkdownInlineCodeForegroundColor;
 const inlineCodeTextAttributes = createTextAttributes({ bold: true });
-const strongForegroundColor = RGBA.fromHex(chatScreenTheme.accentAmber);
+const strongForegroundColor = assistantMarkdownStrongForegroundColor;
 const strongTextAttributes = createTextAttributes({ bold: true });
 const listMarkerTextAttributes = createTextAttributes({ bold: true });
 const diffMetadataTextAttributes = createTextAttributes({ bold: true });
-const diffAdditionForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
-const diffRemovalForegroundColor = RGBA.fromHex(chatScreenTheme.accentRed);
-const diffMetadataForegroundColor = RGBA.fromHex(chatScreenTheme.accentCyan);
-const diffChromeForegroundColor = RGBA.fromHex(chatScreenTheme.textDim);
+const diffAdditionForegroundColor = assistantMarkdownDiffAdditionForegroundColor;
+const diffRemovalForegroundColor = assistantMarkdownDiffRemovalForegroundColor;
+const diffMetadataForegroundColor = assistantMarkdownDiffMetadataForegroundColor;
+const diffChromeForegroundColor = assistantMarkdownDiffChromeForegroundColor;
 const diagnosticErrorForegroundColor = RGBA.fromHex(chatScreenTheme.accentRed);
 const diagnosticWarningForegroundColor = RGBA.fromHex(chatScreenTheme.accentAmber);
 const diagnosticInfoForegroundColor = RGBA.fromHex(chatScreenTheme.accentCyan);

@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { ToolCallGlobDetail } from "@buli/contracts";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { FileReference } from "../primitives/FileReference.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
+import { limitVisibleItems, VisibleContentLimitNotice } from "../primitives/VisibleContentLimit.tsx";
+import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+
+const MAX_EXPANDED_GLOB_PATH_COUNT = 50;
 
 export type GlobToolCallCardProps = {
   toolCallDetail: ToolCallGlobDetail;
@@ -12,48 +13,19 @@ export type GlobToolCallCardProps = {
   errorText?: string;
 };
 
-const MAX_VISIBLE_GLOB_PATHS = 24;
-
 export function GlobToolCallCard(props: GlobToolCallCardProps): ReactNode {
-  const [isGlobResultExpanded, setIsGlobResultExpanded] = useState(false);
-  const accentColor =
-    props.renderState === "failed"
-      ? chatScreenTheme.accentRed
-      : props.renderState === "streaming"
-        ? chatScreenTheme.accentAmber
-        : chatScreenTheme.accentGreen;
-  const statusKind =
-    props.renderState === "completed"
-      ? "success"
-      : props.renderState === "failed"
-        ? "error"
-        : "pending";
-  const matchedPaths = props.toolCallDetail.matchedPaths?.slice(0, MAX_VISIBLE_GLOB_PATHS);
+  const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
+  const matchedPaths = props.toolCallDetail.matchedPaths;
   const hasGlobResultContent = props.renderState !== "failed" && (matchedPaths?.length ?? 0) > 0;
   return (
-    <SurfaceCard
-      accentColor={accentColor}
-      density="compact"
-      headerLeft={
-        <ToolCallCompactHeader
-          accentColor={accentColor}
-          disclosureState={hasGlobResultContent
-            ? {
-                isContentExpandable: true,
-                isContentExpanded: isGlobResultExpanded,
-                onContentExpansionToggle: () => {
-                  setIsGlobResultExpanded((currentGlobResultExpanded) => !currentGlobResultExpanded);
-                },
-              }
-            : { isContentExpandable: false }}
-          statusColor={accentColor}
-          statusKind={statusKind}
-          statusLabel={buildGlobStatusLabel(props)}
-          toolNameLabel="Glob"
-          toolTargetText={props.toolCallDetail.globPattern}
-        />
-      }
-      bodyContent={hasGlobResultContent && isGlobResultExpanded ? buildGlobBodyContent(matchedPaths ?? []) : undefined}
+    <ExpandableToolCallCard
+      accentColor={toolCallPresentation.accentColor}
+      hasExpandableContent={hasGlobResultContent}
+      renderExpandedContent={() => buildGlobBodyContent(matchedPaths ?? [])}
+      statusKind={toolCallPresentation.statusKind}
+      statusLabel={buildGlobStatusLabel(props)}
+      toolNameLabel="Glob"
+      toolTargetText={props.toolCallDetail.globPattern}
     />
   );
 }
@@ -80,10 +52,19 @@ function buildGlobBodyContent(matchedPaths: readonly string[]): ReactNode {
   if (matchedPaths.length === 0) {
     return undefined;
   }
+  const limitedMatchedPaths = limitVisibleItems({
+    items: matchedPaths,
+    maximumVisibleItemCount: MAX_EXPANDED_GLOB_PATH_COUNT,
+  });
   return (
     <box flexDirection="column" width="100%">
       <box flexDirection="column" paddingX={1} width="100%">
-        {matchedPaths.map((matchedPath, index) => (
+        <VisibleContentLimitNotice
+          visibleItemCount={limitedMatchedPaths.visibleItems.length}
+          totalItemCount={limitedMatchedPaths.totalItemCount}
+          itemLabelPlural="paths"
+        />
+        {limitedMatchedPaths.visibleItems.map((matchedPath, index) => (
           <box key={`glob-path-${index}`} width="100%">
             <FileReference filePath={matchedPath} variant="inline" />
           </box>

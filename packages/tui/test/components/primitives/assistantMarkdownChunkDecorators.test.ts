@@ -6,6 +6,11 @@ import {
   decorateAssistantMarkdownListTextChunks,
   decorateAssistantMarkdownProseTextChunks,
 } from "../../../src/components/primitives/assistantMarkdownChunkDecorators.ts";
+import {
+  assistantMarkdownDiffAdditionForegroundColor,
+  assistantMarkdownDiffMetadataForegroundColor,
+  assistantMarkdownDiffRemovalForegroundColor,
+} from "../../../src/components/primitives/codeRenderingTheme.ts";
 
 function createPlainTextChunk(text: string): TextChunk {
   return {
@@ -84,13 +89,13 @@ describe("assistantMarkdownChunkDecorators", () => {
     ]);
 
     expect(findTextChunkByExactText(decoratedChunks, "│ @@ -1 +1 @@")?.fg?.toString()).toBe(
-      RGBA.fromHex(chatScreenTheme.accentCyan).toString(),
+      assistantMarkdownDiffMetadataForegroundColor.toString(),
     );
     expect(findTextChunkByExactText(decoratedChunks, "│ -old")?.fg?.toString()).toBe(
-      RGBA.fromHex(chatScreenTheme.accentRed).toString(),
+      assistantMarkdownDiffRemovalForegroundColor.toString(),
     );
     expect(findTextChunkByExactText(decoratedChunks, "│ +new")?.fg?.toString()).toBe(
-      RGBA.fromHex(chatScreenTheme.accentGreen).toString(),
+      assistantMarkdownDiffAdditionForegroundColor.toString(),
     );
   });
 });

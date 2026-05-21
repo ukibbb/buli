@@ -9,7 +9,7 @@ async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Prom
 }
 
 describe("AssistantMarkdownBlock", () => {
-  test("renders_heading_paragraph_list_and_code_fence_with_OpenTUI_markdown", async () => {
+  test("renders_heading_paragraph_list_and_code_fence_with_native_code_block", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
         horizontalRuleColor="#10B981"
@@ -39,9 +39,31 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain("code");
     expect(frame).toContain("first");
     expect(frame).toContain("second");
-    expect(frame).toContain("╭─ ts");
-    expect(frame).toContain("╰");
+    expect(frame).toContain("ts");
+    expect(frame).not.toContain("// ts");
+    expect(frame).not.toContain("╰");
     expect(frame).toContain("const x = 1;");
+  });
+
+  test("keeps_one_blank_row_between_paragraphs_and_ordered_lists", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["Main risks I see", "", "1. RuntimeConversation loses state", "2. Tests miss coverage"].join("\n")}
+      />,
+      { width: 80, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const renderedRows = captureCharFrame().split("\n");
+    const paragraphRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("Main risks I see"));
+    const firstListRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("1. RuntimeConversation"));
+    expect(paragraphRowIndex).toBeGreaterThanOrEqual(0);
+    expect(firstListRowIndex).toBeGreaterThanOrEqual(0);
+    expect(firstListRowIndex - paragraphRowIndex).toBeGreaterThanOrEqual(2);
+    expect(firstListRowIndex - paragraphRowIndex).toBeLessThanOrEqual(3);
   });
 
   test("renders_third_level_headings_without_the_hollow_diamond_decoration", async () => {
@@ -260,7 +282,7 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain("    ▪ grandchild");
   });
 
-  test("renders_diff_fences_with_change_rails", async () => {
+  test("renders_partial_diff_fences_as_lightweight_patch_snippets", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
         horizontalRuleColor="#10B981"
@@ -273,10 +295,128 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("╭─ diff changes");
-    expect(frame).toContain("│ @@ -1 +1 @@");
-    expect(frame).toContain("│ -old line");
-    expect(frame).toContain("│ +new line");
+    expect(frame).toContain("patch snippet");
+    expect(frame).toContain("@@ -1 +1 @@");
+    expect(frame).toContain("-old line");
+    expect(frame).toContain("+new line");
+    expect(frame).not.toContain("// diff");
+    expect(frame).not.toContain("╭");
+    expect(frame).not.toContain("diff changes");
+  });
+
+  test("renders_bash_fences_as_compact_command_snippets", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["Verification:", "", "```bash", "bun --filter @buli/engine test", "bun --filter @buli/engine typecheck", "```"].join("\n")}
+      />,
+      { width: 96, height: 12 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Verification:");
+    expect(frame).toContain("$ bun --filter @buli/engine test");
+    expect(frame).toContain("$ bun --filter @buli/engine typecheck");
+    expect(frame).not.toContain("// bash");
+    expect(frame).not.toContain("╭");
+  });
+
+  test("renders_raw_unified_diffs_as_structured_diff_blocks", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "Apply this change:",
+          "",
+          "diff --git a/src/example.ts b/src/example.ts",
+          "--- a/src/example.ts",
+          "+++ b/src/example.ts",
+          "@@ -1,2 +1,2 @@",
+          " const stable = true;",
+          "-const value = 1;",
+          "+const value = 2;",
+          "",
+          "Then run the tests.",
+        ].join("\n")}
+      />,
+      { width: 96, height: 18 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Apply this change:");
+    expect(frame).toContain("patch");
+    expect(frame).toContain("src/example.ts");
+    expect(frame).toContain("+1");
+    expect(frame).toContain("-1");
+    expect(frame).toContain("const value");
+    expect(frame).toContain("Then run the tests.");
+    expect(frame).not.toContain("diff --git");
+    expect(frame).not.toContain("+++ b/src/example.ts");
+  });
+
+  test("renders_invalid_raw_diff_blocks_as_diff_snippets_instead_of_prose", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "Malformed but still useful:",
+          "",
+          "diff --git a/src/loose.ts b/src/loose.ts",
+          "@@",
+          "+const loose = true;",
+          "",
+          "Continue after it.",
+        ].join("\n")}
+      />,
+      { width: 96, height: 14 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Malformed but still useful:");
+    expect(frame).toContain("patch src/loose.ts +1 -0");
+    expect(frame).toContain("+const loose = true;");
+    expect(frame).toContain("Continue after it.");
+    expect(frame).not.toContain("// diff");
+    expect(frame).not.toContain("diff --git a/src/loose.ts b/src/loose.ts");
+    expect(frame).not.toContain("Error parsing diff");
+  });
+
+  test("renders_fenced_full_unified_diffs_as_structured_diff_blocks", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "```diff",
+          "diff --git a/src/fenced.ts b/src/fenced.ts",
+          "--- a/src/fenced.ts",
+          "+++ b/src/fenced.ts",
+          "@@ -1 +1 @@",
+          "-oldValue();",
+          "+newValue();",
+          "```",
+        ].join("\n")}
+      />,
+      { width: 96, height: 12 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("src/fenced.ts");
+    expect(frame).toContain("oldValue");
+    expect(frame).toContain("newValue");
+    expect(frame).not.toContain("diff changes");
+    expect(frame).not.toContain("diff --git");
   });
 
   test("renders_code_fence_filename_labels_from_info_strings", async () => {
@@ -291,10 +431,12 @@ describe("AssistantMarkdownBlock", () => {
 
     await renderSettledMarkdownFrame(renderOnce);
 
-    expect(captureCharFrame()).toContain("╭─ ts · src/app.ts");
+    const frame = captureCharFrame();
+    expect(frame).toContain("ts · src/app.ts");
+    expect(frame).not.toContain("// ts");
   });
 
-  test("renders_plain_text_fences_as_unlabeled_terminal_cards", async () => {
+  test("renders_plain_text_fences_as_lightweight_snippets", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
         horizontalRuleColor="#10B981"
@@ -320,10 +462,10 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain("near-term mantra:");
     expect(frame).toContain("Better tutor behavior.");
     expect(frame).toContain("Better context.");
-    expect(frame).toContain("╭");
-    expect(frame).toContain("┃ Better tutor behavior.");
-    expect(frame).toContain("╰");
+    expect(frame).not.toContain("╭");
+    expect(frame).not.toContain("╰");
     expect(frame).not.toContain("╭─ text");
+    expect(frame).not.toContain("┃ Better tutor behavior.");
   });
 
   test("aligns_ordered_list_markers_by_digit_width", async () => {
@@ -365,7 +507,8 @@ describe("AssistantMarkdownBlock", () => {
 
     const frame = captureCharFrame();
     expect(frame).toContain("Narrow");
-    expect(frame).toContain("╭─ ts");
+    expect(frame).toContain("ts · src/narrow.ts");
+    expect(frame).not.toContain("// ts");
     expect(frame).toContain("const narrow");
     expect(frame).not.toContain("---");
   });

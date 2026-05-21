@@ -24,7 +24,7 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     expect(frame).toContain("[+]");
     expect(frame).toContain("TodoWrite");
     expect(frame).toMatch(/\[\d+ items/);
-    expect(frame).toContain("▰");
+    expect(frame).toContain("◆");
     expect(frame).not.toContain("updating");
     expect(frame).not.toContain("draft palette");
   });

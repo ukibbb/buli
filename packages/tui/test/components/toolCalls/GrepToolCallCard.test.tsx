@@ -19,7 +19,7 @@ describe("GrepToolCallCard", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("[+]");
     expect(frame).toContain("[useEffect]");
-    expect(frame).toContain("▰");
+    expect(frame).toContain("◆");
     expect(frame).not.toContain("searching");
   });
 
@@ -96,7 +96,41 @@ describe("GrepToolCallCard", () => {
     expect(frame).toContain("useState(false)");
   });
 
-  test("completed_shows_returned_and_total_match_hits_when_truncated", async () => {
+  test("completed_limits_expanded_match_hits", async () => {
+    const matchHits = Array.from({ length: 55 }, (_value, index) => ({
+      matchFilePath: "notes.txt",
+      matchLineNumber: index + 1,
+      matchSnippet: `match ${index + 1}`,
+    }));
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <GrepToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "grep",
+          searchPattern: "match",
+          totalMatchCount: 55,
+          returnedMatchHitCount: 55,
+          matchedFileCount: 1,
+          matchHits,
+        }}
+      />,
+      { width: 100, height: 90 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("showing first 50 of 55 matches");
+    expect(frame).toContain("match 1");
+    expect(frame).toContain("match 50");
+    expect(frame).not.toContain("match 51");
+  });
+
+  test("completed_shows_full_returned_match_count", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GrepToolCallCard
         renderState="completed"
@@ -104,9 +138,8 @@ describe("GrepToolCallCard", () => {
           toolName: "grep",
           searchPattern: "match",
           totalMatchCount: 105,
-          returnedMatchHitCount: 100,
+          returnedMatchHitCount: 105,
           matchedFileCount: 1,
-          wasTruncated: true,
           matchHits: [
             {
               matchFilePath: "notes.txt",
@@ -120,7 +153,7 @@ describe("GrepToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("100/105 matches");
+    expect(frame).toContain("105 matches");
     expect(frame).not.toContain("truncated");
   });
 

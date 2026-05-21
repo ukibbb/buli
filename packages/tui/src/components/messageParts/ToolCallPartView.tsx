@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AssistantToolCallConversationMessagePart } from "@buli/contracts";
+import type { AssistantToolCallConversationMessagePart, WorkspacePatch } from "@buli/contracts";
 import { ToolCallEntryView } from "../toolCalls/ToolCallEntryView.tsx";
 
 function resolveToolCallRenderState(toolCallStatus: AssistantToolCallConversationMessagePart["toolCallStatus"]):
@@ -19,11 +19,13 @@ function resolveToolCallRenderState(toolCallStatus: AssistantToolCallConversatio
 
 export function ToolCallPartView(props: {
   assistantToolCallConversationMessagePart: AssistantToolCallConversationMessagePart;
+  workspacePatch?: WorkspacePatch;
 }): ReactNode {
   return (
     <ToolCallEntryView
       renderState={resolveToolCallRenderState(props.assistantToolCallConversationMessagePart.toolCallStatus)}
       toolCallDetail={props.assistantToolCallConversationMessagePart.toolCallDetail}
+      {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
       {...(props.assistantToolCallConversationMessagePart.durationMs !== undefined
         ? { durationMs: props.assistantToolCallConversationMessagePart.durationMs }
         : {})}

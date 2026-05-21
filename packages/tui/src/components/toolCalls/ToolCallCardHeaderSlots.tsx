@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "../glyphs.ts";
+import { createClickableControlMouseDownHandler } from "../primitives/clickableControl.ts";
 import { InlineSnakeAnimationIndicator, SnakeAnimationIndicator } from "../SnakeAnimationIndicator.tsx";
 
 export type ToolCallCompactDisclosureState =
@@ -27,8 +28,9 @@ export function ToolCallCompactHeader(props: ToolCallCompactHeaderProps): ReactN
     ? "[-]"
     : "[+]";
   const toggleProps = props.disclosureState.isContentExpandable
-    ? { onMouseDown: props.disclosureState.onContentExpansionToggle }
+    ? { onMouseDown: createClickableControlMouseDownHandler(props.disclosureState.onContentExpansionToggle) }
     : {};
+  const selectableProps = props.disclosureState.isContentExpandable ? { selectable: false } : {};
 
   return (
     <box
@@ -36,10 +38,10 @@ export function ToolCallCompactHeader(props: ToolCallCompactHeaderProps): ReactN
       minWidth={0}
       width="100%"
     >
-      <text wrapMode="char" width="100%">
+      <text {...selectableProps} wrapMode="char" width="100%">
         {props.statusKind === "pending" ? (
           <>
-            <InlineSnakeAnimationIndicator variant={props.pendingSnakeVariant ?? "sixCell"} />
+            <InlineSnakeAnimationIndicator variant={props.pendingSnakeVariant ?? "eatingApple"} />
             <span fg={props.accentColor}>{` ${disclosureText}`}</span>
           </>
         ) : (
@@ -110,7 +112,7 @@ export type ToolCallHeaderRightProps = {
 
 export function ToolCallHeaderRight(props: ToolCallHeaderRightProps): ReactNode {
   if (props.statusKind === "pending") {
-    return props.statusContent ?? <SnakeAnimationIndicator />;
+    return props.statusContent ?? <SnakeAnimationIndicator variant="eatingApple" />;
   }
 
   const statusGlyph =

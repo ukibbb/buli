@@ -1,58 +1,37 @@
-import { useState, type ReactNode } from "react";
-import type { ToolCallEditDetail } from "@buli/contracts";
+import type { ReactNode } from "react";
+import type { ToolCallEditDetail, WorkspacePatch } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { DiffBlock } from "../primitives/DiffBlock.tsx";
-import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { ToolCallCompactHeader } from "./ToolCallCardHeaderSlots.tsx";
+import {
+  formatWorkspacePatchCompactSummary,
+  WorkspacePatchChangedFilesView,
+} from "../workspacePatch/WorkspacePatchChangedFilesView.tsx";
+import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type EditToolCallCardProps = {
   toolCallDetail: ToolCallEditDetail;
   renderState: "streaming" | "completed" | "failed";
   durationMs?: number;
   errorText?: string;
+  workspacePatch?: WorkspacePatch;
 };
 
-const MAX_VISIBLE_EDIT_DIFF_LINES = 80;
-
 export function EditToolCallCard(props: EditToolCallCardProps): ReactNode {
-  const [isEditDiffExpanded, setIsEditDiffExpanded] = useState(false);
-  const accentColor =
-    props.renderState === "failed"
-      ? chatScreenTheme.accentRed
-      : props.renderState === "streaming"
-        ? chatScreenTheme.accentAmber
-        : chatScreenTheme.accentGreen;
-  const statusKind =
-    props.renderState === "completed"
-      ? "success"
-      : props.renderState === "failed"
-        ? "error"
-        : "pending";
-  const hasEditDiffContent = props.renderState !== "failed" && Boolean(props.toolCallDetail.unifiedDiffText);
+  const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
+  const accentColor = props.workspacePatch && props.renderState === "completed"
+    ? chatScreenTheme.accentPrimary
+    : toolCallPresentation.accentColor;
+  const hasEditDiffContent = Boolean(props.workspacePatch) ||
+    (props.renderState !== "failed" && Boolean(props.toolCallDetail.unifiedDiffText));
   return (
-    <SurfaceCard
+    <ExpandableToolCallCard
       accentColor={accentColor}
-      density="compact"
-      headerLeft={
-        <ToolCallCompactHeader
-          accentColor={accentColor}
-          disclosureState={hasEditDiffContent
-            ? {
-                isContentExpandable: true,
-                isContentExpanded: isEditDiffExpanded,
-                onContentExpansionToggle: () => {
-                  setIsEditDiffExpanded((currentEditDiffExpanded) => !currentEditDiffExpanded);
-                },
-              }
-            : { isContentExpandable: false }}
-          statusColor={accentColor}
-          statusKind={statusKind}
-          statusLabel={buildEditStatusLabel(props)}
-          toolNameLabel="Edit"
-          toolTargetText={props.toolCallDetail.editedFilePath}
-        />
-      }
-      bodyContent={hasEditDiffContent && isEditDiffExpanded ? buildEditBodyContent(props) : undefined}
+      hasExpandableContent={hasEditDiffContent}
+      renderExpandedContent={() => buildEditBodyContent(props)}
+      statusKind={toolCallPresentation.statusKind}
+      statusLabel={buildEditStatusLabel(props)}
+      toolNameLabel="Edit"
+      toolTargetText={props.toolCallDetail.editedFilePath}
     />
   );
 }
@@ -63,6 +42,9 @@ function buildEditStatusLabel(props: EditToolCallCardProps): string {
   }
   if (props.renderState === "streaming") {
     return "editing…";
+  }
+  if (props.workspacePatch) {
+    return formatWorkspacePatchCompactSummary(props.workspacePatch);
   }
   const addedLineCount = props.toolCallDetail.addedLineCount;
   const removedLineCount = props.toolCallDetail.removedLineCount;
@@ -77,9 +59,13 @@ function buildEditStatusLabel(props: EditToolCallCardProps): string {
 }
 
 function buildEditBodyContent(props: EditToolCallCardProps): ReactNode {
+  if (props.workspacePatch) {
+    return <WorkspacePatchChangedFilesView workspacePatch={props.workspacePatch} />;
+  }
+
   const unifiedDiffText = props.toolCallDetail.unifiedDiffText;
   if (!unifiedDiffText) {
     return undefined;
   }
-  return <DiffBlock maximumVisibleLineCount={MAX_VISIBLE_EDIT_DIFF_LINES} unifiedDiffText={unifiedDiffText} />;
+  return <DiffBlock filePath={props.toolCallDetail.editedFilePath} unifiedDiffText={unifiedDiffText} />;
 }

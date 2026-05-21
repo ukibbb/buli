@@ -1,7 +1,11 @@
 import { memo, type ReactNode, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
-import { ConversationMessageRow, type ConversationMessageRowProps } from "./ConversationMessageRow.tsx";
+import {
+  ConversationMessageRow,
+  listRenderableConversationMessageParts,
+  type ConversationMessageRowProps,
+} from "./ConversationMessageRow.tsx";
 
 export type ConversationMessageListProps = {
   conversationMessages: readonly ConversationMessage[];
@@ -14,6 +18,11 @@ export type ConversationMessageListProps = {
 };
 
 const MemoizedConversationMessageRow = memo(ConversationMessageRow, areConversationMessageRowPropsEqual);
+
+type RenderableConversationMessage = {
+  conversationMessage: ConversationMessage;
+  conversationMessageParts: readonly ConversationMessagePart[];
+};
 
 function areConversationMessageRowPropsEqual(
   previousProps: ConversationMessageRowProps,
@@ -44,6 +53,24 @@ function areConversationMessagePartReferencesEqual(
 }
 
 export function ConversationMessageList(props: ConversationMessageListProps): ReactNode {
+  const renderableConversationMessages: RenderableConversationMessage[] = props.conversationMessages.flatMap((
+    conversationMessage,
+  ): RenderableConversationMessage[] => {
+    const conversationMessageParts = listRenderableConversationMessageParts({
+      conversationMessageParts: props.resolveConversationMessageParts(conversationMessage.id),
+      isReasoningSummaryVisible: props.isReasoningSummaryVisible,
+    });
+    if (
+      conversationMessage.role === "assistant" &&
+      conversationMessage.messageStatus !== "streaming" &&
+      conversationMessageParts.length === 0
+    ) {
+      return [];
+    }
+
+    return [{ conversationMessage, conversationMessageParts }];
+  });
+
   return (
     <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
       <scrollbox
@@ -58,11 +85,11 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
         verticalScrollbarOptions={{ visible: false, showArrows: false }}
         horizontalScrollbarOptions={{ visible: false, showArrows: false }}
       >
-        {props.conversationMessages.map((conversationMessage, index) => (
+        {renderableConversationMessages.map(({ conversationMessage, conversationMessageParts }, index) => (
           <box flexDirection="column" flexShrink={0} key={conversationMessage.id} marginTop={index === 0 ? 0 : 1} width="100%">
             <MemoizedConversationMessageRow
               conversationMessage={conversationMessage}
-              conversationMessageParts={props.resolveConversationMessageParts(conversationMessage.id)}
+              conversationMessageParts={conversationMessageParts}
               isReasoningSummaryVisible={props.isReasoningSummaryVisible}
               horizontalRuleColor={props.horizontalRuleColor}
               userMessageBorderColor={props.userMessageBorderColor}

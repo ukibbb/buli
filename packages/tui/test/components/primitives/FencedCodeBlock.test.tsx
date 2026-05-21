@@ -110,6 +110,21 @@ describe("FencedCodeBlock", () => {
     expect(frame).not.toContain("ConversationMessageList.tsx");
   });
 
+  test("embedded_wraps_long_code_rows_when_requested", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <FencedCodeBlock
+        variant="embedded"
+        wrapMode="char"
+        codeLines={[{ lineNumber: 1, lineText: "const path = 'packages/tui/src/components/ConversationMessageList.tsx';" }]}
+      />,
+      { width: 34, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("const path");
+    expect(frame.replace(/\s/g, "")).toContain("ConversationMessageList.tsx");
+  });
+
   test("normalizes_markdown_fence_info_strings_with_OpenTUI_filetype_resolution", () => {
     expect(resolveOpenTuiCodeFiletype(undefined, "TSX title=Button.tsx")).toBe("typescriptreact");
     expect(resolveOpenTuiCodeFiletype(undefined, ".jsx")).toBe("javascriptreact");

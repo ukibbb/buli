@@ -67,6 +67,30 @@ describe("InputPanel", () => {
     expect(frame).not.toContain("transcript");
   });
 
+  test("renders_six_cell_activity_indicator_when_assistant_turn_active", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <InputPanel
+        promptDraft="waiting"
+        promptDraftCursorOffset={7}
+        isPromptInputDisabled={true}
+        accentColor={chatScreenTheme.accentGreen}
+        modeLabel="chat"
+        modelIdentifier="gpt-5.4"
+        reasoningEffortLabel="default"
+        assistantResponseStatus="streaming_assistant_response"
+        totalContextTokensUsed={undefined}
+        contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
+      />,
+      { width: 80, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("◆");
+  });
+
   test("reserves_a_second_prompt_row_for_single_line_drafts", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel

@@ -19,7 +19,7 @@ describe("GlobToolCallCard", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("[+]");
     expect(frame).toContain("[**/*.ts]");
-    expect(frame).toContain("▰");
+    expect(frame).toContain("◆");
     expect(frame).not.toContain("searching");
   });
 
@@ -74,7 +74,62 @@ describe("GlobToolCallCard", () => {
     expect(frame).toContain("src/index.ts");
   });
 
-  test("completed_shows_returned_and_total_counts_when_truncated", async () => {
+  test("completed_expands_all_returned_matched_paths", async () => {
+    const matchedPaths = Array.from({ length: 30 }, (_, index) => `src/file-${index + 1}.ts`);
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <GlobToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "glob",
+          globPattern: "src/*.ts",
+          matchedPathCount: 30,
+          matchedPaths,
+        }}
+      />,
+      { width: 80, height: 40 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("src/file-1.ts");
+    expect(frame).toContain("src/file-30.ts");
+  });
+
+  test("completed_limits_expanded_returned_paths", async () => {
+    const matchedPaths = Array.from({ length: 55 }, (_, index) => `src/file-${index + 1}.ts`);
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <GlobToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "glob",
+          globPattern: "src/*.ts",
+          matchedPathCount: 55,
+          returnedPathCount: 55,
+          matchedPaths,
+        }}
+      />,
+      { width: 90, height: 70 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("showing first 50 of 55 paths");
+    expect(frame).toContain("src/file-1.ts");
+    expect(frame).toContain("src/file-50.ts");
+    expect(frame).not.toContain("src/file-51.ts");
+  });
+
+  test("completed_shows_full_match_count", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <GlobToolCallCard
         renderState="completed"
@@ -82,8 +137,7 @@ describe("GlobToolCallCard", () => {
           toolName: "glob",
           globPattern: "**/*.ts",
           matchedPathCount: 105,
-          returnedPathCount: 100,
-          wasTruncated: true,
+          returnedPathCount: 105,
           matchedPaths: ["src/app.ts"],
         }}
       />,
@@ -91,7 +145,7 @@ describe("GlobToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("100/105 paths");
+    expect(frame).toContain("105 paths");
     expect(frame).not.toContain("truncated");
   });
 

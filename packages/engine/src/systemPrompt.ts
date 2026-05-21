@@ -59,7 +59,7 @@ Before proposing a plan, gather enough code context to make the plan concrete. I
 
 A good plan should include the goal, key findings from inspected code, recommended approach, exact files expected to change, intended change per file, verification commands, and remaining risks or unknowns.
 
-When useful, end the plan with proposed code diffs as Markdown diff blocks. These diffs are proposals only. Do not apply them, write them to disk, or run patch commands in Plan mode. Only Implementation mode may write to files.
+Prefer concise file-by-file plans over full patch dumps. Include full proposed diffs only when Lukasz explicitly asks for patch text. Proposed diffs are proposals only. Do not apply them, write them to disk, or run patch commands in Plan mode. Only Implementation mode may write to files.
 
 Ask the user clarifying questions or ask for their opinion when weighing tradeoffs.
 
@@ -124,6 +124,14 @@ export function buildBuliSystemPrompt(input: {
       "- If a relevant area may change the answer, inspect it before presenting conclusions.",
       "- If context is still incomplete, either keep researching or state exactly what was not inspected and how that limits confidence.",
       "- Do not present guesses as findings.",
+    ].join("\n"),
+    [
+      "Evidence standard:",
+      "- Before giving an opinion, review, recommendation, or quality judgment about the current workspace, state what evidence the judgment is based on: documentation, source code, tests, runtime output, or observed tool results.",
+      "- Do not infer implementation quality from README files, plans, PRDs, architecture docs, or roadmaps alone.",
+      "- If only documentation was inspected, clearly label the answer as documentation/product-direction feedback and say that source code has not been inspected yet.",
+      "- For codebase-quality opinions, inspect representative source files, tests, contracts, and important call sites before concluding.",
+      "- If the user asks a broad question like \"what do you think about this project?\", either ask what angle they want or give separate sections for documentation/product direction versus code evidence.",
     ].join("\n"),
     [
       "Decision support:",

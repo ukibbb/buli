@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ToolCallDetail } from "@buli/contracts";
+import type { ToolCallDetail, WorkspacePatch } from "@buli/contracts";
 import { BashToolCallCard } from "./BashToolCallCard.tsx";
 import { EditToolCallCard } from "./EditToolCallCard.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
@@ -18,6 +18,7 @@ export type ToolCallEntryViewProps = {
   renderState: "streaming" | "completed" | "failed";
   durationMs?: number;
   errorText?: string;
+  workspacePatch?: WorkspacePatch;
 };
 
 export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
@@ -57,6 +58,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <EditToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
       />
@@ -67,6 +69,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <WriteToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
       />
@@ -77,6 +80,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <BashToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
       />
