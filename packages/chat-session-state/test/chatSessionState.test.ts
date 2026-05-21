@@ -13,7 +13,12 @@ import {
   insertTextIntoPromptDraftAtCursor,
   listOrderedConversationMessageParts,
   listOrderedConversationMessages,
+  movePromptDraftCursorLeft,
+  movePromptDraftCursorToEnd,
+  movePromptDraftCursorToStart,
   replacePromptDraftFromEditor,
+  removePromptImageAttachmentPlaceholderAtCursor,
+  removePromptImageAttachmentPlaceholderBeforeCursor,
   selectAssistantOperatingMode,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingState,
@@ -170,6 +175,150 @@ test("applyChatSessionKeyboardInputToChatSessionState inserts pasted text at the
   expect(keyboardInteraction.nextChatSessionState.promptDraftCursorOffset).toBe("Hello pasted text".length);
 });
 
+test("appendPromptImageAttachmentToDraft inserts an image placeholder at the prompt cursor", () => {
+  const promptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+    fileName: "clipboard.png",
+  };
+  const chatSessionState = movePromptDraftCursorLeft(
+    insertTextIntoPromptDraftAtCursor(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      "helo",
+    ),
+  );
+
+  const nextChatSessionState = appendPromptImageAttachmentToDraft(chatSessionState, promptImageAttachment);
+
+  expect(nextChatSessionState.promptDraft).toBe("hel[Image 1] o");
+  expect(nextChatSessionState.promptDraftCursorOffset).toBe("hel[Image 1] ".length);
+  expect(nextChatSessionState.pendingPromptImageAttachments).toEqual([
+    {
+      attachment: promptImageAttachment,
+      promptDraftPlaceholderText: "[Image 1]",
+    },
+  ]);
+});
+
+test("appendPromptImageAttachmentToDraft keeps pending images in prompt order", () => {
+  const firstPromptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,Zmlyc3Q=",
+  };
+  const secondPromptImageAttachment = {
+    attachmentId: "image-2",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,c2Vjb25k",
+  };
+  const chatSessionStateWithFirstImage = appendPromptImageAttachmentToDraft(
+    insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "A "),
+    firstPromptImageAttachment,
+  );
+
+  const chatSessionStateWithSecondImageAtStart = appendPromptImageAttachmentToDraft(
+    movePromptDraftCursorToStart(chatSessionStateWithFirstImage),
+    secondPromptImageAttachment,
+  );
+
+  expect(chatSessionStateWithSecondImageAtStart.promptDraft).toBe("[Image 1] A [Image 2] ");
+  expect(chatSessionStateWithSecondImageAtStart.pendingPromptImageAttachments.map((pendingImage) => pendingImage.attachment)).toEqual([
+    secondPromptImageAttachment,
+    firstPromptImageAttachment,
+  ]);
+  expect(chatSessionStateWithSecondImageAtStart.pendingPromptImageAttachments.map((pendingImage) => pendingImage.promptDraftPlaceholderText)).toEqual([
+    "[Image 1]",
+    "[Image 2]",
+  ]);
+});
+
+test("appendPromptImageAttachmentToDraft keeps image placeholders unique after deleting an earlier image", () => {
+  const firstPromptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,Zmlyc3Q=",
+  };
+  const secondPromptImageAttachment = {
+    attachmentId: "image-2",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,c2Vjb25k",
+  };
+  const thirdPromptImageAttachment = {
+    attachmentId: "image-3",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,dGhpcmQ=",
+  };
+  const chatSessionStateWithTwoImages = appendPromptImageAttachmentToDraft(
+    appendPromptImageAttachmentToDraft(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      firstPromptImageAttachment,
+    ),
+    secondPromptImageAttachment,
+  );
+  const chatSessionStateWithFirstImageRemoved = removePromptImageAttachmentPlaceholderBeforeCursor({
+    ...chatSessionStateWithTwoImages,
+    promptDraftCursorOffset: "[Image 1] ".length,
+  });
+
+  const chatSessionStateWithNewImage = appendPromptImageAttachmentToDraft(
+    movePromptDraftCursorToEnd(chatSessionStateWithFirstImageRemoved),
+    thirdPromptImageAttachment,
+  );
+
+  expect(chatSessionStateWithNewImage.promptDraft).toBe("[Image 1] [Image 2] ");
+  expect(chatSessionStateWithNewImage.pendingPromptImageAttachments.map((pendingImage) => pendingImage.attachment)).toEqual([
+    secondPromptImageAttachment,
+    thirdPromptImageAttachment,
+  ]);
+  expect(chatSessionStateWithNewImage.pendingPromptImageAttachments.map((pendingImage) => pendingImage.promptDraftPlaceholderText)).toEqual([
+    "[Image 1]",
+    "[Image 2]",
+  ]);
+});
+
+test("replacePromptDraftFromEditor removes pending images when their placeholders are deleted", () => {
+  const promptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
+  const chatSessionState = appendPromptImageAttachmentToDraft(
+    insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "Look "),
+    promptImageAttachment,
+  );
+
+  const nextChatSessionState = replacePromptDraftFromEditor({
+    chatSessionState,
+    promptDraft: "Look ",
+    promptDraftCursorOffset: "Look ".length,
+  });
+
+  expect(nextChatSessionState.pendingPromptImageAttachments).toEqual([]);
+});
+
+test("image placeholder deletion removes the whole pending image token", () => {
+  const promptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
+  const chatSessionState = appendPromptImageAttachmentToDraft(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    promptImageAttachment,
+  );
+
+  const nextChatSessionStateAfterBackspace = removePromptImageAttachmentPlaceholderBeforeCursor(chatSessionState);
+  expect(nextChatSessionStateAfterBackspace.promptDraft).toBe("");
+  expect(nextChatSessionStateAfterBackspace.pendingPromptImageAttachments).toEqual([]);
+  expect(
+    removePromptImageAttachmentPlaceholderAtCursor({
+      ...chatSessionState,
+      promptDraftCursorOffset: 0,
+    }).promptDraft,
+  ).toBe("");
+});
+
 test("submitPromptDraft submits image attachments with the user message", () => {
   const promptImageAttachment = {
     attachmentId: "image-1",
@@ -180,21 +329,21 @@ test("submitPromptDraft submits image attachments with the user message", () => 
   const chatSessionState = appendPromptImageAttachmentToDraft(
     insertTextIntoPromptDraftAtCursor(
       createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      "Describe this",
+      "Describe this ",
     ),
     promptImageAttachment,
   );
 
   const promptDraftSubmission = submitPromptDraft(chatSessionState);
 
-  expect(promptDraftSubmission.submittedPromptText).toBe("Describe this");
+  expect(promptDraftSubmission.submittedPromptText).toBe("Describe this [Image 1]");
   expect(promptDraftSubmission.submittedPromptImageAttachments).toEqual([promptImageAttachment]);
   expect(promptDraftSubmission.nextChatSessionState.pendingPromptImageAttachments).toEqual([]);
   const userMessage = listOrderedConversationMessages(promptDraftSubmission.nextChatSessionState)[0];
   expect(userMessage?.partIds).toHaveLength(2);
   expect(Object.values(promptDraftSubmission.nextChatSessionState.conversationMessagePartsById)).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ partKind: "user_text", text: "Describe this" }),
+      expect.objectContaining({ partKind: "user_text", text: "Describe this [Image 1]" }),
       expect.objectContaining({ partKind: "user_image_attachment", attachment: promptImageAttachment }),
     ]),
   );
@@ -213,7 +362,7 @@ test("submitPromptDraft allows image-only prompts", () => {
     ),
   );
 
-  expect(promptDraftSubmission.submittedPromptText).toBe("");
+  expect(promptDraftSubmission.submittedPromptText).toBe("[Image 1]");
   expect(promptDraftSubmission.submittedPromptImageAttachments).toEqual([promptImageAttachment]);
 });
 

@@ -8,7 +8,8 @@ import {
   applyChatSessionKeyboardInputToChatSessionState,
   applyChatSlashCommandToChatSessionState,
   refreshChatSlashCommandSelectionForCurrentState,
-  removeLastPromptImageAttachmentFromDraft,
+  removePromptImageAttachmentPlaceholderAtCursor,
+  removePromptImageAttachmentPlaceholderBeforeCursor,
   replacePromptDraftFromEditor,
   type ChatSessionKeyboardEffect,
   type ChatSessionKeyboardInput,
@@ -222,16 +223,17 @@ export function useChatScreenKeyboardInputActions(
       return;
     }
 
-    if (
-      keyboardInput.chatSessionKeyboardInput.keyName === "backspace" &&
-      previousChatSessionState.promptDraft.length === 0 &&
-      previousChatSessionState.pendingPromptImageAttachments.length > 0
-    ) {
+    const nextChatSessionStateAfterImagePlaceholderDeletion =
+      keyboardInput.chatSessionKeyboardInput.keyName === "backspace"
+        ? removePromptImageAttachmentPlaceholderBeforeCursor(previousChatSessionState)
+        : keyboardInput.chatSessionKeyboardInput.keyName === "delete"
+          ? removePromptImageAttachmentPlaceholderAtCursor(previousChatSessionState)
+          : previousChatSessionState;
+    if (nextChatSessionStateAfterImagePlaceholderDeletion !== previousChatSessionState) {
       keyboardInput.inputEvent?.preventDefault();
       keyboardInput.inputEvent?.stopPropagation();
-      const nextChatSessionState = removeLastPromptImageAttachmentFromDraft(previousChatSessionState);
-      input.latestChatSessionStateRef.current = nextChatSessionState;
-      input.setChatSessionState(nextChatSessionState);
+      input.latestChatSessionStateRef.current = nextChatSessionStateAfterImagePlaceholderDeletion;
+      input.setChatSessionState(nextChatSessionStateAfterImagePlaceholderDeletion);
       return;
     }
 
@@ -340,8 +342,20 @@ export function useChatScreenKeyboardInputActions(
       return;
     }
 
+    const latestChatSessionStateAfterClipboardRead = input.latestChatSessionStateRef.current;
+    if (!canPromptTextareaEditChatScreenInput({
+      chatSessionState: latestChatSessionStateAfterClipboardRead,
+      isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
+    })) {
+      logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
+        conversationTurnStatus: latestChatSessionStateAfterClipboardRead.conversationTurnStatus,
+        reason: input.isConversationCompactionInFlightRef.current ? "conversation_compaction_in_flight" : "prompt_not_editable",
+      });
+      return;
+    }
+
     const nextChatSessionState = appendPromptImageAttachmentToDraft(
-      input.latestChatSessionStateRef.current,
+      latestChatSessionStateAfterClipboardRead,
       clipboardImageAttachment,
     );
     input.latestChatSessionStateRef.current = nextChatSessionState;

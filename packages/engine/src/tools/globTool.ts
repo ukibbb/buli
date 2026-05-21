@@ -3,12 +3,13 @@ import {
   type GlobToolCallRequest,
   type ToolCallGlobDetail,
 } from "@buli/contracts";
+import { buildGlobToolResultText } from "./searchToolResultText.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { listWorkspaceFiles } from "./workspaceFileSearch.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 import { listWorkspaceFilesWithRipgrep } from "./workspaceRipgrepSearch.ts";
 
-const MAX_GLOB_RESULT_COUNT = 100;
+const MAX_RETURNED_GLOB_MATCHED_PATHS = 1_000;
 
 export function createStartedGlobToolCallDetail(globToolCallRequest: GlobToolCallRequest): ToolCallGlobDetail {
   return createStartedToolCallDetailFromRequest(globToolCallRequest);
@@ -56,9 +57,9 @@ export async function runGlobToolCall(input: {
         return leftWorkspaceFile.displayPath.localeCompare(rightWorkspaceFile.displayPath);
       });
     const totalMatchedPathCount = matchedFiles.length;
-    const wasTruncated = totalMatchedPathCount > MAX_GLOB_RESULT_COUNT;
-    const visibleMatchedFiles = matchedFiles.slice(0, MAX_GLOB_RESULT_COUNT);
-    const matchedPaths = visibleMatchedFiles.map((workspaceFile) => workspaceFile.displayPath);
+    const matchedPaths = matchedFiles
+      .slice(0, MAX_RETURNED_GLOB_MATCHED_PATHS)
+      .map((workspaceFile) => workspaceFile.displayPath);
     const toolCallDetail: ToolCallGlobDetail = {
       toolName: "glob",
       globPattern: input.globToolCallRequest.globPattern,
@@ -66,7 +67,6 @@ export async function runGlobToolCall(input: {
       matchedPathCount: totalMatchedPathCount,
       returnedPathCount: matchedPaths.length,
       matchedPaths,
-      wasTruncated,
     };
 
     return {
@@ -77,7 +77,6 @@ export async function runGlobToolCall(input: {
         searchDirectoryPath: resolvedSearchPath.displayPath,
         totalMatchedPathCount,
         matchedPaths,
-        wasTruncated,
       }),
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
@@ -95,28 +94,4 @@ export async function runGlobToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
-}
-
-function buildGlobToolResultText(input: {
-  globPattern: string;
-  searchDirectoryPath: string;
-  totalMatchedPathCount: number;
-  matchedPaths: readonly string[];
-  wasTruncated: boolean;
-}): string {
-  if (input.totalMatchedPathCount === 0) {
-    return [
-      `Pattern: ${input.globPattern}`,
-      `Directory: ${input.searchDirectoryPath}`,
-      "No files found",
-    ].join("\n");
-  }
-
-  return [
-    `Pattern: ${input.globPattern}`,
-    `Directory: ${input.searchDirectoryPath}`,
-    `Found ${input.totalMatchedPathCount} files${input.wasTruncated ? ` (showing first ${input.matchedPaths.length})` : ""}`,
-    ...input.matchedPaths,
-    ...(input.wasTruncated ? ["", "(Results truncated. Use a more specific path or pattern.)"] : []),
-  ].join("\n");
 }

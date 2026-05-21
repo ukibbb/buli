@@ -100,7 +100,7 @@ test("OpenAiFunctionCallStreamAccumulator emits each requested tool call once", 
 test("OpenAiFunctionCallStreamAccumulator preserves response output order", () => {
   const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator();
 
-  functionCallStreamAccumulator.recordRequestedToolCallsFromResponseOutputItems([
+  functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems([
     {
       type: "function_call",
       id: "fc_1",

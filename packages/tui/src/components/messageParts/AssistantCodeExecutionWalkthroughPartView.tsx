@@ -120,19 +120,32 @@ function CodeExecutionCodeExampleBlock(props: {
   return (
     <box flexDirection="column" {...(props.marginTop !== undefined ? { marginTop: props.marginTop } : {})} width="100%">
       <box width="100%">
-        <text fg={chatScreenTheme.textMuted}>{`// ${formatCodeExampleSourceLabel(codeExample)}`}</text>
+        <text>
+          <span fg={chatScreenTheme.accentCyan}>{formatCodeExampleSourceRangeLabel(codeExample)}</span>
+          {codeExample.sourceSymbolName ? <span fg={chatScreenTheme.textMuted}>{` · ${codeExample.sourceSymbolName}`}</span> : null}
+        </text>
       </box>
       {codeExample.explanationText !== undefined ? (
         <box width="100%">
           <text fg={chatScreenTheme.textDim}>{codeExample.explanationText}</text>
         </box>
       ) : null}
-      <FencedCodeBlock
-        variant="embedded"
-        filePath={codeExample.sourceFilePath}
-        {...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {})}
-        codeLines={buildCodeExampleLines(codeExample)}
-      />
+      <box
+        border={["left"]}
+        borderColor={chatScreenTheme.textDim}
+        flexDirection="column"
+        marginTop={1}
+        paddingLeft={1}
+        width="100%"
+      >
+        <FencedCodeBlock
+          variant="embedded"
+          filePath={codeExample.sourceFilePath}
+          showLabel={false}
+          {...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {})}
+          codeLines={buildCodeExampleLines(codeExample)}
+        />
+      </box>
     </box>
   );
 }
@@ -141,11 +154,11 @@ function formatCodeExecutionWalkthroughKindLabel(walkthroughKind: CodeExecutionW
   return walkthroughKind === "observed_runtime_trace" ? "observed runtime trace" : "source walkthrough";
 }
 
-function formatCodeExampleSourceLabel(codeExample: CodeExecutionCodeExample): string {
+function formatCodeExampleSourceRangeLabel(codeExample: CodeExecutionCodeExample): string {
   const lineRange = codeExample.startLineNumber === codeExample.endLineNumber
     ? `${codeExample.startLineNumber}`
     : `${codeExample.startLineNumber}-${codeExample.endLineNumber}`;
-  return `${codeExample.sourceFilePath}:${lineRange}${codeExample.sourceSymbolName ? ` · ${codeExample.sourceSymbolName}` : ""}`;
+  return `${codeExample.sourceFilePath}:${lineRange}`;
 }
 
 function buildCodeExampleLines(codeExample: CodeExecutionCodeExample): FencedCodeBlockLine[] {

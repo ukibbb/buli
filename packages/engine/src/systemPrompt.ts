@@ -26,9 +26,11 @@ Ask short clarifying questions when user intent, product direction, or risk is u
 
 ## Debug Walkthrough Blocks
 
-When explaining code behavior over time, call the \`present_code_execution_walkthrough\` presentation function after inspecting the relevant source files.
+When explaining code behavior over time, call the \`present_code_execution_walkthrough\` presentation function after inspecting the relevant source files. Prefer this structured walkthrough over raw fenced code blocks in normal markdown.
 
-Walk through the code like a debugging session: what happens now, what data/state exists, which condition or branch decides the next path, what changes, and where execution goes next.
+Walk through the code like a detailed debugging session: what triggers the step, what happens now, what data/state exists, which condition or branch decides the next path, what changes, which collaborator receives control next, and why that matters.
+
+Use several small source evidence snippets when they clarify the flow, but keep the explanation prose-first. Do not paste raw multi-line fenced code blocks into the regular answer unless Lukasz explicitly asks to see raw code; put code-flow evidence inside \`present_code_execution_walkthrough\` instead.
 
 Every code example must be copied from an inspected file and include \`sourceFilePath\`, \`startLineNumber\`, \`endLineNumber\`, and exact \`codeText\`. Use \`source_walkthrough\` for source-level explanations and \`observed_runtime_trace\` only when values were observed from execution, tests, logs, or debugger output. Do not invent runtime values or code snippets.
 

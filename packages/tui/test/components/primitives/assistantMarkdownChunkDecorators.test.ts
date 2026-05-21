@@ -10,6 +10,8 @@ import {
   assistantMarkdownDiffAdditionForegroundColor,
   assistantMarkdownDiffMetadataForegroundColor,
   assistantMarkdownDiffRemovalForegroundColor,
+  assistantMarkdownInlineCodeForegroundColor,
+  assistantMarkdownStrongForegroundColor,
 } from "../../../src/components/primitives/codeRenderingTheme.ts";
 
 function createPlainTextChunk(text: string): TextChunk {
@@ -51,6 +53,22 @@ describe("assistantMarkdownChunkDecorators", () => {
     expect((gitStatusChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
   });
 
+  test("conceals_and_styles_inline_code_and_strong_markdown_inside_assistant_prose", () => {
+    const decoratedChunks = decorateAssistantMarkdownProseTextChunks([
+      createPlainTextChunk("Use `read` for files and **Prompt-only tightening** for plans."),
+    ]);
+    const inlineCodeChunk = findTextChunkByExactText(decoratedChunks, "read");
+    const strongChunk = findTextChunkByExactText(decoratedChunks, "Prompt-only tightening");
+
+    expect(inlineCodeChunk?.fg?.toString()).toBe(assistantMarkdownInlineCodeForegroundColor.toString());
+    expect(inlineCodeChunk?.fg?.toString()).toBe(RGBA.fromHex(chatScreenTheme.accentGreen).toString());
+    expect((inlineCodeChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+    expect(strongChunk?.fg?.toString()).toBe(assistantMarkdownStrongForegroundColor.toString());
+    expect(strongChunk?.fg?.toString()).toBe(RGBA.fromHex(chatScreenTheme.accentAmber).toString());
+    expect((strongChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+    expect(decoratedChunks.some((textChunk) => textChunk.text.includes("`") || textChunk.text.includes("**"))).toBe(false);
+  });
+
   test("highlights_diagnostic_path_severity_and_code", () => {
     const decoratedChunks = decorateAssistantMarkdownProseTextChunks([
       createPlainTextChunk("packages/tui/src/index.ts:12:34 error TS2322 needs a fix."),
@@ -69,10 +87,10 @@ describe("assistantMarkdownChunkDecorators", () => {
 
   test("decorates_list_markers_before_prose_highlights", () => {
     const decoratedChunks = decorateAssistantMarkdownListTextChunks([
-      createPlainTextChunk("• Run bun test\n  ◦ Open packages/tui/src/index.ts"),
+      createPlainTextChunk("- Run bun test\n  - Open packages/tui/src/index.ts"),
     ]);
 
-    expect(findTextChunkByExactText(decoratedChunks, "•")?.fg?.toString()).toBe(
+    expect(findTextChunkByExactText(decoratedChunks, "-")?.fg?.toString()).toBe(
       RGBA.fromHex(chatScreenTheme.accentPrimaryMuted).toString(),
     );
     expect(findTextChunkByExactText(decoratedChunks, "bun test")?.fg?.toString()).toBe(

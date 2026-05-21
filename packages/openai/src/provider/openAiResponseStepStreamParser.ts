@@ -1,9 +1,7 @@
 import type {
   BuliDiagnosticLogger,
-  ProviderRequestedToolCall,
   ProviderStreamEvent,
   TokenUsage,
-  ToolCallRequest,
 } from "@buli/contracts";
 import {
   logOpenAiDiagnosticEvent,
@@ -19,6 +17,7 @@ import { OpenAiFunctionCallStreamAccumulator } from "./openAiFunctionCallStreamA
 import { OpenAiReasoningSummaryStreamProjector } from "./openAiReasoningSummaryStreamProjector.ts";
 import { sanitizeOpenAiErrorMessage } from "./httpResponseDiagnostics.ts";
 import { normalizeOpenAiUsage } from "./usage.ts";
+import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import {
   parseOpenAiErrorChunk,
   parseOpenAiResponseCompletedChunk,
@@ -39,95 +38,17 @@ import {
   type OpenAiResponseStepTerminalState,
 } from "./openAiResponseStepTerminalStateBuilder.ts";
 import {
-  isOpenAiExecutableToolCallIntent,
-  isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
-  type OpenAiProviderFunctionCallIntent,
-} from "./toolDefinitions.ts";
+  createProviderCompletedEvent,
+  createProviderFunctionCallIntentEvents,
+  createProviderIncompleteEvent,
+  createProviderTextChunkEvent,
+} from "./providerStreamEventFactories.ts";
 
 export type { OpenAiResponseStepTerminalState } from "./openAiResponseStepTerminalStateBuilder.ts";
 
 export type OpenAiStreamParserOptions = {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
-
-function createProviderTextChunkEvent(text: string): ProviderStreamEvent {
-  return { type: "text_chunk", text };
-}
-
-function createProviderToolCallRequestedEvent(toolCallId: string, toolCallRequest: ToolCallRequest): ProviderStreamEvent {
-  return { type: "tool_call_requested", toolCallId, toolCallRequest };
-}
-
-function createProviderToolCallsRequestedEvent(requestedToolCalls: readonly ProviderRequestedToolCall[]): ProviderStreamEvent {
-  if (requestedToolCalls.length === 1) {
-    const requestedToolCall = requestedToolCalls[0];
-    if (!requestedToolCall) {
-      throw new Error("OpenAI stream tried to emit an empty tool-call batch.");
-    }
-
-    return createProviderToolCallRequestedEvent(requestedToolCall.toolCallId, requestedToolCall.toolCallRequest);
-  }
-
-  return {
-    type: "tool_calls_requested",
-    requestedToolCalls: [...requestedToolCalls],
-  };
-}
-
-function createProviderCodeExecutionWalkthroughPresentedEvent(
-  providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
-): ProviderStreamEvent {
-  if (!isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent)) {
-    throw new Error("OpenAI stream tried to emit a non-presentation function call as a code execution walkthrough.");
-  }
-
-  return {
-    type: "code_execution_walkthrough_presented",
-    presentationCallId: providerFunctionCallIntent.functionCallId,
-    codeExecutionWalkthrough: providerFunctionCallIntent.codeExecutionWalkthrough,
-  };
-}
-
-function createProviderFunctionCallIntentEvents(
-  providerFunctionCallIntents: readonly OpenAiProviderFunctionCallIntent[],
-): ProviderStreamEvent[] {
-  const codeExecutionWalkthroughPresentedEvents = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-    isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent)
-      ? [createProviderCodeExecutionWalkthroughPresentedEvent(providerFunctionCallIntent)]
-      : []
-  );
-  const requestedToolCalls = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-    isOpenAiExecutableToolCallIntent(providerFunctionCallIntent)
-      ? [{
-          toolCallId: providerFunctionCallIntent.functionCallId,
-          toolCallRequest: providerFunctionCallIntent.toolCallRequest,
-        }]
-      : []
-  );
-
-  return [
-    ...codeExecutionWalkthroughPresentedEvents,
-    ...(requestedToolCalls.length > 0 ? [createProviderToolCallsRequestedEvent(requestedToolCalls)] : []),
-  ];
-}
-
-function createProviderCompletedEvent(usage: TokenUsage): ProviderStreamEvent {
-  return {
-    type: "completed",
-    usage,
-  };
-}
-
-function createProviderIncompleteEvent(input: {
-  incompleteReason: string;
-  usage: TokenUsage;
-}): ProviderStreamEvent {
-  return {
-    type: "incomplete",
-    incompleteReason: input.incompleteReason,
-    usage: input.usage,
-  };
-}
 
 // Reasoning summary timing is captured provider-side because the provider is
 // closest to the SSE clock. reasoning_summary_started is emitted once per
@@ -406,70 +327,21 @@ export class OpenAiResponseStepStreamParser {
 
       case "response.completed": {
         const completedResponse = parseOpenAiResponseCompletedChunk(value);
-        const providerEvents = this.createPendingReasoningCompletedEvents();
-        this.finished = true;
-        const responseUsage = normalizeOpenAiUsage(completedResponse.response.usage);
-        const responseOutputItems = this.outputItemTracker.createTrackedBackedResponseOutputItems(completedResponse.response.output);
-        this.functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
-        const pendingProviderFunctionCallIntents = this.functionCallStreamAccumulator.listPendingProviderFunctionCallIntents();
-        const pendingRequestedToolCalls = this.functionCallStreamAccumulator.listPendingRequestedToolCalls();
-        const pendingPresentationFunctionCallCount = pendingProviderFunctionCallIntents.length - pendingRequestedToolCalls.length;
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_observed", {
-          terminalKind: chooseOpenAiResponseStepTerminalKind({
-            requestedToolCallCount: pendingRequestedToolCalls.length,
-            presentationFunctionCallCount: pendingPresentationFunctionCallCount,
-            fallbackTerminalKind: "completed",
-          }),
-          ...summarizeTokenUsageForDiagnostics(responseUsage),
+        return this.handleTerminalResponse({
+          responseOutputItemsFromTerminalEvent: completedResponse.response.output,
+          terminalResponseUsage: normalizeOpenAiUsage(completedResponse.response.usage),
+          fallbackTerminalKind: "completed",
         });
-        if (pendingProviderFunctionCallIntents.length > 0) {
-          this.terminalState = createOpenAiResponseStepProviderFunctionCallTerminalState({
-            providerFunctionCallIntents: pendingProviderFunctionCallIntents,
-            responseOutputItems,
-            usage: responseUsage,
-          });
-          providerEvents.push(...createProviderFunctionCallIntentEvents(pendingProviderFunctionCallIntents));
-          return providerEvents;
-        }
-        this.terminalState = { terminalKind: "completed" };
-        providerEvents.push(createProviderCompletedEvent(responseUsage));
-        return providerEvents;
       }
 
       case "response.incomplete": {
         const incompleteResponse = parseOpenAiResponseIncompleteChunk(value);
-        const providerEvents = this.createPendingReasoningCompletedEvents();
-        this.finished = true;
-        const responseUsage = normalizeOpenAiUsage(incompleteResponse.response.usage);
-        const responseOutputItems = this.outputItemTracker.createTrackedBackedResponseOutputItems(incompleteResponse.response.output);
-        this.functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
-        const pendingProviderFunctionCallIntents = this.functionCallStreamAccumulator.listPendingProviderFunctionCallIntents();
-        const pendingRequestedToolCalls = this.functionCallStreamAccumulator.listPendingRequestedToolCalls();
-        const pendingPresentationFunctionCallCount = pendingProviderFunctionCallIntents.length - pendingRequestedToolCalls.length;
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_observed", {
-          terminalKind: chooseOpenAiResponseStepTerminalKind({
-            requestedToolCallCount: pendingRequestedToolCalls.length,
-            presentationFunctionCallCount: pendingPresentationFunctionCallCount,
-            fallbackTerminalKind: "incomplete",
-          }),
+        return this.handleTerminalResponse({
+          responseOutputItemsFromTerminalEvent: incompleteResponse.response.output,
+          terminalResponseUsage: normalizeOpenAiUsage(incompleteResponse.response.usage),
+          fallbackTerminalKind: "incomplete",
           incompleteReason: incompleteResponse.response.incomplete_details?.reason ?? "unknown",
-          ...summarizeTokenUsageForDiagnostics(responseUsage),
         });
-        if (pendingProviderFunctionCallIntents.length > 0) {
-          this.terminalState = createOpenAiResponseStepProviderFunctionCallTerminalState({
-            providerFunctionCallIntents: pendingProviderFunctionCallIntents,
-            responseOutputItems,
-            usage: responseUsage,
-          });
-          providerEvents.push(...createProviderFunctionCallIntentEvents(pendingProviderFunctionCallIntents));
-          return providerEvents;
-        }
-        this.terminalState = { terminalKind: "incomplete" };
-        providerEvents.push(createProviderIncompleteEvent({
-          incompleteReason: incompleteResponse.response.incomplete_details?.reason ?? "unknown",
-          usage: responseUsage,
-        }));
-        return providerEvents;
       }
 
       case "response.failed": {
@@ -532,6 +404,55 @@ export class OpenAiResponseStepStreamParser {
 
   private createPendingReasoningCompletedEvents(): ProviderStreamEvent[] {
     return this.reasoningSummaryStreamProjector.completeReasoningSummaryBeforeNonReasoningEvent();
+  }
+
+  private handleTerminalResponse(input: {
+    responseOutputItemsFromTerminalEvent: readonly unknown[] | undefined;
+    terminalResponseUsage: TokenUsage;
+    fallbackTerminalKind: "completed" | "incomplete";
+    incompleteReason?: string | undefined;
+  }): ProviderStreamEvent[] {
+    const providerEvents = this.createPendingReasoningCompletedEvents();
+    this.finished = true;
+    const responseOutputItems = this.outputItemTracker.createTrackedBackedResponseOutputItems(
+      input.responseOutputItemsFromTerminalEvent,
+    );
+    this.functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
+    const pendingProviderFunctionCallIntents = this.functionCallStreamAccumulator.listPendingProviderFunctionCallIntents();
+    const pendingProviderFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(
+      pendingProviderFunctionCallIntents,
+    );
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_observed", {
+      terminalKind: chooseOpenAiResponseStepTerminalKind({
+        requestedToolCallCount: pendingProviderFunctionCallIntentClassification.requestedToolCalls.length,
+        presentationFunctionCallCount: pendingProviderFunctionCallIntentClassification.presentationFunctionCallIntents.length,
+        fallbackTerminalKind: input.fallbackTerminalKind,
+      }),
+      ...(input.incompleteReason !== undefined ? { incompleteReason: input.incompleteReason } : {}),
+      ...summarizeTokenUsageForDiagnostics(input.terminalResponseUsage),
+    });
+    if (pendingProviderFunctionCallIntents.length > 0) {
+      this.terminalState = createOpenAiResponseStepProviderFunctionCallTerminalState({
+        providerFunctionCallIntents: pendingProviderFunctionCallIntents,
+        responseOutputItems,
+        usage: input.terminalResponseUsage,
+      });
+      providerEvents.push(...createProviderFunctionCallIntentEvents(pendingProviderFunctionCallIntents));
+      return providerEvents;
+    }
+
+    if (input.fallbackTerminalKind === "completed") {
+      this.terminalState = { terminalKind: "completed" };
+      providerEvents.push(createProviderCompletedEvent(input.terminalResponseUsage));
+      return providerEvents;
+    }
+
+    this.terminalState = { terminalKind: "incomplete" };
+    providerEvents.push(createProviderIncompleteEvent({
+      incompleteReason: input.incompleteReason ?? "unknown",
+      usage: input.terminalResponseUsage,
+    }));
+    return providerEvents;
   }
 }
 

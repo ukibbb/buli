@@ -112,7 +112,7 @@ describe("ConversationSessionSelectionPane", () => {
     expect(frame).not.toContain("Session 1 1 entries active");
   });
 
-  test("renders_confirm_for_the_session_waiting_for_delete_confirmation", async () => {
+  test("renders_confirmation_for_the_session_waiting_for_deletion", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationSessionSelectionPane
         conversationSessions={[
@@ -135,7 +135,11 @@ describe("ConversationSessionSelectionPane", () => {
 
     await renderOnce();
 
-    expect(captureCharFrame()).toContain("delete again");
+    const frame = captureCharFrame();
+    expect(frame).toContain("confirm");
+    expect(frame).not.toContain('Delete "Planning session"?');
+    expect(frame).not.toContain("Delete again confirms");
+    expect(frame).not.toContain("delete again");
   });
 
   test("does_not_render_delete_control_for_the_only_empty_session", async () => {

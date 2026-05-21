@@ -32,7 +32,6 @@ export const ToolCallReadPreviewLineSchema = z
   .object({
     lineNumber: z.number().int().positive(),
     lineText: z.string(),
-    wasLineTruncated: z.boolean().optional(),
     syntaxHighlightSpans: z.array(SyntaxHighlightSpanSchema).optional(),
   })
   .strict();
@@ -47,7 +46,6 @@ export const ToolCallReadDetailSchema = z
     readByteCount: z.number().int().nonnegative().optional(),
     previewLines: z.array(ToolCallReadPreviewLineSchema).optional(),
     wasLineCountTruncated: z.boolean().optional(),
-    wasLongLineTruncated: z.boolean().optional(),
   })
   .strict();
 export type ToolCallReadDetail = z.infer<typeof ToolCallReadDetailSchema>;
@@ -57,7 +55,6 @@ export const ToolCallGrepMatchSchema = z
     matchFilePath: z.string().min(1),
     matchLineNumber: z.number().int().positive(),
     matchSnippet: z.string(),
-    wasSnippetTruncated: z.boolean().optional(),
   })
   .strict();
 export type ToolCallGrepMatch = z.infer<typeof ToolCallGrepMatchSchema>;
@@ -70,8 +67,6 @@ export const ToolCallGrepDetailSchema = z
     totalMatchCount: z.number().int().nonnegative().optional(),
     returnedMatchHitCount: z.number().int().nonnegative().optional(),
     matchHits: z.array(ToolCallGrepMatchSchema).optional(),
-    wasTruncated: z.boolean().optional(),
-    wasLongLineTruncated: z.boolean().optional(),
   })
   .strict();
 export type ToolCallGrepDetail = z.infer<typeof ToolCallGrepDetailSchema>;
@@ -84,7 +79,6 @@ export const ToolCallGlobDetailSchema = z
     matchedPathCount: z.number().int().nonnegative().optional(),
     returnedPathCount: z.number().int().nonnegative().optional(),
     matchedPaths: z.array(z.string().min(1)).optional(),
-    wasTruncated: z.boolean().optional(),
   })
   .strict();
 export type ToolCallGlobDetail = z.infer<typeof ToolCallGlobDetailSchema>;

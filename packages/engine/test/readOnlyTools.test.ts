@@ -67,9 +67,10 @@ test("runReadToolCall rejects direct symbolic links as workspace policy", async 
   expect(readToolCallOutcome.toolResultText).toContain("Symbolic links are not supported");
 });
 
-test("runReadToolCall reports line count and long-line truncation", async () => {
+test("runReadToolCall returns full visible lines without shortening long lines", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-truncation-"));
-  await writeFile(join(workspaceRootPath, "long.txt"), `${"x".repeat(2_100)}\nsecond\nthird\n`, "utf8");
+  const longLineText = "x".repeat(2_100);
+  await writeFile(join(workspaceRootPath, "long.txt"), `${longLineText}\nsecond\nthird\n`, "utf8");
 
   const readToolCallOutcome = await runReadToolCall({
     workspaceRootPath,
@@ -87,14 +88,14 @@ test("runReadToolCall reports line count and long-line truncation", async () => 
     readLineCount: 3,
     returnedLineCount: 2,
     wasLineCountTruncated: true,
-    wasLongLineTruncated: true,
     previewLines: [
-      { lineNumber: 1, wasLineTruncated: true },
+      { lineNumber: 1, lineText: longLineText },
       { lineNumber: 2, lineText: "second" },
     ],
   });
   expect(readToolCallOutcome.toolResultText).toContain("Use offset=3 to continue");
-  expect(readToolCallOutcome.toolResultText).toContain("Long lines were truncated to 2000 characters");
+  expect(readToolCallOutcome.toolResultText).toContain(`1: ${longLineText}`);
+  expect(readToolCallOutcome.toolResultText).not.toContain("Long lines were truncated");
 });
 
 test("runReadToolCall rejects default reads of oversized text files with range guidance", async () => {
@@ -304,7 +305,7 @@ test("runGlobToolCall ignores default excluded directories", async () => {
   expect(globToolCallOutcome.toolResultText).not.toContain("node_modules/dependency.ts");
 });
 
-test("runGlobToolCall reports returned and total path counts when truncated", async () => {
+test("runGlobToolCall returns all matched paths", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-truncated-"));
   await mkdir(join(workspaceRootPath, "src"));
   for (let fileIndex = 0; fileIndex < 105; fileIndex += 1) {
@@ -323,11 +324,41 @@ test("runGlobToolCall reports returned and total path counts when truncated", as
   expect(globToolCallOutcome.toolCallDetail).toMatchObject({
     toolName: "glob",
     matchedPathCount: 105,
-    returnedPathCount: 100,
-    wasTruncated: true,
+    returnedPathCount: 105,
   });
-  expect(globToolCallOutcome.toolResultText).toContain("Found 105 files (showing first 100)");
-  expect(globToolCallOutcome.toolResultText).toContain("Results truncated");
+  expect(globToolCallOutcome.toolResultText).toContain("Found 105 files");
+  expect(globToolCallOutcome.toolResultText).toContain("src/file-104.ts");
+  expect(globToolCallOutcome.toolResultText).not.toContain("Results truncated");
+});
+
+test("runGlobToolCall caps returned matched paths while keeping the total count", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-result-cap-"));
+  await mkdir(join(workspaceRootPath, "src"));
+  for (let fileIndex = 0; fileIndex < 1_005; fileIndex += 1) {
+    await writeFile(join(workspaceRootPath, "src", `file-${fileIndex}.ts`), "export const value = true;\n", "utf8");
+  }
+
+  const globToolCallOutcome = await runGlobToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    globToolCallRequest: {
+      toolName: "glob",
+      globPattern: "**/*.ts",
+    },
+  });
+
+  expect(globToolCallOutcome.outcomeKind).toBe("completed");
+  expect(globToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "glob",
+    matchedPathCount: 1_005,
+    returnedPathCount: 1_000,
+  });
+  expect(globToolCallOutcome.toolCallDetail.toolName).toBe("glob");
+  if (globToolCallOutcome.toolCallDetail.toolName === "glob") {
+    expect(globToolCallOutcome.toolCallDetail.matchedPaths).toHaveLength(1_000);
+  }
+  expect(globToolCallOutcome.toolResultText).toContain("Found 1005 files");
+  expect(globToolCallOutcome.toolResultText).toContain("Results truncated: showing first 1000 of 1005 files");
 });
 
 test("runGrepToolCall searches text files with include glob", async () => {
@@ -392,6 +423,44 @@ test("runGrepToolCall prefers ripgrep JSON search when available", async () => {
     matchedFileCount: 1,
     totalMatchCount: 1,
     matchHits: [{ matchFilePath: "from-rg.ts", matchLineNumber: 7, matchSnippet: "fake ripgrep hit" }],
+  });
+});
+
+test("runGrepToolCall accepts ripgrep-valid regex patterns before JavaScript fallback validation", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-rg-regex-"));
+  await writeFile(join(workspaceRootPath, "from-rg.ts"), "Needle from ripgrep\n", "utf8");
+  const fakeRipgrepPath = await writeFakeRipgrepExecutable(
+    workspaceRootPath,
+    [
+      "const args = process.argv.slice(2);",
+      "if (args.includes('--files')) {",
+      "  process.stdout.write('from-rg.ts\\0');",
+      "  process.exit(0);",
+      "}",
+      "if (args.includes('--json')) {",
+      "  process.stdout.write(JSON.stringify({ type: 'match', data: { path: { text: 'from-rg.ts' }, lines: { text: 'Needle from ripgrep\\n' }, line_number: 1 } }) + '\\n');",
+      "  process.exit(0);",
+      "}",
+      "process.exit(2);",
+    ].join("\n"),
+  );
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: fakeRipgrepPath,
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "(?i)needle",
+      includeGlobPattern: "*.ts",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    matchedFileCount: 1,
+    totalMatchCount: 1,
+    matchHits: [{ matchFilePath: "from-rg.ts", matchLineNumber: 1, matchSnippet: "Needle from ripgrep" }],
   });
 });
 
@@ -493,7 +562,7 @@ test("runGrepToolCall rejects invalid regex with a useful failure", async () => 
   expect(grepToolCallOutcome.toolResultText).toContain("Invalid regular expression");
 });
 
-test("runGrepToolCall limits match hits and marks truncation", async () => {
+test("runGrepToolCall returns all match hits", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-truncated-"));
   await writeFile(
     join(workspaceRootPath, "notes.txt"),
@@ -514,13 +583,51 @@ test("runGrepToolCall limits match hits and marks truncation", async () => {
     toolName: "grep",
     matchedFileCount: 1,
     totalMatchCount: 105,
-    returnedMatchHitCount: 100,
-    wasTruncated: true,
+    returnedMatchHitCount: 105,
   });
-  expect(grepToolCallOutcome.toolResultText).toContain("Results truncated: showing 100 of 105 matches");
+  expect(grepToolCallOutcome.toolCallDetail.toolName).toBe("grep");
+  if (grepToolCallOutcome.toolCallDetail.toolName === "grep") {
+    expect(grepToolCallOutcome.toolCallDetail.matchHits).toHaveLength(105);
+  }
+  expect(grepToolCallOutcome.toolResultText).toContain("Line 105: match 104");
+  expect(grepToolCallOutcome.toolResultText).not.toContain("Results truncated");
 });
 
-test("runGrepToolCall skips oversized files instead of loading them", async () => {
+test("runGrepToolCall caps returned match hits while keeping the total count", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-result-cap-"));
+  await writeFile(
+    join(workspaceRootPath, "notes.txt"),
+    Array.from({ length: 1_005 }, (_unusedValue, lineIndex) => `match ${lineIndex}`).join("\n"),
+    "utf8",
+  );
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "match",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    matchedFileCount: 1,
+    totalMatchCount: 1_005,
+    returnedMatchHitCount: 1_000,
+  });
+  expect(grepToolCallOutcome.toolCallDetail.toolName).toBe("grep");
+  if (grepToolCallOutcome.toolCallDetail.toolName === "grep") {
+    expect(grepToolCallOutcome.toolCallDetail.matchHits).toHaveLength(1_000);
+  }
+  expect(grepToolCallOutcome.toolResultText).toContain("Found 1005 matches in 1 files");
+  expect(grepToolCallOutcome.toolResultText).toContain("Results truncated: showing first 1000 of 1005 matches");
+  expect(grepToolCallOutcome.toolResultText).toContain("Line 1000: match 999");
+  expect(grepToolCallOutcome.toolResultText).not.toContain("Line 1005: match 1004");
+});
+
+test("runGrepToolCall searches oversized text files", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-large-file-"));
   await writeFile(join(workspaceRootPath, "large.txt"), `needle ${"x".repeat(1_000_001)}`, "utf8");
 
@@ -535,8 +642,8 @@ test("runGrepToolCall skips oversized files instead of loading them", async () =
   expect(grepToolCallOutcome.outcomeKind).toBe("completed");
   expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
     toolName: "grep",
-    totalMatchCount: 0,
-    wasTruncated: true,
+    totalMatchCount: 1,
+    returnedMatchHitCount: 1,
   });
-  expect(grepToolCallOutcome.toolResultText).toContain("Skipped 1 files larger than 1000000 bytes");
+  expect(grepToolCallOutcome.toolResultText).toContain("Line 1: needle");
 });

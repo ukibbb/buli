@@ -1,8 +1,6 @@
 import type { ProviderRequestedToolCall, TokenUsage, ToolCallRequest } from "@buli/contracts";
-import {
-  isOpenAiExecutableToolCallIntent,
-  type OpenAiProviderFunctionCallIntent,
-} from "./toolDefinitions.ts";
+import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
+import type { OpenAiProviderFunctionCallIntent } from "./toolDefinitions.ts";
 
 export type OpenAiResponseStepToolCallRequestedState = {
   terminalKind: "tool_call_requested";
@@ -84,17 +82,10 @@ export function createOpenAiResponseStepProviderFunctionCallTerminalState(input:
   responseOutputItems: unknown[];
   usage: TokenUsage;
 }): OpenAiResponseStepProviderFunctionCallTerminalState {
-  const requestedToolCalls = input.providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-    isOpenAiExecutableToolCallIntent(providerFunctionCallIntent)
-      ? [{
-          toolCallId: providerFunctionCallIntent.functionCallId,
-          toolCallRequest: providerFunctionCallIntent.toolCallRequest,
-        }]
-      : []
-  );
-  if (requestedToolCalls.length === input.providerFunctionCallIntents.length) {
+  const providerFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(input.providerFunctionCallIntents);
+  if (providerFunctionCallIntentClassification.hasOnlyExecutableToolCallIntents) {
     return createOpenAiResponseStepToolCallTerminalState({
-      requestedToolCalls,
+      requestedToolCalls: providerFunctionCallIntentClassification.requestedToolCalls,
       responseOutputItems: input.responseOutputItems,
       usage: input.usage,
     });

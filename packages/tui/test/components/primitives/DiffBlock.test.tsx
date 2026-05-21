@@ -146,6 +146,37 @@ describe("DiffBlock", () => {
     expect(frame).not.toContain("diff-line-051");
   });
 
+  test("compact_mode_keeps_change_signs_and_line_numbers_for_visual_diff", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <DiffBlock
+        density="compact"
+        filePath="src/example.ts"
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/example.ts b/src/example.ts",
+            "--- a/src/example.ts",
+            "+++ b/src/example.ts",
+            "@@ -7,1 +11,1 @@",
+            "-const removedWidget = false;",
+            "+const addedWidget = true;",
+            "",
+          ])
+        }
+      />,
+      { width: 80, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    const removalLine = frame.split("\n").find((line) => line.includes("removedWidget")) ?? "";
+    const additionLine = frame.split("\n").find((line) => line.includes("addedWidget")) ?? "";
+
+    expect(removalLine).toContain("-");
+    expect(removalLine).toContain("7");
+    expect(additionLine).toContain("+");
+    expect(additionLine).toContain("11");
+    expect(frame).not.toContain("showing first");
+  });
+
   test("resolves_filetype_from_changed_file_path_for_syntax_highlighting", () => {
     expect(resolveOpenTuiDiffFiletype("packages/tui/src/components/App.tsx")).toBe("typescriptreact");
     expect(resolveOpenTuiDiffFiletype("Dockerfile")).toBe("dockerfile");

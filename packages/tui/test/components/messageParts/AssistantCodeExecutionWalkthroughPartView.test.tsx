@@ -45,6 +45,8 @@ describe("AssistantCodeExecutionWalkthroughPartView", () => {
     expect(frame).toContain("packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147");
     expect(frame).toContain("translateProviderStreamEvent");
     expect(frame).toContain("code_execution_walkthrough_presented");
+    expect(frame).not.toContain("// packages/engine/src/runtimeProviderStreamEventTranslator.ts");
+    expect(frame).not.toContain("// ts");
   });
 
   test("uses_singular_step_count_for_one_step", async () => {

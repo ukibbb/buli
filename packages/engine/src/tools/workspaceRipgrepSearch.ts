@@ -6,7 +6,6 @@ import { DEFAULT_EXCLUDED_SEARCH_DIRECTORY_NAMES } from "./workspaceFileSearch.t
 import { formatWorkspaceDisplayPath, isPathInsideWorkspace } from "./workspacePath.ts";
 
 const DEFAULT_RIPGREP_EXECUTABLE_PATH = "rg";
-const RIPGREP_MAX_LINE_LENGTH = 2_000;
 const MAX_RIPGREP_STDOUT_CAPTURE_CHARACTERS = 1_000_000;
 const MAX_RIPGREP_STDERR_CAPTURE_CHARACTERS = 100_000;
 
@@ -29,7 +28,6 @@ export type RipgrepGrepMatch = {
   matchLineNumber: number;
   matchSnippet: string;
   fileModifiedAtMilliseconds: number;
-  wasSnippetTruncated?: boolean;
 };
 
 export type RipgrepGrepSearchAttempt =
@@ -37,9 +35,6 @@ export type RipgrepGrepSearchAttempt =
     attemptKind: "completed";
     matches: RipgrepGrepMatch[];
     matchedFilePaths: ReadonlySet<string>;
-    wasLongLineTruncated: boolean;
-    wasSearchFileCountTruncated: boolean;
-    skippedLargeFileCount: number;
   }
   | RipgrepUnavailableAttempt
   | RipgrepFailedAttempt;
@@ -140,8 +135,6 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
   searchPath: string;
   isSearchPathDirectory: boolean;
   regexPattern: string;
-  maximumSearchFileCount?: number;
-  maximumFileByteCount?: number;
   includeGlobPattern?: string;
   ripgrepExecutablePath?: string;
   maximumCapturedOutputCharacters?: number;
@@ -151,29 +144,6 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
   const searchPath = await realpath(input.searchPath);
   const ripgrepSearchDirectoryPath = input.isSearchPathDirectory ? searchPath : dirname(searchPath);
   const ripgrepSearchTargetPath = input.isSearchPathDirectory ? "." : basename(searchPath);
-  const candidateFileSafetyCheck = await checkRipgrepCandidateFileSafety({
-    workspaceRootPath,
-    searchRootPath: ripgrepSearchDirectoryPath,
-    isSearchPathDirectory: input.isSearchPathDirectory,
-    searchPath,
-    ...(input.includeGlobPattern ? { includeGlobPattern: input.includeGlobPattern } : {}),
-    ...(input.maximumSearchFileCount !== undefined ? { maximumSearchFileCount: input.maximumSearchFileCount } : {}),
-    ...(input.maximumFileByteCount !== undefined ? { maximumFileByteCount: input.maximumFileByteCount } : {}),
-    ...(input.ripgrepExecutablePath ? { ripgrepExecutablePath: input.ripgrepExecutablePath } : {}),
-    ...(input.maximumCapturedOutputCharacters !== undefined
-      ? { maximumCapturedOutputCharacters: input.maximumCapturedOutputCharacters }
-      : {}),
-    ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-  });
-  if (candidateFileSafetyCheck.attemptKind !== "completed") {
-    return candidateFileSafetyCheck;
-  }
-  if (candidateFileSafetyCheck.wasSearchFileCountTruncated) {
-    return {
-      attemptKind: "failed",
-      failureExplanation: `Ripgrep candidate file count exceeded ${input.maximumSearchFileCount ?? 0}`,
-    };
-  }
 
   const ripgrepProcessAttempt = await runRipgrepProcess({
     executablePath: input.ripgrepExecutablePath ?? DEFAULT_RIPGREP_EXECUTABLE_PATH,
@@ -181,7 +151,6 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
     args: buildRipgrepSearchArgs({
       regexPattern: input.regexPattern,
       searchTargetPath: ripgrepSearchTargetPath,
-      ...(input.maximumFileByteCount !== undefined ? { maximumFileByteCount: input.maximumFileByteCount } : {}),
       ...(input.includeGlobPattern ? { includeGlobPattern: input.includeGlobPattern } : {}),
     }),
     ...(input.maximumCapturedOutputCharacters !== undefined
@@ -202,7 +171,6 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
   const matches: RipgrepGrepMatch[] = [];
   const matchedFilePaths = new Set<string>();
   const fileMetadataByAbsolutePath = new Map<string, { displayPath: string; modifiedAtMilliseconds: number }>();
-  let wasLongLineTruncated = false;
   for (const outputLine of splitRipgrepJsonLines(ripgrepProcessAttempt.stdoutText)) {
     const ripgrepMatchEvent = parseRipgrepJsonMatchEvent(outputLine);
     if (!ripgrepMatchEvent) {
@@ -219,17 +187,13 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
       continue;
     }
 
-    const matchSnippet = truncateRipgrepLine(removeSingleTrailingLineBreak(ripgrepMatchEvent.data.lines.text));
-    if (matchSnippet.wasSnippetTruncated) {
-      wasLongLineTruncated = true;
-    }
+    const matchSnippet = removeSingleTrailingLineBreak(ripgrepMatchEvent.data.lines.text);
     matchedFilePaths.add(fileMetadata.displayPath);
     matches.push({
       matchFilePath: fileMetadata.displayPath,
       matchLineNumber: ripgrepMatchEvent.data.line_number,
-      matchSnippet: matchSnippet.text,
+      matchSnippet,
       fileModifiedAtMilliseconds: fileMetadata.modifiedAtMilliseconds,
-      ...(matchSnippet.wasSnippetTruncated ? { wasSnippetTruncated: true } : {}),
     });
   }
 
@@ -247,67 +211,6 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
     attemptKind: "completed",
     matches,
     matchedFilePaths,
-    wasLongLineTruncated,
-    wasSearchFileCountTruncated: false,
-    skippedLargeFileCount: candidateFileSafetyCheck.skippedLargeFileCount,
-  };
-}
-
-type RipgrepCandidateFileSafetyCheckAttempt =
-  | {
-    attemptKind: "completed";
-    wasSearchFileCountTruncated: boolean;
-    skippedLargeFileCount: number;
-  }
-  | RipgrepUnavailableAttempt
-  | RipgrepFailedAttempt;
-
-async function checkRipgrepCandidateFileSafety(input: {
-  workspaceRootPath: string;
-  searchRootPath: string;
-  isSearchPathDirectory: boolean;
-  searchPath: string;
-  includeGlobPattern?: string;
-  maximumSearchFileCount?: number;
-  maximumFileByteCount?: number;
-  ripgrepExecutablePath?: string;
-  maximumCapturedOutputCharacters?: number;
-  abortSignal?: AbortSignal;
-}): Promise<RipgrepCandidateFileSafetyCheckAttempt> {
-  const maximumFileByteCount = input.maximumFileByteCount;
-  if (!input.isSearchPathDirectory) {
-    const file = await loadRipgrepWorkspaceFile({
-      workspaceRootPath: input.workspaceRootPath,
-      absolutePath: input.searchPath,
-    });
-    return {
-      attemptKind: "completed",
-      wasSearchFileCountTruncated: false,
-      skippedLargeFileCount: file && maximumFileByteCount !== undefined && file.stats.size > maximumFileByteCount ? 1 : 0,
-    };
-  }
-
-  const fileSearchAttempt = await listWorkspaceFilesWithRipgrep({
-    workspaceRootPath: input.workspaceRootPath,
-    searchRootPath: input.searchRootPath,
-    ...(input.includeGlobPattern ? { includeGlobPattern: input.includeGlobPattern } : {}),
-    ...(input.ripgrepExecutablePath ? { ripgrepExecutablePath: input.ripgrepExecutablePath } : {}),
-    ...(input.maximumCapturedOutputCharacters !== undefined
-      ? { maximumCapturedOutputCharacters: input.maximumCapturedOutputCharacters }
-      : {}),
-    ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-  });
-  if (fileSearchAttempt.attemptKind !== "completed") {
-    return fileSearchAttempt;
-  }
-
-  return {
-    attemptKind: "completed",
-    wasSearchFileCountTruncated: input.maximumSearchFileCount !== undefined
-      && fileSearchAttempt.files.length > input.maximumSearchFileCount,
-    skippedLargeFileCount: maximumFileByteCount === undefined
-      ? 0
-      : fileSearchAttempt.files.filter((file) => file.stats.size > maximumFileByteCount).length,
   };
 }
 
@@ -328,7 +231,6 @@ function buildRipgrepFileListArgs(includeGlobPattern: string | undefined): strin
 function buildRipgrepSearchArgs(input: {
   regexPattern: string;
   searchTargetPath: string;
-  maximumFileByteCount?: number;
   includeGlobPattern?: string;
 }): string[] {
   return [
@@ -338,7 +240,6 @@ function buildRipgrepSearchArgs(input: {
     "--hidden",
     "--no-messages",
     "--engine=auto",
-    ...(input.maximumFileByteCount !== undefined ? ["--max-filesize", String(input.maximumFileByteCount)] : []),
     ...(input.includeGlobPattern ? ["--glob", input.includeGlobPattern] : []),
     ...buildDefaultExcludedDirectoryGlobArgs(),
     "--",
@@ -597,12 +498,6 @@ function removeSingleTrailingLineBreak(lineText: string): string {
   }
 
   return lineText;
-}
-
-function truncateRipgrepLine(lineText: string): { text: string; wasSnippetTruncated?: boolean } {
-  return lineText.length <= RIPGREP_MAX_LINE_LENGTH
-    ? { text: lineText }
-    : { text: `${lineText.slice(0, RIPGREP_MAX_LINE_LENGTH)}...`, wasSnippetTruncated: true };
 }
 
 function hasErrorCode(error: Error, errorCode: string): boolean {

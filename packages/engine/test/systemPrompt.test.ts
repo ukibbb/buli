@@ -172,9 +172,13 @@ test("understand mode uses debug walkthrough blocks for code behavior", () => {
 
   expect(systemPromptText).toContain("Debug Walkthrough Blocks");
   expect(systemPromptText).toContain("present_code_execution_walkthrough");
-  expect(systemPromptText).toContain("Walk through the code like a debugging session");
+  expect(systemPromptText).toContain("Prefer this structured walkthrough over raw fenced code blocks in normal markdown.");
+  expect(systemPromptText).toContain("Walk through the code like a detailed debugging session");
+  expect(systemPromptText).toContain("what triggers the step");
   expect(systemPromptText).toContain("what data/state exists");
   expect(systemPromptText).toContain("which condition or branch decides the next path");
+  expect(systemPromptText).toContain("which collaborator receives control next");
+  expect(systemPromptText).toContain("Do not paste raw multi-line fenced code blocks into the regular answer unless Lukasz explicitly asks to see raw code");
   expect(systemPromptText).toContain("sourceFilePath");
   expect(systemPromptText).toContain("startLineNumber");
   expect(systemPromptText).toContain("endLineNumber");

@@ -10,9 +10,9 @@ import {
   readOpenAiFunctionCallOutputItem,
   type OpenAiFunctionCallOutputItem,
 } from "./openAiResponseObjects.ts";
+import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import {
   createOpenAiProviderFunctionCallIntent,
-  isOpenAiExecutableToolCallIntent,
   type OpenAiProviderFunctionCallIntent,
 } from "./toolDefinitions.ts";
 
@@ -93,10 +93,6 @@ export class OpenAiFunctionCallStreamAccumulator {
     }
   }
 
-  recordRequestedToolCallsFromResponseOutputItems(responseOutputItems: readonly unknown[]): void {
-    this.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
-  }
-
   recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems: readonly unknown[]): void {
     for (const responseOutputItem of responseOutputItems) {
       const functionCallOutputItem = readOpenAiFunctionCallOutputItem(responseOutputItem);
@@ -114,14 +110,7 @@ export class OpenAiFunctionCallStreamAccumulator {
   }
 
   listPendingRequestedToolCalls(): ProviderRequestedToolCall[] {
-    return this.pendingProviderFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-      isOpenAiExecutableToolCallIntent(providerFunctionCallIntent)
-        ? [{
-            toolCallId: providerFunctionCallIntent.functionCallId,
-            toolCallRequest: providerFunctionCallIntent.toolCallRequest,
-          }]
-        : []
-    );
+    return classifyOpenAiProviderFunctionCallIntents(this.pendingProviderFunctionCallIntents).requestedToolCalls;
   }
 
   listPendingProviderFunctionCallIntents(): OpenAiProviderFunctionCallIntent[] {
@@ -154,20 +143,24 @@ export class OpenAiFunctionCallStreamAccumulator {
         pendingFunctionCallState.hasRecordedFunctionCallIntent = true;
       }
     }
-    if (!isOpenAiExecutableToolCallIntent(providerFunctionCallIntent)) {
-      logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.presentation_function_call_ready", {
-        presentationCallId: input.functionCallId,
-        functionArgumentsLength: input.argumentsText.length,
-        presentationFunctionName: input.functionName,
-      });
-      return;
+    switch (providerFunctionCallIntent.intentKind) {
+      case "code_execution_walkthrough_presentation":
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.presentation_function_call_ready", {
+          presentationCallId: input.functionCallId,
+          functionArgumentsLength: input.argumentsText.length,
+          presentationFunctionName: input.functionName,
+        });
+        return;
+      case "executable_tool":
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.tool_call_ready", {
+          toolCallId: input.functionCallId,
+          functionArgumentsLength: input.argumentsText.length,
+          ...summarizeOpenAiToolCallRequestForDiagnostics(providerFunctionCallIntent.toolCallRequest),
+        });
+        return;
+      default:
+        assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent);
     }
-
-    logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.tool_call_ready", {
-      toolCallId: input.functionCallId,
-      functionArgumentsLength: input.argumentsText.length,
-      ...summarizeOpenAiToolCallRequestForDiagnostics(providerFunctionCallIntent.toolCallRequest),
-    });
   }
 
   private recordProviderFunctionCallIntentIfReady(itemId: string): void {
@@ -210,4 +203,8 @@ export class OpenAiFunctionCallStreamAccumulator {
 
 function readPendingFunctionCallArgumentsText(pendingFunctionCallState: PendingFunctionCallState): string {
   return pendingFunctionCallState.completedArgumentsText ?? pendingFunctionCallState.argumentTextChunks.join("");
+}
+
+function assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent: never): never {
+  throw new Error(`Unhandled OpenAI provider function-call intent: ${String(providerFunctionCallIntent)}`);
 }

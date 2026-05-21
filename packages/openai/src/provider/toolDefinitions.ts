@@ -469,18 +469,6 @@ export function createOpenAiToolDefinitions(input: {
   return [...executableToolDefinitions, ...presentationFunctionDefinitions];
 }
 
-export function isOpenAiExecutableToolCallIntent(
-  providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
-): providerFunctionCallIntent is OpenAiExecutableToolCallIntent {
-  return providerFunctionCallIntent.intentKind === "executable_tool";
-}
-
-export function isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(
-  providerFunctionCallIntent: OpenAiProviderFunctionCallIntent,
-): providerFunctionCallIntent is OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent {
-  return providerFunctionCallIntent.intentKind === "code_execution_walkthrough_presentation";
-}
-
 export function createOpenAiProviderFunctionCallIntent(input: {
   functionCallId: string;
   functionName: string;

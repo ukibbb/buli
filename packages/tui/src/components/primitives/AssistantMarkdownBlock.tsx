@@ -3,12 +3,15 @@ import {
   CodeRenderable,
   RGBA,
   SyntaxStyle,
+  TextAttributes,
   type MarkdownOptions,
+  type TextChunk,
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
   decorateAssistantMarkdownListChunks,
   decorateAssistantMarkdownProseChunks,
+  decorateAssistantMarkdownProseTextChunks,
 } from "./assistantMarkdownChunkDecorators.ts";
 import {
   assistantMarkdownSyntaxStyle,
@@ -50,7 +53,7 @@ const assistantMarkdownCalloutSyntaxStyleByKind = {
   CAUTION: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentRed), bold: true } }),
 } as const;
 
-const assistantMarkdownUnorderedListMarkers = ["•", "◦", "▪", "▫"] as const;
+const assistantMarkdownUnorderedListMarkers = ["-"] as const;
 
 const minimumAssistantMarkdownChromeRuleLength = 8;
 const maximumAssistantMarkdownChromeRuleLength = 120;
@@ -65,6 +68,10 @@ const fencedCodeBlockStartPattern = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 const incompleteStreamingFencePattern = /^\s*```[^`]*$/;
 const incompleteStreamingListMarkerPattern = /^\s*(?:[-*+]\s*|\d+\.\s*)$/;
 const incompleteStreamingHeadingPattern = /^\s*#{1,6}\s*$/;
+const markdownHeadingLinePattern = /^(#{1,6})\s+(.+)$/;
+const markdownBlockquoteLinePattern = /^\s*>\s?(.*)$/;
+const markdownListLinePattern = /^(\s*)(?:([-*+])\s+(?:\[([ xX])\]\s+)?|(\d+\.)\s+)(.*)$/;
+const markdownTableSeparatorLinePattern = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/;
 const assistantMarkdownGenericCodeFenceLanguageLabels = new Set(["code", "plain", "plaintext", "text", "txt"]);
 const unifiedDiffFileHeaderPattern = /^diff --git a\/(.+) b\/(.+)$/;
 const quotedUnifiedDiffFileHeaderPattern = /^diff --git "a\/(.+)" "b\/(.+)"$/;
@@ -109,6 +116,7 @@ type AssistantMarkdownCalloutKind = keyof typeof assistantMarkdownCalloutSyntaxS
 type AssistantMarkdownCodeFenceInfo = {
   codeLanguageLabel: string;
   codeFenceDisplayLabel?: string | undefined;
+  codeFenceFilePath?: string | undefined;
 };
 
 type AssistantMarkdownRenderSection =
@@ -116,7 +124,7 @@ type AssistantMarkdownRenderSection =
   | { sectionKind: "codeFence"; codeFenceText: string; codeFenceInfo: AssistantMarkdownCodeFenceInfo }
   | { sectionKind: "unifiedDiff"; unifiedDiffText: string }
   | { sectionKind: "shellSnippet"; shellSnippetText: string }
-  | { sectionKind: "diffSnippet"; diffSnippetText: string };
+  | { sectionKind: "diffSnippet"; diffSnippetText: string; filePath?: string | undefined };
 
 type AssistantMarkdownFencedCodeBlock = {
   fenceInfoString: string;
@@ -149,6 +157,26 @@ type AssistantUnifiedDiffFileSummary = {
   filePath: string;
   addedLineCount: number;
   removedLineCount: number;
+};
+
+type AssistantMarkdownTextBlock =
+  | { blockKind: "paragraph"; paragraphText: string }
+  | { blockKind: "heading"; headingDepth: number; headingText: string }
+  | { blockKind: "horizontalRule" }
+  | { blockKind: "blockquote"; quoteText: string }
+  | { blockKind: "list"; listLines: AssistantMarkdownVisibleListLine[] }
+  | { blockKind: "table"; tableMarkdownText: string };
+
+type AssistantMarkdownVisibleListLine = {
+  listItemIndentText: string;
+  listItemMarkerText: string;
+  listItemText: string;
+};
+
+type ParsedAssistantMarkdownListLine = {
+  listItemDepth: number;
+  listItemMarkerText: string;
+  listItemText: string;
 };
 
 function isAssistantMarkdownCodeToken(token: AssistantMarkdownToken): token is AssistantMarkdownCodeToken {
@@ -184,11 +212,8 @@ function isAssistantMarkdownDashOnlyParagraphToken(
   );
 }
 
-function formatAssistantMarkdownInlineTextForPlainText(inlineMarkdownText: string): string {
+function formatAssistantMarkdownInlineTextForStyledText(inlineMarkdownText: string): string {
   return inlineMarkdownText
-    .replace(/`([^`\n]+)`/g, "$1")
-    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
-    .replace(/__([^_\n]+)__/g, "$1")
     .replace(/~~([^~\n]+)~~/g, "$1")
     .replace(/!?\[([^\]\n]+)\]\([^\n)]+\)/g, "$1");
 }
@@ -201,7 +226,7 @@ function resolveAssistantMarkdownHeadingSyntaxStyle(depth: number): SyntaxStyle 
 }
 
 function formatAssistantMarkdownHeadingText(headingText: string, depth: number): string {
-  const visibleHeadingText = formatAssistantMarkdownInlineTextForPlainText(headingText);
+  const visibleHeadingText = formatAssistantMarkdownInlineTextForStyledText(headingText);
   if (depth === 1) {
     return `\n▌ ${visibleHeadingText}`;
   }
@@ -231,12 +256,12 @@ function parseAssistantMarkdownCallout(inputText: string): { calloutKind: Assist
 
 function formatAssistantMarkdownQuoteText(quoteText: string): string {
   const quoteLines = quoteText.trim().split("\n");
-  return quoteLines.map((quoteLine) => `│ ${formatAssistantMarkdownInlineTextForPlainText(quoteLine)}`).join("\n");
+  return quoteLines.map((quoteLine) => `│ ${formatAssistantMarkdownInlineTextForStyledText(quoteLine)}`).join("\n");
 }
 
 function formatAssistantMarkdownCalloutText(input: { calloutKind: AssistantMarkdownCalloutKind; bodyText: string }): string {
   const bodyLines = input.bodyText.trim().length > 0 ? input.bodyText.trim().split("\n") : [];
-  return [`▌ ${input.calloutKind}`, "├" + "─".repeat(Math.max(12, input.calloutKind.length + 2)), ...bodyLines.map((bodyLine) => `│ ${formatAssistantMarkdownInlineTextForPlainText(bodyLine)}`)].join("\n");
+  return [`▌ ${input.calloutKind}`, "├" + "─".repeat(Math.max(12, input.calloutKind.length + 2)), ...bodyLines.map((bodyLine) => `│ ${formatAssistantMarkdownInlineTextForStyledText(bodyLine)}`)].join("\n");
 }
 
 function parseAssistantMarkdownCodeFenceInfo(codeFenceInfoString: string | undefined): AssistantMarkdownCodeFenceInfo {
@@ -247,9 +272,10 @@ function parseAssistantMarkdownCodeFenceInfo(codeFenceInfoString: string | undef
   return {
     codeLanguageLabel,
     ...(codeFenceFileLabel
-      ? { codeFenceDisplayLabel: shouldShowCodeLanguageLabel ? `${codeLanguageLabel} · ${codeFenceFileLabel}` : codeFenceFileLabel }
-      : shouldShowCodeLanguageLabel
-      ? { codeFenceDisplayLabel: codeLanguageLabel }
+      ? {
+          codeFenceDisplayLabel: shouldShowCodeLanguageLabel ? `${codeLanguageLabel} · ${codeFenceFileLabel}` : codeFenceFileLabel,
+          codeFenceFilePath: codeFenceFileLabel,
+        }
       : {}),
   };
 }
@@ -327,7 +353,7 @@ function resolveAssistantMarkdownListItemMarker(input: {
 
 function resolveAssistantMarkdownListItemText(listItem: AssistantMarkdownListItemToken): string {
   const paragraphText = (listItem.tokens ?? []).find(isAssistantMarkdownParagraphToken)?.text;
-  return formatAssistantMarkdownInlineTextForPlainText((paragraphText ?? listItem.text ?? "").replace(/\n+/g, " ").trim());
+  return formatAssistantMarkdownInlineTextForStyledText((paragraphText ?? listItem.text ?? "").replace(/\n+/g, " ").trim());
 }
 
 function resolveAssistantMarkdownChildListTokens(listItem: AssistantMarkdownListItemToken): AssistantMarkdownListToken[] {
@@ -383,10 +409,12 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
         flushPendingMarkdownLines();
         renderSections.push({ sectionKind: "unifiedDiff", unifiedDiffText: fencedUnifiedDiffText });
       } else if (isAssistantMarkdownDiffFence(fencedCodeBlock)) {
+        const codeFenceInfo = parseAssistantMarkdownCodeFenceInfo(fencedCodeBlock.fenceInfoString);
         flushPendingMarkdownLines();
         renderSections.push({
           sectionKind: "diffSnippet",
           diffSnippetText: formatAssistantUnifiedDiffText(fencedCodeBlock.fencedContentLines),
+          ...(codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: codeFenceInfo.codeFenceFilePath } : {}),
         });
       } else if (isAssistantMarkdownShellFence(fencedCodeBlock)) {
         flushPendingMarkdownLines();
@@ -729,7 +757,11 @@ function summarizeAssistantUnifiedDiffFiles(unifiedDiffText: string): AssistantU
   return fileSummaries;
 }
 
-function summarizeAssistantDiffSnippet(diffSnippetText: string): string {
+function summarizeAssistantDiffSnippet(input: {
+  diffSnippetText: string;
+  filePath?: string | undefined;
+}): string {
+  const { diffSnippetText } = input;
   const fileSummaries = summarizeAssistantUnifiedDiffFiles(diffSnippetText);
   if (fileSummaries.length === 1) {
     const fileSummary = fileSummaries[0]!;
@@ -746,6 +778,9 @@ function summarizeAssistantDiffSnippet(diffSnippetText: string): string {
   const changedLineSummary = snippetLineCounts.addedLineCount > 0 || snippetLineCounts.removedLineCount > 0
     ? ` +${snippetLineCounts.addedLineCount} -${snippetLineCounts.removedLineCount}`
     : "";
+  if (input.filePath) {
+    return `patch ${input.filePath}${changedLineSummary}`;
+  }
   return `patch snippet${changedLineSummary}`;
 }
 
@@ -795,6 +830,500 @@ function resolveAssistantDiffSnippetLineColor(diffSnippetLine: string): string {
     return githubLikeTerminalCodeColors.diffMetadata;
   }
   return githubLikeTerminalCodeColors.foreground;
+}
+
+function resolveAssistantDiffSnippetFilePath(diffSnippetText: string): string | undefined {
+  for (const diffSnippetLine of diffSnippetText.replace(/\n$/, "").split("\n")) {
+    const fileHeader = parseAssistantUnifiedDiffFileHeader(diffSnippetLine);
+    if (fileHeader) {
+      return fileHeader.afterPath || fileHeader.beforePath;
+    }
+  }
+  return undefined;
+}
+
+function listAssistantDiffSnippetPatchBodyLines(diffSnippetText: string): string[] {
+  return diffSnippetText
+    .replace(/\n$/, "")
+    .split("\n")
+    .filter((diffSnippetLine) => {
+      if (parseAssistantUnifiedDiffFileHeader(diffSnippetLine)) {
+        return false;
+      }
+      if (isUnifiedDiffMetadataLine(diffSnippetLine)) {
+        return false;
+      }
+      if (diffSnippetLine.startsWith("@@")) {
+        return false;
+      }
+      return isUnifiedDiffHunkBodyLine(diffSnippetLine);
+    });
+}
+
+function countAssistantDiffSnippetPatchBodyLineRanges(diffSnippetBodyLines: readonly string[]): {
+  oldLineCount: number;
+  newLineCount: number;
+} {
+  let oldLineCount = 0;
+  let newLineCount = 0;
+  for (const diffSnippetBodyLine of diffSnippetBodyLines) {
+    if (diffSnippetBodyLine.startsWith("+") && !diffSnippetBodyLine.startsWith("+++")) {
+      newLineCount += 1;
+      continue;
+    }
+    if (diffSnippetBodyLine.startsWith("-") && !diffSnippetBodyLine.startsWith("---")) {
+      oldLineCount += 1;
+      continue;
+    }
+    oldLineCount += 1;
+    newLineCount += 1;
+  }
+  return { oldLineCount, newLineCount };
+}
+
+function buildAssistantDiffSnippetUnifiedDiff(input: {
+  diffSnippetText: string;
+  filePath?: string | undefined;
+}): { filePath: string; unifiedDiffText: string } | undefined {
+  const filePath = input.filePath ?? resolveAssistantDiffSnippetFilePath(input.diffSnippetText);
+  if (!filePath) {
+    return undefined;
+  }
+
+  const diffSnippetBodyLines = listAssistantDiffSnippetPatchBodyLines(input.diffSnippetText);
+  if (diffSnippetBodyLines.length === 0) {
+    return undefined;
+  }
+
+  const { oldLineCount, newLineCount } = countAssistantDiffSnippetPatchBodyLineRanges(diffSnippetBodyLines);
+  if (oldLineCount === 0 && newLineCount === 0) {
+    return undefined;
+  }
+
+  const oldStartLineNumber = oldLineCount === 0 ? 0 : 1;
+  const newStartLineNumber = newLineCount === 0 ? 0 : 1;
+  return {
+    filePath,
+    unifiedDiffText: [
+      `diff --git a/${filePath} b/${filePath}`,
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+      `@@ -${oldStartLineNumber},${oldLineCount} +${newStartLineNumber},${newLineCount} @@`,
+      ...diffSnippetBodyLines,
+      "",
+    ].join("\n"),
+  };
+}
+
+function isAssistantMarkdownTableStart(markdownLines: readonly string[], lineIndex: number): boolean {
+  const tableHeaderLine = markdownLines[lineIndex] ?? "";
+  const tableSeparatorLine = markdownLines[lineIndex + 1] ?? "";
+  return tableHeaderLine.includes("|") && markdownTableSeparatorLinePattern.test(tableSeparatorLine);
+}
+
+function isAssistantMarkdownBlockStart(markdownLines: readonly string[], lineIndex: number): boolean {
+  const markdownLine = markdownLines[lineIndex] ?? "";
+  return (
+    markdownHeadingLinePattern.test(markdownLine) ||
+    markdownBlockquoteLinePattern.test(markdownLine) ||
+    markdownListLinePattern.test(markdownLine) ||
+    dashOnlyParagraphPattern.test(markdownLine.trim()) ||
+    isAssistantMarkdownTableStart(markdownLines, lineIndex)
+  );
+}
+
+function parseAssistantMarkdownTextBlocks(markdownText: string): AssistantMarkdownTextBlock[] {
+  const markdownLines = markdownText.split("\n");
+  const markdownTextBlocks: AssistantMarkdownTextBlock[] = [];
+  let lineIndex = 0;
+
+  while (lineIndex < markdownLines.length) {
+    const markdownLine = markdownLines[lineIndex] ?? "";
+    if (markdownLine.trim().length === 0) {
+      lineIndex += 1;
+      continue;
+    }
+
+    const headingLineMatch = markdownHeadingLinePattern.exec(markdownLine);
+    if (headingLineMatch) {
+      markdownTextBlocks.push({
+        blockKind: "heading",
+        headingDepth: headingLineMatch[1]?.length ?? 1,
+        headingText: formatAssistantMarkdownInlineTextForStyledText(headingLineMatch[2] ?? ""),
+      });
+      lineIndex += 1;
+      continue;
+    }
+
+    if (dashOnlyParagraphPattern.test(markdownLine.trim())) {
+      markdownTextBlocks.push({ blockKind: "horizontalRule" });
+      lineIndex += 1;
+      continue;
+    }
+
+    if (isAssistantMarkdownTableStart(markdownLines, lineIndex)) {
+      const tableLines: string[] = [];
+      while (lineIndex < markdownLines.length && (markdownLines[lineIndex] ?? "").trim().length > 0) {
+        tableLines.push(markdownLines[lineIndex] ?? "");
+        lineIndex += 1;
+      }
+      markdownTextBlocks.push({ blockKind: "table", tableMarkdownText: tableLines.join("\n") });
+      continue;
+    }
+
+    if (markdownBlockquoteLinePattern.test(markdownLine)) {
+      const quoteLines: string[] = [];
+      while (lineIndex < markdownLines.length) {
+        const blockquoteLineMatch = markdownBlockquoteLinePattern.exec(markdownLines[lineIndex] ?? "");
+        if (!blockquoteLineMatch) {
+          break;
+        }
+        quoteLines.push(blockquoteLineMatch[1] ?? "");
+        lineIndex += 1;
+      }
+      markdownTextBlocks.push({ blockKind: "blockquote", quoteText: quoteLines.join("\n") });
+      continue;
+    }
+
+    if (markdownListLinePattern.test(markdownLine)) {
+      const listMarkdownLines: string[] = [];
+      while (lineIndex < markdownLines.length && markdownListLinePattern.test(markdownLines[lineIndex] ?? "")) {
+        listMarkdownLines.push(markdownLines[lineIndex] ?? "");
+        lineIndex += 1;
+      }
+      markdownTextBlocks.push({ blockKind: "list", listLines: formatAssistantMarkdownListLines(listMarkdownLines) });
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (
+      lineIndex < markdownLines.length &&
+      (markdownLines[lineIndex] ?? "").trim().length > 0 &&
+      !isAssistantMarkdownBlockStart(markdownLines, lineIndex)
+    ) {
+      paragraphLines.push(markdownLines[lineIndex] ?? "");
+      lineIndex += 1;
+    }
+    markdownTextBlocks.push({
+      blockKind: "paragraph",
+      paragraphText: formatAssistantMarkdownInlineTextForStyledText(paragraphLines.join(" ").trim()),
+    });
+  }
+
+  return markdownTextBlocks;
+}
+
+function parseAssistantMarkdownListLine(markdownListLine: string): ParsedAssistantMarkdownListLine | undefined {
+  const listLineMatch = markdownListLinePattern.exec(markdownListLine);
+  if (!listLineMatch) {
+    return undefined;
+  }
+
+  const listItemDepth = Math.floor((listLineMatch[1] ?? "").length / 2);
+  const taskListState = listLineMatch[3];
+  const orderedListMarkerText = listLineMatch[4];
+  const unorderedListMarkerText = assistantMarkdownUnorderedListMarkers[listItemDepth % assistantMarkdownUnorderedListMarkers.length] ?? "•";
+  const listItemMarkerText = taskListState !== undefined
+    ? taskListState.toLowerCase() === "x" ? "☑" : "☐"
+    : orderedListMarkerText ?? unorderedListMarkerText;
+  return {
+    listItemDepth,
+    listItemMarkerText,
+    listItemText: formatAssistantMarkdownInlineTextForStyledText((listLineMatch[5] ?? "").trim()),
+  };
+}
+
+function formatAssistantMarkdownListLines(markdownListLines: readonly string[]): AssistantMarkdownVisibleListLine[] {
+  const parsedListLines = markdownListLines
+    .map(parseAssistantMarkdownListLine)
+    .filter((listLine): listLine is ParsedAssistantMarkdownListLine => listLine !== undefined);
+  const markerWidthByDepth = new Map<number, number>();
+  for (const parsedListLine of parsedListLines) {
+    markerWidthByDepth.set(
+      parsedListLine.listItemDepth,
+      Math.max(markerWidthByDepth.get(parsedListLine.listItemDepth) ?? 1, parsedListLine.listItemMarkerText.length),
+    );
+  }
+
+  return parsedListLines.map((parsedListLine) => ({
+    listItemIndentText: "  ".repeat(parsedListLine.listItemDepth),
+    listItemMarkerText: parsedListLine.listItemMarkerText.padStart(markerWidthByDepth.get(parsedListLine.listItemDepth) ?? 1, " "),
+    listItemText: parsedListLine.listItemText,
+  }));
+}
+
+function resolveAssistantMarkdownVisibleListMarkerColor(listItemMarkerText: string): string {
+  const trimmedListItemMarkerText = listItemMarkerText.trim();
+  if (trimmedListItemMarkerText === "☑") {
+    return chatScreenTheme.accentGreen;
+  }
+  if (trimmedListItemMarkerText === "☐") {
+    return chatScreenTheme.textDim;
+  }
+  if (/^\d+\.$/.test(trimmedListItemMarkerText)) {
+    return chatScreenTheme.accentAmber;
+  }
+  const unorderedListMarkerIndex = assistantMarkdownUnorderedListMarkers.indexOf(
+    trimmedListItemMarkerText as (typeof assistantMarkdownUnorderedListMarkers)[number],
+  );
+  return [
+    chatScreenTheme.accentPrimaryMuted,
+    chatScreenTheme.accentCyan,
+    chatScreenTheme.accentAmber,
+    chatScreenTheme.accentPurple,
+  ][unorderedListMarkerIndex] ?? chatScreenTheme.textMuted;
+}
+
+function resolveAssistantMarkdownHeadingForegroundColor(headingDepth: number): string {
+  if (headingDepth === 1) return chatScreenTheme.accentCyan;
+  if (headingDepth === 2) return chatScreenTheme.accentAmber;
+  if (headingDepth === 3) return chatScreenTheme.accentPurple;
+  return chatScreenTheme.textPrimary;
+}
+
+function formatAssistantMarkdownVisibleHeadingText(input: { headingDepth: number; headingText: string }): string {
+  if (input.headingDepth === 1) {
+    return `▌ ${input.headingText}`;
+  }
+  if (input.headingDepth === 2) {
+    return `◆ ${input.headingText}`;
+  }
+  if (input.headingDepth === 3) {
+    return input.headingText;
+  }
+  return `• ${input.headingText}`;
+}
+
+function createAssistantMarkdownPlainTextChunk(input: {
+  text: string;
+  foregroundColor: string;
+  attributes?: number | undefined;
+}): TextChunk {
+  return {
+    __isChunk: true,
+    text: input.text,
+    fg: RGBA.fromHex(input.foregroundColor),
+    attributes: input.attributes ?? 0,
+  };
+}
+
+function AssistantMarkdownInlineText(props: {
+  inlineText: string;
+  foregroundColor?: string | undefined;
+  attributes?: number | undefined;
+}): ReactNode {
+  const inlineTextChunks = decorateAssistantMarkdownProseTextChunks([
+    createAssistantMarkdownPlainTextChunk({
+      text: props.inlineText,
+      foregroundColor: props.foregroundColor ?? chatScreenTheme.textPrimary,
+      attributes: props.attributes,
+    }),
+  ]);
+  return inlineTextChunks.map((inlineTextChunk, index) => (
+    <span
+      attributes={inlineTextChunk.attributes ?? 0}
+      fg={inlineTextChunk.fg ?? RGBA.fromHex(props.foregroundColor ?? chatScreenTheme.textPrimary)}
+      key={`assistant-inline-text-chunk-${index}`}
+    >
+      {inlineTextChunk.text}
+    </span>
+  ));
+}
+
+function AssistantMarkdownParagraphBlock(props: { paragraphText: string }): ReactNode {
+  return (
+    <box marginBottom={1} width="100%">
+      <text fg={chatScreenTheme.textPrimary} wrapMode="word">
+        <AssistantMarkdownInlineText inlineText={props.paragraphText} />
+      </text>
+    </box>
+  );
+}
+
+function AssistantMarkdownHeadingBlock(props: { headingDepth: number; headingText: string }): ReactNode {
+  const headingForegroundColor = resolveAssistantMarkdownHeadingForegroundColor(props.headingDepth);
+  return (
+    <box marginBottom={1} width="100%">
+      <text fg={headingForegroundColor} wrapMode="word">
+        <AssistantMarkdownInlineText
+          attributes={TextAttributes.BOLD}
+          foregroundColor={headingForegroundColor}
+          inlineText={formatAssistantMarkdownVisibleHeadingText(props)}
+        />
+      </text>
+    </box>
+  );
+}
+
+function AssistantMarkdownQuoteBlock(props: { quoteText: string }): ReactNode {
+  const assistantMarkdownCallout = parseAssistantMarkdownCallout(props.quoteText);
+  if (assistantMarkdownCallout) {
+    return <AssistantMarkdownCalloutBlock {...assistantMarkdownCallout} />;
+  }
+
+  return (
+    <box
+      border={["left"]}
+      borderColor={chatScreenTheme.textDim}
+      flexDirection="column"
+      marginBottom={1}
+      paddingX={1}
+      width="100%"
+    >
+      {props.quoteText.trim().split("\n").map((quoteLine, index) => (
+        <box key={`assistant-quote-line-${index}`} width="100%">
+          <text fg={chatScreenTheme.textSecondary} wrapMode="word">
+            <AssistantMarkdownInlineText foregroundColor={chatScreenTheme.textSecondary} inlineText={formatAssistantMarkdownInlineTextForStyledText(quoteLine)} />
+          </text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+function AssistantMarkdownCalloutBlock(props: { calloutKind: AssistantMarkdownCalloutKind; bodyText: string }): ReactNode {
+  const calloutForegroundColor = {
+    NOTE: chatScreenTheme.accentCyan,
+    TIP: chatScreenTheme.accentGreen,
+    IMPORTANT: chatScreenTheme.accentPurple,
+    WARNING: chatScreenTheme.accentAmber,
+    CAUTION: chatScreenTheme.accentRed,
+  }[props.calloutKind];
+  const bodyLines = props.bodyText.trim().length > 0 ? props.bodyText.trim().split("\n") : [];
+  return (
+    <box flexDirection="column" marginBottom={1} width="100%">
+      <text fg={calloutForegroundColor}>
+        <span attributes={TextAttributes.BOLD} fg={calloutForegroundColor}>{`▌ ${props.calloutKind}`}</span>
+      </text>
+      <text fg={calloutForegroundColor}>{"├" + "─".repeat(Math.max(12, props.calloutKind.length + 2))}</text>
+      {bodyLines.map((bodyLine, index) => (
+        <box key={`assistant-callout-line-${index}`} width="100%">
+          <text fg={calloutForegroundColor} wrapMode="word">
+            <span fg={calloutForegroundColor}>│ </span>
+            <AssistantMarkdownInlineText foregroundColor={calloutForegroundColor} inlineText={formatAssistantMarkdownInlineTextForStyledText(bodyLine)} />
+          </text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+function AssistantMarkdownListBlock(props: { listLines: readonly AssistantMarkdownVisibleListLine[] }): ReactNode {
+  return (
+    <box flexDirection="column" marginBottom={1} width="100%">
+      {props.listLines.map((listLine, index) => (
+        <box key={`assistant-list-line-${index}`} width="100%">
+          <text fg={chatScreenTheme.textPrimary} wrapMode="word">
+            {listLine.listItemIndentText}
+            <span
+              attributes={TextAttributes.BOLD}
+              fg={resolveAssistantMarkdownVisibleListMarkerColor(listLine.listItemMarkerText)}
+            >
+              {listLine.listItemMarkerText}
+            </span>
+            {" "}
+            <AssistantMarkdownInlineText inlineText={listLine.listItemText} />
+          </text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+function AssistantMarkdownHorizontalRuleBlock(props: { horizontalRuleText: string; horizontalRuleColor: string }): ReactNode {
+  return (
+    <box marginBottom={1} width="100%">
+      <text fg={props.horizontalRuleColor} wrapMode="none">
+        {props.horizontalRuleText}
+      </text>
+    </box>
+  );
+}
+
+function AssistantMarkdownTableBlock(props: {
+  isStreaming: boolean;
+  renderNode: NonNullable<MarkdownOptions["renderNode"]>;
+  tableMarkdownText: string;
+}): ReactNode {
+  return (
+    <box marginBottom={1} width="100%">
+      <markdown
+        bg={chatScreenTheme.bg}
+        conceal={true}
+        concealCode={false}
+        content={props.tableMarkdownText}
+        fg={chatScreenTheme.textPrimary}
+        renderNode={props.renderNode}
+        streaming={props.isStreaming}
+        syntaxStyle={assistantMarkdownSyntaxStyle}
+        tableOptions={{
+          borders: true,
+          borderColor: chatScreenTheme.borderSubtle,
+          borderStyle: "single",
+          cellPadding: 0,
+          columnFitter: "balanced",
+          outerBorder: true,
+          selectable: true,
+          style: "grid",
+          widthMode: "content",
+          wrapMode: "word",
+        }}
+        treeSitterClient={openTuiSharedTreeSitterClient}
+        width="100%"
+      />
+    </box>
+  );
+}
+
+function AssistantMarkdownTextSection(props: {
+  horizontalRuleColor: string;
+  horizontalRuleText: string;
+  isStreaming: boolean;
+  markdownText: string;
+  renderNode: NonNullable<MarkdownOptions["renderNode"]>;
+}): ReactNode {
+  const markdownTextBlocks = parseAssistantMarkdownTextBlocks(props.markdownText);
+  return (
+    <box flexDirection="column" width="100%">
+      {markdownTextBlocks.map((markdownTextBlock, index) => (
+        markdownTextBlock.blockKind === "paragraph" ? (
+          <AssistantMarkdownParagraphBlock
+            key={`assistant-markdown-paragraph-${index}`}
+            paragraphText={markdownTextBlock.paragraphText}
+          />
+        ) : markdownTextBlock.blockKind === "heading" ? (
+          <AssistantMarkdownHeadingBlock
+            headingDepth={markdownTextBlock.headingDepth}
+            headingText={markdownTextBlock.headingText}
+            key={`assistant-markdown-heading-${index}`}
+          />
+        ) : markdownTextBlock.blockKind === "horizontalRule" ? (
+          <AssistantMarkdownHorizontalRuleBlock
+            horizontalRuleColor={props.horizontalRuleColor}
+            horizontalRuleText={props.horizontalRuleText}
+            key={`assistant-markdown-hr-${index}`}
+          />
+        ) : markdownTextBlock.blockKind === "blockquote" ? (
+          <AssistantMarkdownQuoteBlock
+            key={`assistant-markdown-quote-${index}`}
+            quoteText={markdownTextBlock.quoteText}
+          />
+        ) : markdownTextBlock.blockKind === "list" ? (
+          <AssistantMarkdownListBlock
+            key={`assistant-markdown-list-${index}`}
+            listLines={markdownTextBlock.listLines}
+          />
+        ) : (
+          <AssistantMarkdownTableBlock
+            isStreaming={props.isStreaming}
+            key={`assistant-markdown-table-${index}`}
+            renderNode={props.renderNode}
+            tableMarkdownText={markdownTextBlock.tableMarkdownText}
+          />
+        )
+      ))}
+    </box>
+  );
 }
 
 function applyAssistantMarkdownFlowSpacing(defaultRenderable: CodeRenderable): void {
@@ -851,10 +1380,31 @@ function AssistantSnippetFrame(props: {
   );
 }
 
-function AssistantDiffSnippetBlock(props: { diffSnippetText: string }): ReactNode {
+function AssistantDiffSnippetBlock(props: {
+  diffSnippetText: string;
+  filePath?: string | undefined;
+}): ReactNode {
+  const normalizedDiffSnippet = buildAssistantDiffSnippetUnifiedDiff(props);
+  const headerText = summarizeAssistantDiffSnippet({
+    diffSnippetText: props.diffSnippetText,
+    filePath: props.filePath,
+  });
+
+  if (normalizedDiffSnippet) {
+    return (
+      <AssistantSnippetFrame accentColor={chatScreenTheme.accentPrimaryMuted} headerText={headerText}>
+        <DiffBlock
+          density="compact"
+          filePath={normalizedDiffSnippet.filePath}
+          unifiedDiffText={normalizedDiffSnippet.unifiedDiffText}
+        />
+      </AssistantSnippetFrame>
+    );
+  }
+
   const diffSnippetLines = listVisibleAssistantDiffSnippetLines(props.diffSnippetText);
   return (
-    <AssistantSnippetFrame accentColor={chatScreenTheme.accentPrimaryMuted} headerText={summarizeAssistantDiffSnippet(props.diffSnippetText)}>
+    <AssistantSnippetFrame accentColor={chatScreenTheme.accentPrimaryMuted} headerText={headerText}>
       {diffSnippetLines.map((diffSnippetLine, index) => (
         <box key={`assistant-diff-snippet-line-${index}`} width="100%">
           <text fg={resolveAssistantDiffSnippetLineColor(diffSnippetLine)} wrapMode="none">
@@ -939,7 +1489,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       if (isAssistantMarkdownHeadingToken(token)) {
         // Leading newline gives breathing room before each heading, including after an HR.
         defaultRenderable.content = formatAssistantMarkdownHeadingText(token.text, token.depth);
-        defaultRenderable.filetype = "text";
+        defaultRenderable.filetype = "markdown";
         defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
         applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.syntaxStyle = resolveAssistantMarkdownHeadingSyntaxStyle(token.depth);
@@ -951,7 +1501,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         defaultRenderable.content = assistantMarkdownCallout
           ? formatAssistantMarkdownCalloutText(assistantMarkdownCallout)
           : formatAssistantMarkdownQuoteText(token.text);
-        defaultRenderable.filetype = "text";
+        defaultRenderable.filetype = "markdown";
         defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
         applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.syntaxStyle = assistantMarkdownCallout
@@ -962,7 +1512,7 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
 
       if (isAssistantMarkdownListToken(token)) {
         defaultRenderable.content = formatAssistantMarkdownListText(token);
-        defaultRenderable.filetype = "text";
+        defaultRenderable.filetype = "markdown";
         defaultRenderable.onChunks = decorateAssistantMarkdownListChunks;
         applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.syntaxStyle = assistantMarkdownTaskListSyntaxStyle;
@@ -981,8 +1531,8 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
       }
 
       if (isAssistantMarkdownParagraphToken(token)) {
-        defaultRenderable.content = formatAssistantMarkdownInlineTextForPlainText(token.text);
-        defaultRenderable.filetype = "text";
+        defaultRenderable.content = formatAssistantMarkdownInlineTextForStyledText(token.text);
+        defaultRenderable.filetype = "markdown";
         defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
         applyAssistantMarkdownFlowSpacing(defaultRenderable);
         return defaultRenderable;
@@ -998,30 +1548,13 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
     <box flexDirection="column" width="100%">
       {assistantMarkdownRenderSections.map((assistantMarkdownRenderSection, index) => (
         assistantMarkdownRenderSection.sectionKind === "markdown" ? (
-          <markdown
-            bg={chatScreenTheme.bg}
-            conceal={true}
-            concealCode={false}
-            content={assistantMarkdownRenderSection.markdownText}
-            fg={githubLikeTerminalCodeColors.foreground}
+          <AssistantMarkdownTextSection
+            horizontalRuleColor={props.horizontalRuleColor}
+            horizontalRuleText={horizontalRuleText}
+            isStreaming={props.isStreaming}
             key={`assistant-markdown-section-${index}`}
+            markdownText={assistantMarkdownRenderSection.markdownText}
             renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
-            streaming={props.isStreaming}
-            syntaxStyle={assistantMarkdownSyntaxStyle}
-            tableOptions={{
-              borders: true,
-              borderColor: chatScreenTheme.borderSubtle,
-              borderStyle: "single",
-              cellPadding: 0,
-              columnFitter: "balanced",
-              outerBorder: true,
-              selectable: true,
-              style: "grid",
-              widthMode: "content",
-              wrapMode: "word",
-            }}
-            treeSitterClient={openTuiSharedTreeSitterClient}
-            width="100%"
           />
         ) : assistantMarkdownRenderSection.sectionKind === "codeFence" ? (
           <AssistantCodeFenceBlock
@@ -1042,6 +1575,9 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
         ) : (
           <AssistantDiffSnippetBlock
             diffSnippetText={assistantMarkdownRenderSection.diffSnippetText}
+            {...(assistantMarkdownRenderSection.filePath !== undefined
+              ? { filePath: assistantMarkdownRenderSection.filePath }
+              : {})}
             key={`assistant-diff-snippet-section-${index}`}
           />
         )

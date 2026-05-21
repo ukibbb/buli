@@ -3,9 +3,15 @@ import type { ConversationSessionSummary } from "@buli/contracts";
 import { canDeleteConversationSessionFromSelection } from "@buli/chat-session-state";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
+import {
+  calculateVisibleSelectionWindow,
+  resolveSelectionPaneRowTextColor,
+  SelectionPaneHighlightedRow,
+} from "./SelectionPaneRows.tsx";
+import { createClickableControlMouseDownHandler } from "./primitives/clickableControl.ts";
 
 const MAX_VISIBLE_CONVERSATION_SESSION_COUNT = 8;
-const CONVERSATION_SESSION_DELETE_CONTROL_WIDTH = 12;
+const CONVERSATION_SESSION_DELETE_CONTROL_WIDTH = 8;
 
 export type ConversationSessionSelectionPaneProps = {
   conversationSessions: readonly ConversationSessionSummary[];
@@ -20,31 +26,22 @@ export function ConversationSessionSelectionPane(props: ConversationSessionSelec
   if (props.conversationSessions.length === 0) {
     return (
       <SelectionPaneFrame accentColor={props.accentColor}>
-        <text fg={chatScreenTheme.textSecondary}>No saved sessions.</text>
+        <text fg={chatScreenTheme.textSecondary} selectable={false}>
+          No saved sessions.
+        </text>
       </SelectionPaneFrame>
     );
   }
 
-  const lastPossibleFirstVisibleConversationSessionIndex = Math.max(
-    0,
-    props.conversationSessions.length - MAX_VISIBLE_CONVERSATION_SESSION_COUNT,
-  );
-  const highlightedConversationSessionIndex = Math.max(
-    0,
-    Math.min(props.highlightedConversationSessionIndex, props.conversationSessions.length - 1),
-  );
-  const firstVisibleConversationSessionIndex = Math.min(
-    lastPossibleFirstVisibleConversationSessionIndex,
-    Math.max(0, highlightedConversationSessionIndex - MAX_VISIBLE_CONVERSATION_SESSION_COUNT + 1),
-  );
-  const visibleConversationSessions = props.conversationSessions.slice(
-    firstVisibleConversationSessionIndex,
-    firstVisibleConversationSessionIndex + MAX_VISIBLE_CONVERSATION_SESSION_COUNT,
-  );
-  const visibleConversationSessionRows = visibleConversationSessions.flatMap(
+  const visibleConversationSessionWindow = calculateVisibleSelectionWindow({
+    selectionItems: props.conversationSessions,
+    highlightedSelectionItemIndex: props.highlightedConversationSessionIndex,
+    maxVisibleSelectionItemCount: MAX_VISIBLE_CONVERSATION_SESSION_COUNT,
+  });
+  const visibleConversationSessionRows = visibleConversationSessionWindow.visibleSelectionItems.flatMap(
     (conversationSession, visibleConversationSessionOffset) => {
       const dayLabel = formatConversationSessionDayLabel(conversationSession.updatedAtMs);
-      const previousConversationSession = visibleConversationSessions[visibleConversationSessionOffset - 1];
+      const previousConversationSession = visibleConversationSessionWindow.visibleSelectionItems[visibleConversationSessionOffset - 1];
       const shouldRenderDayHeader =
         !previousConversationSession || formatConversationSessionDayLabel(previousConversationSession.updatedAtMs) !== dayLabel;
 
@@ -54,25 +51,24 @@ export function ConversationSessionSelectionPane(props: ConversationSessionSelec
               {
                 rowKind: "day_header" as const,
                 dayLabel,
-                rowKey: `${dayLabel}-${firstVisibleConversationSessionIndex + visibleConversationSessionOffset}`,
+                rowKey: `${dayLabel}-${visibleConversationSessionWindow.firstVisibleSelectionItemIndex + visibleConversationSessionOffset}`,
               },
             ]
           : []),
         {
           rowKind: "conversation_session" as const,
           conversationSession,
-          conversationSessionIndex: firstVisibleConversationSessionIndex + visibleConversationSessionOffset,
+          conversationSessionIndex: visibleConversationSessionWindow.firstVisibleSelectionItemIndex + visibleConversationSessionOffset,
         },
       ];
     },
   );
-
   return (
     <SelectionPaneFrame accentColor={props.accentColor}>
       {visibleConversationSessionRows.map((row) =>
         row.rowKind === "day_header" ? (
           <box flexShrink={0} height={1} key={row.rowKey} width="100%">
-            <text fg={chatScreenTheme.accentPrimaryMuted} truncate={true} wrapMode="none">
+            <text fg={chatScreenTheme.accentPrimaryMuted} selectable={false} truncate={true} wrapMode="none">
               <b>{row.dayLabel}</b>
             </text>
           </box>
@@ -85,7 +81,7 @@ export function ConversationSessionSelectionPane(props: ConversationSessionSelec
             )}
             conversationSession={row.conversationSession}
             conversationSessionIndex={row.conversationSessionIndex}
-            highlightedConversationSessionIndex={highlightedConversationSessionIndex}
+            highlightedConversationSessionIndex={visibleConversationSessionWindow.highlightedSelectionItemIndex}
             isAwaitingDeleteConfirmation={row.conversationSession.sessionId === props.pendingDeletionConversationSessionId}
             key={row.conversationSession.sessionId}
             onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
@@ -107,16 +103,14 @@ function ConversationSessionOptionRow(props: {
 }): ReactNode {
   const isHighlightedConversationSession = props.conversationSessionIndex === props.highlightedConversationSessionIndex;
   return (
-    <box
-      backgroundColor={isHighlightedConversationSession ? chatScreenTheme.borderSubtle : chatScreenTheme.surfaceOne}
-      flexDirection="row"
-      flexShrink={0}
-      height={1}
-      width="100%"
-    >
+    <SelectionPaneHighlightedRow isHighlighted={isHighlightedConversationSession}>
       <box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
         <text
-          fg={isHighlightedConversationSession ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+          fg={resolveSelectionPaneRowTextColor({
+            isHighlighted: isHighlightedConversationSession,
+            unhighlightedTextColor: chatScreenTheme.textSecondary,
+          })}
+          selectable={false}
           truncate={true}
           wrapMode="none"
           width="100%"
@@ -134,7 +128,7 @@ function ConversationSessionOptionRow(props: {
           onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
         />
       ) : null}
-    </box>
+    </SelectionPaneHighlightedRow>
   );
 }
 
@@ -144,23 +138,26 @@ function ConversationSessionDeleteControl(props: {
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 }): ReactNode {
   const [isPointerHovering, setIsPointerHovering] = useState(false);
-  const deleteActionLabel = props.isAwaitingDeleteConfirmation ? "delete again" : "delete";
+  const deleteActionLabel = props.isAwaitingDeleteConfirmation ? "confirm" : "delete";
   const deleteActionColor = props.isAwaitingDeleteConfirmation
-    ? (isPointerHovering ? chatScreenTheme.accentRed : chatScreenTheme.accentAmber)
+    ? chatScreenTheme.textPrimary
     : (isPointerHovering ? chatScreenTheme.accentRed : chatScreenTheme.textDim);
 
   return (
     <box
+      {...(props.isAwaitingDeleteConfirmation ? { backgroundColor: chatScreenTheme.accentRed } : {})}
       flexDirection="row"
       flexShrink={0}
-      justifyContent="flex-end"
+      justifyContent="center"
       marginLeft={1}
-      onMouseDown={() => props.onConversationSessionDeletionRequested(props.conversationSessionId)}
+      onMouseDown={createClickableControlMouseDownHandler(() =>
+        props.onConversationSessionDeletionRequested(props.conversationSessionId)
+      )}
       onMouseOut={() => setIsPointerHovering(false)}
       onMouseOver={() => setIsPointerHovering(true)}
       width={CONVERSATION_SESSION_DELETE_CONTROL_WIDTH}
     >
-      <text fg={deleteActionColor} wrapMode="none">
+      <text fg={deleteActionColor} selectable={false} wrapMode="none">
         {deleteActionLabel}
       </text>
     </box>

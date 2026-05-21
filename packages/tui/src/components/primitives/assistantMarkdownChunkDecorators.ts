@@ -39,7 +39,7 @@ const diagnosticInfoForegroundColor = RGBA.fromHex(chatScreenTheme.accentCyan);
 const diagnosticCodeForegroundColor = RGBA.fromHex(chatScreenTheme.accentPurple);
 const diagnosticTokenTextAttributes = createTextAttributes({ bold: true });
 
-const unorderedListMarkers = ["•", "◦", "▪", "▫"] as const;
+const unorderedListMarkers = ["-"] as const;
 const unorderedListMarkerForegroundColors = [
   RGBA.fromHex(chatScreenTheme.accentPrimaryMuted),
   RGBA.fromHex(chatScreenTheme.accentCyan),
@@ -57,7 +57,7 @@ const diagnosticReferencePattern = new RegExp(
   "gi",
 );
 const shellCommandPattern = /(^|[\s({["'`])((?:bun|npm|pnpm|yarn)\s+(?:(?:run\s+)?[A-Za-z0-9:_-]+)(?:\s+--?[A-Za-z0-9:._=/-]+)*|git\s+(?:status|diff|log|show|add|commit|push|pull|checkout|switch|branch|restore|merge|rebase)(?:\s+--?[A-Za-z0-9:._=/-]+)*|gh\s+(?:pr|issue|repo|api|workflow|run|release)\s+[A-Za-z0-9:_-]+(?:\s+--?[A-Za-z0-9:._=/-]+)*)(?=$|[\s)\]},.;:'"`!?])/g;
-const listMarkerPattern = /(^|\n)(\s*)((?:☑|☐|[•◦▪▫]|\d+\.))(?=\s)/g;
+const listMarkerPattern = /(^|\n)(\s*)((?:☑|☐|-|[•◦▪▫]|\d+\.))(?=\s)/g;
 const inlineCodeSpanPattern = /`([^`\n]+)`/g;
 const strongAsteriskSpanPattern = /\*\*([^*\n]+)\*\*/g;
 const strongUnderscoreSpanPattern = /__([^_\n]+)__/g;

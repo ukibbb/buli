@@ -39,7 +39,7 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain("code");
     expect(frame).toContain("first");
     expect(frame).toContain("second");
-    expect(frame).toContain("ts");
+    expect(frame).not.toContain("ts");
     expect(frame).not.toContain("// ts");
     expect(frame).not.toContain("╰");
     expect(frame).toContain("const x = 1;");
@@ -180,16 +180,19 @@ describe("AssistantMarkdownBlock", () => {
       <AssistantMarkdownBlock
         horizontalRuleColor="#10B981"
         isStreaming={false}
-        markdownText={["> Keep this constraint visible.", "> Second line."].join("\n")}
+        markdownText="> Keep this constraint visible across wrapped terminal rows so the rail stays full height."
       />,
-      { width: 72, height: 10 },
+      { width: 48, height: 10 },
     );
 
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("│ Keep this constraint visible.");
-    expect(frame).toContain("│ Second line.");
+    const visibleRows = frame.split("\n").filter((renderedRow) => renderedRow.trim().length > 0);
+    expect(frame).toContain("Keep this constraint visible");
+    expect(frame).toContain("rail stays full height");
+    expect(visibleRows.length).toBeGreaterThanOrEqual(2);
+    expect(visibleRows.every((visibleRow) => visibleRow.trimStart().startsWith("│"))).toBe(true);
   });
 
   test("renders_github_style_callouts_as_colored_terminal_blocks", async () => {
@@ -277,9 +280,12 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("• parent");
-    expect(frame).toContain("  ◦ child");
-    expect(frame).toContain("    ▪ grandchild");
+    expect(frame).toContain("- parent");
+    expect(frame).toContain("  - child");
+    expect(frame).toContain("    - grandchild");
+    expect(frame).not.toContain("• parent");
+    expect(frame).not.toContain("◦ child");
+    expect(frame).not.toContain("▪ grandchild");
   });
 
   test("renders_partial_diff_fences_as_lightweight_patch_snippets", async () => {
@@ -381,13 +387,71 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
+    const additionLine = frame.split("\n").find((line) => line.includes("const loose")) ?? "";
     expect(frame).toContain("Malformed but still useful:");
     expect(frame).toContain("patch src/loose.ts +1 -0");
-    expect(frame).toContain("+const loose = true;");
+    expect(additionLine).toContain("+");
+    expect(additionLine).toContain("const loose = true;");
     expect(frame).toContain("Continue after it.");
     expect(frame).not.toContain("// diff");
     expect(frame).not.toContain("diff --git a/src/loose.ts b/src/loose.ts");
     expect(frame).not.toContain("Error parsing diff");
+  });
+
+  test("renders_file_backed_invalid_diff_snippets_as_compact_structured_diffs", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "Proposed patch:",
+          "",
+          "diff --git a/src/example.ts b/src/example.ts",
+          "@@",
+          "-const removedWidget = 1;",
+          "+const addedWidget = 2;",
+          "",
+          "Done.",
+        ].join("\n")}
+      />,
+      { width: 96, height: 14 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    const removalLine = frame.split("\n").find((line) => line.includes("removedWidget")) ?? "";
+    const additionLine = frame.split("\n").find((line) => line.includes("addedWidget")) ?? "";
+
+    expect(frame).toContain("patch src/example.ts +1 -1");
+    expect(removalLine).toContain("-");
+    expect(additionLine).toContain("+");
+    expect(frame).not.toContain("diff --git a/src/example.ts b/src/example.ts");
+    expect(frame).not.toContain("@@");
+  });
+
+  test("renders_file_labeled_partial_diff_fences_as_file_patches", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["```diff title=src/example.ts", "@@", "-const removedWidget = 1;", "+const addedWidget = 2;", "```"].join("\n")}
+      />,
+      { width: 96, height: 12 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    const removalLine = frame.split("\n").find((line) => line.includes("removedWidget")) ?? "";
+    const additionLine = frame.split("\n").find((line) => line.includes("addedWidget")) ?? "";
+    expect(frame).toContain("patch src/example.ts +1 -1");
+    expect(removalLine).toContain("-");
+    expect(removalLine).toContain("const removedWidget");
+    expect(additionLine).toContain("+");
+    expect(additionLine).toContain("const addedWidget");
+    expect(frame).not.toContain("patch snippet");
+    expect(frame).not.toContain("@@");
   });
 
   test("renders_fenced_full_unified_diffs_as_structured_diff_blocks", async () => {

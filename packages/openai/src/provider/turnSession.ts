@@ -34,9 +34,8 @@ import {
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "./openAiResponsesRequest.ts";
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
+import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import {
-  isOpenAiExecutableToolCallIntent,
-  isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
   type OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
   type OpenAiProviderFunctionCallIntent,
 } from "./toolDefinitions.ts";
@@ -269,17 +268,9 @@ export class OpenAiProviderConversationTurn {
 
       if (isOpenAiResponseStepFunctionCallTerminalState(terminalState)) {
         const providerFunctionCallIntents = listProviderFunctionCallIntentsFromTerminalState(terminalState);
-        const requestedToolCalls = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-          isOpenAiExecutableToolCallIntent(providerFunctionCallIntent)
-            ? [{
-                toolCallId: providerFunctionCallIntent.functionCallId,
-                toolCallRequest: providerFunctionCallIntent.toolCallRequest,
-              }]
-            : []
-        );
-        const presentationFunctionCallIntents = providerFunctionCallIntents.flatMap((providerFunctionCallIntent) =>
-          isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent) ? [providerFunctionCallIntent] : []
-        );
+        const providerFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(providerFunctionCallIntents);
+        const requestedToolCalls = providerFunctionCallIntentClassification.requestedToolCalls;
+        const presentationFunctionCallIntents = providerFunctionCallIntentClassification.presentationFunctionCallIntents;
         const onlyRequestedToolCall = requestedToolCalls.length === 1 ? requestedToolCalls[0] : undefined;
         requestedToolCallCount += requestedToolCalls.length;
         if (this.maxToolCallsPerTurn !== undefined && requestedToolCallCount > this.maxToolCallsPerTurn) {
@@ -333,22 +324,26 @@ export class OpenAiProviderConversationTurn {
           toolResultSubmissions.map((toolResultSubmission) => [toolResultSubmission.toolCallId, toolResultSubmission]),
         );
         const functionCallOutputInputItems = providerFunctionCallIntents.map((providerFunctionCallIntent) => {
-          if (isOpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent(providerFunctionCallIntent)) {
-            return createFunctionCallOutputInputItem(
-              providerFunctionCallIntent.functionCallId,
-              createCodeExecutionWalkthroughPresentationFunctionOutputText(providerFunctionCallIntent),
-            );
-          }
+          switch (providerFunctionCallIntent.intentKind) {
+            case "code_execution_walkthrough_presentation":
+              return createFunctionCallOutputInputItem(
+                providerFunctionCallIntent.functionCallId,
+                createCodeExecutionWalkthroughPresentationFunctionOutputText(providerFunctionCallIntent),
+              );
+            case "executable_tool": {
+              const toolResultSubmission = toolResultSubmissionByToolCallId.get(providerFunctionCallIntent.functionCallId);
+              if (!toolResultSubmission) {
+                throw new Error(`OpenAI provider turn is missing a tool result for ${providerFunctionCallIntent.functionCallId}.`);
+              }
 
-          const toolResultSubmission = toolResultSubmissionByToolCallId.get(providerFunctionCallIntent.functionCallId);
-          if (!toolResultSubmission) {
-            throw new Error(`OpenAI provider turn is missing a tool result for ${providerFunctionCallIntent.functionCallId}.`);
+              return createFunctionCallOutputInputItem(
+                toolResultSubmission.toolCallId,
+                toolResultSubmission.toolResultText,
+              );
+            }
+            default:
+              return assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent);
           }
-
-          return createFunctionCallOutputInputItem(
-            toolResultSubmission.toolCallId,
-            toolResultSubmission.toolResultText,
-          );
         });
         const toolResultDebugSummary = {
           responseStepIndex,
@@ -585,6 +580,10 @@ function createCodeExecutionWalkthroughPresentationFunctionOutputText(
   presentationFunctionCallIntent: OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
 ): string {
   return `Rendered code execution walkthrough: ${presentationFunctionCallIntent.codeExecutionWalkthrough.titleText}`;
+}
+
+function assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent: never): never {
+  throw new Error(`Unhandled OpenAI provider function-call intent: ${String(providerFunctionCallIntent)}`);
 }
 
 async function createFailedResponseDebugPayload(response: OpenAiHttpErrorResponse): Promise<{

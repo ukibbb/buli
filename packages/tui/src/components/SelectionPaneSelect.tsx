@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import {
+  calculateVisibleSelectionWindow,
+  resolveSelectionPaneRowTextColor,
+  SelectionPaneHighlightedRow,
+} from "./SelectionPaneRows.tsx";
 
 export type SelectionPaneSelectProps = {
   optionNames: readonly string[];
@@ -8,46 +13,31 @@ export type SelectionPaneSelectProps = {
 };
 
 export function SelectionPaneSelect(props: SelectionPaneSelectProps): ReactNode {
-  const lastPossibleFirstVisibleOptionIndex = Math.max(
-    0,
-    props.optionNames.length - props.maxVisibleOptionCount,
-  );
-  const highlightedOptionIndex = Math.max(
-    0,
-    Math.min(props.highlightedOptionIndex, props.optionNames.length - 1),
-  );
-  const firstVisibleOptionIndex = Math.min(
-    lastPossibleFirstVisibleOptionIndex,
-    Math.max(0, highlightedOptionIndex - props.maxVisibleOptionCount + 1),
-  );
-  const visibleOptionNames = props.optionNames.slice(
-    firstVisibleOptionIndex,
-    firstVisibleOptionIndex + props.maxVisibleOptionCount,
-  );
+  const visibleOptionWindow = calculateVisibleSelectionWindow({
+    selectionItems: props.optionNames,
+    highlightedSelectionItemIndex: props.highlightedOptionIndex,
+    maxVisibleSelectionItemCount: props.maxVisibleOptionCount,
+  });
 
   return (
     <>
-      {visibleOptionNames.map((optionName, visibleOptionOffset) => {
-        const optionIndex = firstVisibleOptionIndex + visibleOptionOffset;
-        const isHighlightedOption = optionIndex === highlightedOptionIndex;
+      {visibleOptionWindow.visibleSelectionItems.map((optionName, visibleOptionOffset) => {
+        const optionIndex = visibleOptionWindow.firstVisibleSelectionItemIndex + visibleOptionOffset;
+        const isHighlightedOption = optionIndex === visibleOptionWindow.highlightedSelectionItemIndex;
 
         return (
-          <box
-            backgroundColor={isHighlightedOption ? chatScreenTheme.borderSubtle : chatScreenTheme.surfaceOne}
-            flexDirection="row"
-            flexShrink={0}
-            height={1}
-            key={optionIndex}
-            width="100%"
-          >
+          <SelectionPaneHighlightedRow isHighlighted={isHighlightedOption} key={optionIndex}>
             <text
-              fg={isHighlightedOption ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+              fg={resolveSelectionPaneRowTextColor({
+                isHighlighted: isHighlightedOption,
+                unhighlightedTextColor: chatScreenTheme.textSecondary,
+              })}
               truncate={true}
               wrapMode="none"
             >
               {optionName}
             </text>
-          </box>
+          </SelectionPaneHighlightedRow>
         );
       })}
     </>

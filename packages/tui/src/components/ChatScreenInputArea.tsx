@@ -35,6 +35,10 @@ export type ChatScreenInputAreaProps = {
 };
 
 export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode {
+  const promptImageAttachmentPlaceholderTexts = props.chatSessionState.pendingPromptImageAttachments.map(
+    (pendingPromptImageAttachment) => pendingPromptImageAttachment.promptDraftPlaceholderText,
+  );
+
   return (
     <box flexDirection="column" flexShrink={0}>
       {props.chatSessionState.pendingToolApprovalRequest ? (
@@ -58,7 +62,7 @@ export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode 
             <MinimumHeightPromptStrip
               promptDraft={props.chatSessionState.promptDraft}
               promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
-              pendingPromptImageAttachments={props.chatSessionState.pendingPromptImageAttachments}
+              promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
               selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
               isPromptInputDisabled={props.isPromptInputDisabled}
               accentColor={props.inputPanelAccentColor}
@@ -73,7 +77,8 @@ export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode 
           <InputPanel
             promptDraft={props.chatSessionState.promptDraft}
             promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
-            pendingPromptImageAttachments={props.chatSessionState.pendingPromptImageAttachments}
+            promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
+            pendingPromptImageAttachmentCount={props.chatSessionState.pendingPromptImageAttachments.length}
             selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
             isPromptInputDisabled={props.isPromptInputDisabled}
             {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}

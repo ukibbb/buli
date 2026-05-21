@@ -557,10 +557,12 @@ test("ChatScreen confirms and deletes sessions through slash command", async () 
   const deleteTarget = findRenderedFrameTextPosition(sessionListFrame, "Switched prompt", "delete");
 
   const confirmationFrame = await renderedChatScreen.clickMouse(deleteTarget.column, deleteTarget.row);
-  expect(confirmationFrame).toContain("delete again");
+  expect(confirmationFrame).toContain("confirm");
+  expect(confirmationFrame).not.toContain('Delete "Switched prompt"?');
+  expect(confirmationFrame).not.toContain("delete again");
   expect(deletedConversationSessionIds).toEqual([]);
 
-  const confirmTarget = findRenderedFrameTextPosition(confirmationFrame, "Switched prompt", "delete again");
+  const confirmTarget = findRenderedFrameTextPosition(confirmationFrame, "Switched prompt", "confirm");
   const deletedFrame = await renderedChatScreen.clickMouse(confirmTarget.column, confirmTarget.row);
   expect(deletedConversationSessionIds).toEqual(["session-b"]);
   expect(deletedFrame).toContain("Previous prompt");
@@ -621,7 +623,9 @@ test("ChatScreen confirms and deletes highlighted sessions with keyboard delete"
   await renderedChatScreen.pressArrowDown();
 
   const confirmationFrame = await renderedChatScreen.pressDelete();
-  expect(confirmationFrame).toContain("delete again");
+  expect(confirmationFrame).toContain("confirm");
+  expect(confirmationFrame).not.toContain('Delete "Switched prompt"?');
+  expect(confirmationFrame).not.toContain("delete again");
   expect(deletedConversationSessionIds).toEqual([]);
 
   const deletedFrame = await renderedChatScreen.pressDelete();
@@ -730,10 +734,9 @@ test("ChatScreen toggles reasoning summary visibility through thinking slash com
 
   await renderedChatScreen.typeText("/thinking");
   const hiddenReasoningFrame = await renderedChatScreen.pressEnter();
-  expect(hiddenReasoningFrame).toContain("[+]");
-  expect(hiddenReasoningFrame).toContain("Thought");
-  expect(hiddenReasoningFrame).toContain("7 reasoning tok");
-  expect(hiddenReasoningFrame).toContain("click to show content");
+  expect(hiddenReasoningFrame).not.toContain("Thought");
+  expect(hiddenReasoningFrame).not.toContain("7 reasoning tok");
+  expect(hiddenReasoningFrame).not.toContain("click to show content");
   expect(hiddenReasoningFrame).not.toContain("I inspected the available context before answering.");
 
   const slashMenuFrame = await renderedChatScreen.typeText("/");

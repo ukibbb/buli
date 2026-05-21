@@ -8,6 +8,7 @@ import { VisibleContentLimitNotice } from "./VisibleContentLimit.tsx";
 
 export type DiffBlockProps = {
   unifiedDiffText: UnifiedDiffText;
+  density?: "normal" | "compact";
   filePath?: string;
 };
 
@@ -56,6 +57,17 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
   const unifiedDiffRowCount = countUnifiedDiffRowsForFullHeight(props.unifiedDiffText);
   const visibleUnifiedDiffRowCount = Math.min(unifiedDiffRowCount, MAX_VISIBLE_DIFF_ROW_COUNT);
   const diffFiletype = resolveOpenTuiDiffFiletype(props.filePath);
+  const isCompact = props.density === "compact";
+  const lineNumberForegroundColor = terminalDiffColors.lineNumberForeground;
+  const lineNumberBackgroundColor = isCompact
+    ? githubLikeTerminalCodeColors.canvas
+    : terminalDiffColors.lineNumberBackground;
+  const addedLineNumberBackgroundColor = isCompact
+    ? githubLikeTerminalCodeColors.canvas
+    : terminalDiffColors.addedLineNumberBackground;
+  const removedLineNumberBackgroundColor = isCompact
+    ? githubLikeTerminalCodeColors.canvas
+    : terminalDiffColors.removedLineNumberBackground;
   return (
     <box flexDirection="column" width="100%">
       <VisibleContentLimitNotice
@@ -66,7 +78,7 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
       <diff
         addedBg={terminalDiffColors.addedBackground}
         addedContentBg={terminalDiffColors.addedContentBackground}
-        addedLineNumberBg={terminalDiffColors.addedLineNumberBackground}
+        addedLineNumberBg={addedLineNumberBackgroundColor}
         addedSignColor={terminalDiffColors.addedSignForeground}
         contextBg={terminalDiffColors.contextBackground}
         contextContentBg={terminalDiffColors.contextContentBackground}
@@ -74,11 +86,11 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
         filetype={diffFiletype}
         fg={githubLikeTerminalCodeColors.foreground}
         height={visibleUnifiedDiffRowCount}
-        lineNumberBg={terminalDiffColors.lineNumberBackground}
-        lineNumberFg={terminalDiffColors.lineNumberForeground}
+        lineNumberBg={lineNumberBackgroundColor}
+        lineNumberFg={lineNumberForegroundColor}
         removedBg={terminalDiffColors.removedBackground}
         removedContentBg={terminalDiffColors.removedContentBackground}
-        removedLineNumberBg={terminalDiffColors.removedLineNumberBackground}
+        removedLineNumberBg={removedLineNumberBackgroundColor}
         removedSignColor={terminalDiffColors.removedSignForeground}
         selectionBg={chatScreenTheme.accentPrimary}
         selectionFg={chatScreenTheme.textPrimary}

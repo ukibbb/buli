@@ -11,9 +11,7 @@ import { WorkspaceShellCommandExecutor } from "./workspaceShellCommandExecutor.t
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 
 const DEFAULT_BASH_TIMEOUT_MILLISECONDS = 120_000;
-const MAX_CAPTURED_OUTPUT_CHARACTERS_PER_STREAM = 100_000;
-const MAX_MODEL_VISIBLE_OUTPUT_CHARACTERS = 12_000;
-const MAX_RENDERED_OUTPUT_LINES = 120;
+const DEFAULT_BASH_CAPTURED_OUTPUT_CHARACTER_COUNT = 100_000;
 
 export type CompletedBashToolCallOutcome = {
   outcomeKind: "completed";
@@ -70,7 +68,7 @@ export async function runApprovedBashToolCall(input: {
       shellCommand: input.bashToolCallRequest.shellCommand,
       workingDirectoryPath,
       timeoutMilliseconds,
-      maximumCapturedOutputCharacters: MAX_CAPTURED_OUTPUT_CHARACTERS_PER_STREAM,
+      maximumCapturedOutputCharacters: DEFAULT_BASH_CAPTURED_OUTPUT_CHARACTER_COUNT,
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
     });
     const outputLines = buildBashOutputLines({
@@ -193,17 +191,7 @@ function buildBashOutputLines(input: {
     });
   }
 
-  if (outputLines.length <= MAX_RENDERED_OUTPUT_LINES) {
-    return outputLines;
-  }
-
-  return [
-    ...outputLines.slice(0, MAX_RENDERED_OUTPUT_LINES),
-    {
-      lineKind: "stderr",
-      lineText: `… output truncated after ${MAX_RENDERED_OUTPUT_LINES} lines`,
-    },
-  ];
+  return outputLines;
 }
 
 function buildModelVisibleBashToolResultText(input: {
@@ -223,7 +211,7 @@ function buildModelVisibleBashToolResultText(input: {
   const stderrTruncationText = input.stderrWasTruncated
     ? `\n[stderr truncated; omitted ${input.stderrOmittedCharacterCount ?? 0} characters]`
     : "";
-  const rawResultText = [
+  return [
     `Command: ${input.shellCommand}`,
     `Working directory: ${input.workingDirectoryPath}`,
     `Exit code: ${input.exitCode}`,
@@ -232,12 +220,6 @@ function buildModelVisibleBashToolResultText(input: {
     "Stderr:",
     `${input.stderrText || "<empty>"}${stderrTruncationText}`,
   ].join("\n");
-
-  if (rawResultText.length <= MAX_MODEL_VISIBLE_OUTPUT_CHARACTERS) {
-    return rawResultText;
-  }
-
-  return `${rawResultText.slice(0, MAX_MODEL_VISIBLE_OUTPUT_CHARACTERS)}\n\n[Output truncated]`;
 }
 
 function splitIntoDisplayLines(outputText: string): string[] {

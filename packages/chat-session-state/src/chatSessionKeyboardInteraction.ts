@@ -37,7 +37,8 @@ import {
   movePromptDraftCursorRight,
   movePromptDraftCursorToEnd,
   movePromptDraftCursorToStart,
-  removeLastPromptImageAttachmentFromDraft,
+  removePromptImageAttachmentPlaceholderAtCursor,
+  removePromptImageAttachmentPlaceholderBeforeCursor,
   removePromptDraftCharacterAtCursor,
   removePromptDraftCharacterBeforeCursor,
   submitPromptDraft,
@@ -621,9 +622,10 @@ function applyKeyboardInputToPromptDraftEditingKeys(
   }
 
   if (chatSessionKeyboardInput.keyName === "backspace") {
-    if (chatSessionState.promptDraft.length === 0 && chatSessionState.promptDraftCursorOffset === 0) {
+    const nextChatSessionState = removePromptImageAttachmentPlaceholderBeforeCursor(chatSessionState);
+    if (nextChatSessionState !== chatSessionState) {
       return createChatSessionKeyboardInteraction({
-        nextChatSessionState: removeLastPromptImageAttachmentFromDraft(chatSessionState),
+        nextChatSessionState,
         shouldConsumeKeyboardInput: true,
       });
     }
@@ -635,6 +637,14 @@ function applyKeyboardInputToPromptDraftEditingKeys(
   }
 
   if (chatSessionKeyboardInput.keyName === "delete") {
+    const nextChatSessionState = removePromptImageAttachmentPlaceholderAtCursor(chatSessionState);
+    if (nextChatSessionState !== chatSessionState) {
+      return createChatSessionKeyboardInteraction({
+        nextChatSessionState,
+        shouldConsumeKeyboardInput: true,
+      });
+    }
+
     return createChatSessionKeyboardInteraction({
       nextChatSessionState: removePromptDraftCharacterAtCursor(chatSessionState),
       shouldConsumeKeyboardInput: true,

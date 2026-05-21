@@ -11,7 +11,6 @@ export type WorkspaceShellCommandExecutionResult = {
   stderrOmittedCharacterCount?: number;
 };
 
-const DEFAULT_MAXIMUM_CAPTURED_OUTPUT_CHARACTERS = 100_000;
 const SHELL_COMMAND_ENVIRONMENT_ALLOWLIST = new Set([
   "HOME",
   "LANG",
@@ -56,7 +55,7 @@ export class WorkspaceShellCommandExecutor {
 
       const maximumCapturedOutputCharacters = Math.max(
         0,
-        input.maximumCapturedOutputCharacters ?? DEFAULT_MAXIMUM_CAPTURED_OUTPUT_CHARACTERS,
+        input.maximumCapturedOutputCharacters ?? Number.POSITIVE_INFINITY,
       );
       let stdoutCapture = createBoundedShellOutputCapture(maximumCapturedOutputCharacters);
       let stderrCapture = createBoundedShellOutputCapture(maximumCapturedOutputCharacters);

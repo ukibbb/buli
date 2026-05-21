@@ -96,7 +96,7 @@ export type ChatSessionState = {
   conversationTurnStatus: ConversationTurnStatus;
   promptDraft: string;
   promptDraftCursorOffset: number;
-  pendingPromptImageAttachments: UserPromptImageAttachment[];
+  pendingPromptImageAttachments: PendingPromptImageAttachment[];
   latestTokenUsage: TokenUsage | undefined;
   conversationMessagesById: Record<string, ConversationMessage>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
@@ -109,6 +109,11 @@ export type ChatSessionState = {
   selectedPromptContextReferenceTexts: string[];
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
   isCommandHelpModalVisible: boolean;
+};
+
+export type PendingPromptImageAttachment = {
+  attachment: UserPromptImageAttachment;
+  promptDraftPlaceholderText: string;
 };
 
 export function createInitialChatSessionState(input: {

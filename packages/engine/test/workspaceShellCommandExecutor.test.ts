@@ -162,3 +162,30 @@ test("runApprovedBashToolCall normalizes non-positive timeouts to one millisecon
   expect(bashToolCallOutcome.outcomeKind).toBe("completed");
   expect(receivedTimeoutMilliseconds).toBe(1);
 });
+
+test("runApprovedBashToolCall bounds captured command output by default", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-shell-default-output-cap-"));
+  const workspaceShellCommandExecutor = new WorkspaceShellCommandExecutor({
+    workspaceRootPath,
+  });
+
+  const bashToolCallOutcome = await runApprovedBashToolCall({
+    workspaceRootPath,
+    workspaceShellCommandExecutor,
+    bashToolCallRequest: {
+      toolName: "bash",
+      shellCommand: "printf '%0110000d' 0",
+      commandDescription: "Print large output",
+    },
+  });
+
+  expect(bashToolCallOutcome.outcomeKind).toBe("completed");
+  expect(bashToolCallOutcome.toolResultText).toContain("[stdout truncated; omitted");
+  expect(bashToolCallOutcome.toolCallDetail.toolName).toBe("bash");
+  if (bashToolCallOutcome.toolCallDetail.toolName === "bash") {
+    expect(bashToolCallOutcome.toolCallDetail.outputLines).toContainEqual(expect.objectContaining({
+      lineKind: "stderr",
+      lineText: expect.stringContaining("stdout truncated; omitted"),
+    }));
+  }
+});

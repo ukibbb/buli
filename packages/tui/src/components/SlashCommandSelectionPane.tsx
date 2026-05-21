@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import type { SlashCommand } from "@buli/chat-session-state";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import {
+  calculateVisibleSelectionWindow,
+  resolveSelectionPaneRowTextColor,
+  SelectionPaneHighlightedRow,
+} from "./SelectionPaneRows.tsx";
 
 const MAX_VISIBLE_SLASH_COMMAND_COUNT = 10;
 const SLASH_COMMAND_COMMAND_COLUMN_WIDTH = 18;
@@ -13,24 +18,13 @@ export type SlashCommandSelectionPaneProps = {
 };
 
 export function SlashCommandSelectionPane(props: SlashCommandSelectionPaneProps): ReactNode {
-  const lastPossibleFirstVisibleSlashCommandIndex = Math.max(
-    0,
-    props.availableSlashCommands.length - MAX_VISIBLE_SLASH_COMMAND_COUNT,
-  );
-  const highlightedSlashCommandIndex = Math.max(
-    0,
-    Math.min(props.highlightedSlashCommandIndex, props.availableSlashCommands.length - 1),
-  );
-  const firstVisibleSlashCommandIndex = Math.min(
-    lastPossibleFirstVisibleSlashCommandIndex,
-    Math.max(0, highlightedSlashCommandIndex - MAX_VISIBLE_SLASH_COMMAND_COUNT + 1),
-  );
-  const visibleSlashCommands = props.availableSlashCommands.slice(
-    firstVisibleSlashCommandIndex,
-    firstVisibleSlashCommandIndex + MAX_VISIBLE_SLASH_COMMAND_COUNT,
-  );
+  const visibleSlashCommandWindow = calculateVisibleSelectionWindow({
+    selectionItems: props.availableSlashCommands,
+    highlightedSelectionItemIndex: props.highlightedSlashCommandIndex,
+    maxVisibleSelectionItemCount: MAX_VISIBLE_SLASH_COMMAND_COUNT,
+  });
   const slashCommandPaneInnerRowCount =
-    props.availableSlashCommands.length === 0 ? 1 : visibleSlashCommands.length;
+    props.availableSlashCommands.length === 0 ? 1 : visibleSlashCommandWindow.visibleSelectionItems.length;
   const slashCommandPaneHeight = slashCommandPaneInnerRowCount + 1;
 
   return (
@@ -48,22 +42,18 @@ export function SlashCommandSelectionPane(props: SlashCommandSelectionPaneProps)
       {props.availableSlashCommands.length === 0 ? (
         <text fg={chatScreenTheme.textSecondary}>No matching commands.</text>
       ) : (
-        visibleSlashCommands.map((slashCommand, visibleSlashCommandOffset) => {
-          const slashCommandIndex = firstVisibleSlashCommandIndex + visibleSlashCommandOffset;
-          const isHighlightedSlashCommand = slashCommandIndex === highlightedSlashCommandIndex;
+        visibleSlashCommandWindow.visibleSelectionItems.map((slashCommand, visibleSlashCommandOffset) => {
+          const slashCommandIndex = visibleSlashCommandWindow.firstVisibleSelectionItemIndex + visibleSlashCommandOffset;
+          const isHighlightedSlashCommand = slashCommandIndex === visibleSlashCommandWindow.highlightedSelectionItemIndex;
 
           return (
-            <box
-              backgroundColor={isHighlightedSlashCommand ? chatScreenTheme.borderSubtle : chatScreenTheme.surfaceOne}
-              flexDirection="row"
-              flexShrink={0}
-              height={1}
-              key={slashCommand.value}
-              width="100%"
-            >
+            <SelectionPaneHighlightedRow isHighlighted={isHighlightedSlashCommand} key={slashCommand.value}>
               <box flexShrink={0} width={SLASH_COMMAND_COMMAND_COLUMN_WIDTH}>
                 <text
-                  fg={isHighlightedSlashCommand ? chatScreenTheme.textPrimary : chatScreenTheme.textSecondary}
+                  fg={resolveSelectionPaneRowTextColor({
+                    isHighlighted: isHighlightedSlashCommand,
+                    unhighlightedTextColor: chatScreenTheme.textSecondary,
+                  })}
                   truncate={true}
                   wrapMode="none"
                 >
@@ -71,13 +61,16 @@ export function SlashCommandSelectionPane(props: SlashCommandSelectionPaneProps)
                 </text>
               </box>
               <text
-                fg={isHighlightedSlashCommand ? chatScreenTheme.textPrimary : chatScreenTheme.textMuted}
+                fg={resolveSelectionPaneRowTextColor({
+                  isHighlighted: isHighlightedSlashCommand,
+                  unhighlightedTextColor: chatScreenTheme.textMuted,
+                })}
                 truncate={true}
                 wrapMode="none"
               >
                 {slashCommand.description}
               </text>
-            </box>
+            </SelectionPaneHighlightedRow>
           );
         })
       )}

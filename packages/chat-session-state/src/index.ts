@@ -1,5 +1,6 @@
 export {
   type ChatSessionState,
+  type PendingPromptImageAttachment,
   type ModelAndReasoningSelectionState,
   type ConversationSessionSelectionState,
   type PromptContextSelectionState,
@@ -63,6 +64,8 @@ export {
   movePromptDraftCursorToStart,
   removePromptDraftCharacterAtCursor,
   removePromptDraftCharacterBeforeCursor,
+  removePromptImageAttachmentPlaceholderAtCursor,
+  removePromptImageAttachmentPlaceholderBeforeCursor,
   removeLastPromptImageAttachmentFromDraft,
   replacePromptDraftFromEditor,
   submitPromptDraft,

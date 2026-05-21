@@ -93,47 +93,73 @@ const codeBlockSyntaxStyleStyles = {
 export const codeBlockSyntaxStyle = SyntaxStyle.fromStyles(codeBlockSyntaxStyleStyles);
 
 export const assistantMarkdownSyntaxStyle = SyntaxStyle.fromStyles({
-  ...codeBlockSyntaxStyleStyles,
-  default: { fg: RGBA.fromHex(githubLikeTerminalCodeColors.foreground) },
-  conceal: { fg: RGBA.fromHex(githubLikeTerminalCodeColors.subtle) },
-  "markup.heading": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.foreground), bold: true },
+  default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
+  conceal: { fg: RGBA.fromHex(chatScreenTheme.borderSubtle) },
+  "markup.heading": { fg: RGBA.fromHex(chatScreenTheme.textPrimary), bold: true },
   "markup.heading.1": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
   "markup.heading.2": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
   "markup.heading.3": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
-  "punctuation.definition.heading": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.muted), bold: true },
-  "markup.italic": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.foreground), italic: true },
-  "markup.bold": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.strong": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.strikethrough": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.muted), dim: true },
-  "markup.link": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.property) },
-  "markup.link.bracket.close": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.property) },
-  "markup.link.label": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.property), underline: true },
-  "markup.link.url": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.muted), dim: true },
-  "markup.list": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.list.bullet": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.list.enumeration": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.list.marker": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.list.numbered": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.list.ordered": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.list.unordered": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "punctuation.definition.list": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.type), bold: true },
-  "markup.list.checked": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.diffAddition) },
-  "markup.list.unchecked": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.muted) },
-  "markup.quote": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.muted), italic: true },
+  "punctuation.definition.heading": { fg: RGBA.fromHex(chatScreenTheme.textDim), bold: true },
+  "markup.italic": { fg: RGBA.fromHex(chatScreenTheme.textPrimary), italic: true },
+  "markup.bold": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.strong": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.strikethrough": { fg: RGBA.fromHex(chatScreenTheme.textDim), dim: true },
+  "markup.link": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
+  "markup.link.bracket.close": { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
+  "markup.link.label": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), underline: true },
+  "markup.link.url": { fg: RGBA.fromHex(chatScreenTheme.textSecondary), dim: true },
+  "markup.list": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.list.bullet": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.list.enumeration": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.list.marker": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.list.numbered": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.list.ordered": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.list.unordered": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "punctuation.definition.list": { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true },
+  "markup.list.checked": { fg: RGBA.fromHex(chatScreenTheme.accentGreen) },
+  "markup.list.unchecked": { fg: RGBA.fromHex(chatScreenTheme.textDim) },
+  "markup.quote": { fg: RGBA.fromHex(chatScreenTheme.textSecondary), italic: true },
   "markup.quote.marker": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted), bold: true },
   "punctuation.definition.quote": { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted), bold: true },
-  "markup.raw": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.string), bold: true },
-  "markup.raw.inline": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.string), bold: true },
-  "markup.raw.block": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.foreground) },
-  "markup.fenced_code.block": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.foreground) },
-  "markup.table": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.foreground) },
-  "markup.table.header": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.property), bold: true },
-  "punctuation.separator.table": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.subtle) },
-  "diff.plus": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.diffAddition) },
-  "diff.minus": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.diffRemoval) },
-  "diff.delta": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.diffMetadata), bold: true },
-  "punctuation.definition.inserted": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.diffAddition) },
-  "punctuation.definition.deleted": { fg: RGBA.fromHex(githubLikeTerminalCodeColors.diffRemoval) },
+  "markup.raw": { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
+  "markup.raw.inline": { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
+  "markup.raw.block": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
+  "markup.fenced_code.block": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
+  "markup.table": { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
+  "markup.table.header": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
+  "punctuation.separator.table": { fg: RGBA.fromHex(chatScreenTheme.borderSubtle) },
+  "diff.plus": { fg: RGBA.fromHex(chatScreenTheme.accentGreen) },
+  "diff.minus": { fg: RGBA.fromHex(chatScreenTheme.accentRed) },
+  "diff.delta": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
+  "punctuation.definition.inserted": { fg: RGBA.fromHex(chatScreenTheme.accentGreen) },
+  "punctuation.definition.deleted": { fg: RGBA.fromHex(chatScreenTheme.accentRed) },
+  character: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
+  "character.special": { fg: RGBA.fromHex(chatScreenTheme.accentPink) },
+  label: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
+  import: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
+  keyword: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
+  "keyword.import": { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
+  string: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
+  "string.special.url": { fg: RGBA.fromHex(chatScreenTheme.accentCyan), underline: true },
+  comment: { fg: RGBA.fromHex(chatScreenTheme.textDim), italic: true },
+  number: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
+  boolean: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
+  constant: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
+  function: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
+  "function.call": { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
+  type: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
+  property: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
+  variable: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
+  parameter: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
+  operator: { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
+  punctuation: { fg: RGBA.fromHex(chatScreenTheme.textSecondary) },
+  "punctuation.special": { fg: RGBA.fromHex(chatScreenTheme.accentPink) },
+  tag: { fg: RGBA.fromHex(chatScreenTheme.accentCyan) },
+  attribute: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
+  decorator: { fg: RGBA.fromHex(chatScreenTheme.accentAmber) },
+  namespace: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
+  module: { fg: RGBA.fromHex(chatScreenTheme.accentPrimaryMuted) },
+  escape: { fg: RGBA.fromHex(chatScreenTheme.accentPink) },
 });
 
 export const syntaxHighlightSpanForegroundColors: Record<SyntaxHighlightSpanStyle, string> = {
@@ -151,12 +177,12 @@ export const syntaxHighlightSpanForegroundColors: Record<SyntaxHighlightSpanStyl
 
 export const codeLineNumberGutterForegroundColor = RGBA.fromHex(githubLikeTerminalCodeColors.muted);
 
-export const assistantMarkdownInlineCodeForegroundColor = RGBA.fromHex(githubLikeTerminalCodeColors.string);
-export const assistantMarkdownStrongForegroundColor = RGBA.fromHex(githubLikeTerminalCodeColors.type);
-export const assistantMarkdownDiffAdditionForegroundColor = RGBA.fromHex(githubLikeTerminalCodeColors.diffAddition);
-export const assistantMarkdownDiffRemovalForegroundColor = RGBA.fromHex(githubLikeTerminalCodeColors.diffRemoval);
-export const assistantMarkdownDiffMetadataForegroundColor = RGBA.fromHex(githubLikeTerminalCodeColors.diffMetadata);
-export const assistantMarkdownDiffChromeForegroundColor = RGBA.fromHex(githubLikeTerminalCodeColors.muted);
+export const assistantMarkdownInlineCodeForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
+export const assistantMarkdownStrongForegroundColor = RGBA.fromHex(chatScreenTheme.accentAmber);
+export const assistantMarkdownDiffAdditionForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
+export const assistantMarkdownDiffRemovalForegroundColor = RGBA.fromHex(chatScreenTheme.accentRed);
+export const assistantMarkdownDiffMetadataForegroundColor = RGBA.fromHex(chatScreenTheme.accentCyan);
+export const assistantMarkdownDiffChromeForegroundColor = RGBA.fromHex(chatScreenTheme.textDim);
 
 export const terminalDiffColors = {
   addedBackground: githubLikeTerminalCodeColors.diffAdditionBackground,

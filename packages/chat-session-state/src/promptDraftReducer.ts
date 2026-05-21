@@ -9,18 +9,38 @@ import {
   reconcileSelectedPromptContextReferenceTextsWithPromptDraft,
 } from "@buli/prompt-context-core";
 import type { ChatSessionState } from "./chatSessionState.ts";
+import type { PendingPromptImageAttachment } from "./chatSessionState.ts";
+
+type PromptImageAttachmentPlaceholderRange = {
+  pendingPromptImageAttachment: PendingPromptImageAttachment;
+  startOffset: number;
+  endOffset: number;
+};
+
+type ReconciledPromptImageAttachments = {
+  promptDraft: string;
+  promptDraftCursorOffset: number;
+  pendingPromptImageAttachments: PendingPromptImageAttachment[];
+};
 
 function createPromptDraftEditedState(input: {
   chatSessionState: ChatSessionState;
   promptDraft: string;
   promptDraftCursorOffset: number;
+  pendingPromptImageAttachments?: readonly PendingPromptImageAttachment[];
 }): ChatSessionState {
-  return {
-    ...input.chatSessionState,
+  const reconciledPromptImageAttachments = reconcilePendingPromptImageAttachmentsWithPromptDraft({
     promptDraft: input.promptDraft,
     promptDraftCursorOffset: input.promptDraftCursorOffset,
+    pendingPromptImageAttachments: input.pendingPromptImageAttachments ?? input.chatSessionState.pendingPromptImageAttachments,
+  });
+  return {
+    ...input.chatSessionState,
+    promptDraft: reconciledPromptImageAttachments.promptDraft,
+    promptDraftCursorOffset: reconciledPromptImageAttachments.promptDraftCursorOffset,
+    pendingPromptImageAttachments: reconciledPromptImageAttachments.pendingPromptImageAttachments,
     selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
-      promptDraft: input.promptDraft,
+      promptDraft: reconciledPromptImageAttachments.promptDraft,
       selectedPromptContextReferenceTexts: input.chatSessionState.selectedPromptContextReferenceTexts,
     }),
   };
@@ -55,15 +75,29 @@ function appendConversationMessage(input: {
 
 export function appendPromptImageAttachmentToDraft(
   chatSessionState: ChatSessionState,
-  pendingPromptImageAttachment: UserPromptImageAttachment,
+  promptImageAttachment: UserPromptImageAttachment,
 ): ChatSessionState {
-  return {
-    ...chatSessionState,
-    pendingPromptImageAttachments: [
-      ...chatSessionState.pendingPromptImageAttachments,
-      pendingPromptImageAttachment,
-    ],
+  const promptDraftPlaceholderText = `[Image ${chatSessionState.pendingPromptImageAttachments.length + 1}]`;
+  const promptDraftInsertedText = `${promptDraftPlaceholderText} `;
+  const promptDraftPrefix = chatSessionState.promptDraft.slice(0, chatSessionState.promptDraftCursorOffset);
+  const promptDraftSuffix = chatSessionState.promptDraft.slice(chatSessionState.promptDraftCursorOffset);
+  const promptImageAttachmentInsertionIndex = listPendingPromptImageAttachmentPlaceholderRanges(chatSessionState).filter(
+    (placeholderRange) => placeholderRange.startOffset < chatSessionState.promptDraftCursorOffset,
+  ).length;
+  const pendingPromptImageAttachment: PendingPromptImageAttachment = {
+    attachment: promptImageAttachment,
+    promptDraftPlaceholderText,
   };
+  return createPromptDraftEditedState({
+    chatSessionState,
+    promptDraft: `${promptDraftPrefix}${promptDraftInsertedText}${promptDraftSuffix}`,
+    promptDraftCursorOffset: chatSessionState.promptDraftCursorOffset + promptDraftInsertedText.length,
+    pendingPromptImageAttachments: [
+      ...chatSessionState.pendingPromptImageAttachments.slice(0, promptImageAttachmentInsertionIndex),
+      pendingPromptImageAttachment,
+      ...chatSessionState.pendingPromptImageAttachments.slice(promptImageAttachmentInsertionIndex),
+    ],
+  });
 }
 
 export function removeLastPromptImageAttachmentFromDraft(chatSessionState: ChatSessionState): ChatSessionState {
@@ -71,10 +105,46 @@ export function removeLastPromptImageAttachmentFromDraft(chatSessionState: ChatS
     return chatSessionState;
   }
 
-  return {
-    ...chatSessionState,
-    pendingPromptImageAttachments: chatSessionState.pendingPromptImageAttachments.slice(0, -1),
-  };
+  const lastPlaceholderRange = listPendingPromptImageAttachmentPlaceholderRanges(chatSessionState).at(-1);
+  if (!lastPlaceholderRange) {
+    return {
+      ...chatSessionState,
+      pendingPromptImageAttachments: chatSessionState.pendingPromptImageAttachments.slice(0, -1),
+    };
+  }
+
+  return removePromptImageAttachmentPlaceholderRange(chatSessionState, lastPlaceholderRange);
+}
+
+export function removePromptImageAttachmentPlaceholderBeforeCursor(chatSessionState: ChatSessionState): ChatSessionState {
+  const promptDraftCursorOffset = clampPromptDraftCursorOffset(chatSessionState);
+  const promptImageAttachmentPlaceholderRange = listPendingPromptImageAttachmentPlaceholderRanges(chatSessionState).find(
+    (placeholderRange) => {
+      const placeholderRemovalEndOffset = promptImageAttachmentPlaceholderRemovalEndOffset(
+        chatSessionState.promptDraft,
+        placeholderRange,
+      );
+      return promptDraftCursorOffset > placeholderRange.startOffset && promptDraftCursorOffset <= placeholderRemovalEndOffset;
+    },
+  );
+  if (!promptImageAttachmentPlaceholderRange) {
+    return chatSessionState;
+  }
+
+  return removePromptImageAttachmentPlaceholderRange(chatSessionState, promptImageAttachmentPlaceholderRange);
+}
+
+export function removePromptImageAttachmentPlaceholderAtCursor(chatSessionState: ChatSessionState): ChatSessionState {
+  const promptDraftCursorOffset = clampPromptDraftCursorOffset(chatSessionState);
+  const promptImageAttachmentPlaceholderRange = listPendingPromptImageAttachmentPlaceholderRanges(chatSessionState).find(
+    (placeholderRange) =>
+      promptDraftCursorOffset >= placeholderRange.startOffset && promptDraftCursorOffset < placeholderRange.endOffset,
+  );
+  if (!promptImageAttachmentPlaceholderRange) {
+    return chatSessionState;
+  }
+
+  return removePromptImageAttachmentPlaceholderRange(chatSessionState, promptImageAttachmentPlaceholderRange);
 }
 
 export function insertTextIntoPromptDraftAtCursor(chatSessionState: ChatSessionState, insertedText: string): ChatSessionState {
@@ -106,6 +176,147 @@ export function replacePromptDraftFromEditor(input: {
     promptDraft: input.promptDraft,
     promptDraftCursorOffset,
   });
+}
+
+function reconcilePendingPromptImageAttachmentsWithPromptDraft(input: {
+  promptDraft: string;
+  promptDraftCursorOffset: number;
+  pendingPromptImageAttachments: readonly PendingPromptImageAttachment[];
+}): ReconciledPromptImageAttachments {
+  const promptImageAttachmentPlaceholderRanges: PromptImageAttachmentPlaceholderRange[] = [];
+  let searchStartOffset = 0;
+
+  for (const pendingPromptImageAttachment of input.pendingPromptImageAttachments) {
+    const placeholderStartOffset = input.promptDraft.indexOf(
+      pendingPromptImageAttachment.promptDraftPlaceholderText,
+      searchStartOffset,
+    );
+    if (placeholderStartOffset === -1) {
+      continue;
+    }
+
+    promptImageAttachmentPlaceholderRanges.push({
+      pendingPromptImageAttachment,
+      startOffset: placeholderStartOffset,
+      endOffset: placeholderStartOffset + pendingPromptImageAttachment.promptDraftPlaceholderText.length,
+    });
+    searchStartOffset = placeholderStartOffset + pendingPromptImageAttachment.promptDraftPlaceholderText.length;
+  }
+
+  return renumberPromptImageAttachmentPlaceholders({
+    promptDraft: input.promptDraft,
+    promptDraftCursorOffset: input.promptDraftCursorOffset,
+    promptImageAttachmentPlaceholderRanges,
+  });
+}
+
+function renumberPromptImageAttachmentPlaceholders(input: {
+  promptDraft: string;
+  promptDraftCursorOffset: number;
+  promptImageAttachmentPlaceholderRanges: readonly PromptImageAttachmentPlaceholderRange[];
+}): ReconciledPromptImageAttachments {
+  if (input.promptImageAttachmentPlaceholderRanges.length === 0) {
+    return {
+      promptDraft: input.promptDraft,
+      promptDraftCursorOffset: Math.max(0, Math.min(input.promptDraftCursorOffset, input.promptDraft.length)),
+      pendingPromptImageAttachments: [],
+    };
+  }
+
+  let nextPromptDraft = "";
+  let copiedPromptDraftOffset = 0;
+  let accumulatedLengthDelta = 0;
+  const originalPromptDraftCursorOffset = Math.max(0, Math.min(input.promptDraftCursorOffset, input.promptDraft.length));
+  let promptDraftCursorOffset = originalPromptDraftCursorOffset;
+  const pendingPromptImageAttachments = input.promptImageAttachmentPlaceholderRanges.map((placeholderRange, index) => {
+    const nextPlaceholderText = `[Image ${index + 1}]`;
+    const originalPlaceholderText = input.promptDraft.slice(placeholderRange.startOffset, placeholderRange.endOffset);
+    const replacementLengthDelta = nextPlaceholderText.length - originalPlaceholderText.length;
+    const adjustedStartOffset = placeholderRange.startOffset + accumulatedLengthDelta;
+    if (originalPromptDraftCursorOffset > placeholderRange.endOffset) {
+      promptDraftCursorOffset += replacementLengthDelta;
+    } else if (originalPromptDraftCursorOffset >= placeholderRange.startOffset) {
+      promptDraftCursorOffset = adjustedStartOffset + Math.min(
+        originalPromptDraftCursorOffset - placeholderRange.startOffset,
+        nextPlaceholderText.length,
+      );
+    }
+
+    nextPromptDraft += input.promptDraft.slice(copiedPromptDraftOffset, placeholderRange.startOffset);
+    nextPromptDraft += nextPlaceholderText;
+    copiedPromptDraftOffset = placeholderRange.endOffset;
+    accumulatedLengthDelta += replacementLengthDelta;
+
+    return {
+      attachment: placeholderRange.pendingPromptImageAttachment.attachment,
+      promptDraftPlaceholderText: nextPlaceholderText,
+    };
+  });
+
+  nextPromptDraft += input.promptDraft.slice(copiedPromptDraftOffset);
+  return {
+    promptDraft: nextPromptDraft,
+    promptDraftCursorOffset: Math.max(0, Math.min(promptDraftCursorOffset, nextPromptDraft.length)),
+    pendingPromptImageAttachments,
+  };
+}
+
+function listPendingPromptImageAttachmentPlaceholderRanges(
+  chatSessionState: ChatSessionState,
+): PromptImageAttachmentPlaceholderRange[] {
+  const placeholderRanges: PromptImageAttachmentPlaceholderRange[] = [];
+  let searchStartOffset = 0;
+
+  for (const pendingPromptImageAttachment of chatSessionState.pendingPromptImageAttachments) {
+    const startOffset = chatSessionState.promptDraft.indexOf(
+      pendingPromptImageAttachment.promptDraftPlaceholderText,
+      searchStartOffset,
+    );
+    if (startOffset === -1) {
+      continue;
+    }
+
+    const endOffset = startOffset + pendingPromptImageAttachment.promptDraftPlaceholderText.length;
+    placeholderRanges.push({
+      pendingPromptImageAttachment,
+      startOffset,
+      endOffset,
+    });
+    searchStartOffset = endOffset;
+  }
+
+  return placeholderRanges;
+}
+
+function removePromptImageAttachmentPlaceholderRange(
+  chatSessionState: ChatSessionState,
+  placeholderRange: PromptImageAttachmentPlaceholderRange,
+): ChatSessionState {
+  const placeholderRemovalEndOffset = promptImageAttachmentPlaceholderRemovalEndOffset(
+    chatSessionState.promptDraft,
+    placeholderRange,
+  );
+  return createPromptDraftEditedState({
+    chatSessionState,
+    promptDraft:
+      chatSessionState.promptDraft.slice(0, placeholderRange.startOffset) +
+      chatSessionState.promptDraft.slice(placeholderRemovalEndOffset),
+    promptDraftCursorOffset: placeholderRange.startOffset,
+    pendingPromptImageAttachments: chatSessionState.pendingPromptImageAttachments.filter(
+      (pendingPromptImageAttachment) => pendingPromptImageAttachment !== placeholderRange.pendingPromptImageAttachment,
+    ),
+  });
+}
+
+function promptImageAttachmentPlaceholderRemovalEndOffset(
+  promptDraft: string,
+  placeholderRange: PromptImageAttachmentPlaceholderRange,
+): number {
+  return promptDraft[placeholderRange.endOffset] === " " ? placeholderRange.endOffset + 1 : placeholderRange.endOffset;
+}
+
+function clampPromptDraftCursorOffset(chatSessionState: ChatSessionState): number {
+  return Math.max(0, Math.min(chatSessionState.promptDraftCursorOffset, chatSessionState.promptDraft.length));
 }
 
 export function movePromptDraftCursorLeft(chatSessionState: ChatSessionState): ChatSessionState {
@@ -170,7 +381,9 @@ export function submitPromptDraft(chatSessionState: ChatSessionState): {
   submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
 } {
   const submittedPromptText = chatSessionState.promptDraft.trim();
-  const submittedPromptImageAttachments = [...chatSessionState.pendingPromptImageAttachments];
+  const submittedPromptImageAttachments = chatSessionState.pendingPromptImageAttachments.map(
+    (pendingPromptImageAttachment) => pendingPromptImageAttachment.attachment,
+  );
   if (
     (submittedPromptText.length === 0 && submittedPromptImageAttachments.length === 0) ||
     chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
