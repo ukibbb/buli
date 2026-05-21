@@ -72,6 +72,52 @@ test("session selection records the session waiting for delete confirmation", ()
   });
 });
 
+test("session selection records empty session deletion when another session remains", () => {
+  const emptyConversationSession = {
+    sessionId: "session-empty",
+    title: "New session",
+    createdAtMs: 5000,
+    updatedAtMs: 5000,
+    conversationSessionEntryCount: 0,
+  } as const;
+  const chatSessionState = requestConversationSessionDeletionConfirmation(
+    showAvailableConversationSessionsForSelection(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      [...conversationSessionSummaries, emptyConversationSession],
+      "session-a",
+    ),
+    "session-empty",
+  );
+
+  expect(chatSessionState.conversationSessionSelectionState).toMatchObject({
+    step: "showing_conversation_sessions",
+    pendingDeletionConversationSessionId: "session-empty",
+  });
+});
+
+test("session selection does not record delete confirmation for the only empty session", () => {
+  const onlyEmptyConversationSession = {
+    sessionId: "session-empty",
+    title: "New session",
+    createdAtMs: 5000,
+    updatedAtMs: 5000,
+    conversationSessionEntryCount: 0,
+  } as const;
+  const chatSessionState = requestConversationSessionDeletionConfirmation(
+    showAvailableConversationSessionsForSelection(
+      createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      [onlyEmptyConversationSession],
+      "session-empty",
+    ),
+    "session-empty",
+  );
+
+  expect(chatSessionState.conversationSessionSelectionState).toMatchObject({
+    step: "showing_conversation_sessions",
+    pendingDeletionConversationSessionId: undefined,
+  });
+});
+
 test("session selection clears delete confirmation when the highlighted session changes", () => {
   const chatSessionState = requestConversationSessionDeletionConfirmation(
     showAvailableConversationSessionsForSelection(

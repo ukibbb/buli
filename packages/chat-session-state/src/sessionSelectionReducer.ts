@@ -118,10 +118,12 @@ export function requestConversationSessionDeletionConfirmation(
     return chatSessionState;
   }
 
-  const hasConversationSession = chatSessionState.conversationSessionSelectionState.conversationSessions.some(
-    (conversationSession) => conversationSession.sessionId === conversationSessionId,
-  );
-  if (!hasConversationSession) {
+  if (
+    !canDeleteConversationSessionFromSelection(
+      chatSessionState.conversationSessionSelectionState.conversationSessions,
+      conversationSessionId,
+    )
+  ) {
     return chatSessionState;
   }
 
@@ -132,6 +134,43 @@ export function requestConversationSessionDeletionConfirmation(
       pendingDeletionConversationSessionId: conversationSessionId,
     },
   };
+}
+
+export function selectHighlightedConversationSessionForDeletion(
+  chatSessionState: ChatSessionState,
+): ConversationSessionSummary | undefined {
+  if (chatSessionState.conversationSessionSelectionState.step !== "showing_conversation_sessions") {
+    return undefined;
+  }
+
+  const selectedConversationSession =
+    chatSessionState.conversationSessionSelectionState.conversationSessions[
+      chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex
+    ];
+  if (!selectedConversationSession) {
+    return undefined;
+  }
+
+  return canDeleteConversationSessionFromSelection(
+    chatSessionState.conversationSessionSelectionState.conversationSessions,
+    selectedConversationSession.sessionId,
+  )
+    ? selectedConversationSession
+    : undefined;
+}
+
+export function canDeleteConversationSessionFromSelection(
+  conversationSessions: readonly ConversationSessionSummary[],
+  conversationSessionId: string,
+): boolean {
+  const conversationSession = conversationSessions.find(
+    (candidateConversationSession) => candidateConversationSession.sessionId === conversationSessionId,
+  );
+  if (!conversationSession) {
+    return false;
+  }
+
+  return conversationSessions.length > 1 || conversationSession.conversationSessionEntryCount > 0;
 }
 
 export function selectHighlightedConversationSession(chatSessionState: ChatSessionState): {

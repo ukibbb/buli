@@ -21,7 +21,7 @@ export function buildChatSlashCommands(input: {
     { name: "model", value: "model", description: "Choose OpenAI model and reasoning effort" },
     { name: "clear", value: "clear", description: "Clear conversation history" },
     { name: "compact", value: "compact", description: "Summarize old context for this session" },
-    { name: "sessions", value: "sessions", description: "Switch saved conversation session" },
+    { name: "sessions", value: "sessions", description: "Switch or delete saved sessions" },
     { name: "export-session", value: "export-session", description: "Export current session as HTML" },
     {
       name: "thinking",

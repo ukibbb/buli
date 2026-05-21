@@ -51,6 +51,7 @@ export type UseChatScreenKeyboardInputActionsInput = {
   dismissActivePromptContextQuery: (dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined) => void;
   loadConversationSessionsForSelection: () => Promise<void>;
   switchToConversationSession: (conversationSessionId: string) => Promise<void>;
+  requestConversationSessionDeletion: (conversationSessionId: string) => Promise<void>;
   exportCurrentConversationSession: () => Promise<void>;
   compactCurrentConversationSession: () => Promise<void>;
   clearCurrentConversationSession: () => void;
@@ -192,6 +193,9 @@ export function useChatScreenKeyboardInputActions(
         return;
       case "switch_to_selected_conversation_session":
         void input.switchToConversationSession(keyboardEffectInput.chatSessionKeyboardEffect.conversationSessionId);
+        return;
+      case "request_conversation_session_deletion":
+        void input.requestConversationSessionDeletion(keyboardEffectInput.chatSessionKeyboardEffect.conversationSessionId);
         return;
     }
   });

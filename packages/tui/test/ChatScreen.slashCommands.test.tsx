@@ -80,6 +80,7 @@ type OpenTuiChatScreenHarness = {
   captureFrame(): Promise<string>;
   pressArrowDown(): Promise<string>;
   pressCtrlL(): Promise<string>;
+  pressDelete(): Promise<string>;
   pressEnter(): Promise<string>;
   pressEscape(): Promise<string>;
   clickMouse(column: number, row: number): Promise<string>;
@@ -152,6 +153,12 @@ async function renderChatScreen(input: {
     async pressCtrlL(): Promise<string> {
       await act(async () => {
         renderedChatScreen.mockInput.pressKey("l", { ctrl: true });
+      });
+      return captureFrame();
+    },
+    async pressDelete(): Promise<string> {
+      await act(async () => {
+        renderedChatScreen.mockInput.pressKey("DELETE");
       });
       return captureFrame();
     },
@@ -547,17 +554,79 @@ test("ChatScreen confirms and deletes sessions through slash command", async () 
 
   await renderedChatScreen.typeText("/sessions");
   const sessionListFrame = await renderedChatScreen.pressEnter();
-  const deleteTarget = findRenderedFrameTextPosition(sessionListFrame, "Switched prompt", "x");
+  const deleteTarget = findRenderedFrameTextPosition(sessionListFrame, "Switched prompt", "delete");
 
   const confirmationFrame = await renderedChatScreen.clickMouse(deleteTarget.column, deleteTarget.row);
-  expect(confirmationFrame).toContain("confirm");
+  expect(confirmationFrame).toContain("delete again");
   expect(deletedConversationSessionIds).toEqual([]);
 
-  const confirmTarget = findRenderedFrameTextPosition(confirmationFrame, "Switched prompt", "confirm");
+  const confirmTarget = findRenderedFrameTextPosition(confirmationFrame, "Switched prompt", "delete again");
   const deletedFrame = await renderedChatScreen.clickMouse(confirmTarget.column, confirmTarget.row);
   expect(deletedConversationSessionIds).toEqual(["session-b"]);
   expect(deletedFrame).toContain("Previous prompt");
   expect(deletedFrame).toContain("Previous answer");
+  expect(deletedFrame).not.toContain("Switched prompt");
+});
+
+test("ChatScreen confirms and deletes highlighted sessions with keyboard delete", async () => {
+  const activeConversationSessionEntries = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Previous prompt",
+      modelFacingPromptText: "Previous prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Previous answer",
+    },
+  ] as const satisfies readonly ConversationSessionEntry[];
+  let conversationSessions: ConversationSessionSummary[] = [
+    {
+      sessionId: "session-a",
+      title: "Previous prompt",
+      createdAtMs: 1000,
+      updatedAtMs: 2000,
+      conversationSessionEntryCount: 2,
+    },
+    {
+      sessionId: "session-b",
+      title: "Switched prompt",
+      createdAtMs: 3000,
+      updatedAtMs: 4000,
+      conversationSessionEntryCount: 2,
+    },
+  ];
+  const deletedConversationSessionIds: string[] = [];
+  const renderedChatScreen = await renderChatScreen({
+    initialConversationSessionId: "session-a",
+    initialConversationSessionEntries: activeConversationSessionEntries,
+    loadConversationSessions: async () => conversationSessions,
+    deleteConversationSession: async (conversationSessionId) => {
+      deletedConversationSessionIds.push(conversationSessionId);
+      conversationSessions = conversationSessions.filter(
+        (conversationSession) => conversationSession.sessionId !== conversationSessionId,
+      );
+      return {
+        deletedConversationSessionId: conversationSessionId,
+        activeConversationSessionId: "session-a",
+        activeConversationSessionEntries,
+        conversationSessions,
+      };
+    },
+  });
+
+  await renderedChatScreen.typeText("/sessions");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.pressArrowDown();
+
+  const confirmationFrame = await renderedChatScreen.pressDelete();
+  expect(confirmationFrame).toContain("delete again");
+  expect(deletedConversationSessionIds).toEqual([]);
+
+  const deletedFrame = await renderedChatScreen.pressDelete();
+  expect(deletedConversationSessionIds).toEqual(["session-b"]);
+  expect(deletedFrame).toContain("Previous prompt");
   expect(deletedFrame).not.toContain("Switched prompt");
 });
 

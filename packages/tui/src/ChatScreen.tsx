@@ -226,6 +226,7 @@ export function ChatScreen(props: ChatScreenProps) {
     dismissActivePromptContextQuery,
     loadConversationSessionsForSelection,
     switchToConversationSession,
+    requestConversationSessionDeletion,
     exportCurrentConversationSession,
     compactCurrentConversationSession,
     clearCurrentConversationSession,

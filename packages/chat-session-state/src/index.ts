@@ -89,11 +89,13 @@ export {
   selectHighlightedSlashCommand,
 } from "./slashCommandSelectionReducer.ts";
 export {
+  canDeleteConversationSessionFromSelection,
   hideConversationSessionSelection,
   moveHighlightedConversationSessionSelectionDown,
   moveHighlightedConversationSessionSelectionUp,
   requestConversationSessionDeletionConfirmation,
   selectHighlightedConversationSession,
+  selectHighlightedConversationSessionForDeletion,
   showAvailableConversationSessionsForSelection,
   showConversationSessionSelectionLoadingError,
   showConversationSessionSelectionLoadingState,

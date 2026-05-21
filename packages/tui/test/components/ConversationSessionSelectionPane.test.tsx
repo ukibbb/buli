@@ -41,7 +41,7 @@ describe("ConversationSessionSelectionPane", () => {
     expect(frame).toContain(new Date(updatedAtMs).toDateString());
     expect(frame).toContain("Planning session 3 entries");
     expect(frame).toContain("Implementation session 5 entries active");
-    expect(frame).toContain("x");
+    expect(frame).toContain("delete");
   });
 
   test("groups_sessions_by_updated_day", async () => {
@@ -135,7 +135,35 @@ describe("ConversationSessionSelectionPane", () => {
 
     await renderOnce();
 
-    expect(captureCharFrame()).toContain("confirm");
+    expect(captureCharFrame()).toContain("delete again");
+  });
+
+  test("does_not_render_delete_control_for_the_only_empty_session", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationSessionSelectionPane
+        conversationSessions={[
+          {
+            sessionId: "session-1",
+            title: "New session",
+            createdAtMs: 1,
+            updatedAtMs: new Date(2000, 0, 1, 12).getTime(),
+            conversationSessionEntryCount: 0,
+          },
+        ]}
+        highlightedConversationSessionIndex={0}
+        activeConversationSessionId="session-1"
+        pendingDeletionConversationSessionId={undefined}
+        accentColor="#00ff00"
+        onConversationSessionDeletionRequested={() => {}}
+      />,
+      { width: 80, height: 8 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("New session 0 entries active");
+    expect(frame).not.toContain("delete");
   });
 
   test("requests_deletion_when_the_delete_control_is_clicked", async () => {
@@ -163,7 +191,7 @@ describe("ConversationSessionSelectionPane", () => {
     );
 
     await renderOnce();
-    const deleteTarget = findRenderedFrameTextPosition(captureCharFrame(), "Planning session", "x");
+    const deleteTarget = findRenderedFrameTextPosition(captureCharFrame(), "Planning session", "delete");
     await act(async () => {
       await mockMouse.click(deleteTarget.column, deleteTarget.row);
     });

@@ -7,7 +7,7 @@ This file lists only unfinished work. Completed baseline features such as JSONL 
 The durable session layer exists, but it still needs reliability work around per-session settings and larger session lifecycle operations.
 
 - Persist selected model and reasoning settings per session.
-- Add session rename, delete, and search flows.
+- Add session rename and search flows.
 - Add compaction or summarization for very large sessions.
 
 ## 2. Patch And Richer File Tools

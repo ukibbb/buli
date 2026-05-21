@@ -27,6 +27,20 @@ const escapeKeyboardInput = {
   isMetaPressed: false,
 } as const satisfies ChatSessionKeyboardInput;
 
+const deleteKeyboardInput = {
+  keyName: "delete",
+  textInput: undefined,
+  isCtrlPressed: false,
+  isMetaPressed: false,
+} as const satisfies ChatSessionKeyboardInput;
+
+const backspaceKeyboardInput = {
+  keyName: "backspace",
+  textInput: undefined,
+  isCtrlPressed: false,
+  isMetaPressed: false,
+} as const satisfies ChatSessionKeyboardInput;
+
 function createTextKeyboardInput(textInput: string): ChatSessionKeyboardInput {
   return {
     keyName: undefined,
@@ -155,6 +169,91 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_selected_session_s
     effectType: "switch_to_selected_conversation_session",
     conversationSessionId: "session-a",
   });
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState_returns_selected_session_delete_effect", () => {
+  const conversationSessions = [
+    {
+      sessionId: "session-a",
+      title: "First session",
+      createdAtMs: 1,
+      updatedAtMs: 2,
+      conversationSessionEntryCount: 2,
+    },
+  ] as const satisfies readonly ConversationSessionSummary[];
+  const chatSessionState = showAvailableConversationSessionsForSelection(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationSessions,
+    undefined,
+  );
+
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: deleteKeyboardInput,
+    isPromptSubmissionInFlight: false,
+  });
+
+  expect(interaction.nextChatSessionState).toBe(chatSessionState);
+  expect(interaction.shouldConsumeKeyboardInput).toBe(true);
+  expect(interaction.chatSessionKeyboardEffect).toEqual({
+    effectType: "request_conversation_session_deletion",
+    conversationSessionId: "session-a",
+  });
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState_uses_backspace_for_selected_session_delete_effect", () => {
+  const conversationSessions = [
+    {
+      sessionId: "session-a",
+      title: "First session",
+      createdAtMs: 1,
+      updatedAtMs: 2,
+      conversationSessionEntryCount: 2,
+    },
+  ] as const satisfies readonly ConversationSessionSummary[];
+  const chatSessionState = showAvailableConversationSessionsForSelection(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationSessions,
+    undefined,
+  );
+
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: backspaceKeyboardInput,
+    isPromptSubmissionInFlight: false,
+  });
+
+  expect(interaction.shouldConsumeKeyboardInput).toBe(true);
+  expect(interaction.chatSessionKeyboardEffect).toEqual({
+    effectType: "request_conversation_session_deletion",
+    conversationSessionId: "session-a",
+  });
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState_does_not_delete_the_only_empty_session", () => {
+  const conversationSessions = [
+    {
+      sessionId: "session-empty",
+      title: "New session",
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      conversationSessionEntryCount: 0,
+    },
+  ] as const satisfies readonly ConversationSessionSummary[];
+  const chatSessionState = showAvailableConversationSessionsForSelection(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationSessions,
+    "session-empty",
+  );
+
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: deleteKeyboardInput,
+    isPromptSubmissionInFlight: false,
+  });
+
+  expect(interaction.shouldConsumeKeyboardInput).toBe(true);
+  expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
 });
 
 test("applyChatSessionKeyboardInputToChatSessionState_dismisses_prompt_context_query_on_escape", () => {

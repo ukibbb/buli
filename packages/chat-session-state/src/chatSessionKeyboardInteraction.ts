@@ -8,6 +8,7 @@ import {
   moveHighlightedConversationSessionSelectionDown,
   moveHighlightedConversationSessionSelectionUp,
   selectHighlightedConversationSession,
+  selectHighlightedConversationSessionForDeletion,
 } from "./sessionSelectionReducer.ts";
 import {
   confirmHighlightedModelSelection,
@@ -105,6 +106,10 @@ export type ChatSessionKeyboardEffect =
     }
   | {
       effectType: "switch_to_selected_conversation_session";
+      conversationSessionId: string;
+    }
+  | {
+      effectType: "request_conversation_session_deletion";
       conversationSessionId: string;
     };
 
@@ -295,6 +300,20 @@ function applyKeyboardInputToConversationSessionSelectionState(
         ? {
             effectType: "switch_to_selected_conversation_session",
             conversationSessionId: conversationSessionSelection.selectedConversationSession.sessionId,
+          }
+        : undefined,
+    });
+  }
+
+  if (chatSessionKeyboardInput.keyName === "delete" || chatSessionKeyboardInput.keyName === "backspace") {
+    const conversationSessionForDeletion = selectHighlightedConversationSessionForDeletion(chatSessionState);
+    return createChatSessionKeyboardInteraction({
+      nextChatSessionState: chatSessionState,
+      shouldConsumeKeyboardInput: true,
+      chatSessionKeyboardEffect: conversationSessionForDeletion
+        ? {
+            effectType: "request_conversation_session_deletion",
+            conversationSessionId: conversationSessionForDeletion.sessionId,
           }
         : undefined,
     });

@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from "react";
 import type { ConversationSessionSummary } from "@buli/contracts";
+import { canDeleteConversationSessionFromSelection } from "@buli/chat-session-state";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
 
 const MAX_VISIBLE_CONVERSATION_SESSION_COUNT = 8;
+const CONVERSATION_SESSION_DELETE_CONTROL_WIDTH = 12;
 
 export type ConversationSessionSelectionPaneProps = {
   conversationSessions: readonly ConversationSessionSummary[];
@@ -77,6 +79,10 @@ export function ConversationSessionSelectionPane(props: ConversationSessionSelec
         ) : (
           <ConversationSessionOptionRow
             activeConversationSessionId={props.activeConversationSessionId}
+            canDeleteConversationSession={canDeleteConversationSessionFromSelection(
+              props.conversationSessions,
+              row.conversationSession.sessionId,
+            )}
             conversationSession={row.conversationSession}
             conversationSessionIndex={row.conversationSessionIndex}
             highlightedConversationSessionIndex={highlightedConversationSessionIndex}
@@ -95,6 +101,7 @@ function ConversationSessionOptionRow(props: {
   conversationSessionIndex: number;
   highlightedConversationSessionIndex: number;
   activeConversationSessionId: string | undefined;
+  canDeleteConversationSession: boolean;
   isAwaitingDeleteConfirmation: boolean;
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 }): ReactNode {
@@ -120,11 +127,13 @@ function ConversationSessionOptionRow(props: {
           )}
         </text>
       </box>
-      <ConversationSessionDeleteControl
-        conversationSessionId={props.conversationSession.sessionId}
-        isAwaitingDeleteConfirmation={props.isAwaitingDeleteConfirmation}
-        onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
-      />
+      {props.canDeleteConversationSession ? (
+        <ConversationSessionDeleteControl
+          conversationSessionId={props.conversationSession.sessionId}
+          isAwaitingDeleteConfirmation={props.isAwaitingDeleteConfirmation}
+          onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
+        />
+      ) : null}
     </box>
   );
 }
@@ -135,18 +144,21 @@ function ConversationSessionDeleteControl(props: {
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 }): ReactNode {
   const [isPointerHovering, setIsPointerHovering] = useState(false);
-  const deleteActionLabel = props.isAwaitingDeleteConfirmation ? "confirm" : "x";
+  const deleteActionLabel = props.isAwaitingDeleteConfirmation ? "delete again" : "delete";
   const deleteActionColor = props.isAwaitingDeleteConfirmation
     ? (isPointerHovering ? chatScreenTheme.accentRed : chatScreenTheme.accentAmber)
     : (isPointerHovering ? chatScreenTheme.accentRed : chatScreenTheme.textDim);
 
   return (
     <box
+      flexDirection="row"
       flexShrink={0}
+      justifyContent="flex-end"
       marginLeft={1}
       onMouseDown={() => props.onConversationSessionDeletionRequested(props.conversationSessionId)}
       onMouseOut={() => setIsPointerHovering(false)}
       onMouseOver={() => setIsPointerHovering(true)}
+      width={CONVERSATION_SESSION_DELETE_CONTROL_WIDTH}
     >
       <text fg={deleteActionColor} wrapMode="none">
         {deleteActionLabel}
