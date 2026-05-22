@@ -1,5 +1,4 @@
 import {
-  ASSISTANT_PRESENTATION_FUNCTION_NAMES,
   ASSISTANT_TOOL_REQUEST_NAMES,
   CodeExecutionWalkthroughKindSchema,
   CodeExecutionWalkthroughSchema,
@@ -147,7 +146,7 @@ export function createGlobToolDefinition(): OpenAiToolDefinition<"glob"> {
   return {
     type: "function",
     name: "glob",
-    description: "Find files inside the current workspace by filename glob pattern. Use this instead of bash for file discovery.",
+    description: "Find files inside the current workspace by filename glob pattern. Use this instead of bash for file discovery. The path argument is one directory only; do not pass multiple directories, shell globs, or a trailing * there.",
     parameters: {
       type: "object",
       properties: {
@@ -157,7 +156,7 @@ export function createGlobToolDefinition(): OpenAiToolDefinition<"glob"> {
         },
         path: {
           type: ["string", "null"],
-          description: "Directory to search in, or null to search from the workspace root.",
+          description: "Single directory to search in, or null to search from the workspace root. Do not pass multiple paths, spaces as separators, shell globs, or a trailing *; use pattern for matching or make separate glob calls.",
         },
       },
       required: ["pattern", "path"],
@@ -171,7 +170,7 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
   return {
     type: "function",
     name: "grep",
-    description: "Search text inside files in the current workspace using a JavaScript regular expression. Use this instead of bash for text search.",
+    description: "Search text inside files in the current workspace using a JavaScript regular expression. Use this instead of bash for text search. The path argument is one file or directory only; do not pass multiple paths, shell globs, or a trailing * there.",
     parameters: {
       type: "object",
       properties: {
@@ -181,7 +180,7 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
         },
         path: {
           type: ["string", "null"],
-          description: "File or directory to search, or null to search from the workspace root.",
+          description: "Single file or directory to search, or null to search from the workspace root. Do not pass multiple paths, spaces as separators, shell globs, or a trailing *; use include to narrow files under one directory or make separate grep calls.",
         },
         include: {
           type: ["string", "null"],
@@ -279,13 +278,13 @@ export function createPresentCodeExecutionWalkthroughToolDefinition(): OpenAiToo
   return {
     type: "function",
     name: "present_code_execution_walkthrough",
-    description: "Render a structured, non-executable debug walkthrough in the Buli UI. Use this after inspecting source files when code behavior should be explained over time: what happens now, what data/state exists, which branch or condition decides the next path, what changes, and where execution goes next. Every code example must be copied from inspected source and include exact file path, line range, and code text.",
+    description: "Render structured source evidence in the Buli UI. This legacy presentation function is only available when explicitly enabled. Every code example must be copied from inspected source and include exact file path, line range, and code text.",
     parameters: {
       type: "object",
       properties: {
         titleText: {
           type: "string",
-          description: "Short title for the debug walkthrough.",
+          description: "Short title for the source evidence.",
         },
         summaryText: {
           type: ["string", "null"],
@@ -506,15 +505,14 @@ export function createOpenAiToolDefinitions(input: {
   const availableToolNameSet = input.availableToolNames
     ? new Set<ProviderAvailableToolName>(input.availableToolNames)
     : undefined;
-  const availablePresentationFunctionNameSet = input.availablePresentationFunctionNames
-    ? new Set<ProviderAvailablePresentationFunctionName>(input.availablePresentationFunctionNames)
-    : undefined;
+  const requestedPresentationFunctionNames = input.availablePresentationFunctionNames
+    ? Array.from(new Set<ProviderAvailablePresentationFunctionName>(input.availablePresentationFunctionNames))
+    : [];
 
   const executableToolDefinitions = ASSISTANT_TOOL_REQUEST_NAMES
     .filter((toolName) => !availableToolNameSet || availableToolNameSet.has(toolName))
     .map((toolName) => openAiToolAdapterByName[toolName].definition);
-  const presentationFunctionDefinitions = ASSISTANT_PRESENTATION_FUNCTION_NAMES
-    .filter((functionName) => !availablePresentationFunctionNameSet || availablePresentationFunctionNameSet.has(functionName))
+  const presentationFunctionDefinitions = requestedPresentationFunctionNames
     .map((functionName) => openAiPresentationFunctionDefinitionByName[functionName]);
 
   return [...executableToolDefinitions, ...presentationFunctionDefinitions];

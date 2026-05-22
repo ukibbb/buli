@@ -190,6 +190,34 @@ test("prompt textarea creates virtual extmarks for image placeholders", async ()
   );
 });
 
+test("prompt textarea creates non-virtual extmarks for selected prompt-context references", async () => {
+  const renderedPromptTextarea = await testRender(
+    <PromptTextarea
+      promptDraft="Read @README.md and @packages/tui/src/ChatScreen.tsx"
+      promptDraftCursorOffset={"Read @README.md".length}
+      selectedPromptContextReferenceTexts={["@README.md"]}
+      isFocused={true}
+      onPromptDraftEdited={noopPromptDraftEdited}
+      onPromptSubmitted={noopPromptSubmitted}
+    />,
+    { width: 80, height: 4 },
+  );
+  await renderedPromptTextarea.renderOnce();
+
+  const promptTextarea = readFocusedPromptTextarea(renderedPromptTextarea);
+  const promptContextReferenceExtmarks = promptTextarea.extmarks.getAll().filter((extmark) =>
+    promptTextarea.extmarks.getTypeName(extmark.typeId) === "prompt-context-reference"
+  );
+
+  expect(promptContextReferenceExtmarks.map((extmark) => ({
+    start: extmark.start,
+    end: extmark.end,
+    virtual: extmark.virtual,
+  }))).toEqual([
+    { start: "Read ".length, end: "Read @README.md".length, virtual: false },
+  ]);
+});
+
 test("prompt textarea requests native clipboard paste only for empty paste bytes", async () => {
   let nativeClipboardPasteRequestCount = 0;
   const publishedPromptTextareaEdits: PromptTextareaEdit[] = [];

@@ -79,6 +79,30 @@ export function isPathInsideWorkspace(workspaceRootPath: string, candidatePath: 
   return resolvedCandidatePath.startsWith(rootPrefix);
 }
 
+export function assertSingleWorkspaceSearchPathArgument(input: {
+  toolName: "Glob" | "Grep";
+  pathKind: "directory" | "file or directory";
+  requestedPath: string;
+  guidance: string;
+}): void {
+  const pathArgumentSegments = input.requestedPath
+    .trim()
+    .split(/\s+/)
+    .filter((pathArgumentSegment) => pathArgumentSegment.length > 0);
+  if (pathArgumentSegments.length < 2) {
+    return;
+  }
+
+  const pathLikeSegmentCount = pathArgumentSegments.filter(isShellStylePathArgumentSegment).length;
+  if (pathLikeSegmentCount < 2 && !pathArgumentSegments.some(hasShellGlobMetacharacter)) {
+    return;
+  }
+
+  throw new Error(
+    `${input.toolName} path must be a single ${input.pathKind}, not multiple shell arguments: ${input.requestedPath}. ${input.guidance}`,
+  );
+}
+
 async function buildMissingWorkspacePathError(input: {
   workspaceRootPath: string;
   candidateAbsolutePath: string;
@@ -145,6 +169,23 @@ function isObviousMissingPathSuggestion(requestedBasename: string, candidateBase
 function stripExtension(fileBasename: string): string {
   const extension = extname(fileBasename);
   return extension.length === 0 ? fileBasename : fileBasename.slice(0, -extension.length);
+}
+
+function isShellStylePathArgumentSegment(pathArgumentSegment: string): boolean {
+  return pathArgumentSegment === "." ||
+    pathArgumentSegment === ".." ||
+    pathArgumentSegment.includes("/") ||
+    pathArgumentSegment.includes("\\") ||
+    hasShellGlobMetacharacter(pathArgumentSegment);
+}
+
+function hasShellGlobMetacharacter(pathArgumentSegment: string): boolean {
+  return pathArgumentSegment.includes("*") ||
+    pathArgumentSegment.includes("?") ||
+    pathArgumentSegment.includes("[") ||
+    pathArgumentSegment.includes("]") ||
+    pathArgumentSegment.includes("{") ||
+    pathArgumentSegment.includes("}");
 }
 
 function isMissingPathError(error: unknown): boolean {

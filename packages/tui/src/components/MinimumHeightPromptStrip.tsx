@@ -64,6 +64,7 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
             promptDraft={props.promptDraft}
             promptDraftCursorOffset={props.promptDraftCursorOffset}
             selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+            promptContextReferenceTextColor={props.accentColor}
             cursorCharacter={cursorCharacter}
             shouldRenderPromptDraftOnSingleLine={true}
           />
@@ -72,6 +73,8 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
             promptDraft={props.promptDraft}
             promptDraftCursorOffset={props.promptDraftCursorOffset}
             promptImageAttachmentPlaceholderTexts={props.promptImageAttachmentPlaceholderTexts}
+            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+            promptContextReferenceTextColor={props.accentColor}
             isFocused={true}
             rowCount={MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT}
             onPromptDraftEdited={props.onPromptDraftEdited}

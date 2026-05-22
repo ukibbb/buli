@@ -94,8 +94,52 @@ test("TerminalSelectionClipboardBridge handles completed OpenTUI selection event
     );
     await Promise.resolve();
   });
+  await renderedBridge.renderOnce();
 
   expect(osc52ClipboardTexts).toEqual(["selected terminal text"]);
   expect(nativeClipboardTexts).toEqual(["selected terminal text"]);
   expect(clearSelectionCount).toBe(1);
+  expect(renderedBridge.captureCharFrame()).toContain("Copied to clipboard");
+});
+
+test("TerminalSelectionClipboardBridge does not show copy confirmation for empty selection events", async () => {
+  const renderedBridge = await testRender(
+    <TerminalSelectionClipboardBridge
+      writeClipboardText={async () => true}
+    />,
+    { width: 80, height: 8 },
+  );
+
+  await act(async () => {
+    renderedBridge.renderer.emit("selection", createSelectionWithText("") as Selection);
+    await Promise.resolve();
+  });
+  await renderedBridge.renderOnce();
+
+  expect(renderedBridge.captureCharFrame()).not.toContain("Copied to clipboard");
+});
+
+test("TerminalSelectionClipboardBridge hides copy confirmation after the configured duration", async () => {
+  const renderedBridge = await testRender(
+    <TerminalSelectionClipboardBridge
+      copyConfirmationToastDurationMs={10}
+      writeClipboardText={async () => true}
+    />,
+    { width: 80, height: 8 },
+  );
+  renderedBridge.renderer.copyToClipboardOSC52 = () => true;
+
+  await act(async () => {
+    renderedBridge.renderer.emit("selection", createSelectionWithText("short lived selection") as Selection);
+    await Promise.resolve();
+  });
+  await renderedBridge.renderOnce();
+  expect(renderedBridge.captureCharFrame()).toContain("Copied to clipboard");
+
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  });
+  await renderedBridge.renderOnce();
+
+  expect(renderedBridge.captureCharFrame()).not.toContain("Copied to clipboard");
 });

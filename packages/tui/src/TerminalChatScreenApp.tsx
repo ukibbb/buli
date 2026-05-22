@@ -4,9 +4,9 @@ import { TerminalSelectionClipboardBridge } from "./clipboard/TerminalSelectionC
 
 export function TerminalChatScreenApp(props: ChatScreenProps): ReactNode {
   return (
-    <>
-      <TerminalSelectionClipboardBridge />
+    <box height="100%" position="relative" width="100%">
       <ChatScreen {...props} />
-    </>
+      <TerminalSelectionClipboardBridge />
+    </box>
   );
 }

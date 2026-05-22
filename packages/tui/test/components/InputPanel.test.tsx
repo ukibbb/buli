@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TextareaRenderable } from "@opentui/core";
+import { TextareaRenderable, type CapturedFrame, type RGBA } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { InputPanel } from "../../src/components/InputPanel.tsx";
@@ -24,6 +24,24 @@ function countRenderedLinesMatchingPattern(renderedOutput: string, pattern: RegE
 function splitRenderedViewportRows(renderedOutput: string): string[] {
   const renderedRows = renderedOutput.split("\n");
   return renderedRows[renderedRows.length - 1] === "" ? renderedRows.slice(0, -1) : renderedRows;
+}
+
+function formatCapturedColorAsHex(capturedColor: RGBA): string {
+  const [red, green, blue] = capturedColor.toInts();
+  const formatChannel = (channel: number): string => channel.toString(16).padStart(2, "0").toUpperCase();
+  return `#${formatChannel(red)}${formatChannel(green)}${formatChannel(blue)}`;
+}
+
+function readForegroundColorForRenderedText(capturedFrame: CapturedFrame, renderedText: string): string | undefined {
+  for (const capturedLine of capturedFrame.lines) {
+    for (const capturedSpan of capturedLine.spans) {
+      if (capturedSpan.text.includes(renderedText)) {
+        return formatCapturedColorAsHex(capturedSpan.fg);
+      }
+    }
+  }
+
+  return undefined;
 }
 
 describe("InputPanel", () => {
@@ -254,6 +272,34 @@ describe("InputPanel", () => {
     await renderOnce();
 
     expect(captureCharFrame()).toContain("hello");
+  });
+
+  test("renders_selected_prompt_context_reference_with_agent_accent_color", async () => {
+    const selectedPromptContextReferenceText = "@/Users/lukasz/Desktop/Projekty/buli/examples/opencode/";
+    const { captureSpans, renderOnce } = await testRender(
+      <InputPanel
+        promptDraft={selectedPromptContextReferenceText}
+        promptDraftCursorOffset={selectedPromptContextReferenceText.length}
+        selectedPromptContextReferenceTexts={[selectedPromptContextReferenceText]}
+        isPromptInputDisabled={false}
+        accentColor={chatScreenTheme.accentPink}
+        modeLabel="Understand Agent"
+        modelIdentifier="gpt-5.5"
+        reasoningEffortLabel="medium"
+        assistantResponseStatus="waiting_for_user_input"
+        totalContextTokensUsed={undefined}
+        contextWindowTokenCapacity={undefined}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
+      />,
+      { width: 140, height: 8 },
+    );
+
+    await renderOnce();
+
+    expect(readForegroundColorForRenderedText(captureSpans(), selectedPromptContextReferenceText)).toBe(
+      chatScreenTheme.accentPink.toUpperCase(),
+    );
   });
 
   test("keeps_long_prompt_cursor_away_from_the_panel_border", async () => {

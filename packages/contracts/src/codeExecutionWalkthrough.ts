@@ -92,7 +92,7 @@ export function formatCodeExecutionWalkthroughAsMarkdownText(
 }
 
 function formatCodeExecutionWalkthroughKind(walkthroughKind: CodeExecutionWalkthroughKind): string {
-  return walkthroughKind === "observed_runtime_trace" ? "observed runtime trace" : "source walkthrough";
+  return walkthroughKind === "observed_runtime_trace" ? "observed runtime trace" : "source evidence";
 }
 
 function formatCodeExecutionWalkthroughStepAsMarkdown(

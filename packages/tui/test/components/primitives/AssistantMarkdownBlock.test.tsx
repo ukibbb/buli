@@ -500,6 +500,31 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("// ts");
   });
 
+  test("renders_source_labeled_code_fences_with_inline_explanation_comments", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "```ts path=\"src/runtime.ts:10-12\"",
+          "// explain: The guard decides whether this branch should run.",
+          "if (isReady) {",
+          "  startRuntime();",
+          "}",
+          "```",
+        ].join("\n")}
+      />,
+      { width: 96, height: 12 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("ts · src/runtime.ts:10-12");
+    expect(frame).toContain("// explain: The guard decides whether this branch should run.");
+    expect(frame).toContain("startRuntime");
+  });
+
   test("renders_plain_text_fences_as_lightweight_snippets", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock

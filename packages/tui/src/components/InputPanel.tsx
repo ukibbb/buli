@@ -81,6 +81,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
               promptDraft={props.promptDraft}
               promptDraftCursorOffset={props.promptDraftCursorOffset}
               selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+              promptContextReferenceTextColor={props.accentColor}
               cursorCharacter=" "
               shouldRenderPromptDraftOnSingleLine={false}
             />
@@ -89,6 +90,8 @@ export function InputPanel(props: InputPanelProps): ReactNode {
               promptDraft={props.promptDraft}
               promptDraftCursorOffset={props.promptDraftCursorOffset}
               promptImageAttachmentPlaceholderTexts={props.promptImageAttachmentPlaceholderTexts}
+              selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+              promptContextReferenceTextColor={props.accentColor}
               isFocused={true}
               onPromptDraftEdited={props.onPromptDraftEdited}
               onPromptSubmitted={props.onPromptSubmitted}

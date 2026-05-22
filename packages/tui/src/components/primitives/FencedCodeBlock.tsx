@@ -1,10 +1,9 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { SyntaxHighlightSpan } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
   infoStringToFiletype,
   pathToFiletype,
-  type TextChunk,
 } from "@opentui/core";
 import {
   codeBlockSyntaxStyle,
@@ -88,25 +87,6 @@ function OpenTuiFencedCodeContent(props: {
   const codeText = props.codeLines.map((codeLine) => codeLine.lineText).join("\n");
   const codeFiletype = resolveOpenTuiCodeFiletype(props.filePath, props.languageLabel);
   const hasAnyLineNumber = props.codeLines.some((codeLine) => codeLine.lineNumber !== undefined);
-  // Compute a primitive cache key over the line-number column so memoised
-  // gutter state remains stable across parent re-renders that hand us a new
-  // `codeLines` array with identical line numbers. OpenTUI treats any
-  // `onChunks` identity change as a highlights-invalidation signal and would
-  // otherwise re-run tree-sitter on every chat re-render.
-  const lineNumberSequenceSignature = props.codeLines
-    .map((codeLine) => codeLine.lineNumber ?? "")
-    .join(",");
-  const gutterChunkTexts = useMemo(
-    () => buildGutterChunkTextsForLineNumbers(props.codeLines),
-    // Intentionally keyed on the signature rather than the codeLines array.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lineNumberSequenceSignature],
-  );
-  const handleOpenTuiCodeChunks = useCallback(
-    (treeSitterChunks: TextChunk[]) =>
-      injectGutterChunksBeforeEachSourceLine(treeSitterChunks, gutterChunkTexts),
-    [gutterChunkTexts],
-  );
   if (!hasAnyLineNumber) {
     return (
       <code
@@ -123,20 +103,30 @@ function OpenTuiFencedCodeContent(props: {
       />
     );
   }
+
   return (
-    <code
-      content={codeText}
+    <line-number
       bg={githubLikeTerminalCodeColors.canvas}
-      {...(props.conceal !== undefined ? { conceal: props.conceal } : {})}
-      drawUnstyledText={true}
-      filetype={codeFiletype}
-      onChunks={handleOpenTuiCodeChunks}
-      selectable={true}
-      syntaxStyle={codeBlockSyntaxStyle}
-      treeSitterClient={openTuiSharedTreeSitterClient}
+      fg={codeLineNumberGutterForegroundColor}
+      hideLineNumbers={buildHiddenLineNumberSetForCodeLines(props.codeLines)}
+      lineNumbers={buildLineNumberOverrideMapForCodeLines(props.codeLines)}
+      minWidth={computeLineNumberGutterWidth(props.codeLines)}
+      paddingRight={1}
       width="100%"
-      wrapMode={props.wrapMode}
-    />
+    >
+      <code
+        content={codeText}
+        bg={githubLikeTerminalCodeColors.canvas}
+        {...(props.conceal !== undefined ? { conceal: props.conceal } : {})}
+        drawUnstyledText={true}
+        filetype={codeFiletype}
+        selectable={true}
+        syntaxStyle={codeBlockSyntaxStyle}
+        treeSitterClient={openTuiSharedTreeSitterClient}
+        width="100%"
+        wrapMode={props.wrapMode}
+      />
+    </line-number>
   );
 }
 
@@ -149,7 +139,7 @@ export function resolveOpenTuiCodeFiletype(
   languageLabel: string | undefined,
 ): string {
   if (filePath) {
-    const filetypeFromPath = pathToFiletype(filePath);
+    const filetypeFromPath = pathToFiletype(removeSourceLineRangeSuffix(filePath));
     if (filetypeFromPath) {
       return filetypeFromPath;
     }
@@ -161,8 +151,36 @@ export function resolveOpenTuiCodeFiletype(
   return infoStringToFiletype(normalizedLanguageLabel) || "text";
 }
 
+function removeSourceLineRangeSuffix(filePath: string): string {
+  return filePath.replace(/:\d+(?:-\d+)?$/, "");
+}
+
 function computeLineNumberGutterWidth(codeLines: FencedCodeBlockLine[]): number {
-  return Math.max(2, String(codeLines.at(-1)?.lineNumber ?? codeLines.length).length);
+  const largestLineNumber = Math.max(
+    codeLines.length,
+    ...codeLines.map((codeLine) => codeLine.lineNumber ?? 0),
+  );
+  return Math.max(2, String(largestLineNumber).length);
+}
+
+function buildLineNumberOverrideMapForCodeLines(codeLines: FencedCodeBlockLine[]): Map<number, number> {
+  const lineNumberOverrideByLogicalLineIndex = new Map<number, number>();
+  codeLines.forEach((codeLine, logicalLineIndex) => {
+    if (codeLine.lineNumber !== undefined) {
+      lineNumberOverrideByLogicalLineIndex.set(logicalLineIndex, codeLine.lineNumber);
+    }
+  });
+  return lineNumberOverrideByLogicalLineIndex;
+}
+
+function buildHiddenLineNumberSetForCodeLines(codeLines: FencedCodeBlockLine[]): Set<number> {
+  const hiddenLogicalLineIndexes = new Set<number>();
+  codeLines.forEach((codeLine, logicalLineIndex) => {
+    if (codeLine.lineNumber === undefined) {
+      hiddenLogicalLineIndexes.add(logicalLineIndex);
+    }
+  });
+  return hiddenLogicalLineIndexes;
 }
 
 function formatLineNumberGutterCell(
@@ -172,63 +190,6 @@ function formatLineNumberGutterCell(
   return lineNumber === undefined
     ? " ".repeat(lineNumberGutterWidth)
     : String(lineNumber).padStart(lineNumberGutterWidth, " ");
-}
-
-// Trailing separator space keeps the code column aligned regardless of how
-// tree-sitter splits a source line across chunks.
-function buildGutterChunkTextsForLineNumbers(codeLines: FencedCodeBlockLine[]): string[] {
-  const lineNumberGutterWidth = computeLineNumberGutterWidth(codeLines);
-  return codeLines.map(
-    (codeLine) => `${formatLineNumberGutterCell(codeLine.lineNumber, lineNumberGutterWidth)} `,
-  );
-}
-
-// The gutter lives inside the same buffer as the syntax-highlighted code, so
-// row counts and code column alignment are guaranteed by construction.
-function injectGutterChunksBeforeEachSourceLine(
-  treeSitterChunks: TextChunk[],
-  gutterChunkTexts: string[],
-): TextChunk[] {
-  const transformedChunks: TextChunk[] = [];
-  let currentSourceLineIndex = 0;
-  let currentSourceLineNeedsGutterChunk = true;
-
-  const pushGutterChunkIfNeeded = () => {
-    if (!currentSourceLineNeedsGutterChunk) {
-      return;
-    }
-    const gutterChunkText = gutterChunkTexts[currentSourceLineIndex] ?? "";
-    if (gutterChunkText.length > 0) {
-      transformedChunks.push({
-        __isChunk: true,
-        text: gutterChunkText,
-        fg: codeLineNumberGutterForegroundColor,
-      });
-    }
-    currentSourceLineNeedsGutterChunk = false;
-  };
-
-  for (const treeSitterChunk of treeSitterChunks) {
-    let remainingChunkText = treeSitterChunk.text;
-    while (remainingChunkText.length > 0) {
-      const nextNewlineIndex = remainingChunkText.indexOf("\n");
-      if (nextNewlineIndex === -1) {
-        pushGutterChunkIfNeeded();
-        transformedChunks.push({ ...treeSitterChunk, text: remainingChunkText });
-        remainingChunkText = "";
-      } else {
-        pushGutterChunkIfNeeded();
-        transformedChunks.push({
-          ...treeSitterChunk,
-          text: remainingChunkText.slice(0, nextNewlineIndex + 1),
-        });
-        remainingChunkText = remainingChunkText.slice(nextNewlineIndex + 1);
-        currentSourceLineIndex += 1;
-        currentSourceLineNeedsGutterChunk = true;
-      }
-    }
-  }
-  return transformedChunks;
 }
 
 // Engine-supplied per-line spans bypass tree-sitter entirely; we render with

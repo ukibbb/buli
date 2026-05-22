@@ -397,12 +397,13 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Plan Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("READ-ONLY phase");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
-    "or ANY other bash command to manipulate files - commands may ONLY read/inspect.",
+    "ANY file edits, modifications, or system changes. Commands may ONLY read/inspect.",
   );
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
-    "delegate built-in task subagents to construct a well-formed plan",
+    "delegate read-only exploration agents to construct a well-formed plan",
   );
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "task"]);
+  expect(provider.startedTurnRequests[0]?.availablePresentationFunctionNames).toEqual([]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
     entryKind: "user_prompt",
     assistantOperatingMode: "plan",
@@ -433,6 +434,7 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "task"]);
+  expect(provider.startedTurnRequests[0]?.availablePresentationFunctionNames).toEqual([]);
 });
 
 test("AssistantConversationRuntime filters explicit tool overrides in read-only modes", async () => {

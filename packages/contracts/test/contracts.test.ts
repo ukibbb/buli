@@ -225,7 +225,7 @@ test("CodeExecutionWalkthroughSchema formats model-readable fallback text", () =
 
   expect(formatCodeExecutionWalkthroughAsMarkdownText(codeExecutionWalkthrough)).toBe([
     "**Runtime flow**",
-    "Walkthrough kind: source walkthrough",
+    "Walkthrough kind: source evidence",
     "",
     "1. Translate event",
     "What happens: The stream event becomes a message part.",

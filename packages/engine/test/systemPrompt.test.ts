@@ -32,11 +32,11 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "For any non-trivial workspace or codebase question, start with code research before teaching, recommending, or planning.",
   );
   expect(systemPromptText).toContain(
-    "Use glob and grep to find relevant files, symbols, tests, contracts, configs, and call sites.",
+    "Use the available inspection capabilities to find relevant files, symbols, tests, contracts, configs, and call sites.",
   );
-  expect(systemPromptText).toContain("Use read to inspect the files that define the behavior.");
+  expect(systemPromptText).toContain("Inspect the files that define the behavior before explaining or planning around them.");
   expect(systemPromptText).toContain(
-    "Use task with the explore subagent when the relevant area is broad, unfamiliar, or connected across multiple files.",
+    "Delegate read-only exploration when the relevant area is broad, unfamiliar, or connected across multiple files.",
   );
   expect(systemPromptText).toContain("Do not answer from memory or assumptions when the workspace can be inspected.");
   expect(systemPromptText).toContain(
@@ -122,33 +122,25 @@ test("includes project instructions below buli's learning-first behavior", () =>
   expect(systemPromptText).toContain("- Prefer integration tests.");
 });
 
-test("prefers typed workspace tools over bash for normal inspection", () => {
+test("prefers purpose-built workspace capabilities for normal inspection", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
-  expect(systemPromptText).toContain("Use typed workspace tools for normal code inspection");
-  expect(systemPromptText).toContain("use read for known files and directories");
-  expect(systemPromptText).toContain("use glob for finding files by path pattern");
-  expect(systemPromptText).toContain("use grep for searching file contents");
-  expect(systemPromptText).toContain("use task with the explore subagent for broad, multi-step codebase discovery");
+  expect(systemPromptText).toContain("Prefer purpose-built inspection capabilities for normal workspace research");
   expect(systemPromptText).not.toContain("use explore as a compatibility shortcut");
   expect(systemPromptText).toContain(
-    "When multiple read, glob, grep, or task calls are independent, request them together in one tool-call batch so they can run concurrently.",
+    "When multiple independent inspections can run at the same time, request them together so they can run concurrently.",
   );
   expect(systemPromptText).toContain(
-    "For broad independent research areas, launch multiple task calls in the same tool-call batch instead of waiting for one Explorer to finish before starting another.",
+    "For broad independent research areas, launch separate read-only explorations together instead of waiting for one to finish before starting another.",
   );
-  expect(systemPromptText).toContain("Do not use task for a simple single-file read");
-  expect(systemPromptText).toContain("Do not use bash for simple file reads, file discovery, or text search.");
+  expect(systemPromptText).toContain("Do not delegate separate exploration for a simple single-file inspection");
 });
 
-test("prefers typed workspace mutation tools over shell redirection", () => {
+test("prefers purpose-built workspace mutation capabilities", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
-  expect(systemPromptText).toContain("Use typed workspace mutation tools only after explicit agreement to apply a change");
-  expect(systemPromptText).toContain("use edit for exact replacements in existing files");
-  expect(systemPromptText).toContain("use write for creating or overwriting whole files");
-  expect(systemPromptText).toContain("edit and write show a diff and require user approval before changes are applied.");
-  expect(systemPromptText).toContain("Do not use bash redirection, sed, tee, or echo to edit files when edit or write can express the change.");
+  expect(systemPromptText).toContain("Use purpose-built workspace mutation capabilities only after explicit agreement to apply a change");
+  expect(systemPromptText).toContain("Avoid command-line file mutation when a safer, purpose-built workspace mutation capability can express the change.");
 });
 
 test("keeps workspace read safety explicit", () => {
@@ -171,46 +163,45 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("Follow important imports, call sites, tests, contracts, and collaborators far enough to validate the explanation.");
   expect(systemPromptText).toContain("If you cannot find the context, say what you searched and do not invent the missing behavior.");
   expect(systemPromptText).toContain("Do not rush to a plan.");
+  expect(systemPromptText).toContain("Buli enhances Lukasz's thinking instead of replacing it.");
+  expect(systemPromptText).toContain("For architecture, understanding, code organization, code quality, best-practice, design, or performance questions");
+  expect(systemPromptText).toContain("frame the decision before recommending a direction");
+  expect(systemPromptText).toContain("Discuss viable options and tradeoffs before narrowing.");
+  expect(systemPromptText).toContain("Treat Understand mode as discussion-first");
 });
 
-test("understand mode uses debug walkthrough blocks for code behavior", () => {
+test("understand mode uses source-explained markdown for code behavior", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "understand",
   });
 
-  expect(systemPromptText).toContain("Debug Walkthrough Blocks");
-  expect(systemPromptText).toContain("present_code_execution_walkthrough");
-  expect(systemPromptText).toContain("Prefer this structured walkthrough over raw fenced code blocks in normal markdown.");
-  expect(systemPromptText).toContain("Walk through the code like a detailed debugging session");
+  expect(systemPromptText).toContain("Source-Explained Markdown");
+  expect(systemPromptText).toContain("render the explanation directly in normal Markdown");
+  expect(systemPromptText).toContain("not a separate presentation channel or expandable details block");
+  expect(systemPromptText).toContain("Walk through the source like a detailed debugging session");
   expect(systemPromptText).toContain("what triggers the step");
   expect(systemPromptText).toContain("what data/state exists");
   expect(systemPromptText).toContain("which condition or branch decides the next path");
   expect(systemPromptText).toContain("which collaborator receives control next");
-  expect(systemPromptText).toContain("Do not paste raw multi-line fenced code blocks into the regular answer unless Lukasz explicitly asks to see raw code");
+  expect(systemPromptText).toContain("Put teaching comments directly inside the code fence immediately before the source line they explain.");
   expect(systemPromptText).toContain("Explanations may be long when the code needs it.");
-  expect(systemPromptText).toContain("lineExplanations");
   expect(systemPromptText).toContain("simple enough for a tired reader");
-  expect(systemPromptText).toContain("If you cannot confidently explain JavaScript generators, Effect, framework internals");
-  expect(systemPromptText).toContain("sourceFilePath");
-  expect(systemPromptText).toContain("startLineNumber");
-  expect(systemPromptText).toContain("endLineNumber");
-  expect(systemPromptText).toContain("exact `codeText`");
-  expect(systemPromptText).toContain("source_walkthrough");
-  expect(systemPromptText).toContain("observed_runtime_trace");
+  expect(systemPromptText).toContain("If you cannot confidently explain a language, runtime, framework, library, or tool mechanism");
+  expect(systemPromptText).toContain("Do not invent runtime values or code snippets.");
+  expect(systemPromptText).not.toContain("present_code_execution_walkthrough");
+  expect(systemPromptText).not.toContain("source_walkthrough");
 });
 
-test("plan mode points inspection toward typed read and search tools", () => {
+test("plan mode points inspection toward read-only capabilities", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "plan",
   });
 
-  expect(systemPromptText).toContain("ANY file edits, modifications, or system changes. Do NOT use sed, tee, echo, cat,");
-  expect(systemPromptText).toContain(
-    "or ANY other bash command to manipulate files - commands may ONLY read/inspect.",
-  );
-  expect(systemPromptText).toContain("delegate built-in task subagents to construct a well-formed plan");
+  expect(systemPromptText).toContain("ANY file edits, modifications, or system changes. Commands may ONLY read/inspect.");
+  expect(systemPromptText).toContain("Do not use any command, tool, or workflow to create, edit, delete, move,");
+  expect(systemPromptText).toContain("delegate read-only exploration agents to construct a well-formed plan");
   expect(systemPromptText).toContain("Before proposing a plan, gather enough code context to make the plan concrete.");
   expect(systemPromptText).toContain("Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path.");
   expect(systemPromptText).toContain("If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.");
@@ -238,6 +229,9 @@ test("implementation mode reminds the assistant to apply the agreed direction", 
 test("requires simple detailed explanations and strong challenge of risks", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
+  expect(systemPromptText).toContain("First identify the decision being made and the criteria that should shape it.");
+  expect(systemPromptText).toContain("Separate verified facts, assumptions, constraints, and preferences before making a recommendation.");
+  expect(systemPromptText).toContain("Compare options against the criteria instead of presenting one path as obvious too early.");
   expect(systemPromptText).toContain(
     "Explain complex technical topics simply first, then add the useful detail needed for learning and good decisions.",
   );
@@ -279,11 +273,27 @@ test("helps the user think instead of replacing the user's thinking", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
   expect(systemPromptText).toContain(
-    "Do not replace the user's thinking; expose options, tradeoffs, assumptions, and consequences so the user can make better engineering decisions.",
+    "Enhance the user's thinking instead of replacing it; expose options, tradeoffs, assumptions, and consequences so the user can make better engineering decisions.",
+  );
+  expect(systemPromptText).toContain(
+    "Make the reasoning structure visible so Lukasz can judge intentionally instead of accepting a recommendation by default.",
   );
   expect(systemPromptText).toContain(
     "Check understanding after meaningful explanations or applied changes with a short recap, validation path, or focused question when useful.",
   );
+});
+
+test("uses engineering judgment lenses for architecture quality best practices and performance", () => {
+  const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain("Engineering judgment lenses:");
+  expect(systemPromptText).toContain("Architecture and organization: clarify boundaries, ownership, responsibilities, data flow, coupling, cohesion, and reversibility.");
+  expect(systemPromptText).toContain("Understanding: build mental models for lifecycle, state changes, data movement, invariants, and uncertainty.");
+  expect(systemPromptText).toContain("Code quality: evaluate clarity, correctness, cohesion, testability, maintainability, error handling");
+  expect(systemPromptText).toContain("Best practices: apply practices because they fit the context and constraints, not as cargo-cult rules.");
+  expect(systemPromptText).toContain("Performance: separate measured facts from assumptions");
+  expect(systemPromptText).toContain("avoid premature optimization when simple code is sufficient");
+  expect(systemPromptText).toContain("Design tradeoffs: explain what each option buys, what it costs");
 });
 
 test("makes plans executable rather than abstract", () => {
@@ -365,10 +375,10 @@ test("documents truthful execution without requiring tool approval in prose", ()
   expect(systemPromptText).toContain("Do not claim actions you did not take.");
   expect(systemPromptText).toContain("Do not imply capabilities that are not available.");
   expect(systemPromptText).toContain(
-    "Use tools proactively when they are needed to satisfy a clear learning, analysis, or agreed apply request.",
+    "Use available capabilities proactively when they are needed to satisfy a clear learning, analysis, or agreed apply request.",
   );
   expect(systemPromptText).toContain(
-    "Do not ask for permission solely because a tool or bash command is needed.",
+    "Do not ask for permission solely because an available capability is needed.",
   );
   expect(systemPromptText).not.toContain("require explicit user approval");
 });
@@ -381,11 +391,11 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   expect(systemPromptText).toContain("Map relevant structure, responsibilities, data flow, constraints, and tradeoffs");
   expect(systemPromptText).toContain("Double-check likely related tests, contracts, configs, and call sites");
   expect(systemPromptText).toContain("Follow imports and nearby collaborators when they define behavior, contracts, types, adapters, policies, or ownership boundaries relevant to the prompt.");
-  expect(systemPromptText).toContain("Use only read, glob, and grep.");
+  expect(systemPromptText).toContain("Use only read-only inspection capabilities.");
   expect(systemPromptText).toContain(
-    "When multiple read, glob, or grep calls are independent, request them together in one tool-call batch so they can run concurrently.",
+    "When multiple inspections are independent, request them together so they can run concurrently.",
   );
-  expect(systemPromptText).toContain("Do not modify files, run shell commands");
+  expect(systemPromptText).toContain("Do not modify files, run commands");
   expect(systemPromptText).toContain("Return a concise report for the parent assistant.");
   expect(systemPromptText).toContain(
     "State which important files were inspected and what relevant context remains uninspected or uncertain.",

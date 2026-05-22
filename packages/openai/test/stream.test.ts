@@ -823,25 +823,23 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
   const taskToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "task");
-  const presentCodeExecutionWalkthroughDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "present_code_execution_walkthrough");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
   expect(readToolDefinition?.description).toContain("continue with offset before concluding");
   expect(globToolDefinition?.description).toContain("Use this instead of bash for file discovery");
+  expect(globToolDefinition?.parameters.properties["path"]?.description).toContain("Single directory");
+  expect(globToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
   expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
+  expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Single file or directory");
+  expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
-  expect(presentCodeExecutionWalkthroughDefinition?.parameters.properties["steps"]?.description).toContain("as many steps as needed");
-  expect(
-    presentCodeExecutionWalkthroughDefinition?.parameters.properties["steps"]?.items?.properties?.["codeExamples"]?.items?.properties?.["lineExplanations"]?.description,
-  ).toContain("line-by-line teaching notes");
   const openAiToolDefinitionNames: string[] = openAiToolDefinitions.map((toolDefinition) => toolDefinition.name);
   expect(openAiToolDefinitionNames).not.toContain("explore");
+  expect(openAiToolDefinitionNames).not.toContain("present_code_execution_walkthrough");
   expect(taskToolDefinition?.description).toContain("Launch a built-in Buli subagent");
   expect(taskToolDefinition?.description).toContain("Currently available subagent: explore");
-  expect(presentCodeExecutionWalkthroughDefinition?.description).toContain("Render a structured, non-executable debug walkthrough");
-  expect(presentCodeExecutionWalkthroughDefinition?.description).toContain("exact file path, line range, and code text");
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
   expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);
@@ -870,6 +868,15 @@ test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => 
   });
 
   expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep"]);
+});
+
+test("createOpenAiToolDefinitions includes presentation functions only when explicitly requested", () => {
+  const toolDefinitions = createOpenAiToolDefinitions({
+    availableToolNames: [],
+    availablePresentationFunctionNames: ["present_code_execution_walkthrough"],
+  });
+
+  expect(toolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["present_code_execution_walkthrough"]);
 });
 
 test("parseOpenAiStream rejects malformed typed tool JSON arguments clearly", async () => {
@@ -1606,7 +1613,6 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       "edit",
       "write",
       "task",
-      "present_code_execution_walkthrough",
     ]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },

@@ -226,16 +226,16 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("Agent: Understand Agent");
   expect(html).toContain("Render &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
   expect(html).toContain('src="data:image/png;base64,aGVsbG8="');
-  expect(html).toContain("clipboard.png · image/png");
+  expect(html).toContain("clipboard.png &middot; image/png");
   expect(html).not.toContain("<script>alert('x')</script>");
-  expect(html).toContain("Tool · call");
+  expect(html).toContain("Tool call");
   expect(html).toContain("pwd");
   expect(html).toContain("README.md");
   expect(html).toContain("src/app.ts");
   expect(html).toContain("const title = &quot;old&quot;;");
   expect(html).toContain("notes/new-file.txt");
   expect(html).toContain("hello from write");
-  expect(html).toContain("Workspace · patch");
+  expect(html).toContain("Workspace patch");
   expect(html).toContain("workspace patch");
   expect(html).toContain("+1 -0");
   expect(html).toContain("map runtime");
@@ -253,7 +253,8 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain('<a href="https://example.com">safe link</a>');
   expect(html).toContain("unsafe link");
   expect(html).not.toContain("javascript:alert");
-  expect(html).toContain('<pre data-lang="ts"><code>const safe = true;</code></pre>');
+  expect(html).toContain('data-lang="typescript"');
+  expect(html).toContain('data-copy-text="const safe = true;"');
   expect(html).toContain("Compaction");
   expect(html).toContain("Context compacted from 4 entries.");
   expect(html).toContain("continue the exported session from compacted context");
@@ -396,9 +397,8 @@ test("renderConversationSessionHtmlDocument renders assistant code execution wal
     conversationSessionId: "session-code-execution-walkthrough",
   });
 
-  expect(html).toContain("debug walkthrough");
-  expect(html).toContain("source walkthrough");
-  expect(html.match(/Runtime flow/g)).toHaveLength(1);
+  expect(html).toContain("source evidence");
+  expect(html.match(/<span class="panel-purpose">Runtime flow<\/span>/g)).toHaveLength(1);
   expect(html.match(/Prompt accepted/g)).toHaveLength(1);
   expect(html).not.toContain("**Runtime flow**");
 });

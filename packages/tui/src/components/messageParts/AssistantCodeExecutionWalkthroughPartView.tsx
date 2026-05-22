@@ -8,6 +8,7 @@ import type {
 } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { createClickableControlMouseDownHandler } from "../primitives/clickableControl.ts";
+import { FencedCodeBlock, type FencedCodeBlockLine } from "../primitives/FencedCodeBlock.tsx";
 
 export function AssistantCodeExecutionWalkthroughPartView(props: {
   assistantCodeExecutionWalkthroughConversationMessagePart: AssistantCodeExecutionWalkthroughConversationMessagePart;
@@ -135,8 +136,7 @@ function CodeExecutionCodeExampleBlock(props: {
   marginTop?: number;
 }): ReactNode {
   const { codeExample } = props;
-  const annotatedCodeExampleLines = buildAnnotatedCodeExampleLines(codeExample);
-  const lineNumberGutterWidth = computeCodeExampleLineNumberGutterWidth(annotatedCodeExampleLines);
+  const explainedCodeBlockLines = buildExplainedCodeBlockLines(codeExample);
   return (
     <box flexDirection="column" {...(props.marginTop !== undefined ? { marginTop: props.marginTop } : {})} width="100%">
       <box width="100%">
@@ -158,98 +158,21 @@ function CodeExecutionCodeExampleBlock(props: {
         paddingLeft={1}
         width="100%"
       >
-        {annotatedCodeExampleLines.map((annotatedCodeExampleLine, index) => (
-          <AnnotatedCodeExampleLineBlock
-            annotatedCodeExampleLine={annotatedCodeExampleLine}
-            key={`annotated-code-example-line-${index}`}
-            lineNumberGutterWidth={lineNumberGutterWidth}
-          />
-        ))}
-      </box>
-    </box>
-  );
-}
-
-type AnnotatedCodeExampleLine = {
-  lineNumber: number;
-  lineText: string;
-  lineExplanation?: CodeExecutionLineExplanation | undefined;
-};
-
-function AnnotatedCodeExampleLineBlock(props: {
-  annotatedCodeExampleLine: AnnotatedCodeExampleLine;
-  lineNumberGutterWidth: number;
-}): ReactNode {
-  const { annotatedCodeExampleLine } = props;
-  return (
-    <box flexDirection="column" width="100%">
-      <box flexDirection="row" width="100%">
-        <box flexShrink={0} marginRight={1} width={props.lineNumberGutterWidth}>
-          <text fg={chatScreenTheme.textDim}>{String(annotatedCodeExampleLine.lineNumber).padStart(props.lineNumberGutterWidth, " ")}</text>
-        </box>
-        <box flexShrink={1} minWidth={0} overflow="hidden" width="100%">
-          <text fg={chatScreenTheme.textPrimary} truncate={true} wrapMode="none" width="100%">
-            {annotatedCodeExampleLine.lineText}
-          </text>
-        </box>
-      </box>
-      {annotatedCodeExampleLine.lineExplanation ? (
-        <LineExplanationBlock
-          lineExplanation={annotatedCodeExampleLine.lineExplanation}
-          paddingLeft={props.lineNumberGutterWidth + 1}
+        <FencedCodeBlock
+          variant="embedded"
+          codeLines={explainedCodeBlockLines}
+          filePath={codeExample.sourceFilePath}
+          {...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {})}
+          showLabel={false}
+          wrapMode="char"
         />
-      ) : null}
-    </box>
-  );
-}
-
-function LineExplanationBlock(props: {
-  lineExplanation: CodeExecutionLineExplanation;
-  paddingLeft: number;
-}): ReactNode {
-  const { lineExplanation } = props;
-  return (
-    <box flexDirection="column" paddingLeft={props.paddingLeft} width="100%">
-      <CodeExplanationCommentLine labelText="explain" detailText={lineExplanation.explanationText} labelColor={chatScreenTheme.textSecondary} />
-      <OptionalCodeExplanationCommentLine labelText="project model" detailText={lineExplanation.projectModelText} labelColor={chatScreenTheme.accentCyan} />
-      <OptionalCodeExplanationCommentLine labelText="framework lifecycle" detailText={lineExplanation.frameworkLifecycleText} labelColor={chatScreenTheme.accentPurple} />
-      <OptionalCodeExplanationCommentLine labelText="language mechanics" detailText={lineExplanation.languageMechanicsText} labelColor={chatScreenTheme.accentAmber} />
-      <OptionalCodeExplanationCommentLine labelText="plain pseudocode" detailText={lineExplanation.plainPseudocodeText} labelColor={chatScreenTheme.accentGreen} />
-      <OptionalCodeExplanationCommentLine labelText="not verified" detailText={lineExplanation.uncertaintyText} labelColor={chatScreenTheme.accentRed} />
-    </box>
-  );
-}
-
-function OptionalCodeExplanationCommentLine(props: {
-  labelText: string;
-  detailText?: string | undefined;
-  labelColor: string;
-}): ReactNode {
-  if (props.detailText === undefined) {
-    return null;
-  }
-
-  return <CodeExplanationCommentLine labelText={props.labelText} detailText={props.detailText} labelColor={props.labelColor} />;
-}
-
-function CodeExplanationCommentLine(props: {
-  labelText: string;
-  detailText: string;
-  labelColor: string;
-}): ReactNode {
-  return (
-    <box width="100%">
-      <text wrapMode="word" width="100%">
-        <span fg={chatScreenTheme.textDim}>// </span>
-        <span fg={props.labelColor}>{`${props.labelText}: `}</span>
-        <span fg={chatScreenTheme.textSecondary}>{props.detailText}</span>
-      </text>
+      </box>
     </box>
   );
 }
 
 function formatCodeExecutionWalkthroughKindLabel(walkthroughKind: CodeExecutionWalkthroughKind): string {
-  return walkthroughKind === "observed_runtime_trace" ? "observed runtime trace" : "source walkthrough";
+  return walkthroughKind === "observed_runtime_trace" ? "observed runtime trace" : "source evidence";
 }
 
 function formatCodeExampleSourceRangeLabel(codeExample: CodeExecutionCodeExample): string {
@@ -259,24 +182,197 @@ function formatCodeExampleSourceRangeLabel(codeExample: CodeExecutionCodeExample
   return `${codeExample.sourceFilePath}:${lineRange}`;
 }
 
-function buildAnnotatedCodeExampleLines(codeExample: CodeExecutionCodeExample): AnnotatedCodeExampleLine[] {
+function buildExplainedCodeBlockLines(codeExample: CodeExecutionCodeExample): FencedCodeBlockLine[] {
   const lineExplanationByLineNumber = new Map(
     (codeExample.lineExplanations ?? []).map((lineExplanation) => [lineExplanation.lineNumber, lineExplanation]),
   );
-  return codeExample.codeText.split("\n").map((lineText, lineIndex) => {
+  const commentSyntax = resolveCodeExplanationCommentSyntax(codeExample);
+  const explainedCodeBlockLines: FencedCodeBlockLine[] = [];
+
+  for (const [lineIndex, lineText] of codeExample.codeText.split("\n").entries()) {
     const lineNumber = codeExample.startLineNumber + lineIndex;
-    return {
+    const lineExplanation = lineExplanationByLineNumber.get(lineNumber);
+
+    if (lineExplanation !== undefined) {
+      explainedCodeBlockLines.push(...buildCodeExplanationCommentLines(lineExplanation, commentSyntax));
+    }
+
+    explainedCodeBlockLines.push({
       lineNumber,
       lineText,
-      ...(lineExplanationByLineNumber.has(lineNumber)
-        ? { lineExplanation: lineExplanationByLineNumber.get(lineNumber) }
-        : {}),
-    };
+    });
+  }
+
+  return explainedCodeBlockLines;
+}
+
+type CodeExplanationCommentSyntax =
+  | { syntaxKind: "lineComment"; linePrefix: string }
+  | { syntaxKind: "blockComment"; openingText: string; closingText: string };
+
+type CodeExplanationLayer = {
+  labelText: string;
+  detailText: string;
+};
+
+const codeExplanationCommentWrapColumnCount = 96;
+
+function buildCodeExplanationCommentLines(
+  lineExplanation: CodeExecutionLineExplanation,
+  commentSyntax: CodeExplanationCommentSyntax,
+): FencedCodeBlockLine[] {
+  return buildCodeExplanationLayers(lineExplanation).flatMap((codeExplanationLayer) =>
+    wrapCodeExplanationCommentLayer(codeExplanationLayer, commentSyntax).map((lineText) => ({ lineText }))
+  );
+}
+
+function buildCodeExplanationLayers(lineExplanation: CodeExecutionLineExplanation): CodeExplanationLayer[] {
+  return [
+    { labelText: "explain", detailText: lineExplanation.explanationText },
+    ...(lineExplanation.projectModelText !== undefined ? [{ labelText: "project model", detailText: lineExplanation.projectModelText }] : []),
+    ...(lineExplanation.frameworkLifecycleText !== undefined ? [{ labelText: "framework lifecycle", detailText: lineExplanation.frameworkLifecycleText }] : []),
+    ...(lineExplanation.languageMechanicsText !== undefined ? [{ labelText: "language mechanics", detailText: lineExplanation.languageMechanicsText }] : []),
+    ...(lineExplanation.plainPseudocodeText !== undefined ? [{ labelText: "plain pseudocode", detailText: lineExplanation.plainPseudocodeText }] : []),
+    ...(lineExplanation.uncertaintyText !== undefined ? [{ labelText: "not verified", detailText: lineExplanation.uncertaintyText }] : []),
+  ];
+}
+
+function wrapCodeExplanationCommentLayer(
+  codeExplanationLayer: CodeExplanationLayer,
+  commentSyntax: CodeExplanationCommentSyntax,
+): string[] {
+  const firstLinePrefix = `${codeExplanationLayer.labelText}: `;
+  const wrappedDetailLines = wrapTextForCodeExplanationComment(
+    codeExplanationLayer.detailText,
+    Math.max(20, codeExplanationCommentWrapColumnCount - firstLinePrefix.length),
+  );
+  if (commentSyntax.syntaxKind === "blockComment") {
+    return wrappedDetailLines.map((wrappedDetailLine, wrappedDetailLineIndex) => {
+      const lineBody = wrappedDetailLineIndex === 0
+        ? `${firstLinePrefix}${wrappedDetailLine}`
+        : `  ${wrappedDetailLine}`;
+      return `${commentSyntax.openingText} ${lineBody} ${commentSyntax.closingText}`;
+    });
+  }
+
+  return wrappedDetailLines.map((wrappedDetailLine, wrappedDetailLineIndex) => {
+    const lineBody = wrappedDetailLineIndex === 0
+      ? `${firstLinePrefix}${wrappedDetailLine}`
+      : `  ${wrappedDetailLine}`;
+    return `${commentSyntax.linePrefix} ${lineBody}`;
   });
 }
 
-function computeCodeExampleLineNumberGutterWidth(annotatedCodeExampleLines: readonly AnnotatedCodeExampleLine[]): number {
-  return Math.max(2, String(annotatedCodeExampleLines.at(-1)?.lineNumber ?? 1).length);
+function wrapTextForCodeExplanationComment(text: string, maximumLineLength: number): string[] {
+  const normalizedText = text.trim().replace(/\s+/g, " ");
+  if (normalizedText.length <= maximumLineLength) {
+    return [normalizedText];
+  }
+
+  const wrappedLines: string[] = [];
+  let currentLine = "";
+  for (const word of normalizedText.split(" ")) {
+    if (word.length > maximumLineLength) {
+      if (currentLine.length > 0) {
+        wrappedLines.push(currentLine);
+        currentLine = "";
+      }
+      wrappedLines.push(word);
+      continue;
+    }
+
+    const nextLine = currentLine.length === 0 ? word : `${currentLine} ${word}`;
+    if (nextLine.length > maximumLineLength) {
+      wrappedLines.push(currentLine);
+      currentLine = word;
+      continue;
+    }
+
+    currentLine = nextLine;
+  }
+
+  if (currentLine.length > 0) {
+    wrappedLines.push(currentLine);
+  }
+
+  return wrappedLines.length > 0 ? wrappedLines : [normalizedText];
+}
+
+function resolveCodeExplanationCommentSyntax(codeExample: CodeExecutionCodeExample): CodeExplanationCommentSyntax {
+  const sourceLanguageHints = buildSourceLanguageHintsForCommentSyntax(codeExample);
+
+  if (sourceLanguageHints.some(isHtmlLikeSourceLanguageHint)) {
+    return { syntaxKind: "blockComment", openingText: "<!--", closingText: "-->" };
+  }
+
+  if (sourceLanguageHints.some(isSqlOrLuaSourceLanguageHint)) {
+    return { syntaxKind: "lineComment", linePrefix: "--" };
+  }
+
+  if (sourceLanguageHints.some(isHashCommentSourceLanguageHint)) {
+    return { syntaxKind: "lineComment", linePrefix: "#" };
+  }
+
+  return { syntaxKind: "lineComment", linePrefix: "//" };
+}
+
+function isHashCommentSourceLanguageHint(sourceLanguageHint: string): boolean {
+  return hashCommentSourceLanguageHints.has(sourceLanguageHint);
+}
+
+function isSqlOrLuaSourceLanguageHint(sourceLanguageHint: string): boolean {
+  return sqlOrLuaSourceLanguageHints.has(sourceLanguageHint);
+}
+
+function isHtmlLikeSourceLanguageHint(sourceLanguageHint: string): boolean {
+  return htmlLikeSourceLanguageHints.has(sourceLanguageHint);
+}
+
+const hashCommentSourceLanguageHints = new Set([
+  "bash",
+  "dockerfile",
+  "fish",
+  "makefile",
+  "ps1",
+  "py",
+  "python",
+  "rb",
+  "ruby",
+  "sh",
+  "toml",
+  "yaml",
+  "yml",
+  "zsh",
+]);
+
+const sqlOrLuaSourceLanguageHints = new Set(["lua", "sql"]);
+
+const htmlLikeSourceLanguageHints = new Set([
+  "html",
+  "markdown",
+  "md",
+  "mdx",
+  "svg",
+  "xml",
+]);
+
+function buildSourceLanguageHintsForCommentSyntax(codeExample: CodeExecutionCodeExample): string[] {
+  const sourceFileName = codeExample.sourceFilePath.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
+  const sourceFileExtension = readSourceFileExtension(sourceFileName);
+  return [
+    codeExample.languageLabel?.trim().toLowerCase(),
+    sourceFileExtension,
+    sourceFileName,
+  ].filter((sourceLanguageHint): sourceLanguageHint is string => sourceLanguageHint !== undefined && sourceLanguageHint.length > 0);
+}
+
+function readSourceFileExtension(sourceFileName: string): string | undefined {
+  const finalDotIndex = sourceFileName.lastIndexOf(".");
+  if (finalDotIndex === -1 || finalDotIndex === sourceFileName.length - 1) {
+    return undefined;
+  }
+
+  return sourceFileName.slice(finalDotIndex + 1);
 }
 
 function buildWalkthroughStepNarrativeText(walkthroughStep: CodeExecutionWalkthroughStep): string {

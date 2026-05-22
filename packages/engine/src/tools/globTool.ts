@@ -6,7 +6,7 @@ import {
 import { buildGlobToolResultText } from "./searchToolResultText.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { listWorkspaceFiles } from "./workspaceFileSearch.ts";
-import { resolveExistingWorkspacePath } from "./workspacePath.ts";
+import { assertSingleWorkspaceSearchPathArgument, resolveExistingWorkspacePath } from "./workspacePath.ts";
 import { listWorkspaceFilesWithRipgrep } from "./workspaceRipgrepSearch.ts";
 
 const MAX_RETURNED_GLOB_MATCHED_PATHS = 1_000;
@@ -25,9 +25,16 @@ export async function runGlobToolCall(input: {
   const startedToolCallDetail = createStartedGlobToolCallDetail(input.globToolCallRequest);
 
   try {
+    const requestedSearchDirectoryPath = input.globToolCallRequest.searchDirectoryPath ?? ".";
+    assertSingleWorkspaceSearchPathArgument({
+      toolName: "Glob",
+      pathKind: "directory",
+      requestedPath: requestedSearchDirectoryPath,
+      guidance: "Use one common parent path with the glob pattern, or make separate glob calls.",
+    });
     const resolvedSearchPath = await resolveExistingWorkspacePath({
       workspaceRootPath: input.workspaceRootPath,
-      requestedPath: input.globToolCallRequest.searchDirectoryPath ?? ".",
+      requestedPath: requestedSearchDirectoryPath,
     });
     if (!resolvedSearchPath.stats.isDirectory()) {
       throw new Error(`Glob search path must be a directory: ${resolvedSearchPath.displayPath}`);

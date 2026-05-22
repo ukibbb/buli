@@ -63,6 +63,25 @@ describe("FencedCodeBlock", () => {
     expect(frame).toContain("console.log(answer);");
   });
 
+  test("renders_custom_line_number_gutter_for_highlighted_code", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <FencedCodeBlock
+        variant="embedded"
+        filePath="src/example.ts"
+        codeLines={[
+          { lineText: "// explain: this comment line has no source line number" },
+          { lineNumber: 145, lineText: "const value = 1;" },
+        ]}
+      />,
+      { width: 80, height: 8 },
+    );
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("// explain:");
+    expect(frame).toContain("145 const value = 1;");
+  });
+
   test("standalone_renders_language_label_and_code_lines", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <FencedCodeBlock
@@ -133,6 +152,7 @@ describe("FencedCodeBlock", () => {
 
   test("prefers_file_path_over_language_label_for_OpenTUI_filetype_resolution", () => {
     expect(resolveOpenTuiCodeFiletype("packages/tui/src/index.ts", undefined)).toBe("typescript");
+    expect(resolveOpenTuiCodeFiletype("packages/tui/src/index.ts:10-18", undefined)).toBe("typescript");
     expect(resolveOpenTuiCodeFiletype("Dockerfile", undefined)).toBe("dockerfile");
     // Falls back to the language label when the path produces no match.
     expect(resolveOpenTuiCodeFiletype("path/with/no/extension", "ts")).toBe("typescript");

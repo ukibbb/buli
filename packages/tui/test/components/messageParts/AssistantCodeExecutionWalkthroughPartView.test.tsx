@@ -51,7 +51,7 @@ describe("AssistantCodeExecutionWalkthroughPartView", () => {
     const collapsedFrame = captureCharFrame();
     expect(collapsedFrame).toContain("[+]");
     expect(collapsedFrame).toContain("Runtime flow");
-    expect(collapsedFrame).toContain("source walkthrough");
+    expect(collapsedFrame).toContain("source evidence");
     expect(collapsedFrame).toContain("Provider event is translated");
     expect(collapsedFrame).not.toContain("packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147");
 
@@ -68,11 +68,60 @@ describe("AssistantCodeExecutionWalkthroughPartView", () => {
     expect(expandedFrame).toContain("translateProviderStreamEvent");
     expect(expandedFrame).toContain("code_execution_walkthrough_presented");
     expect(expandedFrame).toContain("// explain:");
+    expect(expandedFrame).toContain("145 if");
     expect(expandedFrame).toContain("project model:");
     expect(expandedFrame).toContain("language mechanics:");
     expect(expandedFrame).toContain("plain pseudocode:");
     expect(expandedFrame).not.toContain("// packages/engine/src/runtimeProviderStreamEventTranslator.ts");
     expect(expandedFrame).not.toContain("// ts");
+  });
+
+  test("uses_source_language_comment_syntax_for_inline_explanations", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <AssistantCodeExecutionWalkthroughPartView
+        assistantCodeExecutionWalkthroughConversationMessagePart={{
+          id: "code-walkthrough-1",
+          partKind: "assistant_code_execution_walkthrough",
+          titleText: "Python flow",
+          walkthroughKind: "source_walkthrough",
+          steps: [
+            {
+              stepTitle: "Print result",
+              whatHappensText: "The script prints the computed result.",
+              codeExamples: [
+                {
+                  sourceFilePath: "scripts/example.py",
+                  startLineNumber: 4,
+                  endLineNumber: 4,
+                  languageLabel: "py",
+                  codeText: "print(result)",
+                  lineExplanations: [
+                    {
+                      lineNumber: 4,
+                      explanationText: "This sends the result text to standard output.",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+      { width: 80, height: 18 },
+    );
+    await renderOnce();
+
+    expect(captureCharFrame()).not.toContain("scripts/example.py:4");
+
+    await act(async () => {
+      await mockMouse.click(3, 2);
+    });
+    await renderOnce();
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("scripts/example.py:4");
+    expect(expandedFrame).toContain("# explain:");
+    expect(expandedFrame).toContain("print(result)");
   });
 
   test("uses_singular_step_count_for_one_step", async () => {

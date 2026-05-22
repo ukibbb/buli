@@ -6,6 +6,7 @@ import {
   type TextareaRenderable,
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { parsePromptContextReferencesFromPromptText } from "@buli/prompt-context-core";
 import { normalizeOpenTuiPasteEventText } from "../behavior/normalizeOpenTuiPasteEventText.ts";
 
 export const PROMPT_TEXTAREA_MIN_ROW_COUNT = 2;
@@ -20,11 +21,23 @@ export type PromptTextareaProps = {
   promptDraft: string;
   promptDraftCursorOffset: number;
   promptImageAttachmentPlaceholderTexts?: readonly string[] | undefined;
+  selectedPromptContextReferenceTexts?: readonly string[] | undefined;
+  promptContextReferenceTextColor?: string | undefined;
   isFocused: boolean;
   rowCount?: number;
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
   onNativeClipboardPasteRequested?: (() => void | Promise<void>) | undefined;
+};
+
+type PromptContextReferenceRange = {
+  startOffset: number;
+  endOffset: number;
+};
+
+type PromptTextareaDecorativeExtmarkTypeIds = {
+  promptImageAttachmentPlaceholderExtmarkTypeId: number | undefined;
+  promptContextReferenceExtmarkTypeId: number | undefined;
 };
 
 const promptTextareaKeyBindings: KeyBinding[] = [
@@ -34,6 +47,9 @@ const promptTextareaKeyBindings: KeyBinding[] = [
 ];
 
 const promptImageAttachmentPlaceholderStyleScope = "prompt.image_attachment_placeholder";
+const promptContextReferenceExtmarkTypeName = "prompt-context-reference";
+const promptContextReferenceStyleScopePrefix = "prompt.context_reference.";
+const promptContextReferenceStyleIdsByTextColor = new Map<string, number>();
 const promptTextareaSyntaxStyle = SyntaxStyle.fromStyles({
   default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
   [promptImageAttachmentPlaceholderStyleScope]: { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
@@ -41,6 +57,22 @@ const promptTextareaSyntaxStyle = SyntaxStyle.fromStyles({
 const promptImageAttachmentPlaceholderStyleId = promptTextareaSyntaxStyle.getStyleId(
   promptImageAttachmentPlaceholderStyleScope,
 )!;
+
+function resolvePromptContextReferenceStyleId(promptContextReferenceTextColor: string): number {
+  const cachedPromptContextReferenceStyleId = promptContextReferenceStyleIdsByTextColor.get(
+    promptContextReferenceTextColor,
+  );
+  if (cachedPromptContextReferenceStyleId !== undefined) {
+    return cachedPromptContextReferenceStyleId;
+  }
+
+  const promptContextReferenceStyleId = promptTextareaSyntaxStyle.registerStyle(
+    `${promptContextReferenceStyleScopePrefix}${promptContextReferenceTextColor}`,
+    { fg: RGBA.fromHex(promptContextReferenceTextColor) },
+  );
+  promptContextReferenceStyleIdsByTextColor.set(promptContextReferenceTextColor, promptContextReferenceStyleId);
+  return promptContextReferenceStyleId;
+}
 
 function clampPromptDraftCursorOffset(promptDraft: string, promptDraftCursorOffset: number): number {
   return Math.max(0, Math.min(promptDraftCursorOffset, promptDraft.length));
@@ -53,7 +85,8 @@ function arePromptTextareaEditsEqual(left: PromptTextareaEdit, right: PromptText
 export function PromptTextarea(props: PromptTextareaProps): ReactNode {
   const promptTextareaRef = useRef<TextareaRenderable | null>(null);
   const promptImageAttachmentPlaceholderExtmarkTypeIdRef = useRef<number | undefined>(undefined);
-  const promptImageAttachmentPlaceholderExtmarkOwnerRef = useRef<TextareaRenderable | null>(null);
+  const promptContextReferenceExtmarkTypeIdRef = useRef<number | undefined>(undefined);
+  const promptTextareaDecorativeExtmarkOwnerRef = useRef<TextareaRenderable | null>(null);
   const isSynchronizingTextareaFromPromptStateRef = useRef(false);
   const promptTextareaRowSizing =
     props.rowCount === undefined
@@ -113,18 +146,31 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       return;
     }
 
-    if (promptImageAttachmentPlaceholderExtmarkOwnerRef.current !== promptTextarea) {
-      promptImageAttachmentPlaceholderExtmarkOwnerRef.current = promptTextarea;
+    if (promptTextareaDecorativeExtmarkOwnerRef.current !== promptTextarea) {
+      promptTextareaDecorativeExtmarkOwnerRef.current = promptTextarea;
       promptImageAttachmentPlaceholderExtmarkTypeIdRef.current = undefined;
+      promptContextReferenceExtmarkTypeIdRef.current = undefined;
     }
 
-    promptImageAttachmentPlaceholderExtmarkTypeIdRef.current = syncPromptImageAttachmentPlaceholderExtmarks({
+    const promptTextareaDecorativeExtmarkTypeIds = syncPromptTextareaDecorativeExtmarks({
       promptTextarea,
       promptDraft: props.promptDraft,
       promptImageAttachmentPlaceholderTexts: props.promptImageAttachmentPlaceholderTexts ?? [],
+      selectedPromptContextReferenceTexts: props.selectedPromptContextReferenceTexts ?? [],
+      promptContextReferenceTextColor: props.promptContextReferenceTextColor ?? chatScreenTheme.promptContextReferenceText,
       promptImageAttachmentPlaceholderExtmarkTypeId: promptImageAttachmentPlaceholderExtmarkTypeIdRef.current,
+      promptContextReferenceExtmarkTypeId: promptContextReferenceExtmarkTypeIdRef.current,
     });
-  }, [props.promptDraft, props.promptImageAttachmentPlaceholderTexts]);
+    promptImageAttachmentPlaceholderExtmarkTypeIdRef.current =
+      promptTextareaDecorativeExtmarkTypeIds.promptImageAttachmentPlaceholderExtmarkTypeId;
+    promptContextReferenceExtmarkTypeIdRef.current =
+      promptTextareaDecorativeExtmarkTypeIds.promptContextReferenceExtmarkTypeId;
+  }, [
+    props.promptContextReferenceTextColor,
+    props.promptDraft,
+    props.promptImageAttachmentPlaceholderTexts,
+    props.selectedPromptContextReferenceTexts,
+  ]);
 
   const publishPromptTextareaEdit = () => {
     if (isSynchronizingTextareaFromPromptStateRef.current) {
@@ -189,36 +235,94 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
   );
 }
 
-function syncPromptImageAttachmentPlaceholderExtmarks(input: {
+function syncPromptTextareaDecorativeExtmarks(input: {
   promptTextarea: TextareaRenderable;
   promptDraft: string;
   promptImageAttachmentPlaceholderTexts: readonly string[];
+  selectedPromptContextReferenceTexts: readonly string[];
+  promptContextReferenceTextColor: string;
   promptImageAttachmentPlaceholderExtmarkTypeId: number | undefined;
-}): number | undefined {
+  promptContextReferenceExtmarkTypeId: number | undefined;
+}): PromptTextareaDecorativeExtmarkTypeIds {
   input.promptTextarea.extmarks.clear();
-  if (input.promptImageAttachmentPlaceholderTexts.length === 0) {
-    return input.promptImageAttachmentPlaceholderExtmarkTypeId;
+
+  let promptImageAttachmentPlaceholderExtmarkTypeId = input.promptImageAttachmentPlaceholderExtmarkTypeId;
+  if (input.promptImageAttachmentPlaceholderTexts.length > 0) {
+    promptImageAttachmentPlaceholderExtmarkTypeId = promptImageAttachmentPlaceholderExtmarkTypeId ??
+      input.promptTextarea.extmarks.registerType("prompt-image-attachment-placeholder");
+    let searchStartOffset = 0;
+    for (const promptImageAttachmentPlaceholderText of input.promptImageAttachmentPlaceholderTexts) {
+      const startOffset = input.promptDraft.indexOf(promptImageAttachmentPlaceholderText, searchStartOffset);
+      if (startOffset === -1) {
+        continue;
+      }
+
+      const endOffset = startOffset + promptImageAttachmentPlaceholderText.length;
+      input.promptTextarea.extmarks.create({
+        start: startOffset,
+        end: endOffset,
+        virtual: true,
+        styleId: promptImageAttachmentPlaceholderStyleId,
+        typeId: promptImageAttachmentPlaceholderExtmarkTypeId,
+      });
+      searchStartOffset = endOffset;
+    }
   }
 
-  const promptImageAttachmentPlaceholderExtmarkTypeId = input.promptImageAttachmentPlaceholderExtmarkTypeId ??
-    input.promptTextarea.extmarks.registerType("prompt-image-attachment-placeholder");
+  let promptContextReferenceExtmarkTypeId = input.promptContextReferenceExtmarkTypeId;
+  const selectedPromptContextReferenceRanges = listSelectedPromptContextReferenceRanges({
+    promptDraft: input.promptDraft,
+    selectedPromptContextReferenceTexts: input.selectedPromptContextReferenceTexts,
+  });
+  if (selectedPromptContextReferenceRanges.length > 0) {
+    promptContextReferenceExtmarkTypeId = promptContextReferenceExtmarkTypeId ??
+      input.promptTextarea.extmarks.registerType(promptContextReferenceExtmarkTypeName);
+    const promptContextReferenceStyleId = resolvePromptContextReferenceStyleId(input.promptContextReferenceTextColor);
+    for (const selectedPromptContextReferenceRange of selectedPromptContextReferenceRanges) {
+      input.promptTextarea.extmarks.create({
+        start: selectedPromptContextReferenceRange.startOffset,
+        end: selectedPromptContextReferenceRange.endOffset,
+        virtual: false,
+        styleId: promptContextReferenceStyleId,
+        typeId: promptContextReferenceExtmarkTypeId,
+      });
+    }
+  }
+
+  return {
+    promptImageAttachmentPlaceholderExtmarkTypeId,
+    promptContextReferenceExtmarkTypeId,
+  };
+}
+
+function listSelectedPromptContextReferenceRanges(input: {
+  promptDraft: string;
+  selectedPromptContextReferenceTexts: readonly string[];
+}): PromptContextReferenceRange[] {
+  const selectedPromptContextReferenceRanges: PromptContextReferenceRange[] = [];
+  const parsedPromptContextReferences = parsePromptContextReferencesFromPromptText(input.promptDraft);
   let searchStartOffset = 0;
-  for (const promptImageAttachmentPlaceholderText of input.promptImageAttachmentPlaceholderTexts) {
-    const startOffset = input.promptDraft.indexOf(promptImageAttachmentPlaceholderText, searchStartOffset);
-    if (startOffset === -1) {
+
+  for (const selectedPromptContextReferenceText of input.selectedPromptContextReferenceTexts) {
+    if (selectedPromptContextReferenceText.length === 0) {
       continue;
     }
 
-    const endOffset = startOffset + promptImageAttachmentPlaceholderText.length;
-    input.promptTextarea.extmarks.create({
-      start: startOffset,
-      end: endOffset,
-      virtual: true,
-      styleId: promptImageAttachmentPlaceholderStyleId,
-      typeId: promptImageAttachmentPlaceholderExtmarkTypeId,
+    const matchedPromptContextReference = parsedPromptContextReferences.find(
+      (parsedPromptContextReference) =>
+        parsedPromptContextReference.startOffset >= searchStartOffset &&
+        parsedPromptContextReference.promptReferenceText === selectedPromptContextReferenceText,
+    );
+    if (!matchedPromptContextReference) {
+      continue;
+    }
+
+    selectedPromptContextReferenceRanges.push({
+      startOffset: matchedPromptContextReference.startOffset,
+      endOffset: matchedPromptContextReference.endOffset,
     });
-    searchStartOffset = endOffset;
+    searchStartOffset = matchedPromptContextReference.endOffset;
   }
 
-  return promptImageAttachmentPlaceholderExtmarkTypeId;
+  return selectedPromptContextReferenceRanges;
 }

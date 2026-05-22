@@ -21,6 +21,10 @@
     "@buli/engine": "workspace:*",
     "@buli/openai": "workspace:*",
     "@buli/tui": "workspace:*",
+    "@shikijs/core": "^4.1.0",
+    "@shikijs/engine-javascript": "^4.1.0",
+    "@shikijs/langs": "^4.1.0",
+    "@shikijs/themes": "^4.1.0",
     "marked": "^17.0.1",
     "open": "^10.2.0"
   },

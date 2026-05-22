@@ -9,7 +9,7 @@ import { buildGrepToolResultText } from "./searchToolResultText.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { listWorkspaceFiles, matchesWorkspaceGlobPattern, type WorkspaceSearchFile } from "./workspaceFileSearch.ts";
 import { isLikelyBinaryFileSample, splitWorkspaceTextFileIntoLines } from "./workspaceTextFileContent.ts";
-import { resolveExistingWorkspacePath } from "./workspacePath.ts";
+import { assertSingleWorkspaceSearchPathArgument, resolveExistingWorkspacePath } from "./workspacePath.ts";
 import { searchWorkspaceFilesWithRipgrep } from "./workspaceRipgrepSearch.ts";
 
 const BINARY_SAMPLE_BYTE_COUNT = 4_096;
@@ -30,9 +30,16 @@ export async function runGrepToolCall(input: {
   const startedToolCallDetail = createStartedGrepToolCallDetail(input.grepToolCallRequest);
 
   try {
+    const requestedSearchPath = input.grepToolCallRequest.searchPath ?? ".";
+    assertSingleWorkspaceSearchPathArgument({
+      toolName: "Grep",
+      pathKind: "file or directory",
+      requestedPath: requestedSearchPath,
+      guidance: "Use one common parent path with include, or make separate grep calls.",
+    });
     const resolvedSearchPath = await resolveExistingWorkspacePath({
       workspaceRootPath: input.workspaceRootPath,
-      requestedPath: input.grepToolCallRequest.searchPath ?? ".",
+      requestedPath: requestedSearchPath,
     });
     if (!resolvedSearchPath.stats.isFile() && !resolvedSearchPath.stats.isDirectory()) {
       throw new Error(`Grep search path must be a file or directory: ${resolvedSearchPath.displayPath}`);

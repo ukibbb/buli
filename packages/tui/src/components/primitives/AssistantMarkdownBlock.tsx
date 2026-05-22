@@ -1447,6 +1447,7 @@ function AssistantCodeFenceBlock(props: {
       <FencedCodeBlock
         variant="embedded"
         codeLines={visibleCodeFenceLines.map((lineText) => ({ lineText }))}
+        {...(props.codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: props.codeFenceInfo.codeFenceFilePath } : {})}
         languageLabel={props.codeFenceInfo.codeLanguageLabel}
         showLabel={false}
         wrapMode="none"

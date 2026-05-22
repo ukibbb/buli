@@ -262,6 +262,25 @@ test("runGlobToolCall finds files by glob pattern", async () => {
   expect(globToolCallOutcome.toolResultText).toContain("src/app.test.ts");
 });
 
+test("runGlobToolCall rejects shell-style multi-path search directory", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-multi-path-"));
+  await mkdir(join(workspaceRootPath, "src"));
+  await mkdir(join(workspaceRootPath, "test"));
+
+  const globToolCallOutcome = await runGlobToolCall({
+    workspaceRootPath,
+    globToolCallRequest: {
+      toolName: "glob",
+      globPattern: "**/*.ts",
+      searchDirectoryPath: "src test *",
+    },
+  });
+
+  expect(globToolCallOutcome.outcomeKind).toBe("failed");
+  expect(globToolCallOutcome.toolResultText).toContain("Glob path must be a single directory");
+  expect(globToolCallOutcome.toolResultText).toContain("not multiple shell arguments");
+});
+
 test("runGlobToolCall prefers ripgrep file discovery when available", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-rg-"));
   await writeFile(join(workspaceRootPath, "from-rg.ts"), "export const fromRipgrep = true;\n", "utf8");
@@ -410,6 +429,25 @@ test("runGrepToolCall searches text files with include glob", async () => {
     matchHits: [{ matchFilePath: "src/app.ts", matchLineNumber: 1, matchSnippet: "const answer = 42;" }],
   });
   expect(grepToolCallOutcome.toolResultText).toContain("Line 1: const answer = 42;");
+});
+
+test("runGrepToolCall rejects shell-style multi-path search path", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-multi-path-"));
+  await mkdir(join(workspaceRootPath, "src"));
+  await mkdir(join(workspaceRootPath, "test"));
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "answer",
+      searchPath: "src test *",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("failed");
+  expect(grepToolCallOutcome.toolResultText).toContain("Grep path must be a single file or directory");
+  expect(grepToolCallOutcome.toolResultText).toContain("not multiple shell arguments");
 });
 
 test("runGrepToolCall prefers ripgrep JSON search when available", async () => {

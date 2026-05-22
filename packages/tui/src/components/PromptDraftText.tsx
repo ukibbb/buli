@@ -6,6 +6,7 @@ export type PromptDraftTextProps = {
   promptDraft: string;
   promptDraftCursorOffset: number;
   selectedPromptContextReferenceTexts: readonly string[] | undefined;
+  promptContextReferenceTextColor?: string | undefined;
   cursorCharacter: string;
   shouldRenderPromptDraftOnSingleLine?: boolean;
 };
@@ -54,13 +55,16 @@ function splitPromptDraftDisplaySegmentsAtCursorOffset(
   };
 }
 
-function renderPromptDraftDisplaySegments(promptDraftDisplaySegments: readonly PromptDraftDisplaySegment[]): ReactNode {
-  return promptDraftDisplaySegments.map((promptDraftDisplaySegment, index) => (
+function renderPromptDraftDisplaySegments(input: {
+  promptDraftDisplaySegments: readonly PromptDraftDisplaySegment[];
+  promptContextReferenceTextColor: string;
+}): ReactNode {
+  return input.promptDraftDisplaySegments.map((promptDraftDisplaySegment, index) => (
     <span
       key={`${promptDraftDisplaySegment.segmentKind}-${index}`}
       fg={
         promptDraftDisplaySegment.segmentKind === "selected_prompt_context_reference"
-          ? chatScreenTheme.promptContextReferenceText
+          ? input.promptContextReferenceTextColor
           : chatScreenTheme.textPrimary
       }
     >
@@ -70,6 +74,7 @@ function renderPromptDraftDisplaySegments(promptDraftDisplaySegments: readonly P
 }
 
 export function PromptDraftText(props: PromptDraftTextProps): ReactNode {
+  const promptContextReferenceTextColor = props.promptContextReferenceTextColor ?? chatScreenTheme.promptContextReferenceText;
   const promptDraftDisplaySegments = buildPromptContextDisplaySegments({
     promptDraft: props.promptDraft,
     selectedPromptContextReferenceTexts: props.selectedPromptContextReferenceTexts ?? [],
@@ -91,9 +96,15 @@ export function PromptDraftText(props: PromptDraftTextProps): ReactNode {
           }
         : {})}
     >
-      {renderPromptDraftDisplaySegments(promptDraftDisplaySegmentsBeforeCursor)}
+      {renderPromptDraftDisplaySegments({
+        promptDraftDisplaySegments: promptDraftDisplaySegmentsBeforeCursor,
+        promptContextReferenceTextColor,
+      })}
       <span fg={chatScreenTheme.textPrimary}>{props.cursorCharacter}</span>
-      {renderPromptDraftDisplaySegments(promptDraftDisplaySegmentsAfterCursor)}
+      {renderPromptDraftDisplaySegments({
+        promptDraftDisplaySegments: promptDraftDisplaySegmentsAfterCursor,
+        promptContextReferenceTextColor,
+      })}
     </text>
   );
 }
