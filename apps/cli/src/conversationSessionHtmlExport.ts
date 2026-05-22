@@ -16,7 +16,6 @@ import {
   renderConversationSessionExportRuntimeScript,
 } from "./conversationSessionHtmlExport/scripts.ts";
 import {
-  renderCopyIcons,
   renderFailAlertIcon,
   renderFileIcon,
   renderInfoAlertIcon,
@@ -684,6 +683,3 @@ function formatExportedDateTimeForDisplay(epochMs: number): string {
 function safeFileNameSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "session";
 }
-
-// Silence unused-import warnings for icons used only via Shiki copy markup.
-void renderCopyIcons;
