@@ -10,6 +10,8 @@ export function buildChatScreenRenderSnapshotDiagnosticFields(input: {
   terminalColumnCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
   orderedConversationMessageCount: number;
+  renderedConversationMessageCount: number;
+  hiddenOlderConversationMessageCount: number;
   orderedConversationMessagePartCount: number;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
@@ -31,6 +33,8 @@ export function buildChatScreenRenderSnapshotDiagnosticFields(input: {
     promptDraftLength: input.chatSessionState.promptDraft.length,
     selectedPromptContextReferenceCount: input.chatSessionState.selectedPromptContextReferenceTexts.length,
     conversationMessageCount: input.orderedConversationMessageCount,
+    renderedConversationMessageCount: input.renderedConversationMessageCount,
+    hiddenOlderConversationMessageCount: input.hiddenOlderConversationMessageCount,
     conversationMessagePartCount: input.orderedConversationMessagePartCount,
     hasPendingToolApprovalRequest: input.chatSessionState.pendingToolApprovalRequest !== undefined,
     promptContextSelectionStep: input.chatSessionState.promptContextSelectionState.step,

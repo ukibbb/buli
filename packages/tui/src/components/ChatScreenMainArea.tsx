@@ -14,8 +14,11 @@ export type ChatScreenMainAreaProps = {
   terminalColumnCount: number;
   availableChatSlashCommands: readonly ChatSlashCommand[];
   orderedConversationMessages: readonly ConversationMessage[];
+  hiddenOlderConversationMessageCount: number;
+  olderConversationMessageRevealCount: number;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
+  onRevealOlderConversationMessages: () => void;
   onCommandHelpCloseRequested: () => void;
 };
 
@@ -36,7 +39,10 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
   return (
     <ConversationMessageList
       conversationMessages={props.orderedConversationMessages}
+      hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
       isReasoningSummaryVisible={props.chatSessionState.isReasoningSummaryVisible}
+      olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
+      onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
       resolveConversationMessageParts={props.resolveConversationMessageParts}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       horizontalRuleColor={props.inputPanelAccentColor}

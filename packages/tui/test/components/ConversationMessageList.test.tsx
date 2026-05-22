@@ -2,7 +2,18 @@ import { describe, expect, test } from "bun:test";
 import type { ConversationMessage, ConversationMessagePart, WorkspacePatch } from "@buli/contracts";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "../testRenderWithCleanup.ts";
-import { ConversationMessageList } from "../../src/components/ConversationMessageList.tsx";
+import { ConversationMessageList, type ConversationMessageListProps } from "../../src/components/ConversationMessageList.tsx";
+
+type ConversationHistoryRevealTestProps = Pick<
+  ConversationMessageListProps,
+  "hiddenOlderConversationMessageCount" | "olderConversationMessageRevealCount" | "onRevealOlderConversationMessages"
+>;
+
+const noHiddenOlderConversationMessagesProps: ConversationHistoryRevealTestProps = {
+  hiddenOlderConversationMessageCount: 0,
+  olderConversationMessageRevealCount: 0,
+  onRevealOlderConversationMessages: () => {},
+};
 
 function createSingleFileWorkspacePatch(input: {
   toolCallId: string;
@@ -51,6 +62,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={() => []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 80, height: 8 },
@@ -122,6 +134,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 24 },
@@ -197,6 +210,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 16 },
@@ -263,6 +277,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 16 },
@@ -306,6 +321,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 8 },
@@ -348,6 +364,7 @@ describe("ConversationMessageList", () => {
         resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 8 },
@@ -378,6 +395,7 @@ describe("ConversationMessageList", () => {
         }]}
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 80, height: 20 },
@@ -412,6 +430,7 @@ describe("ConversationMessageList", () => {
         }]}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 40, height: 10 },

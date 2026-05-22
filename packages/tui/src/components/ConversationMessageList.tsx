@@ -6,6 +6,7 @@ import {
   listRenderableConversationMessageParts,
   type ConversationMessageRowProps,
 } from "./ConversationMessageRow.tsx";
+import { ConversationHistoryRevealRow } from "./ConversationHistoryRevealRow.tsx";
 
 export type ConversationMessageListProps = {
   conversationMessages: readonly ConversationMessage[];
@@ -13,6 +14,9 @@ export type ConversationMessageListProps = {
   resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   horizontalRuleColor: string;
+  hiddenOlderConversationMessageCount: number;
+  olderConversationMessageRevealCount: number;
+  onRevealOlderConversationMessages: () => void;
   userMessageBorderColor: string;
   terminalColumnCount?: number | undefined;
 };
@@ -70,6 +74,8 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
 
     return [{ conversationMessage, conversationMessageParts }];
   });
+  const shouldRenderHistoryRevealRow = props.hiddenOlderConversationMessageCount > 0 &&
+    props.olderConversationMessageRevealCount > 0;
 
   return (
     <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
@@ -81,12 +87,26 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
         scrollX={false}
         stickyScroll={true}
         stickyStart="bottom"
+        viewportCulling={true}
         viewportOptions={{ paddingRight: 0 }}
         verticalScrollbarOptions={{ visible: false, showArrows: false }}
         horizontalScrollbarOptions={{ visible: false, showArrows: false }}
       >
+        {shouldRenderHistoryRevealRow ? (
+          <ConversationHistoryRevealRow
+            hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
+            olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
+            onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
+          />
+        ) : null}
         {renderableConversationMessages.map(({ conversationMessage, conversationMessageParts }, index) => (
-          <box flexDirection="column" flexShrink={0} key={conversationMessage.id} marginTop={index === 0 ? 0 : 1} width="100%">
+          <box
+            flexDirection="column"
+            flexShrink={0}
+            key={conversationMessage.id}
+            marginTop={index === 0 && !shouldRenderHistoryRevealRow ? 0 : 1}
+            width="100%"
+          >
             <MemoizedConversationMessageRow
               conversationMessage={conversationMessage}
               conversationMessageParts={conversationMessageParts}

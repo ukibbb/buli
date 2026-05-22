@@ -31,6 +31,11 @@ import { TopBar } from "./components/TopBar.tsx";
 import { buildChatScreenViewModel } from "./behavior/chatScreenViewModel.ts";
 import { buildChatScreenRenderSnapshotDiagnosticFields } from "./behavior/chatScreenRenderSnapshotDiagnostics.ts";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
+import {
+  buildConversationTranscriptWindow,
+  DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT,
+  revealOlderConversationTranscriptMessages,
+} from "./behavior/conversationTranscriptWindow.ts";
 import { useChatScreenActiveTurnInterrupt } from "./behavior/useChatScreenActiveTurnInterrupt.ts";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./behavior/chatScreenConversationSessionStatus.ts";
 import { useChatScreenAssistantTurnActions } from "./behavior/useChatScreenAssistantTurnActions.ts";
@@ -113,9 +118,16 @@ export function ChatScreen(props: ChatScreenProps) {
   const isConversationCompactionInFlightRef = useRef(false);
   const submittedToolApprovalDecisionApprovalIdRef = useRef<string | undefined>(undefined);
   const conversationMessageScrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
+  const [requestedVisibleConversationMessageCount, setRequestedVisibleConversationMessageCount] = useState(
+    DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT,
+  );
 
   latestChatSessionStateRef.current = chatSessionState;
   latestActiveConversationSessionIdRef.current = activeConversationSessionId;
+
+  useEffect(() => {
+    setRequestedVisibleConversationMessageCount(DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT);
+  }, [activeConversationSessionId]);
 
   const {
     isActiveTurnInterruptConfirmationArmed,
@@ -263,6 +275,18 @@ export function ChatScreen(props: ChatScreenProps) {
     terminalColumnCount: columns,
     terminalSizeTierForChatScreen,
   });
+  const conversationTranscriptWindow = buildConversationTranscriptWindow({
+    conversationMessages: orderedConversationMessages,
+    requestedVisibleConversationMessageCount,
+  });
+  const revealOlderConversationMessages = useEffectEvent(() => {
+    setRequestedVisibleConversationMessageCount((currentVisibleConversationMessageCount) =>
+      revealOlderConversationTranscriptMessages({
+        currentVisibleConversationMessageCount,
+        totalConversationMessageCount: orderedConversationMessages.length,
+      })
+    );
+  });
 
   useEffect(() => {
     logChatScreenDiagnosticEvent(
@@ -275,6 +299,8 @@ export function ChatScreen(props: ChatScreenProps) {
         terminalColumnCount: columns,
         terminalSizeTierForChatScreen,
         orderedConversationMessageCount: orderedConversationMessages.length,
+        renderedConversationMessageCount: conversationTranscriptWindow.visibleConversationMessageCount,
+        hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
         orderedConversationMessagePartCount,
         totalContextTokensUsed,
         contextWindowTokenCapacity,
@@ -302,6 +328,8 @@ export function ChatScreen(props: ChatScreenProps) {
     diagnosticLogger,
     orderedConversationMessagePartCount,
     orderedConversationMessages.length,
+    conversationTranscriptWindow.hiddenOlderConversationMessageCount,
+    conversationTranscriptWindow.visibleConversationMessageCount,
     rows,
     terminalSizeTierForChatScreen,
     totalContextTokensUsed,
@@ -318,9 +346,12 @@ export function ChatScreen(props: ChatScreenProps) {
           terminalSizeTierForChatScreen={terminalSizeTierForChatScreen}
           terminalColumnCount={columns}
           availableChatSlashCommands={availableChatSlashCommands}
-          orderedConversationMessages={orderedConversationMessages}
+          orderedConversationMessages={conversationTranscriptWindow.visibleConversationMessages}
+          hiddenOlderConversationMessageCount={conversationTranscriptWindow.hiddenOlderConversationMessageCount}
+          olderConversationMessageRevealCount={conversationTranscriptWindow.olderConversationMessageRevealCount}
           conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
           resolveConversationMessageParts={(messageId) => listOrderedConversationMessageParts(chatSessionState, messageId)}
+          onRevealOlderConversationMessages={revealOlderConversationMessages}
           onCommandHelpCloseRequested={() =>
             setChatSessionState((currentChatSessionState) => hideCommandHelpModal(currentChatSessionState))
           }
