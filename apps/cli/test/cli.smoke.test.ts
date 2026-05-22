@@ -499,7 +499,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   const skippedAutoCompactionResult = await Promise.resolve(
     autoCompactCurrentConversationSession({
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      latestContextWindowUsage: { total: 10, input: 10, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     }),
   );
   expect(skippedAutoCompactionResult).toMatchObject({
@@ -513,7 +513,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   conversationRuntime.autoCompactConversationSession = async (autoCompactionRequest) => {
     expect(autoCompactionRequest).toEqual({
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: { total: 390_000, input: 390_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      latestContextWindowUsage: { total: 390_000, input: 390_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     });
     const compactedEntryCount = conversationRuntime.conversationHistory.listConversationSessionEntries().length;
     conversationRuntime.conversationHistory.appendConversationSessionEntry({
@@ -544,7 +544,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   const completedAutoCompactionResult = await Promise.resolve(
     autoCompactCurrentConversationSession({
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: { total: 390_000, input: 390_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      latestContextWindowUsage: { total: 390_000, input: 390_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     }),
   );
   if (!completedAutoCompactionResult.didCompact) {

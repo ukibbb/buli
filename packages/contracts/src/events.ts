@@ -51,6 +51,7 @@ export const AssistantMessageCompletedEventSchema = z
     type: z.literal("assistant_message_completed"),
     messageId: z.string().min(1),
     usage: TokenUsageSchema,
+    contextWindowUsage: TokenUsageSchema.optional(),
   })
   .strict();
 
@@ -60,6 +61,7 @@ export const AssistantMessageIncompleteEventSchema = z
     messageId: z.string().min(1),
     incompleteReason: z.string().min(1),
     usage: TokenUsageSchema,
+    contextWindowUsage: TokenUsageSchema.optional(),
   })
   .strict();
 

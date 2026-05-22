@@ -479,6 +479,7 @@ test("clearConversationTranscript clears visible conversation while preserving s
   expect(clearedChatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(listOrderedConversationMessages(clearedChatSessionState)).toEqual([]);
   expect(clearedChatSessionState.latestTokenUsage).toBeUndefined();
+  expect(clearedChatSessionState.latestContextWindowUsage).toBeUndefined();
 });
 
 test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted messages", () => {
@@ -531,6 +532,36 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
     "assistant_text",
   ]);
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
+});
+
+test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compaction continuation prompts", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "conversation_compaction_summary",
+        summaryText: "Goal: continue after compaction.",
+        compactedEntryCount: 2,
+        retainedRecentConversationSessionEntryCount: 0,
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Continue if you have next steps.",
+        modelFacingPromptText: "Continue if you have next steps.",
+        promptSource: "auto_compaction_continue",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Continuing after compaction.",
+      },
+    ],
+  );
+
+  expect(listOrderedConversationMessages(chatSessionState).map((conversationMessage) => conversationMessage.role)).toEqual([
+    "assistant",
+    "assistant",
+  ]);
 });
 
 test("hydrateConversationTranscriptFromSessionEntries restores assistant text segments around tools", () => {
@@ -898,6 +929,13 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
       reasoning: 2,
       cache: { read: 0, write: 0 },
     },
+    contextWindowUsage: {
+      total: 8,
+      input: 5,
+      output: 1,
+      reasoning: 2,
+      cache: { read: 0, write: 0 },
+    },
   });
 
   const assistantConversationMessage = listOrderedConversationMessages(chatSessionState)[0];
@@ -907,6 +945,7 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
 
   expect(assistantConversationMessage.messageStatus).toBe("completed");
   expect(chatSessionState.latestTokenUsage?.reasoning).toBe(2);
+  expect(chatSessionState.latestContextWindowUsage?.total).toBe(8);
   expect(listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id)).toEqual([
     {
       id: "reasoning-1",

@@ -33,7 +33,7 @@ describe("decideConversationAutoCompaction", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: createTokenUsage(380_000),
+      latestContextWindowUsage: createTokenUsage(380_000),
     });
 
     expect(decision).toMatchObject({
@@ -53,7 +53,7 @@ describe("decideConversationAutoCompaction", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: createTokenUsage(379_999),
+      latestContextWindowUsage: createTokenUsage(379_999),
     });
 
     expect(decision).toMatchObject({
@@ -67,7 +67,7 @@ describe("decideConversationAutoCompaction", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: createTokenUsage(300_000),
+      latestContextWindowUsage: createTokenUsage(300_000),
       thresholdRatio: 0.75,
     });
 
@@ -88,7 +88,7 @@ describe("decideConversationAutoCompaction", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "unknown-model",
-      latestTokenUsage: createTokenUsage(300_000),
+      latestContextWindowUsage: createTokenUsage(300_000),
     });
 
     expect(decision).toMatchObject({
@@ -103,7 +103,7 @@ describe("decideConversationAutoCompaction", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5-future",
-      latestTokenUsage: createTokenUsage(236_000),
+      latestContextWindowUsage: createTokenUsage(236_000),
     });
 
     expect(decision).toMatchObject({
@@ -118,7 +118,7 @@ describe("decideConversationAutoCompaction", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: createTokenUsage(400_000),
+      latestContextWindowUsage: createTokenUsage(400_000),
       thresholdRatio: 0,
     });
 
@@ -140,7 +140,7 @@ describe("decideConversationAutoCompaction", () => {
         },
       ],
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: createTokenUsage(400_000),
+      latestContextWindowUsage: createTokenUsage(400_000),
     });
 
     expect(decision).toMatchObject({
@@ -167,7 +167,7 @@ describe("decideConversationAutoCompaction", () => {
         },
       ],
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: createTokenUsage(400_000),
+      latestContextWindowUsage: createTokenUsage(400_000),
     });
 
     expect(decision).toMatchObject({

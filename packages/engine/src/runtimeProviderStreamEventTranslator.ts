@@ -203,12 +203,14 @@ export class RuntimeProviderStreamEventTranslator {
       return this.translateIncompleteProviderStreamEvent({
         incompleteReason: input.providerStreamEvent.incompleteReason,
         usage: input.providerStreamEvent.usage,
+        contextWindowUsage: input.providerStreamEvent.contextWindowUsage,
         providerTurnReplay: input.providerTurnReplay,
       });
     }
 
     return this.translateCompletedProviderStreamEvent({
       usage: input.providerStreamEvent.usage,
+      contextWindowUsage: input.providerStreamEvent.contextWindowUsage,
       providerTurnReplay: input.providerTurnReplay,
     });
   }
@@ -555,6 +557,7 @@ export class RuntimeProviderStreamEventTranslator {
   private translateIncompleteProviderStreamEvent(input: {
     incompleteReason: string;
     usage: TokenUsage;
+    contextWindowUsage?: TokenUsage | undefined;
     providerTurnReplay?: ProviderTurnReplay | undefined;
   }): RuntimeProviderStreamTerminalAssistantResponseTranslation {
     const assistantSegmentFlush = this.flushCurrentAssistantTextSegmentForBoundary({
@@ -584,12 +587,14 @@ export class RuntimeProviderStreamEventTranslator {
         messageId: this.assistantResponseMessageId,
         incompleteReason: input.incompleteReason,
         usage: input.usage,
+        ...(input.contextWindowUsage ? { contextWindowUsage: input.contextWindowUsage } : {}),
       }),
     };
   }
 
   private translateCompletedProviderStreamEvent(input: {
     usage: TokenUsage;
+    contextWindowUsage?: TokenUsage | undefined;
     providerTurnReplay?: ProviderTurnReplay | undefined;
   }): RuntimeProviderStreamTerminalAssistantResponseTranslation {
     const assistantSegmentFlush = this.flushCurrentAssistantTextSegmentForBoundary({
@@ -618,6 +623,7 @@ export class RuntimeProviderStreamEventTranslator {
         type: "assistant_message_completed",
         messageId: this.assistantResponseMessageId,
         usage: input.usage,
+        ...(input.contextWindowUsage ? { contextWindowUsage: input.contextWindowUsage } : {}),
       }),
     };
   }

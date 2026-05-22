@@ -37,6 +37,7 @@ export function clearConversationTranscript(chatSessionState: ChatSessionState):
     promptDraftCursorOffset: 0,
     pendingPromptImageAttachments: [],
     latestTokenUsage: undefined,
+    latestContextWindowUsage: undefined,
     conversationMessagesById: {},
     conversationMessagePartsById: {},
     orderedConversationMessageIds: [],
@@ -199,6 +200,10 @@ function buildHydratedConversationTranscript(
       markDanglingHydratedToolCallsAsInterrupted(entryIndex);
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
+      if (conversationSessionEntry.promptSource === "auto_compaction_continue") {
+        return;
+      }
+
       const userMessageId = `persisted-entry-${entryIndex}-user`;
       const userTextPartId = `persisted-entry-${entryIndex}-user-text`;
       appendConversationMessage({

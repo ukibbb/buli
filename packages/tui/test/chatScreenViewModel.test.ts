@@ -74,7 +74,8 @@ test("buildChatScreenViewModel derives context usage and minimum input branch", 
   const viewModel = buildChatScreenViewModel({
     chatSessionState: {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      latestTokenUsage: { input: 10, output: 20, reasoning: 30, total: undefined, cache: { read: 0, write: 0 } },
+      latestTokenUsage: { input: 100, output: 200, reasoning: 300, total: undefined, cache: { read: 0, write: 0 } },
+      latestContextWindowUsage: { input: 10, output: 20, reasoning: 30, total: undefined, cache: { read: 0, write: 0 } },
     },
     conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 8,

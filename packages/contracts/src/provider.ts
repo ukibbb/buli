@@ -43,6 +43,7 @@ export const ProviderCompletedEventSchema = z
   .object({
     type: z.literal("completed"),
     usage: TokenUsageSchema,
+    contextWindowUsage: TokenUsageSchema.optional(),
   })
   .strict();
 
@@ -51,6 +52,7 @@ export const ProviderIncompleteEventSchema = z
     type: z.literal("incomplete"),
     incompleteReason: z.string().min(1),
     usage: TokenUsageSchema,
+    contextWindowUsage: TokenUsageSchema.optional(),
   })
   .strict();
 

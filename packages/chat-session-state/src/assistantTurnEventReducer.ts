@@ -451,6 +451,7 @@ export function applyAssistantResponseEventToChatSessionState(
         ...chatSessionState,
         conversationTurnStatus: "streaming_assistant_response",
         latestTokenUsage: undefined,
+        latestContextWindowUsage: undefined,
         pendingToolApprovalRequest: undefined,
       },
       conversationMessage: {
@@ -506,6 +507,7 @@ export function applyAssistantResponseEventToChatSessionState(
             ...chatSessionState,
             conversationTurnStatus: "waiting_for_user_input",
             latestTokenUsage: assistantResponseEvent.usage,
+            latestContextWindowUsage: assistantResponseEvent.contextWindowUsage ?? assistantResponseEvent.usage,
             pendingToolApprovalRequest: undefined,
           },
           messageId: assistantResponseEvent.messageId,
@@ -532,6 +534,7 @@ export function applyAssistantResponseEventToChatSessionState(
                 ...chatSessionState,
                 conversationTurnStatus: "waiting_for_user_input",
                 latestTokenUsage: assistantResponseEvent.usage,
+                latestContextWindowUsage: assistantResponseEvent.contextWindowUsage ?? assistantResponseEvent.usage,
                 pendingToolApprovalRequest: undefined,
               },
               messageId: assistantResponseEvent.messageId,

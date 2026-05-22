@@ -23,6 +23,7 @@ export const UserPromptConversationSessionEntrySchema = z
     entryKind: z.literal("user_prompt"),
     promptText: z.string(),
     modelFacingPromptText: z.string(),
+    promptSource: z.enum(["auto_compaction_continue"]).optional(),
     assistantOperatingMode: AssistantOperatingModeSchema.optional(),
     imageAttachments: z.array(UserPromptImageAttachmentSchema).optional(),
     projectInstructionSnapshots: z.array(ProjectInstructionSnapshotSchema).optional(),
@@ -148,6 +149,7 @@ export const ConversationSessionSnapshotSchema = z
   .strict();
 
 export type UserPromptConversationSessionEntry = z.infer<typeof UserPromptConversationSessionEntrySchema>;
+export type UserPromptSource = NonNullable<UserPromptConversationSessionEntry["promptSource"]>;
 export type ProjectInstructionFileName = z.infer<typeof ProjectInstructionFileNameSchema>;
 export type ProjectInstructionSnapshot = z.infer<typeof ProjectInstructionSnapshotSchema>;
 export type AssistantMessageConversationSessionEntryStatus = z.infer<typeof AssistantMessageConversationSessionEntryStatusSchema>;

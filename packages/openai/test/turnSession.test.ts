@@ -771,6 +771,13 @@ test("OpenAiProviderConversationTurn aggregates usage across tool and final resp
       reasoning: 19,
       cache: { read: 25, write: 0 },
     },
+    contextWindowUsage: {
+      total: 75,
+      input: 45,
+      output: 18,
+      reasoning: 7,
+      cache: { read: 5, write: 0 },
+    },
   });
 });
 

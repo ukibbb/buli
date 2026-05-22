@@ -8,6 +8,7 @@ import type {
   ProviderTurnReplay,
   ReasoningEffort,
   UserPromptImageAttachment,
+  UserPromptSource,
 } from "@buli/contracts";
 
 export type ConversationTurnRequest = {
@@ -16,6 +17,7 @@ export type ConversationTurnRequest = {
   assistantOperatingMode?: AssistantOperatingMode;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  promptSource?: UserPromptSource;
 };
 
 export type ConversationCompactionRequest = {

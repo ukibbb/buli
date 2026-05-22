@@ -159,6 +159,7 @@ export type {
   ProjectInstructionSnapshot,
   ToolCallConversationSessionEntry,
   UserPromptConversationSessionEntry,
+  UserPromptSource,
   WorkspacePatchConversationSessionEntry,
 } from "./conversationSessionEntry.ts";
 export type {

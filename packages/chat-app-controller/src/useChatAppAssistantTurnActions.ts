@@ -1,9 +1,15 @@
 import {
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
+  type UserPromptSource,
   type UserPromptImageAttachment,
 } from "@buli/contracts";
-import type { ActiveConversationTurn, AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
+import type {
+  ActiveConversationTurn,
+  AssistantConversationRunner,
+  ConversationAutoCompactionResult,
+  ConversationTurnRequest,
+} from "@buli/engine";
 import { applyAssistantResponseEventsToChatSessionState, type ChatSessionState } from "@buli/chat-session-state";
 import { startTransition, useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { summarizeAssistantResponseEventsForDiagnostics } from "./assistantResponseEventDiagnostics.ts";
@@ -12,6 +18,9 @@ import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunn
 import type { FinishedChatAppActiveTurn, StartedChatAppActiveTurn } from "./useChatAppActiveTurnInterrupt.ts";
 
 type MutableValueRef<T> = { current: T };
+
+const AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT =
+  "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.";
 
 export type UseChatAppAssistantTurnActionsInput = {
   chatSessionState: ChatSessionState;
@@ -24,13 +33,17 @@ export type UseChatAppAssistantTurnActionsInput = {
   registerActiveConversationTurnStarted: (startedActiveConversationTurn: StartedChatAppActiveTurn) => void;
   registerActiveConversationTurnFinished: (finishedActiveConversationTurn: FinishedChatAppActiveTurn) => void;
   registerActiveConversationTurnSettlement: (activeConversationTurnSettlementPromise: Promise<void>) => void;
-  autoCompactCurrentConversationSessionAfterAssistantTurn: () => Promise<void> | void;
+  autoCompactCurrentConversationSessionAfterAssistantTurn: () =>
+    | Promise<ConversationAutoCompactionResult | undefined>
+    | ConversationAutoCompactionResult
+    | undefined;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type SubmittedChatAppPrompt = {
   submittedPromptText: string;
   submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+  submittedPromptSource?: UserPromptSource | undefined;
 };
 
 export type PendingToolApprovalDecisionSubmission = {
@@ -69,47 +82,68 @@ export function useChatAppAssistantTurnActions(
   });
 
   const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (submittedPrompt: SubmittedChatAppPrompt): Promise<void> => {
-    const conversationTurnRequest: ConversationTurnRequest = {
-      userPromptText: submittedPrompt.submittedPromptText,
-      ...(submittedPrompt.submittedPromptImageAttachments.length > 0
-        ? { userPromptImageAttachments: submittedPrompt.submittedPromptImageAttachments }
-        : {}),
-      assistantOperatingMode: input.latestChatSessionStateRef.current.selectedAssistantOperatingMode,
-      selectedModelId: input.latestChatSessionStateRef.current.selectedModelId,
-      ...(input.latestChatSessionStateRef.current.selectedReasoningEffort
-        ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }
-        : {}),
-    };
-
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.assistant_turn_request_created", {
-      selectedModelId: conversationTurnRequest.selectedModelId,
-      selectedReasoningEffort: conversationTurnRequest.selectedReasoningEffort ?? null,
-      assistantOperatingMode: conversationTurnRequest.assistantOperatingMode ?? null,
-      submittedPromptLength: submittedPrompt.submittedPromptText.length,
-      submittedPromptImageAttachmentCount: submittedPrompt.submittedPromptImageAttachments.length,
-    });
-
+    let nextSubmittedPrompt: SubmittedChatAppPrompt | undefined = submittedPrompt;
     try {
-      const assistantResponseRelayPromise = relayAssistantResponseRunnerEvents({
-        assistantConversationRunner: input.assistantConversationRunner,
-        conversationTurnRequest,
-        onConversationTurnStarted: (activeConversationTurn) => {
-          input.registerActiveConversationTurnStarted({
-            activeConversationTurn,
-            selectedModelId: conversationTurnRequest.selectedModelId,
-          });
-        },
-        onConversationTurnFinished: () => {
-          input.registerActiveConversationTurnFinished({
-            selectedModelId: conversationTurnRequest.selectedModelId,
-          });
-        },
-        onAssistantResponseEvents: applyIncomingAssistantResponseEventsToChatAppState,
-        diagnosticLogger: input.diagnosticLogger,
-      });
-      input.registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
-      await assistantResponseRelayPromise;
-      await input.autoCompactCurrentConversationSessionAfterAssistantTurn();
+      while (nextSubmittedPrompt) {
+        const activeSubmittedPrompt = nextSubmittedPrompt;
+        nextSubmittedPrompt = undefined;
+        const conversationTurnRequest: ConversationTurnRequest = {
+          userPromptText: activeSubmittedPrompt.submittedPromptText,
+          ...(activeSubmittedPrompt.submittedPromptImageAttachments.length > 0
+            ? { userPromptImageAttachments: activeSubmittedPrompt.submittedPromptImageAttachments }
+            : {}),
+          assistantOperatingMode: input.latestChatSessionStateRef.current.selectedAssistantOperatingMode,
+          selectedModelId: input.latestChatSessionStateRef.current.selectedModelId,
+          ...(input.latestChatSessionStateRef.current.selectedReasoningEffort
+            ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }
+            : {}),
+          ...(activeSubmittedPrompt.submittedPromptSource ? { promptSource: activeSubmittedPrompt.submittedPromptSource } : {}),
+        };
+
+        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.assistant_turn_request_created", {
+          selectedModelId: conversationTurnRequest.selectedModelId,
+          selectedReasoningEffort: conversationTurnRequest.selectedReasoningEffort ?? null,
+          assistantOperatingMode: conversationTurnRequest.assistantOperatingMode ?? null,
+          promptSource: conversationTurnRequest.promptSource ?? null,
+          submittedPromptLength: activeSubmittedPrompt.submittedPromptText.length,
+          submittedPromptImageAttachmentCount: activeSubmittedPrompt.submittedPromptImageAttachments.length,
+        });
+
+        const assistantResponseRelayPromise = relayAssistantResponseRunnerEvents({
+          assistantConversationRunner: input.assistantConversationRunner,
+          conversationTurnRequest,
+          onConversationTurnStarted: (activeConversationTurn) => {
+            input.registerActiveConversationTurnStarted({
+              activeConversationTurn,
+              selectedModelId: conversationTurnRequest.selectedModelId,
+            });
+          },
+          onConversationTurnFinished: () => {
+            input.registerActiveConversationTurnFinished({
+              selectedModelId: conversationTurnRequest.selectedModelId,
+            });
+          },
+          onAssistantResponseEvents: applyIncomingAssistantResponseEventsToChatAppState,
+          diagnosticLogger: input.diagnosticLogger,
+        });
+        input.registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
+        await assistantResponseRelayPromise;
+
+        const autoCompactionResult = await input.autoCompactCurrentConversationSessionAfterAssistantTurn();
+        if (!autoCompactionResult?.didCompact || activeSubmittedPrompt.submittedPromptSource === "auto_compaction_continue") {
+          continue;
+        }
+
+        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.auto_compaction_continue_prompt_queued", {
+          selectedModelId: conversationTurnRequest.selectedModelId,
+          conversationSessionEntryCount: autoCompactionResult.conversationSessionEntries.length,
+        });
+        nextSubmittedPrompt = {
+          submittedPromptText: AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
+          submittedPromptImageAttachments: [],
+          submittedPromptSource: "auto_compaction_continue",
+        };
+      }
     } finally {
       input.isPromptSubmissionInFlightRef.current = false;
     }

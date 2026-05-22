@@ -10,6 +10,7 @@ import type {
   ConversationAutoCompactionDecision,
   ConversationAutoCompactionRequest,
   ConversationAutoCompactionResult,
+  ConversationTurnRequest,
   PromptContextCandidate,
 } from "@buli/engine";
 import { act } from "react";
@@ -346,7 +347,7 @@ test("ChatScreen compacts the current session through slash command", async () =
   expect(compactedFrame).toContain("continue the manual compaction implementation");
 });
 
-test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
+test("ChatScreen auto-compacts and continues after a terminal assistant turn", async () => {
   const terminalUsage = {
     total: 800_000,
     input: 790_000,
@@ -354,10 +355,48 @@ test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
     reasoning: 0,
     cache: { read: 0, write: 0 },
   };
+  const terminalContextWindowUsage = {
+    total: 790_000,
+    input: 780_000,
+    output: 10_000,
+    reasoning: 0,
+    cache: { read: 0, write: 0 },
+  };
+  const continuedUsage = {
+    total: 10,
+    input: 8,
+    output: 2,
+    reasoning: 0,
+    cache: { read: 0, write: 0 },
+  };
+  const conversationTurnRequests: ConversationTurnRequest[] = [];
   const assistantConversationRunner: AssistantConversationRunner = {
-    startConversationTurn() {
+    startConversationTurn(conversationTurnRequest) {
+      conversationTurnRequests.push(conversationTurnRequest);
+      const conversationTurnRequestIndex = conversationTurnRequests.length;
       return {
         async *streamAssistantResponseEvents() {
+          if (conversationTurnRequestIndex === 2) {
+            yield { type: "assistant_turn_started", messageId: "assistant-auto-continue-1", startedAtMs: 2 };
+            yield {
+              type: "assistant_message_part_added",
+              messageId: "assistant-auto-continue-1",
+              part: {
+                id: "assistant-auto-continue-text-1",
+                partKind: "assistant_text",
+                partStatus: "completed",
+                rawMarkdownText: "Continued after compaction.",
+              },
+            };
+            yield {
+              type: "assistant_message_completed",
+              messageId: "assistant-auto-continue-1",
+              usage: continuedUsage,
+              contextWindowUsage: continuedUsage,
+            };
+            return;
+          }
+
           yield { type: "assistant_turn_started", messageId: "assistant-auto-compact-1", startedAtMs: 1 };
           yield {
             type: "assistant_message_part_added",
@@ -373,6 +412,7 @@ test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
             type: "assistant_message_completed",
             messageId: "assistant-auto-compact-1",
             usage: terminalUsage,
+            contextWindowUsage: terminalContextWindowUsage,
           };
         },
         async approvePendingToolCall() {},
@@ -387,8 +427,21 @@ test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
     reason: "context_usage_threshold_reached",
     selectedModelId: "gpt-5.4",
     thresholdRatio: 0.75,
-    contextTokensUsed: 800_000,
-    contextUsageRatio: 800_000 / 1_050_000,
+    contextTokensUsed: 790_000,
+    contextUsageRatio: 790_000 / 1_050_000,
+    contextWindowTokenCapacity: 1_050_000,
+    contextCompactionTriggerTokenCount: 787_500,
+    reservedTokenCount: undefined,
+    sessionEntryCountAfterLatestCompactionSummary: 2,
+    triggerKind: "threshold_ratio",
+  } satisfies ConversationAutoCompactionDecision;
+  const skippedAutoCompactionDecision = {
+    shouldCompact: false,
+    reason: "context_usage_below_threshold",
+    selectedModelId: "gpt-5.4",
+    thresholdRatio: 0.75,
+    contextTokensUsed: 10,
+    contextUsageRatio: 10 / 1_050_000,
     contextWindowTokenCapacity: 1_050_000,
     contextCompactionTriggerTokenCount: 787_500,
     reservedTokenCount: undefined,
@@ -399,6 +452,13 @@ test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
     assistantConversationRunner,
     autoCompactCurrentConversationSession: (autoCompactionRequest) => {
       autoCompactionRequests.push(autoCompactionRequest);
+      if (autoCompactionRequests.length > 1) {
+        return {
+          didCompact: false,
+          decision: skippedAutoCompactionDecision,
+        };
+      }
+
       return {
         didCompact: true,
         decision: autoCompactionDecision,
@@ -426,16 +486,36 @@ test("ChatScreen auto-compacts after a terminal assistant turn", async () => {
 
   await renderedChatScreen.typeText("Trigger auto compaction");
   await renderedChatScreen.pressEnter();
+  await renderedChatScreen.waitForAssistantEvents();
   const compactedFrame = await renderedChatScreen.waitForAssistantEvents();
 
   expect(autoCompactionRequests).toEqual<ConversationAutoCompactionRequest[]>([
     {
       selectedModelId: "gpt-5.4",
-      latestTokenUsage: terminalUsage,
+      latestContextWindowUsage: terminalContextWindowUsage,
+    },
+    {
+      selectedModelId: "gpt-5.4",
+      latestContextWindowUsage: continuedUsage,
+    },
+  ]);
+  expect(conversationTurnRequests.map((conversationTurnRequest) => ({
+    userPromptText: conversationTurnRequest.userPromptText,
+    promptSource: conversationTurnRequest.promptSource,
+  }))).toEqual([
+    {
+      userPromptText: "Trigger auto compaction",
+      promptSource: undefined,
+    },
+    {
+      userPromptText: "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+      promptSource: "auto_compaction_continue",
     },
   ]);
   expect(compactedFrame).toContain("Context compacted");
   expect(compactedFrame).toContain("continue after automatic compaction");
+  expect(compactedFrame).toContain("Continued after compaction.");
+  expect(compactedFrame).not.toContain("Continue if you have next steps, or stop and ask for clarification");
 });
 
 test("ChatScreen hydrates the initial session and switches sessions through slash command", async () => {

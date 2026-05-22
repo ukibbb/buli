@@ -1588,6 +1588,13 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
           reasoning: 5,
           cache: { read: 10, write: 0 },
         },
+        contextWindowUsage: {
+          total: 135,
+          input: 80,
+          output: 40,
+          reasoning: 5,
+          cache: { read: 10, write: 0 },
+        },
       },
     ]);
   } finally {

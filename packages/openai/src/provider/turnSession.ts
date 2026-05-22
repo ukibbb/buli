@@ -369,6 +369,7 @@ export class OpenAiProviderConversationTurn {
         const completedProviderEvent = {
           ...terminalUsageProviderEvent,
           usage: accumulatedOpenAiTurnUsage ?? terminalUsageProviderEvent.usage,
+          contextWindowUsage: terminalUsageProviderEvent.contextWindowUsage ?? terminalUsageProviderEvent.usage,
         };
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.completed", {
           responseStepCount: responseStepIndex,
@@ -387,6 +388,7 @@ export class OpenAiProviderConversationTurn {
       const incompleteProviderEvent = {
         ...terminalUsageProviderEvent,
         usage: accumulatedOpenAiTurnUsage ?? terminalUsageProviderEvent.usage,
+        contextWindowUsage: terminalUsageProviderEvent.contextWindowUsage ?? terminalUsageProviderEvent.usage,
       };
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.incomplete", {
         responseStepCount: responseStepIndex,

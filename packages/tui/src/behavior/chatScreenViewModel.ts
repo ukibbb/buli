@@ -56,8 +56,8 @@ export function buildChatScreenViewModel(input: {
     input.terminalSizeTierForChatScreen === minimumTerminalSizeTier
       ? MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT
       : INPUT_PANEL_MAX_ROW_COUNT;
-  const totalContextTokensUsed = input.chatSessionState.latestTokenUsage
-    ? calculateContextTokensUsedFromTokenUsage(input.chatSessionState.latestTokenUsage)
+  const totalContextTokensUsed = input.chatSessionState.latestContextWindowUsage
+    ? calculateContextTokensUsedFromTokenUsage(input.chatSessionState.latestContextWindowUsage)
     : undefined;
   const orderedConversationMessages = listOrderedConversationMessages(input.chatSessionState);
 

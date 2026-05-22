@@ -2352,7 +2352,7 @@ test("AssistantConversationRuntime auto-compacts gpt-5 sessions at the reserved-
   await expect(
     runtime.autoCompactConversationSession({
       selectedModelId: "gpt-5.5",
-      latestTokenUsage: { total: 380_000, input: 380_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      latestContextWindowUsage: { total: 380_000, input: 380_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     }),
   ).resolves.toMatchObject({
     didCompact: true,

@@ -431,6 +431,7 @@ export function submitPromptDraft(chatSessionState: ChatSessionState): {
         pendingPromptImageAttachments: [],
         conversationTurnStatus: "streaming_assistant_response",
         latestTokenUsage: undefined,
+        latestContextWindowUsage: undefined,
         pendingToolApprovalRequest: undefined,
         promptContextSelectionState: { step: "hidden" },
         selectedPromptContextReferenceTexts: [],

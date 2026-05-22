@@ -8,7 +8,7 @@ export const DEFAULT_MINIMUM_SESSION_ENTRY_COUNT_AFTER_LATEST_COMPACTION_SUMMARY
 export type ConversationAutoCompactionRequest = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
-  latestTokenUsage: TokenUsage;
+  latestContextWindowUsage: TokenUsage;
 };
 
 export type ConversationAutoCompactionPolicyInput = ConversationAutoCompactionRequest & {
@@ -59,7 +59,7 @@ export type ConversationAutoCompactionResult =
 export function decideConversationAutoCompaction(
   input: ConversationAutoCompactionPolicyInput,
 ): ConversationAutoCompactionDecision {
-  const contextTokensUsed = calculateContextTokensUsedFromTokenUsage(input.latestTokenUsage);
+  const contextTokensUsed = calculateContextTokensUsedFromTokenUsage(input.latestContextWindowUsage);
   const latestCompactionSummaryEntryIndex = findLatestCompactionSummaryEntryIndex(input.conversationSessionEntries);
   const sessionEntryCountAfterLatestCompactionSummary = countSessionEntriesAfterLatestCompactionSummary({
     conversationSessionEntries: input.conversationSessionEntries,

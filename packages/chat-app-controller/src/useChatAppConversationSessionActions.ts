@@ -70,7 +70,7 @@ export type UseChatAppConversationSessionActionsResult = {
   requestConversationSessionDeletion: (conversationSessionId: string) => Promise<void>;
   exportCurrentConversationSession: () => Promise<void>;
   compactCurrentConversationSession: () => Promise<void>;
-  autoCompactCurrentConversationSessionAfterAssistantTurn: () => Promise<void>;
+  autoCompactCurrentConversationSessionAfterAssistantTurn: () => Promise<ConversationAutoCompactionResult | undefined>;
   clearCurrentConversationSession: () => void;
 };
 
@@ -82,15 +82,13 @@ export function useChatAppConversationSessionActions(
 
   const hydrateConversationSessionEntriesIntoChatApp = useEffectEvent(
     (conversationSessionEntries: readonly ConversationSessionEntry[]): void => {
+      const nextChatSessionState = hydrateConversationTranscriptFromSessionEntries(
+        input.latestChatSessionStateRef.current,
+        conversationSessionEntries,
+      );
+      input.latestChatSessionStateRef.current = nextChatSessionState;
       startTransition(() => {
-        input.setChatSessionState((currentChatSessionState) => {
-          const nextChatSessionState = hydrateConversationTranscriptFromSessionEntries(
-            currentChatSessionState,
-            conversationSessionEntries,
-          );
-          input.latestChatSessionStateRef.current = nextChatSessionState;
-          return nextChatSessionState;
-        });
+        input.setChatSessionState(nextChatSessionState);
       });
     },
   );
@@ -301,14 +299,14 @@ export function useChatAppConversationSessionActions(
     }
   });
 
-  const autoCompactCurrentConversationSessionAfterAssistantTurn = useEffectEvent(async (): Promise<void> => {
+  const autoCompactCurrentConversationSessionAfterAssistantTurn = useEffectEvent(async (): Promise<ConversationAutoCompactionResult | undefined> => {
     if (!input.autoCompactCurrentConversationSession) {
-      return;
+      return undefined;
     }
 
-    const latestTokenUsage = input.latestChatSessionStateRef.current.latestTokenUsage;
-    if (!latestTokenUsage || input.isConversationCompactionInFlightRef.current) {
-      return;
+    const latestContextWindowUsage = input.latestChatSessionStateRef.current.latestContextWindowUsage;
+    if (!latestContextWindowUsage || input.isConversationCompactionInFlightRef.current) {
+      return undefined;
     }
 
     const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
@@ -321,24 +319,26 @@ export function useChatAppConversationSessionActions(
         ...(input.latestChatSessionStateRef.current.selectedReasoningEffort
           ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }
           : {}),
-        latestTokenUsage,
+        latestContextWindowUsage,
       };
       const autoCompactionResult = await input.autoCompactCurrentConversationSession(autoCompactionRequest);
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
-        return;
+        return undefined;
       }
       if (autoCompactionResult.didCompact) {
         hydrateConversationSessionEntriesIntoChatApp(autoCompactionResult.conversationSessionEntries);
       }
       input.setConversationSessionCompactionStatus({ step: "idle" });
+      return autoCompactionResult;
     } catch (error) {
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
-        return;
+        return undefined;
       }
       input.setConversationSessionCompactionStatus({
         step: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+      return undefined;
     } finally {
       input.isConversationCompactionInFlightRef.current = false;
     }

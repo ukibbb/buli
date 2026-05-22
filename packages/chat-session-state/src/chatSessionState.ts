@@ -98,6 +98,7 @@ export type ChatSessionState = {
   promptDraftCursorOffset: number;
   pendingPromptImageAttachments: PendingPromptImageAttachment[];
   latestTokenUsage: TokenUsage | undefined;
+  latestContextWindowUsage: TokenUsage | undefined;
   conversationMessagesById: Record<string, ConversationMessage>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   orderedConversationMessageIds: string[];
@@ -132,6 +133,7 @@ export function createInitialChatSessionState(input: {
     promptDraftCursorOffset: 0,
     pendingPromptImageAttachments: [],
     latestTokenUsage: undefined,
+    latestContextWindowUsage: undefined,
     conversationMessagesById: {},
     conversationMessagePartsById: {},
     orderedConversationMessageIds: [],

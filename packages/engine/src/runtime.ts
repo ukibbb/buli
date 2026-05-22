@@ -281,6 +281,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       conversationHistory: this.conversationHistory,
       userPromptText: this.conversationTurnInput.userPromptText,
       assistantOperatingMode: this.assistantOperatingMode,
+      ...(this.conversationTurnInput.promptSource ? { promptSource: this.conversationTurnInput.promptSource } : {}),
       ...(this.conversationTurnInput.userPromptImageAttachments
         ? { userPromptImageAttachments: this.conversationTurnInput.userPromptImageAttachments }
         : {}),

@@ -5,6 +5,7 @@ import type {
   BuliDiagnosticLogger,
   ProjectInstructionSnapshot,
   UserPromptImageAttachment,
+  UserPromptSource,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
@@ -13,6 +14,7 @@ export class RuntimeConversationTurnSessionRecorder {
   readonly conversationHistory: InMemoryConversationHistory;
   readonly userPromptText: string;
   readonly assistantOperatingMode: AssistantOperatingMode;
+  readonly promptSource: UserPromptSource | undefined;
   readonly userPromptImageAttachments: readonly UserPromptImageAttachment[];
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   private hasRecordedAcceptedUserPromptSessionEntry = false;
@@ -22,12 +24,14 @@ export class RuntimeConversationTurnSessionRecorder {
     conversationHistory: InMemoryConversationHistory;
     userPromptText: string;
     assistantOperatingMode: AssistantOperatingMode;
+    promptSource?: UserPromptSource | undefined;
     userPromptImageAttachments?: readonly UserPromptImageAttachment[];
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.conversationHistory = input.conversationHistory;
     this.userPromptText = input.userPromptText;
     this.assistantOperatingMode = input.assistantOperatingMode;
+    this.promptSource = input.promptSource;
     this.userPromptImageAttachments = input.userPromptImageAttachments ?? [];
     this.diagnosticLogger = input.diagnosticLogger;
   }
@@ -52,6 +56,7 @@ export class RuntimeConversationTurnSessionRecorder {
       entryKind: "user_prompt",
       promptText: this.userPromptText,
       modelFacingPromptText,
+      ...(this.promptSource ? { promptSource: this.promptSource } : {}),
       assistantOperatingMode: this.assistantOperatingMode,
       ...(this.userPromptImageAttachments.length > 0 ? { imageAttachments: [...this.userPromptImageAttachments] } : {}),
       ...(projectInstructionSnapshots && projectInstructionSnapshots.length > 0

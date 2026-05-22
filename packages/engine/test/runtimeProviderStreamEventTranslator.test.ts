@@ -10,6 +10,14 @@ const completedTokenUsage: TokenUsage = {
   cache: { read: 0, write: 0 },
 };
 
+const contextWindowTokenUsage: TokenUsage = {
+  total: 7,
+  input: 5,
+  output: 1,
+  reasoning: 1,
+  cache: { read: 0, write: 0 },
+};
+
 function createRuntimeProviderStreamEventTranslator(input?: {
   currentTimeInMilliseconds?: number;
 }): RuntimeProviderStreamEventTranslator {
@@ -226,7 +234,7 @@ test("RuntimeProviderStreamEventTranslator translates completed provider events 
     providerStreamEvent: { type: "text_chunk", text: "Done." },
   });
   const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
-    providerStreamEvent: { type: "completed", usage: completedTokenUsage },
+    providerStreamEvent: { type: "completed", usage: completedTokenUsage, contextWindowUsage: contextWindowTokenUsage },
     providerTurnReplay: {
       provider: "openai",
       inputItems: [
@@ -284,6 +292,7 @@ test("RuntimeProviderStreamEventTranslator translates completed provider events 
     type: "assistant_message_completed",
     messageId: "assistant-message-1",
     usage: completedTokenUsage,
+    contextWindowUsage: contextWindowTokenUsage,
   });
 });
 
