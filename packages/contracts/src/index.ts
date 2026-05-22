@@ -96,7 +96,10 @@ export {
   redactSensitiveText,
 } from "./sensitiveTextRedaction.ts";
 export type { SensitiveTextRedactionOptions } from "./sensitiveTextRedaction.ts";
-export { summarizeTokenUsageForDiagnostics } from "./tokenUsageDiagnostics.ts";
+export {
+  summarizeContextWindowUsageForDiagnostics,
+  summarizeTokenUsageForDiagnostics,
+} from "./tokenUsageDiagnostics.ts";
 export type {
   BuliDiagnosticLogEvent,
   BuliDiagnosticLogFields,

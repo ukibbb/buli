@@ -4,7 +4,11 @@ import type {
   BuliDiagnosticLogger,
   ProviderStreamEvent,
 } from "@buli/contracts";
-import { emitBuliDiagnosticLogEvent, summarizeTokenUsageForDiagnostics } from "@buli/contracts";
+import {
+  emitBuliDiagnosticLogEvent,
+  summarizeContextWindowUsageForDiagnostics,
+  summarizeTokenUsageForDiagnostics,
+} from "@buli/contracts";
 
 export function logEngineDiagnosticEvent(
   diagnosticLogger: BuliDiagnosticLogger | undefined,
@@ -28,13 +32,17 @@ export function summarizeProviderStreamEventForDiagnostics(
   }
 
   if (providerStreamEvent.type === "completed") {
-    return summarizeTokenUsageForDiagnostics(providerStreamEvent.usage);
+    return {
+      ...summarizeTokenUsageForDiagnostics(providerStreamEvent.usage),
+      ...summarizeContextWindowUsageForDiagnostics(providerStreamEvent.contextWindowUsage),
+    };
   }
 
   if (providerStreamEvent.type === "incomplete") {
     return {
       incompleteReason: providerStreamEvent.incompleteReason,
       ...summarizeTokenUsageForDiagnostics(providerStreamEvent.usage),
+      ...summarizeContextWindowUsageForDiagnostics(providerStreamEvent.contextWindowUsage),
     };
   }
 
@@ -166,6 +174,7 @@ export function summarizeAssistantResponseEventForDiagnostics(
     return {
       messageId: assistantResponseEvent.messageId,
       ...summarizeTokenUsageForDiagnostics(assistantResponseEvent.usage),
+      ...summarizeContextWindowUsageForDiagnostics(assistantResponseEvent.contextWindowUsage),
     };
   }
 
@@ -174,6 +183,7 @@ export function summarizeAssistantResponseEventForDiagnostics(
       messageId: assistantResponseEvent.messageId,
       incompleteReason: assistantResponseEvent.incompleteReason,
       ...summarizeTokenUsageForDiagnostics(assistantResponseEvent.usage),
+      ...summarizeContextWindowUsageForDiagnostics(assistantResponseEvent.contextWindowUsage),
     };
   }
 

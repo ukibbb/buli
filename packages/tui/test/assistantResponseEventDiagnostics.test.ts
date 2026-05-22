@@ -18,6 +18,14 @@ const tokenUsage: TokenUsage = {
   cache: { read: 3, write: 1 },
 };
 
+const contextWindowTokenUsage: TokenUsage = {
+  total: 170,
+  input: 100,
+  output: 50,
+  reasoning: 20,
+  cache: { read: 30, write: 10 },
+};
+
 function summarizeConversationMessagePart(conversationMessagePart: AssistantConversationMessagePart) {
   return summarizeAssistantResponseEventForDiagnostics({
     type: "assistant_message_part_added",
@@ -91,7 +99,12 @@ test("summarizeAssistantResponseEventForDiagnostics covers assistant response ev
       expectedFields: { approvalId: "approval-1" },
     },
     {
-      assistantResponseEvent: { type: "assistant_message_completed", messageId: "assistant-1", usage: tokenUsage },
+      assistantResponseEvent: {
+        type: "assistant_message_completed",
+        messageId: "assistant-1",
+        usage: tokenUsage,
+        contextWindowUsage: contextWindowTokenUsage,
+      },
       expectedFields: {
         messageId: "assistant-1",
         totalTokens: 17,
@@ -100,6 +113,12 @@ test("summarizeAssistantResponseEventForDiagnostics covers assistant response ev
         reasoningTokens: 2,
         cacheReadTokens: 3,
         cacheWriteTokens: 1,
+        contextWindowTotalTokens: 170,
+        contextWindowInputTokens: 100,
+        contextWindowOutputTokens: 50,
+        contextWindowReasoningTokens: 20,
+        contextWindowCacheReadTokens: 30,
+        contextWindowCacheWriteTokens: 10,
       },
     },
     {
@@ -108,6 +127,7 @@ test("summarizeAssistantResponseEventForDiagnostics covers assistant response ev
         messageId: "assistant-1",
         incompleteReason: "max_output_tokens",
         usage: tokenUsage,
+        contextWindowUsage: contextWindowTokenUsage,
       },
       expectedFields: {
         messageId: "assistant-1",
@@ -118,6 +138,12 @@ test("summarizeAssistantResponseEventForDiagnostics covers assistant response ev
         reasoningTokens: 2,
         cacheReadTokens: 3,
         cacheWriteTokens: 1,
+        contextWindowTotalTokens: 170,
+        contextWindowInputTokens: 100,
+        contextWindowOutputTokens: 50,
+        contextWindowReasoningTokens: 20,
+        contextWindowCacheReadTokens: 30,
+        contextWindowCacheWriteTokens: 10,
       },
     },
     {

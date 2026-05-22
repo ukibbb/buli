@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import type { BuliDiagnosticLogEvent } from "@buli/contracts";
-import { logEngineDiagnosticEvent, summarizeProviderStreamEventForDiagnostics } from "../src/runtimeDiagnostics.ts";
+import {
+  logEngineDiagnosticEvent,
+  summarizeAssistantResponseEventForDiagnostics,
+  summarizeProviderStreamEventForDiagnostics,
+} from "../src/runtimeDiagnostics.ts";
 
 test("logEngineDiagnosticEvent emits an engine diagnostic event", () => {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
@@ -43,5 +47,51 @@ test("summarizeProviderStreamEventForDiagnostics summarizes code execution walkt
     codeExecutionWalkthroughTitleLength: "Request flow".length,
     codeExecutionWalkthroughStepCount: 2,
     codeExecutionWalkthroughCodeExampleCount: 2,
+  });
+});
+
+test("summarizeProviderStreamEventForDiagnostics includes context-window usage on terminal events", () => {
+  expect(summarizeProviderStreamEventForDiagnostics({
+    type: "completed",
+    usage: { total: 17, input: 10, output: 5, reasoning: 2, cache: { read: 3, write: 1 } },
+    contextWindowUsage: { total: 170, input: 100, output: 50, reasoning: 20, cache: { read: 30, write: 10 } },
+  })).toEqual({
+    totalTokens: 17,
+    inputTokens: 10,
+    outputTokens: 5,
+    reasoningTokens: 2,
+    cacheReadTokens: 3,
+    cacheWriteTokens: 1,
+    contextWindowTotalTokens: 170,
+    contextWindowInputTokens: 100,
+    contextWindowOutputTokens: 50,
+    contextWindowReasoningTokens: 20,
+    contextWindowCacheReadTokens: 30,
+    contextWindowCacheWriteTokens: 10,
+  });
+});
+
+test("summarizeAssistantResponseEventForDiagnostics includes context-window usage on terminal events", () => {
+  expect(summarizeAssistantResponseEventForDiagnostics({
+    type: "assistant_message_incomplete",
+    messageId: "assistant-1",
+    incompleteReason: "max_output_tokens",
+    usage: { total: 17, input: 10, output: 5, reasoning: 2, cache: { read: 3, write: 1 } },
+    contextWindowUsage: { total: 170, input: 100, output: 50, reasoning: 20, cache: { read: 30, write: 10 } },
+  })).toEqual({
+    messageId: "assistant-1",
+    incompleteReason: "max_output_tokens",
+    totalTokens: 17,
+    inputTokens: 10,
+    outputTokens: 5,
+    reasoningTokens: 2,
+    cacheReadTokens: 3,
+    cacheWriteTokens: 1,
+    contextWindowTotalTokens: 170,
+    contextWindowInputTokens: 100,
+    contextWindowOutputTokens: 50,
+    contextWindowReasoningTokens: 20,
+    contextWindowCacheReadTokens: 30,
+    contextWindowCacheWriteTokens: 10,
   });
 });

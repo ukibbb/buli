@@ -21,6 +21,7 @@ import {
   ProviderStreamEventSchema,
   READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
   RENDER_ONLY_TOOL_DETAIL_NAMES,
+  summarizeContextWindowUsageForDiagnostics,
   summarizeTokenUsageForDiagnostics,
   ToolCallRequestSchema,
   type BuliDiagnosticLogEvent,
@@ -80,6 +81,24 @@ test("summarizeTokenUsageForDiagnostics reports normalized token counts", () => 
     cacheReadTokens: 3,
     cacheWriteTokens: 1,
   });
+});
+
+test("summarizeContextWindowUsageForDiagnostics reports prefixed token counts", () => {
+  expect(summarizeContextWindowUsageForDiagnostics({
+    input: 100,
+    output: 50,
+    reasoning: 20,
+    cache: { read: 30, write: 10 },
+  })).toEqual({
+    contextWindowTotalTokens: 170,
+    contextWindowInputTokens: 100,
+    contextWindowOutputTokens: 50,
+    contextWindowReasoningTokens: 20,
+    contextWindowCacheReadTokens: 30,
+    contextWindowCacheWriteTokens: 10,
+  });
+
+  expect(summarizeContextWindowUsageForDiagnostics(undefined)).toEqual({});
 });
 
 test("AssistantOperatingModeSchema parses understand, plan, and implementation modes", () => {

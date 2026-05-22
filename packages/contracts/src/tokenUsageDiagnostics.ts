@@ -11,3 +11,21 @@ export function summarizeTokenUsageForDiagnostics(tokenUsage: TokenUsage): BuliD
     cacheWriteTokens: tokenUsage.cache.write,
   };
 }
+
+export function summarizeContextWindowUsageForDiagnostics(
+  contextWindowUsage: TokenUsage | undefined,
+): BuliDiagnosticLogFields {
+  if (!contextWindowUsage) {
+    return {};
+  }
+
+  return {
+    contextWindowTotalTokens: contextWindowUsage.total ??
+      contextWindowUsage.input + contextWindowUsage.output + contextWindowUsage.reasoning,
+    contextWindowInputTokens: contextWindowUsage.input,
+    contextWindowOutputTokens: contextWindowUsage.output,
+    contextWindowReasoningTokens: contextWindowUsage.reasoning,
+    contextWindowCacheReadTokens: contextWindowUsage.cache.read,
+    contextWindowCacheWriteTokens: contextWindowUsage.cache.write,
+  };
+}

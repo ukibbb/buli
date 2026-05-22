@@ -3,7 +3,10 @@ import type {
   AssistantResponseEvent,
   BuliDiagnosticLogFields,
 } from "@buli/contracts";
-import { summarizeTokenUsageForDiagnostics } from "@buli/contracts";
+import {
+  summarizeContextWindowUsageForDiagnostics,
+  summarizeTokenUsageForDiagnostics,
+} from "@buli/contracts";
 
 export function summarizeAssistantResponseEventsForDiagnostics(
   assistantResponseEvents: readonly AssistantResponseEvent[],
@@ -45,12 +48,14 @@ export function summarizeAssistantResponseEventForDiagnostics(
       return {
         messageId: assistantResponseEvent.messageId,
         ...summarizeTokenUsageForDiagnostics(assistantResponseEvent.usage),
+        ...summarizeContextWindowUsageForDiagnostics(assistantResponseEvent.contextWindowUsage),
       };
     case "assistant_message_incomplete":
       return {
         messageId: assistantResponseEvent.messageId,
         incompleteReason: assistantResponseEvent.incompleteReason,
         ...summarizeTokenUsageForDiagnostics(assistantResponseEvent.usage),
+        ...summarizeContextWindowUsageForDiagnostics(assistantResponseEvent.contextWindowUsage),
       };
     case "assistant_message_failed":
       return {

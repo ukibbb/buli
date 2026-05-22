@@ -10,7 +10,27 @@ import type {
 } from "./toolCallDetail.ts";
 import type { ToolCallRequest } from "./toolCallRequest.ts";
 
-export const ASSISTANT_TOOL_REQUEST_NAMES = ["bash", "read", "glob", "grep", "edit", "write", "task"] as const satisfies readonly ToolCallRequest["toolName"][];
+type CompleteAssistantToolRequestNameList<ToolNames extends readonly ToolCallRequest["toolName"][]> = ToolNames & (
+  Exclude<ToolCallRequest["toolName"], ToolNames[number]> extends never
+    ? unknown
+    : readonly ["Missing assistant tool request names", Exclude<ToolCallRequest["toolName"], ToolNames[number]>]
+);
+
+function defineCompleteAssistantToolRequestNameList<const ToolNames extends readonly ToolCallRequest["toolName"][]>(
+  toolNames: CompleteAssistantToolRequestNameList<ToolNames>,
+): ToolNames {
+  return toolNames;
+}
+
+export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNameList([
+  "bash",
+  "read",
+  "glob",
+  "grep",
+  "edit",
+  "write",
+  "task",
+] as const);
 export const ASSISTANT_PRESENTATION_FUNCTION_NAMES = ["present_code_execution_walkthrough"] as const;
 export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "write"] as const satisfies readonly AssistantToolRequestName[];
