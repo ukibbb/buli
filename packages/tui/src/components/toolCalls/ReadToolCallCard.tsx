@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { ToolCallReadDetail } from "@buli/contracts";
-import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
+import { ReadFilePreviewBlock } from "../primitives/ReadFilePreviewBlock.tsx";
 import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type ReadToolCallCardProps = {
@@ -54,17 +54,18 @@ function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
   }
   return (
     <box width="100%">
-      <FencedCodeBlock
-        variant="embedded"
-        filePath={props.toolCallDetail.readFilePath}
-        wrapMode="char"
-        codeLines={previewLines.map((previewLine) => ({
-          lineNumber: previewLine.lineNumber,
-          lineText: previewLine.lineText,
-          ...(previewLine.syntaxHighlightSpans
-            ? { syntaxHighlightSpans: previewLine.syntaxHighlightSpans }
-            : {}),
-        }))}
+      <ReadFilePreviewBlock
+        previewLines={previewLines}
+        readFilePath={props.toolCallDetail.readFilePath}
+        {...(props.toolCallDetail.readLineCount !== undefined
+          ? { readLineCount: props.toolCallDetail.readLineCount }
+          : {})}
+        {...(props.toolCallDetail.returnedLineCount !== undefined
+          ? { returnedLineCount: props.toolCallDetail.returnedLineCount }
+          : {})}
+        {...(props.toolCallDetail.wasLineCountTruncated !== undefined
+          ? { wasLineCountTruncated: props.toolCallDetail.wasLineCountTruncated }
+          : {})}
       />
     </box>
   );

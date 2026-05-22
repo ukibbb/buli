@@ -488,14 +488,14 @@ test("ChatScreen approves a pending tool call with the y keyboard shortcut", asy
   await renderedChatScreen.typeText("request approval");
   await renderedChatScreen.pressEnter();
   const approvalFrame = await renderedChatScreen.waitForFrame(25);
-  expect(approvalFrame).toContain("Approval needed");
+  expect(approvalFrame).toContain("This command deletes files.");
 
   await renderedChatScreen.pressKey("y");
   const completedFrame = await renderedChatScreen.waitForFrame(25);
   expect(approvalRunner.getApprovedDecisionCount()).toBe(1);
   expect(approvalRunner.getDeniedDecisionCount()).toBe(0);
   expect(completedFrame).toContain("Approved after keyboard.");
-  expect(completedFrame).not.toContain("Approval needed");
+  expect(completedFrame).not.toContain("This command deletes files.");
 });
 
 test("ChatScreen denies a pending tool call with the n keyboard shortcut", async () => {
@@ -507,14 +507,14 @@ test("ChatScreen denies a pending tool call with the n keyboard shortcut", async
   await renderedChatScreen.typeText("request approval");
   await renderedChatScreen.pressEnter();
   const approvalFrame = await renderedChatScreen.waitForFrame(25);
-  expect(approvalFrame).toContain("Approval needed");
+  expect(approvalFrame).toContain("This command deletes files.");
 
   await renderedChatScreen.pressKey("n");
   const completedFrame = await renderedChatScreen.waitForFrame(25);
   expect(approvalRunner.getApprovedDecisionCount()).toBe(0);
   expect(approvalRunner.getDeniedDecisionCount()).toBe(1);
   expect(completedFrame).toContain("Denied after keyboard.");
-  expect(completedFrame).not.toContain("Approval needed");
+  expect(completedFrame).not.toContain("This command deletes files.");
 });
 
 test("ChatScreen ignores pasted tool approval shortcut text", async () => {
@@ -526,12 +526,12 @@ test("ChatScreen ignores pasted tool approval shortcut text", async () => {
   await renderedChatScreen.typeText("request approval");
   await renderedChatScreen.pressEnter();
   const approvalFrame = await renderedChatScreen.waitForFrame(25);
-  expect(approvalFrame).toContain("Approval needed");
+  expect(approvalFrame).toContain("This command deletes files.");
 
   const pastedShortcutFrame = await renderedChatScreen.pasteText("y");
   expect(approvalRunner.getApprovedDecisionCount()).toBe(0);
   expect(approvalRunner.getDeniedDecisionCount()).toBe(0);
-  expect(pastedShortcutFrame).toContain("Approval needed");
+  expect(pastedShortcutFrame).toContain("This command deletes files.");
 
   await renderedChatScreen.pressKey("y");
   await renderedChatScreen.waitForFrame(25);

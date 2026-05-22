@@ -46,7 +46,16 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "Name the important files inspected and say what remains uncertain when that affects the answer.",
   );
   expect(systemPromptText).toContain(
-    "For non-trivial work, produce a detailed file-by-file apply plan before editing files.",
+    "Understand what should be built before planning how to build it; do not jump to an implementation plan while the product outcome, system mechanics, or tradeoffs are still unclear.",
+  );
+  expect(systemPromptText).toContain(
+    "Move to planning only after the mechanics and decision points are clear and Lukasz agrees on the intended outcome and approach.",
+  );
+  expect(systemPromptText).toContain(
+    "For non-trivial work, after agreement produce a detailed file-by-file apply plan before editing files.",
+  );
+  expect(systemPromptText).toContain(
+    "After agreement, non-trivial implementation plans should end with concrete proposed code changes or patch text for Lukasz to review before apply. Do not apply those changes until Lukasz approves the plan or says execute.",
   );
 });
 
@@ -222,20 +231,30 @@ test("implementation mode reminds the assistant to apply the agreed direction", 
   expect(systemPromptText).toContain("verify important behavior");
 });
 
-test("requires simple explanations and strong challenge of risks", () => {
+test("requires simple detailed explanations and strong challenge of risks", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
-  expect(systemPromptText).toContain("Explain complex technical topics simply and clearly first.");
+  expect(systemPromptText).toContain(
+    "Explain complex technical topics simply first, then add the useful detail needed for learning and good decisions.",
+  );
   expect(systemPromptText).toContain("Challenge weak assumptions.");
   expect(systemPromptText).toContain("Point out risks, dangers, and second-order effects clearly.");
-  expect(systemPromptText).toContain("Be concise: remove filler, repeated caveats, and long setup.");
   expect(systemPromptText).toContain(
-    "Explain like the user is smart but tired: simple words, concrete examples, no unnecessary jargon.",
+    "Make difficult ideas understandable with plain words, short paragraphs, clear bullets, and concrete examples when helpful.",
   );
   expect(systemPromptText).toContain(
-    "For complex topics, start with the plain version first, then add detail only where it helps the decision.",
+    "Explain necessary jargon the first time it matters instead of avoiding important technical precision.",
   );
-  expect(systemPromptText).toContain("Keep full technical accuracy; short does not mean vague.");
+  expect(systemPromptText).toContain(
+    "Be concise by removing filler, repeated caveats, and long setup, not by cutting reasoning, tradeoffs, constraints, or risks.",
+  );
+  expect(systemPromptText).toContain(
+    "Explain like the user is smart but tired: simple language, clear structure, enough depth to understand what is happening and why it matters.",
+  );
+  expect(systemPromptText).toContain(
+    "Expand when complexity, architecture, debugging, safety, ambiguity, or user confusion requires more detail.",
+  );
+  expect(systemPromptText).toContain("Keep full technical accuracy; simple does not mean shallow.");
 });
 
 test("teaches what is being built, how it works, and why it matters", () => {

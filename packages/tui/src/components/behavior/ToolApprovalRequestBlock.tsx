@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ApprovalDecisionControl } from "../primitives/ApprovalDecisionControl.tsx";
 import { SurfaceCard } from "../primitives/SurfaceCard.tsx";
-import { glyphs } from "../glyphs.ts";
 
 // The pending tool call itself is already rendered as the latest card in the
 // transcript above this block — re-rendering it inside the approval surface
@@ -19,22 +18,16 @@ export function ToolApprovalRequestBlock(props: ToolApprovalRequestBlockProps): 
   return (
     <SurfaceCard
       accentColor={chatScreenTheme.accentAmber}
+      density="compact"
       headerLeft={
-        <box flexDirection="row" alignItems="center" flexShrink={1} minWidth={0} overflow="hidden">
-          <box flexShrink={0} width={2}>
-            <text fg={chatScreenTheme.accentAmber}>{glyphs.statusDot}</text>
+        <box alignItems="center" flexDirection="row" justifyContent="space-between" minWidth={0} overflow="hidden" width="100%">
+          <box flexShrink={1} minWidth={0} overflow="hidden">
+            <text fg={chatScreenTheme.textSecondary} wrapMode="none">{props.riskExplanation}</text>
           </box>
-          <box flexShrink={1} marginLeft={1} minWidth={0} overflow="hidden">
-            <text wrapMode="none">
-              <b fg={chatScreenTheme.accentAmber}>{"Approval needed"}</b>
-              <span fg={chatScreenTheme.textMuted}>{" — "}</span>
-              <span fg={chatScreenTheme.textSecondary}>{props.riskExplanation}</span>
-            </text>
+          <box flexShrink={0} marginLeft={1}>
+            <ApprovalDecisionControl onApprove={props.onApprove} onDeny={props.onDeny} />
           </box>
         </box>
-      }
-      headerRight={
-        <ApprovalDecisionControl onApprove={props.onApprove} onDeny={props.onDeny} />
       }
     />
   );

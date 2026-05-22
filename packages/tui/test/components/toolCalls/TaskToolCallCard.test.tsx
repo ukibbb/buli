@@ -188,7 +188,7 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(frame).not.toContain("showing first");
   });
 
-  test("completed limits very long prompt and result sections", async () => {
+  test("completed renders very long prompt and result sections without line limits", async () => {
     const longSubagentPrompt = Array.from({ length: 55 }, (_, index) => `prompt line ${index + 1}`).join("\n");
     const longSubagentResultSummary = Array.from({ length: 55 }, (_, index) => `result line ${index + 1}`).join("\n");
     const { captureCharFrame, mockMouse, renderOnce } = await testRender(
@@ -212,14 +212,12 @@ describe("TaskToolCallCard (opentui)", () => {
     await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
 
-    expect(frame).toContain("prompt line 50");
-    expect(frame).not.toContain("prompt line 51");
-    expect(frame).toContain("result line 50");
-    expect(frame).not.toContain("result line 51");
-    expect(frame.split("showing first 50 of 55 lines").length - 1).toBe(2);
+    expect(frame).toContain("prompt line 55");
+    expect(frame).toContain("result line 55");
+    expect(frame).not.toContain("showing first");
   });
 
-  test("completed limits large subagent child activity", async () => {
+  test("completed renders all subagent child activity without tool_call_limits", async () => {
     const subagentChildToolCalls = Array.from({ length: 55 }, (_value, index) => ({
       subagentChildToolCallId: `call-read-${index + 1}`,
       subagentChildToolCallStatus: "completed" as const,
@@ -249,10 +247,9 @@ describe("TaskToolCallCard (opentui)", () => {
     await renderOnce();
     const frame = captureCharFrame();
 
-    expect(frame).toContain("showing first 50 of 55 tool calls");
     expect(frame).toContain("file-1.ts");
-    expect(frame).toContain("file-50.ts");
-    expect(frame).not.toContain("file-51.ts");
+    expect(frame).toContain("file-55.ts");
+    expect(frame).not.toContain("showing first");
   });
 
   test("completed with sub-1000ms duration shows ms suffix", async () => {

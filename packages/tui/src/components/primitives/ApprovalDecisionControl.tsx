@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { createClickableControlMouseDownHandler } from "./clickableControl.ts";
 
 export type ApprovalDecisionControlProps = {
   onApprove: () => void;
@@ -11,15 +12,13 @@ export function ApprovalDecisionControl(props: ApprovalDecisionControlProps): Re
     <box flexDirection="row" flexShrink={0}>
       <ApprovalDecisionAction
         accentColor={chatScreenTheme.accentGreen}
-        decisionLetterLabel="y"
-        actionLabel="yes"
+        actionLabel="Yes"
         onActivate={props.onApprove}
       />
-      <box marginLeft={2}>
+      <box marginLeft={1}>
         <ApprovalDecisionAction
           accentColor={chatScreenTheme.accentRed}
-          decisionLetterLabel="n"
-          actionLabel="no"
+          actionLabel="No"
           onActivate={props.onDeny}
         />
       </box>
@@ -29,27 +28,25 @@ export function ApprovalDecisionControl(props: ApprovalDecisionControlProps): Re
 
 type ApprovalDecisionActionProps = {
   accentColor: string;
-  decisionLetterLabel: string;
   actionLabel: string;
   onActivate: () => void;
 };
 
 function ApprovalDecisionAction(props: ApprovalDecisionActionProps): ReactNode {
   const [isPointerHovering, setIsPointerHovering] = useState(false);
-  const labelColor = isPointerHovering ? props.accentColor : chatScreenTheme.textSecondary;
+  const labelColor = isPointerHovering ? chatScreenTheme.textPrimary : props.accentColor;
   return (
     <box
+      {...(isPointerHovering ? { backgroundColor: props.accentColor } : {})}
       flexDirection="row"
       flexShrink={0}
+      paddingX={1}
       onMouseOver={() => setIsPointerHovering(true)}
       onMouseOut={() => setIsPointerHovering(false)}
-      onMouseDown={() => props.onActivate()}
+      onMouseDown={createClickableControlMouseDownHandler(props.onActivate)}
     >
-      <text wrapMode="none">
-        <span fg={chatScreenTheme.textDim}>{"[ "}</span>
-        <b fg={props.accentColor}>{props.decisionLetterLabel}</b>
-        <span fg={chatScreenTheme.textDim}>{" ] "}</span>
-        <span fg={labelColor}>{props.actionLabel}</span>
+      <text fg={labelColor} selectable={false} wrapMode="none">
+        <b>{props.actionLabel}</b>
       </text>
     </box>
   );

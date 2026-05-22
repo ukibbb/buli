@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { SubagentChildToolCall, ToolCallTaskDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { AssistantMarkdownBlock } from "../primitives/AssistantMarkdownBlock.tsx";
-import { limitVisibleItems, VisibleContentLimitNotice } from "../primitives/VisibleContentLimit.tsx";
 import {
   ExpandableToolCallCard,
   formatToolCallDurationMs,
@@ -10,9 +9,6 @@ import {
   type ToolCallRenderState,
 } from "./ExpandableToolCallCard.tsx";
 import { ToolCallEntryView } from "./ToolCallEntryView.tsx";
-
-const MAX_EXPANDED_TASK_TEXT_LINE_COUNT = 50;
-const MAX_EXPANDED_SUBAGENT_CHILD_TOOL_CALL_COUNT = 50;
 
 export type TaskToolCallCardProps = {
   toolCallDetail: ToolCallTaskDetail;
@@ -90,10 +86,6 @@ function buildTaskBodyContent(input: TaskBodyContentInput): ReactNode {
   }
 
   if (hasSubagentChildToolCalls) {
-    const limitedSubagentChildToolCalls = limitVisibleItems({
-      items: subagentChildToolCalls,
-      maximumVisibleItemCount: MAX_EXPANDED_SUBAGENT_CHILD_TOOL_CALL_COUNT,
-    });
     return (
       <box flexDirection="column" width="100%">
         <box flexDirection="column" paddingX={1} width="100%">
@@ -115,12 +107,7 @@ function buildTaskBodyContent(input: TaskBodyContentInput): ReactNode {
             <text fg={chatScreenTheme.textMuted}>{"// activity"}</text>
           </box>
           <box flexDirection="column" width="100%">
-            <VisibleContentLimitNotice
-              visibleItemCount={limitedSubagentChildToolCalls.visibleItems.length}
-              totalItemCount={limitedSubagentChildToolCalls.totalItemCount}
-              itemLabelPlural="tool calls"
-            />
-            {limitedSubagentChildToolCalls.visibleItems.map((subagentChildToolCall) => (
+            {subagentChildToolCalls.map((subagentChildToolCall) => (
               <box
                 key={subagentChildToolCall.subagentChildToolCallId}
                 flexDirection="column"
@@ -231,34 +218,19 @@ type TaskTextSectionProps = {
 );
 
 function TaskTextSection(props: TaskTextSectionProps): ReactNode {
-  const limitedTaskSectionLines = limitVisibleItems({
-    items: splitTaskSectionTextIntoLines(props.taskSectionText),
-    maximumVisibleItemCount: MAX_EXPANDED_TASK_TEXT_LINE_COUNT,
-  });
-  const visibleTaskSectionText = limitedTaskSectionLines.visibleItems.join("\n");
-
   return (
     <box flexDirection="column" width="100%">
       {props.presentation === "plain" ? (
-        <text fg={props.foregroundColor} wrapMode="word">{visibleTaskSectionText}</text>
+        <text fg={props.foregroundColor} wrapMode="word">{props.taskSectionText}</text>
       ) : (
         <AssistantMarkdownBlock
           horizontalRuleColor={props.horizontalRuleColor}
           isStreaming={false}
-          markdownText={visibleTaskSectionText}
+          markdownText={props.taskSectionText}
         />
       )}
-      <VisibleContentLimitNotice
-        visibleItemCount={limitedTaskSectionLines.visibleItems.length}
-        totalItemCount={limitedTaskSectionLines.totalItemCount}
-        itemLabelPlural="lines"
-      />
     </box>
   );
-}
-
-function splitTaskSectionTextIntoLines(taskSectionText: string): string[] {
-  return taskSectionText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 }
 
 function resolveTaskResultMarkdownRuleColor(renderState: TaskToolCallCardProps["renderState"]): string {

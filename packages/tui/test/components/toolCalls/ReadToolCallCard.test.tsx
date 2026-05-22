@@ -3,6 +3,12 @@ import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { ReadToolCallCard } from "../../../src/components/toolCalls/ReadToolCallCard.tsx";
 
+async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Promise<void> {
+  await renderOnce();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await renderOnce();
+}
+
 describe("ReadToolCallCard", () => {
   test("completed_starts_collapsed_with_read_range_summary", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
@@ -64,6 +70,96 @@ describe("ReadToolCallCard", () => {
     expect(frame).not.toContain("click to hide content");
     expect(frame).toContain("import React");
     expect(frame).toContain("export function App");
+  });
+
+  test("completed_expands_complete_markdown_read_as_rendered_markdown", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <ReadToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "read",
+          readFilePath: "README.md",
+          readLineCount: 4,
+          returnedLineCount: 4,
+          previewLines: [
+            { lineNumber: 1, lineText: "# Project" },
+            { lineNumber: 2, lineText: "" },
+            { lineNumber: 3, lineText: "- Install" },
+            { lineNumber: 4, lineText: "Use `bun test`." },
+          ],
+        }}
+      />,
+      { width: 90, height: 20 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Project");
+    expect(frame).toContain("Install");
+    expect(frame).toContain("bun test");
+    expect(frame).toContain("▌ Project");
+    expect(frame).not.toContain("# Project");
+    expect(frame).not.toContain("`bun test`");
+  });
+
+  test("completed_keeps_partial_markdown_read_as_source_text", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <ReadToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "read",
+          readFilePath: "README.md",
+          readLineCount: 10,
+          returnedLineCount: 2,
+          previewLines: [
+            { lineNumber: 4, lineText: "# Partial section" },
+            { lineNumber: 5, lineText: "- raw item" },
+          ],
+        }}
+      />,
+      { width: 90, height: 16 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("# Partial section");
+    expect(frame).toContain("- raw item");
+  });
+
+  test("completed_expands_unknown_filetypes_as_plain_source", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <ReadToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "read",
+          readFilePath: "notes.customtype",
+          readLineCount: 1,
+          returnedLineCount: 1,
+          previewLines: [
+            { lineNumber: 1, lineText: "plain source text" },
+          ],
+        }}
+      />,
+      { width: 90, height: 10 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    expect(captureCharFrame()).toContain("plain source text");
   });
 
   test("completed_shows_returned_read_range", async () => {

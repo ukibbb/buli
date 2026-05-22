@@ -31,6 +31,7 @@ export type FencedCodeBlockProps = {
   showLabel?: boolean;
   filePath?: string;
   codeLines: FencedCodeBlockLine[];
+  conceal?: boolean;
   wrapMode?: "char" | "none" | "word";
 };
 
@@ -67,6 +68,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
       ) : (
         <OpenTuiFencedCodeContent
           codeLines={props.codeLines}
+          conceal={props.conceal}
           filePath={props.filePath}
           languageLabel={props.languageLabel}
           wrapMode={codeWrapMode}
@@ -78,6 +80,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
 
 function OpenTuiFencedCodeContent(props: {
   codeLines: FencedCodeBlockLine[];
+  conceal: boolean | undefined;
   filePath: string | undefined;
   languageLabel: string | undefined;
   wrapMode: "char" | "none" | "word";
@@ -109,6 +112,7 @@ function OpenTuiFencedCodeContent(props: {
       <code
         content={codeText}
         bg={githubLikeTerminalCodeColors.canvas}
+        {...(props.conceal !== undefined ? { conceal: props.conceal } : {})}
         drawUnstyledText={true}
         filetype={codeFiletype}
         selectable={true}
@@ -123,6 +127,7 @@ function OpenTuiFencedCodeContent(props: {
     <code
       content={codeText}
       bg={githubLikeTerminalCodeColors.canvas}
+      {...(props.conceal !== undefined ? { conceal: props.conceal } : {})}
       drawUnstyledText={true}
       filetype={codeFiletype}
       onChunks={handleOpenTuiCodeChunks}

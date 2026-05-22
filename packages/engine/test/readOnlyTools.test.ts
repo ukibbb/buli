@@ -67,6 +67,30 @@ test("runReadToolCall rejects direct symbolic links as workspace policy", async 
   expect(readToolCallOutcome.toolResultText).toContain("Symbolic links are not supported");
 });
 
+test("runReadToolCall suggests obvious nearby filenames when a file is missing", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-suggestion-"));
+  await mkdir(join(workspaceRootPath, "packages", "chat-session-state", "src"), { recursive: true });
+  await writeFile(
+    join(workspaceRootPath, "packages", "chat-session-state", "src", "chatSlashCommands.ts"),
+    "export const slashCommands = [];\n",
+    "utf8",
+  );
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "packages/chat-session-state/src/chatSlashCommand.ts",
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("failed");
+  expect(readToolCallOutcome.toolResultText).toContain("File not found: packages/chat-session-state/src/chatSlashCommand.ts");
+  expect(readToolCallOutcome.toolResultText).toContain("Did you mean one of these?");
+  expect(readToolCallOutcome.toolResultText).toContain("packages/chat-session-state/src/chatSlashCommands.ts");
+  expect(readToolCallOutcome.toolResultText).not.toContain("ENOENT");
+});
+
 test("runReadToolCall returns full visible lines without shortening long lines", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-truncation-"));
   const longLineText = "x".repeat(2_100);
