@@ -75,7 +75,7 @@ export function InputPanel(props: InputPanelProps): ReactNode {
         <text fg={props.accentColor}>
           <b>{">"}</b>
         </text>
-        <box flexGrow={1} minWidth={0} overflow="hidden" width="100%">
+        <box flexGrow={1} minWidth={0} overflow="hidden" paddingRight={3}>
           {props.isPromptInputDisabled ? (
             <PromptDraftText
               promptDraft={props.promptDraft}

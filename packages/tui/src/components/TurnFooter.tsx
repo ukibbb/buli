@@ -5,9 +5,9 @@ import { formatCompactTokenCount } from "./formatCompactTokenCount.ts";
 import { glyphs } from "./glyphs.ts";
 import { shortenTerminalTextWithMiddleEllipsis } from "./shortenTerminalTextWithMiddleEllipsis.ts";
 
-// Mirrors pen component/TurnFooter (qfHh3): a state indicator on the left
-// ("✓ done · {duration}") and turn metadata on the right ("tokens
-// [· reasoning] · model [· cached]"), separated across a space-between flex row so
+// Compact completed-turn footer: a state indicator on the left
+// ("✓ done {duration}") and turn metadata on the right ("tokens
+// reasoning cached"), separated across a space-between flex row so
 // the two sides read as distinct regions rather than a run-on line.
 export type TurnFooterProps = {
   modelDisplayName: string;
@@ -29,8 +29,8 @@ export function TurnFooter(props: TurnFooterProps): ReactNode {
         <text wrapMode="none">
           <span fg={chatScreenTheme.accentGreen}>{glyphs.checkMark}</span>
           <span fg={chatScreenTheme.textMuted}>{" done"}</span>
-          <span fg={chatScreenTheme.textDim}>{" · "}</span>
-          <span fg={chatScreenTheme.accentPrimaryMuted}>{durationLabel}</span>
+          <span fg={chatScreenTheme.textDim}>{" "}</span>
+          <span fg={chatScreenTheme.accentCyan}>{durationLabel}</span>
         </text>
       </box>
       <box flexShrink={1} marginLeft={1} minWidth={0} overflow="hidden">
@@ -49,17 +49,15 @@ function buildTurnMetadataText(props: TurnFooterProps, totalTokenCount: number |
     metadataLabels.push(`${formatCompactTokenCount(totalTokenCount)} tok`);
   }
 
-  if (props.usage && props.usage.reasoning > 0) {
+  if (props.usage) {
     metadataLabels.push(`${formatCompactTokenCount(props.usage.reasoning)} reasoning tok`);
   }
 
-  metadataLabels.push(props.modelDisplayName);
-
-  if (props.usage && props.usage.cache.read > 0) {
+  if (props.usage) {
     metadataLabels.push(`${formatCompactTokenCount(props.usage.cache.read)} cached`);
   }
 
-  return metadataLabels.join(" · ");
+  return metadataLabels.join("  ");
 }
 
 function formatTurnDurationMs(turnDurationMs: number): string {

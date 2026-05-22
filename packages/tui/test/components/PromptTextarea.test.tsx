@@ -139,6 +139,25 @@ test("prompt textarea publishes user edits with the current cursor offset", asyn
   });
 });
 
+test("prompt textarea hard-wraps long unbroken prompt text before the cursor leaves its bounds", async () => {
+  const promptDraft = "s".repeat(30);
+  const renderedPromptTextarea = await testRender(
+    <PromptTextarea
+      promptDraft={promptDraft}
+      promptDraftCursorOffset={promptDraft.length}
+      isFocused={true}
+      onPromptDraftEdited={noopPromptDraftEdited}
+      onPromptSubmitted={noopPromptSubmitted}
+    />,
+    { width: 12, height: 4 },
+  );
+  await renderedPromptTextarea.renderOnce();
+
+  const promptTextarea = readFocusedPromptTextarea(renderedPromptTextarea);
+  expect(promptTextarea.wrapMode).toBe("char");
+  expect(promptTextarea.visualCursor.visualCol).toBeLessThan(promptTextarea.width);
+});
+
 test("prompt textarea creates virtual extmarks for image placeholders", async () => {
   const renderedPromptTextarea = await testRender(
     <PromptTextarea

@@ -1,10 +1,21 @@
 import { describe, expect, test } from "bun:test";
+import { TextareaRenderable } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { InputPanel } from "../../src/components/InputPanel.tsx";
 
 const noopPromptDraftEdited = () => {};
 const noopPromptSubmitted = () => {};
+type RenderedInputPanel = Awaited<ReturnType<typeof testRender>>;
+
+function readFocusedInputPanelTextarea(renderedInputPanel: RenderedInputPanel): TextareaRenderable {
+  const focusedRenderable = renderedInputPanel.renderer.currentFocusedRenderable;
+  if (!(focusedRenderable instanceof TextareaRenderable)) {
+    throw new Error("Expected InputPanel textarea to be focused");
+  }
+
+  return focusedRenderable;
+}
 
 function countRenderedLinesMatchingPattern(renderedOutput: string, pattern: RegExp): number {
   return renderedOutput.split("\n").filter((renderedLine) => pattern.test(renderedLine)).length;
@@ -243,5 +254,48 @@ describe("InputPanel", () => {
     await renderOnce();
 
     expect(captureCharFrame()).toContain("hello");
+  });
+
+  test("keeps_long_prompt_cursor_away_from_the_panel_border", async () => {
+    const minimumCursorGapBeforeRightBorder = 2;
+    const promptWidthCases = [
+      { terminalColumnCount: 100, promptCharacterCount: 91 },
+      { terminalColumnCount: 158, promptCharacterCount: 148 },
+    ] as const;
+
+    for (const promptWidthCase of promptWidthCases) {
+      const promptDraft = "s".repeat(promptWidthCase.promptCharacterCount);
+      const renderedInputPanel = await testRender(
+        <InputPanel
+          promptDraft={promptDraft}
+          promptDraftCursorOffset={promptDraft.length}
+          isPromptInputDisabled={false}
+          accentColor={chatScreenTheme.accentPink}
+          modeLabel="Understand Agent"
+          modelIdentifier="gpt-5.5"
+          reasoningEffortLabel="medium"
+          assistantResponseStatus="waiting_for_user_input"
+          totalContextTokensUsed={undefined}
+          contextWindowTokenCapacity={undefined}
+          onPromptDraftEdited={noopPromptDraftEdited}
+          onPromptSubmitted={noopPromptSubmitted}
+        />,
+        { width: promptWidthCase.terminalColumnCount, height: 10 },
+      );
+
+      await renderedInputPanel.renderOnce();
+
+      const renderedRows = splitRenderedViewportRows(renderedInputPanel.captureCharFrame());
+      const promptRow = renderedRows.find((renderedRow) => renderedRow.includes("> s"));
+      if (promptRow === undefined) {
+        throw new Error("Expected rendered prompt row");
+      }
+
+      const promptTextarea = readFocusedInputPanelTextarea(renderedInputPanel);
+      const cursorColumn = promptTextarea.x + promptTextarea.visualCursor.visualCol;
+      const rightBorderColumn = promptRow.lastIndexOf("│");
+      expect(rightBorderColumn).toBeGreaterThan(0);
+      expect(rightBorderColumn - cursorColumn).toBeGreaterThanOrEqual(minimumCursorGapBeforeRightBorder);
+    }
   });
 });

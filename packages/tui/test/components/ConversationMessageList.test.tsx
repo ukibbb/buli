@@ -136,7 +136,8 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Done");
     expect(frame).toContain("Read");
     expect(frame).toContain("src/index.ts");
-    expect(frame).toContain("gpt-5.4");
+    expect(frame).toContain("100 tok  10 reasoning tok  5 cached");
+    expect(frame).not.toContain("gpt-5.4");
   });
 
   test("merges_matching_workspace_patch_into_edit_tool_call_card", async () => {

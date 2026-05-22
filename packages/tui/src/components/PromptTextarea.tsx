@@ -184,8 +184,7 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       selectionFg={chatScreenTheme.textPrimary}
       syntaxStyle={promptTextareaSyntaxStyle}
       textColor={chatScreenTheme.textPrimary}
-      width="100%"
-      wrapMode="word"
+      wrapMode="char"
     />
   );
 }
