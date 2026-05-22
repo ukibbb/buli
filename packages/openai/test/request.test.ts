@@ -146,6 +146,121 @@ test("createOpenAiResponsesInputItems skips interrupted assistant turns", () => 
   ]);
 });
 
+test("createOpenAiResponsesInputItems keeps paired tool side effects from failed assistant turns", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Write generated file",
+        modelFacingPromptText: "Write generated file",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_write",
+        toolCallRequest: {
+          toolName: "write",
+          writeTargetPath: "generated.txt",
+          fileContent: "created\n",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_write",
+        toolCallDetail: {
+          toolName: "write",
+          writtenFilePath: "generated.txt",
+        },
+        toolResultText: "Wrote generated.txt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "failed",
+        assistantMessageText: "Unsafe partial assistant text",
+        failureExplanation: "Provider failed mid-turn",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Write generated file",
+    },
+    {
+      role: "assistant",
+      content: [
+        "[assistant tool call call_write]\nTool: write\nPath: generated.txt\nContent length: 8",
+        "[assistant tool result call_write]\nWrote generated.txt",
+      ].join("\n\n"),
+    },
+    {
+      role: "user",
+      content: "Next prompt",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems keeps paired tool side effects from interrupted assistant turns", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Run pwd",
+        modelFacingPromptText: "Run pwd",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_bash",
+        toolCallRequest: {
+          toolName: "bash",
+          shellCommand: "pwd",
+          commandDescription: "Print working directory",
+        },
+      },
+      {
+        entryKind: "denied_tool_result",
+        toolCallId: "call_bash",
+        toolCallDetail: {
+          toolName: "bash",
+          commandLine: "pwd",
+        },
+        toolResultText: "The user denied this bash command, so it was not executed.",
+        denialExplanation: "The user denied this bash command, so it was not executed.",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "interrupted",
+        assistantMessageText: "Unsafe interrupted assistant text",
+        interruptionReason: "Interrupted by user.",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Run pwd",
+    },
+    {
+      role: "assistant",
+      content: [
+        "[assistant tool call call_bash]\nTool: bash\nCommand: pwd\nDescription: Print working directory",
+        "[assistant tool denial call_bash]\nThe user denied this bash command, so it was not executed.",
+      ].join("\n\n"),
+    },
+    {
+      role: "user",
+      content: "Next prompt",
+    },
+  ]);
+});
+
 test("createOpenAiResponsesInputItems starts at the latest compaction summary", () => {
   expect(
     createOpenAiResponsesInputItems([

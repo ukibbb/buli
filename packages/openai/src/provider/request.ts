@@ -125,6 +125,10 @@ function appendOpenAiInputItemsForConversationSessionTurn(
     terminalAssistantMessageEntry.assistantMessageStatus === "failed" ||
     terminalAssistantMessageEntry.assistantMessageStatus === "interrupted"
   ) {
+    appendOpenAiInputItemsForFailedOrInterruptedConversationSessionTurn(
+      openAiInputItems,
+      conversationSessionTurn,
+    );
     return;
   }
 
@@ -141,6 +145,23 @@ function appendOpenAiInputItemsForConversationSessionTurn(
   }
 
   openAiInputItems.push(createMessageInputItem("assistant", terminalAssistantMessageEntry.assistantMessageText));
+}
+
+function appendOpenAiInputItemsForFailedOrInterruptedConversationSessionTurn(
+  openAiInputItems: OpenAiConversationInputItem[],
+  conversationSessionTurn: ConversationSessionTurn,
+): void {
+  const legacyToolTranscriptSegments = createPairedLegacyToolTranscriptSegments(
+    conversationSessionTurn.entriesAfterUserPrompt.slice(0, -1),
+  );
+  if (legacyToolTranscriptSegments.length === 0) {
+    return;
+  }
+
+  openAiInputItems.push(
+    createUserMessageInputItem(conversationSessionTurn.userPromptEntry),
+    createMessageInputItem("assistant", legacyToolTranscriptSegments.join("\n\n")),
+  );
 }
 
 export function createFunctionCallOutputInputItem(
