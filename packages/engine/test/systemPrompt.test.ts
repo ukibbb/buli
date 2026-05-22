@@ -188,6 +188,10 @@ test("understand mode uses debug walkthrough blocks for code behavior", () => {
   expect(systemPromptText).toContain("which condition or branch decides the next path");
   expect(systemPromptText).toContain("which collaborator receives control next");
   expect(systemPromptText).toContain("Do not paste raw multi-line fenced code blocks into the regular answer unless Lukasz explicitly asks to see raw code");
+  expect(systemPromptText).toContain("Explanations may be long when the code needs it.");
+  expect(systemPromptText).toContain("lineExplanations");
+  expect(systemPromptText).toContain("simple enough for a tired reader");
+  expect(systemPromptText).toContain("If you cannot confidently explain JavaScript generators, Effect, framework internals");
   expect(systemPromptText).toContain("sourceFilePath");
   expect(systemPromptText).toContain("startLineNumber");
   expect(systemPromptText).toContain("endLineNumber");

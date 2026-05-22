@@ -5,6 +5,18 @@ const CodeExecutionWalkthroughCodeTextSchema = z.string().min(1);
 
 export const CodeExecutionWalkthroughKindSchema = z.enum(["source_walkthrough", "observed_runtime_trace"]);
 
+export const CodeExecutionLineExplanationSchema = z
+  .object({
+    lineNumber: z.number().int().positive(),
+    explanationText: CodeExecutionWalkthroughTextSchema,
+    projectModelText: CodeExecutionWalkthroughTextSchema.optional(),
+    frameworkLifecycleText: CodeExecutionWalkthroughTextSchema.optional(),
+    languageMechanicsText: CodeExecutionWalkthroughTextSchema.optional(),
+    plainPseudocodeText: CodeExecutionWalkthroughTextSchema.optional(),
+    uncertaintyText: CodeExecutionWalkthroughTextSchema.optional(),
+  })
+  .strict();
+
 export const CodeExecutionCodeExampleSchema = z
   .object({
     sourceFilePath: CodeExecutionWalkthroughTextSchema,
@@ -14,6 +26,7 @@ export const CodeExecutionCodeExampleSchema = z
     languageLabel: CodeExecutionWalkthroughTextSchema.optional(),
     codeText: CodeExecutionWalkthroughCodeTextSchema,
     explanationText: CodeExecutionWalkthroughTextSchema.optional(),
+    lineExplanations: z.array(CodeExecutionLineExplanationSchema).optional(),
   })
   .strict()
   .superRefine((codeExample, context) => {
@@ -23,6 +36,16 @@ export const CodeExecutionCodeExampleSchema = z
         path: ["endLineNumber"],
         message: "endLineNumber must be greater than or equal to startLineNumber",
       });
+    }
+
+    for (const lineExplanation of codeExample.lineExplanations ?? []) {
+      if (lineExplanation.lineNumber < codeExample.startLineNumber || lineExplanation.lineNumber > codeExample.endLineNumber) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["lineExplanations"],
+          message: "lineExplanations lineNumber must be inside the code example line range",
+        });
+      }
     }
   });
 
@@ -49,6 +72,7 @@ export const CodeExecutionWalkthroughSchema = z
   .strict();
 
 export type CodeExecutionWalkthroughKind = z.infer<typeof CodeExecutionWalkthroughKindSchema>;
+export type CodeExecutionLineExplanation = z.infer<typeof CodeExecutionLineExplanationSchema>;
 export type CodeExecutionCodeExample = z.infer<typeof CodeExecutionCodeExampleSchema>;
 export type CodeExecutionWalkthroughStep = z.infer<typeof CodeExecutionWalkthroughStepSchema>;
 export type CodeExecutionWalkthrough = z.infer<typeof CodeExecutionWalkthroughSchema>;
@@ -97,10 +121,29 @@ function formatCodeExecutionCodeExampleAsMarkdown(codeExample: CodeExecutionCode
   return [
     `Source: ${formatCodeExecutionCodeExampleSourceRange(codeExample)}`,
     ...(codeExample.explanationText !== undefined ? [`Why it matters: ${codeExample.explanationText}`] : []),
+    ...formatCodeExecutionLineExplanationsAsMarkdown(codeExample),
     `${codeFence}${codeFenceInfo}`,
     codeExample.codeText,
     codeFence,
     "",
+  ];
+}
+
+function formatCodeExecutionLineExplanationsAsMarkdown(codeExample: CodeExecutionCodeExample): string[] {
+  if (!codeExample.lineExplanations || codeExample.lineExplanations.length === 0) {
+    return [];
+  }
+
+  return [
+    "Line-by-line explanation:",
+    ...codeExample.lineExplanations.flatMap((lineExplanation) => [
+      `- Line ${lineExplanation.lineNumber}: ${lineExplanation.explanationText}`,
+      ...(lineExplanation.projectModelText !== undefined ? [`  Project model: ${lineExplanation.projectModelText}`] : []),
+      ...(lineExplanation.frameworkLifecycleText !== undefined ? [`  Framework/lifecycle: ${lineExplanation.frameworkLifecycleText}`] : []),
+      ...(lineExplanation.languageMechanicsText !== undefined ? [`  Language mechanics: ${lineExplanation.languageMechanicsText}`] : []),
+      ...(lineExplanation.plainPseudocodeText !== undefined ? [`  Plain pseudocode: ${lineExplanation.plainPseudocodeText}`] : []),
+      ...(lineExplanation.uncertaintyText !== undefined ? [`  Not verified: ${lineExplanation.uncertaintyText}`] : []),
+    ]),
   ];
 }
 

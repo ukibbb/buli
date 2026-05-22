@@ -690,6 +690,17 @@ test("parseOpenAiStream emits code execution walkthrough presentation events wit
             languageLabel: "ts",
             codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
             explanationText: null,
+            lineExplanations: [
+              {
+                lineNumber: 64,
+                explanationText: "This records the accepted user prompt before the provider turn starts.",
+                projectModelText: "The conversation history keeps the prompt as a session entry.",
+                frameworkLifecycleText: null,
+                languageMechanicsText: null,
+                plainPseudocodeText: "Save this accepted prompt into history.",
+                uncertaintyText: null,
+              },
+            ],
           },
         ],
       },
@@ -748,6 +759,14 @@ test("parseOpenAiStream emits code execution walkthrough presentation events wit
                   endLineNumber: 67,
                   languageLabel: "ts",
                   codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
+                  lineExplanations: [
+                    {
+                      lineNumber: 64,
+                      explanationText: "This records the accepted user prompt before the provider turn starts.",
+                      projectModelText: "The conversation history keeps the prompt as a session entry.",
+                      plainPseudocodeText: "Save this accepted prompt into history.",
+                    },
+                  ],
                 },
               ],
             },
@@ -777,6 +796,14 @@ test("parseOpenAiStream emits code execution walkthrough presentation events wit
                   endLineNumber: 67,
                   languageLabel: "ts",
                   codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
+                  lineExplanations: [
+                    {
+                      lineNumber: 64,
+                      explanationText: "This records the accepted user prompt before the provider turn starts.",
+                      projectModelText: "The conversation history keeps the prompt as a session entry.",
+                      plainPseudocodeText: "Save this accepted prompt into history.",
+                    },
+                  ],
                 },
               ],
             },
@@ -805,6 +832,10 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
+  expect(presentCodeExecutionWalkthroughDefinition?.parameters.properties["steps"]?.description).toContain("as many steps as needed");
+  expect(
+    presentCodeExecutionWalkthroughDefinition?.parameters.properties["steps"]?.items?.properties?.["codeExamples"]?.items?.properties?.["lineExplanations"]?.description,
+  ).toContain("line-by-line teaching notes");
   const openAiToolDefinitionNames: string[] = openAiToolDefinitions.map((toolDefinition) => toolDefinition.name);
   expect(openAiToolDefinitionNames).not.toContain("explore");
   expect(taskToolDefinition?.description).toContain("Launch a built-in Buli subagent");

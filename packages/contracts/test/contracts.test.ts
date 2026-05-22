@@ -146,6 +146,14 @@ test("ConversationMessagePartSchema parses an assistant code execution walkthrou
               languageLabel: "ts",
               codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
               explanationText: "This branch chooses the walkthrough translation path.",
+              lineExplanations: [
+                {
+                  lineNumber: 145,
+                  explanationText: "This checks whether the provider sent a walkthrough presentation event.",
+                  projectModelText: "Walkthroughs are modeled as assistant message parts, not executable tool calls.",
+                  plainPseudocodeText: "If the event is a walkthrough, take the walkthrough path.",
+                },
+              ],
             },
           ],
         },
@@ -170,6 +178,14 @@ test("ConversationMessagePartSchema parses an assistant code execution walkthrou
             languageLabel: "ts",
             codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
             explanationText: "This branch chooses the walkthrough translation path.",
+            lineExplanations: [
+              {
+                lineNumber: 145,
+                explanationText: "This checks whether the provider sent a walkthrough presentation event.",
+                projectModelText: "Walkthroughs are modeled as assistant message parts, not executable tool calls.",
+                plainPseudocodeText: "If the event is a walkthrough, take the walkthrough path.",
+              },
+            ],
           },
         ],
       },
@@ -193,6 +209,14 @@ test("CodeExecutionWalkthroughSchema formats model-readable fallback text", () =
             endLineNumber: 147,
             languageLabel: "ts",
             codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
+            lineExplanations: [
+              {
+                lineNumber: 145,
+                explanationText: "This line chooses the walkthrough translation branch when the provider event has the walkthrough type.",
+                languageMechanicsText: "The strict equality check narrows the discriminated union before the translator reads the walkthrough payload.",
+                uncertaintyText: "No runtime values were observed; this is a source-level explanation.",
+              },
+            ],
           },
         ],
       },
@@ -208,6 +232,10 @@ test("CodeExecutionWalkthroughSchema formats model-readable fallback text", () =
     "Data/state: providerStreamEvent carries the walkthrough payload.",
     "",
     "Source: packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147",
+    "Line-by-line explanation:",
+    "- Line 145: This line chooses the walkthrough translation branch when the provider event has the walkthrough type.",
+    "  Language mechanics: The strict equality check narrows the discriminated union before the translator reads the walkthrough payload.",
+    "  Not verified: No runtime values were observed; this is a source-level explanation.",
     "```ts path=\"packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147\"",
     "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {",
     "  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);",
@@ -237,6 +265,28 @@ test("CodeExecutionWalkthroughSchema rejects whitespace-only text fields and inv
       titleText: "Runtime flow",
       walkthroughKind: "source_walkthrough",
       steps: [{ stepTitle: "Valid stage", whatHappensText: "Valid text", codeExamples: [{ sourceFilePath: "src/a.ts", startLineNumber: 3, endLineNumber: 2, codeText: "const a = 1;" }] }],
+    })
+  ).toThrow();
+});
+
+test("CodeExecutionWalkthroughSchema rejects line explanations outside the source range", () => {
+  expect(() =>
+    CodeExecutionWalkthroughSchema.parse({
+      titleText: "Runtime flow",
+      walkthroughKind: "source_walkthrough",
+      steps: [
+        {
+          stepTitle: "Valid stage",
+          whatHappensText: "Valid text",
+          codeExamples: [{
+            sourceFilePath: "src/a.ts",
+            startLineNumber: 1,
+            endLineNumber: 1,
+            codeText: "const a = 1;",
+            lineExplanations: [{ lineNumber: 2, explanationText: "This line is outside the copied snippet." }],
+          }],
+        },
+      ],
     })
   ).toThrow();
 });

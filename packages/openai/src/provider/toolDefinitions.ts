@@ -11,6 +11,7 @@ import {
   type AssistantSubagentName,
   type AssistantPresentationFunctionName,
   type AssistantToolRequestName,
+  type CodeExecutionLineExplanation,
   type CodeExecutionWalkthrough,
   type CodeExecutionWalkthroughKind,
   type ProviderAvailablePresentationFunctionName,
@@ -298,7 +299,7 @@ export function createPresentCodeExecutionWalkthroughToolDefinition(): OpenAiToo
         steps: {
           type: "array",
           minItems: 1,
-          description: "Ordered moments in time, as if stepping through the code during debugging.",
+          description: "Ordered moments in time, as if stepping through the code during debugging. Include as many steps as needed for a clear, non-redundant explanation.",
           items: {
             type: "object",
             description: "One moment in the code walkthrough.",
@@ -334,7 +335,7 @@ export function createPresentCodeExecutionWalkthroughToolDefinition(): OpenAiToo
               codeExamples: {
                 type: "array",
                 minItems: 1,
-                description: "Exact source snippets that prove this step. Each snippet must come from an inspected file.",
+                description: "Exact source snippets that prove this step. Each snippet must come from an inspected file and should include line-by-line explanations when the snippet is important to understand.",
                 items: {
                   type: "object",
                   description: "One exact source snippet for this walkthrough step.",
@@ -369,6 +370,55 @@ export function createPresentCodeExecutionWalkthroughToolDefinition(): OpenAiToo
                       type: ["string", "null"],
                       description: "Optional short explanation of why this snippet matters for the current step, or null when the step text already explains it.",
                     },
+                    lineExplanations: {
+                      type: ["array", "null"],
+                      description: "Optional line-by-line teaching notes for important source lines. Use simple explanations. Include project model, framework lifecycle, language mechanics, pseudocode, or uncertainty only when that layer helps.",
+                      items: {
+                        type: "object",
+                        description: "Explanation for one source line in codeText.",
+                        properties: {
+                          lineNumber: {
+                            type: "integer",
+                            minimum: 1,
+                            description: "1-indexed source line number being explained. Must be inside the snippet line range.",
+                          },
+                          explanationText: {
+                            type: "string",
+                            description: "Detailed but simple explanation of what this exact line does.",
+                          },
+                          projectModelText: {
+                            type: ["string", "null"],
+                            description: "Optional explanation of how this line models the application/project/business problem, or null when not relevant.",
+                          },
+                          frameworkLifecycleText: {
+                            type: ["string", "null"],
+                            description: "Optional explanation of the framework, library, package, or tool lifecycle involved, or null when not relevant or not verified.",
+                          },
+                          languageMechanicsText: {
+                            type: ["string", "null"],
+                            description: "Optional explanation of language mechanics such as generators, async iteration, types, or control flow, or null when not relevant or not verified.",
+                          },
+                          plainPseudocodeText: {
+                            type: ["string", "null"],
+                            description: "Optional tired-person pseudocode explanation for this line, or null when the explanationText already covers it.",
+                          },
+                          uncertaintyText: {
+                            type: ["string", "null"],
+                            description: "Optional explicit uncertainty. Use this when library/framework/language internals are not verified instead of pretending to know.",
+                          },
+                        },
+                        required: [
+                          "lineNumber",
+                          "explanationText",
+                          "projectModelText",
+                          "frameworkLifecycleText",
+                          "languageMechanicsText",
+                          "plainPseudocodeText",
+                          "uncertaintyText",
+                        ],
+                        additionalProperties: false,
+                      },
+                    },
                   },
                   required: [
                     "sourceFilePath",
@@ -378,6 +428,7 @@ export function createPresentCodeExecutionWalkthroughToolDefinition(): OpenAiToo
                     "languageLabel",
                     "codeText",
                     "explanationText",
+                    "lineExplanations",
                   ],
                   additionalProperties: false,
                 },
@@ -572,6 +623,8 @@ function parseCodeExecutionWalkthroughPresentationFunctionArguments(parsedArgume
           const sourceSymbolName = readOptionalStringToolArgument(codeExampleArguments, "sourceSymbolName", functionName);
           const languageLabel = readOptionalStringToolArgument(codeExampleArguments, "languageLabel", functionName);
           const explanationText = readOptionalStringToolArgument(codeExampleArguments, "explanationText", functionName);
+          const lineExplanations = readOptionalObjectArrayFunctionArgument(codeExampleArguments, "lineExplanations", functionName)
+            ?.map((lineExplanationArguments) => parseCodeExecutionLineExplanationArguments(lineExplanationArguments, functionName));
           return {
             sourceFilePath: readRequiredStringToolArgument(codeExampleArguments, "sourceFilePath", functionName),
             ...(sourceSymbolName !== undefined ? { sourceSymbolName } : {}),
@@ -580,6 +633,7 @@ function parseCodeExecutionWalkthroughPresentationFunctionArguments(parsedArgume
             ...(languageLabel !== undefined ? { languageLabel } : {}),
             codeText: readRequiredStringToolArgument(codeExampleArguments, "codeText", functionName),
             ...(explanationText !== undefined ? { explanationText } : {}),
+            ...(lineExplanations !== undefined ? { lineExplanations } : {}),
           };
         }),
       };
@@ -592,6 +646,27 @@ function parseCodeExecutionWalkthroughPresentationFunctionArguments(parsedArgume
 
   const contractViolationText = parsedCodeExecutionWalkthrough.error.issues.map(formatToolCallContractViolation).join("; ");
   throw new Error(`OpenAI function call for present_code_execution_walkthrough violates Buli code execution walkthrough contract: ${contractViolationText}`);
+}
+
+function parseCodeExecutionLineExplanationArguments(
+  lineExplanationArguments: JsonObjectRecord,
+  functionName: string,
+): CodeExecutionLineExplanation {
+  const projectModelText = readOptionalStringToolArgument(lineExplanationArguments, "projectModelText", functionName);
+  const frameworkLifecycleText = readOptionalStringToolArgument(lineExplanationArguments, "frameworkLifecycleText", functionName);
+  const languageMechanicsText = readOptionalStringToolArgument(lineExplanationArguments, "languageMechanicsText", functionName);
+  const plainPseudocodeText = readOptionalStringToolArgument(lineExplanationArguments, "plainPseudocodeText", functionName);
+  const uncertaintyText = readOptionalStringToolArgument(lineExplanationArguments, "uncertaintyText", functionName);
+
+  return {
+    lineNumber: readRequiredPositiveIntegerToolArgument(lineExplanationArguments, "lineNumber", functionName),
+    explanationText: readRequiredStringToolArgument(lineExplanationArguments, "explanationText", functionName),
+    ...(projectModelText !== undefined ? { projectModelText } : {}),
+    ...(frameworkLifecycleText !== undefined ? { frameworkLifecycleText } : {}),
+    ...(languageMechanicsText !== undefined ? { languageMechanicsText } : {}),
+    ...(plainPseudocodeText !== undefined ? { plainPseudocodeText } : {}),
+    ...(uncertaintyText !== undefined ? { uncertaintyText } : {}),
+  };
 }
 
 function assertUnhandledPresentationFunctionName(functionName: never): never {
@@ -695,6 +770,28 @@ function readRequiredObjectArrayFunctionArgument(
   const argumentValue = parsedArguments[argumentName];
   if (!Array.isArray(argumentValue)) {
     throw new Error(`OpenAI function call for ${functionName} is missing required object array argument: ${argumentName}`);
+  }
+
+  return argumentValue.map((arrayItem, arrayItemIndex) => {
+    if (typeof arrayItem !== "object" || arrayItem === null || Array.isArray(arrayItem)) {
+      throw new Error(`OpenAI function call for ${functionName} has invalid object at ${argumentName}[${arrayItemIndex}]`);
+    }
+
+    return arrayItem as JsonObjectRecord;
+  });
+}
+
+function readOptionalObjectArrayFunctionArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  functionName: string,
+): JsonObjectRecord[] | undefined {
+  const argumentValue = parsedArguments[argumentName];
+  if (argumentValue === undefined || argumentValue === null) {
+    return undefined;
+  }
+  if (!Array.isArray(argumentValue)) {
+    throw new Error(`OpenAI function call for ${functionName} has invalid object array argument: ${argumentName}`);
   }
 
   return argumentValue.map((arrayItem, arrayItemIndex) => {

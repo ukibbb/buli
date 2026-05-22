@@ -286,6 +286,7 @@ function buildHydratedConversationTranscript(
             ...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {}),
             codeText: codeExample.codeText,
             ...(codeExample.explanationText !== undefined ? { explanationText: codeExample.explanationText } : {}),
+            ...(codeExample.lineExplanations !== undefined ? { lineExplanations: codeExample.lineExplanations } : {}),
           })),
         })),
       });

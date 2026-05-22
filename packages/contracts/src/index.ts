@@ -66,6 +66,7 @@ export type {
 } from "./conversationMessagePart.ts";
 export {
   CodeExecutionCodeExampleSchema,
+  CodeExecutionLineExplanationSchema,
   CodeExecutionWalkthroughKindSchema,
   CodeExecutionWalkthroughSchema,
   CodeExecutionWalkthroughStepSchema,
@@ -73,6 +74,7 @@ export {
 } from "./codeExecutionWalkthrough.ts";
 export type {
   CodeExecutionCodeExample,
+  CodeExecutionLineExplanation,
   CodeExecutionWalkthrough,
   CodeExecutionWalkthroughKind,
   CodeExecutionWalkthroughStep,

@@ -645,7 +645,13 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant code ex
           {
             stepTitle: "Prompt accepted",
             whatHappensText: "The user prompt is recorded.",
-            codeExamples: [{ sourceFilePath: "packages/engine/src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "recordPrompt();" }],
+            codeExamples: [{
+              sourceFilePath: "packages/engine/src/runtime.ts",
+              startLineNumber: 1,
+              endLineNumber: 1,
+              codeText: "recordPrompt();",
+              lineExplanations: [{ lineNumber: 1, explanationText: "This stores the accepted prompt." }],
+            }],
           },
           {
             stepTitle: "Provider streams",
@@ -680,7 +686,13 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant code ex
         {
           stepTitle: "Prompt accepted",
           whatHappensText: "The user prompt is recorded.",
-          codeExamples: [{ sourceFilePath: "packages/engine/src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "recordPrompt();" }],
+          codeExamples: [{
+            sourceFilePath: "packages/engine/src/runtime.ts",
+            startLineNumber: 1,
+            endLineNumber: 1,
+            codeText: "recordPrompt();",
+            lineExplanations: [{ lineNumber: 1, explanationText: "This stores the accepted prompt." }],
+          }],
         },
         {
           stepTitle: "Provider streams",
