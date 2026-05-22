@@ -44,7 +44,9 @@ class SafeAssistantMarkdownHtmlRenderer extends Renderer {
   }
 
   override code({ text, lang }: Tokens.Code): string {
-    return renderCodeWrap({ codeText: text, languageLabel: lang });
+    // Spread lang only when defined so exactOptionalPropertyTypes is satisfied — the renderer
+    // signature uses an optional property, not an explicit-undefined property.
+    return renderCodeWrap({ codeText: text, ...(lang !== undefined ? { languageLabel: lang } : {}) });
   }
 
   override link({ href, title, tokens }: Tokens.Link): string {
@@ -176,8 +178,7 @@ export function renderConversationSessionHtmlDocument(input: {
 <div class="shell">
   <main>
     <section class="hero">
-      <h1>Session <span class="id">${escapeHtml(input.conversationSessionId)}</span></h1>
-      <p class="deck">A working conversation, captured verbatim &mdash; every prompt, every tool call, every reply.</p>
+      <h1>Session <span class="id" title="${escapeHtmlAttribute(input.conversationSessionId)}">${escapeHtml(shortenSessionIdForDisplay(input.conversationSessionId))}</span></h1>
     </section>
     <section class="meta-grid" aria-label="Session metadata">
       <div class="meta-card">
@@ -191,6 +192,10 @@ export function renderConversationSessionHtmlDocument(input: {
       <div class="meta-card">
         <div class="meta-label">Entries</div>
         <div class="meta-value">${input.conversationSessionEntries.length}</div>
+      </div>
+      <div class="meta-card">
+        <div class="meta-label">Model</div>
+        <div class="meta-value">&mdash;</div>
       </div>
     </section>
     <nav class="trace" aria-label="Session trace map">
@@ -569,9 +574,10 @@ function renderCodeExecutionCodeExampleBlock(codeExample: CodeExecutionCodeExamp
   const sourceSymbolHtml = codeExample.sourceSymbolName === undefined ? "" : ` &middot; ${escapeHtml(codeExample.sourceSymbolName)}`;
   const explanationHtml = codeExample.explanationText === undefined ? "" : `<p class="panel-notice">${escapeHtml(codeExample.explanationText)}</p>`;
   const sourceLabel = `${formatCodeExampleSourceRange(codeExample)}${codeExample.sourceSymbolName === undefined ? "" : ` ${codeExample.sourceSymbolName}`}`;
+  // Spread the optional languageLabel only when defined to keep exactOptionalPropertyTypes happy.
   const codeWrapHtml = renderCodeWrap({
     codeText: codeExample.codeText,
-    languageLabel: codeExample.languageLabel,
+    ...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {}),
     sourceFilePath: codeExample.sourceFilePath,
     filePathLabel: sourceLabel,
   });
@@ -682,4 +688,14 @@ function formatExportedDateTimeForDisplay(epochMs: number): string {
 
 function safeFileNameSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "session";
+}
+
+// Hero shows a short session ID for visual calm; full ID stays in the title tooltip and the
+// breadcrumb so copy/paste remains lossless.
+function shortenSessionIdForDisplay(conversationSessionId: string): string {
+  const trimmed = conversationSessionId.trim();
+  if (trimmed.length <= 12) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 8)}…${trimmed.slice(-4)}`;
 }

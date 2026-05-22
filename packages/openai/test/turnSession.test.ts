@@ -8,6 +8,27 @@ function createOpenAiStepResponse(eventFrames: readonly string[]): Response {
   });
 }
 
+function createOpenAiErrorResponse(input: {
+  status: number;
+  message: string;
+  headers?: Record<string, string>;
+}): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: input.message,
+      },
+    }),
+    {
+      status: input.status,
+      headers: {
+        "content-type": "application/json",
+        ...(input.headers ?? {}),
+      },
+    },
+  );
+}
+
 function createOpenAiSseFrame(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
@@ -64,6 +85,33 @@ function createFetchImpl(queuedResponses: Response[], requestBodies: string[]): 
       }
 
       return queuedResponse;
+    },
+    {
+      preconnect: fetch.preconnect.bind(fetch),
+    },
+  );
+
+  return fetchImpl;
+}
+
+type QueuedFetchOutcome =
+  | { outcomeKind: "response"; response: Response }
+  | { outcomeKind: "rejection"; error: unknown };
+
+function createFetchImplWithQueuedOutcomes(queuedOutcomes: QueuedFetchOutcome[], requestBodies: string[]): typeof fetch {
+  const fetchImpl: typeof fetch = Object.assign(
+    async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requestBodies.push(String(init?.body ?? ""));
+      const queuedOutcome = queuedOutcomes.shift();
+      if (!queuedOutcome) {
+        throw new Error("No queued OpenAI test fetch outcome remained");
+      }
+
+      if (queuedOutcome.outcomeKind === "rejection") {
+        throw queuedOutcome.error;
+      }
+
+      return queuedOutcome.response;
     },
     {
       preconnect: fetch.preconnect.bind(fetch),
@@ -540,7 +588,8 @@ test("OpenAiProviderConversationTurn honors a configured response-step limit", a
 
 test("OpenAiProviderConversationTurn lets the agent finish after more than twenty response steps by default", async () => {
   const requestBodies: string[] = [];
-  const toolStepCount = 21;
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const toolStepCount = 32;
   const queuedResponses = [
     ...Array.from({ length: toolStepCount }, (_value, index) => createOpenAiReadToolStepResponse(index + 1)),
     createOpenAiStepResponse([
@@ -559,6 +608,7 @@ test("OpenAiProviderConversationTurn lets the agent finish after more than twent
     systemPromptText: "You are buli.",
     conversationSessionEntries: createConversationSessionEntries("Inspect all files"),
     onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
   const emittedEvents: ProviderStreamEvent[] = [];
 
@@ -575,6 +625,14 @@ test("OpenAiProviderConversationTurn lets the agent finish after more than twent
   expect(emittedEvents.filter((emittedEvent) => emittedEvent.type === "tool_call_requested")).toHaveLength(toolStepCount);
   expect(emittedEvents.map((emittedEvent) => emittedEvent.type).slice(-2)).toEqual(["text_chunk", "completed"]);
   expect(requestBodies).toHaveLength(toolStepCount + 1);
+  const responseStepWarning = diagnosticEvents.find(
+    (diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.response_step_warning_threshold_reached",
+  );
+  expect(responseStepWarning?.fields).toMatchObject({
+    responseStepIndex: 32,
+    responseStepDiagnosticWarningThreshold: 32,
+    requestedToolCallCount: 31,
+  });
 });
 
 test("OpenAiProviderConversationTurn emits soft loop diagnostics without limiting the turn", async () => {
@@ -708,6 +766,277 @@ test("OpenAiProviderConversationTurn passes the abort signal to response fetch",
   }
 
   expect(receivedAbortSignals).toEqual([abortController.signal]);
+});
+
+test("OpenAiProviderConversationTurn retries transient response-step failures", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      createOpenAiErrorResponse({
+        status: 429,
+        message: "slow down",
+        headers: { "retry-after-ms": "0", "openai-request-id": "req_retry_1" },
+      }),
+      createOpenAiErrorResponse({
+        status: 503,
+        message: "temporarily unavailable",
+        headers: { "retry-after": "0", "openai-request-id": "req_retry_2" },
+      }),
+      createOpenAiStepResponse([
+        createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done after retry" }),
+        createOpenAiSseFrame({
+          type: "response.completed",
+          response: { usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 } },
+        }),
+      ]),
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after transient failures"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  const emittedEvents = await collectProviderEvents(providerTurn);
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "rate_limit_pending",
+    "rate_limit_pending",
+    "text_chunk",
+    "completed",
+  ]);
+  expect(emittedEvents[0]).toMatchObject({
+    type: "rate_limit_pending",
+    retryAfterSeconds: 0,
+  });
+  expect(emittedEvents[1]).toMatchObject({
+    type: "rate_limit_pending",
+    retryAfterSeconds: 0,
+  });
+  expect(requestBodies).toHaveLength(3);
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.retry_scheduled"))
+    .toHaveLength(2);
+  expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "response_step.retry_succeeded")?.fields)
+    .toMatchObject({
+      responseStepIndex: 1,
+      responseStepRequestAttemptIndex: 3,
+      retryAttemptCount: 2,
+      status: 200,
+    });
+});
+
+test("OpenAiProviderConversationTurn fails after exhausting transient response-step retries", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      createOpenAiErrorResponse({ status: 429, message: "retry 1", headers: { "retry-after-ms": "0" } }),
+      createOpenAiErrorResponse({ status: 429, message: "retry 2", headers: { "retry-after-ms": "0" } }),
+      createOpenAiErrorResponse({ status: 429, message: "retry 3", headers: { "retry-after-ms": "0" } }),
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after too many transient failures"),
+    onStepRequestFailed: async (response) => new Error(`request failed with ${response.status}`),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("request failed with 429");
+
+  expect(requestBodies).toHaveLength(3);
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.retry_scheduled"))
+    .toHaveLength(2);
+  expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "response_step.retry_exhausted")?.fields)
+    .toMatchObject({
+      responseStepIndex: 1,
+      responseStepRequestAttemptIndex: 3,
+      maxResponseStepHttpRetryCount: 2,
+      status: 429,
+    });
+});
+
+test("OpenAiProviderConversationTurn stops waiting for a response-step retry when aborted", async () => {
+  const abortController = new AbortController();
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      createOpenAiErrorResponse({
+        status: 429,
+        message: "wait before retry",
+        headers: { "retry-after-ms": "60000" },
+      }),
+    ], []),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after retry wait"),
+    abortSignal: abortController.signal,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+  const providerEventIterator = providerTurn.streamProviderEvents()[Symbol.asyncIterator]();
+
+  await expect(providerEventIterator.next()).resolves.toMatchObject({
+    done: false,
+    value: { type: "rate_limit_pending", retryAfterSeconds: 60 },
+  });
+  abortController.abort();
+
+  await expect(providerEventIterator.next()).rejects.toThrow("interrupted while waiting to retry OpenAI request");
+});
+
+test("OpenAiProviderConversationTurn retries transient response-step transport failures", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImplWithQueuedOutcomes([
+      { outcomeKind: "rejection", error: new TypeError("fetch failed with secret-token") },
+      { outcomeKind: "rejection", error: new TypeError("socket reset") },
+      {
+        outcomeKind: "response",
+        response: createOpenAiStepResponse([
+          createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done after transport retry" }),
+          createOpenAiSseFrame({
+            type: "response.completed",
+            response: { usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 } },
+          }),
+        ]),
+      },
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after transport failures"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  const emittedEvents = await collectProviderEvents(providerTurn);
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "rate_limit_pending",
+    "rate_limit_pending",
+    "text_chunk",
+    "completed",
+  ]);
+  expect(emittedEvents[0]).toMatchObject({
+    type: "rate_limit_pending",
+    retryAfterSeconds: 1,
+  });
+  expect(requestBodies).toHaveLength(3);
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_scheduled"))
+    .toHaveLength(2);
+  expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_succeeded")?.fields)
+    .toMatchObject({
+      responseStepIndex: 1,
+      responseStepRequestAttemptIndex: 3,
+      transportRetryAttemptCount: 2,
+      status: 200,
+    });
+  expect(JSON.stringify(diagnosticEvents)).not.toContain("secret-token");
+});
+
+test("OpenAiProviderConversationTurn fails after exhausting transient response-step transport retries", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImplWithQueuedOutcomes([
+      { outcomeKind: "rejection", error: new TypeError("fetch failed 1") },
+      { outcomeKind: "rejection", error: new TypeError("fetch failed 2") },
+      { outcomeKind: "rejection", error: new TypeError("fetch failed 3") },
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after too many transport failures"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("fetch failed 3");
+
+  expect(requestBodies).toHaveLength(3);
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_scheduled"))
+    .toHaveLength(2);
+  expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_exhausted")?.fields)
+    .toMatchObject({
+      responseStepIndex: 1,
+      responseStepRequestAttemptIndex: 3,
+      maxResponseStepHttpRetryCount: 2,
+      transportErrorName: "TypeError",
+    });
+});
+
+test("OpenAiProviderConversationTurn does not retry aborted response-step fetches", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImplWithQueuedOutcomes([
+      { outcomeKind: "rejection", error: new DOMException("request aborted", "AbortError") },
+      {
+        outcomeKind: "response",
+        response: createOpenAiStepResponse([
+          createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Unexpected retry" }),
+          createOpenAiSseFrame({
+            type: "response.completed",
+            response: { usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 } },
+          }),
+        ]),
+      },
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after abort"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("request aborted");
+
+  expect(requestBodies).toHaveLength(1);
+  expect(diagnosticEvents.some((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_scheduled"))
+    .toBe(false);
+});
+
+test("OpenAiProviderConversationTurn does not retry non-transport response-step fetch errors", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImplWithQueuedOutcomes([
+      { outcomeKind: "rejection", error: new Error("test programming error") },
+      {
+        outcomeKind: "response",
+        response: createOpenAiStepResponse([
+          createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Unexpected retry" }),
+          createOpenAiSseFrame({
+            type: "response.completed",
+            response: { usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 } },
+          }),
+        ]),
+      },
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after programming error"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("test programming error");
+
+  expect(requestBodies).toHaveLength(1);
+  expect(diagnosticEvents.some((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_scheduled"))
+    .toBe(false);
 });
 
 test("OpenAiProviderConversationTurn stops waiting for a tool result when aborted", async () => {
@@ -1146,4 +1475,5 @@ test("OpenAiProviderConversationTurn redacts failed-response structured diagnost
   expect(structuredErrorMessage).toContain("chars omitted");
   expect(structuredErrorMessage).not.toContain("secret-token");
   expect(structuredErrorMessage).not.toContain("abc123");
+  expect(requestBodies).toHaveLength(1);
 });

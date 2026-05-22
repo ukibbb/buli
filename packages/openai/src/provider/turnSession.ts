@@ -27,7 +27,11 @@ import {
 import {
   extractStructuredOpenAiErrorMessage,
   getOpenAiRequestId,
+  isRetryableOpenAiHttpResponseStatus,
+  isRetryableOpenAiTransportError,
+  readOpenAiRetryAfterMilliseconds,
   sanitizeOpenAiErrorMessage,
+  summarizeOpenAiTransportErrorForDiagnostics,
   type OpenAiHttpErrorResponse,
 } from "./httpResponseDiagnostics.ts";
 import {
@@ -57,6 +61,12 @@ type OpenAiResponseStepToolCallTerminalState = Extract<
   OpenAiResponseStepTerminalState,
   { terminalKind: "tool_call_requested" | "tool_calls_requested" | "provider_function_calls_requested" }
 >;
+
+const DEFAULT_RESPONSE_STEP_DIAGNOSTIC_WARNING_THRESHOLD = 32;
+const DEFAULT_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 128;
+const DEFAULT_REPEATED_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 3;
+const DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT = 2;
+const DEFAULT_RESPONSE_STEP_HTTP_RETRY_DELAY_MILLISECONDS = 500;
 
 function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenUsage: TokenUsage): TokenUsage {
   if (!accumulatedTokenUsage) {
@@ -94,9 +104,9 @@ export class OpenAiProviderConversationTurn {
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
   readonly maxResponseStepsPerTurn: number | undefined;
   readonly maxToolCallsPerTurn: number | undefined;
-  readonly responseStepDiagnosticWarningThreshold: number | undefined;
-  readonly toolCallDiagnosticWarningThreshold: number | undefined;
-  readonly repeatedToolCallDiagnosticWarningThreshold: number | undefined;
+  readonly responseStepDiagnosticWarningThreshold: number;
+  readonly toolCallDiagnosticWarningThreshold: number;
+  readonly repeatedToolCallDiagnosticWarningThreshold: number;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
@@ -137,14 +147,17 @@ export class OpenAiProviderConversationTurn {
     this.onStepRequestFailed = input.onStepRequestFailed;
     this.maxResponseStepsPerTurn = normalizeOptionalPositiveIntegerLimit(input.maxResponseStepsPerTurn);
     this.maxToolCallsPerTurn = normalizeOptionalPositiveIntegerLimit(input.maxToolCallsPerTurn);
-    this.responseStepDiagnosticWarningThreshold = normalizeOptionalPositiveIntegerLimit(
+    this.responseStepDiagnosticWarningThreshold = normalizePositiveIntegerThreshold(
       input.responseStepDiagnosticWarningThreshold,
+      DEFAULT_RESPONSE_STEP_DIAGNOSTIC_WARNING_THRESHOLD,
     );
-    this.toolCallDiagnosticWarningThreshold = normalizeOptionalPositiveIntegerLimit(
+    this.toolCallDiagnosticWarningThreshold = normalizePositiveIntegerThreshold(
       input.toolCallDiagnosticWarningThreshold,
+      DEFAULT_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD,
     );
-    this.repeatedToolCallDiagnosticWarningThreshold = normalizeOptionalPositiveIntegerLimit(
+    this.repeatedToolCallDiagnosticWarningThreshold = normalizePositiveIntegerThreshold(
       input.repeatedToolCallDiagnosticWarningThreshold,
+      DEFAULT_REPEATED_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD,
     );
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.providerTurnReplayInputItems = [];
@@ -191,13 +204,20 @@ export class OpenAiProviderConversationTurn {
     let accumulatedOpenAiTurnUsage: TokenUsage | undefined;
     let responseStepIndex = 0;
     let requestedToolCallCount = 0;
-    const toolCallPatternObservationCountByKey = new Map<string, number>();
+    const toolCallPatternObservationCountByFingerprint = new Map<string, number>();
     const turnStartedAtMs = Date.now();
 
     while (true) {
       responseStepIndex += 1;
       if (this.maxResponseStepsPerTurn !== undefined && responseStepIndex > this.maxResponseStepsPerTurn) {
         throw new Error(`OpenAI response step limit exceeded after ${this.maxResponseStepsPerTurn} steps.`);
+      }
+      if (responseStepIndex === this.responseStepDiagnosticWarningThreshold) {
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.response_step_warning_threshold_reached", {
+          responseStepIndex,
+          responseStepDiagnosticWarningThreshold: this.responseStepDiagnosticWarningThreshold,
+          requestedToolCallCount,
+        });
       }
       const responseStepStartedAtMs = Date.now();
       const requestBody = createOpenAiResponsesHttpRequestBody({
@@ -218,28 +238,164 @@ export class OpenAiProviderConversationTurn {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", requestDebugSummary);
       await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
 
-      const response = await this.fetchImpl(this.endpoint, {
-        method: "POST",
-        headers: await this.loadRequestHeaders(),
-        body: JSON.stringify(requestBody),
-        ...(this.abortSignal ? { signal: this.abortSignal } : {}),
-      });
-      logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.response_received", {
-        responseStepIndex,
-        status: response.status,
-        requestId: getOpenAiRequestId(response.headers) ?? null,
-        contentType: response.headers.get("content-type") ?? null,
-        durationMs: Date.now() - responseStepStartedAtMs,
-      });
+      let responseStepRequestAttemptIndex = 0;
+      let responseStepTransportRetryAttemptCount = 0;
+      let response: Response | undefined;
+      while (!response) {
+        responseStepRequestAttemptIndex += 1;
+        const responseStepRequestAttemptStartedAtMs = Date.now();
+        const currentRequestHeaders = await this.loadRequestHeaders();
+        let currentResponse: Response;
+        try {
+          currentResponse = await this.fetchImpl(this.endpoint, {
+            method: "POST",
+            headers: currentRequestHeaders,
+            body: JSON.stringify(requestBody),
+            ...(this.abortSignal ? { signal: this.abortSignal } : {}),
+          });
+        } catch (transportError) {
+          const transportErrorDiagnosticFields = summarizeOpenAiTransportErrorForDiagnostics(transportError);
+          const canRetryTransportError =
+            isRetryableOpenAiTransportError(transportError) &&
+            responseStepRequestAttemptIndex <= DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT;
+          if (!canRetryTransportError) {
+            if (isRetryableOpenAiTransportError(transportError)) {
+              logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.transport_retry_exhausted", {
+                responseStepIndex,
+                responseStepRequestAttemptIndex,
+                maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
+                ...transportErrorDiagnosticFields,
+              });
+            }
+            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_transport_failed", {
+              responseStepIndex,
+              responseStepRequestAttemptIndex,
+              ...transportErrorDiagnosticFields,
+            });
+            throw transportError;
+          }
 
-      if (!response.ok) {
-        const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
+          responseStepTransportRetryAttemptCount += 1;
+          const retryDelayMilliseconds = DEFAULT_RESPONSE_STEP_HTTP_RETRY_DELAY_MILLISECONDS;
+          const transportRetryScheduledDiagnosticFields = {
+            responseStepIndex,
+            responseStepRequestAttemptIndex,
+            maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
+            retryDelayMilliseconds,
+            remainingRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT - responseStepRequestAttemptIndex,
+            ...transportErrorDiagnosticFields,
+          };
+          logOpenAiDiagnosticEvent(
+            this.diagnosticLogger,
+            "response_step.transport_retry_scheduled",
+            transportRetryScheduledDiagnosticFields,
+          );
+          await writeOpenAiDebugLog("OpenAI response-step transport retry scheduled", transportRetryScheduledDiagnosticFields);
+          const transportRetryPendingProviderEvent = {
+            type: "rate_limit_pending" as const,
+            retryAfterSeconds: convertRetryDelayMillisecondsToProviderRetryAfterSeconds(retryDelayMilliseconds),
+            limitExplanation: createOpenAiResponseStepTransportRetryLimitExplanation({ retryDelayMilliseconds }),
+          };
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+            responseStepIndex,
+            eventType: transportRetryPendingProviderEvent.type,
+            ...summarizeProviderStreamEventForDiagnostics(transportRetryPendingProviderEvent),
+          });
+          yield transportRetryPendingProviderEvent;
+          await waitForOpenAiResponseStepRetryDelay({
+            retryDelayMilliseconds,
+            abortSignal: this.abortSignal,
+          });
+          continue;
+        }
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.response_received", {
           responseStepIndex,
-          ...failedResponseDebugPayload,
+          responseStepRequestAttemptIndex,
+          status: currentResponse.status,
+          requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
+          contentType: currentResponse.headers.get("content-type") ?? null,
+          durationMs: Date.now() - responseStepRequestAttemptStartedAtMs,
         });
-        await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
-        throw await this.onStepRequestFailed(response);
+
+        if (currentResponse.ok) {
+          if (responseStepTransportRetryAttemptCount > 0) {
+            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.transport_retry_succeeded", {
+              responseStepIndex,
+              responseStepRequestAttemptIndex,
+              transportRetryAttemptCount: responseStepTransportRetryAttemptCount,
+              status: currentResponse.status,
+              requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
+              durationMs: Date.now() - responseStepStartedAtMs,
+            });
+          }
+          if (responseStepRequestAttemptIndex > 1) {
+            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.retry_succeeded", {
+              responseStepIndex,
+              responseStepRequestAttemptIndex,
+              retryAttemptCount: responseStepRequestAttemptIndex - 1,
+              status: currentResponse.status,
+              requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
+              durationMs: Date.now() - responseStepStartedAtMs,
+            });
+          }
+          response = currentResponse;
+          break;
+        }
+
+        const canRetryResponseStepRequest =
+          isRetryableOpenAiHttpResponseStatus(currentResponse.status) &&
+          responseStepRequestAttemptIndex <= DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT;
+        if (!canRetryResponseStepRequest) {
+          if (isRetryableOpenAiHttpResponseStatus(currentResponse.status)) {
+            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.retry_exhausted", {
+              responseStepIndex,
+              responseStepRequestAttemptIndex,
+              maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
+              status: currentResponse.status,
+              requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
+            });
+          }
+          const failedResponseDebugPayload = await createFailedResponseDebugPayload(currentResponse.clone());
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
+            responseStepIndex,
+            responseStepRequestAttemptIndex,
+            ...failedResponseDebugPayload,
+          });
+          await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
+          throw await this.onStepRequestFailed(currentResponse);
+        }
+
+        const retryDelayMilliseconds =
+          readOpenAiRetryAfterMilliseconds(currentResponse.headers) ?? DEFAULT_RESPONSE_STEP_HTTP_RETRY_DELAY_MILLISECONDS;
+        const retryScheduledDiagnosticFields = {
+          responseStepIndex,
+          responseStepRequestAttemptIndex,
+          maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
+          status: currentResponse.status,
+          requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
+          retryDelayMilliseconds,
+          remainingRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT - responseStepRequestAttemptIndex,
+        };
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.retry_scheduled", retryScheduledDiagnosticFields);
+        await writeOpenAiDebugLog("OpenAI response-step retry scheduled", retryScheduledDiagnosticFields);
+        const retryPendingProviderEvent = {
+          type: "rate_limit_pending" as const,
+          retryAfterSeconds: convertRetryDelayMillisecondsToProviderRetryAfterSeconds(retryDelayMilliseconds),
+          limitExplanation: createOpenAiResponseStepRetryLimitExplanation({
+            status: currentResponse.status,
+            retryDelayMilliseconds,
+          }),
+        };
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+          responseStepIndex,
+          eventType: retryPendingProviderEvent.type,
+          ...summarizeProviderStreamEventForDiagnostics(retryPendingProviderEvent),
+        });
+        yield retryPendingProviderEvent;
+        await waitForOpenAiResponseStepRetryDelay({
+          retryDelayMilliseconds,
+          abortSignal: this.abortSignal,
+        });
       }
 
       const openAiStepEventIterator = parseOpenAiStream(response, {
@@ -297,7 +453,7 @@ export class OpenAiProviderConversationTurn {
           previousRequestedToolCallCount,
           currentResponseStepToolCallCount: requestedToolCalls.length,
           requestedToolCalls,
-          toolCallPatternObservationCountByKey,
+          toolCallPatternObservationCountByFingerprint,
         });
         if (this.maxToolCallsPerTurn !== undefined && requestedToolCallCount > this.maxToolCallsPerTurn) {
           throw new Error(
@@ -484,18 +640,9 @@ export class OpenAiProviderConversationTurn {
     previousRequestedToolCallCount: number;
     currentResponseStepToolCallCount: number;
     requestedToolCalls: readonly ProviderRequestedToolCall[];
-    toolCallPatternObservationCountByKey: Map<string, number>;
+    toolCallPatternObservationCountByFingerprint: Map<string, number>;
   }): void {
-    if (input.responseStepIndex === this.responseStepDiagnosticWarningThreshold) {
-      logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.response_step_warning_threshold_reached", {
-        responseStepIndex: input.responseStepIndex,
-        responseStepDiagnosticWarningThreshold: this.responseStepDiagnosticWarningThreshold,
-        requestedToolCallCount: input.currentResponseStepToolCallCount,
-      });
-    }
-
     if (
-      this.toolCallDiagnosticWarningThreshold !== undefined &&
       input.previousRequestedToolCallCount < this.toolCallDiagnosticWarningThreshold &&
       input.requestedToolCallCount >= this.toolCallDiagnosticWarningThreshold
     ) {
@@ -507,24 +654,22 @@ export class OpenAiProviderConversationTurn {
       });
     }
 
-    if (this.repeatedToolCallDiagnosticWarningThreshold === undefined) {
-      return;
-    }
-
     for (const requestedToolCall of input.requestedToolCalls) {
-      const toolCallPatternKey = createToolCallPatternDiagnosticKey(requestedToolCall.toolCallRequest);
+      const toolCallPatternDiagnosticFields = summarizeToolCallPatternForDiagnostics(requestedToolCall.toolCallRequest);
+      const toolCallPatternFingerprint = createToolCallPatternDiagnosticFingerprint(toolCallPatternDiagnosticFields);
       const toolCallPatternObservationCount =
-        (input.toolCallPatternObservationCountByKey.get(toolCallPatternKey) ?? 0) + 1;
-      input.toolCallPatternObservationCountByKey.set(toolCallPatternKey, toolCallPatternObservationCount);
+        (input.toolCallPatternObservationCountByFingerprint.get(toolCallPatternFingerprint) ?? 0) + 1;
+      input.toolCallPatternObservationCountByFingerprint.set(toolCallPatternFingerprint, toolCallPatternObservationCount);
       if (toolCallPatternObservationCount !== this.repeatedToolCallDiagnosticWarningThreshold) {
         continue;
       }
 
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.repeated_tool_call_pattern_observed", {
         responseStepIndex: input.responseStepIndex,
+        requestedToolCallCount: input.requestedToolCallCount,
         toolCallPatternObservationCount,
         repeatedToolCallDiagnosticWarningThreshold: this.repeatedToolCallDiagnosticWarningThreshold,
-        ...summarizeToolCallPatternForDiagnostics(requestedToolCall.toolCallRequest),
+        ...toolCallPatternDiagnosticFields,
       });
     }
   }
@@ -538,35 +683,72 @@ function normalizeOptionalPositiveIntegerLimit(requestedLimit: number | undefine
   return Math.max(1, Math.floor(requestedLimit));
 }
 
-function createToolCallPatternDiagnosticKey(toolCallRequest: ToolCallRequest): string {
-  switch (toolCallRequest.toolName) {
-    case "bash":
-      return [
-        toolCallRequest.toolName,
-        toolCallRequest.workingDirectoryPath !== undefined,
-        toolCallRequest.timeoutMilliseconds !== undefined,
-      ].join(":");
-    case "read":
-      return [
-        toolCallRequest.toolName,
-        toolCallRequest.offsetLineNumber !== undefined,
-        toolCallRequest.maximumLineCount !== undefined,
-      ].join(":");
-    case "glob":
-      return [toolCallRequest.toolName, toolCallRequest.searchDirectoryPath !== undefined].join(":");
-    case "grep":
-      return [
-        toolCallRequest.toolName,
-        toolCallRequest.searchPath !== undefined,
-        toolCallRequest.includeGlobPattern !== undefined,
-      ].join(":");
-    case "edit":
-    case "write":
-    case "task":
-      return toolCallRequest.toolName;
-    default:
-      return assertUnhandledToolCallPatternDiagnosticKey(toolCallRequest);
+function normalizePositiveIntegerThreshold(requestedThreshold: number | undefined, defaultThreshold: number): number {
+  if (requestedThreshold === undefined || !Number.isFinite(requestedThreshold)) {
+    return defaultThreshold;
   }
+
+  return Math.max(1, Math.floor(requestedThreshold));
+}
+
+function convertRetryDelayMillisecondsToProviderRetryAfterSeconds(retryDelayMilliseconds: number): number {
+  return Math.ceil(Math.max(0, retryDelayMilliseconds) / 1000);
+}
+
+function createOpenAiResponseStepRetryLimitExplanation(input: {
+  status: number;
+  retryDelayMilliseconds: number;
+}): string {
+  const retryAfterSeconds = convertRetryDelayMillisecondsToProviderRetryAfterSeconds(input.retryDelayMilliseconds);
+  const retryAfterDescription = `${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
+  if (input.status === 429) {
+    return `OpenAI request was rate limited. Retrying after ${retryAfterDescription}.`;
+  }
+
+  return `OpenAI request failed with transient HTTP ${input.status}. Retrying after ${retryAfterDescription}.`;
+}
+
+function createOpenAiResponseStepTransportRetryLimitExplanation(input: {
+  retryDelayMilliseconds: number;
+}): string {
+  const retryAfterSeconds = convertRetryDelayMillisecondsToProviderRetryAfterSeconds(input.retryDelayMilliseconds);
+  const retryAfterDescription = `${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
+  return `OpenAI request failed before receiving a response. Retrying after ${retryAfterDescription}.`;
+}
+
+function waitForOpenAiResponseStepRetryDelay(input: {
+  retryDelayMilliseconds: number;
+  abortSignal: AbortSignal | undefined;
+}): Promise<void> {
+  if (input.abortSignal?.aborted) {
+    return Promise.reject(new Error("OpenAI provider turn interrupted while waiting to retry OpenAI request"));
+  }
+
+  if (input.retryDelayMilliseconds <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolveRetryDelay, rejectRetryDelay) => {
+    const abortListener = (): void => {
+      clearTimeout(retryDelayTimeout);
+      input.abortSignal?.removeEventListener("abort", abortListener);
+      rejectRetryDelay(new Error("OpenAI provider turn interrupted while waiting to retry OpenAI request"));
+    };
+    const retryDelayTimeout = setTimeout(() => {
+      input.abortSignal?.removeEventListener("abort", abortListener);
+      resolveRetryDelay();
+    }, input.retryDelayMilliseconds);
+    input.abortSignal?.addEventListener("abort", abortListener, { once: true });
+    if (input.abortSignal?.aborted) {
+      abortListener();
+    }
+  });
+}
+
+function createToolCallPatternDiagnosticFingerprint(diagnosticFields: BuliDiagnosticLogFields): string {
+  return JSON.stringify(
+    Object.entries(diagnosticFields).sort(([leftFieldName], [rightFieldName]) => leftFieldName.localeCompare(rightFieldName)),
+  );
 }
 
 function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest): BuliDiagnosticLogFields {
@@ -609,17 +791,12 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
     case "task":
       return {
         toolName: toolCallRequest.toolName,
-        subagentName: toolCallRequest.subagentName,
         subagentDescriptionLength: toolCallRequest.subagentDescription.length,
         subagentPromptLength: toolCallRequest.subagentPrompt.length,
       };
     default:
       return assertUnhandledToolCallPatternSummary(toolCallRequest);
   }
-}
-
-function assertUnhandledToolCallPatternDiagnosticKey(unhandledToolCallRequest: never): never {
-  throw new Error(`Unhandled tool call pattern key: ${JSON.stringify(unhandledToolCallRequest)}`);
 }
 
 function assertUnhandledToolCallPatternSummary(unhandledToolCallRequest: never): never {
