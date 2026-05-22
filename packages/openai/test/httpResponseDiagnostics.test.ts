@@ -4,7 +4,11 @@ import {
   extractHumanReadableOpenAiErrorMessage,
   extractStructuredOpenAiErrorMessage,
   getOpenAiRequestId,
+  isRetryableOpenAiHttpResponseStatus,
+  isRetryableOpenAiTransportError,
+  readOpenAiRetryAfterMilliseconds,
   sanitizeOpenAiErrorMessage,
+  summarizeOpenAiTransportErrorForDiagnostics,
 } from "../src/provider/httpResponseDiagnostics.ts";
 
 test("getOpenAiRequestId reads known OpenAI request id headers", () => {
@@ -12,6 +16,37 @@ test("getOpenAiRequestId reads known OpenAI request id headers", () => {
   expect(getOpenAiRequestId(new Headers({ "request-id": "req_plain" }))).toBe("req_plain");
   expect(getOpenAiRequestId(new Headers({ "openai-request-id": "req_openai" }))).toBe("req_openai");
   expect(getOpenAiRequestId(new Headers())).toBeUndefined();
+});
+
+test("isRetryableOpenAiHttpResponseStatus identifies transient provider statuses", () => {
+  expect(isRetryableOpenAiHttpResponseStatus(429)).toBe(true);
+  expect(isRetryableOpenAiHttpResponseStatus(500)).toBe(true);
+  expect(isRetryableOpenAiHttpResponseStatus(502)).toBe(true);
+  expect(isRetryableOpenAiHttpResponseStatus(503)).toBe(true);
+  expect(isRetryableOpenAiHttpResponseStatus(504)).toBe(true);
+  expect(isRetryableOpenAiHttpResponseStatus(529)).toBe(true);
+  expect(isRetryableOpenAiHttpResponseStatus(400)).toBe(false);
+  expect(isRetryableOpenAiHttpResponseStatus(401)).toBe(false);
+});
+
+test("readOpenAiRetryAfterMilliseconds reads retry headers", () => {
+  expect(readOpenAiRetryAfterMilliseconds(new Headers({ "retry-after-ms": "250.2" }))).toBe(251);
+  expect(readOpenAiRetryAfterMilliseconds(new Headers({ "retry-after": "2" }))).toBe(2000);
+  expect(readOpenAiRetryAfterMilliseconds(new Headers({ "retry-after-ms": "bad", "retry-after": "1" }))).toBe(1000);
+  expect(readOpenAiRetryAfterMilliseconds(new Headers())).toBeUndefined();
+});
+
+test("OpenAI transport diagnostics classify retryable errors without raw messages", () => {
+  const retryableTransportError = new TypeError("fetch failed with secret-token");
+
+  expect(isRetryableOpenAiTransportError(retryableTransportError)).toBe(true);
+  expect(isRetryableOpenAiTransportError(new DOMException("request aborted", "AbortError"))).toBe(false);
+  expect(isRetryableOpenAiTransportError(new Error("test programming error"))).toBe(false);
+  expect(summarizeOpenAiTransportErrorForDiagnostics(retryableTransportError)).toEqual({
+    transportErrorName: "TypeError",
+    transportErrorMessageLength: "fetch failed with secret-token".length,
+  });
+  expect(JSON.stringify(summarizeOpenAiTransportErrorForDiagnostics(retryableTransportError))).not.toContain("secret-token");
 });
 
 test("extractStructuredOpenAiErrorMessage reads JSON error messages", () => {

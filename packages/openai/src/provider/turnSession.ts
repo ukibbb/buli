@@ -27,13 +27,10 @@ import {
 import {
   extractStructuredOpenAiErrorMessage,
   getOpenAiRequestId,
-  isRetryableOpenAiHttpResponseStatus,
-  isRetryableOpenAiTransportError,
-  readOpenAiRetryAfterMilliseconds,
   sanitizeOpenAiErrorMessage,
-  summarizeOpenAiTransportErrorForDiagnostics,
   type OpenAiHttpErrorResponse,
 } from "./httpResponseDiagnostics.ts";
+import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
 import {
   createOpenAiResponsesHttpRequestBody,
   summarizeOpenAiResponsesRequestForDiagnostics,
@@ -65,8 +62,6 @@ type OpenAiResponseStepToolCallTerminalState = Extract<
 const DEFAULT_RESPONSE_STEP_DIAGNOSTIC_WARNING_THRESHOLD = 32;
 const DEFAULT_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 128;
 const DEFAULT_REPEATED_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 3;
-const DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT = 2;
-const DEFAULT_RESPONSE_STEP_HTTP_RETRY_DELAY_MILLISECONDS = 500;
 
 function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenUsage: TokenUsage): TokenUsage {
   if (!accumulatedTokenUsage) {
@@ -238,164 +233,52 @@ export class OpenAiProviderConversationTurn {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", requestDebugSummary);
       await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
 
-      let responseStepRequestAttemptIndex = 0;
-      let responseStepTransportRetryAttemptCount = 0;
-      let response: Response | undefined;
-      while (!response) {
-        responseStepRequestAttemptIndex += 1;
-        const responseStepRequestAttemptStartedAtMs = Date.now();
-        const currentRequestHeaders = await this.loadRequestHeaders();
-        let currentResponse: Response;
-        try {
-          currentResponse = await this.fetchImpl(this.endpoint, {
-            method: "POST",
-            headers: currentRequestHeaders,
-            body: JSON.stringify(requestBody),
-            ...(this.abortSignal ? { signal: this.abortSignal } : {}),
-          });
-        } catch (transportError) {
-          const transportErrorDiagnosticFields = summarizeOpenAiTransportErrorForDiagnostics(transportError);
-          const canRetryTransportError =
-            isRetryableOpenAiTransportError(transportError) &&
-            responseStepRequestAttemptIndex <= DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT;
-          if (!canRetryTransportError) {
-            if (isRetryableOpenAiTransportError(transportError)) {
-              logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.transport_retry_exhausted", {
-                responseStepIndex,
-                responseStepRequestAttemptIndex,
-                maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
-                ...transportErrorDiagnosticFields,
-              });
-            }
-            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_transport_failed", {
-              responseStepIndex,
-              responseStepRequestAttemptIndex,
-              ...transportErrorDiagnosticFields,
-            });
-            throw transportError;
-          }
-
-          responseStepTransportRetryAttemptCount += 1;
-          const retryDelayMilliseconds = DEFAULT_RESPONSE_STEP_HTTP_RETRY_DELAY_MILLISECONDS;
-          const transportRetryScheduledDiagnosticFields = {
-            responseStepIndex,
-            responseStepRequestAttemptIndex,
-            maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
-            retryDelayMilliseconds,
-            remainingRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT - responseStepRequestAttemptIndex,
-            ...transportErrorDiagnosticFields,
-          };
-          logOpenAiDiagnosticEvent(
-            this.diagnosticLogger,
-            "response_step.transport_retry_scheduled",
-            transportRetryScheduledDiagnosticFields,
-          );
-          await writeOpenAiDebugLog("OpenAI response-step transport retry scheduled", transportRetryScheduledDiagnosticFields);
-          const transportRetryPendingProviderEvent = {
-            type: "rate_limit_pending" as const,
-            retryAfterSeconds: convertRetryDelayMillisecondsToProviderRetryAfterSeconds(retryDelayMilliseconds),
-            limitExplanation: createOpenAiResponseStepTransportRetryLimitExplanation({ retryDelayMilliseconds }),
-          };
-          logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
-            responseStepIndex,
-            eventType: transportRetryPendingProviderEvent.type,
-            ...summarizeProviderStreamEventForDiagnostics(transportRetryPendingProviderEvent),
-          });
-          yield transportRetryPendingProviderEvent;
-          await waitForOpenAiResponseStepRetryDelay({
-            retryDelayMilliseconds,
-            abortSignal: this.abortSignal,
-          });
-          continue;
-        }
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.response_received", {
-          responseStepIndex,
-          responseStepRequestAttemptIndex,
-          status: currentResponse.status,
-          requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
-          contentType: currentResponse.headers.get("content-type") ?? null,
-          durationMs: Date.now() - responseStepRequestAttemptStartedAtMs,
-        });
-
-        if (currentResponse.ok) {
-          if (responseStepTransportRetryAttemptCount > 0) {
-            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.transport_retry_succeeded", {
-              responseStepIndex,
-              responseStepRequestAttemptIndex,
-              transportRetryAttemptCount: responseStepTransportRetryAttemptCount,
-              status: currentResponse.status,
-              requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
-              durationMs: Date.now() - responseStepStartedAtMs,
-            });
-          }
-          if (responseStepRequestAttemptIndex > 1) {
-            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.retry_succeeded", {
-              responseStepIndex,
-              responseStepRequestAttemptIndex,
-              retryAttemptCount: responseStepRequestAttemptIndex - 1,
-              status: currentResponse.status,
-              requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
-              durationMs: Date.now() - responseStepStartedAtMs,
-            });
-          }
-          response = currentResponse;
+      const responseRetryIterator = requestOpenAiHttpResponseWithRetries({
+        fetchResponse: async () => this.fetchImpl(this.endpoint, {
+          method: "POST",
+          headers: await this.loadRequestHeaders(),
+          body: JSON.stringify(requestBody),
+          ...(this.abortSignal ? { signal: this.abortSignal } : {}),
+        }),
+        diagnosticLogger: this.diagnosticLogger,
+        diagnosticEventPrefix: "response_step",
+        diagnosticFields: { responseStepIndex },
+        requestAttemptDiagnosticFieldName: "responseStepRequestAttemptIndex",
+        maximumRetryCountDiagnosticFieldName: "maxResponseStepHttpRetryCount",
+        debugLogTitlePrefix: "OpenAI response-step",
+        abortSignal: this.abortSignal,
+        operationStartedAtMs: responseStepStartedAtMs,
+        shouldYieldRetryPendingEvents: true,
+      })[Symbol.asyncIterator]();
+      let responseRetryResult: Awaited<ReturnType<typeof responseRetryIterator.next>> | undefined;
+      while (true) {
+        responseRetryResult = await responseRetryIterator.next();
+        if (responseRetryResult.done) {
           break;
         }
 
-        const canRetryResponseStepRequest =
-          isRetryableOpenAiHttpResponseStatus(currentResponse.status) &&
-          responseStepRequestAttemptIndex <= DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT;
-        if (!canRetryResponseStepRequest) {
-          if (isRetryableOpenAiHttpResponseStatus(currentResponse.status)) {
-            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.retry_exhausted", {
-              responseStepIndex,
-              responseStepRequestAttemptIndex,
-              maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
-              status: currentResponse.status,
-              requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
-            });
-          }
-          const failedResponseDebugPayload = await createFailedResponseDebugPayload(currentResponse.clone());
-          logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
-            responseStepIndex,
-            responseStepRequestAttemptIndex,
-            ...failedResponseDebugPayload,
-          });
-          await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
-          throw await this.onStepRequestFailed(currentResponse);
-        }
-
-        const retryDelayMilliseconds =
-          readOpenAiRetryAfterMilliseconds(currentResponse.headers) ?? DEFAULT_RESPONSE_STEP_HTTP_RETRY_DELAY_MILLISECONDS;
-        const retryScheduledDiagnosticFields = {
-          responseStepIndex,
-          responseStepRequestAttemptIndex,
-          maxResponseStepHttpRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT,
-          status: currentResponse.status,
-          requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
-          retryDelayMilliseconds,
-          remainingRetryCount: DEFAULT_RESPONSE_STEP_HTTP_RETRY_COUNT - responseStepRequestAttemptIndex,
-        };
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.retry_scheduled", retryScheduledDiagnosticFields);
-        await writeOpenAiDebugLog("OpenAI response-step retry scheduled", retryScheduledDiagnosticFields);
-        const retryPendingProviderEvent = {
-          type: "rate_limit_pending" as const,
-          retryAfterSeconds: convertRetryDelayMillisecondsToProviderRetryAfterSeconds(retryDelayMilliseconds),
-          limitExplanation: createOpenAiResponseStepRetryLimitExplanation({
-            status: currentResponse.status,
-            retryDelayMilliseconds,
-          }),
-        };
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
           responseStepIndex,
-          eventType: retryPendingProviderEvent.type,
-          ...summarizeProviderStreamEventForDiagnostics(retryPendingProviderEvent),
+          eventType: responseRetryResult.value.type,
+          ...summarizeProviderStreamEventForDiagnostics(responseRetryResult.value),
         });
-        yield retryPendingProviderEvent;
-        await waitForOpenAiResponseStepRetryDelay({
-          retryDelayMilliseconds,
-          abortSignal: this.abortSignal,
+        yield responseRetryResult.value;
+      }
+
+      if (!responseRetryResult?.done) {
+        throw new Error("OpenAI response-step retry loop ended without a response");
+      }
+
+      const response = responseRetryResult.value.response;
+      if (!response.ok) {
+        const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
+          responseStepIndex,
+          responseStepRequestAttemptIndex: responseRetryResult.value.requestAttemptIndex,
+          ...failedResponseDebugPayload,
         });
+        await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
+        throw await this.onStepRequestFailed(response);
       }
 
       const openAiStepEventIterator = parseOpenAiStream(response, {
@@ -689,60 +572,6 @@ function normalizePositiveIntegerThreshold(requestedThreshold: number | undefine
   }
 
   return Math.max(1, Math.floor(requestedThreshold));
-}
-
-function convertRetryDelayMillisecondsToProviderRetryAfterSeconds(retryDelayMilliseconds: number): number {
-  return Math.ceil(Math.max(0, retryDelayMilliseconds) / 1000);
-}
-
-function createOpenAiResponseStepRetryLimitExplanation(input: {
-  status: number;
-  retryDelayMilliseconds: number;
-}): string {
-  const retryAfterSeconds = convertRetryDelayMillisecondsToProviderRetryAfterSeconds(input.retryDelayMilliseconds);
-  const retryAfterDescription = `${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
-  if (input.status === 429) {
-    return `OpenAI request was rate limited. Retrying after ${retryAfterDescription}.`;
-  }
-
-  return `OpenAI request failed with transient HTTP ${input.status}. Retrying after ${retryAfterDescription}.`;
-}
-
-function createOpenAiResponseStepTransportRetryLimitExplanation(input: {
-  retryDelayMilliseconds: number;
-}): string {
-  const retryAfterSeconds = convertRetryDelayMillisecondsToProviderRetryAfterSeconds(input.retryDelayMilliseconds);
-  const retryAfterDescription = `${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
-  return `OpenAI request failed before receiving a response. Retrying after ${retryAfterDescription}.`;
-}
-
-function waitForOpenAiResponseStepRetryDelay(input: {
-  retryDelayMilliseconds: number;
-  abortSignal: AbortSignal | undefined;
-}): Promise<void> {
-  if (input.abortSignal?.aborted) {
-    return Promise.reject(new Error("OpenAI provider turn interrupted while waiting to retry OpenAI request"));
-  }
-
-  if (input.retryDelayMilliseconds <= 0) {
-    return Promise.resolve();
-  }
-
-  return new Promise<void>((resolveRetryDelay, rejectRetryDelay) => {
-    const abortListener = (): void => {
-      clearTimeout(retryDelayTimeout);
-      input.abortSignal?.removeEventListener("abort", abortListener);
-      rejectRetryDelay(new Error("OpenAI provider turn interrupted while waiting to retry OpenAI request"));
-    };
-    const retryDelayTimeout = setTimeout(() => {
-      input.abortSignal?.removeEventListener("abort", abortListener);
-      resolveRetryDelay();
-    }, input.retryDelayMilliseconds);
-    input.abortSignal?.addEventListener("abort", abortListener, { once: true });
-    if (input.abortSignal?.aborted) {
-      abortListener();
-    }
-  });
 }
 
 function createToolCallPatternDiagnosticFingerprint(diagnosticFields: BuliDiagnosticLogFields): string {

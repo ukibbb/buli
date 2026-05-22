@@ -12,6 +12,7 @@ import type { OpenAiAuthInfo } from "../auth/schema.ts";
 import { OpenAiAuthStore } from "../auth/store.ts";
 import { logOpenAiDiagnosticEvent } from "./diagnostics.ts";
 import { createOpenAiHttpRequestError, getOpenAiRequestId } from "./httpResponseDiagnostics.ts";
+import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
 import { deriveOpenAiModelListEndpoint, parseAvailableAssistantModelsFromOpenAiResponse } from "./models.ts";
 import { OpenAiProviderConversationTurn } from "./turnSession.ts";
 
@@ -71,8 +72,9 @@ export class OpenAiProvider {
 
   async listAvailableAssistantModels(): Promise<AvailableAssistantModel[]> {
     const modelListRequestStartedAtMs = Date.now();
+    const modelListEndpoint = deriveOpenAiModelListEndpoint(this.endpoint);
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.request_started", {
-      endpointPath: new URL(deriveOpenAiModelListEndpoint(this.endpoint)).pathname,
+      endpointPath: new URL(modelListEndpoint).pathname,
     });
     const auth = await loadOpenAiAuth({
       store: this.store,
@@ -83,18 +85,31 @@ export class OpenAiProvider {
       expiresInMs: Math.max(0, auth.expiresAt - Date.now()),
     });
 
-    const response = await this.fetchImpl(deriveOpenAiModelListEndpoint(this.endpoint), {
-      method: "GET",
-      headers: createRequestHeaders(auth, "application/json"),
-    });
-    logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.response_received", {
-      status: response.status,
-      requestId: getOpenAiRequestId(response.headers) ?? null,
-      contentType: response.headers.get("content-type") ?? null,
-      durationMs: Date.now() - modelListRequestStartedAtMs,
-    });
+    const modelListRetryIterator = requestOpenAiHttpResponseWithRetries({
+      fetchResponse: async () => this.fetchImpl(modelListEndpoint, {
+        method: "GET",
+        headers: createRequestHeaders(auth, "application/json"),
+      }),
+      diagnosticLogger: this.diagnosticLogger,
+      diagnosticEventPrefix: "model_list",
+      requestAttemptDiagnosticFieldName: "modelListRequestAttemptIndex",
+      maximumRetryCountDiagnosticFieldName: "maxModelListHttpRetryCount",
+      debugLogTitlePrefix: "OpenAI model-list",
+      operationStartedAtMs: modelListRequestStartedAtMs,
+    })[Symbol.asyncIterator]();
+    const modelListRetryResult = await modelListRetryIterator.next();
+    if (!modelListRetryResult.done) {
+      throw new Error("OpenAI model-list retry loop unexpectedly yielded a provider event");
+    }
+    const response = modelListRetryResult.value.response;
 
     if (!response.ok) {
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.request_failed", {
+        modelListRequestAttemptIndex: modelListRetryResult.value.requestAttemptIndex,
+        status: response.status,
+        requestId: getOpenAiRequestId(response.headers) ?? null,
+        contentType: response.headers.get("content-type") ?? null,
+      });
       throw await createOpenAiHttpRequestError(response, "models");
     }
 
@@ -102,8 +117,7 @@ export class OpenAiProvider {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.parsed", {
       availableModelCount: models.length,
     });
-    return models
-
+    return models;
   }
 
   startConversationTurn(input: OpenAiConversationTurnRequest): OpenAiProviderConversationTurn {
