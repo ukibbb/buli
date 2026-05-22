@@ -10,6 +10,7 @@ import type {
   ProviderStreamEvent,
   ReasoningEffort,
   TokenUsage,
+  ToolCallRequest,
 } from "@buli/contracts";
 import {
   createFunctionCallOutputInputItem,
@@ -93,6 +94,9 @@ export class OpenAiProviderConversationTurn {
   readonly onStepRequestFailed: (response: Response) => Promise<Error>;
   readonly maxResponseStepsPerTurn: number | undefined;
   readonly maxToolCallsPerTurn: number | undefined;
+  readonly responseStepDiagnosticWarningThreshold: number | undefined;
+  readonly toolCallDiagnosticWarningThreshold: number | undefined;
+  readonly repeatedToolCallDiagnosticWarningThreshold: number | undefined;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
@@ -114,6 +118,9 @@ export class OpenAiProviderConversationTurn {
     onStepRequestFailed: (response: Response) => Promise<Error>;
     maxResponseStepsPerTurn?: number;
     maxToolCallsPerTurn?: number;
+    responseStepDiagnosticWarningThreshold?: number;
+    toolCallDiagnosticWarningThreshold?: number;
+    repeatedToolCallDiagnosticWarningThreshold?: number;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.endpoint = input.endpoint;
@@ -130,6 +137,15 @@ export class OpenAiProviderConversationTurn {
     this.onStepRequestFailed = input.onStepRequestFailed;
     this.maxResponseStepsPerTurn = normalizeOptionalPositiveIntegerLimit(input.maxResponseStepsPerTurn);
     this.maxToolCallsPerTurn = normalizeOptionalPositiveIntegerLimit(input.maxToolCallsPerTurn);
+    this.responseStepDiagnosticWarningThreshold = normalizeOptionalPositiveIntegerLimit(
+      input.responseStepDiagnosticWarningThreshold,
+    );
+    this.toolCallDiagnosticWarningThreshold = normalizeOptionalPositiveIntegerLimit(
+      input.toolCallDiagnosticWarningThreshold,
+    );
+    this.repeatedToolCallDiagnosticWarningThreshold = normalizeOptionalPositiveIntegerLimit(
+      input.repeatedToolCallDiagnosticWarningThreshold,
+    );
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
@@ -175,6 +191,7 @@ export class OpenAiProviderConversationTurn {
     let accumulatedOpenAiTurnUsage: TokenUsage | undefined;
     let responseStepIndex = 0;
     let requestedToolCallCount = 0;
+    const toolCallPatternObservationCountByKey = new Map<string, number>();
     const turnStartedAtMs = Date.now();
 
     while (true) {
@@ -272,7 +289,16 @@ export class OpenAiProviderConversationTurn {
         const requestedToolCalls = providerFunctionCallIntentClassification.requestedToolCalls;
         const presentationFunctionCallIntents = providerFunctionCallIntentClassification.presentationFunctionCallIntents;
         const onlyRequestedToolCall = requestedToolCalls.length === 1 ? requestedToolCalls[0] : undefined;
+        const previousRequestedToolCallCount = requestedToolCallCount;
         requestedToolCallCount += requestedToolCalls.length;
+        this.logProviderTurnSoftDiagnosticWarnings({
+          responseStepIndex,
+          requestedToolCallCount,
+          previousRequestedToolCallCount,
+          currentResponseStepToolCallCount: requestedToolCalls.length,
+          requestedToolCalls,
+          toolCallPatternObservationCountByKey,
+        });
         if (this.maxToolCallsPerTurn !== undefined && requestedToolCallCount > this.maxToolCallsPerTurn) {
           throw new Error(
             `OpenAI tool-call limit exceeded: requested ${requestedToolCallCount} tool calls (max ${this.maxToolCallsPerTurn}).`,
@@ -451,6 +477,57 @@ export class OpenAiProviderConversationTurn {
       this.abortSignal?.removeEventListener("abort", pendingSubmissionWait.abortListener);
     }
   }
+
+  private logProviderTurnSoftDiagnosticWarnings(input: {
+    responseStepIndex: number;
+    requestedToolCallCount: number;
+    previousRequestedToolCallCount: number;
+    currentResponseStepToolCallCount: number;
+    requestedToolCalls: readonly ProviderRequestedToolCall[];
+    toolCallPatternObservationCountByKey: Map<string, number>;
+  }): void {
+    if (input.responseStepIndex === this.responseStepDiagnosticWarningThreshold) {
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.response_step_warning_threshold_reached", {
+        responseStepIndex: input.responseStepIndex,
+        responseStepDiagnosticWarningThreshold: this.responseStepDiagnosticWarningThreshold,
+        requestedToolCallCount: input.currentResponseStepToolCallCount,
+      });
+    }
+
+    if (
+      this.toolCallDiagnosticWarningThreshold !== undefined &&
+      input.previousRequestedToolCallCount < this.toolCallDiagnosticWarningThreshold &&
+      input.requestedToolCallCount >= this.toolCallDiagnosticWarningThreshold
+    ) {
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.tool_call_warning_threshold_reached", {
+        responseStepIndex: input.responseStepIndex,
+        requestedToolCallCount: input.requestedToolCallCount,
+        toolCallDiagnosticWarningThreshold: this.toolCallDiagnosticWarningThreshold,
+        currentResponseStepToolCallCount: input.currentResponseStepToolCallCount,
+      });
+    }
+
+    if (this.repeatedToolCallDiagnosticWarningThreshold === undefined) {
+      return;
+    }
+
+    for (const requestedToolCall of input.requestedToolCalls) {
+      const toolCallPatternKey = createToolCallPatternDiagnosticKey(requestedToolCall.toolCallRequest);
+      const toolCallPatternObservationCount =
+        (input.toolCallPatternObservationCountByKey.get(toolCallPatternKey) ?? 0) + 1;
+      input.toolCallPatternObservationCountByKey.set(toolCallPatternKey, toolCallPatternObservationCount);
+      if (toolCallPatternObservationCount !== this.repeatedToolCallDiagnosticWarningThreshold) {
+        continue;
+      }
+
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.repeated_tool_call_pattern_observed", {
+        responseStepIndex: input.responseStepIndex,
+        toolCallPatternObservationCount,
+        repeatedToolCallDiagnosticWarningThreshold: this.repeatedToolCallDiagnosticWarningThreshold,
+        ...summarizeToolCallPatternForDiagnostics(requestedToolCall.toolCallRequest),
+      });
+    }
+  }
 }
 
 function normalizeOptionalPositiveIntegerLimit(requestedLimit: number | undefined): number | undefined {
@@ -459,6 +536,94 @@ function normalizeOptionalPositiveIntegerLimit(requestedLimit: number | undefine
   }
 
   return Math.max(1, Math.floor(requestedLimit));
+}
+
+function createToolCallPatternDiagnosticKey(toolCallRequest: ToolCallRequest): string {
+  switch (toolCallRequest.toolName) {
+    case "bash":
+      return [
+        toolCallRequest.toolName,
+        toolCallRequest.workingDirectoryPath !== undefined,
+        toolCallRequest.timeoutMilliseconds !== undefined,
+      ].join(":");
+    case "read":
+      return [
+        toolCallRequest.toolName,
+        toolCallRequest.offsetLineNumber !== undefined,
+        toolCallRequest.maximumLineCount !== undefined,
+      ].join(":");
+    case "glob":
+      return [toolCallRequest.toolName, toolCallRequest.searchDirectoryPath !== undefined].join(":");
+    case "grep":
+      return [
+        toolCallRequest.toolName,
+        toolCallRequest.searchPath !== undefined,
+        toolCallRequest.includeGlobPattern !== undefined,
+      ].join(":");
+    case "edit":
+    case "write":
+    case "task":
+      return toolCallRequest.toolName;
+    default:
+      return assertUnhandledToolCallPatternDiagnosticKey(toolCallRequest);
+  }
+}
+
+function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest): BuliDiagnosticLogFields {
+  switch (toolCallRequest.toolName) {
+    case "bash":
+      return summarizeOpenAiToolCallRequestForDiagnostics(toolCallRequest);
+    case "read":
+      return {
+        toolName: toolCallRequest.toolName,
+        readTargetPathLength: toolCallRequest.readTargetPath.length,
+        hasOffsetLineNumber: toolCallRequest.offsetLineNumber !== undefined,
+        hasMaximumLineCount: toolCallRequest.maximumLineCount !== undefined,
+      };
+    case "glob":
+      return {
+        toolName: toolCallRequest.toolName,
+        globPatternLength: toolCallRequest.globPattern.length,
+        hasSearchDirectoryPath: toolCallRequest.searchDirectoryPath !== undefined,
+      };
+    case "grep":
+      return {
+        toolName: toolCallRequest.toolName,
+        regexPatternLength: toolCallRequest.regexPattern.length,
+        hasSearchPath: toolCallRequest.searchPath !== undefined,
+        hasIncludeGlobPattern: toolCallRequest.includeGlobPattern !== undefined,
+      };
+    case "edit":
+      return {
+        toolName: toolCallRequest.toolName,
+        editTargetPathLength: toolCallRequest.editTargetPath.length,
+        oldStringLength: toolCallRequest.oldString.length,
+        newStringLength: toolCallRequest.newString.length,
+      };
+    case "write":
+      return {
+        toolName: toolCallRequest.toolName,
+        writeTargetPathLength: toolCallRequest.writeTargetPath.length,
+        fileContentLength: toolCallRequest.fileContent.length,
+      };
+    case "task":
+      return {
+        toolName: toolCallRequest.toolName,
+        subagentName: toolCallRequest.subagentName,
+        subagentDescriptionLength: toolCallRequest.subagentDescription.length,
+        subagentPromptLength: toolCallRequest.subagentPrompt.length,
+      };
+    default:
+      return assertUnhandledToolCallPatternSummary(toolCallRequest);
+  }
+}
+
+function assertUnhandledToolCallPatternDiagnosticKey(unhandledToolCallRequest: never): never {
+  throw new Error(`Unhandled tool call pattern key: ${JSON.stringify(unhandledToolCallRequest)}`);
+}
+
+function assertUnhandledToolCallPatternSummary(unhandledToolCallRequest: never): never {
+  throw new Error(`Unhandled tool call pattern summary: ${JSON.stringify(unhandledToolCallRequest)}`);
 }
 
 function isMatchingFunctionCallReplayItem(toolCallId: string) {

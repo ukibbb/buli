@@ -577,6 +577,82 @@ test("OpenAiProviderConversationTurn lets the agent finish after more than twent
   expect(requestBodies).toHaveLength(toolStepCount + 1);
 });
 
+test("OpenAiProviderConversationTurn emits soft loop diagnostics without limiting the turn", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const toolStepCount = 3;
+  const queuedResponses = [
+    ...Array.from({ length: toolStepCount }, (_value, index) => createOpenAiReadToolStepResponse(index + 1)),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done after warnings" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Inspect all files"),
+    responseStepDiagnosticWarningThreshold: 2,
+    toolCallDiagnosticWarningThreshold: 2,
+    repeatedToolCallDiagnosticWarningThreshold: 2,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+  const emittedEvents: ProviderStreamEvent[] = [];
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    emittedEvents.push(emittedEvent);
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: `<path>${emittedEvent.toolCallId}.txt</path>\n1: inspected`,
+      });
+    }
+  }
+
+  expect(emittedEvents.filter((emittedEvent) => emittedEvent.type === "tool_call_requested")).toHaveLength(toolStepCount);
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type).slice(-2)).toEqual(["text_chunk", "completed"]);
+  expect(requestBodies).toHaveLength(toolStepCount + 1);
+
+  const responseStepWarning = diagnosticEvents.find(
+    (diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.response_step_warning_threshold_reached",
+  );
+  expect(responseStepWarning?.fields).toMatchObject({
+    responseStepIndex: 2,
+    responseStepDiagnosticWarningThreshold: 2,
+    requestedToolCallCount: 1,
+  });
+
+  const toolCallWarning = diagnosticEvents.find(
+    (diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.tool_call_warning_threshold_reached",
+  );
+  expect(toolCallWarning?.fields).toMatchObject({
+    responseStepIndex: 2,
+    requestedToolCallCount: 2,
+    toolCallDiagnosticWarningThreshold: 2,
+    currentResponseStepToolCallCount: 1,
+  });
+
+  const repeatedPatternWarning = diagnosticEvents.find(
+    (diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.repeated_tool_call_pattern_observed",
+  );
+  expect(repeatedPatternWarning?.fields).toMatchObject({
+    responseStepIndex: 2,
+    toolName: "read",
+    toolCallPatternObservationCount: 2,
+    repeatedToolCallDiagnosticWarningThreshold: 2,
+    readTargetPathLength: 10,
+  });
+  expect(JSON.stringify(repeatedPatternWarning?.fields ?? {})).not.toContain("file-1.txt");
+  expect(JSON.stringify(repeatedPatternWarning?.fields ?? {})).not.toContain("file-2.txt");
+});
+
 test("OpenAiProviderConversationTurn honors a configured per-turn tool-call limit", async () => {
   const providerTurn = new OpenAiProviderConversationTurn({
     endpoint: "https://example.test/v1/responses",

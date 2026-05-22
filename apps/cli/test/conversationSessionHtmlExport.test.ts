@@ -258,6 +258,19 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("Compaction");
   expect(html).toContain("Context compacted from 4 entries.");
   expect(html).toContain("continue the exported session from compacted context");
+
+  expect(html).toContain('<header class="appbar">');
+  expect(html).toContain('<nav class="trace"');
+  expect(html).toContain('class="meta-grid"');
+  expect(html).toContain('data-theme="auto"');
+  expect(html).toContain("buli-export-theme");
+  expect(html).toContain("--space-1:");
+  expect(html).toContain('class="badge badge-user"');
+  expect(html).toContain('class="badge badge-tool"');
+  expect(html).toContain('class="badge badge-result"');
+  expect(html).toContain('class="badge badge-patch"');
+  expect(html).toContain('class="badge badge-compaction"');
+  expect(html).toContain('class="shiki');
 });
 
 test("renderConversationSessionHtmlDocument renders image-only user prompts without empty text placeholder", () => {
