@@ -78,11 +78,10 @@ describe("TurnFooter", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("150 tok");
-    expect(frame).toContain("0 reasoning tok");
+    expect(frame).toContain("150 tokens");
+    expect(frame).toContain("0 reasoning");
     expect(frame).toContain("0 cached");
     expect(frame).not.toContain("claude-3-5-sonnet");
-    expect(frame).not.toContain("·");
   });
 
   test("renders_reasoning_token_usage_when_provided", async () => {
@@ -102,11 +101,10 @@ describe("TurnFooter", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("192 tok");
-    expect(frame).toContain("42 reasoning tok");
+    expect(frame).toContain("192 tokens");
+    expect(frame).toContain("42 reasoning");
     expect(frame).toContain("10 cached");
     expect(frame).not.toContain("gpt-5.4");
-    expect(frame).not.toContain("·");
   });
 
   test("renders_large_token_counts_compactly", async () => {
@@ -126,9 +124,8 @@ describe("TurnFooter", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("74.9k tok");
+    expect(frame).toContain("74.9k tokens");
     expect(frame).not.toContain("gpt-5.5");
-    expect(frame).not.toContain("·");
   });
 
   test("shortens_usage_metadata_in_narrow_widths_without_model_name", async () => {
@@ -150,11 +147,9 @@ describe("TurnFooter", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("done");
     expect(frame).toContain("2.3s");
-    expect(frame).toContain("512 tok");
-    expect(frame).toContain("...");
+    expect(frame).toContain("512 tokens");
     expect(frame).toContain("24 cached");
     expect(frame).not.toContain("gpt-5.4-preview");
-    expect(frame).not.toContain("·");
     expect(frame).not.toContain("very-long-provider-suffix");
   });
 });

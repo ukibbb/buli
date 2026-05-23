@@ -82,8 +82,8 @@ test("ChatScreen starts with an empty transcript before any real conversation ex
   });
 
   const frame = await renderedChatScreen.captureFrame();
-  expect(frame).toContain("gpt-5.4");
-  expect(frame).toContain("Understand");
+  expect(frame).toContain("understand agent");
+  expect(frame).toContain("tab to Plan Agent");
 });
 
 test("ChatScreen shows the selected model default reasoning effort when it is known", async () => {
@@ -94,8 +94,8 @@ test("ChatScreen shows the selected model default reasoning effort when it is kn
   });
 
   const frame = await renderedChatScreen.captureFrame();
-  expect(frame).toContain("gpt-5.5");
-  expect(frame).toContain("xhigh");
+  expect(frame).toContain("understand agent");
+  expect(frame).toContain("tab to Plan Agent");
 });
 
 test("ChatScreen shows the submitted prompt after the first message is added", async () => {

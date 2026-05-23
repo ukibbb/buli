@@ -45,31 +45,6 @@ function readForegroundColorForRenderedText(capturedFrame: CapturedFrame, render
 }
 
 describe("InputPanel", () => {
-  test("renders_mode_label_and_model_identifier", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <InputPanel
-        promptDraft=""
-        promptDraftCursorOffset={0}
-        isPromptInputDisabled={false}
-        accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="claude-3-5-sonnet"
-        reasoningEffortLabel="none"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
-        onPromptDraftEdited={noopPromptDraftEdited}
-        onPromptSubmitted={noopPromptSubmitted}
-      />,
-      { width: 80, height: 8 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("chat");
-    expect(frame).toContain("claude-3-5-sonnet");
-    expect(frame).not.toContain("Ask Buli");
-  });
-
   test("renders_prompt_draft_without_shortcut_hints_when_idle", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
@@ -77,12 +52,6 @@ describe("InputPanel", () => {
         promptDraftCursorOffset={11}
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="claude-3-5-haiku"
-        reasoningEffortLabel="low"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={1000}
-        contextWindowTokenCapacity={200000}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -96,30 +65,6 @@ describe("InputPanel", () => {
     expect(frame).not.toContain("transcript");
   });
 
-  test("renders_six_cell_activity_indicator_when_assistant_turn_active", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <InputPanel
-        promptDraft="waiting"
-        promptDraftCursorOffset={7}
-        isPromptInputDisabled={true}
-        accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="gpt-5.4"
-        reasoningEffortLabel="default"
-        assistantResponseStatus="streaming_assistant_response"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
-        onPromptDraftEdited={noopPromptDraftEdited}
-        onPromptSubmitted={noopPromptSubmitted}
-      />,
-      { width: 80, height: 8 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("▰");
-    expect(frame).not.toContain("◆");
-  });
-
   test("reserves_a_second_prompt_row_for_single_line_drafts", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
@@ -127,12 +72,6 @@ describe("InputPanel", () => {
         promptDraftCursorOffset={5}
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="gpt-5.4"
-        reasoningEffortLabel="default"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -141,34 +80,13 @@ describe("InputPanel", () => {
 
     await renderOnce();
 
+    // Single-line draft must occupy at least two rows inside the frame so the
+    // textarea body never collapses to a single visible line.
     const renderedRows = splitRenderedViewportRows(captureCharFrame());
     const promptRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("> hello"));
-    const footerRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("--"));
+    const closingBorderRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("╰"));
     expect(promptRowIndex).toBeGreaterThanOrEqual(0);
-    expect(footerRowIndex - promptRowIndex).toBe(2);
-  });
-
-  test("renders_override_hint_when_provided", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <InputPanel
-        promptDraft=""
-        promptDraftCursorOffset={0}
-        isPromptInputDisabled={true}
-        promptInputHintOverride="Selection is open. Press Esc to close it."
-        accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="claude-3-5-haiku"
-        reasoningEffortLabel="low"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
-        onPromptDraftEdited={noopPromptDraftEdited}
-        onPromptSubmitted={noopPromptSubmitted}
-      />,
-      { width: 80, height: 8 },
-    );
-    await renderOnce();
-    expect(captureCharFrame()).toContain("Selection is open");
+    expect(closingBorderRowIndex - promptRowIndex).toBeGreaterThanOrEqual(2);
   });
 
   test("renders_no_left_footer_hint_when_given_an_empty_override", async () => {
@@ -177,14 +95,7 @@ describe("InputPanel", () => {
         promptDraft=""
         promptDraftCursorOffset={0}
         isPromptInputDisabled={true}
-        promptInputHintOverride=""
         accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="claude-3-5-haiku"
-        reasoningEffortLabel="low"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -205,12 +116,6 @@ describe("InputPanel", () => {
         promptDraftCursorOffset={33}
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="gpt-5.4"
-        reasoningEffortLabel="default"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -233,12 +138,6 @@ describe("InputPanel", () => {
         promptDraftCursorOffset={promptDraft.length}
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="gpt-5.4"
-        reasoningEffortLabel="default"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -257,12 +156,6 @@ describe("InputPanel", () => {
         promptDraftCursorOffset={2}
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentGreen}
-        modeLabel="chat"
-        modelIdentifier="gpt-5.4"
-        reasoningEffortLabel="default"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -283,12 +176,6 @@ describe("InputPanel", () => {
         selectedPromptContextReferenceTexts={[selectedPromptContextReferenceText]}
         isPromptInputDisabled={false}
         accentColor={chatScreenTheme.accentPink}
-        modeLabel="Understand Agent"
-        modelIdentifier="gpt-5.5"
-        reasoningEffortLabel="medium"
-        assistantResponseStatus="waiting_for_user_input"
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -317,12 +204,6 @@ describe("InputPanel", () => {
           promptDraftCursorOffset={promptDraft.length}
           isPromptInputDisabled={false}
           accentColor={chatScreenTheme.accentPink}
-          modeLabel="Understand Agent"
-          modelIdentifier="gpt-5.5"
-          reasoningEffortLabel="medium"
-          assistantResponseStatus="waiting_for_user_input"
-          totalContextTokensUsed={undefined}
-          contextWindowTokenCapacity={undefined}
           onPromptDraftEdited={noopPromptDraftEdited}
           onPromptSubmitted={noopPromptSubmitted}
         />,
