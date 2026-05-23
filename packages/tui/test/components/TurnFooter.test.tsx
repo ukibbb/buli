@@ -2,6 +2,51 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { TurnFooter } from "../../src/components/TurnFooter.tsx";
 
+test("turn footer with full usage renders duration, total, reasoning, cached", async () => {
+  const { captureCharFrame, renderOnce } = await testRender(
+    <TurnFooter
+      modelDisplayName="GPT-5.5"
+      turnDurationMs={1400}
+      usage={{
+        input: 1200,
+        output: 900,
+        reasoning: 800,
+        total: 2100,
+        cache: { read: 18_400, write: 0 },
+      }}
+    />,
+    { width: 120, height: 3 },
+  );
+  await renderOnce();
+  const frame = captureCharFrame();
+  expect(frame).toContain("done");
+  expect(frame).toContain("1.4s");
+  expect(frame).toContain("2.1k");
+  expect(frame).toContain("tokens");
+  expect(frame).toContain("800");
+  expect(frame).toContain("reasoning");
+  expect(frame).toContain("18.4k");
+  expect(frame).toContain("cached");
+});
+
+test("turn footer with missing usage renders left half only", async () => {
+  const { captureCharFrame, renderOnce } = await testRender(
+    <TurnFooter
+      modelDisplayName="GPT-5.5"
+      turnDurationMs={950}
+      usage={undefined}
+    />,
+    { width: 120, height: 3 },
+  );
+  await renderOnce();
+  const frame = captureCharFrame();
+  expect(frame).toContain("done");
+  expect(frame).toContain("950ms");
+  expect(frame).not.toContain("tokens");
+  expect(frame).not.toContain("reasoning");
+  expect(frame).not.toContain("cached");
+});
+
 describe("TurnFooter", () => {
   test("renders_done_state_and_duration_without_model_name", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
