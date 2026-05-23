@@ -19,7 +19,7 @@ import {
   hydrateConversationTranscriptFromSessionEntries,
   type ChatSessionState,
 } from "@buli/chat-session-state";
-import { useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./conversationSessionStatus.ts";
 import {
@@ -90,6 +90,7 @@ export type UseChatAppControllerResult = {
   conversationSessionExportStatus: ConversationSessionExportStatus;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   queuedPromptCount: number;
+  queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
   applyChatAppKeyboardInput: UseChatAppKeyboardActionsResult["applyChatAppKeyboardInput"];
   applyPromptDraftEditToChatApp: UseChatAppKeyboardActionsResult["applyPromptDraftEditToChatApp"];
@@ -130,7 +131,18 @@ export type ChatAppPromptComposerState = Pick<
   | "latestContextWindowUsage"
 > & {
   queuedPromptCount: number;
+  queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
+};
+
+export type QueuedChatAppPromptPreview = {
+  queuedPromptId: string;
+  submittedPromptText: string;
+  submittedPromptImageAttachmentCount: number;
+};
+
+type StoredQueuedChatAppPrompt = QueuedChatAppPrompt & {
+  queuedPromptId: string;
 };
 
 export type ChatAppInteractionStatusState = Pick<ChatSessionState, "conversationTurnStatus" | "pendingToolApprovalRequest"> & {
@@ -158,6 +170,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     step: "idle",
   });
   const [queuedPromptCount, setQueuedPromptCount] = useState(0);
+  const [queuedPromptPreviews, setQueuedPromptPreviews] = useState<readonly QueuedChatAppPromptPreview[]>([]);
   const [chatSessionState, setChatSessionState] = useState(() => {
     const initialChatSessionState = createInitialChatSessionState({
       selectedModelId: input.selectedModelId,
@@ -175,8 +188,10 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
   const isPromptSubmissionInFlightRef = useRef(false);
   const isConversationCompactionInFlightRef = useRef(false);
+  const isChatAppControllerMountedRef = useRef(true);
   const submittedToolApprovalDecisionApprovalIdRef = useRef<string | undefined>(undefined);
-  const queuedChatAppPromptsRef = useRef<QueuedChatAppPrompt[]>([]);
+  const queuedChatAppPromptsRef = useRef<StoredQueuedChatAppPrompt[]>([]);
+  const nextQueuedPromptIdRef = useRef(0);
   const stableTranscriptStateRef = useRef<ChatAppTranscriptState | undefined>(undefined);
   const stablePromptComposerStateRef = useRef<ChatAppPromptComposerState | undefined>(undefined);
   const stableInteractionStatusStateRef = useRef<ChatAppInteractionStatusState | undefined>(undefined);
@@ -184,6 +199,14 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
 
   latestChatSessionStateRef.current = chatSessionState;
   latestActiveConversationSessionIdRef.current = activeConversationSessionId;
+
+  useEffect(() => {
+    isChatAppControllerMountedRef.current = true;
+    return () => {
+      isChatAppControllerMountedRef.current = false;
+      queuedChatAppPromptsRef.current = [];
+    };
+  }, []);
 
   const {
     isActiveTurnInterruptConfirmationArmed,
@@ -203,9 +226,17 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     diagnosticLogger: input.diagnosticLogger,
   });
   const enqueueQueuedSubmittedPrompt = useEffectEvent((queuedChatAppPrompt: QueuedChatAppPrompt): number => {
-    const nextQueuedChatAppPrompts = [...queuedChatAppPromptsRef.current, queuedChatAppPrompt];
+    nextQueuedPromptIdRef.current += 1;
+    const nextQueuedChatAppPrompts = [
+      ...queuedChatAppPromptsRef.current,
+      {
+        ...queuedChatAppPrompt,
+        queuedPromptId: `queued-prompt-${nextQueuedPromptIdRef.current}`,
+      },
+    ];
     queuedChatAppPromptsRef.current = nextQueuedChatAppPrompts;
     setQueuedPromptCount(nextQueuedChatAppPrompts.length);
+    setQueuedPromptPreviews(toQueuedChatAppPromptPreviews(nextQueuedChatAppPrompts));
     return nextQueuedChatAppPrompts.length;
   });
   const dequeueQueuedSubmittedPrompt = useEffectEvent((): QueuedChatAppPrompt | undefined => {
@@ -216,6 +247,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
 
     queuedChatAppPromptsRef.current = remainingQueuedChatAppPrompts;
     setQueuedPromptCount(remainingQueuedChatAppPrompts.length);
+    setQueuedPromptPreviews(toQueuedChatAppPromptPreviews(remainingQueuedChatAppPrompts));
     return nextQueuedChatAppPrompt;
   });
   const {
@@ -252,6 +284,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     assistantConversationRunner: input.assistantConversationRunner,
     latestChatSessionStateRef,
     isPromptSubmissionInFlightRef,
+    isChatAppControllerMountedRef,
     submittedToolApprovalDecisionApprovalIdRef,
     setChatSessionState,
     getActiveConversationTurn,
@@ -319,6 +352,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     nextState: buildChatAppPromptComposerState({
       chatSessionState,
       queuedPromptCount,
+      queuedPromptPreviews,
       isActiveTurnInterruptConfirmationArmed,
     }),
   });
@@ -349,6 +383,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     conversationSessionExportStatus,
     conversationSessionCompactionStatus,
     queuedPromptCount,
+    queuedPromptPreviews,
     isActiveTurnInterruptConfirmationArmed,
     applyChatAppKeyboardInput,
     applyPromptDraftEditToChatApp,
@@ -377,6 +412,7 @@ function buildChatAppTranscriptState(chatSessionState: ChatSessionState): ChatAp
 function buildChatAppPromptComposerState(input: {
   chatSessionState: ChatSessionState;
   queuedPromptCount: number;
+  queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
 }): ChatAppPromptComposerState {
   return {
@@ -391,8 +427,19 @@ function buildChatAppPromptComposerState(input: {
     selectedReasoningEffort: input.chatSessionState.selectedReasoningEffort,
     latestContextWindowUsage: input.chatSessionState.latestContextWindowUsage,
     queuedPromptCount: input.queuedPromptCount,
+    queuedPromptPreviews: input.queuedPromptPreviews,
     isActiveTurnInterruptConfirmationArmed: input.isActiveTurnInterruptConfirmationArmed,
   };
+}
+
+function toQueuedChatAppPromptPreviews(
+  queuedChatAppPrompts: readonly StoredQueuedChatAppPrompt[],
+): QueuedChatAppPromptPreview[] {
+  return queuedChatAppPrompts.map((queuedChatAppPrompt) => ({
+    queuedPromptId: queuedChatAppPrompt.queuedPromptId,
+    submittedPromptText: queuedChatAppPrompt.submittedPromptText,
+    submittedPromptImageAttachmentCount: queuedChatAppPrompt.submittedPromptImageAttachments.length,
+  }));
 }
 
 function buildChatAppInteractionStatusState(input: {
@@ -454,6 +501,7 @@ function selectStableChatAppPromptComposerState(input: {
     input.previousState.selectedReasoningEffort === input.nextState.selectedReasoningEffort &&
     input.previousState.latestContextWindowUsage === input.nextState.latestContextWindowUsage &&
     input.previousState.queuedPromptCount === input.nextState.queuedPromptCount &&
+    input.previousState.queuedPromptPreviews === input.nextState.queuedPromptPreviews &&
     input.previousState.isActiveTurnInterruptConfirmationArmed === input.nextState.isActiveTurnInterruptConfirmationArmed
   ) {
     return input.previousState;

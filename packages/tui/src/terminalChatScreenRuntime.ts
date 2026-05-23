@@ -104,6 +104,7 @@ export async function renderChatScreenInTerminalWithRuntime<
   input: RenderChatScreenInTerminalInput,
   runtime: RenderChatScreenInTerminalRuntime<TerminalRenderer>,
 ): Promise<TuiChatScreenInstance> {
+  const terminalRenderStartedAtMs = Date.now();
   const originalConsole = globalThis.console;
   const isConsoleFileLoggerActive = Boolean(process.env["BULI_CONSOLE_LOG_FILE"]?.trim());
   const consoleMode = isConsoleFileLoggerActive ? "disabled" : "console-overlay";
@@ -120,6 +121,7 @@ export async function renderChatScreenInTerminalWithRuntime<
     enableMouseMovement: true,
   });
   let cliRenderer: TerminalRenderer;
+  const terminalRendererCreateStartedAtMs = Date.now();
   try {
     cliRenderer = await runtime.createTerminalRenderer({
       screenMode: "alternate-screen",
@@ -199,8 +201,11 @@ export async function renderChatScreenInTerminalWithRuntime<
   };
   logTuiDiagnosticEvent(input.diagnosticLogger, "terminal_renderer_created", {
     consoleMode,
+    rendererCreateDurationMs: Math.max(0, Date.now() - terminalRendererCreateStartedAtMs),
+    renderTerminalElapsedMs: Math.max(0, Date.now() - terminalRenderStartedAtMs),
   });
   try {
+    const chatScreenRootRenderStartedAtMs = Date.now();
     root.render(
       runtime.createChatScreenElement({
         assistantConversationRunner: input.assistantConversationRunner,
@@ -242,15 +247,17 @@ export async function renderChatScreenInTerminalWithRuntime<
         ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
       }),
     );
+    logTuiDiagnosticEvent(input.diagnosticLogger, "chat_screen_root_rendered", {
+      selectedModelId: input.selectedModelId,
+      selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort ?? null,
+      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
+      rootRenderDurationMs: Math.max(0, Date.now() - chatScreenRootRenderStartedAtMs),
+      renderTerminalElapsedMs: Math.max(0, Date.now() - terminalRenderStartedAtMs),
+    });
   } catch (error) {
     destroyRendererOnce();
     throw error;
   }
-  logTuiDiagnosticEvent(input.diagnosticLogger, "chat_screen_root_rendered", {
-    selectedModelId: input.selectedModelId,
-    selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort ?? null,
-    selectedReasoningEffort: input.selectedReasoningEffort ?? null,
-  });
 
   return {
     destroy(): void {

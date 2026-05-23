@@ -13,6 +13,7 @@ export {
   type ChatAppInteractionStatusState,
   type ChatAppConversationTranscriptScrollDirection,
   type ChatAppPromptComposerState,
+  type QueuedChatAppPromptPreview,
   type ChatAppSelectionState,
   type ChatAppTranscriptState,
   type UseChatAppControllerInput,

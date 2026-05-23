@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useRef, type ReactNode } from "react";
 import {
   CodeRenderable,
   RGBA,
@@ -9,9 +9,10 @@ import {
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
+  decorateAssistantMarkdownInlineTextChunks,
   decorateAssistantMarkdownListChunks,
   decorateAssistantMarkdownProseChunks,
-  decorateAssistantMarkdownProseTextChunks,
+  type AssistantMarkdownInlineDecorationProfile,
 } from "./assistantMarkdownChunkDecorators.ts";
 import {
   assistantMarkdownSyntaxStyle,
@@ -119,12 +120,34 @@ type AssistantMarkdownCodeFenceInfo = {
   codeFenceFilePath?: string | undefined;
 };
 
-type AssistantMarkdownRenderSection =
-  | { sectionKind: "markdown"; markdownText: string }
-  | { sectionKind: "codeFence"; codeFenceText: string; codeFenceInfo: AssistantMarkdownCodeFenceInfo }
-  | { sectionKind: "unifiedDiff"; unifiedDiffText: string }
-  | { sectionKind: "shellSnippet"; shellSnippetText: string }
-  | { sectionKind: "diffSnippet"; diffSnippetText: string; filePath?: string | undefined };
+type AssistantMarkdownRenderSectionBase = {
+  sectionKey: string;
+};
+
+export type AssistantMarkdownRenderSection =
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "markdown"; markdownText: string })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "paragraph"; paragraphText: string })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "heading"; headingDepth: number; headingText: string })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "horizontalRule" })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "table"; tableMarkdownText: string })
+  | (AssistantMarkdownRenderSectionBase & {
+    sectionKind: "codeFence";
+    codeFenceText: string;
+    codeFenceInfo: AssistantMarkdownCodeFenceInfo;
+  })
+  | (AssistantMarkdownRenderSectionBase & {
+    sectionKind: "list";
+    listLines: AssistantMarkdownVisibleListLine[];
+    hasLeadingBlankLine: boolean;
+  })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "blockquote"; quoteText: string })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "unifiedDiff"; unifiedDiffText: string })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "shellSnippet"; shellSnippetText: string })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "diffSnippet"; diffSnippetText: string; filePath?: string | undefined });
+
+export type AssistantMarkdownRenderSectionCache = {
+  renderSections: readonly AssistantMarkdownRenderSection[];
+};
 
 type AssistantMarkdownFencedCodeBlock = {
   fenceInfoString: string;
@@ -143,6 +166,38 @@ type AssistantMarkdownRawDiffSnippetBlock = {
   nextLineIndex: number;
 };
 
+type AssistantMarkdownBlockquoteBlock = {
+  quoteText: string;
+  nextLineIndex: number;
+};
+
+type AssistantMarkdownListBlock = {
+  listLines: AssistantMarkdownVisibleListLine[];
+  nextLineIndex: number;
+};
+
+type AssistantMarkdownParagraphBlock = {
+  paragraphText: string;
+  nextLineIndex: number;
+};
+
+type AssistantMarkdownTableBlock = {
+  tableMarkdownText: string;
+  nextLineIndex: number;
+};
+
+type AssistantMarkdownVisibleListLine = {
+  listItemIndentText: string;
+  listItemMarkerText: string;
+  listItemText: string;
+};
+
+type ParsedAssistantMarkdownListLine = {
+  listItemDepth: number;
+  listItemMarkerText: string;
+  listItemText: string;
+};
+
 type AssistantUnifiedDiffExpectedHunkLineCounts = {
   oldLineCount: number;
   newLineCount: number;
@@ -157,26 +212,6 @@ type AssistantUnifiedDiffFileSummary = {
   filePath: string;
   addedLineCount: number;
   removedLineCount: number;
-};
-
-type AssistantMarkdownTextBlock =
-  | { blockKind: "paragraph"; paragraphText: string }
-  | { blockKind: "heading"; headingDepth: number; headingText: string }
-  | { blockKind: "horizontalRule" }
-  | { blockKind: "blockquote"; quoteText: string }
-  | { blockKind: "list"; listLines: AssistantMarkdownVisibleListLine[] }
-  | { blockKind: "table"; tableMarkdownText: string };
-
-type AssistantMarkdownVisibleListLine = {
-  listItemIndentText: string;
-  listItemMarkerText: string;
-  listItemText: string;
-};
-
-type ParsedAssistantMarkdownListLine = {
-  listItemDepth: number;
-  listItemMarkerText: string;
-  listItemText: string;
 };
 
 function isAssistantMarkdownCodeToken(token: AssistantMarkdownToken): token is AssistantMarkdownCodeToken {
@@ -216,6 +251,48 @@ function formatAssistantMarkdownInlineTextForStyledText(inlineMarkdownText: stri
   return inlineMarkdownText
     .replace(/~~([^~\n]+)~~/g, "$1")
     .replace(/!?\[([^\]\n]+)\]\([^\n)]+\)/g, "$1");
+}
+
+function createAssistantMarkdownPlainTextChunk(input: {
+  text: string;
+  foregroundColor: string;
+  attributes?: number | undefined;
+}): TextChunk {
+  return {
+    __isChunk: true,
+    text: input.text,
+    fg: RGBA.fromHex(input.foregroundColor),
+    attributes: input.attributes ?? 0,
+  };
+}
+
+function AssistantMarkdownInlineText(props: {
+  inlineText: string;
+  foregroundColor?: string | undefined;
+  attributes?: number | undefined;
+  decorationProfile?: AssistantMarkdownInlineDecorationProfile | undefined;
+}): ReactNode {
+  const baseForegroundColor = props.foregroundColor ?? chatScreenTheme.textPrimary;
+  const inlineTextChunks = decorateAssistantMarkdownInlineTextChunks({
+    profile: props.decorationProfile ?? "prose",
+    textChunks: [
+      createAssistantMarkdownPlainTextChunk({
+        text: props.inlineText,
+        foregroundColor: baseForegroundColor,
+        attributes: props.attributes,
+      }),
+    ],
+  });
+
+  return inlineTextChunks.map((inlineTextChunk, index) => (
+    <span
+      attributes={inlineTextChunk.attributes ?? 0}
+      fg={inlineTextChunk.fg ?? RGBA.fromHex(baseForegroundColor)}
+      key={`assistant-inline-text-chunk-${index}`}
+    >
+      {inlineTextChunk.text}
+    </span>
+  ));
 }
 
 function resolveAssistantMarkdownHeadingSyntaxStyle(depth: number): SyntaxStyle {
@@ -386,33 +463,43 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
   const markdownLines = markdownText.split("\n");
   const renderSections: AssistantMarkdownRenderSection[] = [];
   let pendingMarkdownLines: string[] = [];
+  let pendingMarkdownStartLineIndex: number | undefined;
 
   const flushPendingMarkdownLines = () => {
     const markdownSectionLines = trimAssistantMarkdownSectionBoundaryBlankLines(pendingMarkdownLines);
+    const markdownSectionStartLineIndex = pendingMarkdownStartLineIndex ?? 0;
     pendingMarkdownLines = [];
+    pendingMarkdownStartLineIndex = undefined;
     if (markdownSectionLines.length === 0) {
       return;
     }
 
     renderSections.push({
       sectionKind: "markdown",
+      sectionKey: `markdown:${markdownSectionStartLineIndex}`,
       markdownText: markdownSectionLines.join("\n"),
     });
   };
 
   let lineIndex = 0;
   while (lineIndex < markdownLines.length) {
+    const sectionStartLineIndex = lineIndex;
     const fencedCodeBlock = readAssistantMarkdownFencedCodeBlock(markdownLines, lineIndex);
     if (fencedCodeBlock) {
       const fencedUnifiedDiffText = resolveFencedUnifiedDiffText(fencedCodeBlock);
       if (fencedUnifiedDiffText) {
         flushPendingMarkdownLines();
-        renderSections.push({ sectionKind: "unifiedDiff", unifiedDiffText: fencedUnifiedDiffText });
+        renderSections.push({
+          sectionKind: "unifiedDiff",
+          sectionKey: `unifiedDiff:${sectionStartLineIndex}`,
+          unifiedDiffText: fencedUnifiedDiffText,
+        });
       } else if (isAssistantMarkdownDiffFence(fencedCodeBlock)) {
         const codeFenceInfo = parseAssistantMarkdownCodeFenceInfo(fencedCodeBlock.fenceInfoString);
         flushPendingMarkdownLines();
         renderSections.push({
           sectionKind: "diffSnippet",
+          sectionKey: `diffSnippet:${sectionStartLineIndex}`,
           diffSnippetText: formatAssistantUnifiedDiffText(fencedCodeBlock.fencedContentLines),
           ...(codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: codeFenceInfo.codeFenceFilePath } : {}),
         });
@@ -420,12 +507,14 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
         flushPendingMarkdownLines();
         renderSections.push({
           sectionKind: "shellSnippet",
+          sectionKey: `shellSnippet:${sectionStartLineIndex}`,
           shellSnippetText: formatAssistantCodeFenceText(fencedCodeBlock.fencedContentLines),
         });
       } else {
         flushPendingMarkdownLines();
         renderSections.push({
           sectionKind: "codeFence",
+          sectionKey: `codeFence:${sectionStartLineIndex}`,
           codeFenceInfo: parseAssistantMarkdownCodeFenceInfo(fencedCodeBlock.fenceInfoString),
           codeFenceText: formatAssistantCodeFenceText(fencedCodeBlock.fencedContentLines),
         });
@@ -439,6 +528,7 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
       flushPendingMarkdownLines();
       renderSections.push({
         sectionKind: "unifiedDiff",
+        sectionKey: `unifiedDiff:${sectionStartLineIndex}`,
         unifiedDiffText: formatAssistantUnifiedDiffText(unifiedDiffBlock.unifiedDiffLines),
       });
       lineIndex = unifiedDiffBlock.nextLineIndex;
@@ -450,18 +540,197 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
       flushPendingMarkdownLines();
       renderSections.push({
         sectionKind: "diffSnippet",
+        sectionKey: `diffSnippet:${sectionStartLineIndex}`,
         diffSnippetText: formatAssistantUnifiedDiffText(rawDiffSnippetBlock.diffSnippetLines),
       });
       lineIndex = rawDiffSnippetBlock.nextLineIndex;
       continue;
     }
 
+    const headingLineMatch = markdownHeadingLinePattern.exec(markdownLines[lineIndex] ?? "");
+    if (headingLineMatch) {
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "heading",
+        sectionKey: `heading:${sectionStartLineIndex}`,
+        headingDepth: headingLineMatch[1]?.length ?? 1,
+        headingText: formatAssistantMarkdownInlineTextForStyledText(headingLineMatch[2] ?? ""),
+      });
+      lineIndex += 1;
+      continue;
+    }
+
+    if (dashOnlyParagraphPattern.test((markdownLines[lineIndex] ?? "").trim())) {
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "horizontalRule",
+        sectionKey: `horizontalRule:${sectionStartLineIndex}`,
+      });
+      lineIndex += 1;
+      continue;
+    }
+
+    const tableBlock = readAssistantMarkdownTableBlock(markdownLines, lineIndex);
+    if (tableBlock) {
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "table",
+        sectionKey: `table:${sectionStartLineIndex}`,
+        tableMarkdownText: tableBlock.tableMarkdownText,
+      });
+      lineIndex = tableBlock.nextLineIndex;
+      continue;
+    }
+
+    const listBlock = readAssistantMarkdownListBlock(markdownLines, lineIndex);
+    if (listBlock) {
+      const hasLeadingBlankLine = pendingMarkdownLines.some((markdownLine) => markdownLine.trim().length > 0) &&
+        pendingMarkdownLines.at(-1)?.trim().length === 0;
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "list",
+        sectionKey: `list:${sectionStartLineIndex}`,
+        listLines: listBlock.listLines,
+        hasLeadingBlankLine,
+      });
+      lineIndex = listBlock.nextLineIndex;
+      continue;
+    }
+
+    const blockquoteBlock = readAssistantMarkdownBlockquoteBlock(markdownLines, lineIndex);
+    if (blockquoteBlock) {
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "blockquote",
+        sectionKey: `blockquote:${sectionStartLineIndex}`,
+        quoteText: blockquoteBlock.quoteText,
+      });
+      lineIndex = blockquoteBlock.nextLineIndex;
+      continue;
+    }
+
+    const paragraphBlock = readAssistantMarkdownParagraphBlock(markdownLines, lineIndex);
+    if (paragraphBlock) {
+      flushPendingMarkdownLines();
+      renderSections.push({
+        sectionKind: "paragraph",
+        sectionKey: `paragraph:${sectionStartLineIndex}`,
+        paragraphText: paragraphBlock.paragraphText,
+      });
+      lineIndex = paragraphBlock.nextLineIndex;
+      continue;
+    }
+
+    if (pendingMarkdownStartLineIndex === undefined) {
+      pendingMarkdownStartLineIndex = lineIndex;
+    }
     pendingMarkdownLines.push(markdownLines[lineIndex] ?? "");
     lineIndex += 1;
   }
 
   flushPendingMarkdownLines();
   return renderSections;
+}
+
+export function createAssistantMarkdownRenderSectionCache(): AssistantMarkdownRenderSectionCache {
+  return { renderSections: [] };
+}
+
+export function buildStableAssistantMarkdownRenderSections(input: {
+  markdownText: string;
+  isStreaming: boolean;
+  previousCache: AssistantMarkdownRenderSectionCache | undefined;
+}): {
+  renderSections: readonly AssistantMarkdownRenderSection[];
+  nextCache: AssistantMarkdownRenderSectionCache;
+} {
+  const preparedMarkdownText = prepareAssistantMarkdownTextForRendering(input.markdownText, input.isStreaming);
+  const nextRenderSections = splitAssistantMarkdownTextIntoRenderSections(preparedMarkdownText);
+  const previousRenderSectionsByKey = new Map(
+    (input.previousCache?.renderSections ?? []).map((renderSection) => [renderSection.sectionKey, renderSection]),
+  );
+  const stableRenderSections = nextRenderSections.map((nextRenderSection) => {
+    const previousRenderSection = previousRenderSectionsByKey.get(nextRenderSection.sectionKey);
+    return previousRenderSection && areAssistantMarkdownRenderSectionsEqual(previousRenderSection, nextRenderSection)
+      ? previousRenderSection
+      : nextRenderSection;
+  });
+
+  return {
+    renderSections: stableRenderSections,
+    nextCache: { renderSections: stableRenderSections },
+  };
+}
+
+function areAssistantMarkdownRenderSectionsEqual(
+  previousRenderSection: AssistantMarkdownRenderSection,
+  nextRenderSection: AssistantMarkdownRenderSection,
+): boolean {
+  if (previousRenderSection.sectionKind !== nextRenderSection.sectionKind) {
+    return false;
+  }
+
+  if (previousRenderSection.sectionKind === "markdown" && nextRenderSection.sectionKind === "markdown") {
+    return previousRenderSection.markdownText === nextRenderSection.markdownText;
+  }
+  if (previousRenderSection.sectionKind === "paragraph" && nextRenderSection.sectionKind === "paragraph") {
+    return previousRenderSection.paragraphText === nextRenderSection.paragraphText;
+  }
+  if (previousRenderSection.sectionKind === "heading" && nextRenderSection.sectionKind === "heading") {
+    return previousRenderSection.headingDepth === nextRenderSection.headingDepth &&
+      previousRenderSection.headingText === nextRenderSection.headingText;
+  }
+  if (previousRenderSection.sectionKind === "horizontalRule" && nextRenderSection.sectionKind === "horizontalRule") {
+    return true;
+  }
+  if (previousRenderSection.sectionKind === "table" && nextRenderSection.sectionKind === "table") {
+    return previousRenderSection.tableMarkdownText === nextRenderSection.tableMarkdownText;
+  }
+  if (previousRenderSection.sectionKind === "codeFence" && nextRenderSection.sectionKind === "codeFence") {
+    return previousRenderSection.codeFenceText === nextRenderSection.codeFenceText &&
+      areAssistantMarkdownCodeFenceInfoValuesEqual(previousRenderSection.codeFenceInfo, nextRenderSection.codeFenceInfo);
+  }
+  if (previousRenderSection.sectionKind === "list" && nextRenderSection.sectionKind === "list") {
+    return previousRenderSection.hasLeadingBlankLine === nextRenderSection.hasLeadingBlankLine &&
+      areAssistantMarkdownVisibleListLinesEqual(previousRenderSection.listLines, nextRenderSection.listLines);
+  }
+  if (previousRenderSection.sectionKind === "blockquote" && nextRenderSection.sectionKind === "blockquote") {
+    return previousRenderSection.quoteText === nextRenderSection.quoteText;
+  }
+  if (previousRenderSection.sectionKind === "unifiedDiff" && nextRenderSection.sectionKind === "unifiedDiff") {
+    return previousRenderSection.unifiedDiffText === nextRenderSection.unifiedDiffText;
+  }
+  if (previousRenderSection.sectionKind === "shellSnippet" && nextRenderSection.sectionKind === "shellSnippet") {
+    return previousRenderSection.shellSnippetText === nextRenderSection.shellSnippetText;
+  }
+  if (previousRenderSection.sectionKind === "diffSnippet" && nextRenderSection.sectionKind === "diffSnippet") {
+    return previousRenderSection.diffSnippetText === nextRenderSection.diffSnippetText &&
+      previousRenderSection.filePath === nextRenderSection.filePath;
+  }
+
+  return false;
+}
+
+function areAssistantMarkdownCodeFenceInfoValuesEqual(
+  previousCodeFenceInfo: AssistantMarkdownCodeFenceInfo,
+  nextCodeFenceInfo: AssistantMarkdownCodeFenceInfo,
+): boolean {
+  return previousCodeFenceInfo.codeLanguageLabel === nextCodeFenceInfo.codeLanguageLabel &&
+    previousCodeFenceInfo.codeFenceDisplayLabel === nextCodeFenceInfo.codeFenceDisplayLabel &&
+    previousCodeFenceInfo.codeFenceFilePath === nextCodeFenceInfo.codeFenceFilePath;
+}
+
+function areAssistantMarkdownVisibleListLinesEqual(
+  previousListLines: readonly AssistantMarkdownVisibleListLine[],
+  nextListLines: readonly AssistantMarkdownVisibleListLine[],
+): boolean {
+  return previousListLines.length === nextListLines.length && previousListLines.every((previousListLine, index) => {
+    const nextListLine = nextListLines[index];
+    return nextListLine !== undefined &&
+      previousListLine.listItemIndentText === nextListLine.listItemIndentText &&
+      previousListLine.listItemMarkerText === nextListLine.listItemMarkerText &&
+      previousListLine.listItemText === nextListLine.listItemText;
+  });
 }
 
 function isAssistantMarkdownDiffFence(fencedCodeBlock: AssistantMarkdownFencedCodeBlock): boolean {
@@ -611,6 +880,155 @@ function readAssistantMarkdownRawDiffSnippetBlock(
   }
 
   return diffSnippetLines.length > 0 ? { diffSnippetLines, nextLineIndex: lineIndex } : undefined;
+}
+
+function readAssistantMarkdownBlockquoteBlock(
+  markdownLines: readonly string[],
+  startLineIndex: number,
+): AssistantMarkdownBlockquoteBlock | undefined {
+  if (!markdownBlockquoteLinePattern.test(markdownLines[startLineIndex] ?? "")) {
+    return undefined;
+  }
+
+  const quoteLines: string[] = [];
+  let lineIndex = startLineIndex;
+  while (lineIndex < markdownLines.length) {
+    const blockquoteLineMatch = markdownBlockquoteLinePattern.exec(markdownLines[lineIndex] ?? "");
+    if (!blockquoteLineMatch) {
+      break;
+    }
+    quoteLines.push(blockquoteLineMatch[1] ?? "");
+    lineIndex += 1;
+  }
+
+  return { quoteText: quoteLines.join("\n"), nextLineIndex: lineIndex };
+}
+
+function readAssistantMarkdownListBlock(
+  markdownLines: readonly string[],
+  startLineIndex: number,
+): AssistantMarkdownListBlock | undefined {
+  if (!markdownListLinePattern.test(markdownLines[startLineIndex] ?? "")) {
+    return undefined;
+  }
+
+  const listMarkdownLines: string[] = [];
+  let lineIndex = startLineIndex;
+  while (lineIndex < markdownLines.length && markdownListLinePattern.test(markdownLines[lineIndex] ?? "")) {
+    listMarkdownLines.push(markdownLines[lineIndex] ?? "");
+    lineIndex += 1;
+  }
+
+  return {
+    listLines: formatAssistantMarkdownVisibleListLines(listMarkdownLines),
+    nextLineIndex: lineIndex,
+  };
+}
+
+function parseAssistantMarkdownListLine(markdownListLine: string): ParsedAssistantMarkdownListLine | undefined {
+  const listLineMatch = markdownListLinePattern.exec(markdownListLine);
+  if (!listLineMatch) {
+    return undefined;
+  }
+
+  const listItemDepth = Math.floor((listLineMatch[1] ?? "").length / 2);
+  const taskListState = listLineMatch[3];
+  const orderedListMarkerText = listLineMatch[4];
+  const unorderedListMarkerText = assistantMarkdownUnorderedListMarkers[listItemDepth % assistantMarkdownUnorderedListMarkers.length] ?? "-";
+  const listItemMarkerText = taskListState !== undefined
+    ? taskListState.toLowerCase() === "x" ? "☑" : "☐"
+    : orderedListMarkerText ?? unorderedListMarkerText;
+  return {
+    listItemDepth,
+    listItemMarkerText,
+    listItemText: formatAssistantMarkdownInlineTextForStyledText((listLineMatch[5] ?? "").trim()),
+  };
+}
+
+function formatAssistantMarkdownVisibleListLines(markdownListLines: readonly string[]): AssistantMarkdownVisibleListLine[] {
+  const parsedListLines = markdownListLines
+    .map(parseAssistantMarkdownListLine)
+    .filter((listLine): listLine is ParsedAssistantMarkdownListLine => listLine !== undefined);
+  const markerWidthByDepth = new Map<number, number>();
+  for (const parsedListLine of parsedListLines) {
+    markerWidthByDepth.set(
+      parsedListLine.listItemDepth,
+      Math.max(markerWidthByDepth.get(parsedListLine.listItemDepth) ?? 1, parsedListLine.listItemMarkerText.length),
+    );
+  }
+
+  return parsedListLines.map((parsedListLine) => ({
+    listItemIndentText: "  ".repeat(parsedListLine.listItemDepth),
+    listItemMarkerText: parsedListLine.listItemMarkerText.padStart(markerWidthByDepth.get(parsedListLine.listItemDepth) ?? 1, " "),
+    listItemText: parsedListLine.listItemText,
+  }));
+}
+
+function isAssistantMarkdownTableStart(markdownLines: readonly string[], lineIndex: number): boolean {
+  const tableHeaderLine = markdownLines[lineIndex] ?? "";
+  const tableSeparatorLine = markdownLines[lineIndex + 1] ?? "";
+  return tableHeaderLine.includes("|") && markdownTableSeparatorLinePattern.test(tableSeparatorLine);
+}
+
+function readAssistantMarkdownTableBlock(
+  markdownLines: readonly string[],
+  startLineIndex: number,
+): AssistantMarkdownTableBlock | undefined {
+  if (!isAssistantMarkdownTableStart(markdownLines, startLineIndex)) {
+    return undefined;
+  }
+
+  const tableLines: string[] = [];
+  let lineIndex = startLineIndex;
+  while (lineIndex < markdownLines.length && (markdownLines[lineIndex] ?? "").trim().length > 0) {
+    tableLines.push(markdownLines[lineIndex] ?? "");
+    lineIndex += 1;
+  }
+
+  return {
+    tableMarkdownText: tableLines.join("\n"),
+    nextLineIndex: lineIndex,
+  };
+}
+
+function isAssistantMarkdownCustomBlockStart(markdownLines: readonly string[], lineIndex: number): boolean {
+  const markdownLine = markdownLines[lineIndex] ?? "";
+  return (
+    fencedCodeBlockStartPattern.test(markdownLine) ||
+    markdownHeadingLinePattern.test(markdownLine) ||
+    dashOnlyParagraphPattern.test(markdownLine.trim()) ||
+    isAssistantMarkdownTableStart(markdownLines, lineIndex) ||
+    markdownListLinePattern.test(markdownLine) ||
+    markdownBlockquoteLinePattern.test(markdownLine) ||
+    parseAssistantUnifiedDiffFileHeader(markdownLine) !== undefined ||
+    isRawDiffSnippetLine(markdownLine)
+  );
+}
+
+function readAssistantMarkdownParagraphBlock(
+  markdownLines: readonly string[],
+  startLineIndex: number,
+): AssistantMarkdownParagraphBlock | undefined {
+  const firstParagraphLine = markdownLines[startLineIndex] ?? "";
+  if (firstParagraphLine.trim().length === 0 || isAssistantMarkdownCustomBlockStart(markdownLines, startLineIndex)) {
+    return undefined;
+  }
+
+  const paragraphLines: string[] = [];
+  let lineIndex = startLineIndex;
+  while (
+    lineIndex < markdownLines.length &&
+    (markdownLines[lineIndex] ?? "").trim().length > 0 &&
+    !isAssistantMarkdownCustomBlockStart(markdownLines, lineIndex)
+  ) {
+    paragraphLines.push(markdownLines[lineIndex] ?? "");
+    lineIndex += 1;
+  }
+
+  return {
+    paragraphText: formatAssistantMarkdownInlineTextForStyledText(paragraphLines.join(" ").trim()),
+    nextLineIndex: lineIndex,
+  };
 }
 
 function isRawDiffSnippetLine(markdownLine: string): boolean {
@@ -915,163 +1333,48 @@ function buildAssistantDiffSnippetUnifiedDiff(input: {
   };
 }
 
-function isAssistantMarkdownTableStart(markdownLines: readonly string[], lineIndex: number): boolean {
-  const tableHeaderLine = markdownLines[lineIndex] ?? "";
-  const tableSeparatorLine = markdownLines[lineIndex + 1] ?? "";
-  return tableHeaderLine.includes("|") && markdownTableSeparatorLinePattern.test(tableSeparatorLine);
-}
-
-function isAssistantMarkdownBlockStart(markdownLines: readonly string[], lineIndex: number): boolean {
-  const markdownLine = markdownLines[lineIndex] ?? "";
+function AssistantMarkdownTextSection(props: {
+  isStreaming: boolean;
+  markdownText: string;
+  renderNode: NonNullable<MarkdownOptions["renderNode"]>;
+}): ReactNode {
   return (
-    markdownHeadingLinePattern.test(markdownLine) ||
-    markdownBlockquoteLinePattern.test(markdownLine) ||
-    markdownListLinePattern.test(markdownLine) ||
-    dashOnlyParagraphPattern.test(markdownLine.trim()) ||
-    isAssistantMarkdownTableStart(markdownLines, lineIndex)
+    <markdown
+      bg={chatScreenTheme.bg}
+      conceal={true}
+      concealCode={false}
+      content={props.markdownText}
+      fg={chatScreenTheme.textPrimary}
+      internalBlockMode="top-level"
+      renderNode={props.renderNode}
+      streaming={props.isStreaming}
+      syntaxStyle={assistantMarkdownSyntaxStyle}
+      tableOptions={{
+        borders: true,
+        borderColor: chatScreenTheme.borderSubtle,
+        borderStyle: "single",
+        cellPadding: 0,
+        columnFitter: "balanced",
+        outerBorder: true,
+        selectable: true,
+        style: "grid",
+        widthMode: "content",
+        wrapMode: "word",
+      }}
+      treeSitterClient={openTuiSharedTreeSitterClient}
+      width="100%"
+    />
   );
 }
 
-function parseAssistantMarkdownTextBlocks(markdownText: string): AssistantMarkdownTextBlock[] {
-  const markdownLines = markdownText.split("\n");
-  const markdownTextBlocks: AssistantMarkdownTextBlock[] = [];
-  let lineIndex = 0;
-
-  while (lineIndex < markdownLines.length) {
-    const markdownLine = markdownLines[lineIndex] ?? "";
-    if (markdownLine.trim().length === 0) {
-      lineIndex += 1;
-      continue;
-    }
-
-    const headingLineMatch = markdownHeadingLinePattern.exec(markdownLine);
-    if (headingLineMatch) {
-      markdownTextBlocks.push({
-        blockKind: "heading",
-        headingDepth: headingLineMatch[1]?.length ?? 1,
-        headingText: formatAssistantMarkdownInlineTextForStyledText(headingLineMatch[2] ?? ""),
-      });
-      lineIndex += 1;
-      continue;
-    }
-
-    if (dashOnlyParagraphPattern.test(markdownLine.trim())) {
-      markdownTextBlocks.push({ blockKind: "horizontalRule" });
-      lineIndex += 1;
-      continue;
-    }
-
-    if (isAssistantMarkdownTableStart(markdownLines, lineIndex)) {
-      const tableLines: string[] = [];
-      while (lineIndex < markdownLines.length && (markdownLines[lineIndex] ?? "").trim().length > 0) {
-        tableLines.push(markdownLines[lineIndex] ?? "");
-        lineIndex += 1;
-      }
-      markdownTextBlocks.push({ blockKind: "table", tableMarkdownText: tableLines.join("\n") });
-      continue;
-    }
-
-    if (markdownBlockquoteLinePattern.test(markdownLine)) {
-      const quoteLines: string[] = [];
-      while (lineIndex < markdownLines.length) {
-        const blockquoteLineMatch = markdownBlockquoteLinePattern.exec(markdownLines[lineIndex] ?? "");
-        if (!blockquoteLineMatch) {
-          break;
-        }
-        quoteLines.push(blockquoteLineMatch[1] ?? "");
-        lineIndex += 1;
-      }
-      markdownTextBlocks.push({ blockKind: "blockquote", quoteText: quoteLines.join("\n") });
-      continue;
-    }
-
-    if (markdownListLinePattern.test(markdownLine)) {
-      const listMarkdownLines: string[] = [];
-      while (lineIndex < markdownLines.length && markdownListLinePattern.test(markdownLines[lineIndex] ?? "")) {
-        listMarkdownLines.push(markdownLines[lineIndex] ?? "");
-        lineIndex += 1;
-      }
-      markdownTextBlocks.push({ blockKind: "list", listLines: formatAssistantMarkdownListLines(listMarkdownLines) });
-      continue;
-    }
-
-    const paragraphLines: string[] = [];
-    while (
-      lineIndex < markdownLines.length &&
-      (markdownLines[lineIndex] ?? "").trim().length > 0 &&
-      !isAssistantMarkdownBlockStart(markdownLines, lineIndex)
-    ) {
-      paragraphLines.push(markdownLines[lineIndex] ?? "");
-      lineIndex += 1;
-    }
-    markdownTextBlocks.push({
-      blockKind: "paragraph",
-      paragraphText: formatAssistantMarkdownInlineTextForStyledText(paragraphLines.join(" ").trim()),
-    });
-  }
-
-  return markdownTextBlocks;
-}
-
-function parseAssistantMarkdownListLine(markdownListLine: string): ParsedAssistantMarkdownListLine | undefined {
-  const listLineMatch = markdownListLinePattern.exec(markdownListLine);
-  if (!listLineMatch) {
-    return undefined;
-  }
-
-  const listItemDepth = Math.floor((listLineMatch[1] ?? "").length / 2);
-  const taskListState = listLineMatch[3];
-  const orderedListMarkerText = listLineMatch[4];
-  const unorderedListMarkerText = assistantMarkdownUnorderedListMarkers[listItemDepth % assistantMarkdownUnorderedListMarkers.length] ?? "•";
-  const listItemMarkerText = taskListState !== undefined
-    ? taskListState.toLowerCase() === "x" ? "☑" : "☐"
-    : orderedListMarkerText ?? unorderedListMarkerText;
-  return {
-    listItemDepth,
-    listItemMarkerText,
-    listItemText: formatAssistantMarkdownInlineTextForStyledText((listLineMatch[5] ?? "").trim()),
-  };
-}
-
-function formatAssistantMarkdownListLines(markdownListLines: readonly string[]): AssistantMarkdownVisibleListLine[] {
-  const parsedListLines = markdownListLines
-    .map(parseAssistantMarkdownListLine)
-    .filter((listLine): listLine is ParsedAssistantMarkdownListLine => listLine !== undefined);
-  const markerWidthByDepth = new Map<number, number>();
-  for (const parsedListLine of parsedListLines) {
-    markerWidthByDepth.set(
-      parsedListLine.listItemDepth,
-      Math.max(markerWidthByDepth.get(parsedListLine.listItemDepth) ?? 1, parsedListLine.listItemMarkerText.length),
-    );
-  }
-
-  return parsedListLines.map((parsedListLine) => ({
-    listItemIndentText: "  ".repeat(parsedListLine.listItemDepth),
-    listItemMarkerText: parsedListLine.listItemMarkerText.padStart(markerWidthByDepth.get(parsedListLine.listItemDepth) ?? 1, " "),
-    listItemText: parsedListLine.listItemText,
-  }));
-}
-
-function resolveAssistantMarkdownVisibleListMarkerColor(listItemMarkerText: string): string {
-  const trimmedListItemMarkerText = listItemMarkerText.trim();
-  if (trimmedListItemMarkerText === "☑") {
-    return chatScreenTheme.accentGreen;
-  }
-  if (trimmedListItemMarkerText === "☐") {
-    return chatScreenTheme.textDim;
-  }
-  if (/^\d+\.$/.test(trimmedListItemMarkerText)) {
-    return chatScreenTheme.accentAmber;
-  }
-  const unorderedListMarkerIndex = assistantMarkdownUnorderedListMarkers.indexOf(
-    trimmedListItemMarkerText as (typeof assistantMarkdownUnorderedListMarkers)[number],
+function AssistantMarkdownParagraphBlock(props: { paragraphText: string }): ReactNode {
+  return (
+    <box marginBottom={1} width="100%">
+      <text fg={chatScreenTheme.textPrimary} wrapMode="word">
+        <AssistantMarkdownInlineText inlineText={props.paragraphText} />
+      </text>
+    </box>
   );
-  return [
-    chatScreenTheme.accentPrimaryMuted,
-    chatScreenTheme.accentCyan,
-    chatScreenTheme.accentAmber,
-    chatScreenTheme.accentPurple,
-  ][unorderedListMarkerIndex] ?? chatScreenTheme.textMuted;
 }
 
 function resolveAssistantMarkdownHeadingForegroundColor(headingDepth: number): string {
@@ -1094,52 +1397,6 @@ function formatAssistantMarkdownVisibleHeadingText(input: { headingDepth: number
   return `• ${input.headingText}`;
 }
 
-function createAssistantMarkdownPlainTextChunk(input: {
-  text: string;
-  foregroundColor: string;
-  attributes?: number | undefined;
-}): TextChunk {
-  return {
-    __isChunk: true,
-    text: input.text,
-    fg: RGBA.fromHex(input.foregroundColor),
-    attributes: input.attributes ?? 0,
-  };
-}
-
-function AssistantMarkdownInlineText(props: {
-  inlineText: string;
-  foregroundColor?: string | undefined;
-  attributes?: number | undefined;
-}): ReactNode {
-  const inlineTextChunks = decorateAssistantMarkdownProseTextChunks([
-    createAssistantMarkdownPlainTextChunk({
-      text: props.inlineText,
-      foregroundColor: props.foregroundColor ?? chatScreenTheme.textPrimary,
-      attributes: props.attributes,
-    }),
-  ]);
-  return inlineTextChunks.map((inlineTextChunk, index) => (
-    <span
-      attributes={inlineTextChunk.attributes ?? 0}
-      fg={inlineTextChunk.fg ?? RGBA.fromHex(props.foregroundColor ?? chatScreenTheme.textPrimary)}
-      key={`assistant-inline-text-chunk-${index}`}
-    >
-      {inlineTextChunk.text}
-    </span>
-  ));
-}
-
-function AssistantMarkdownParagraphBlock(props: { paragraphText: string }): ReactNode {
-  return (
-    <box marginBottom={1} width="100%">
-      <text fg={chatScreenTheme.textPrimary} wrapMode="word">
-        <AssistantMarkdownInlineText inlineText={props.paragraphText} />
-      </text>
-    </box>
-  );
-}
-
 function AssistantMarkdownHeadingBlock(props: { headingDepth: number; headingText: string }): ReactNode {
   const headingForegroundColor = resolveAssistantMarkdownHeadingForegroundColor(props.headingDepth);
   return (
@@ -1151,81 +1408,6 @@ function AssistantMarkdownHeadingBlock(props: { headingDepth: number; headingTex
           inlineText={formatAssistantMarkdownVisibleHeadingText(props)}
         />
       </text>
-    </box>
-  );
-}
-
-function AssistantMarkdownQuoteBlock(props: { quoteText: string }): ReactNode {
-  const assistantMarkdownCallout = parseAssistantMarkdownCallout(props.quoteText);
-  if (assistantMarkdownCallout) {
-    return <AssistantMarkdownCalloutBlock {...assistantMarkdownCallout} />;
-  }
-
-  return (
-    <box
-      border={["left"]}
-      borderColor={chatScreenTheme.textDim}
-      flexDirection="column"
-      marginBottom={1}
-      paddingX={1}
-      width="100%"
-    >
-      {props.quoteText.trim().split("\n").map((quoteLine, index) => (
-        <box key={`assistant-quote-line-${index}`} width="100%">
-          <text fg={chatScreenTheme.textSecondary} wrapMode="word">
-            <AssistantMarkdownInlineText foregroundColor={chatScreenTheme.textSecondary} inlineText={formatAssistantMarkdownInlineTextForStyledText(quoteLine)} />
-          </text>
-        </box>
-      ))}
-    </box>
-  );
-}
-
-function AssistantMarkdownCalloutBlock(props: { calloutKind: AssistantMarkdownCalloutKind; bodyText: string }): ReactNode {
-  const calloutForegroundColor = {
-    NOTE: chatScreenTheme.accentCyan,
-    TIP: chatScreenTheme.accentGreen,
-    IMPORTANT: chatScreenTheme.accentPurple,
-    WARNING: chatScreenTheme.accentAmber,
-    CAUTION: chatScreenTheme.accentRed,
-  }[props.calloutKind];
-  const bodyLines = props.bodyText.trim().length > 0 ? props.bodyText.trim().split("\n") : [];
-  return (
-    <box flexDirection="column" marginBottom={1} width="100%">
-      <text fg={calloutForegroundColor}>
-        <span attributes={TextAttributes.BOLD} fg={calloutForegroundColor}>{`▌ ${props.calloutKind}`}</span>
-      </text>
-      <text fg={calloutForegroundColor}>{"├" + "─".repeat(Math.max(12, props.calloutKind.length + 2))}</text>
-      {bodyLines.map((bodyLine, index) => (
-        <box key={`assistant-callout-line-${index}`} width="100%">
-          <text fg={calloutForegroundColor} wrapMode="word">
-            <span fg={calloutForegroundColor}>│ </span>
-            <AssistantMarkdownInlineText foregroundColor={calloutForegroundColor} inlineText={formatAssistantMarkdownInlineTextForStyledText(bodyLine)} />
-          </text>
-        </box>
-      ))}
-    </box>
-  );
-}
-
-function AssistantMarkdownListBlock(props: { listLines: readonly AssistantMarkdownVisibleListLine[] }): ReactNode {
-  return (
-    <box flexDirection="column" marginBottom={1} width="100%">
-      {props.listLines.map((listLine, index) => (
-        <box key={`assistant-list-line-${index}`} width="100%">
-          <text fg={chatScreenTheme.textPrimary} wrapMode="word">
-            {listLine.listItemIndentText}
-            <span
-              attributes={TextAttributes.BOLD}
-              fg={resolveAssistantMarkdownVisibleListMarkerColor(listLine.listItemMarkerText)}
-            >
-              {listLine.listItemMarkerText}
-            </span>
-            {" "}
-            <AssistantMarkdownInlineText inlineText={listLine.listItemText} />
-          </text>
-        </box>
-      ))}
     </box>
   );
 }
@@ -1275,52 +1457,109 @@ function AssistantMarkdownTableBlock(props: {
   );
 }
 
-function AssistantMarkdownTextSection(props: {
-  horizontalRuleColor: string;
-  horizontalRuleText: string;
-  isStreaming: boolean;
-  markdownText: string;
-  renderNode: NonNullable<MarkdownOptions["renderNode"]>;
+function resolveAssistantMarkdownVisibleListMarkerColor(listItemMarkerText: string): string {
+  const trimmedListItemMarkerText = listItemMarkerText.trim();
+  if (trimmedListItemMarkerText === "☑") {
+    return chatScreenTheme.accentGreen;
+  }
+  if (trimmedListItemMarkerText === "☐") {
+    return chatScreenTheme.textDim;
+  }
+  if (/^\d+\.$/.test(trimmedListItemMarkerText)) {
+    return chatScreenTheme.accentAmber;
+  }
+
+  const unorderedListMarkerIndex = assistantMarkdownUnorderedListMarkers.indexOf(
+    trimmedListItemMarkerText as (typeof assistantMarkdownUnorderedListMarkers)[number],
+  );
+  return [
+    chatScreenTheme.accentPrimaryMuted,
+    chatScreenTheme.accentCyan,
+    chatScreenTheme.accentAmber,
+    chatScreenTheme.accentPurple,
+  ][unorderedListMarkerIndex] ?? chatScreenTheme.textMuted;
+}
+
+function AssistantMarkdownListBlock(props: {
+  listLines: readonly AssistantMarkdownVisibleListLine[];
+  hasLeadingBlankLine: boolean;
 }): ReactNode {
-  const markdownTextBlocks = parseAssistantMarkdownTextBlocks(props.markdownText);
   return (
-    <box flexDirection="column" width="100%">
-      {markdownTextBlocks.map((markdownTextBlock, index) => (
-        markdownTextBlock.blockKind === "paragraph" ? (
-          <AssistantMarkdownParagraphBlock
-            key={`assistant-markdown-paragraph-${index}`}
-            paragraphText={markdownTextBlock.paragraphText}
-          />
-        ) : markdownTextBlock.blockKind === "heading" ? (
-          <AssistantMarkdownHeadingBlock
-            headingDepth={markdownTextBlock.headingDepth}
-            headingText={markdownTextBlock.headingText}
-            key={`assistant-markdown-heading-${index}`}
-          />
-        ) : markdownTextBlock.blockKind === "horizontalRule" ? (
-          <AssistantMarkdownHorizontalRuleBlock
-            horizontalRuleColor={props.horizontalRuleColor}
-            horizontalRuleText={props.horizontalRuleText}
-            key={`assistant-markdown-hr-${index}`}
-          />
-        ) : markdownTextBlock.blockKind === "blockquote" ? (
-          <AssistantMarkdownQuoteBlock
-            key={`assistant-markdown-quote-${index}`}
-            quoteText={markdownTextBlock.quoteText}
-          />
-        ) : markdownTextBlock.blockKind === "list" ? (
-          <AssistantMarkdownListBlock
-            key={`assistant-markdown-list-${index}`}
-            listLines={markdownTextBlock.listLines}
-          />
-        ) : (
-          <AssistantMarkdownTableBlock
-            isStreaming={props.isStreaming}
-            key={`assistant-markdown-table-${index}`}
-            renderNode={props.renderNode}
-            tableMarkdownText={markdownTextBlock.tableMarkdownText}
-          />
-        )
+    <box flexDirection="column" marginBottom={1} {...(props.hasLeadingBlankLine ? { marginTop: 1 } : {})} width="100%">
+      {props.listLines.map((listLine, index) => (
+        <box key={`assistant-list-line-${index}`} width="100%">
+          <text fg={chatScreenTheme.textPrimary} wrapMode="word">
+            {listLine.listItemIndentText}
+            <span
+              attributes={TextAttributes.BOLD}
+              fg={resolveAssistantMarkdownVisibleListMarkerColor(listLine.listItemMarkerText)}
+            >
+              {listLine.listItemMarkerText}
+            </span>
+            {" "}
+            <AssistantMarkdownInlineText decorationProfile="prose" inlineText={listLine.listItemText} />
+          </text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+function AssistantMarkdownQuoteBlock(props: { quoteText: string }): ReactNode {
+  const assistantMarkdownCallout = parseAssistantMarkdownCallout(props.quoteText);
+  if (assistantMarkdownCallout) {
+    return <AssistantMarkdownCalloutBlock {...assistantMarkdownCallout} />;
+  }
+
+  return (
+    <box
+      border={["left"]}
+      borderColor={chatScreenTheme.textDim}
+      flexDirection="column"
+      marginBottom={1}
+      paddingX={1}
+      width="100%"
+    >
+      {props.quoteText.trim().split("\n").map((quoteLine, index) => (
+        <box key={`assistant-quote-line-${index}`} width="100%">
+          <text fg={chatScreenTheme.textSecondary} wrapMode="word">
+            <AssistantMarkdownInlineText
+              foregroundColor={chatScreenTheme.textSecondary}
+              inlineText={formatAssistantMarkdownInlineTextForStyledText(quoteLine)}
+            />
+          </text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+function AssistantMarkdownCalloutBlock(props: { calloutKind: AssistantMarkdownCalloutKind; bodyText: string }): ReactNode {
+  const calloutForegroundColor = {
+    NOTE: chatScreenTheme.accentCyan,
+    TIP: chatScreenTheme.accentGreen,
+    IMPORTANT: chatScreenTheme.accentPurple,
+    WARNING: chatScreenTheme.accentAmber,
+    CAUTION: chatScreenTheme.accentRed,
+  }[props.calloutKind];
+  const bodyLines = props.bodyText.trim().length > 0 ? props.bodyText.trim().split("\n") : [];
+
+  return (
+    <box flexDirection="column" marginBottom={1} width="100%">
+      <text fg={calloutForegroundColor}>
+        <span attributes={TextAttributes.BOLD} fg={calloutForegroundColor}>{`▌ ${props.calloutKind}`}</span>
+      </text>
+      <text fg={calloutForegroundColor}>{"├" + "─".repeat(Math.max(12, props.calloutKind.length + 2))}</text>
+      {bodyLines.map((bodyLine, index) => (
+        <box key={`assistant-callout-line-${index}`} width="100%">
+          <text fg={calloutForegroundColor} wrapMode="word">
+            <span fg={calloutForegroundColor}>│ </span>
+            <AssistantMarkdownInlineText
+              foregroundColor={calloutForegroundColor}
+              inlineText={formatAssistantMarkdownInlineTextForStyledText(bodyLine)}
+            />
+          </text>
+        </box>
       ))}
     </box>
   );
@@ -1456,20 +1695,42 @@ function AssistantCodeFenceBlock(props: {
   );
 }
 
+const MemoizedAssistantCodeFenceBlock = memo(AssistantCodeFenceBlock, (previousProps, nextProps) => {
+  return previousProps.codeFenceText === nextProps.codeFenceText &&
+    areAssistantMarkdownCodeFenceInfoValuesEqual(previousProps.codeFenceInfo, nextProps.codeFenceInfo);
+});
+const MemoizedAssistantMarkdownParagraphBlock = memo(AssistantMarkdownParagraphBlock);
+const MemoizedAssistantMarkdownHeadingBlock = memo(AssistantMarkdownHeadingBlock);
+const MemoizedAssistantMarkdownHorizontalRuleBlock = memo(AssistantMarkdownHorizontalRuleBlock);
+const MemoizedAssistantMarkdownTableBlock = memo(AssistantMarkdownTableBlock);
+const MemoizedAssistantMarkdownListBlock = memo(AssistantMarkdownListBlock, (previousProps, nextProps) => {
+  return previousProps.hasLeadingBlankLine === nextProps.hasLeadingBlankLine &&
+    areAssistantMarkdownVisibleListLinesEqual(previousProps.listLines, nextProps.listLines);
+});
+const MemoizedAssistantMarkdownQuoteBlock = memo(AssistantMarkdownQuoteBlock);
+const MemoizedAssistantUnifiedDiffBlock = memo(AssistantUnifiedDiffBlock);
+const MemoizedAssistantDiffSnippetBlock = memo(AssistantDiffSnippetBlock);
+const MemoizedAssistantShellSnippetBlock = memo(AssistantShellSnippetBlock);
+
 export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): ReactNode {
+  const renderSectionCacheRef = useRef<AssistantMarkdownRenderSectionCache | undefined>(undefined);
   const terminalColumnCount = props.terminalColumnCount ?? defaultAssistantMarkdownTerminalColumnCount;
   const markdownChromeColumnCount = Math.max(20, terminalColumnCount - 4);
   const horizontalRuleText = useMemo(
     () => repeatAssistantMarkdownChromeRule({ availableColumnCount: markdownChromeColumnCount }),
     [markdownChromeColumnCount],
   );
-  const preparedMarkdownText = useMemo(
-    () => prepareAssistantMarkdownTextForRendering(props.markdownText, props.isStreaming),
-    [props.isStreaming, props.markdownText],
-  );
   const assistantMarkdownRenderSections = useMemo(
-    () => splitAssistantMarkdownTextIntoRenderSections(preparedMarkdownText),
-    [preparedMarkdownText],
+    () => {
+      const stableRenderSections = buildStableAssistantMarkdownRenderSections({
+        markdownText: props.markdownText,
+        isStreaming: props.isStreaming,
+        previousCache: renderSectionCacheRef.current,
+      });
+      renderSectionCacheRef.current = stableRenderSections.nextCache;
+      return stableRenderSections.renderSections;
+    },
+    [props.isStreaming, props.markdownText],
   );
   const horizontalRuleSyntaxStyle = useMemo(
     () => SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(props.horizontalRuleColor) } }),
@@ -1547,39 +1808,72 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
 
   return (
     <box flexDirection="column" width="100%">
-      {assistantMarkdownRenderSections.map((assistantMarkdownRenderSection, index) => (
+      {assistantMarkdownRenderSections.map((assistantMarkdownRenderSection) => (
         assistantMarkdownRenderSection.sectionKind === "markdown" ? (
           <AssistantMarkdownTextSection
-            horizontalRuleColor={props.horizontalRuleColor}
-            horizontalRuleText={horizontalRuleText}
             isStreaming={props.isStreaming}
-            key={`assistant-markdown-section-${index}`}
+            key={assistantMarkdownRenderSection.sectionKey}
             markdownText={assistantMarkdownRenderSection.markdownText}
             renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
           />
+        ) : assistantMarkdownRenderSection.sectionKind === "paragraph" ? (
+          <MemoizedAssistantMarkdownParagraphBlock
+            key={assistantMarkdownRenderSection.sectionKey}
+            paragraphText={assistantMarkdownRenderSection.paragraphText}
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "heading" ? (
+          <MemoizedAssistantMarkdownHeadingBlock
+            headingDepth={assistantMarkdownRenderSection.headingDepth}
+            headingText={assistantMarkdownRenderSection.headingText}
+            key={assistantMarkdownRenderSection.sectionKey}
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "horizontalRule" ? (
+          <MemoizedAssistantMarkdownHorizontalRuleBlock
+            horizontalRuleColor={props.horizontalRuleColor}
+            horizontalRuleText={horizontalRuleText}
+            key={assistantMarkdownRenderSection.sectionKey}
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "table" ? (
+          <MemoizedAssistantMarkdownTableBlock
+            isStreaming={props.isStreaming}
+            key={assistantMarkdownRenderSection.sectionKey}
+            renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
+            tableMarkdownText={assistantMarkdownRenderSection.tableMarkdownText}
+          />
         ) : assistantMarkdownRenderSection.sectionKind === "codeFence" ? (
-          <AssistantCodeFenceBlock
+          <MemoizedAssistantCodeFenceBlock
             codeFenceInfo={assistantMarkdownRenderSection.codeFenceInfo}
             codeFenceText={assistantMarkdownRenderSection.codeFenceText}
-            key={`assistant-code-fence-section-${index}`}
+            key={assistantMarkdownRenderSection.sectionKey}
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "list" ? (
+          <MemoizedAssistantMarkdownListBlock
+            hasLeadingBlankLine={assistantMarkdownRenderSection.hasLeadingBlankLine}
+            key={assistantMarkdownRenderSection.sectionKey}
+            listLines={assistantMarkdownRenderSection.listLines}
+          />
+        ) : assistantMarkdownRenderSection.sectionKind === "blockquote" ? (
+          <MemoizedAssistantMarkdownQuoteBlock
+            key={assistantMarkdownRenderSection.sectionKey}
+            quoteText={assistantMarkdownRenderSection.quoteText}
           />
         ) : assistantMarkdownRenderSection.sectionKind === "unifiedDiff" ? (
-          <AssistantUnifiedDiffBlock
-            key={`assistant-unified-diff-section-${index}`}
+          <MemoizedAssistantUnifiedDiffBlock
+            key={assistantMarkdownRenderSection.sectionKey}
             unifiedDiffText={assistantMarkdownRenderSection.unifiedDiffText}
           />
         ) : assistantMarkdownRenderSection.sectionKind === "shellSnippet" ? (
-          <AssistantShellSnippetBlock
-            key={`assistant-shell-snippet-section-${index}`}
+          <MemoizedAssistantShellSnippetBlock
+            key={assistantMarkdownRenderSection.sectionKey}
             shellSnippetText={assistantMarkdownRenderSection.shellSnippetText}
           />
         ) : (
-          <AssistantDiffSnippetBlock
+          <MemoizedAssistantDiffSnippetBlock
             diffSnippetText={assistantMarkdownRenderSection.diffSnippetText}
             {...(assistantMarkdownRenderSection.filePath !== undefined
               ? { filePath: assistantMarkdownRenderSection.filePath }
               : {})}
-            key={`assistant-diff-snippet-section-${index}`}
+            key={assistantMarkdownRenderSection.sectionKey}
           />
         )
       ))}

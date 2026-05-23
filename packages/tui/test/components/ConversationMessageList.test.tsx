@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ConversationMessage, ConversationMessagePart, WorkspacePatch } from "@buli/contracts";
+import type { ConversationMessage, ConversationMessagePart, PendingToolApprovalRequest, WorkspacePatch } from "@buli/contracts";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "../testRenderWithCleanup.ts";
 import {
@@ -59,6 +59,14 @@ function collectConversationMessagePartsById(
   }
 
   return conversationMessagePartsById;
+}
+
+function findRenderedLineContaining(frame: string, targetText: string): string {
+  const renderedLine = frame.split("\n").find((line) => line.includes(targetText));
+  if (!renderedLine) {
+    throw new Error(`expected rendered frame to contain ${targetText}`);
+  }
+  return renderedLine;
 }
 
 describe("ConversationMessageList", () => {
@@ -337,6 +345,67 @@ describe("ConversationMessageList", () => {
     expect(frame).not.toContain("workspace patch");
     expect(frame).not.toContain("M src/utils.ts");
     expect(frame).not.toContain("newName");
+  });
+
+  test("renders_pending_edit_approval_buttons_on_the_tool_call_row", async () => {
+    const pendingToolApprovalRequest: PendingToolApprovalRequest = {
+      approvalId: "approval-1",
+      pendingToolCallId: "call-edit-1",
+      pendingToolCallDetail: {
+        toolName: "edit",
+        editedFilePath: "packages/engine/test/systemPrompt.test.ts",
+      },
+      riskExplanation: "This edit will modify packages/engine/test/systemPrompt.test.ts. Review",
+    };
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: 2,
+        partIds: ["tool-1"],
+      },
+    ];
+    const conversationMessagePartsByMessageId: Record<string, ConversationMessagePart[]> = {
+      "assistant-1": [
+        {
+          id: "tool-1",
+          partKind: "assistant_tool_call",
+          toolCallId: "call-edit-1",
+          toolCallStatus: "pending_approval",
+          toolCallStartedAtMs: 2,
+          toolCallDetail: pendingToolApprovalRequest.pendingToolCallDetail,
+        },
+      ],
+    };
+    const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
+
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        conversationMessages={conversationMessages}
+        isReasoningSummaryVisible={true}
+        conversationMessagePartsById={conversationMessagePartsById}
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
+        pendingToolApprovalDecision={{
+          pendingToolApprovalRequest,
+          onPendingToolApprovalApproved: () => {},
+          onPendingToolApprovalDenied: () => {},
+        }}
+        userMessageBorderColor="#10B981"
+      />,
+      { width: 120, height: 8 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    const editHeaderLine = findRenderedLineContaining(frame, "Edit");
+    expect(editHeaderLine).toContain("packages/engine/test/systemPrompt.test.ts");
+    expect(editHeaderLine).toContain("Yes");
+    expect(editHeaderLine).toContain("No");
+    expect(frame).not.toContain("This edit will modify");
+    expect(frame).not.toContain("Review");
   });
 
   test("renders_unmatched_workspace_patch_as_standalone_fallback", async () => {

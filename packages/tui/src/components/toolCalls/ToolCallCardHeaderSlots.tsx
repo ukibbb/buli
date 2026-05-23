@@ -14,6 +14,7 @@ export type ToolCallCompactDisclosureState =
 
 export type ToolCallCompactHeaderProps = {
   accentColor: string;
+  approvalDecisionControl?: ReactNode;
   disclosureState: ToolCallCompactDisclosureState;
   statusColor: string;
   statusKind: "success" | "error" | "pending";
@@ -31,36 +32,49 @@ export function ToolCallCompactHeader(props: ToolCallCompactHeaderProps): ReactN
     ? { onMouseDown: createClickableControlMouseDownHandler(props.disclosureState.onContentExpansionToggle) }
     : {};
   const selectableProps = props.disclosureState.isContentExpandable ? { selectable: false } : {};
+  const shouldKeepApprovalHeaderOnOneLine = props.approvalDecisionControl !== undefined;
 
   return (
     <box
       {...toggleProps}
+      alignItems="center"
+      flexDirection="row"
       minWidth={0}
       width="100%"
     >
-      <text {...selectableProps} wrapMode="char" width="100%">
-        {props.statusKind === "pending" ? (
-          <>
-            <InlineSnakeAnimationIndicator variant={props.pendingSnakeVariant ?? "eatingApple"} />
-            <span fg={props.accentColor}>{` ${disclosureText}`}</span>
-          </>
-        ) : (
-          <span fg={props.accentColor}>{disclosureText}</span>
-        )}
-        <span fg={chatScreenTheme.textPrimary}>{` ${props.toolNameLabel}`}</span>
-        {props.toolTargetText ? (
-          <>
-            <span fg={props.accentColor}>{" ["}</span>
-            <span fg={chatScreenTheme.textMuted}>{props.toolTargetText}</span>
-            <span fg={props.accentColor}>{"]"}</span>
-          </>
-        ) : null}
-        <ToolCallCompactStatus
-          statusColor={props.statusColor}
-          statusKind={props.statusKind}
-          statusLabel={props.statusLabel}
-        />
-      </text>
+      <box
+        flexShrink={1}
+        minWidth={0}
+        {...(shouldKeepApprovalHeaderOnOneLine ? { overflow: "hidden" } : {})}
+        width="100%"
+      >
+        <text {...selectableProps} wrapMode={shouldKeepApprovalHeaderOnOneLine ? "none" : "char"} width="100%">
+          {props.statusKind === "pending" ? (
+            <>
+              <InlineSnakeAnimationIndicator variant={props.pendingSnakeVariant ?? "eatingApple"} />
+              <span fg={props.accentColor}>{` ${disclosureText}`}</span>
+            </>
+          ) : (
+            <span fg={props.accentColor}>{disclosureText}</span>
+          )}
+          <span fg={chatScreenTheme.textPrimary}>{` ${props.toolNameLabel}`}</span>
+          {props.toolTargetText ? (
+            <>
+              <span fg={props.accentColor}>{" ["}</span>
+              <span fg={chatScreenTheme.textMuted}>{props.toolTargetText}</span>
+              <span fg={props.accentColor}>{"]"}</span>
+            </>
+          ) : null}
+          <ToolCallCompactStatus
+            statusColor={props.statusColor}
+            statusKind={props.statusKind}
+            statusLabel={props.statusLabel}
+          />
+        </text>
+      </box>
+      {props.approvalDecisionControl ? (
+        <box flexShrink={0} marginLeft={1}>{props.approvalDecisionControl}</box>
+      ) : null}
     </box>
   );
 }

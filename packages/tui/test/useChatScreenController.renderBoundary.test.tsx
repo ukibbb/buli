@@ -48,6 +48,7 @@ const chatScreenMainAreaPropKeys = [
   "conversationMessagePartsById",
   "hiddenOlderConversationMessageCount",
   "olderConversationMessageRevealCount",
+  "pendingToolApprovalDecision",
   "conversationMessageScrollBoxRef",
   "onRevealOlderConversationMessages",
   "onCommandHelpCloseRequested",

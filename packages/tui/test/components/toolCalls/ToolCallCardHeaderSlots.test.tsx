@@ -4,11 +4,20 @@ import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { ToolCallCompactHeader } from "../../../src/components/toolCalls/ToolCallCardHeaderSlots.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import { ApprovalDecisionControl } from "../../../src/components/primitives/ApprovalDecisionControl.tsx";
 
 function extractRenderedNonEmptyLineIndexes(frame: string): number[] {
   return frame
     .split("\n")
     .flatMap((line, lineIndex) => line.trim().length > 0 ? [lineIndex] : []);
+}
+
+function findRenderedLineContaining(frame: string, targetText: string): string {
+  const renderedLine = frame.split("\n").find((line) => line.includes(targetText));
+  if (!renderedLine) {
+    throw new Error(`expected rendered frame to contain ${targetText}`);
+  }
+  return renderedLine;
 }
 
 describe("ToolCallCardHeaderSlots (opentui)", () => {
@@ -130,5 +139,28 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     expect(frame).toContain("◆");
     expect(frame.indexOf("◆")).toBeLessThan(frame.indexOf("[+]"));
     expect(frame).not.toContain("running");
+  });
+
+  test("ToolCallCompactHeader renders approval buttons on the pending header row", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallCompactHeader
+        accentColor={chatScreenTheme.accentAmber}
+        approvalDecisionControl={<ApprovalDecisionControl onApprove={() => {}} onDeny={() => {}} />}
+        disclosureState={{ isContentExpandable: false }}
+        statusColor={chatScreenTheme.accentAmber}
+        statusKind="pending"
+        toolNameLabel="Edit"
+        toolTargetText="packages/engine/test/systemPrompt.test.ts"
+      />,
+      { width: 120, height: 3 },
+    );
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    const headerLine = findRenderedLineContaining(frame, "Edit");
+    expect(headerLine).toContain("packages/engine/test/systemPrompt.test.ts");
+    expect(headerLine).toContain("Yes");
+    expect(headerLine).toContain("No");
+    expect(extractRenderedNonEmptyLineIndexes(frame)).toHaveLength(1);
   });
 });

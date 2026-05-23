@@ -490,7 +490,9 @@ test("ChatScreen approves a pending tool call with the y keyboard shortcut", asy
   await renderedChatScreen.typeText("request approval");
   await renderedChatScreen.pressEnter();
   const approvalFrame = await renderedChatScreen.waitForFrame(25);
-  expect(approvalFrame).toContain("This command deletes files.");
+  expect(approvalFrame).toContain("Yes");
+  expect(approvalFrame).toContain("No");
+  expect(approvalFrame).not.toContain("This command deletes files.");
 
   await renderedChatScreen.pressKey("y");
   const completedFrame = await renderedChatScreen.waitForFrame(25);
@@ -509,7 +511,9 @@ test("ChatScreen denies a pending tool call with the n keyboard shortcut", async
   await renderedChatScreen.typeText("request approval");
   await renderedChatScreen.pressEnter();
   const approvalFrame = await renderedChatScreen.waitForFrame(25);
-  expect(approvalFrame).toContain("This command deletes files.");
+  expect(approvalFrame).toContain("Yes");
+  expect(approvalFrame).toContain("No");
+  expect(approvalFrame).not.toContain("This command deletes files.");
 
   await renderedChatScreen.pressKey("n");
   const completedFrame = await renderedChatScreen.waitForFrame(25);
@@ -528,12 +532,16 @@ test("ChatScreen ignores pasted tool approval shortcut text", async () => {
   await renderedChatScreen.typeText("request approval");
   await renderedChatScreen.pressEnter();
   const approvalFrame = await renderedChatScreen.waitForFrame(25);
-  expect(approvalFrame).toContain("This command deletes files.");
+  expect(approvalFrame).toContain("Yes");
+  expect(approvalFrame).toContain("No");
+  expect(approvalFrame).not.toContain("This command deletes files.");
 
   const pastedShortcutFrame = await renderedChatScreen.pasteText("y");
   expect(approvalRunner.getApprovedDecisionCount()).toBe(0);
   expect(approvalRunner.getDeniedDecisionCount()).toBe(0);
-  expect(pastedShortcutFrame).toContain("This command deletes files.");
+  expect(pastedShortcutFrame).toContain("Yes");
+  expect(pastedShortcutFrame).toContain("No");
+  expect(pastedShortcutFrame).not.toContain("This command deletes files.");
 
   await renderedChatScreen.pressKey("y");
   await renderedChatScreen.waitForFrame(25);

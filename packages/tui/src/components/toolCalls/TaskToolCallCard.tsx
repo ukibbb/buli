@@ -13,6 +13,7 @@ import { ToolCallEntryView } from "./ToolCallEntryView.tsx";
 export type TaskToolCallCardProps = {
   toolCallDetail: ToolCallTaskDetail;
   renderState: "streaming" | "completed" | "failed";
+  approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
 };
@@ -23,6 +24,9 @@ export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
   return (
     <ExpandableToolCallCard
       accentColor={toolCallPresentation.accentColor}
+      {...(props.approvalDecisionControl !== undefined
+        ? { approvalDecisionControl: props.approvalDecisionControl }
+        : {})}
       hasExpandableContent={hasSubagentContent}
       renderExpandedContent={() => buildTaskBodyContent({
         accentColor: toolCallPresentation.accentColor,

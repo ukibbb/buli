@@ -86,6 +86,7 @@ export type {
   ConversationCompactionRequest,
   ConversationCompactionResult,
   ConversationCompactionRunner,
+  ConversationTurnRuntimeStatus,
   ConversationTurnProvider,
   ConversationTurnRequest,
   ProviderConversationTurn,

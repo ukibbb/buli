@@ -3,6 +3,7 @@ import { RGBA, TextAttributes, type TextChunk } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
   decorateAssistantMarkdownDiffFenceTextChunks,
+  decorateAssistantMarkdownInlineTextChunks,
   decorateAssistantMarkdownListTextChunks,
   decorateAssistantMarkdownProseTextChunks,
 } from "../../../src/components/primitives/assistantMarkdownChunkDecorators.ts";
@@ -25,6 +26,10 @@ function createPlainTextChunk(text: string): TextChunk {
 
 function findTextChunkByExactText(textChunks: TextChunk[], text: string): TextChunk | undefined {
   return textChunks.find((textChunk) => textChunk.text === text);
+}
+
+function joinTextChunks(textChunks: readonly TextChunk[]): string {
+  return textChunks.map((textChunk) => textChunk.text).join("");
 }
 
 describe("assistantMarkdownChunkDecorators", () => {
@@ -99,6 +104,21 @@ describe("assistantMarkdownChunkDecorators", () => {
     expect(findTextChunkByExactText(decoratedChunks, "packages/tui/src/index.ts")?.fg?.toString()).toBe(
       RGBA.fromHex(chatScreenTheme.accentCyan).toString(),
     );
+  });
+
+  test("explicit_list_profile_keeps_list_markers_and_inline_code_rules_together", () => {
+    const decoratedChunks = decorateAssistantMarkdownInlineTextChunks({
+      profile: "list",
+      textChunks: [createPlainTextChunk("- Use `read`")],
+    });
+
+    const listMarkerChunk = findTextChunkByExactText(decoratedChunks, "-");
+    const inlineCodeChunk = findTextChunkByExactText(decoratedChunks, "read");
+    expect(joinTextChunks(decoratedChunks)).toBe("- Use read");
+    expect(listMarkerChunk?.fg?.toString()).toBe(RGBA.fromHex(chatScreenTheme.accentPrimaryMuted).toString());
+    expect((listMarkerChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+    expect(inlineCodeChunk?.fg?.toString()).toBe(assistantMarkdownInlineCodeForegroundColor.toString());
+    expect((inlineCodeChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
   });
 
   test("decorates_diff_fence_lines_before_prose_highlights", () => {

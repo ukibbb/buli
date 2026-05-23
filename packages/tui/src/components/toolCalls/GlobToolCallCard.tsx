@@ -9,6 +9,7 @@ const MAX_EXPANDED_GLOB_PATH_COUNT = 50;
 export type GlobToolCallCardProps = {
   toolCallDetail: ToolCallGlobDetail;
   renderState: "streaming" | "completed" | "failed";
+  approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
 };
@@ -20,6 +21,9 @@ export function GlobToolCallCard(props: GlobToolCallCardProps): ReactNode {
   return (
     <ExpandableToolCallCard
       accentColor={toolCallPresentation.accentColor}
+      {...(props.approvalDecisionControl !== undefined
+        ? { approvalDecisionControl: props.approvalDecisionControl }
+        : {})}
       hasExpandableContent={hasGlobResultContent}
       renderExpandedContent={() => buildGlobBodyContent(matchedPaths ?? [])}
       statusKind={toolCallPresentation.statusKind}

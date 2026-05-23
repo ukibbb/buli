@@ -5,6 +5,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo, type ReactNode, type RefObject } from "react";
 import { CommandHelpModal } from "./CommandHelpModal.tsx";
 import { ConversationTranscriptSurface } from "./ConversationTranscriptSurface.tsx";
+import type { PendingToolApprovalDecision } from "./ConversationMessageRow.tsx";
 
 export type ChatScreenMainAreaProps = {
   isCommandHelpModalVisible: boolean;
@@ -18,6 +19,7 @@ export type ChatScreenMainAreaProps = {
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
+  pendingToolApprovalDecision?: PendingToolApprovalDecision;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   onRevealOlderConversationMessages: () => void;
   onCommandHelpCloseRequested: () => void;
@@ -44,6 +46,9 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
       isReasoningSummaryVisible={props.isReasoningSummaryVisible}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
       onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
+      {...(props.pendingToolApprovalDecision !== undefined
+        ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
+        : {})}
       conversationMessagePartsById={props.conversationMessagePartsById}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       accentColor={props.inputPanelAccentColor}

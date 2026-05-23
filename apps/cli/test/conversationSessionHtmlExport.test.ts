@@ -6,7 +6,7 @@ import type { ConversationSessionEntry } from "@buli/contracts";
 import {
   renderConversationSessionHtmlDocument,
   writeConversationSessionHtmlExport,
-} from "../src/conversationSessionHtmlExport.ts";
+} from "../src/conversationSession/export/conversationSessionHtmlExport.ts";
 
 const conversationSessionEntries = [
   {

@@ -43,11 +43,6 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
         width="100%"
       >
         <SnakeAnimationIndicator variant="sixCell" />
-        {props.queuedPromptCount > 0 ? (
-          <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
-            {`Queued: ${props.queuedPromptCount}`}
-          </text>
-        ) : null}
       </box>
     );
   }
@@ -90,11 +85,6 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
           />
         )}
       </box>
-      {props.queuedPromptCount > 0 ? (
-        <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
-          {`Queued: ${props.queuedPromptCount}`}
-        </text>
-      ) : null}
     </box>
   );
 }

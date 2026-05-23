@@ -19,7 +19,9 @@ export function buildGlobToolResultText(input: {
     `Directory: ${input.searchDirectoryPath}`,
     `Found ${input.totalMatchedPathCount} files`,
     ...(input.matchedPaths.length < input.totalMatchedPathCount
-      ? [`Results truncated: showing first ${input.matchedPaths.length} of ${input.totalMatchedPathCount} files`]
+      ? [
+          `Results truncated: showing first ${input.matchedPaths.length} of ${input.totalMatchedPathCount} files. This search result is incomplete; narrow the directory or glob pattern before making conclusions about absence.`,
+        ]
       : []),
     ...input.matchedPaths,
   ].join("\n");
@@ -45,7 +47,9 @@ export function buildGrepToolResultText(input: {
     `Path: ${input.searchPath}`,
     `Found ${input.totalMatchCount} matches in ${input.matchedFileCount} files`,
     ...(input.matchHits.length < input.totalMatchCount
-      ? [`Results truncated: showing first ${input.matchHits.length} of ${input.totalMatchCount} matches`]
+      ? [
+          `Results truncated: showing first ${input.matchHits.length} of ${input.totalMatchCount} matches. This search result is incomplete; narrow the path or regex before making conclusions about absence.`,
+        ]
       : []),
   ];
   let currentFilePath = "";

@@ -6,6 +6,7 @@ import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation }
 export type TodoWriteToolCallCardProps = {
   toolCallDetail: ToolCallTodoWriteDetail;
   renderState: "streaming" | "completed" | "failed";
+  approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
 };
@@ -16,6 +17,9 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
   return (
     <ExpandableToolCallCard
       accentColor={toolCallPresentation.accentColor}
+      {...(props.approvalDecisionControl !== undefined
+        ? { approvalDecisionControl: props.approvalDecisionControl }
+        : {})}
       hasExpandableContent={hasTodoListContent}
       renderExpandedContent={() => buildTodoBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}

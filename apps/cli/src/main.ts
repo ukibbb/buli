@@ -1,8 +1,5 @@
-import { ReasoningEffortSchema, type ReasoningEffort } from "@buli/contracts";
-import { parseBashToolApprovalMode, type BashToolApprovalMode } from "@buli/engine";
-import { runInteractiveChat } from "./commands/chat.ts";
-import { runLogin } from "./commands/login.ts";
-import { runListAvailableModels } from "./commands/models.ts";
+import type { ReasoningEffort } from "@buli/contracts";
+import type { BashToolApprovalMode } from "@buli/engine";
 
 export type InteractiveChatStartOptions = {
   selectedModelId?: string;
@@ -21,12 +18,23 @@ export type CliRunResult =
   | { status: "usage_error"; output: string };
 
 const defaultCommandHandlers: CommandHandlers = {
-  runInteractiveChat,
-  runListAvailableModels,
-  runLogin,
+  async runInteractiveChat(input) {
+    const { runInteractiveChat } = await import("./commands/chat.ts");
+    return runInteractiveChat(input);
+  },
+  async runListAvailableModels() {
+    const { runListAvailableModels } = await import("./commands/models.ts");
+    return runListAvailableModels();
+  },
+  async runLogin() {
+    const { runLogin } = await import("./commands/login.ts");
+    return runLogin();
+  },
 };
 
 export const USAGE = "Usage: buli [login|models|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]";
+
+const supportedReasoningEfforts = new Set<ReasoningEffort>(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
 function ok(output: string): CliRunResult {
   return { status: "ok", output };
@@ -34,6 +42,19 @@ function ok(output: string): CliRunResult {
 
 function usageError(): CliRunResult {
   return { status: "usage_error", output: USAGE };
+}
+
+function parseInteractiveChatReasoningEffort(value: string): ReasoningEffort | undefined {
+  const reasoningEffort = value as ReasoningEffort;
+  return supportedReasoningEfforts.has(reasoningEffort) ? reasoningEffort : undefined;
+}
+
+function parseInteractiveChatBashToolApprovalMode(value: string): BashToolApprovalMode | undefined {
+  if (value === "risk_based" || value === "trusted") {
+    return value;
+  }
+
+  return undefined;
 }
 
 function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveChatStartOptions | undefined {
@@ -59,12 +80,12 @@ function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveC
         return undefined;
       }
 
-      const parsedReasoningEffort = ReasoningEffortSchema.safeParse(selectedReasoningEffort);
-      if (!parsedReasoningEffort.success) {
+      const parsedReasoningEffort = parseInteractiveChatReasoningEffort(selectedReasoningEffort);
+      if (!parsedReasoningEffort) {
         return undefined;
       }
 
-      interactiveChatStartOptions.selectedReasoningEffort = parsedReasoningEffort.data;
+      interactiveChatStartOptions.selectedReasoningEffort = parsedReasoningEffort;
       index += 1;
       continue;
     }
@@ -75,7 +96,7 @@ function parseInteractiveChatStartOptions(args: readonly string[]): InteractiveC
         return undefined;
       }
 
-      const parsedBashToolApprovalMode = parseBashToolApprovalMode(selectedBashToolApprovalMode);
+      const parsedBashToolApprovalMode = parseInteractiveChatBashToolApprovalMode(selectedBashToolApprovalMode);
       if (!parsedBashToolApprovalMode) {
         return undefined;
       }

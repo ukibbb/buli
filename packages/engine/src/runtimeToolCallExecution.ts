@@ -28,6 +28,7 @@ import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
 } from "./runtimeReadOnlyToolCallExecution.ts";
+import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import type {
   RuntimePendingToolApproval,
   RuntimePendingToolApprovalInput,
@@ -56,6 +57,7 @@ export type RuntimeToolCallExecutionContext = {
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   projectInstructionTracker: ProjectInstructionTracker;
+  readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   promptContextBrowseRootPath: string;
   promptContextStartingDirectoryPath: string;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
@@ -189,6 +191,7 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionTracker: input.projectInstructionTracker,
         toolResultSessionRecorder: input.toolResultSessionRecorder,
+        readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
         abortSignal: input.abortSignal,
         throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
         diagnosticLogger: input.diagnosticLogger,
@@ -243,6 +246,7 @@ async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(
     workspaceRootPath: input.workspaceRootPath,
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,
@@ -267,6 +271,7 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     workspaceRootPath: input.workspaceRootPath,
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
     abortSignal: input.abortSignal,
     canSpawnSubagent: input.canSpawnSubagent,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,

@@ -24,6 +24,7 @@ import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import { escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 import { toProjectInstructionSnapshots, type ProjectInstructionTracker } from "./projectInstructions.ts";
+import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
@@ -69,6 +70,7 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   selectedReasoningEffort?: ReasoningEffort;
   workspaceRootPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
+  readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   canSpawnSubagent: boolean;
@@ -137,6 +139,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
     workspaceRootPath: input.workspaceRootPath,
     projectInstructionTracker: input.projectInstructionTracker,
+    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,
@@ -241,6 +244,7 @@ async function* streamTaskSubagentConversationProgress(input: {
   selectedReasoningEffort?: ReasoningEffort;
   workspaceRootPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
+  readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -294,6 +298,7 @@ async function* streamTaskSubagentConversationProgress(input: {
           subagentToolResultSessionRecorder,
           workspaceRootPath: input.workspaceRootPath,
           projectInstructionTracker: input.projectInstructionTracker,
+          readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
           abortSignal: input.abortSignal,
           throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
           diagnosticLogger: input.diagnosticLogger,
@@ -427,6 +432,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
   subagentToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   workspaceRootPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
+  readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -451,6 +457,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
       workspaceRootPath: input.workspaceRootPath,
       projectInstructionTracker: input.projectInstructionTracker,
       toolResultSessionRecorder: input.subagentToolResultSessionRecorder,
+      readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
       abortSignal: input.abortSignal,
       throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
       diagnosticLogger: input.diagnosticLogger,
@@ -475,6 +482,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
         subagentToolResultSessionRecorder: input.subagentToolResultSessionRecorder,
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionTracker: input.projectInstructionTracker,
+        readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
         abortSignal: input.abortSignal,
         throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
         diagnosticLogger: input.diagnosticLogger,
@@ -516,6 +524,7 @@ async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
   subagentToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   workspaceRootPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
+  readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -528,6 +537,7 @@ async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
     workspaceRootPath: input.workspaceRootPath,
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.subagentToolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,

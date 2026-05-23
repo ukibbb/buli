@@ -196,6 +196,33 @@ test("runReadToolCall reads bounded line windows from oversized text files", asy
   expect(readToolCallOutcome.toolResultText).toContain("Use offset=4 to continue");
 });
 
+test("runReadToolCall preserves long visible lines from oversized text files", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-large-long-line-"));
+  const longVisibleLineText = `visible ${"x".repeat(1_000_010)}`;
+  await writeFile(join(workspaceRootPath, "large-long-line.txt"), `${longVisibleLineText}\nsecond\n`, "utf8");
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "large-long-line.txt",
+      offsetLineNumber: 1,
+      maximumLineCount: 1,
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("completed");
+  expect(readToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "read",
+    readFilePath: "large-long-line.txt",
+    returnedLineCount: 1,
+    wasLineCountTruncated: true,
+    previewLines: [{ lineNumber: 1, lineText: longVisibleLineText }],
+  });
+  expect(readToolCallOutcome.toolResultText).toContain(`1: ${longVisibleLineText}`);
+  expect(readToolCallOutcome.toolResultText).not.toContain("Long lines were truncated");
+});
+
 test("runReadToolCall rejects bounded reads of oversized binary files", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-large-binary-"));
   await writeFile(join(workspaceRootPath, "large.bin"), Buffer.alloc(1_000_001));
@@ -423,6 +450,9 @@ test("runGlobToolCall caps returned matched paths while keeping the total count"
   }
   expect(globToolCallOutcome.toolResultText).toContain("Found 1005 files");
   expect(globToolCallOutcome.toolResultText).toContain("Results truncated: showing first 1000 of 1005 files");
+  expect(globToolCallOutcome.toolResultText).toContain(
+    "This search result is incomplete; narrow the directory or glob pattern before making conclusions about absence.",
+  );
 });
 
 test("runGrepToolCall searches text files with include glob", async () => {
@@ -706,6 +736,9 @@ test("runGrepToolCall caps returned match hits while keeping the total count", a
   }
   expect(grepToolCallOutcome.toolResultText).toContain("Found 1005 matches in 1 files");
   expect(grepToolCallOutcome.toolResultText).toContain("Results truncated: showing first 1000 of 1005 matches");
+  expect(grepToolCallOutcome.toolResultText).toContain(
+    "This search result is incomplete; narrow the path or regex before making conclusions about absence.",
+  );
   expect(grepToolCallOutcome.toolResultText).toContain("Line 1000: match 999");
   expect(grepToolCallOutcome.toolResultText).not.toContain("Line 1005: match 1004");
 });

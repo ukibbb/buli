@@ -3,6 +3,7 @@ import type { ConversationMessage, ConversationMessagePart } from "@buli/contrac
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ReactNode, RefObject } from "react";
 import { ConversationMessageList } from "./ConversationMessageList.tsx";
+import type { PendingToolApprovalDecision } from "./ConversationMessageRow.tsx";
 
 export type ConversationTranscriptSurfaceProps = {
   conversationMessages: readonly ConversationMessage[];
@@ -12,6 +13,7 @@ export type ConversationTranscriptSurfaceProps = {
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
   onRevealOlderConversationMessages: () => void;
+  pendingToolApprovalDecision?: PendingToolApprovalDecision;
   accentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   terminalColumnCount: number;
 };
@@ -24,6 +26,9 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
       isReasoningSummaryVisible={props.isReasoningSummaryVisible}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
       onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
+      {...(props.pendingToolApprovalDecision !== undefined
+        ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
+        : {})}
       conversationMessagePartsById={props.conversationMessagePartsById}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       horizontalRuleColor={props.accentColor}

@@ -68,6 +68,19 @@ export interface ActiveConversationTurn {
   interrupt(): void;
 }
 
+export type ConversationTurnRuntimeStatus =
+  | {
+      statusKind: "idle";
+    }
+  | {
+      statusKind: "conversation_turn_running";
+      selectedModelId: string;
+    }
+  | {
+      statusKind: "conversation_session_compaction_running";
+    };
+
 export interface AssistantConversationRunner {
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn;
+  readConversationTurnRuntimeStatus?(): ConversationTurnRuntimeStatus;
 }

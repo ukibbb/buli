@@ -4,11 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
+import { ProjectInstructionTracker, type ProjectInstructionFile } from "../src/projectInstructions.ts";
 import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../src/provider.ts";
 import {
+  type AutoApprovedReadOnlyRequestedToolCall,
   isAutoApprovedReadOnlyToolCallRequest,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
+  streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
 } from "../src/runtimeReadOnlyToolCallExecution.ts";
+import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "../src/runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
 
 class RecordingProviderConversationTurn implements ProviderConversationTurn {
@@ -25,11 +29,63 @@ class RecordingProviderConversationTurn implements ProviderConversationTurn {
   }
 }
 
+class DeferredCompletion {
+  readonly promise: Promise<void>;
+  private resolvePromise: (() => void) | undefined;
+
+  constructor() {
+    this.promise = new Promise<void>((resolvePromise) => {
+      this.resolvePromise = resolvePromise;
+    });
+  }
+
+  complete(): void {
+    this.resolvePromise?.();
+  }
+}
+
+class BlockingProjectInstructionTracker extends ProjectInstructionTracker {
+  readonly expectedActiveDiscoveryCount: number;
+  readonly expectedActiveDiscoveriesReached = new DeferredCompletion();
+  readonly releaseDiscoveries = new DeferredCompletion();
+  startedDiscoveryCount = 0;
+  activeDiscoveryCount = 0;
+  maximumActiveDiscoveryCount = 0;
+
+  constructor(input: { workspaceRootPath: string; expectedActiveDiscoveryCount: number }) {
+    super({ workspaceRootPath: input.workspaceRootPath });
+    this.expectedActiveDiscoveryCount = input.expectedActiveDiscoveryCount;
+  }
+
+  override async discoverNewProjectInstructionsForDirectory(): Promise<readonly ProjectInstructionFile[]> {
+    this.startedDiscoveryCount += 1;
+    this.activeDiscoveryCount += 1;
+    this.maximumActiveDiscoveryCount = Math.max(this.maximumActiveDiscoveryCount, this.activeDiscoveryCount);
+    if (this.activeDiscoveryCount === this.expectedActiveDiscoveryCount) {
+      this.expectedActiveDiscoveriesReached.complete();
+    }
+
+    await this.releaseDiscoveries.promise;
+    this.activeDiscoveryCount -= 1;
+    return [];
+  }
+}
+
 async function collectReadOnlyToolCallEvents(input: Parameters<
   typeof streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall
 >[0]): Promise<AssistantResponseEvent[]> {
   const assistantResponseEvents: AssistantResponseEvent[] = [];
   for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall(input)) {
+    assistantResponseEvents.push(assistantResponseEvent);
+  }
+  return assistantResponseEvents;
+}
+
+async function collectReadOnlyToolCallBatchEvents(input: Parameters<
+  typeof streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls
+>[0]): Promise<AssistantResponseEvent[]> {
+  const assistantResponseEvents: AssistantResponseEvent[] = [];
+  for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls(input)) {
     assistantResponseEvents.push(assistantResponseEvent);
   }
   return assistantResponseEvents;
@@ -271,3 +327,89 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
     failureExplanation: expect.stringContaining("Invalid regular expression"),
   });
 });
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concurrent execution and submits ordered results", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-concurrency-"));
+  const requestedToolCalls: AutoApprovedReadOnlyRequestedToolCall[] = Array.from({ length: 5 }, (_, toolCallIndex) => ({
+    toolCallId: `call_read_${toolCallIndex + 1}`,
+    toolCallRequest: {
+      toolName: "read",
+      readTargetPath: `notes-${toolCallIndex + 1}.txt`,
+    },
+  }));
+  await Promise.all(requestedToolCalls.map((_requestedToolCall, toolCallIndex) =>
+    writeFile(join(workspaceRootPath, `notes-${toolCallIndex + 1}.txt`), `note ${toolCallIndex + 1}\n`, "utf8")
+  ));
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const projectInstructionTracker = new BlockingProjectInstructionTracker({
+    workspaceRootPath,
+    expectedActiveDiscoveryCount: 2,
+  });
+  const readOnlyToolCallConcurrencyLimiter = new RuntimeReadOnlyToolCallConcurrencyLimiter({
+    maximumConcurrentReadOnlyToolCalls: 2,
+  });
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Read notes",
+        modelFacingPromptText: "Read notes",
+      },
+      ...requestedToolCalls.map((requestedToolCall) => ({
+        entryKind: "tool_call" as const,
+        toolCallId: requestedToolCall.toolCallId,
+        toolCallRequest: requestedToolCall.toolCallRequest,
+      })),
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  const assistantResponseEventsPromise = collectReadOnlyToolCallBatchEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    providerConversationTurn,
+    requestedToolCalls,
+    workspaceRootPath,
+    projectInstructionTracker,
+    toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  await waitForPromiseWithTimeout({
+    promise: projectInstructionTracker.expectedActiveDiscoveriesReached.promise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("Read-only tool calls did not reach the expected active concurrency."),
+  });
+  expect(projectInstructionTracker.startedDiscoveryCount).toBe(2);
+  expect(projectInstructionTracker.activeDiscoveryCount).toBe(2);
+
+  projectInstructionTracker.releaseDiscoveries.complete();
+  const assistantResponseEvents = await assistantResponseEventsPromise;
+
+  expect(projectInstructionTracker.startedDiscoveryCount).toBe(requestedToolCalls.length);
+  expect(projectInstructionTracker.maximumActiveDiscoveryCount).toBe(2);
+  expect(providerConversationTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).toEqual(
+    requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+  );
+  expect(assistantResponseEvents.flatMap((assistantResponseEvent) =>
+    (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call"
+      ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
+      : []
+  )).toEqual([
+    ...requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:running`),
+    ...requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:completed`),
+  ]);
+});
+
+async function waitForPromiseWithTimeout(input: {
+  promise: Promise<void>;
+  timeoutMilliseconds: number;
+  createTimeoutError: () => Error;
+}): Promise<void> {
+  return new Promise<void>((resolvePromise, rejectPromise) => {
+    const timeoutHandle = setTimeout(() => rejectPromise(input.createTimeoutError()), input.timeoutMilliseconds);
+    input.promise.then(resolvePromise, rejectPromise).finally(() => clearTimeout(timeoutHandle));
+  });
+}

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ToolCallDetail, WorkspacePatch } from "@buli/contracts";
+import { ApprovalDecisionControl } from "../primitives/ApprovalDecisionControl.tsx";
 import { BashToolCallCard } from "./BashToolCallCard.tsx";
 import { EditToolCallCard } from "./EditToolCallCard.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
@@ -16,18 +17,31 @@ import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
 export type ToolCallEntryViewProps = {
   toolCallDetail: ToolCallDetail;
   renderState: "streaming" | "completed" | "failed";
+  pendingToolCallApprovalDecisionActions?: PendingToolCallApprovalDecisionActions;
   durationMs?: number;
   errorText?: string;
   workspacePatch?: WorkspacePatch;
 };
 
+export type PendingToolCallApprovalDecisionActions = {
+  onApprove: () => void;
+  onDeny: () => void;
+};
+
 export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   const { toolCallDetail } = props;
+  const approvalDecisionControl = props.pendingToolCallApprovalDecisionActions ? (
+    <ApprovalDecisionControl
+      onApprove={props.pendingToolCallApprovalDecisionActions.onApprove}
+      onDeny={props.pendingToolCallApprovalDecisionActions.onDeny}
+    />
+  ) : undefined;
   if (toolCallDetail.toolName === "read") {
     return (
       <ReadToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
       />
@@ -38,6 +52,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <GrepToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
       />
@@ -48,6 +63,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <GlobToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
       />
@@ -58,6 +74,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <EditToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
         {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
@@ -69,6 +86,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <WriteToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
         {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
@@ -80,6 +98,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <BashToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
         {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
@@ -91,6 +110,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       <TodoWriteToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
         {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
         {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
       />
@@ -101,6 +121,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
     <TaskToolCallCard
       renderState={props.renderState}
       toolCallDetail={toolCallDetail}
+      {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
       {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
       {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
     />

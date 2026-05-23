@@ -25,6 +25,8 @@ import { useChatScreenKeyboardInputActions } from "./useChatScreenKeyboardInputA
 import { useConversationTranscriptViewport } from "./useConversationTranscriptViewport.ts";
 import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
 
+const EMPTY_QUEUED_PROMPT_PREVIEWS = [] as const;
+
 export type UseChatScreenControllerInput = {
   chatScreenProps: ChatScreenProps;
   terminalRowCount: number;
@@ -249,6 +251,15 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     diagnosticLogger,
   ]);
 
+  const pendingToolApprovalRequest = chatAppController.interactionStatusState.pendingToolApprovalRequest;
+  const pendingToolApprovalDecision = pendingToolApprovalRequest === undefined
+    ? undefined
+    : {
+        pendingToolApprovalRequest,
+        onPendingToolApprovalApproved: approvePendingToolApprovalRequest,
+        onPendingToolApprovalDenied: denyPendingToolApprovalRequest,
+      };
+
   const currentMainAreaProps: ChatScreenMainAreaProps = {
     isCommandHelpModalVisible: chatAppController.transcriptState.isCommandHelpModalVisible,
     isReasoningSummaryVisible: chatAppController.transcriptState.isReasoningSummaryVisible,
@@ -261,21 +272,22 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     conversationMessagePartsById: chatAppController.transcriptState.conversationMessagePartsById,
     hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
     olderConversationMessageRevealCount: conversationTranscriptWindow.olderConversationMessageRevealCount,
+    ...(pendingToolApprovalDecision !== undefined ? { pendingToolApprovalDecision } : {}),
     conversationMessageScrollBoxRef,
     onRevealOlderConversationMessages: revealOlderConversationMessages,
     onCommandHelpCloseRequested: chatAppController.hideCommandHelpModalInChatApp,
   };
   const currentStatusStackProps: LiveInteractionStatusStackProps = {
-    pendingToolApprovalRequest: chatAppController.interactionStatusState.pendingToolApprovalRequest,
     conversationSessionSelectionState: chatAppController.selectionState.conversationSessionSelectionState,
     modelAndReasoningSelectionState: chatAppController.selectionState.modelAndReasoningSelectionState,
     slashCommandSelectionState: chatAppController.selectionState.slashCommandSelectionState,
     promptContextSelectionState: chatAppController.selectionState.promptContextSelectionState,
     conversationSessionExportStatus: chatAppController.interactionStatusState.conversationSessionExportStatus,
     conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
+    queuedPromptPreviews: shouldRenderMinimumHeightPromptStrip
+      ? EMPTY_QUEUED_PROMPT_PREVIEWS
+      : chatAppController.promptComposerState.queuedPromptPreviews,
     inputPanelAccentColor,
-    onPendingToolApprovalApproved: approvePendingToolApprovalRequest,
-    onPendingToolApprovalDenied: denyPendingToolApprovalRequest,
     onConversationSessionDeletionRequested: chatAppController.requestConversationSessionDeletion,
   };
   const mainAreaProps = selectStableChatScreenMainAreaProps({
@@ -348,6 +360,10 @@ function selectStableChatScreenMainAreaProps(input: {
     input.previousMainAreaProps.conversationMessagePartsById === input.nextMainAreaProps.conversationMessagePartsById &&
     input.previousMainAreaProps.hiddenOlderConversationMessageCount === input.nextMainAreaProps.hiddenOlderConversationMessageCount &&
     input.previousMainAreaProps.olderConversationMessageRevealCount === input.nextMainAreaProps.olderConversationMessageRevealCount &&
+    arePendingToolApprovalDecisionsEqual(
+      input.previousMainAreaProps.pendingToolApprovalDecision,
+      input.nextMainAreaProps.pendingToolApprovalDecision,
+    ) &&
     input.previousMainAreaProps.conversationMessageScrollBoxRef === input.nextMainAreaProps.conversationMessageScrollBoxRef
   ) {
     return input.previousMainAreaProps;
@@ -356,19 +372,36 @@ function selectStableChatScreenMainAreaProps(input: {
   return input.nextMainAreaProps;
 }
 
+function arePendingToolApprovalDecisionsEqual(
+  previousPendingToolApprovalDecision: ChatScreenMainAreaProps["pendingToolApprovalDecision"],
+  nextPendingToolApprovalDecision: ChatScreenMainAreaProps["pendingToolApprovalDecision"],
+): boolean {
+  return previousPendingToolApprovalDecision === nextPendingToolApprovalDecision ||
+    (
+      previousPendingToolApprovalDecision !== undefined &&
+      nextPendingToolApprovalDecision !== undefined &&
+      previousPendingToolApprovalDecision.pendingToolApprovalRequest ===
+        nextPendingToolApprovalDecision.pendingToolApprovalRequest &&
+      previousPendingToolApprovalDecision.onPendingToolApprovalApproved ===
+        nextPendingToolApprovalDecision.onPendingToolApprovalApproved &&
+      previousPendingToolApprovalDecision.onPendingToolApprovalDenied ===
+        nextPendingToolApprovalDecision.onPendingToolApprovalDenied
+    );
+}
+
 function selectStableLiveInteractionStatusStackProps(input: {
   previousStatusStackProps: LiveInteractionStatusStackProps | undefined;
   nextStatusStackProps: LiveInteractionStatusStackProps;
 }): LiveInteractionStatusStackProps {
   if (
     input.previousStatusStackProps &&
-    input.previousStatusStackProps.pendingToolApprovalRequest === input.nextStatusStackProps.pendingToolApprovalRequest &&
     input.previousStatusStackProps.conversationSessionSelectionState === input.nextStatusStackProps.conversationSessionSelectionState &&
     input.previousStatusStackProps.modelAndReasoningSelectionState === input.nextStatusStackProps.modelAndReasoningSelectionState &&
     input.previousStatusStackProps.slashCommandSelectionState === input.nextStatusStackProps.slashCommandSelectionState &&
     input.previousStatusStackProps.promptContextSelectionState === input.nextStatusStackProps.promptContextSelectionState &&
     input.previousStatusStackProps.conversationSessionExportStatus === input.nextStatusStackProps.conversationSessionExportStatus &&
     input.previousStatusStackProps.conversationSessionCompactionStatus === input.nextStatusStackProps.conversationSessionCompactionStatus &&
+    input.previousStatusStackProps.queuedPromptPreviews === input.nextStatusStackProps.queuedPromptPreviews &&
     input.previousStatusStackProps.inputPanelAccentColor === input.nextStatusStackProps.inputPanelAccentColor
   ) {
     return input.previousStatusStackProps;

@@ -7,6 +7,9 @@ import {
 } from "./testRenderRegistry.ts";
 
 type OpenTuiTestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
+type OpenTuiRenderedTestSetup = OpenTuiTestSetup & {
+  cleanup: () => Promise<void>;
+};
 type ReactGlobalWithActEnvironment = typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
 };
@@ -18,7 +21,7 @@ function enableReactActEnvironmentForOpenTuiTest(): void {
 export async function testRender(
   node: ReactNode,
   testRendererOptions: TestRendererOptions = {},
-): Promise<OpenTuiTestSetup> {
+): Promise<OpenTuiRenderedTestSetup> {
   enableReactActEnvironmentForOpenTuiTest();
   const renderedTestSetup = await createTestRenderer({
     consoleMode: "disabled",
@@ -60,7 +63,7 @@ export async function testRender(
     };
 
     registerOpenTuiTestCleanupCallbackForLifecycle(cleanupRenderedTestSetup);
-    return renderedTestSetup;
+    return Object.assign(renderedTestSetup, { cleanup: cleanupRenderedTestSetup });
   } catch (error) {
     renderedTestSetup.renderer.destroy();
     throw error;

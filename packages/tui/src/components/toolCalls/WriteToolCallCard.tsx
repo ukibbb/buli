@@ -11,6 +11,7 @@ import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation }
 export type WriteToolCallCardProps = {
   toolCallDetail: ToolCallWriteDetail;
   renderState: "streaming" | "completed" | "failed";
+  approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
   workspacePatch?: WorkspacePatch;
@@ -26,6 +27,9 @@ export function WriteToolCallCard(props: WriteToolCallCardProps): ReactNode {
   return (
     <ExpandableToolCallCard
       accentColor={accentColor}
+      {...(props.approvalDecisionControl !== undefined
+        ? { approvalDecisionControl: props.approvalDecisionControl }
+        : {})}
       hasExpandableContent={hasWriteDiffContent}
       renderExpandedContent={() => buildWriteBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}

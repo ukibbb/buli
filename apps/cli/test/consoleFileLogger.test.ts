@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installConsoleFileLogger, type ConsoleMethodTarget } from "../src/consoleFileLogger.ts";
+import { installConsoleFileLogger, type ConsoleMethodTarget } from "../src/diagnostics/consoleFileLogger.ts";
 
 async function readPermissionBits(filePath: string): Promise<number> {
   return (await stat(filePath)).mode & 0o777;

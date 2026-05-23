@@ -15,6 +15,7 @@ type RenderedChatAppControllerHook = {
   pressReturn: () => Promise<void>;
   pressEscape: () => Promise<void>;
   flushHookEffects: () => Promise<void>;
+  cleanup: () => Promise<void>;
 };
 
 type ControlledAssistantTurn = {
@@ -120,6 +121,7 @@ async function renderChatAppControllerHook(
       });
       await renderedHook.renderOnce();
     },
+    cleanup: renderedHook.cleanup,
   };
 }
 
@@ -444,11 +446,18 @@ test("useChatAppController queues prompts typed while streaming and drains them 
   await renderedHook.typeText("Second prompt");
   await renderedHook.pressReturn();
   expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+  expect(renderedHook.readCurrentController().queuedPromptPreviews).toMatchObject([
+    { submittedPromptText: "Second prompt", submittedPromptImageAttachmentCount: 0 },
+  ]);
   expect(renderedHook.readCurrentController().chatSessionState.promptDraft).toBe("");
 
   await renderedHook.typeText("Third prompt");
   await renderedHook.pressReturn();
   expect(renderedHook.readCurrentController().queuedPromptCount).toBe(2);
+  expect(renderedHook.readCurrentController().queuedPromptPreviews).toMatchObject([
+    { submittedPromptText: "Second prompt", submittedPromptImageAttachmentCount: 0 },
+    { submittedPromptText: "Third prompt", submittedPromptImageAttachmentCount: 0 },
+  ]);
   expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
     "First prompt",
   ]);
@@ -458,6 +467,9 @@ test("useChatAppController queues prompts typed while streaming and drains them 
   });
   await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 2 });
   expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+  expect(renderedHook.readCurrentController().queuedPromptPreviews).toMatchObject([
+    { submittedPromptText: "Third prompt", submittedPromptImageAttachmentCount: 0 },
+  ]);
   expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
     "First prompt",
     "Second prompt",
@@ -468,6 +480,7 @@ test("useChatAppController queues prompts typed while streaming and drains them 
   });
   await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 3 });
   expect(renderedHook.readCurrentController().queuedPromptCount).toBe(0);
+  expect(renderedHook.readCurrentController().queuedPromptPreviews).toEqual([]);
   expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
     "First prompt",
     "Second prompt",
@@ -493,6 +506,9 @@ test("useChatAppController drains queued prompts after confirmed interruption se
   await renderedHook.typeText("Continue after interrupt");
   await renderedHook.pressReturn();
   expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+  expect(renderedHook.readCurrentController().queuedPromptPreviews).toMatchObject([
+    { submittedPromptText: "Continue after interrupt", submittedPromptImageAttachmentCount: 0 },
+  ]);
 
   await renderedHook.pressEscape();
   expect(renderedHook.readCurrentController().isActiveTurnInterruptConfirmationArmed).toBe(true);
@@ -501,6 +517,7 @@ test("useChatAppController drains queued prompts after confirmed interruption se
   await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 2 });
   expect(controlledRunner.startedTurns[0]?.readWasInterrupted()).toBe(true);
   expect(renderedHook.readCurrentController().queuedPromptCount).toBe(0);
+  expect(renderedHook.readCurrentController().queuedPromptPreviews).toEqual([]);
   expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
     "Interruptible prompt",
     "Continue after interrupt",
@@ -510,4 +527,31 @@ test("useChatAppController drains queued prompts after confirmed interruption se
     controlledRunner.startedTurns[1]?.complete();
   });
   await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
+});
+
+test("useChatAppController does not drain queued prompts after unmount", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+  });
+
+  await renderedHook.typeText("First prompt");
+  await renderedHook.pressReturn();
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 1 });
+
+  await renderedHook.typeText("Queued after unmount");
+  await renderedHook.pressReturn();
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+
+  await renderedHook.cleanup();
+
+  await act(async () => {
+    controlledRunner.startedTurns[0]?.complete();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
+    "First prompt",
+  ]);
 });

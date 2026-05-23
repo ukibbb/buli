@@ -4,6 +4,7 @@ import type {
   AssistantWorkspacePatchConversationMessagePart,
   ConversationMessage,
   ConversationMessagePart,
+  PendingToolApprovalRequest,
   WorkspacePatch,
 } from "@buli/contracts";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
@@ -25,6 +26,7 @@ function ConversationMessagePartView(props: {
   conversationMessagePart: ConversationMessagePart;
   isReasoningSummaryVisible: boolean;
   horizontalRuleColor: string;
+  pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
   workspacePatch?: WorkspacePatch;
   terminalColumnCount?: number | undefined;
@@ -59,9 +61,16 @@ function ConversationMessagePartView(props: {
     );
   }
   if (conversationMessagePart.partKind === "assistant_tool_call") {
+    const pendingToolCallApprovalDecisionActions = resolvePendingToolCallApprovalDecisionActions({
+      conversationMessagePart,
+      pendingToolApprovalDecision: props.pendingToolApprovalDecision,
+    });
     return (
       <ToolCallPartView
         assistantToolCallConversationMessagePart={conversationMessagePart}
+        {...(pendingToolCallApprovalDecisionActions !== undefined
+          ? { pendingToolCallApprovalDecisionActions }
+          : {})}
         {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
       />
     );
@@ -107,9 +116,33 @@ export type ConversationMessageRowProps = {
   conversationMessageParts: readonly ConversationMessagePart[];
   isReasoningSummaryVisible: boolean;
   horizontalRuleColor: string;
+  pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
   terminalColumnCount?: number | undefined;
 };
+
+export type PendingToolApprovalDecision = {
+  pendingToolApprovalRequest: PendingToolApprovalRequest;
+  onPendingToolApprovalApproved: () => void;
+  onPendingToolApprovalDenied: () => void;
+};
+
+function resolvePendingToolCallApprovalDecisionActions(input: {
+  conversationMessagePart: AssistantToolCallConversationMessagePart;
+  pendingToolApprovalDecision: PendingToolApprovalDecision | undefined;
+}): { onApprove: () => void; onDeny: () => void } | undefined {
+  if (
+    input.pendingToolApprovalDecision?.pendingToolApprovalRequest.pendingToolCallId !==
+      input.conversationMessagePart.toolCallId
+  ) {
+    return undefined;
+  }
+
+  return {
+    onApprove: input.pendingToolApprovalDecision.onPendingToolApprovalApproved,
+    onDeny: input.pendingToolApprovalDecision.onPendingToolApprovalDenied,
+  };
+}
 
 function shouldUseCompactSpacingBetweenParts(input: {
   currentConversationMessagePart: ConversationMessagePart;
@@ -247,6 +280,9 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
               conversationMessagePart={conversationMessagePart}
               isReasoningSummaryVisible={props.isReasoningSummaryVisible}
               horizontalRuleColor={props.horizontalRuleColor}
+              {...(props.pendingToolApprovalDecision !== undefined
+                ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
+                : {})}
               userMessageBorderColor={props.userMessageBorderColor}
               {...(workspacePatch !== undefined ? { workspacePatch } : {})}
               terminalColumnCount={props.terminalColumnCount}

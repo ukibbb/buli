@@ -272,6 +272,71 @@ class ParentAndAbortTrackingExplorerProvider implements ConversationTurnProvider
   }
 }
 
+class BlockingStatusProviderTurn implements ProviderConversationTurn {
+  readonly abortSignal: AbortSignal | undefined;
+  readonly streamStarted = new DeferredCompletion();
+  readonly allowCompletion = new DeferredCompletion();
+
+  constructor(abortSignal: AbortSignal | undefined) {
+    this.abortSignal = abortSignal;
+  }
+
+  async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
+    this.streamStarted.resolve();
+    yield { type: "text_chunk", text: "Working" };
+    await Promise.race([this.allowCompletion.promise, createAbortPromise(this.abortSignal)]);
+    yield { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } };
+  }
+
+  async submitToolResult(): Promise<void> {}
+
+  getProviderTurnReplay(): ProviderTurnReplay | undefined {
+    return undefined;
+  }
+}
+
+class BlockingStatusConversationTurnProvider implements ConversationTurnProvider {
+  readonly startedTurnRequests: ProviderConversationTurnRequest[] = [];
+  readonly providerTurns: BlockingStatusProviderTurn[] = [];
+  readonly firstProviderTurnStarted = new DeferredCompletion();
+
+  startConversationTurn(input: ProviderConversationTurnRequest): ProviderConversationTurn {
+    this.startedTurnRequests.push(input);
+    const providerTurn = new BlockingStatusProviderTurn(input.abortSignal);
+    this.providerTurns.push(providerTurn);
+    if (this.providerTurns.length === 1) {
+      this.firstProviderTurnStarted.resolve();
+    }
+    return providerTurn;
+  }
+}
+
+function readFirstBlockingProviderTurn(
+  conversationTurnProvider: BlockingStatusConversationTurnProvider,
+): BlockingStatusProviderTurn {
+  const providerTurn = conversationTurnProvider.providerTurns[0];
+  if (!providerTurn) {
+    throw new Error("Expected a blocking provider turn to have started.");
+  }
+
+  return providerTurn;
+}
+
+function createAbortPromise(abortSignal: AbortSignal | undefined): Promise<never> {
+  return new Promise<never>((_resolve, reject) => {
+    const rejectAsAborted = (): void => {
+      reject(new Error("provider aborted"));
+    };
+
+    if (abortSignal?.aborted) {
+      rejectAsAborted();
+      return;
+    }
+
+    abortSignal?.addEventListener("abort", rejectAsAborted, { once: true });
+  });
+}
+
 async function waitForPromiseWithTimeout(input: {
   promise: Promise<void>;
   timeoutMilliseconds: number;
@@ -298,6 +363,125 @@ async function collectAssistantEvents(activeConversationTurn: ReturnType<Assista
   }
   return emittedAssistantEvents;
 }
+
+test("AssistantConversationRuntime exposes idle turn status before work starts", () => {
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new RecordingConversationTurnProvider([]),
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  expect(runtime.readConversationTurnRuntimeStatus()).toEqual({ statusKind: "idle" });
+});
+
+test("AssistantConversationRuntime exposes running turn status until the stream finishes", async () => {
+  const provider = new BlockingStatusConversationTurnProvider();
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const activeConversationTurn = runtime.startConversationTurn({
+    userPromptText: "Say hello",
+    selectedModelId: "gpt-5.4",
+  });
+  const emittedAssistantEventsPromise = collectAssistantEvents(activeConversationTurn);
+  await provider.firstProviderTurnStarted.promise;
+  const providerTurn = readFirstBlockingProviderTurn(provider);
+  await providerTurn.streamStarted.promise;
+
+  expect(runtime.readConversationTurnRuntimeStatus()).toEqual({
+    statusKind: "conversation_turn_running",
+    selectedModelId: "gpt-5.4",
+  });
+
+  providerTurn.allowCompletion.resolve();
+  await emittedAssistantEventsPromise;
+
+  expect(runtime.readConversationTurnRuntimeStatus()).toEqual({ statusKind: "idle" });
+});
+
+test("AssistantConversationRuntime exposes idle turn status after interruption finishes", async () => {
+  const provider = new BlockingStatusConversationTurnProvider();
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const activeConversationTurn = runtime.startConversationTurn({
+    userPromptText: "Stop this",
+    selectedModelId: "gpt-5.4",
+  });
+  const emittedAssistantEventsPromise = collectAssistantEvents(activeConversationTurn);
+  await provider.firstProviderTurnStarted.promise;
+  const providerTurn = readFirstBlockingProviderTurn(provider);
+  await providerTurn.streamStarted.promise;
+
+  expect(runtime.readConversationTurnRuntimeStatus().statusKind).toBe("conversation_turn_running");
+
+  activeConversationTurn.interrupt();
+  await emittedAssistantEventsPromise;
+
+  expect(runtime.readConversationTurnRuntimeStatus()).toEqual({ statusKind: "idle" });
+});
+
+test("AssistantConversationRuntime exposes compaction status while compacting", async () => {
+  const provider = new BlockingStatusConversationTurnProvider();
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory: new InMemoryConversationHistory({
+      initialConversationSessionEntries: [
+        {
+          entryKind: "user_prompt",
+          promptText: "Original prompt",
+          modelFacingPromptText: "Original prompt",
+        },
+      ],
+    }),
+  });
+
+  const compactionPromise = runtime.compactConversationSession({ selectedModelId: "gpt-5.4" });
+  await provider.firstProviderTurnStarted.promise;
+  const providerTurn = readFirstBlockingProviderTurn(provider);
+  await providerTurn.streamStarted.promise;
+
+  expect(runtime.readConversationTurnRuntimeStatus()).toEqual({
+    statusKind: "conversation_session_compaction_running",
+  });
+
+  providerTurn.allowCompletion.resolve();
+  await compactionPromise;
+
+  expect(runtime.readConversationTurnRuntimeStatus()).toEqual({ statusKind: "idle" });
+});
+
+test("AssistantConversationRuntime preserves running status after duplicate turn rejection", () => {
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new BlockingStatusConversationTurnProvider(),
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  runtime.startConversationTurn({
+    userPromptText: "First prompt",
+    selectedModelId: "gpt-5.4",
+  });
+
+  expect(() =>
+    runtime.startConversationTurn({
+      userPromptText: "Second prompt",
+      selectedModelId: "gpt-5.4",
+    })
+  ).toThrow("A conversation turn is already running");
+  expect(runtime.readConversationTurnRuntimeStatus()).toEqual({
+    statusKind: "conversation_turn_running",
+    selectedModelId: "gpt-5.4",
+  });
+});
 
 test("AssistantConversationRuntime ignores diagnostic logger failures", async () => {
   const providerTurn = new ScriptedProviderTurn({

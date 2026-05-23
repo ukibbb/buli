@@ -20,6 +20,7 @@ import type {
   AssistantConversationRunner,
   ConversationCompactionRequest,
   ConversationCompactionResult,
+  ConversationTurnRuntimeStatus,
   ConversationTurnProvider,
   ConversationTurnRequest,
   ProviderConversationTurn,
@@ -45,6 +46,7 @@ import {
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
 import { ProjectInstructionTracker } from "./projectInstructions.ts";
+import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { startAcceptedRuntimeConversationTurn } from "./runtimeConversationTurnStart.ts";
 import { streamAssistantResponseEventsFromProviderStream } from "./runtimeProviderStreamProcessor.ts";
 import {
@@ -178,6 +180,21 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     return runtimeConversationTurn;
   }
 
+  readConversationTurnRuntimeStatus(): ConversationTurnRuntimeStatus {
+    if (this.conversationSessionCompactor.isCompactingCurrentConversationSession()) {
+      return { statusKind: "conversation_session_compaction_running" };
+    }
+
+    if (this.currentPendingConversationTurn && !this.currentPendingConversationTurn.hasFinishedTurn()) {
+      return {
+        statusKind: "conversation_turn_running",
+        selectedModelId: this.currentPendingConversationTurn.conversationTurnInput.selectedModelId,
+      };
+    }
+
+    return { statusKind: "idle" };
+  }
+
   async compactConversationSession(input: ConversationCompactionRequest): Promise<ConversationCompactionResult> {
     return this.conversationSessionCompactor.compactCurrentConversationSession(input);
   }
@@ -206,6 +223,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly onConversationTurnFinished: () => void;
   readonly pendingToolApprovalController: RuntimePendingToolApprovalController;
   readonly conversationTurnLifecycle: RuntimeConversationTurnLifecycle;
+  readonly readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
 
   constructor(input: {
     conversationTurnInput: ConversationTurnRequest;
@@ -244,6 +262,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.pendingToolApprovalController = new RuntimePendingToolApprovalController({
       diagnosticLogger: this.diagnosticLogger,
     });
+    this.readOnlyToolCallConcurrencyLimiter = new RuntimeReadOnlyToolCallConcurrencyLimiter();
     this.conversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
       selectedModelId: this.conversationTurnInput.selectedModelId,
       diagnosticLogger: this.diagnosticLogger,
@@ -433,6 +452,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
       conversationHistory: this.conversationHistory,
       abortSignal: this.conversationTurnLifecycle.abortSignal,
+      readOnlyToolCallConcurrencyLimiter: this.readOnlyToolCallConcurrencyLimiter,
       canSpawnSubagent: this.canSpawnSubagent,
       createPendingToolApproval: (pendingToolApprovalInput) => this.createPendingToolApproval(pendingToolApprovalInput),
       throwIfConversationTurnInterrupted: () => {

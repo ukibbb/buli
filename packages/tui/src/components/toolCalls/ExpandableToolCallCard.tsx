@@ -13,6 +13,7 @@ export type ToolCallRenderStatePresentation = {
 
 export type ExpandableToolCallCardProps = {
   accentColor: string;
+  approvalDecisionControl?: ReactNode;
   hasExpandableContent: boolean;
   pendingSnakeVariant?: "sixCell" | "eatingApple";
   renderExpandedContent: () => ReactNode;
@@ -32,6 +33,9 @@ export function ExpandableToolCallCard(props: ExpandableToolCallCardProps): Reac
       headerLeft={
         <ToolCallCompactHeader
           accentColor={props.accentColor}
+          {...(props.approvalDecisionControl !== undefined
+            ? { approvalDecisionControl: props.approvalDecisionControl }
+            : {})}
           disclosureState={props.hasExpandableContent
             ? {
                 isContentExpandable: true,

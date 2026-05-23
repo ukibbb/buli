@@ -31,6 +31,7 @@ export type UseChatAppAssistantTurnActionsInput = {
   assistantConversationRunner: AssistantConversationRunner;
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
+  isChatAppControllerMountedRef: MutableValueRef<boolean>;
   submittedToolApprovalDecisionApprovalIdRef: MutableValueRef<string | undefined>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   getActiveConversationTurn: () => ActiveConversationTurn | undefined;
@@ -161,7 +162,14 @@ export function useChatAppAssistantTurnActions(
         input.registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
         await assistantResponseRelayPromise;
 
+        if (!input.isChatAppControllerMountedRef.current) {
+          return;
+        }
+
         const autoCompactionResult = await input.autoCompactCurrentConversationSessionAfterAssistantTurn();
+        if (!input.isChatAppControllerMountedRef.current) {
+          return;
+        }
         if (autoCompactionResult?.didCompact && activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_continue") {
           logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.auto_compaction_continue_prompt_queued", {
             selectedModelId: conversationTurnRequest.selectedModelId,

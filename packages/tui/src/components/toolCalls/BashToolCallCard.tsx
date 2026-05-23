@@ -15,6 +15,7 @@ import {
 export type BashToolCallCardProps = {
   toolCallDetail: ToolCallBashDetail;
   renderState: "streaming" | "completed" | "failed";
+  approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
   workspacePatch?: WorkspacePatch;
@@ -29,6 +30,9 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
   return (
     <ExpandableToolCallCard
       accentColor={accentColor}
+      {...(props.approvalDecisionControl !== undefined
+        ? { approvalDecisionControl: props.approvalDecisionControl }
+        : {})}
       hasExpandableContent={hasBashOutputContent}
       renderExpandedContent={() => buildBashBodyContent(props)}
       statusKind={bashToolCallPresentation.statusKind}

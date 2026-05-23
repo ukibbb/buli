@@ -2,6 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { EditToolCallCard } from "../../../src/components/toolCalls/EditToolCallCard.tsx";
+import { ApprovalDecisionControl } from "../../../src/components/primitives/ApprovalDecisionControl.tsx";
+
+function findRenderedLineContaining(frame: string, targetText: string): string {
+  const renderedLine = frame.split("\n").find((line) => line.includes(targetText));
+  if (!renderedLine) {
+    throw new Error(`expected rendered frame to contain ${targetText}`);
+  }
+  return renderedLine;
+}
 
 describe("EditToolCallCard", () => {
   test("completed_shows_file_path_and_diff", async () => {
@@ -134,6 +143,29 @@ describe("EditToolCallCard", () => {
     expect(frame).toContain("[/src/foo.ts]");
     expect(frame).toContain("◆");
     expect(frame).not.toContain("editing");
+  });
+
+  test("pending_approval_shows_decision_buttons_on_the_edit_header_row", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <EditToolCallCard
+        renderState="streaming"
+        toolCallDetail={{
+          toolName: "edit",
+          editedFilePath: "packages/engine/test/systemPrompt.test.ts",
+        }}
+        approvalDecisionControl={<ApprovalDecisionControl onApprove={() => {}} onDeny={() => {}} />}
+      />,
+      { width: 120, height: 6 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    const editHeaderLine = findRenderedLineContaining(frame, "Edit");
+    expect(editHeaderLine).toContain("packages/engine/test/systemPrompt.test.ts");
+    expect(editHeaderLine).toContain("Yes");
+    expect(editHeaderLine).toContain("No");
+    expect(frame).not.toContain("This edit will modify");
+    expect(frame).not.toContain("Review");
   });
 
   test("failed_shows_error_state", async () => {

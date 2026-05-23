@@ -19,10 +19,10 @@ import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
 import { runLogin } from "../src/commands/login.ts";
 import {
-  defaultConversationSessionFilePath,
-  FileConversationSessionStore,
+  defaultConversationSessionDatabasePath,
+  SqliteConversationSessionStore,
   type ConversationSessionStore,
-} from "../src/conversationSessionStore.ts";
+} from "../src/conversationSession/index.ts";
 import { runListAvailableModels } from "../src/commands/models.ts";
 import { type InteractiveChatStartOptions, runCli, USAGE } from "../src/main.ts";
 
@@ -196,6 +196,12 @@ test("runInteractiveChat uses the prompt-context root environment override", asy
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-prompt-context-"));
   const promptContextBrowseRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-root-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStore = new SqliteConversationSessionStore({
+    databasePath: join(dir, "session-store.sqlite"),
+    createSessionId: () => "session-a",
+    createSessionEntryId: () => "entry-a",
+    nowMs: () => 1_000,
+  });
   let capturedConversationRuntime: AssistantConversationRuntime | undefined;
 
   await store.saveOpenAi({
@@ -207,32 +213,31 @@ test("runInteractiveChat uses the prompt-context root environment override", asy
     accountId: "acct_123",
   });
 
-  const output = await runInteractiveChat({
-    store,
-    conversationSessionStore: new FileConversationSessionStore({
-      filePath: join(dir, "conversation-session.json"),
-      sessionWorkspaceDirectoryPath: join(dir, "conversation-sessions"),
-      createSessionId: () => "session-a",
-      createSessionEntryId: () => "entry-a",
-      nowMs: () => 1_000,
-    }),
-    stdin: { isTTY: true },
-    environment: { BULI_PROMPT_CONTEXT_ROOT: promptContextBrowseRootPath },
-    renderChatScreen: async (renderInput) => {
-      capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
-      return { destroy: () => {}, waitUntilExit: async () => {} };
-    },
-  });
+  try {
+    const output = await runInteractiveChat({
+      store,
+      conversationSessionStore,
+      stdin: { isTTY: true },
+      environment: { BULI_PROMPT_CONTEXT_ROOT: promptContextBrowseRootPath },
+      renderChatScreen: async (renderInput) => {
+        capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+        return { destroy: () => {}, waitUntilExit: async () => {} };
+      },
+    });
 
-  expect(output).toBe("");
-  expect(capturedConversationRuntime?.workspaceRootPath).toBe(process.cwd());
-  expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(resolve(promptContextBrowseRootPath));
-  expect(capturedConversationRuntime?.promptContextStartingDirectoryPath).toBe(resolve(promptContextBrowseRootPath));
+    expect(output).toBe("");
+    expect(capturedConversationRuntime?.workspaceRootPath).toBe(process.cwd());
+    expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(resolve(promptContextBrowseRootPath));
+    expect(capturedConversationRuntime?.promptContextStartingDirectoryPath).toBe(resolve(promptContextBrowseRootPath));
+  } finally {
+    conversationSessionStore.close();
+  }
 });
 
 test("runInteractiveChat passes the known default model reasoning effort to the renderer", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
   let receivedSelection: {
     selectedModelId: string;
     selectedModelDefaultReasoningEffort: ReasoningEffort | undefined;
@@ -250,6 +255,7 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
 
   const output = await runInteractiveChat({
     store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
     stdin: { isTTY: true },
     environment: {},
     renderChatScreen: async (renderInput) => {
@@ -320,6 +326,40 @@ test("runInteractiveChat uses persisted session model selection before app defau
   });
 });
 
+test("runInteractiveChat skips saving unchanged startup model selection", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-unchanged-model-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const persistedModelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.5",
+    selectedModelDefaultReasoningEffort: "medium",
+    selectedReasoningEffort: "medium",
+  };
+  const conversationSessionStoreStub = createConversationSessionStoreStub({
+    directoryPath: dir,
+    activeModelSelection: persistedModelSelection,
+  });
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {},
+    renderChatScreen: async () => ({ destroy: () => {}, waitUntilExit: async () => {} }),
+  });
+
+  expect(output).toBe("");
+  expect(conversationSessionStoreStub.savedModelSelections).toEqual([]);
+});
+
 test("runInteractiveChat lets startup model flags override persisted session settings", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-model-override-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
@@ -379,6 +419,7 @@ test("runInteractiveChat lets startup model flags override persisted session set
 test("runInteractiveChat restores console logging after the renderer exits", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-console-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
   const originalConsoleLog = console.log;
   await store.saveOpenAi({
     provider: "openai",
@@ -391,6 +432,7 @@ test("runInteractiveChat restores console logging after the renderer exits", asy
 
   const output = await runInteractiveChat({
     store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
     stdin: { isTTY: true },
     environment: {
       BULI_CONSOLE_LOG_FILE: join(dir, "console.log"),
@@ -406,9 +448,45 @@ test("runInteractiveChat restores console logging after the renderer exits", asy
   expect(console.log).toBe(originalConsoleLog);
 });
 
+test("runInteractiveChat writes startup timing diagnostics", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-startup-timing-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
+  const logFilePath = join(dir, "startup.log");
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {
+      BULI_CONSOLE_LOG_FILE: logFilePath,
+      BULI_CONSOLE_LOG_RESET: "true",
+    },
+    renderChatScreen: async () => ({ destroy: () => {}, waitUntilExit: async () => {} }),
+  });
+
+  expect(output).toBe("");
+  const diagnosticLogText = await readFile(logFilePath, "utf8");
+  expect(diagnosticLogText).toContain("interactive_chat.startup_timing");
+  expect(diagnosticLogText).toContain("phase: 'auth'");
+  expect(diagnosticLogText).toContain("phase: 'session_load'");
+  expect(diagnosticLogText).toContain("phase: 'renderer_load'");
+  expect(diagnosticLogText).toContain("phase: 'render'");
+});
+
 test("runInteractiveChat restores console logging when the renderer throws", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-console-error-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
   const originalConsoleLog = console.log;
   await store.saveOpenAi({
     provider: "openai",
@@ -421,6 +499,7 @@ test("runInteractiveChat restores console logging when the renderer throws", asy
 
   await expect(runInteractiveChat({
     store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
     stdin: { isTTY: true },
     environment: {
       BULI_CONSOLE_LOG_FILE: join(dir, "console.log"),
@@ -470,11 +549,10 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     },
   ];
   const conversationSessionStore = {
-    filePath: join(dir, "conversation-session.json"),
+    storagePath: join(dir, "session-store.sqlite"),
     promptCacheKey: "buli:test-workspace",
     loadActiveConversationSession: () => ({
       sessionId: "session-a",
-      filePath: join(dir, "session-a.jsonl"),
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),
@@ -493,7 +571,6 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       activeModelSelection = startNewConversationSessionInput?.modelSelection;
       return {
         sessionId: "session-new",
-        filePath: join(dir, "session-new.jsonl"),
         modelSelection: activeModelSelection,
         conversationSessionEntries: [],
       };
@@ -501,7 +578,6 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     listConversationSessions: () => listedConversationSessions,
     switchActiveConversationSession: (sessionId) => ({
       sessionId,
-      filePath: join(dir, `${sessionId}.jsonl`),
       modelSelection: undefined,
       conversationSessionEntries: [
         {
@@ -517,7 +593,6 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       );
       return {
         sessionId: "session-a",
-        filePath: join(dir, "session-a.jsonl"),
         modelSelection: undefined,
         conversationSessionEntries: initialConversationSessionEntries,
       };
@@ -741,18 +816,31 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
 });
 
-test("FileConversationSessionStore uses a workspace-scoped default path and prompt cache key", () => {
+test("SqliteConversationSessionStore uses a workspace-scoped default path and prompt cache key", async () => {
   const workspaceRootPath = join(tmpdir(), "buli-workspace-a");
   const otherWorkspaceRootPath = join(tmpdir(), "buli-workspace-b");
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-default-path-"));
 
-  const sessionStore = new FileConversationSessionStore({ workspaceRootPath });
-  const otherSessionStore = new FileConversationSessionStore({ workspaceRootPath: otherWorkspaceRootPath });
+  const sessionStore = new SqliteConversationSessionStore({
+    databasePath: join(directoryPath, "a.sqlite"),
+    workspaceRootPath,
+  });
+  const otherSessionStore = new SqliteConversationSessionStore({
+    databasePath: join(directoryPath, "b.sqlite"),
+    workspaceRootPath: otherWorkspaceRootPath,
+  });
 
-  expect(sessionStore.filePath).toContain("conversation-sessions");
-  expect(sessionStore.filePath).toBe(defaultConversationSessionFilePath({ workspaceRootPath }));
-  expect(sessionStore.filePath).not.toBe(otherSessionStore.filePath);
-  expect(sessionStore.promptCacheKey.startsWith("buli:")).toBe(true);
-  expect(sessionStore.promptCacheKey).not.toBe(otherSessionStore.promptCacheKey);
+  try {
+    expect(defaultConversationSessionDatabasePath({ workspaceRootPath })).toContain("conversation-sessions");
+    expect(defaultConversationSessionDatabasePath({ workspaceRootPath })).not.toBe(
+      defaultConversationSessionDatabasePath({ workspaceRootPath: otherWorkspaceRootPath }),
+    );
+    expect(sessionStore.promptCacheKey.startsWith("buli:")).toBe(true);
+    expect(sessionStore.promptCacheKey).not.toBe(otherSessionStore.promptCacheKey);
+  } finally {
+    sessionStore.close();
+    otherSessionStore.close();
+  }
 });
 
 test("runListAvailableModels returns a clean message when auth is missing", async () => {
@@ -797,11 +885,10 @@ function createConversationSessionStoreStub(input: {
   const savedModelSelections: ConversationSessionModelSelection[] = [];
   let activeModelSelection = input.activeModelSelection;
   const conversationSessionStore = {
-    filePath: join(input.directoryPath, "conversation-session.json"),
+    storagePath: join(input.directoryPath, "session-store.sqlite"),
     promptCacheKey: "buli:test-workspace",
     loadActiveConversationSession: () => ({
       sessionId: "session-a",
-      filePath: join(input.directoryPath, "session-a.jsonl"),
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),
@@ -816,7 +903,6 @@ function createConversationSessionStoreStub(input: {
       activeModelSelection = startNewConversationSessionInput?.modelSelection;
       return {
         sessionId: "session-new",
-        filePath: join(input.directoryPath, "session-new.jsonl"),
         modelSelection: activeModelSelection,
         conversationSessionEntries: [],
       };
@@ -824,13 +910,11 @@ function createConversationSessionStoreStub(input: {
     listConversationSessions: () => [],
     switchActiveConversationSession: (sessionId) => ({
       sessionId,
-      filePath: join(input.directoryPath, `${sessionId}.jsonl`),
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),
     deleteConversationSession: () => ({
       sessionId: "session-a",
-      filePath: join(input.directoryPath, "session-a.jsonl"),
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),

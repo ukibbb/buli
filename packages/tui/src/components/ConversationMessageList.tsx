@@ -4,6 +4,7 @@ import type { ConversationMessage, ConversationMessagePart } from "@buli/contrac
 import {
   ConversationMessageRow,
   listRenderableConversationMessageParts,
+  type PendingToolApprovalDecision,
   type ConversationMessageRowProps,
 } from "./ConversationMessageRow.tsx";
 import { ConversationHistoryRevealRow } from "./ConversationHistoryRevealRow.tsx";
@@ -17,6 +18,7 @@ export type ConversationMessageListProps = {
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
   onRevealOlderConversationMessages: () => void;
+  pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
   terminalColumnCount?: number | undefined;
 };
@@ -48,6 +50,7 @@ function areConversationMessageRowPropsEqual(
     previousProps.horizontalRuleColor === nextProps.horizontalRuleColor &&
     previousProps.userMessageBorderColor === nextProps.userMessageBorderColor &&
     previousProps.terminalColumnCount === nextProps.terminalColumnCount &&
+    previousProps.pendingToolApprovalDecision === nextProps.pendingToolApprovalDecision &&
     areConversationMessagePartReferencesEqual(
       previousProps.conversationMessageParts,
       nextProps.conversationMessageParts,
@@ -113,6 +116,9 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
               conversationMessageParts={conversationMessageParts}
               isReasoningSummaryVisible={props.isReasoningSummaryVisible}
               horizontalRuleColor={props.horizontalRuleColor}
+              {...(props.pendingToolApprovalDecision !== undefined
+                ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
+                : {})}
               userMessageBorderColor={props.userMessageBorderColor}
               terminalColumnCount={props.terminalColumnCount}
             />

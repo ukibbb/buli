@@ -9,12 +9,12 @@ import type {
   ConversationSessionEntry,
 } from "@buli/contracts";
 import { marked, Renderer, type Tokens } from "marked";
-import { escapeHtml, escapeHtmlAttribute } from "./conversationSessionHtmlExport/htmlEscaping.ts";
-import { renderConversationSessionExportStyles } from "./conversationSessionHtmlExport/styles.ts";
+import { escapeHtml, escapeHtmlAttribute } from "./htmlEscaping.ts";
+import { renderConversationSessionExportStyles } from "./styles.ts";
 import {
   renderConversationSessionExportFoucScript,
   renderConversationSessionExportRuntimeScript,
-} from "./conversationSessionHtmlExport/scripts.ts";
+} from "./scripts.ts";
 import {
   renderFailAlertIcon,
   renderFileIcon,
@@ -23,15 +23,15 @@ import {
   renderMoonIcon,
   renderSunIcon,
   renderUpChevronIcon,
-} from "./conversationSessionHtmlExport/svgIcons.ts";
+} from "./svgIcons.ts";
 import {
   highlightCodeBlock,
   renderCodeWrap,
-} from "./conversationSessionHtmlExport/syntaxHighlight.ts";
+} from "./syntaxHighlight.ts";
 import {
   renderToolCallRequestBlock,
   renderToolResultBlock,
-} from "./conversationSessionHtmlExport/toolBlocks.ts";
+} from "./toolBlocks.ts";
 
 export type ConversationSessionHtmlExportResult = {
   exportFilePath: string;

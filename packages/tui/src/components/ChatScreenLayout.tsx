@@ -19,10 +19,9 @@ export function ChatScreenLayout(props: ChatScreenLayoutProps): ReactNode {
         workingDirectoryPath={props.workingDirectoryPath}
         accentColor={props.liveInteractionChromeProps.promptComposerProps.inputPanelAccentColor}
       />
-      {/* No bottom spacing here: the latest TurnFooter must sit on the row directly
-          above the input frame's top border so the turn summary reads as a caption
-          to the prompt. */}
-      <box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden" paddingX={2} paddingTop={1}>
+      {/* Keep one breathing row between transcript output and the prompt frame so
+          live tool-call cards do not visually merge with the input. */}
+      <box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden" paddingX={2} paddingTop={1} paddingBottom={1}>
         <ChatScreenMainArea {...props.mainAreaProps} />
       </box>
       <LiveInteractionChrome {...props.liveInteractionChromeProps} />

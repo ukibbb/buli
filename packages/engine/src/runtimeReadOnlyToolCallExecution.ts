@@ -14,6 +14,7 @@ import {
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
+import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { runGlobToolCall } from "./tools/globTool.ts";
@@ -75,6 +76,7 @@ export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = 
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
+  readOnlyToolCallConcurrencyLimiter?: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -116,6 +118,8 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
     throw new Error("Cannot execute an empty read-only tool-call batch.");
   }
 
+  const readOnlyToolCallConcurrencyLimiter = input.readOnlyToolCallConcurrencyLimiter ?? new RuntimeReadOnlyToolCallConcurrencyLimiter();
+
   const pendingToolCallExecutions = input.requestedToolCalls.map((requestedToolCall): PendingAutoApprovedReadOnlyToolCallExecution => ({
     ...requestedToolCall,
     toolCallPartId: randomUUID(),
@@ -141,12 +145,14 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
   input.throwIfConversationTurnInterrupted();
   const toolCallOutcomes = await Promise.all(
     pendingToolCallExecutions.map((pendingToolCallExecution) =>
-      runAutoApprovedReadOnlyToolCall({
-        toolCallRequest: pendingToolCallExecution.toolCallRequest,
-        workspaceRootPath: input.workspaceRootPath,
-        ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
-        abortSignal: input.abortSignal,
-      })
+      readOnlyToolCallConcurrencyLimiter.run(() =>
+        runAutoApprovedReadOnlyToolCall({
+          toolCallRequest: pendingToolCallExecution.toolCallRequest,
+          workspaceRootPath: input.workspaceRootPath,
+          ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
+          abortSignal: input.abortSignal,
+        })
+      )
     ),
   );
   input.throwIfConversationTurnInterrupted();

@@ -6,7 +6,7 @@
 import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ConversationSessionEntry } from "@buli/contracts";
-import { writeConversationSessionHtmlExport } from "../src/conversationSessionHtmlExport.ts";
+import { writeConversationSessionHtmlExport } from "../src/conversationSession/export/conversationSessionHtmlExport.ts";
 
 // Real 1x1 transparent PNG as a data URL — keeps the browser image decoder happy
 // so the smoke export never shows the broken-image icon.

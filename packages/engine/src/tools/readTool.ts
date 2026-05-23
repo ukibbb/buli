@@ -297,20 +297,32 @@ async function readLargeTextFileLineWindow(input: {
   const visibleFileLines: ReadVisibleLine[] = [];
   const lastRequestedLineNumber = input.offsetLineNumber + input.maximumLineCount - 1;
   let completedLineCount = 0;
-  let currentLineText = "";
+  let currentLineTextSegments: string[] = [];
   let currentLineHasContent = false;
   let previousCharacterWasCarriageReturn = false;
 
-  const finishCurrentLine = (): void => {
+  const isCurrentLineRequested = (): boolean => {
     const currentLineNumber = completedLineCount + 1;
-    if (currentLineNumber >= input.offsetLineNumber && currentLineNumber <= lastRequestedLineNumber) {
+    return currentLineNumber >= input.offsetLineNumber && currentLineNumber <= lastRequestedLineNumber;
+  };
+
+  const appendCurrentLineSegment = (lineSegmentText: string): void => {
+    if (lineSegmentText.length === 0 || !isCurrentLineRequested()) {
+      return;
+    }
+
+    currentLineTextSegments.push(lineSegmentText);
+  };
+
+  const finishCurrentLine = (): void => {
+    if (isCurrentLineRequested()) {
       visibleFileLines.push({
-        lineText: currentLineText,
+        lineText: currentLineTextSegments.join(""),
       });
     }
 
     completedLineCount += 1;
-    currentLineText = "";
+    currentLineTextSegments = [];
     currentLineHasContent = false;
   };
 
@@ -322,10 +334,14 @@ async function readLargeTextFileLineWindow(input: {
   try {
     for await (const chunk of fileReadStream) {
       throwIfReadToolAborted(input.abortSignal);
-      for (const character of String(chunk)) {
+      const chunkText = String(chunk);
+      let currentSegmentStartIndex = 0;
+      for (let characterIndex = 0; characterIndex < chunkText.length; characterIndex += 1) {
+        const character = chunkText[characterIndex] ?? "";
         if (previousCharacterWasCarriageReturn) {
           previousCharacterWasCarriageReturn = false;
           if (character === "\n") {
+            currentSegmentStartIndex = characterIndex + 1;
             continue;
           }
         }
@@ -338,19 +354,17 @@ async function readLargeTextFileLineWindow(input: {
         }
 
         if (character === "\r" || character === "\n") {
+          appendCurrentLineSegment(chunkText.slice(currentSegmentStartIndex, characterIndex));
           finishCurrentLine();
           previousCharacterWasCarriageReturn = character === "\r";
+          currentSegmentStartIndex = characterIndex + 1;
           continue;
         }
 
         currentLineHasContent = true;
-        const currentLineNumber = completedLineCount + 1;
-        if (currentLineNumber < input.offsetLineNumber || currentLineNumber > lastRequestedLineNumber) {
-          continue;
-        }
-
-        currentLineText = `${currentLineText}${character}`;
       }
+
+      appendCurrentLineSegment(chunkText.slice(currentSegmentStartIndex));
     }
   } finally {
     input.abortSignal?.removeEventListener("abort", interruptFileReadStream);

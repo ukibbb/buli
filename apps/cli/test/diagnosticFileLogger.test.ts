@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDiagnosticFileLogger } from "../src/diagnosticFileLogger.ts";
+import { createDiagnosticFileLogger } from "../src/diagnostics/diagnosticFileLogger.ts";
 
 async function readPermissionBits(filePath: string): Promise<number> {
   return (await stat(filePath)).mode & 0o777;

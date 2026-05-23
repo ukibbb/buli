@@ -19,6 +19,10 @@ type AssistantMarkdownTextChunkStyle = {
   attributes?: number;
 };
 
+export type AssistantMarkdownInlineDecorationProfile = "prose" | "list" | "diff";
+
+type AssistantMarkdownInlineDecorationRule = (textChunk: TextChunk) => TextChunk[];
+
 const filePathForegroundColor = RGBA.fromHex(chatScreenTheme.accentCyan);
 const filePathTextAttributes = createTextAttributes({ underline: true });
 const shellCommandForegroundColor = RGBA.fromHex(chatScreenTheme.accentGreen);
@@ -456,32 +460,72 @@ function splitTextChunkByDiffLines(textChunk: TextChunk): TextChunk[] {
   return textChunks.length > 0 ? textChunks : [textChunk];
 }
 
-function decorateAssistantMarkdownReferenceTextChunks(textChunks: TextChunk[]): TextChunk[] {
-  return Array.from(textChunks)
-    .flatMap(splitTextChunkByDiagnostics)
-    .flatMap(splitTextChunkByShellCommands)
-    .flatMap(splitTextChunkByFilePathReferences);
+const assistantMarkdownReferenceInlineDecorationRules: readonly AssistantMarkdownInlineDecorationRule[] = [
+  splitTextChunkByDiagnostics,
+  splitTextChunkByShellCommands,
+  splitTextChunkByFilePathReferences,
+];
+
+const assistantMarkdownProseInlineDecorationRules: readonly AssistantMarkdownInlineDecorationRule[] = [
+  splitTextChunkByInlineCodeSpans,
+  splitTextChunkByStrongAsteriskSpans,
+  splitTextChunkByStrongUnderscoreSpans,
+  ...assistantMarkdownReferenceInlineDecorationRules,
+];
+
+const assistantMarkdownListInlineDecorationRules: readonly AssistantMarkdownInlineDecorationRule[] = [
+  splitTextChunkByListMarkers,
+  ...assistantMarkdownProseInlineDecorationRules,
+];
+
+const assistantMarkdownDiffInlineDecorationRules: readonly AssistantMarkdownInlineDecorationRule[] = [
+  splitTextChunkByDiffLines,
+  ...assistantMarkdownReferenceInlineDecorationRules,
+];
+
+function applyAssistantMarkdownInlineDecorationRules(input: {
+  textChunks: TextChunk[];
+  rules: readonly AssistantMarkdownInlineDecorationRule[];
+}): TextChunk[] {
+  return input.rules.reduce(
+    (decoratedTextChunks, decorationRule) => decoratedTextChunks.flatMap(decorationRule),
+    Array.from(input.textChunks),
+  );
+}
+
+function resolveAssistantMarkdownInlineDecorationRules(
+  profile: AssistantMarkdownInlineDecorationProfile,
+): readonly AssistantMarkdownInlineDecorationRule[] {
+  if (profile === "list") {
+    return assistantMarkdownListInlineDecorationRules;
+  }
+  if (profile === "diff") {
+    return assistantMarkdownDiffInlineDecorationRules;
+  }
+
+  return assistantMarkdownProseInlineDecorationRules;
+}
+
+export function decorateAssistantMarkdownInlineTextChunks(input: {
+  textChunks: TextChunk[];
+  profile: AssistantMarkdownInlineDecorationProfile;
+}): TextChunk[] {
+  return applyAssistantMarkdownInlineDecorationRules({
+    textChunks: input.textChunks,
+    rules: resolveAssistantMarkdownInlineDecorationRules(input.profile),
+  });
 }
 
 export function decorateAssistantMarkdownProseTextChunks(textChunks: TextChunk[]): TextChunk[] {
-  return decorateAssistantMarkdownReferenceTextChunks(
-    Array.from(textChunks)
-      .flatMap(splitTextChunkByInlineCodeSpans)
-      .flatMap(splitTextChunkByStrongAsteriskSpans)
-      .flatMap(splitTextChunkByStrongUnderscoreSpans),
-  );
+  return decorateAssistantMarkdownInlineTextChunks({ textChunks, profile: "prose" });
 }
 
 export function decorateAssistantMarkdownListTextChunks(textChunks: TextChunk[]): TextChunk[] {
-  return decorateAssistantMarkdownProseTextChunks(
-    Array.from(textChunks).flatMap(splitTextChunkByListMarkers),
-  );
+  return decorateAssistantMarkdownInlineTextChunks({ textChunks, profile: "list" });
 }
 
 export function decorateAssistantMarkdownDiffFenceTextChunks(textChunks: TextChunk[]): TextChunk[] {
-  return decorateAssistantMarkdownReferenceTextChunks(
-    Array.from(textChunks).flatMap(splitTextChunkByDiffLines),
-  );
+  return decorateAssistantMarkdownInlineTextChunks({ textChunks, profile: "diff" });
 }
 
 export function decorateAssistantMarkdownProseChunks(

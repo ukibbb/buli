@@ -121,6 +121,38 @@ test("renderChatScreenInTerminalWithRuntime unmounts React before destroying Ope
   expect(runtimeHarness.getRenderedChatScreenElementCount()).toBe(1);
 });
 
+test("renderChatScreenInTerminalWithRuntime keeps catalog loaders lazy during startup", async () => {
+  let availableAssistantModelLoadCount = 0;
+  let promptContextCandidateLoadCount = 0;
+  let conversationSessionLoadCount = 0;
+  const runtimeHarness = createRuntimeHarness();
+  const chatScreen = await renderChatScreenInTerminalWithRuntime(
+    {
+      ...createRuntimeTestInput(),
+      loadAvailableAssistantModels: async () => {
+        availableAssistantModelLoadCount += 1;
+        return [];
+      },
+      loadPromptContextCandidates: async (): Promise<readonly PromptContextCandidate[]> => {
+        promptContextCandidateLoadCount += 1;
+        return [];
+      },
+      loadConversationSessions: async () => {
+        conversationSessionLoadCount += 1;
+        return [];
+      },
+    },
+    runtimeHarness.runtime,
+  );
+
+  expect(availableAssistantModelLoadCount).toBe(0);
+  expect(promptContextCandidateLoadCount).toBe(0);
+  expect(conversationSessionLoadCount).toBe(0);
+
+  chatScreen.destroy();
+  await chatScreen.waitUntilExit();
+});
+
 test("renderChatScreenInTerminalWithRuntime interrupts active turns before unmounting during shutdown", async () => {
   let resolveActiveTurnSettlement: () => void = () => {};
   const activeTurnSettlementPromise = new Promise<void>((resolve) => {

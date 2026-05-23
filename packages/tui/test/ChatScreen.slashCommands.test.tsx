@@ -231,6 +231,32 @@ function findRenderedFrameTextPosition(renderedOutput: string, rowText: string, 
   return { column, row };
 }
 
+test("ChatScreen keeps catalog loaders lazy on first render", async () => {
+  let availableAssistantModelLoadCount = 0;
+  let promptContextCandidateLoadCount = 0;
+  let conversationSessionLoadCount = 0;
+  const renderedChatScreen = await renderChatScreen({
+    loadAvailableAssistantModels: async () => {
+      availableAssistantModelLoadCount += 1;
+      return [];
+    },
+    loadPromptContextCandidates: async () => {
+      promptContextCandidateLoadCount += 1;
+      return [];
+    },
+    loadConversationSessions: async () => {
+      conversationSessionLoadCount += 1;
+      return [];
+    },
+  });
+
+  await renderedChatScreen.captureFrame();
+
+  expect(availableAssistantModelLoadCount).toBe(0);
+  expect(promptContextCandidateLoadCount).toBe(0);
+  expect(conversationSessionLoadCount).toBe(0);
+});
+
 test("ChatScreen shows user-facing slash commands after typing a bare slash", async () => {
   const renderedChatScreen = await renderChatScreen();
 

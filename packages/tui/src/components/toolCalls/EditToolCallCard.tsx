@@ -11,6 +11,7 @@ import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation }
 export type EditToolCallCardProps = {
   toolCallDetail: ToolCallEditDetail;
   renderState: "streaming" | "completed" | "failed";
+  approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
   workspacePatch?: WorkspacePatch;
@@ -26,6 +27,9 @@ export function EditToolCallCard(props: EditToolCallCardProps): ReactNode {
   return (
     <ExpandableToolCallCard
       accentColor={accentColor}
+      {...(props.approvalDecisionControl !== undefined
+        ? { approvalDecisionControl: props.approvalDecisionControl }
+        : {})}
       hasExpandableContent={hasEditDiffContent}
       renderExpandedContent={() => buildEditBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}

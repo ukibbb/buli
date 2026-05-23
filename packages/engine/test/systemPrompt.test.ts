@@ -261,6 +261,19 @@ test("requires simple detailed explanations and strong challenge of risks", () =
   expect(systemPromptText).toContain("Keep full technical accuracy; simple does not mean shallow.");
 });
 
+test("requires proportionate consequence explanations for meaningful decisions", () => {
+  const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain("For every meaningful decision, explicitly explain the consequences before moving forward.");
+  expect(systemPromptText).toContain(
+    "Keep consequence explanations proportionate: one short sentence for low-risk choices, and a small bullet list for architectural, product, safety, security, performance, persistence, ownership, or hard-to-reverse choices.",
+  );
+  expect(systemPromptText).toContain(
+    "Consequence explanations should cover what the decision makes easier, what it makes harder, what risks or second-order effects it introduces, and how reversible it is.",
+  );
+  expect(systemPromptText).toContain("If the user asks for speed, do not skip consequences; compress them instead.");
+});
+
 test("teaches what is being built, how it works, and why it matters", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 

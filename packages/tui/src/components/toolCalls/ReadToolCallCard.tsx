@@ -6,6 +6,7 @@ import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation }
 export type ReadToolCallCardProps = {
   toolCallDetail: ToolCallReadDetail;
   renderState: "streaming" | "completed" | "failed";
+  approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
 };
@@ -16,6 +17,9 @@ export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
   return (
     <ExpandableToolCallCard
       accentColor={toolCallPresentation.accentColor}
+      {...(props.approvalDecisionControl !== undefined
+        ? { approvalDecisionControl: props.approvalDecisionControl }
+        : {})}
       hasExpandableContent={hasReadPreviewContent}
       renderExpandedContent={() => buildReadBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}

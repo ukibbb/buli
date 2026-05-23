@@ -4,10 +4,10 @@ import type {
   PromptContextSelectionState,
   SlashCommandSelectionState,
 } from "@buli/chat-session-state";
-import type { PendingToolApprovalRequest } from "@buli/contracts";
 import type {
   ConversationSessionCompactionStatus,
   ConversationSessionExportStatus,
+  QueuedChatAppPromptPreview,
 } from "@buli/chat-app-controller";
 import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
 import { memo, type ReactNode } from "react";
@@ -17,36 +17,26 @@ import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
 import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
 import { SlashCommandSelectionPane } from "./SlashCommandSelectionPane.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
-import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.tsx";
+import { QueuedPromptStack } from "./QueuedPromptStack.tsx";
 
 export type LiveInteractionStatusStackProps = {
-  pendingToolApprovalRequest: PendingToolApprovalRequest | undefined;
   conversationSessionSelectionState: ConversationSessionSelectionState;
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
   slashCommandSelectionState: SlashCommandSelectionState;
   promptContextSelectionState: PromptContextSelectionState;
   conversationSessionExportStatus: ConversationSessionExportStatus;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+  queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
-  onPendingToolApprovalApproved: () => void;
-  onPendingToolApprovalDenied: () => void;
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };
 
 function LiveInteractionStatusStackComponent(props: LiveInteractionStatusStackProps): ReactNode {
   return (
     <>
-      {props.pendingToolApprovalRequest ? (
-        <box paddingX={2}>
-          <ToolApprovalRequestBlock
-            riskExplanation={props.pendingToolApprovalRequest.riskExplanation}
-            onApprove={props.onPendingToolApprovalApproved}
-            onDeny={props.onPendingToolApprovalDenied}
-          />
-        </box>
-      ) : null}
       {renderConversationSessionExportStatusPane(props.conversationSessionExportStatus)}
       {renderConversationSessionCompactionStatusPane(props.conversationSessionCompactionStatus)}
+      <QueuedPromptStack queuedPromptPreviews={props.queuedPromptPreviews} accentColor={props.inputPanelAccentColor} />
       {renderConversationSessionSelectionPane(props)}
       {renderModelAndReasoningSelectionPane(props)}
       {renderSlashCommandSelectionPane(props)}

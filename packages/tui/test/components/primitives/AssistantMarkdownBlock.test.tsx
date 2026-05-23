@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { AssistantMarkdownBlock } from "../../../src/components/primitives/AssistantMarkdownBlock.tsx";
+import { RGBA, SyntaxStyle, type MarkdownRenderable } from "@opentui/core";
+import { act, useRef, useState } from "react";
+import {
+  AssistantMarkdownBlock,
+  buildStableAssistantMarkdownRenderSections,
+} from "../../../src/components/primitives/AssistantMarkdownBlock.tsx";
 import { testRender } from "../../testRenderWithCleanup.ts";
+
+const markdownStreamingStabilitySyntaxStyle = SyntaxStyle.fromStyles({
+  default: { fg: RGBA.fromHex("#E5E7EB") },
+});
 
 async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Promise<void> {
   await renderOnce();
@@ -9,6 +18,94 @@ async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Prom
 }
 
 describe("AssistantMarkdownBlock", () => {
+  test("reuses_completed_custom_render_sections_when_streaming_tail_changes", () => {
+    const firstMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: ["```ts title=src/stable.ts", "const stable = true;", "```"].join("\n"),
+      isStreaming: true,
+      previousCache: undefined,
+    });
+    const firstCodeFenceSection = firstMarkdownSections.renderSections.find(
+      (renderSection) => renderSection.sectionKind === "codeFence",
+    );
+
+    const secondMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: [
+        "```ts title=src/stable.ts",
+        "const stable = true;",
+        "```",
+        "",
+        "Streaming tail is still changing",
+      ].join("\n"),
+      isStreaming: true,
+      previousCache: firstMarkdownSections.nextCache,
+    });
+    const secondCodeFenceSection = secondMarkdownSections.renderSections.find(
+      (renderSection) => renderSection.sectionKind === "codeFence",
+    );
+
+    expect(firstCodeFenceSection?.sectionKind).toBe("codeFence");
+    expect(secondCodeFenceSection).toBe(firstCodeFenceSection);
+  });
+
+  test("OpenTUI_top_level_markdown_reuses_stable_blocks_while_streaming_tail_changes", async () => {
+    let updateMarkdownContent: ((nextMarkdownText: string) => void) | undefined;
+    let readMarkdownRenderable: (() => MarkdownRenderable | null) | undefined;
+
+    function NativeMarkdownStreamingStabilityProbe() {
+      const markdownRef = useRef<MarkdownRenderable | null>(null);
+      const [markdownContent, setMarkdownContent] = useState(
+        ["First stable block", "", "Second stable block", "", "Streaming tail"].join("\n"),
+      );
+      updateMarkdownContent = (nextMarkdownText) => setMarkdownContent(nextMarkdownText);
+      readMarkdownRenderable = () => markdownRef.current;
+
+      return (
+        <markdown
+          content={markdownContent}
+          internalBlockMode="top-level"
+          ref={markdownRef}
+          streaming={true}
+          syntaxStyle={markdownStreamingStabilitySyntaxStyle}
+          width="100%"
+        />
+      );
+    }
+
+    const { renderOnce } = await testRender(<NativeMarkdownStreamingStabilityProbe />, { width: 80, height: 12 });
+    await renderOnce();
+
+    const readMountedMarkdownRenderable = (): MarkdownRenderable => {
+      const markdownRenderable = readMarkdownRenderable?.();
+      if (!markdownRenderable) {
+        throw new Error("Native markdown renderable was not mounted.");
+      }
+      return markdownRenderable;
+    };
+    const updateMountedMarkdownContent = async (nextMarkdownText: string): Promise<void> => {
+      if (!updateMarkdownContent) {
+        throw new Error("Native markdown content updater was not mounted.");
+      }
+      const mountedUpdateMarkdownContent = updateMarkdownContent;
+      await act(async () => {
+        mountedUpdateMarkdownContent(nextMarkdownText);
+      });
+    };
+
+    const firstStableBlockRenderable = readMountedMarkdownRenderable()._blockStates[0]?.renderable;
+    if (!firstStableBlockRenderable) {
+      throw new Error("Native markdown did not create the first top-level block.");
+    }
+
+    await updateMountedMarkdownContent(
+      ["First stable block", "", "Second stable block", "", "Streaming tail keeps growing"].join("\n"),
+    );
+    await renderOnce();
+
+    const updatedMarkdownRenderable = readMountedMarkdownRenderable();
+    expect(updatedMarkdownRenderable._stableBlockCount).toBeGreaterThanOrEqual(1);
+    expect(updatedMarkdownRenderable._blockStates[0]?.renderable).toBe(firstStableBlockRenderable);
+  });
+
   test("renders_heading_paragraph_list_and_code_fence_with_native_code_block", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
