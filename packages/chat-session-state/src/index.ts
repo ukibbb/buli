@@ -37,6 +37,7 @@ export {
   resolveChatSessionInteractionScope,
 } from "./chatSessionKeyboardInteraction.ts";
 export { cycleAssistantOperatingMode, selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
+export { resolveNextAssistantOperatingMode } from "./resolveNextAssistantOperatingMode.ts";
 export {
   applyAssistantResponseEventToChatSessionState,
   applyAssistantResponseEventsToChatSessionState,
