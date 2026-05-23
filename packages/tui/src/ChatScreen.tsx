@@ -341,6 +341,9 @@ export function ChatScreen(props: ChatScreenProps) {
   return (
     <box backgroundColor={chatScreenTheme.bg} flexDirection="column" height={rows} width={columns}>
       <TopBar workingDirectoryPath={workingDirectoryPath} accentColor={inputPanelAccentColor} />
+      {/* No bottom spacing here: the latest TurnFooter must sit on the row directly
+          above the input frame's top border so the turn summary reads as a caption
+          to the prompt. */}
       <box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden" paddingX={2} paddingTop={1}>
         <ChatScreenMainArea
           chatSessionState={chatSessionState}
