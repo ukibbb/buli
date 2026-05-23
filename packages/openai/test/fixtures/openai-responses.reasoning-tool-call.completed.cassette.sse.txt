@@ -1,0 +1,27 @@
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_fixture_tool","object":"response","created_at":1700000001,"status":"in_progress","model":"gpt-5.5"}}
+
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_fixture_1","summary":[],"encrypted_content":"encrypted-reasoning-redacted","status":"in_progress"}}
+
+data: {"type":"response.reasoning_summary_part.added","sequence_number":2,"item_id":"rs_fixture_1","output_index":0,"summary_index":0}
+
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":3,"item_id":"rs_fixture_1","output_index":0,"summary_index":0,"delta":"Need "}
+
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":4,"item_id":"rs_fixture_1","output_index":0,"summary_index":0,"delta":"to inspect a file."}
+
+data: {"type":"response.reasoning_summary_text.done","sequence_number":5,"item_id":"rs_fixture_1","output_index":0,"summary_index":0,"text":"Need to inspect a file."}
+
+data: {"type":"response.output_item.done","sequence_number":6,"output_index":0,"item":{"type":"reasoning","id":"rs_fixture_1","summary":[{"type":"summary_text","text":"Need to inspect a file."}],"encrypted_content":"encrypted-reasoning-redacted","status":"completed"}}
+
+data: {"type":"response.output_item.added","sequence_number":7,"output_index":1,"item":{"type":"function_call","id":"fc_fixture_read","call_id":"call_fixture_read","name":"read","arguments":"","status":"in_progress"}}
+
+data: {"type":"response.function_call_arguments.delta","sequence_number":8,"output_index":1,"item_id":"fc_fixture_read","delta":"{\"filePath\":\"README.md\""}
+
+data: {"type":"response.function_call_arguments.delta","sequence_number":9,"output_index":1,"item_id":"fc_fixture_read","delta":",\"offset\":null,\"limit\":5}"}
+
+data: {"type":"response.function_call_arguments.done","sequence_number":10,"output_index":1,"item_id":"fc_fixture_read","name":"read","arguments":"{\"filePath\":\"README.md\",\"offset\":null,\"limit\":5}"}
+
+data: {"type":"response.output_item.done","sequence_number":11,"output_index":1,"item":{"type":"function_call","id":"fc_fixture_read","call_id":"call_fixture_read","name":"read","arguments":"{\"filePath\":\"README.md\",\"offset\":null,\"limit\":5}","status":"completed"}}
+
+data: {"type":"response.completed","sequence_number":12,"response":{"id":"resp_fixture_tool","object":"response","created_at":1700000001,"status":"completed","model":"gpt-5.5","output":[{"type":"reasoning","id":"rs_fixture_1","summary":[{"type":"summary_text","text":"Need to inspect a file."}],"encrypted_content":"encrypted-reasoning-redacted","status":"completed"},{"type":"function_call","id":"fc_fixture_read","call_id":"call_fixture_read","name":"read","arguments":"{\"filePath\":\"README.md\",\"offset\":null,\"limit\":5}","status":"completed"}],"usage":{"input_tokens":60,"input_tokens_details":{"cached_tokens":10},"output_tokens":8,"output_tokens_details":{"reasoning_tokens":8},"total_tokens":68},"provider_extra":"ignored"}}
+
+data: [DONE]

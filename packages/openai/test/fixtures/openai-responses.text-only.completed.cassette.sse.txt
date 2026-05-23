@@ -1,0 +1,13 @@
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_fixture_text","object":"response","created_at":1700000000,"status":"in_progress","model":"gpt-5.5"}}
+
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"msg_fixture_text","role":"assistant","status":"in_progress","content":[],"provider_extra":"ignored"}}
+
+data: {"type":"response.output_text.delta","sequence_number":2,"output_index":0,"content_index":0,"item_id":"msg_fixture_text","delta":"Hello from a sanitized cassette.","logprobs":[]}
+
+data: {"type":"response.output_text.done","sequence_number":3,"output_index":0,"content_index":0,"item_id":"msg_fixture_text","text":"Hello from a sanitized cassette.","logprobs":[]}
+
+data: {"type":"response.output_item.done","sequence_number":4,"output_index":0,"item":{"type":"message","id":"msg_fixture_text","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello from a sanitized cassette.","annotations":[]}],"provider_extra":"ignored"}}
+
+data: {"type":"response.completed","sequence_number":5,"response":{"id":"resp_fixture_text","object":"response","created_at":1700000000,"status":"completed","model":"gpt-5.5","output":[{"type":"message","id":"msg_fixture_text","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello from a sanitized cassette.","annotations":[]}]}],"usage":{"input_tokens":25,"input_tokens_details":{"cached_tokens":5},"output_tokens":10,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":35},"provider_extra":"ignored"}}
+
+data: [DONE]

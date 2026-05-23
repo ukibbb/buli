@@ -1,0 +1,64 @@
+{
+  "models": [
+    {
+      "slug": "gpt-5.5",
+      "display_name": "GPT-5.5",
+      "visibility": "list",
+      "supported_in_api": true,
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        { "effort": "minimal", "provider_extra": "ignored" },
+        { "effort": "medium" },
+        { "effort": "high" },
+        { "effort": "xhigh" }
+      ],
+      "provider_capabilities": {
+        "streaming": true,
+        "tool_calls": true
+      }
+    },
+    {
+      "slug": "gpt-5.5-codex",
+      "display_name": "GPT-5.5 Codex",
+      "visibility": "list",
+      "supported_in_api": true,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        { "effort": "low" },
+        { "effort": "medium" },
+        { "effort": "high" }
+      ],
+      "provider_capabilities": {
+        "streaming": true,
+        "code": true
+      }
+    },
+    {
+      "slug": "internal-shadow-model",
+      "display_name": "Internal Shadow Model",
+      "visibility": "hide",
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        { "effort": "medium" }
+      ]
+    },
+    {
+      "slug": "unsupported-legacy-model",
+      "display_name": "Unsupported Legacy Model",
+      "visibility": "list",
+      "supported_in_api": false,
+      "supported_reasoning_levels": []
+    },
+    {
+      "slug": "gpt-4.1-mini",
+      "visibility": "list",
+      "supported_in_api": true,
+      "provider_extra": {
+        "owned_by": "openai"
+      }
+    }
+  ],
+  "provider_extra_top_level": {
+    "account": "redacted"
+  }
+}
