@@ -87,7 +87,7 @@ describe("ChatScreen responsive layout", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("--");
     expect(frame).not.toContain("ctx");
-    expect(frame).toContain("understand agent");
+    expect(frame).toContain("Understand");
   });
 
   test("left_aligns_full_input_panel_and_lets_it_span_the_wide_viewport", async () => {
@@ -102,7 +102,7 @@ describe("ChatScreen responsive layout", () => {
     );
     await renderOnce();
     const renderedRows = splitRenderedViewportRows(captureCharFrame());
-    const inputHeaderRow = findRenderedRowContaining(renderedRows.join("\n"), "understand agent");
+    const inputHeaderRow = findRenderedRowContaining(renderedRows.join("\n"), "Understand");
     const bottomViewportRow = renderedRows[renderedRows.length - 1] ?? "";
 
     expectRenderedRowToSpanViewportWithTextMargin(inputHeaderRow);

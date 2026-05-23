@@ -428,7 +428,7 @@ test("ChatScreen keeps prompt controls available after a failed assistant stream
   expect(failedFrame).toContain("runner exploded");
 
   const planModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(planModeFrame).toContain("plan agent");
+  expect(planModeFrame).toContain("Plan");
 
   const slashCommandFrame = await renderedChatScreen.typeText("/");
   expect(slashCommandFrame).not.toContain("Commands");
@@ -455,7 +455,7 @@ test("ChatScreen cycles to plan mode with Tab and submits that mode", async () =
   });
 
   const planModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(planModeFrame).toContain("plan agent");
+  expect(planModeFrame).toContain("Plan");
 
   await renderedChatScreen.typeText("stay read only");
   await renderedChatScreen.pressEnter();
@@ -470,13 +470,13 @@ test("ChatScreen cycles from plan to implementation and then understand with Tab
   });
 
   const planModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(planModeFrame).toContain("plan agent");
+  expect(planModeFrame).toContain("Plan");
 
   const implementationModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(implementationModeFrame).toContain("implementation agent");
+  expect(implementationModeFrame).toContain("Implementation");
 
   const understandModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(understandModeFrame).toContain("understand agent");
+  expect(understandModeFrame).toContain("Understand");
 });
 
 test("ChatScreen approves a pending tool call with the y keyboard shortcut", async () => {

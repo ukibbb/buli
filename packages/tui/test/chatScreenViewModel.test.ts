@@ -58,7 +58,7 @@ test("buildChatScreenViewModel derives plan-mode input copy", () => {
 
   expect(viewModel.modeLabel).toBe("Plan Agent");
   expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentAmber);
-  expect(viewModel.promptInputHintOverride).toBe("read-only plan agent · tab to Implementation Agent");
+  expect(viewModel.promptInputHintOverride).toBeUndefined();
 });
 
 test("buildChatScreenViewModel derives understand-mode pink input copy", () => {
@@ -72,7 +72,7 @@ test("buildChatScreenViewModel derives understand-mode pink input copy", () => {
 
   expect(viewModel.modeLabel).toBe("Understand Agent");
   expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentPink);
-  expect(viewModel.promptInputHintOverride).toBe("read-only understand agent · tab to Plan Agent");
+  expect(viewModel.promptInputHintOverride).toBeUndefined();
 });
 
 test("buildChatScreenViewModel derives context usage and minimum input branch", () => {

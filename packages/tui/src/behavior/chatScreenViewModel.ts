@@ -89,9 +89,11 @@ export function buildChatScreenViewModel(input: {
     nextShortModeLabel: formatAssistantOperatingModeShortLabel(nextAssistantOperatingMode),
     nextModeAccentColor: resolveAssistantOperatingModeAccentColor(nextAssistantOperatingMode),
     inputPanelAccentColor: resolveAssistantOperatingModeAccentColor(input.chatSessionState.selectedAssistantOperatingMode),
-    promptInputHintOverride: isPromptInputDisabled
-      ? undefined
-      : resolveAssistantOperatingModePromptHint(input.chatSessionState.selectedAssistantOperatingMode),
+    // Mode hint text was needed when the input frame had no visible mode chips.
+    // InputStatusStrip now surfaces the active mode + destination + tab keycap
+    // directly, so the legacy hint would be redundant. Leave the prop as a
+    // future escape hatch for transient prompts (e.g., interrupt confirmation).
+    promptInputHintOverride: undefined,
     reasoningEffortLabel:
       input.chatSessionState.selectedReasoningEffort ?? input.chatSessionState.selectedModelDefaultReasoningEffort ?? "default",
     inputRegionRowCount,
@@ -191,10 +193,3 @@ function resolveAssistantOperatingModeAccentColor(
     : chatScreenTheme.accentGreen;
 }
 
-function resolveAssistantOperatingModePromptHint(assistantOperatingMode: AssistantOperatingMode): string | undefined {
-  return assistantOperatingMode === "understand"
-    ? "read-only understand agent · tab to Plan Agent"
-    : assistantOperatingMode === "plan"
-    ? "read-only plan agent · tab to Implementation Agent"
-    : "implementation agent · tab to Understand Agent";
-}

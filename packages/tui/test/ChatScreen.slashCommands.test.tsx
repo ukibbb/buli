@@ -805,7 +805,8 @@ test("ChatScreen shows the model default reasoning label after choosing the mode
   expect(reasoningChoicesFrame).toContain("Use model default (medium)");
 
   const selectedDefaultReasoningFrame = await renderedChatScreen.pressEnter();
-  expect(selectedDefaultReasoningFrame).toContain("understand agent");
+  expect(selectedDefaultReasoningFrame).toContain("gpt-5.4");
+  expect(selectedDefaultReasoningFrame).toContain("medium");
 });
 
 test("ChatScreen reports committed model selection changes", async () => {
