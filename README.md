@@ -155,13 +155,25 @@ The source runner is the preferred development workflow while the product change
 
 Type these in the prompt:
 
-- `/help` opens command help.
+- `/help` opens command and keyboard shortcut help.
 - `/model` opens model and reasoning selection.
 - `/clear` starts a new conversation session for the workspace.
 - `/compact` summarizes older context for the active session.
 - `/sessions` opens saved session switching and deletion.
 - `/export-session` writes and opens an HTML transcript export.
 - `/thinking` toggles reasoning-summary visibility.
+
+## Keyboard Shortcuts
+
+- `Tab` cycles the active operating mode in the prompt.
+- `Enter` submits the prompt or confirms the highlighted item in an open picker.
+- `Shift+Enter` or `Ctrl+Enter` inserts a newline in the prompt.
+- `Esc` closes an open panel or picker; during an active assistant turn it requests interruption.
+- `Up` and `Down` move through open slash-command, context, model, reasoning, and session selections.
+- `PageUp` and `PageDown` scroll the transcript by page.
+- `Delete` or `Backspace` removes prompt text, removes image placeholders, or starts/confirms deletion for the highlighted saved session.
+- `Y` approves and `N` denies a pending tool request.
+- `Ctrl+V` pastes a clipboard image into the prompt when the prompt is editable.
 
 ## Operating Modes
 
@@ -183,7 +195,7 @@ Buli stores local state under `~/.buli`.
 
 Auth files, session directories, exports, and diagnostic logs are written with private file permissions where Buli creates them.
 
-Useful environment variables:
+Configuration environment variables:
 
 - `BULI_BASH_APPROVAL_MODE`: sets the default bash approval mode to `risk_based` or `trusted`.
 - `BULI_AUTO_COMPACT_THRESHOLD`: enables automatic compaction at a context-usage ratio from `0` through `1`.

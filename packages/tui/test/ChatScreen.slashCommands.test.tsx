@@ -714,26 +714,30 @@ test("ChatScreen confirms and deletes highlighted sessions with keyboard delete"
   expect(deletedFrame).not.toContain("Switched prompt");
 });
 
-test("ChatScreen opens command help through slash command instead of question mark shortcut", async () => {
+test("ChatScreen opens command and shortcut help through slash command instead of question mark shortcut", async () => {
   const renderedChatScreen = await renderChatScreen();
 
   await renderedChatScreen.typeText("/help");
   const helpFrame = await renderedChatScreen.pressEnter();
 
-  expect(helpFrame).toContain("help · commands");
+  expect(helpFrame).toContain("help · commands + shortcuts");
   expect(helpFrame).toContain("/help");
   expect(helpFrame).toContain("/model");
   expect(helpFrame).toContain("/clear");
   expect(helpFrame).toContain("/compact");
   expect(helpFrame).toContain("/thinking");
   expect(helpFrame).toContain("Collapse thinking");
+  expect(helpFrame).toContain("shortcuts");
+  expect(helpFrame).toContain("Tab");
+  expect(helpFrame).toContain("Cycle operating mode");
+  expect(helpFrame).toContain("Shift/Ctrl+Enter");
   expect(helpFrame).not.toContain("/understand");
   expect(helpFrame).not.toContain("/plan");
   expect(helpFrame).not.toContain("/implementation");
 
   const renderedQuestionMarkScreen = await renderChatScreen();
   const questionMarkFrame = await renderedQuestionMarkScreen.typeText("?");
-  expect(questionMarkFrame).not.toContain("help · commands");
+  expect(questionMarkFrame).not.toContain("help · commands + shortcuts");
   expect(questionMarkFrame).toContain("?");
 });
 
@@ -742,10 +746,10 @@ test("ChatScreen closes command help with Escape", async () => {
 
   await renderedChatScreen.typeText("/help");
   const helpFrame = await renderedChatScreen.pressEnter();
-  expect(helpFrame).toContain("help · commands");
+  expect(helpFrame).toContain("help · commands + shortcuts");
 
   const closedFrame = await renderedChatScreen.pressEscape();
-  expect(closedFrame).not.toContain("help · commands");
+  expect(closedFrame).not.toContain("help · commands + shortcuts");
   expect(closedFrame).toContain(">");
 });
 

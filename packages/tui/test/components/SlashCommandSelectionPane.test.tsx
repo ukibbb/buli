@@ -16,7 +16,7 @@ describe("SlashCommandSelectionPane", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <SlashCommandSelectionPane
         availableSlashCommands={[
-          { name: "help", value: "help", description: "Show available commands" },
+          { name: "help", value: "help", description: "Show available commands and shortcuts" },
           { name: "model", value: "model", description: "Choose model and reasoning effort" },
         ]}
         highlightedSlashCommandIndex={0}
@@ -30,13 +30,13 @@ describe("SlashCommandSelectionPane", () => {
     const frame = captureCharFrame();
     expect(frame).not.toContain("Commands");
     expect(frame).toContain("/help");
-    expect(frame).toContain("Show available commands");
+    expect(frame).toContain("Show available commands and shortcuts");
     expect(frame).toContain("/model");
     expect(frame).toContain("Choose model and reasoning effort");
 
     const helpRow = findRenderedRowContaining(frame, "/help");
     const modelRow = findRenderedRowContaining(frame, "/model");
-    expect(helpRow.indexOf("Show available commands")).toBe(
+    expect(helpRow.indexOf("Show available commands and shortcuts")).toBe(
       modelRow.indexOf("Choose model and reasoning effort"),
     );
   });
@@ -45,7 +45,7 @@ describe("SlashCommandSelectionPane", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <SlashCommandSelectionPane
         availableSlashCommands={[
-          { name: "help", value: "help", description: "Show available commands" },
+          { name: "help", value: "help", description: "Show available commands and shortcuts" },
           { name: "model", value: "model", description: "Choose model and reasoning effort" },
         ]}
         highlightedSlashCommandIndex={1}

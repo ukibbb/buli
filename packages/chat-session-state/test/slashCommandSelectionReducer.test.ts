@@ -9,7 +9,7 @@ import {
 } from "../src/index.ts";
 
 const slashCommands = [
-  { name: "help", value: "help", description: "Show available commands" },
+  { name: "help", value: "help", description: "Show available commands and shortcuts" },
   { name: "model", value: "model", description: "Choose model and reasoning effort" },
 ] as const satisfies readonly SlashCommand[];
 

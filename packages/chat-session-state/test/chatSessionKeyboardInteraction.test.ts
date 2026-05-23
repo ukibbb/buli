@@ -137,7 +137,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_selected_slash_com
     selectedSlashCommand: {
       name: "help",
       value: "help",
-      description: "Show available commands",
+      description: "Show available commands and shortcuts",
     },
   });
 });

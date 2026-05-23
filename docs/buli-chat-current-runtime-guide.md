@@ -683,7 +683,7 @@ This decides what keys mean.
 | `reasoning_effort_selection` | Up/down move reasoning highlight. Enter selects. Esc closes. |
 | `slash_command_selection` | Up/down move command highlight. Enter executes. Esc closes. |
 | `prompt_context_selection` | Up/down move context candidate. Enter inserts. Esc dismisses. |
-| `tool_approval` | Keyboard input is ignored; visible buttons approve or deny. |
+| `tool_approval` | `Y` approves, `N` denies, and `Esc` requests active-turn interruption. |
 | `prompt_draft_editing` | Text edits draft. Enter submits. Left/right move caret. |
 
 ## Typing Flow
@@ -2037,32 +2037,37 @@ Source file:
 ```tsx
 <SurfaceCard
   accentColor={chatScreenTheme.accentAmber}
-  headerLeft={... Approval required ...}
-  headerRight={<text fg={chatScreenTheme.textMuted}>y approve · n deny</text>}
-  bodyContent={...}
+  headerLeft={... risk explanation and <ApprovalDecisionControl ... /> ...}
 />
 ```
 
-The approval block is not another transcript row. It is a bottom control surface.
+The approval block is not another transcript row. It is a bottom control surface. The visible buttons collect mouse decisions, and the keyboard reducer also maps `Y` to approve and `N` to deny while approval is pending.
 
 ### User Presses `y` Or `n`
 
 Source file:
 
-`packages/tui/src/ChatScreen.tsx`
+`packages/chat-session-state/src/chatSessionKeyboardInteraction.ts`
 
 ```ts
-if (keyEvent.sequence === "y" || keyEvent.sequence === "Y") {
-  void latestActiveConversationTurnRef.current?.approvePendingToolCall(pendingToolApprovalRequest.approvalId);
-  return;
+if (chatSessionKeyboardInput.textInput?.toLowerCase() === "y") {
+  return createChatSessionKeyboardInteraction({
+    nextChatSessionState: chatSessionState,
+    shouldConsumeKeyboardInput: true,
+    chatSessionKeyboardEffect: {
+      effectType: "submit_pending_tool_approval_decision",
+      decision: "approved",
+      source: "keyboard",
+    },
+  });
 }
 
-if (keyEvent.sequence === "n" || keyEvent.sequence === "N") {
-  void latestActiveConversationTurnRef.current?.denyPendingToolCall(pendingToolApprovalRequest.approvalId);
+if (chatSessionKeyboardInput.textInput?.toLowerCase() === "n") {
+  // Same effect shape, with decision: "denied".
 }
 ```
 
-The UI does not run the command itself. It calls the active runtime turn.
+The reducer does not run the command itself. It returns a typed keyboard effect, and the TUI action hook submits that decision to the active runtime turn.
 
 ### Runtime Continues After Decision
 
@@ -2829,13 +2834,13 @@ Source file:
 ```ts
 export function buildChatSlashCommands(...) {
   return [
-  { name: "help", value: "help", description: "Show available commands" },
+  { name: "help", value: "help", description: "Show available commands and shortcuts" },
   { name: "model", value: "model", description: "Choose OpenAI model and reasoning effort" },
   ];
 }
 ```
 
-Selecting `/help` is resolved by slash-command application before it opens command help through a tiny modal reducer:
+Selecting `/help` is resolved by slash-command application before it opens command and shortcut help through a tiny modal reducer:
 
 Source file:
 
@@ -2860,18 +2865,19 @@ export function showCommandHelpModal(chatSessionState: ChatSessionState): ChatSe
 }
 ```
 
-The modal itself listens for Esc:
+The global keyboard reducer closes the modal when `Esc` is pressed:
 
 Source file:
 
-`packages/tui/src/components/CommandHelpModal.tsx`
+`packages/chat-session-state/src/chatSessionKeyboardInteraction.ts`
 
 ```ts
-useKeyboard((e: KeyEvent) => {
-  if (e.name === "escape") {
-    props.onCloseRequested();
-  }
-});
+if (chatSessionKeyboardInput.keyName === "escape") {
+  return createChatSessionKeyboardInteraction({
+    nextChatSessionState: hideCommandHelpModal(chatSessionState),
+    shouldConsumeKeyboardInput: true,
+  });
+}
 ```
 
 The command help modal takes over the middle region, but it does not destroy input state. The slash-command picker itself renders in the bottom stack above the input.
