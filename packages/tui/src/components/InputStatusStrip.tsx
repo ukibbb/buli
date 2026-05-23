@@ -11,11 +11,7 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 // matches the frame's border (1 cell) plus internal padding (1 cell) so the
 // strip content area aligns visually with the prompt content area inside the
 // frame.
-// Accounts for both the header row and footer row that were removed from
-// InputPanel in the chrome redesign, keeping the total input region row budget
-// (INPUT_PANEL_MAX_ROW_COUNT + INPUT_STATUS_STRIP_ROW_COUNT) equal to the
-// pre-redesign value. See InputPanelMaxRowCount.test.ts.
-export const INPUT_STATUS_STRIP_ROW_COUNT = 2;
+export const INPUT_STATUS_STRIP_ROW_COUNT = 1;
 
 export type InputStatusStripProps = {
   assistantResponseStatus: ConversationTurnStatus;
