@@ -100,6 +100,33 @@ type PendingAutoApprovedReadOnlyToolCallExecution = AutoApprovedReadOnlyRequeste
   startedToolCallDetail: ReturnType<typeof createStartedToolCallDetailFromRequest>;
 };
 
+type FulfilledAutoApprovedReadOnlyToolCallExecution = {
+  executionResultKind: "fulfilled";
+  pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  toolCallOutcome: ToolCallOutcome;
+};
+
+type RejectedAutoApprovedReadOnlyToolCallExecution = {
+  executionResultKind: "rejected";
+  pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  error: unknown;
+};
+
+type SettledAutoApprovedReadOnlyToolCallExecution =
+  | FulfilledAutoApprovedReadOnlyToolCallExecution
+  | RejectedAutoApprovedReadOnlyToolCallExecution;
+
+type SubmittedAutoApprovedReadOnlyToolResultKind = "completed" | "failed";
+
+type RecordedAutoApprovedReadOnlyToolCallOutcome = {
+  assistantResponseEvent: AssistantResponseEvent;
+  providerToolResult: {
+    toolCallId: string;
+    toolResultText: string;
+    toolResultKind: SubmittedAutoApprovedReadOnlyToolResultKind;
+  };
+};
+
 export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall(
   input: StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput,
 ): AsyncGenerator<AssistantResponseEvent> {
@@ -143,83 +170,142 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
   }
 
   input.throwIfConversationTurnInterrupted();
-  const toolCallOutcomes = await Promise.all(
-    pendingToolCallExecutions.map((pendingToolCallExecution) =>
-      readOnlyToolCallConcurrencyLimiter.run(() =>
+  const activeToolCallExecutionPromisesByPartId = new Map(
+    pendingToolCallExecutions.map((pendingToolCallExecution) => [
+      pendingToolCallExecution.toolCallPartId,
+      runPendingAutoApprovedReadOnlyToolCallExecution({
+        pendingToolCallExecution,
+        readOnlyToolCallConcurrencyLimiter,
+        workspaceRootPath: input.workspaceRootPath,
+        ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
+        abortSignal: input.abortSignal,
+      }),
+    ]),
+  );
+
+  while (activeToolCallExecutionPromisesByPartId.size > 0) {
+    input.throwIfConversationTurnInterrupted();
+    const settledToolCallExecution = await Promise.race(activeToolCallExecutionPromisesByPartId.values());
+    if (!activeToolCallExecutionPromisesByPartId.delete(settledToolCallExecution.pendingToolCallExecution.toolCallPartId)) {
+      throw new Error(
+        `Received a completed read-only tool-call execution for inactive part ${settledToolCallExecution.pendingToolCallExecution.toolCallPartId}.`,
+      );
+    }
+    input.throwIfConversationTurnInterrupted();
+
+    if (settledToolCallExecution.executionResultKind === "rejected") {
+      throw settledToolCallExecution.error;
+    }
+
+    const recordedToolCallOutcome = recordAutoApprovedReadOnlyToolCallOutcome({
+      assistantResponseMessageId: input.assistantResponseMessageId,
+      pendingToolCallExecution: settledToolCallExecution.pendingToolCallExecution,
+      toolCallOutcome: settledToolCallExecution.toolCallOutcome,
+      toolResultSessionRecorder: input.toolResultSessionRecorder,
+      diagnosticLogger: input.diagnosticLogger,
+    });
+    yield recordedToolCallOutcome.assistantResponseEvent;
+    await submitProviderToolResultWithDiagnostics({
+      providerConversationTurn: input.providerConversationTurn,
+      toolCallId: recordedToolCallOutcome.providerToolResult.toolCallId,
+      toolResultText: recordedToolCallOutcome.providerToolResult.toolResultText,
+      toolResultKind: recordedToolCallOutcome.providerToolResult.toolResultKind,
+      diagnosticLogger: input.diagnosticLogger,
+    });
+  }
+}
+
+async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
+  pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+  workspaceRootPath: string;
+  projectInstructionTracker?: ProjectInstructionTracker;
+  abortSignal: AbortSignal;
+}): Promise<SettledAutoApprovedReadOnlyToolCallExecution> {
+  try {
+    return {
+      executionResultKind: "fulfilled",
+      pendingToolCallExecution: input.pendingToolCallExecution,
+      toolCallOutcome: await input.readOnlyToolCallConcurrencyLimiter.run(() =>
         runAutoApprovedReadOnlyToolCall({
-          toolCallRequest: pendingToolCallExecution.toolCallRequest,
+          toolCallRequest: input.pendingToolCallExecution.toolCallRequest,
           workspaceRootPath: input.workspaceRootPath,
           ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
           abortSignal: input.abortSignal,
         })
-      )
-    ),
-  );
-  input.throwIfConversationTurnInterrupted();
+      ),
+    };
+  } catch (error) {
+    return {
+      executionResultKind: "rejected",
+      pendingToolCallExecution: input.pendingToolCallExecution,
+      error,
+    };
+  }
+}
 
-  for (const [toolCallOutcomeIndex, toolCallOutcome] of toolCallOutcomes.entries()) {
-    const pendingToolCallExecution = pendingToolCallExecutions[toolCallOutcomeIndex];
-    if (!pendingToolCallExecution) {
-      throw new Error(`Missing read-only tool-call execution state at index ${toolCallOutcomeIndex}.`);
-    }
-
-    if (toolCallOutcome.outcomeKind === "completed") {
-      input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
-        toolCallId: pendingToolCallExecution.toolCallId,
-        toolCallDetail: toolCallOutcome.toolCallDetail,
-        toolResultText: toolCallOutcome.toolResultText,
-      });
-      yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
+function recordAutoApprovedReadOnlyToolCallOutcome(input: {
+  assistantResponseMessageId: string;
+  pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  toolCallOutcome: ToolCallOutcome;
+  toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
+}): RecordedAutoApprovedReadOnlyToolCallOutcome {
+  if (input.toolCallOutcome.outcomeKind === "completed") {
+    input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
+      toolCallId: input.pendingToolCallExecution.toolCallId,
+      toolCallDetail: input.toolCallOutcome.toolCallDetail,
+      toolResultText: input.toolCallOutcome.toolResultText,
+    });
+    return {
+      assistantResponseEvent: logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
         type: "assistant_message_part_updated",
         messageId: input.assistantResponseMessageId,
         part: AssistantToolCallConversationMessagePartSchema.parse({
-          id: pendingToolCallExecution.toolCallPartId,
+          id: input.pendingToolCallExecution.toolCallPartId,
           partKind: "assistant_tool_call",
-          toolCallId: pendingToolCallExecution.toolCallId,
+          toolCallId: input.pendingToolCallExecution.toolCallId,
           toolCallStatus: "completed",
-          toolCallStartedAtMs: pendingToolCallExecution.toolCallStartedAtMs,
-          toolCallDetail: toolCallOutcome.toolCallDetail,
-          durationMs: toolCallOutcome.durationMilliseconds,
+          toolCallStartedAtMs: input.pendingToolCallExecution.toolCallStartedAtMs,
+          toolCallDetail: input.toolCallOutcome.toolCallDetail,
+          durationMs: input.toolCallOutcome.durationMilliseconds,
         }),
-      }));
-      await submitProviderToolResultWithDiagnostics({
-        providerConversationTurn: input.providerConversationTurn,
-        toolCallId: pendingToolCallExecution.toolCallId,
-        toolResultText: toolCallOutcome.toolResultText,
+      })),
+      providerToolResult: {
+        toolCallId: input.pendingToolCallExecution.toolCallId,
+        toolResultText: input.toolCallOutcome.toolResultText,
         toolResultKind: "completed",
-        diagnosticLogger: input.diagnosticLogger,
-      });
-      continue;
-    }
+      },
+    };
+  }
 
-    input.toolResultSessionRecorder.appendFailedToolResultSessionEntry({
-      toolCallId: pendingToolCallExecution.toolCallId,
-      toolCallDetail: toolCallOutcome.toolCallDetail,
-      toolResultText: toolCallOutcome.toolResultText,
-      failureExplanation: toolCallOutcome.failureExplanation,
-    });
-    yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
+  input.toolResultSessionRecorder.appendFailedToolResultSessionEntry({
+    toolCallId: input.pendingToolCallExecution.toolCallId,
+    toolCallDetail: input.toolCallOutcome.toolCallDetail,
+    toolResultText: input.toolCallOutcome.toolResultText,
+    failureExplanation: input.toolCallOutcome.failureExplanation,
+  });
+  return {
+    assistantResponseEvent: logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
       type: "assistant_message_part_updated",
       messageId: input.assistantResponseMessageId,
       part: AssistantToolCallConversationMessagePartSchema.parse({
-        id: pendingToolCallExecution.toolCallPartId,
+        id: input.pendingToolCallExecution.toolCallPartId,
         partKind: "assistant_tool_call",
-        toolCallId: pendingToolCallExecution.toolCallId,
+        toolCallId: input.pendingToolCallExecution.toolCallId,
         toolCallStatus: "failed",
-        toolCallStartedAtMs: pendingToolCallExecution.toolCallStartedAtMs,
-        toolCallDetail: toolCallOutcome.toolCallDetail,
-        errorText: toolCallOutcome.failureExplanation,
-        durationMs: toolCallOutcome.durationMilliseconds,
+        toolCallStartedAtMs: input.pendingToolCallExecution.toolCallStartedAtMs,
+        toolCallDetail: input.toolCallOutcome.toolCallDetail,
+        errorText: input.toolCallOutcome.failureExplanation,
+        durationMs: input.toolCallOutcome.durationMilliseconds,
       }),
-    }));
-    await submitProviderToolResultWithDiagnostics({
-      providerConversationTurn: input.providerConversationTurn,
-      toolCallId: pendingToolCallExecution.toolCallId,
-      toolResultText: toolCallOutcome.toolResultText,
+    })),
+    providerToolResult: {
+      toolCallId: input.pendingToolCallExecution.toolCallId,
+      toolResultText: input.toolCallOutcome.toolResultText,
       toolResultKind: "failed",
-      diagnosticLogger: input.diagnosticLogger,
-    });
-  }
+    },
+  };
 }
 
 export function isAutoApprovedReadOnlyToolCallRequest(

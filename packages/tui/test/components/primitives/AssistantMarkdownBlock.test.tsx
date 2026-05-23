@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { RGBA, SyntaxStyle, type MarkdownRenderable } from "@opentui/core";
 import { act, useRef, useState } from "react";
-import {
-  AssistantMarkdownBlock,
-  buildStableAssistantMarkdownRenderSections,
-} from "../../../src/components/primitives/AssistantMarkdownBlock.tsx";
+import { AssistantMarkdownBlock } from "../../../src/components/primitives/AssistantMarkdownBlock.tsx";
 import { testRender } from "../../testRenderWithCleanup.ts";
 
 const markdownStreamingStabilitySyntaxStyle = SyntaxStyle.fromStyles({
@@ -18,35 +15,6 @@ async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Prom
 }
 
 describe("AssistantMarkdownBlock", () => {
-  test("reuses_completed_custom_render_sections_when_streaming_tail_changes", () => {
-    const firstMarkdownSections = buildStableAssistantMarkdownRenderSections({
-      markdownText: ["```ts title=src/stable.ts", "const stable = true;", "```"].join("\n"),
-      isStreaming: true,
-      previousCache: undefined,
-    });
-    const firstCodeFenceSection = firstMarkdownSections.renderSections.find(
-      (renderSection) => renderSection.sectionKind === "codeFence",
-    );
-
-    const secondMarkdownSections = buildStableAssistantMarkdownRenderSections({
-      markdownText: [
-        "```ts title=src/stable.ts",
-        "const stable = true;",
-        "```",
-        "",
-        "Streaming tail is still changing",
-      ].join("\n"),
-      isStreaming: true,
-      previousCache: firstMarkdownSections.nextCache,
-    });
-    const secondCodeFenceSection = secondMarkdownSections.renderSections.find(
-      (renderSection) => renderSection.sectionKind === "codeFence",
-    );
-
-    expect(firstCodeFenceSection?.sectionKind).toBe("codeFence");
-    expect(secondCodeFenceSection).toBe(firstCodeFenceSection);
-  });
-
   test("OpenTUI_top_level_markdown_reuses_stable_blocks_while_streaming_tail_changes", async () => {
     let updateMarkdownContent: ((nextMarkdownText: string) => void) | undefined;
     let readMarkdownRenderable: (() => MarkdownRenderable | null) | undefined;

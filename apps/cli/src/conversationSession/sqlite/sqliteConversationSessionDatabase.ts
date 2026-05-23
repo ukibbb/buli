@@ -5,20 +5,43 @@ import { Database } from "bun:sqlite";
 const privateConversationSessionDirectoryMode = 0o700;
 const privateConversationSessionDatabaseFileMode = 0o600;
 
+type ConversationSessionSqliteMigration = {
+  version: number;
+  migrateConversationSessionDatabase: (database: Database) => void;
+};
+
+type ConversationSessionSqliteUserVersionRow = {
+  user_version: number;
+};
+
+const conversationSessionSqliteMigrations: readonly ConversationSessionSqliteMigration[] = [
+  {
+    version: 1,
+    migrateConversationSessionDatabase: createInitialConversationSessionSchema,
+  },
+];
+
+const latestConversationSessionSqliteSchemaVersion = conversationSessionSqliteMigrations.at(-1)?.version ?? 0;
+
 export function openConversationSessionSqliteDatabase(storagePath: string): Database {
   if (storagePath !== ":memory:") {
     ensurePrivateConversationSessionDirectory(dirname(storagePath));
   }
 
   const database = new Database(storagePath, { create: true });
-  configureConversationSessionSqliteDatabase(database);
-  createConversationSessionSchema(database);
+  try {
+    configureConversationSessionSqliteDatabase(database);
+    migrateConversationSessionSqliteDatabase(database);
 
-  if (storagePath !== ":memory:") {
-    chmodSync(storagePath, privateConversationSessionDatabaseFileMode);
+    if (storagePath !== ":memory:") {
+      chmodSync(storagePath, privateConversationSessionDatabaseFileMode);
+    }
+
+    return database;
+  } catch (error) {
+    database.close();
+    throw error;
   }
-
-  return database;
 }
 
 export function runImmediateConversationSessionSqliteTransaction<T>(
@@ -48,7 +71,36 @@ function configureConversationSessionSqliteDatabase(database: Database): void {
   database.run("PRAGMA foreign_keys = ON");
 }
 
-function createConversationSessionSchema(database: Database): void {
+function migrateConversationSessionSqliteDatabase(database: Database): void {
+  const currentSchemaVersion = readConversationSessionSqliteSchemaVersion(database);
+  if (currentSchemaVersion > latestConversationSessionSqliteSchemaVersion) {
+    throw new Error(
+      `Conversation session database schema version ${currentSchemaVersion} is newer than supported version ${latestConversationSessionSqliteSchemaVersion}`,
+    );
+  }
+
+  const pendingMigrations = conversationSessionSqliteMigrations.filter(
+    (migration) => migration.version > currentSchemaVersion,
+  );
+  if (pendingMigrations.length === 0) {
+    return;
+  }
+
+  runImmediateConversationSessionSqliteTransaction(database, () => {
+    for (const migration of pendingMigrations) {
+      migration.migrateConversationSessionDatabase(database);
+      database.run(`PRAGMA user_version = ${migration.version}`);
+    }
+  });
+}
+
+function readConversationSessionSqliteSchemaVersion(database: Database): number {
+  return database
+    .query<ConversationSessionSqliteUserVersionRow, []>("PRAGMA user_version")
+    .get()?.user_version ?? 0;
+}
+
+function createInitialConversationSessionSchema(database: Database): void {
   database.run(`CREATE TABLE IF NOT EXISTS conversation_session (
     session_id TEXT PRIMARY KEY,
     workspace_root_path TEXT NOT NULL,
@@ -89,5 +141,4 @@ function createConversationSessionSchema(database: Database): void {
     workspace_root_path TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES conversation_session(session_id) ON DELETE CASCADE
   )`);
-  database.run("PRAGMA user_version = 1");
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fetchWithTimeout } from "../fetchWithTimeout.ts";
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./constants.ts";
 import { extractAccountId } from "./pkce.ts";
 import { OpenAiAuthInfoSchema, type OpenAiAuthInfo } from "./schema.ts";
@@ -12,6 +13,7 @@ const TokenResponseSchema = z.object({
 });
 
 const AUTH_REFRESH_EXPIRY_SKEW_MS = 5 * 60 * 1000;
+const OPENAI_TOKEN_FETCH_TIMEOUT_MESSAGE = "OpenAI token request timed out";
 
 export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 
@@ -34,19 +36,28 @@ export async function exchangeAuthorizationCode(input: {
   issuer?: string | undefined;
   clientId?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
+  abortSignal?: AbortSignal | undefined;
+  fetchTimeoutMilliseconds?: number | undefined;
 }): Promise<TokenResponse> {
-  const response = await (input.fetchImpl ?? fetch)(buildTokenEndpointUrl(input.issuer), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+  const response = await fetchWithTimeout({
+    resource: buildTokenEndpointUrl(input.issuer),
+    fetchImpl: input.fetchImpl,
+    abortSignal: input.abortSignal,
+    timeoutMilliseconds: input.fetchTimeoutMilliseconds,
+    timeoutErrorMessage: OPENAI_TOKEN_FETCH_TIMEOUT_MESSAGE,
+    requestInit: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: input.code,
+        redirect_uri: input.redirectUri,
+        client_id: input.clientId ?? OPENAI_CLIENT_ID,
+        code_verifier: input.verifier,
+      }).toString(),
     },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code: input.code,
-      redirect_uri: input.redirectUri,
-      client_id: input.clientId ?? OPENAI_CLIENT_ID,
-      code_verifier: input.verifier,
-    }).toString(),
   });
 
   return parseTokenResponse(response);
@@ -57,17 +68,26 @@ export async function refreshAccessToken(input: {
   issuer?: string | undefined;
   clientId?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
+  abortSignal?: AbortSignal | undefined;
+  fetchTimeoutMilliseconds?: number | undefined;
 }): Promise<TokenResponse> {
-  const response = await (input.fetchImpl ?? fetch)(buildTokenEndpointUrl(input.issuer), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+  const response = await fetchWithTimeout({
+    resource: buildTokenEndpointUrl(input.issuer),
+    fetchImpl: input.fetchImpl,
+    abortSignal: input.abortSignal,
+    timeoutMilliseconds: input.fetchTimeoutMilliseconds,
+    timeoutErrorMessage: OPENAI_TOKEN_FETCH_TIMEOUT_MESSAGE,
+    requestInit: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: input.refreshToken,
+        client_id: input.clientId ?? OPENAI_CLIENT_ID,
+      }).toString(),
     },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: input.refreshToken,
-      client_id: input.clientId ?? OPENAI_CLIENT_ID,
-    }).toString(),
   });
 
   return parseTokenResponse(response);
@@ -99,6 +119,8 @@ export async function refreshStoredAuth(input: {
   issuer?: string | undefined;
   clientId?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
+  abortSignal?: AbortSignal | undefined;
+  fetchTimeoutMilliseconds?: number | undefined;
   now?: number | undefined;
 }): Promise<OpenAiAuthInfo | undefined> {
   let auth = await input.store.loadOpenAi();
@@ -114,6 +136,8 @@ export async function refreshStoredAuth(input: {
       issuer: input.issuer,
       clientId: input.clientId,
       fetchImpl: input.fetchImpl,
+      abortSignal: input.abortSignal,
+      fetchTimeoutMilliseconds: input.fetchTimeoutMilliseconds,
     });
     const next = toAuthInfo({
       tokens,

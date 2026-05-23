@@ -39,12 +39,23 @@ function upsertConversationMessagePart(input: {
     return input.chatSessionState;
   }
 
-  const nextPartIds = existingConversationMessage.partIds.includes(input.conversationMessagePart.id)
-    ? existingConversationMessage.partIds
-    : [...existingConversationMessage.partIds, input.conversationMessagePart.id];
+  const doesConversationMessageAlreadyReferencePart = existingConversationMessage.partIds.includes(input.conversationMessagePart.id);
   const hasExistingConversationMessagePart = Boolean(
     input.chatSessionState.conversationMessagePartsById[input.conversationMessagePart.id],
   );
+
+  if (doesConversationMessageAlreadyReferencePart) {
+    return {
+      ...input.chatSessionState,
+      conversationMessagePartsById: {
+        ...input.chatSessionState.conversationMessagePartsById,
+        [input.conversationMessagePart.id]: input.conversationMessagePart,
+      },
+      conversationMessagePartCount: hasExistingConversationMessagePart
+        ? input.chatSessionState.conversationMessagePartCount
+        : input.chatSessionState.conversationMessagePartCount + 1,
+    };
+  }
 
   return {
     ...input.chatSessionState,
@@ -52,7 +63,7 @@ function upsertConversationMessagePart(input: {
       ...input.chatSessionState.conversationMessagesById,
       [input.messageId]: {
         ...existingConversationMessage,
-        partIds: nextPartIds,
+        partIds: [...existingConversationMessage.partIds, input.conversationMessagePart.id],
       },
     },
     conversationMessagePartsById: {

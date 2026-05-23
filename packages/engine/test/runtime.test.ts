@@ -1530,7 +1530,7 @@ test("AssistantConversationRuntime auto-runs read-only tool calls without approv
   ]);
 });
 
-test("AssistantConversationRuntime runs batched read-only tool calls and records ordered results", async () => {
+test("AssistantConversationRuntime runs batched read-only tool calls and records every result", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-batched-read-tools-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nToolCallRequest appears here.\n", "utf8");
   const providerTurn = new ScriptedProviderTurn({
@@ -1581,24 +1581,34 @@ test("AssistantConversationRuntime runs batched read-only tool calls and records
       : []
   );
 
-  expect(toolCallPartStatuses).toEqual([
+  expect(toolCallPartStatuses).toHaveLength(4);
+  expect(toolCallPartStatuses.slice(0, 2)).toEqual([
     "call_read_1:running",
     "call_grep_1:running",
+  ]);
+  expect(toolCallPartStatuses.slice(2).toSorted()).toEqual([
     "call_read_1:completed",
     "call_grep_1:completed",
-  ]);
-  expect(providerTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).toEqual([
+  ].toSorted());
+  expect(providerTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).toSorted()).toEqual([
     "call_read_1",
     "call_grep_1",
-  ]);
-  expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("1: # Demo");
-  expect(providerTurn.submittedToolResults[1]?.toolResultText).toContain("ToolCallRequest appears here");
-  expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
+  ].toSorted());
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_read_1")?.toolResultText)
+    .toContain("1: # Demo");
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_grep_1")?.toolResultText)
+    .toContain("ToolCallRequest appears here");
+  const conversationSessionEntries = runtime.conversationHistory.listConversationSessionEntries();
+  expect(conversationSessionEntries.slice(0, 3)).toMatchObject([
     { entryKind: "user_prompt" },
     { entryKind: "tool_call", toolCallId: "call_read_1" },
     { entryKind: "tool_call", toolCallId: "call_grep_1" },
-    { entryKind: "completed_tool_result", toolCallId: "call_read_1" },
-    { entryKind: "completed_tool_result", toolCallId: "call_grep_1" },
+  ]);
+  expect(conversationSessionEntries.slice(3, 5)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_read_1" }),
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_grep_1" }),
+  ]));
+  expect(conversationSessionEntries.slice(5)).toMatchObject([
     { entryKind: "assistant_text_segment", assistantTextSegmentText: "Batch acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
   ]);

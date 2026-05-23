@@ -1035,6 +1035,49 @@ test("assistant_message_part_updated keeps the cached conversation part count st
   ]);
 });
 
+test("assistant_message_part_updated preserves message map identity when part ids do not change", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hel",
+    },
+  });
+  const conversationMessagesByIdBeforePartUpdate = chatSessionState.conversationMessagesById;
+  const assistantConversationMessageBeforePartUpdate = chatSessionState.conversationMessagesById["assistant-1"];
+
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_updated",
+    messageId: "assistant-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hello",
+    },
+  });
+
+  expect(chatSessionState.conversationMessagesById).toBe(conversationMessagesByIdBeforePartUpdate);
+  expect(chatSessionState.conversationMessagesById["assistant-1"]).toBe(assistantConversationMessageBeforePartUpdate);
+  expect(listOrderedConversationMessageParts(chatSessionState, "assistant-1")).toEqual([
+    {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hello",
+    },
+  ]);
+});
+
 test("assistant_message_completed does not copy total reasoning tokens onto multiple reasoning parts", () => {
   let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
   chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {

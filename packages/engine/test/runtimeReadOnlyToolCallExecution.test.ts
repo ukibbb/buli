@@ -328,7 +328,104 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
   });
 });
 
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concurrent execution and submits ordered results", async () => {
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls emits fast completions before slower siblings finish", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-fast-completion-"));
+  await mkdir(join(workspaceRootPath, "src"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "slow note\n", "utf8");
+  await writeFile(join(workspaceRootPath, "src", "fast.ts"), "export const fast = true;\n", "utf8");
+  const requestedToolCalls: AutoApprovedReadOnlyRequestedToolCall[] = [
+    {
+      toolCallId: "call_read_slow",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "notes.txt",
+      },
+    },
+    {
+      toolCallId: "call_glob_fast",
+      toolCallRequest: {
+        toolName: "glob",
+        globPattern: "src/**/*.ts",
+      },
+    },
+  ];
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const projectInstructionTracker = new BlockingProjectInstructionTracker({
+    workspaceRootPath,
+    expectedActiveDiscoveryCount: 1,
+  });
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Read notes and list source files",
+        modelFacingPromptText: "Read notes and list source files",
+      },
+      ...requestedToolCalls.map((requestedToolCall) => ({
+        entryKind: "tool_call" as const,
+        toolCallId: requestedToolCall.toolCallId,
+        toolCallRequest: requestedToolCall.toolCallRequest,
+      })),
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+  const assistantResponseEventIterator = streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
+    assistantResponseMessageId: "assistant-message-1",
+    providerConversationTurn,
+    requestedToolCalls,
+    workspaceRootPath,
+    projectInstructionTracker,
+    toolResultSessionRecorder,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  })[Symbol.asyncIterator]();
+
+  const firstAssistantResponseEvent = await readNextAssistantResponseEvent(assistantResponseEventIterator);
+  const secondAssistantResponseEvent = await readNextAssistantResponseEvent(assistantResponseEventIterator);
+  const thirdAssistantResponseEventPromise = readNextAssistantResponseEvent(assistantResponseEventIterator);
+  await waitForPromiseWithTimeout({
+    promise: projectInstructionTracker.expectedActiveDiscoveriesReached.promise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("Slow read tool call did not reach the blocking project instruction discovery."),
+  });
+  const thirdAssistantResponseEvent = await waitForPromiseWithTimeout({
+    promise: thirdAssistantResponseEventPromise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("Fast glob completion was not emitted while slow read was still blocked."),
+  });
+
+  expect(listToolCallPartStatuses([
+    firstAssistantResponseEvent,
+    secondAssistantResponseEvent,
+    thirdAssistantResponseEvent,
+  ])).toEqual([
+    "call_read_slow:running",
+    "call_glob_fast:running",
+    "call_glob_fast:completed",
+  ]);
+  expect(providerConversationTurn.submittedToolResults).toEqual([]);
+
+  const fourthAssistantResponseEventPromise = readNextAssistantResponseEvent(assistantResponseEventIterator);
+  projectInstructionTracker.releaseDiscoveries.complete();
+  const fourthAssistantResponseEvent = await waitForPromiseWithTimeout({
+    promise: fourthAssistantResponseEventPromise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("Slow read completion was not emitted after release."),
+  });
+
+  expect(listToolCallPartStatuses([fourthAssistantResponseEvent])).toEqual(["call_read_slow:completed"]);
+  expect(await assistantResponseEventIterator.next()).toEqual({ done: true, value: undefined });
+  expect(providerConversationTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).toEqual([
+    "call_glob_fast",
+    "call_read_slow",
+  ]);
+  expect(conversationHistory.listConversationSessionEntries()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_glob_fast" }),
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_read_slow" }),
+  ]));
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concurrent execution and submits every result", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-concurrency-"));
   const requestedToolCalls: AutoApprovedReadOnlyRequestedToolCall[] = Array.from({ length: 5 }, (_, toolCallIndex) => ({
     toolCallId: `call_read_${toolCallIndex + 1}`,
@@ -389,26 +486,44 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concu
 
   expect(projectInstructionTracker.startedDiscoveryCount).toBe(requestedToolCalls.length);
   expect(projectInstructionTracker.maximumActiveDiscoveryCount).toBe(2);
-  expect(providerConversationTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).toEqual(
-    requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+  expect(providerConversationTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).toSorted()).toEqual(
+    requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId).toSorted(),
   );
-  expect(assistantResponseEvents.flatMap((assistantResponseEvent) =>
+  const toolCallPartStatuses = listToolCallPartStatuses(assistantResponseEvents);
+  expect(toolCallPartStatuses.slice(0, requestedToolCalls.length)).toEqual(
+    requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:running`),
+  );
+  expect(toolCallPartStatuses.slice(requestedToolCalls.length).toSorted()).toEqual(
+    requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:completed`).toSorted(),
+  );
+});
+
+async function readNextAssistantResponseEvent(
+  assistantResponseEventIterator: AsyncIterator<AssistantResponseEvent>,
+): Promise<AssistantResponseEvent> {
+  const nextAssistantResponseEvent = await assistantResponseEventIterator.next();
+  if (nextAssistantResponseEvent.done) {
+    throw new Error("Expected another assistant response event before the stream ended.");
+  }
+
+  return nextAssistantResponseEvent.value;
+}
+
+function listToolCallPartStatuses(assistantResponseEvents: readonly AssistantResponseEvent[]): string[] {
+  return assistantResponseEvents.flatMap((assistantResponseEvent) =>
     (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
       assistantResponseEvent.part.partKind === "assistant_tool_call"
       ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
       : []
-  )).toEqual([
-    ...requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:running`),
-    ...requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:completed`),
-  ]);
-});
+  );
+}
 
-async function waitForPromiseWithTimeout(input: {
-  promise: Promise<void>;
+async function waitForPromiseWithTimeout<T>(input: {
+  promise: Promise<T>;
   timeoutMilliseconds: number;
   createTimeoutError: () => Error;
-}): Promise<void> {
-  return new Promise<void>((resolvePromise, rejectPromise) => {
+}): Promise<T> {
+  return new Promise<T>((resolvePromise, rejectPromise) => {
     const timeoutHandle = setTimeout(() => rejectPromise(input.createTimeoutError()), input.timeoutMilliseconds);
     input.promise.then(resolvePromise, rejectPromise).finally(() => clearTimeout(timeoutHandle));
   });

@@ -215,6 +215,27 @@ test("parseOpenAiStream fails with stream context when an SSE frame is malformed
   await expect(collectParsedEvents(response)).rejects.toThrow("OpenAI stream returned malformed SSE JSON at frame 1");
 });
 
+test("parseOpenAiStream rejects an oversized delimited SSE frame", async () => {
+  const response = new Response(
+    createSseDataFrame({
+      type: "response.output_text.delta",
+      item_id: "msg_1",
+      delta: "x".repeat(1_048_577),
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow("OpenAI stream SSE frame exceeded 1048576 characters");
+});
+
+test("parseOpenAiStream rejects an oversized unterminated SSE frame", async () => {
+  const response = new Response(`data: ${"x".repeat(1_048_577)}`, {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+
+  await expect(collectParsedEvents(response)).rejects.toThrow("OpenAI stream SSE frame exceeded 1048576 characters");
+});
+
 test("parseOpenAiStream emits reasoning_summary_completed before the first non-reasoning text chunk", async () => {
   const response = new Response(
     [

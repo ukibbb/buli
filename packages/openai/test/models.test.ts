@@ -12,6 +12,11 @@ type QueuedModelListFetchOutcome =
   | { outcomeKind: "response"; response: Response }
   | { outcomeKind: "rejection"; error: unknown };
 
+type AbortablePendingModelListRequest = {
+  url: string;
+  signal: AbortSignal | null | undefined;
+};
+
 function createModelListSuccessResponse(): Response {
   return new Response(
     JSON.stringify({
@@ -69,6 +74,36 @@ function createModelListFetchImplWithQueuedOutcomes(input: {
   );
 
   return fetchImpl;
+}
+
+function createAbortablePendingModelListFetchImpl(input: {
+  requests: AbortablePendingModelListRequest[];
+  afterRequestStarted?: ((requestIndex: number) => void) | undefined;
+}): typeof fetch {
+  const fetchImpl: typeof fetch = Object.assign(
+    async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      input.requests.push({
+        url: String(url),
+        signal: init?.signal,
+      });
+      const requestIndex = input.requests.length;
+
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const abortReason = readAbortSignalReason(init.signal);
+          reject(abortReason instanceof Error ? abortReason : new Error("model-list request aborted"));
+        }, { once: true });
+        input.afterRequestStarted?.(requestIndex);
+      });
+    },
+    { preconnect: fetch.preconnect.bind(fetch) },
+  );
+
+  return fetchImpl;
+}
+
+function readAbortSignalReason(abortSignal: AbortSignal | null | undefined): unknown {
+  return abortSignal ? (abortSignal as { readonly reason?: unknown }).reason : undefined;
 }
 
 async function createFreshOpenAiAuthStore(testDirectoryPrefix: string): Promise<OpenAiAuthStore> {
@@ -375,6 +410,63 @@ test("OpenAiProvider.listAvailableAssistantModels does not retry aborted model-l
   expect(requests).toHaveLength(1);
   expect(diagnosticEvents.some((diagnosticEvent) => diagnosticEvent.eventName === "model_list.transport_retry_scheduled"))
     .toBe(false);
+});
+
+test("OpenAiProvider.listAvailableAssistantModels times out hanging model-list fetches", async () => {
+  const requests: AbortablePendingModelListRequest[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const provider = new OpenAiProvider({
+    endpoint: "https://example.test/backend-api/codex/responses",
+    store: await createFreshOpenAiAuthStore("buli-openai-models-timeout-"),
+    fetchImpl: createAbortablePendingModelListFetchImpl({ requests }),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await expect(provider.listAvailableAssistantModels({ fetchTimeoutMilliseconds: 1 }))
+    .rejects.toThrow("OpenAI model-list request timed out");
+
+  expect(requests).toHaveLength(3);
+  for (const request of requests) {
+    expect(request.signal?.aborted).toBe(true);
+    const abortReason = readAbortSignalReason(request.signal);
+    expect(abortReason).toBeInstanceOf(Error);
+    if (abortReason instanceof Error) {
+      expect(abortReason.name).toBe("TimeoutError");
+    }
+  }
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "model_list.transport_retry_scheduled"))
+    .toHaveLength(2);
+  expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "model_list.transport_retry_exhausted")?.fields)
+    .toMatchObject({
+      modelListRequestAttemptIndex: 3,
+      maxModelListHttpRetryCount: 2,
+      transportErrorName: "TimeoutError",
+    });
+});
+
+test("OpenAiProvider.listAvailableAssistantModels aborts model-list fetches when the caller aborts", async () => {
+  const requests: AbortablePendingModelListRequest[] = [];
+  const callerAbortController = new AbortController();
+  const provider = new OpenAiProvider({
+    endpoint: "https://example.test/backend-api/codex/responses",
+    store: await createFreshOpenAiAuthStore("buli-openai-models-caller-abort-"),
+    fetchImpl: createAbortablePendingModelListFetchImpl({
+      requests,
+      afterRequestStarted: () => callerAbortController.abort(new DOMException("model list cancelled", "AbortError")),
+    }),
+  });
+
+  await expect(provider.listAvailableAssistantModels({
+    abortSignal: callerAbortController.signal,
+    fetchTimeoutMilliseconds: 1_000,
+  })).rejects.toThrow("model list cancelled");
+
+  expect(requests).toHaveLength(1);
+  const request = requests[0];
+  if (!request) {
+    throw new Error("OpenAiProvider did not issue a model-list request");
+  }
+  expect(request.signal?.aborted).toBe(true);
 });
 
 test("OpenAiProvider.listAvailableAssistantModels surfaces the backend error message from JSON responses", async () => {

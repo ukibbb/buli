@@ -7,6 +7,8 @@ import {
 
 export type { OpenAiResponseStepTerminalState, OpenAiStreamParserOptions } from "./openAiResponseStepStreamParser.ts";
 
+const MAX_OPENAI_SSE_FRAME_CHARACTER_COUNT = 1_048_576;
+
 function nextFrameBoundary(buffer: string): { index: number; length: number } | undefined {
   const boundaries = [
     { index: buffer.indexOf("\n\n"), length: 2 },
@@ -30,6 +32,16 @@ function extractData(frame: string): string {
     .trim();
 }
 
+function assertOpenAiSseFrameWithinLimit(frameCharacterCount: number): void {
+  if (frameCharacterCount <= MAX_OPENAI_SSE_FRAME_CHARACTER_COUNT) {
+    return;
+  }
+
+  throw new Error(
+    `OpenAI stream SSE frame exceeded ${MAX_OPENAI_SSE_FRAME_CHARACTER_COUNT} characters (${frameCharacterCount} characters).`,
+  );
+}
+
 async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
@@ -46,8 +58,10 @@ async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<st
       while (true) {
         const boundary = nextFrameBoundary(buffer);
         if (!boundary) {
+          assertOpenAiSseFrameWithinLimit(buffer.length);
           break;
         }
+        assertOpenAiSseFrameWithinLimit(boundary.index);
 
         const frame = buffer.slice(0, boundary.index);
         buffer = buffer.slice(boundary.index + boundary.length);
@@ -60,6 +74,7 @@ async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<st
       }
     }
 
+    assertOpenAiSseFrameWithinLimit(buffer.length);
     const data = extractData(buffer);
 
     if (data) {

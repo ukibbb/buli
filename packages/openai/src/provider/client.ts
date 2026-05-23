@@ -10,6 +10,7 @@ import { OPENAI_CODEX_API_ENDPOINT } from "../auth/constants.ts";
 import { refreshStoredAuth } from "../auth/refresh.ts";
 import type { OpenAiAuthInfo } from "../auth/schema.ts";
 import { OpenAiAuthStore } from "../auth/store.ts";
+import { fetchWithTimeout } from "../fetchWithTimeout.ts";
 import { logOpenAiDiagnosticEvent } from "./diagnostics.ts";
 import { createOpenAiHttpRequestError, getOpenAiRequestId } from "./httpResponseDiagnostics.ts";
 import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
@@ -27,7 +28,21 @@ export type OpenAiConversationTurnRequest = {
   abortSignal?: AbortSignal;
 };
 
-async function loadOpenAiAuth(input: { store: OpenAiAuthStore; fetchImpl: typeof fetch }): Promise<OpenAiAuthInfo> {
+export type OpenAiModelListRequest = Readonly<{
+  abortSignal?: AbortSignal | undefined;
+  fetchTimeoutMilliseconds?: number | undefined;
+}>;
+
+const OPENAI_MODEL_LIST_FETCH_TIMEOUT_MESSAGE = "OpenAI model-list request timed out";
+const DEFAULT_OPENAI_MAX_RESPONSE_STEPS_PER_TURN = 64;
+const DEFAULT_OPENAI_MAX_TOOL_CALLS_PER_TURN = 256;
+
+async function loadOpenAiAuth(input: {
+  store: OpenAiAuthStore;
+  fetchImpl: typeof fetch;
+  abortSignal?: AbortSignal | undefined;
+  fetchTimeoutMilliseconds?: number | undefined;
+}): Promise<OpenAiAuthInfo> {
   const auth = await refreshStoredAuth(input);
 
   if (!auth) {
@@ -70,7 +85,7 @@ export class OpenAiProvider {
     this.diagnosticLogger = input.diagnosticLogger;
   }
 
-  async listAvailableAssistantModels(): Promise<AvailableAssistantModel[]> {
+  async listAvailableAssistantModels(input: OpenAiModelListRequest = {}): Promise<AvailableAssistantModel[]> {
     const modelListRequestStartedAtMs = Date.now();
     const modelListEndpoint = deriveOpenAiModelListEndpoint(this.endpoint);
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "model_list.request_started", {
@@ -79,6 +94,8 @@ export class OpenAiProvider {
     const auth = await loadOpenAiAuth({
       store: this.store,
       fetchImpl: this.fetchImpl,
+      abortSignal: input.abortSignal,
+      fetchTimeoutMilliseconds: input.fetchTimeoutMilliseconds,
     });
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "auth.loaded_for_model_list", {
       hasAccountId: auth.accountId !== undefined,
@@ -86,15 +103,23 @@ export class OpenAiProvider {
     });
 
     const modelListRetryIterator = requestOpenAiHttpResponseWithRetries({
-      fetchResponse: async () => this.fetchImpl(modelListEndpoint, {
-        method: "GET",
-        headers: createRequestHeaders(auth, "application/json"),
+      fetchResponse: async () => fetchWithTimeout({
+        resource: modelListEndpoint,
+        fetchImpl: this.fetchImpl,
+        abortSignal: input.abortSignal,
+        timeoutMilliseconds: input.fetchTimeoutMilliseconds,
+        timeoutErrorMessage: OPENAI_MODEL_LIST_FETCH_TIMEOUT_MESSAGE,
+        requestInit: {
+          method: "GET",
+          headers: createRequestHeaders(auth, "application/json"),
+        },
       }),
       diagnosticLogger: this.diagnosticLogger,
       diagnosticEventPrefix: "model_list",
       requestAttemptDiagnosticFieldName: "modelListRequestAttemptIndex",
       maximumRetryCountDiagnosticFieldName: "maxModelListHttpRetryCount",
       debugLogTitlePrefix: "OpenAI model-list",
+      abortSignal: input.abortSignal,
       operationStartedAtMs: modelListRequestStartedAtMs,
     })[Symbol.asyncIterator]();
     const modelListRetryResult = await modelListRetryIterator.next();
@@ -134,6 +159,7 @@ export class OpenAiProvider {
         const auth = await loadOpenAiAuth({
           store: this.store,
           fetchImpl: this.fetchImpl,
+          abortSignal: input.abortSignal,
         });
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "auth.loaded_for_stream", {
           hasAccountId: auth.accountId !== undefined,
@@ -160,6 +186,8 @@ export class OpenAiProvider {
         ? { availablePresentationFunctionNames: input.availablePresentationFunctionNames }
         : {}),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      maxResponseStepsPerTurn: DEFAULT_OPENAI_MAX_RESPONSE_STEPS_PER_TURN,
+      maxToolCallsPerTurn: DEFAULT_OPENAI_MAX_TOOL_CALLS_PER_TURN,
       systemPromptText: input.systemPromptText,
       conversationSessionEntries: input.conversationSessionEntries,
       onStepRequestFailed: async (response) => createOpenAiHttpRequestError(response, "stream"),

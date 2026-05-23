@@ -6,6 +6,34 @@ import { join } from "node:path";
 import { exchangeAuthorizationCode, refreshAccessToken, refreshStoredAuth, toAuthInfo } from "../src/auth/refresh.ts";
 import { OpenAiAuthStore } from "../src/auth/store.ts";
 
+function createAbortablePendingTokenFetchImpl(input: {
+  receivedAbortSignals: AbortSignal[];
+  afterRequestStarted?: (() => void) | undefined;
+}): typeof fetch {
+  const fetchImpl: typeof fetch = Object.assign(
+    async (_url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      if (init?.signal) {
+        input.receivedAbortSignals.push(init.signal);
+      }
+
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const abortReason = readAbortSignalReason(init.signal);
+          reject(abortReason instanceof Error ? abortReason : new Error("token request aborted"));
+        }, { once: true });
+        input.afterRequestStarted?.();
+      });
+    },
+    { preconnect: fetch.preconnect.bind(fetch) },
+  );
+
+  return fetchImpl;
+}
+
+function readAbortSignalReason(abortSignal: AbortSignal | null | undefined): unknown {
+  return abortSignal ? (abortSignal as { readonly reason?: unknown }).reason : undefined;
+}
+
 async function withTokenServer(
   handler: (body: URLSearchParams) => Record<string, unknown>,
   run: (issuer: string) => Promise<void>,
@@ -96,6 +124,31 @@ test("exchangeAuthorizationCode handles trailing slash issuers", async () => {
   expect(requestedUrls).toEqual(["https://auth.example.com/oauth/token"]);
 });
 
+test("exchangeAuthorizationCode times out hanging token fetches", async () => {
+  const receivedAbortSignals: AbortSignal[] = [];
+
+  await expect(exchangeAuthorizationCode({
+    code: "auth-code",
+    redirectUri: "http://localhost:1455/auth/callback",
+    verifier: "verifier",
+    issuer: "https://auth.example.com",
+    fetchImpl: createAbortablePendingTokenFetchImpl({ receivedAbortSignals }),
+    fetchTimeoutMilliseconds: 1,
+  })).rejects.toThrow("OpenAI token request timed out");
+
+  expect(receivedAbortSignals).toHaveLength(1);
+  const receivedAbortSignal = receivedAbortSignals[0];
+  if (!receivedAbortSignal) {
+    throw new Error("exchangeAuthorizationCode did not pass an abort signal to fetch");
+  }
+  expect(receivedAbortSignal.aborted).toBe(true);
+  const abortReason = readAbortSignalReason(receivedAbortSignal);
+  expect(abortReason).toBeInstanceOf(Error);
+  if (abortReason instanceof Error) {
+    expect(abortReason.name).toBe("TimeoutError");
+  }
+});
+
 test("refreshAccessToken posts the refresh token form", async () => {
   await withTokenServer(
     (body) => {
@@ -118,6 +171,29 @@ test("refreshAccessToken posts the refresh token form", async () => {
       expect(tokens.refresh_token).toBe("next-refresh");
     },
   );
+});
+
+test("refreshAccessToken aborts token fetches when the caller aborts", async () => {
+  const callerAbortController = new AbortController();
+  const receivedAbortSignals: AbortSignal[] = [];
+
+  await expect(refreshAccessToken({
+    refreshToken: "refresh-token",
+    issuer: "https://auth.example.com",
+    fetchImpl: createAbortablePendingTokenFetchImpl({
+      receivedAbortSignals,
+      afterRequestStarted: () => callerAbortController.abort(new DOMException("refresh cancelled", "AbortError")),
+    }),
+    abortSignal: callerAbortController.signal,
+    fetchTimeoutMilliseconds: 1_000,
+  })).rejects.toThrow("refresh cancelled");
+
+  expect(receivedAbortSignals).toHaveLength(1);
+  const receivedAbortSignal = receivedAbortSignals[0];
+  if (!receivedAbortSignal) {
+    throw new Error("refreshAccessToken did not pass an abort signal to fetch");
+  }
+  expect(receivedAbortSignal.aborted).toBe(true);
 });
 
 test("toAuthInfo converts token responses into stored auth", () => {
