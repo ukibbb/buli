@@ -23,6 +23,17 @@ type ReconciledPromptImageAttachments = {
   pendingPromptImageAttachments: PendingPromptImageAttachment[];
 };
 
+export type SubmittedUserPrompt = {
+  submittedPromptText: string;
+  submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+};
+
+export type PromptDraftSubmission = {
+  nextChatSessionState: ChatSessionState;
+  submittedPromptText: string | undefined;
+  submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+};
+
 function createPromptDraftEditedState(input: {
   chatSessionState: ChatSessionState;
   promptDraft: string;
@@ -379,34 +390,87 @@ export function removePromptDraftCharacterAtCursor(chatSessionState: ChatSession
   });
 }
 
-export function submitPromptDraft(chatSessionState: ChatSessionState): {
-  nextChatSessionState: ChatSessionState;
-  submittedPromptText: string | undefined;
-  submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
-} {
-  const submittedPromptText = chatSessionState.promptDraft.trim();
-  const submittedPromptImageAttachments = chatSessionState.pendingPromptImageAttachments.map(
-    (pendingPromptImageAttachment) => pendingPromptImageAttachment.attachment,
-  );
+export function submitPromptDraft(chatSessionState: ChatSessionState): PromptDraftSubmission {
+  const submittedUserPrompt = readSubmittablePromptDraft(chatSessionState);
   if (
-    (submittedPromptText.length === 0 && submittedPromptImageAttachments.length === 0) ||
-    chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
-    chatSessionState.conversationTurnStatus === "waiting_for_tool_approval" ||
+    !submittedUserPrompt ||
+    chatSessionState.conversationTurnStatus !== "waiting_for_user_input" ||
     chatSessionState.promptContextSelectionState.step !== "hidden" ||
     chatSessionState.modelAndReasoningSelectionState.step !== "hidden"
   ) {
     return { nextChatSessionState: chatSessionState, submittedPromptText: undefined, submittedPromptImageAttachments: [] };
   }
 
+  return {
+    submittedPromptText: submittedUserPrompt.submittedPromptText,
+    submittedPromptImageAttachments: submittedUserPrompt.submittedPromptImageAttachments,
+    nextChatSessionState: appendSubmittedUserPromptToConversation({
+      chatSessionState: clearSubmittedPromptDraft(chatSessionState),
+      submittedPromptText: submittedUserPrompt.submittedPromptText,
+      submittedPromptImageAttachments: submittedUserPrompt.submittedPromptImageAttachments,
+    }),
+  };
+}
+
+export function queuePromptDraftForLaterSubmission(chatSessionState: ChatSessionState): PromptDraftSubmission {
+  const submittedUserPrompt = readSubmittablePromptDraft(chatSessionState);
+  if (
+    !submittedUserPrompt ||
+    chatSessionState.conversationTurnStatus !== "streaming_assistant_response" ||
+    chatSessionState.promptContextSelectionState.step !== "hidden" ||
+    chatSessionState.modelAndReasoningSelectionState.step !== "hidden"
+  ) {
+    return { nextChatSessionState: chatSessionState, submittedPromptText: undefined, submittedPromptImageAttachments: [] };
+  }
+
+  return {
+    submittedPromptText: submittedUserPrompt.submittedPromptText,
+    submittedPromptImageAttachments: submittedUserPrompt.submittedPromptImageAttachments,
+    nextChatSessionState: clearSubmittedPromptDraft(chatSessionState),
+  };
+}
+
+function readSubmittablePromptDraft(chatSessionState: ChatSessionState): SubmittedUserPrompt | undefined {
+  const submittedPromptText = chatSessionState.promptDraft.trim();
+  const submittedPromptImageAttachments = chatSessionState.pendingPromptImageAttachments.map(
+    (pendingPromptImageAttachment) => pendingPromptImageAttachment.attachment,
+  );
+
+  if (submittedPromptText.length === 0 && submittedPromptImageAttachments.length === 0) {
+    return undefined;
+  }
+
+  return {
+    submittedPromptText,
+    submittedPromptImageAttachments,
+  };
+}
+
+function clearSubmittedPromptDraft(chatSessionState: ChatSessionState): ChatSessionState {
+  return {
+    ...chatSessionState,
+    promptDraft: "",
+    promptDraftCursorOffset: 0,
+    pendingPromptImageAttachments: [],
+    promptContextSelectionState: { step: "hidden" },
+    selectedPromptContextReferenceTexts: [],
+  };
+}
+
+export function appendSubmittedUserPromptToConversation(input: {
+  chatSessionState: ChatSessionState;
+  submittedPromptText: string;
+  submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+}): ChatSessionState {
   const userMessageId = `user-${randomUUID()}`;
-  const userTextConversationMessagePart = submittedPromptText.length > 0
+  const userTextConversationMessagePart = input.submittedPromptText.length > 0
     ? {
         id: `user-text-${randomUUID()}`,
         partKind: "user_text" as const,
-        text: submittedPromptText,
+        text: input.submittedPromptText,
       }
     : undefined;
-  const userImageAttachmentConversationMessageParts = submittedPromptImageAttachments.map((attachment) => ({
+  const userImageAttachmentConversationMessageParts = input.submittedPromptImageAttachments.map((attachment) => ({
     id: `user-image-${randomUUID()}`,
     partKind: "user_image_attachment" as const,
     attachment,
@@ -424,26 +488,17 @@ export function submitPromptDraft(chatSessionState: ChatSessionState): {
     partIds: userConversationMessageParts.map((conversationMessagePart) => conversationMessagePart.id),
   };
 
-  return {
-    submittedPromptText,
-    submittedPromptImageAttachments,
-    nextChatSessionState: appendConversationMessage({
-      chatSessionState: {
-        ...chatSessionState,
-        promptDraft: "",
-        promptDraftCursorOffset: 0,
-        pendingPromptImageAttachments: [],
-        conversationTurnStatus: "streaming_assistant_response",
-        latestTokenUsage: undefined,
-        latestContextWindowUsage: undefined,
-        pendingToolApprovalRequest: undefined,
-        promptContextSelectionState: { step: "hidden" },
-        selectedPromptContextReferenceTexts: [],
-      },
-      conversationMessage: userConversationMessage,
-      conversationMessageParts: userConversationMessageParts,
-    }),
-  };
+  return appendConversationMessage({
+    chatSessionState: {
+      ...input.chatSessionState,
+      conversationTurnStatus: "streaming_assistant_response",
+      latestTokenUsage: undefined,
+      latestContextWindowUsage: undefined,
+      pendingToolApprovalRequest: undefined,
+    },
+    conversationMessage: userConversationMessage,
+    conversationMessageParts: userConversationMessageParts,
+  });
 }
 
 export function getActivePromptContextQueryText(chatSessionState: ChatSessionState): string | undefined {

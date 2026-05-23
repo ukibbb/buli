@@ -10,7 +10,11 @@ import type {
   ConversationAutoCompactionResult,
   ConversationTurnRequest,
 } from "@buli/engine";
-import { applyAssistantResponseEventsToChatSessionState, type ChatSessionState } from "@buli/chat-session-state";
+import {
+  appendSubmittedUserPromptToConversation,
+  applyAssistantResponseEventsToChatSessionState,
+  type ChatSessionState,
+} from "@buli/chat-session-state";
 import { startTransition, useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { summarizeAssistantResponseEventsForDiagnostics } from "./assistantResponseEventDiagnostics.ts";
 import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
@@ -33,6 +37,8 @@ export type UseChatAppAssistantTurnActionsInput = {
   registerActiveConversationTurnStarted: (startedActiveConversationTurn: StartedChatAppActiveTurn) => void;
   registerActiveConversationTurnFinished: (finishedActiveConversationTurn: FinishedChatAppActiveTurn) => void;
   registerActiveConversationTurnSettlement: (activeConversationTurnSettlementPromise: Promise<void>) => void;
+  dequeueQueuedSubmittedPrompt: () => QueuedChatAppPrompt | undefined;
+  scrollConversationMessagesToBottom: () => void;
   autoCompactCurrentConversationSessionAfterAssistantTurn: () =>
     | Promise<ConversationAutoCompactionResult | undefined>
     | ConversationAutoCompactionResult
@@ -44,6 +50,11 @@ export type SubmittedChatAppPrompt = {
   submittedPromptText: string;
   submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
   submittedPromptSource?: UserPromptSource | undefined;
+};
+
+export type QueuedChatAppPrompt = {
+  submittedPromptText: string;
+  submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
 };
 
 export type PendingToolApprovalDecisionSubmission = {
@@ -79,6 +90,27 @@ export function useChatAppAssistantTurnActions(
     startTransition(() => {
       input.setChatSessionState(nextChatSessionState);
     });
+  });
+
+  const appendQueuedSubmittedPromptToConversation = useEffectEvent((queuedChatAppPrompt: QueuedChatAppPrompt): SubmittedChatAppPrompt => {
+    const nextChatSessionState = appendSubmittedUserPromptToConversation({
+      chatSessionState: input.latestChatSessionStateRef.current,
+      submittedPromptText: queuedChatAppPrompt.submittedPromptText,
+      submittedPromptImageAttachments: queuedChatAppPrompt.submittedPromptImageAttachments,
+    });
+    input.latestChatSessionStateRef.current = nextChatSessionState;
+    input.setChatSessionState(nextChatSessionState);
+    input.scrollConversationMessagesToBottom();
+    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.queued_prompt_started", {
+      submittedPromptLength: queuedChatAppPrompt.submittedPromptText.length,
+      submittedPromptImageAttachmentCount: queuedChatAppPrompt.submittedPromptImageAttachments.length,
+      selectedModelId: nextChatSessionState.selectedModelId,
+      selectedReasoningEffort: nextChatSessionState.selectedReasoningEffort ?? null,
+    });
+    return {
+      submittedPromptText: queuedChatAppPrompt.submittedPromptText,
+      submittedPromptImageAttachments: queuedChatAppPrompt.submittedPromptImageAttachments,
+    };
   });
 
   const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (submittedPrompt: SubmittedChatAppPrompt): Promise<void> => {
@@ -130,19 +162,23 @@ export function useChatAppAssistantTurnActions(
         await assistantResponseRelayPromise;
 
         const autoCompactionResult = await input.autoCompactCurrentConversationSessionAfterAssistantTurn();
-        if (!autoCompactionResult?.didCompact || activeSubmittedPrompt.submittedPromptSource === "auto_compaction_continue") {
+        if (autoCompactionResult?.didCompact && activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_continue") {
+          logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.auto_compaction_continue_prompt_queued", {
+            selectedModelId: conversationTurnRequest.selectedModelId,
+            conversationSessionEntryCount: autoCompactionResult.conversationSessionEntries.length,
+          });
+          nextSubmittedPrompt = {
+            submittedPromptText: AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
+            submittedPromptImageAttachments: [],
+            submittedPromptSource: "auto_compaction_continue",
+          };
           continue;
         }
 
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.auto_compaction_continue_prompt_queued", {
-          selectedModelId: conversationTurnRequest.selectedModelId,
-          conversationSessionEntryCount: autoCompactionResult.conversationSessionEntries.length,
-        });
-        nextSubmittedPrompt = {
-          submittedPromptText: AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
-          submittedPromptImageAttachments: [],
-          submittedPromptSource: "auto_compaction_continue",
-        };
+        const queuedChatAppPrompt = input.dequeueQueuedSubmittedPrompt();
+        if (queuedChatAppPrompt) {
+          nextSubmittedPrompt = appendQueuedSubmittedPromptToConversation(queuedChatAppPrompt);
+        }
       }
     } finally {
       input.isPromptSubmissionInFlightRef.current = false;

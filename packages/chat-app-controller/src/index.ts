@@ -10,7 +10,11 @@ export type {
 } from "./conversationSessionStatus.ts";
 export {
   useChatAppController,
+  type ChatAppInteractionStatusState,
   type ChatAppConversationTranscriptScrollDirection,
+  type ChatAppPromptComposerState,
+  type ChatAppSelectionState,
+  type ChatAppTranscriptState,
   type UseChatAppControllerInput,
   type UseChatAppControllerResult,
 } from "./useChatAppController.ts";
@@ -24,6 +28,7 @@ export {
 export {
   useChatAppAssistantTurnActions,
   type PendingToolApprovalDecisionSubmission,
+  type QueuedChatAppPrompt,
   type SubmittedChatAppPrompt,
   type UseChatAppAssistantTurnActionsInput,
   type UseChatAppAssistantTurnActionsResult,

@@ -19,6 +19,7 @@ import { useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "r
 import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 import type {
   PendingToolApprovalDecisionSubmission,
+  QueuedChatAppPrompt,
   SubmittedChatAppPrompt,
 } from "./useChatAppAssistantTurnActions.ts";
 import { useChatAppModelSelectionActions } from "./useChatAppModelSelectionActions.ts";
@@ -53,6 +54,7 @@ export type UseChatAppKeyboardActionsInput = {
     | ((modelSelection: ConversationSessionModelSelection) => void | Promise<void>)
     | undefined;
   streamAssistantResponseForSubmittedPrompt: (submittedPrompt: SubmittedChatAppPrompt) => Promise<void>;
+  enqueueQueuedSubmittedPrompt: (queuedChatAppPrompt: QueuedChatAppPrompt) => number;
   submitPendingToolApprovalDecision: (submission: PendingToolApprovalDecisionSubmission) => void;
   scrollConversationMessagesToBottom: () => void;
   scrollConversationMessagesByPage: (direction: "up" | "down") => void;
@@ -176,6 +178,18 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
           submittedPromptImageAttachments: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments,
         });
         return;
+      case "enqueue_submitted_prompt": {
+        const queuedPromptCount = input.enqueueQueuedSubmittedPrompt({
+          submittedPromptText: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText,
+          submittedPromptImageAttachments: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments,
+        });
+        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_queued", {
+          submittedPromptLength: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText.length,
+          submittedPromptImageAttachmentCount: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments.length,
+          queuedPromptCount,
+        });
+        return;
+      }
       case "submit_pending_tool_approval_decision":
         input.submitPendingToolApprovalDecision({
           decision: keyboardEffectInput.chatSessionKeyboardEffect.decision,

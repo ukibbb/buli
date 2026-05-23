@@ -20,6 +20,7 @@ export type MinimumHeightPromptStripProps = {
   promptImageAttachmentPlaceholderTexts?: readonly string[] | undefined;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
+  queuedPromptCount: number;
   accentColor: string;
   assistantResponseStatus: ConversationTurnStatus;
   isActiveTurnInterruptConfirmationArmed?: boolean;
@@ -31,16 +32,22 @@ export type MinimumHeightPromptStripProps = {
 export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): ReactNode {
   const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
     props.assistantResponseStatus === "waiting_for_tool_approval";
-  if (isAssistantTurnActive) {
+  if (isAssistantTurnActive && props.isPromptInputDisabled) {
     return (
       <box
         backgroundColor={chatScreenTheme.surfaceOne}
         flexDirection="row"
         paddingX={1}
+        gap={1}
         flexShrink={0}
         width="100%"
       >
         <SnakeAnimationIndicator variant="sixCell" />
+        {props.queuedPromptCount > 0 ? (
+          <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
+            {`Queued: ${props.queuedPromptCount}`}
+          </text>
+        ) : null}
       </box>
     );
   }
@@ -83,6 +90,11 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
           />
         )}
       </box>
+      {props.queuedPromptCount > 0 ? (
+        <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
+          {`Queued: ${props.queuedPromptCount}`}
+        </text>
+      ) : null}
     </box>
   );
 }

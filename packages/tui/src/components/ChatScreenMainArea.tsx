@@ -1,29 +1,30 @@
-import type { ChatSessionState, ChatSlashCommand } from "@buli/chat-session-state";
+import type { ChatSlashCommand } from "@buli/chat-session-state";
 import type { ChatScreenTheme, TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { ReactNode, RefObject } from "react";
+import { memo, type ReactNode, type RefObject } from "react";
 import { CommandHelpModal } from "./CommandHelpModal.tsx";
 import { ConversationTranscriptSurface } from "./ConversationTranscriptSurface.tsx";
 
 export type ChatScreenMainAreaProps = {
-  chatSessionState: ChatSessionState;
+  isCommandHelpModalVisible: boolean;
+  isReasoningSummaryVisible: boolean;
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   availableCommandHelpModalRowCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
   terminalColumnCount: number;
   availableChatSlashCommands: readonly ChatSlashCommand[];
   orderedConversationMessages: readonly ConversationMessage[];
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
-  resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
   onRevealOlderConversationMessages: () => void;
   onCommandHelpCloseRequested: () => void;
 };
 
-export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
-  if (props.chatSessionState.isCommandHelpModalVisible) {
+function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode {
+  if (props.isCommandHelpModalVisible) {
     return (
       <box alignItems="center" flexGrow={1} justifyContent="center">
         <CommandHelpModal
@@ -40,13 +41,15 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
     <ConversationTranscriptSurface
       conversationMessages={props.orderedConversationMessages}
       hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
-      isReasoningSummaryVisible={props.chatSessionState.isReasoningSummaryVisible}
+      isReasoningSummaryVisible={props.isReasoningSummaryVisible}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
       onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
-      resolveConversationMessageParts={props.resolveConversationMessageParts}
+      conversationMessagePartsById={props.conversationMessagePartsById}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       accentColor={props.inputPanelAccentColor}
       terminalColumnCount={props.terminalColumnCount}
     />
   );
 }
+
+export const ChatScreenMainArea = memo(ChatScreenMainAreaComponent);

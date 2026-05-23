@@ -7,7 +7,7 @@ import { ConversationMessageList } from "./ConversationMessageList.tsx";
 export type ConversationTranscriptSurfaceProps = {
   conversationMessages: readonly ConversationMessage[];
   isReasoningSummaryVisible: boolean;
-  resolveConversationMessageParts: (messageId: string) => readonly ConversationMessagePart[];
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
@@ -24,7 +24,7 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
       isReasoningSummaryVisible={props.isReasoningSummaryVisible}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
       onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
-      resolveConversationMessageParts={props.resolveConversationMessageParts}
+      conversationMessagePartsById={props.conversationMessagePartsById}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       horizontalRuleColor={props.accentColor}
       userMessageBorderColor={props.accentColor}

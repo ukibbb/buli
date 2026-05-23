@@ -71,7 +71,11 @@ export {
   removePromptImageAttachmentPlaceholderBeforeCursor,
   removeLastPromptImageAttachmentFromDraft,
   replacePromptDraftFromEditor,
+  queuePromptDraftForLaterSubmission,
   submitPromptDraft,
+  appendSubmittedUserPromptToConversation,
+  type PromptDraftSubmission,
+  type SubmittedUserPrompt,
 } from "./promptDraftReducer.ts";
 export {
   hidePromptContextSelection,

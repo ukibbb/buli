@@ -62,6 +62,18 @@ test("prompt textarea cannot edit while conversation compaction is in flight", (
   })).toBe(false);
 });
 
+test("prompt textarea can edit while an assistant response is streaming", () => {
+  const streamingChatSessionState = createChatSessionState({ conversationTurnStatus: "streaming_assistant_response" });
+
+  expect(canPromptTextareaEditChatSessionState(streamingChatSessionState)).toBe(true);
+  expect(canPromptTextareaEditChatScreenInput({
+    chatSessionState: streamingChatSessionState,
+    isConversationCompactionInFlight: false,
+  })).toBe(true);
+  expect(shouldPromptTextareaHandleInput({ chatSessionState: streamingChatSessionState, textInput: "x" })).toBe(true);
+  expect(shouldPromptTextareaHandleInput({ chatSessionState: streamingChatSessionState, keyName: "return" })).toBe(true);
+});
+
 test("prompt interaction input includes editing keys and mode cycling", () => {
   expect(isPromptInteractionKeyboardInput(createKeyboardInput({ textInput: "x" }))).toBe(true);
   expect(isPromptInteractionKeyboardInput(createKeyboardInput({ keyName: "return" }))).toBe(true);
@@ -108,7 +120,7 @@ test("selection panes let prompt textarea keep text editing keys but not selecti
 
 test("prompt textarea cannot edit while another top-level chat screen state owns input", () => {
   const nonEditableChatSessionStates: ChatSessionState[] = [
-    createChatSessionState({ conversationTurnStatus: "streaming_assistant_response" }),
+    createChatSessionState({ conversationTurnStatus: "waiting_for_tool_approval" }),
     createChatSessionState({ isCommandHelpModalVisible: true }),
     createChatSessionState({ modelAndReasoningSelectionState: { step: "loading_available_models" } }),
     createChatSessionState({ conversationSessionSelectionState: { step: "loading_conversation_sessions" } }),

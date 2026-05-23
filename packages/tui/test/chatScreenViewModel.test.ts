@@ -6,9 +6,12 @@ import {
   insertTextIntoPromptDraftAtCursor,
   type ChatSessionState,
 } from "@buli/chat-session-state";
-import { buildChatScreenViewModel } from "../src/behavior/chatScreenViewModel.ts";
+import {
+  buildChatScreenViewModel,
+  buildStableChatScreenTranscriptViewModel,
+} from "../src/behavior/chatScreenViewModel.ts";
 
-test("buildChatScreenViewModel disables prompt input while a turn is streaming", () => {
+test("buildChatScreenViewModel keeps prompt input enabled while a turn is streaming", () => {
   const chatSessionState = {
     ...insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "hello"),
     conversationTurnStatus: "streaming_assistant_response" as const,
@@ -22,8 +25,25 @@ test("buildChatScreenViewModel disables prompt input while a turn is streaming",
     terminalSizeTierForChatScreen: "comfortable",
   });
 
-  expect(viewModel.isPromptInputDisabled).toBe(true);
+  expect(viewModel.isPromptInputDisabled).toBe(false);
   expect(viewModel.promptInputHintOverride).toBeUndefined();
+});
+
+test("buildChatScreenViewModel disables prompt input while waiting for tool approval", () => {
+  const chatSessionState = {
+    ...insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "next prompt"),
+    conversationTurnStatus: "waiting_for_tool_approval" as const,
+  };
+
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState,
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.isPromptInputDisabled).toBe(true);
 });
 
 test("buildChatScreenViewModel disables prompt input while conversation compaction is running", () => {
@@ -157,6 +177,29 @@ test("buildChatScreenViewModel hydrates only the requested visible tail for larg
     "message-9999",
   ]);
   expect(viewModel.orderedConversationMessagePartCount).toBe(10_000);
+});
+
+test("buildStableChatScreenTranscriptViewModel reuses transcript output across prompt-only edits", () => {
+  const chatSessionState = createChatSessionStateWithTranscript({
+    conversationMessageCount: 100,
+  });
+  const firstTranscriptSelection = buildStableChatScreenTranscriptViewModel({
+    chatSessionState,
+    requestedVisibleConversationMessageCount: 12,
+    previousCache: undefined,
+  });
+  const chatSessionStateWithPromptEdit = insertTextIntoPromptDraftAtCursor(chatSessionState, "draft change");
+
+  const secondTranscriptSelection = buildStableChatScreenTranscriptViewModel({
+    chatSessionState: chatSessionStateWithPromptEdit,
+    requestedVisibleConversationMessageCount: 12,
+    previousCache: firstTranscriptSelection.nextCache,
+  });
+
+  expect(secondTranscriptSelection.transcriptViewModel).toBe(firstTranscriptSelection.transcriptViewModel);
+  expect(secondTranscriptSelection.transcriptViewModel.conversationTranscriptWindow.visibleConversationMessages).toBe(
+    firstTranscriptSelection.transcriptViewModel.conversationTranscriptWindow.visibleConversationMessages,
+  );
 });
 
 test("buildChatScreenViewModel derives the short mode label and the destination mode in Understand", () => {

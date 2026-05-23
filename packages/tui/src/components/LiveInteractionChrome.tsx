@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { LiveInteractionStatusStack, type LiveInteractionStatusStackProps } from "./LiveInteractionStatusStack.tsx";
 import { PromptComposerChrome, type PromptComposerChromeProps } from "./PromptComposerChrome.tsx";
 
@@ -7,7 +7,7 @@ export type LiveInteractionChromeProps = {
   promptComposerProps: PromptComposerChromeProps;
 };
 
-export function LiveInteractionChrome(props: LiveInteractionChromeProps): ReactNode {
+function LiveInteractionChromeComponent(props: LiveInteractionChromeProps): ReactNode {
   return (
     <box flexDirection="column" flexShrink={0}>
       <LiveInteractionStatusStack {...props.statusStackProps} />
@@ -15,3 +15,5 @@ export function LiveInteractionChrome(props: LiveInteractionChromeProps): ReactN
     </box>
   );
 }
+
+export const LiveInteractionChrome = memo(LiveInteractionChromeComponent);

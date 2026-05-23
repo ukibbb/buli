@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { createInitialChatSessionState, type ChatSessionState } from "@buli/chat-session-state";
-import { buildChatScreenRenderSnapshotDiagnosticFields } from "../src/behavior/chatScreenRenderSnapshotDiagnostics.ts";
+import {
+  buildChatScreenInteractionStatusDiagnosticFields,
+  buildChatScreenPromptRenderDiagnosticFields,
+  buildChatScreenRenderSnapshotDiagnosticFields,
+  buildChatScreenTranscriptRenderDiagnosticFields,
+} from "../src/behavior/chatScreenRenderSnapshotDiagnostics.ts";
 
 function createChatSessionState(overrides: Partial<ChatSessionState> = {}): ChatSessionState {
   return {
@@ -49,6 +54,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields summarizes render state with
     renderedConversationMessageCount: 2,
     hiddenOlderConversationMessageCount: 0,
     orderedConversationMessagePartCount: 5,
+    queuedPromptCount: 2,
     totalContextTokensUsed: 123,
     contextWindowTokenCapacity: 400000,
   });
@@ -66,6 +72,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields summarizes render state with
     selectedModelDefaultReasoningEffort: "medium",
     selectedReasoningEffort: "high",
     promptDraftLength: "secret prompt text".length,
+    queuedPromptCount: 2,
     selectedPromptContextReferenceCount: 1,
     conversationMessageCount: 2,
     renderedConversationMessageCount: 2,
@@ -101,6 +108,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields normalizes missing token cou
       renderedConversationMessageCount: 0,
       hiddenOlderConversationMessageCount: 0,
       orderedConversationMessagePartCount: 0,
+      queuedPromptCount: 0,
       totalContextTokensUsed: undefined,
       contextWindowTokenCapacity: undefined,
     }),
@@ -111,5 +119,66 @@ test("buildChatScreenRenderSnapshotDiagnosticFields normalizes missing token cou
     contextWindowTokenCapacity: null,
     conversationCompactionStep: "idle",
     conversationCompactionSource: null,
+  });
+});
+
+test("split render diagnostic builders keep transcript, prompt, and status fields separate", () => {
+  expect(
+    buildChatScreenTranscriptRenderDiagnosticFields({
+      terminalRowCount: 24,
+      terminalColumnCount: 120,
+      terminalSizeTierForChatScreen: "comfortable",
+      orderedConversationMessageCount: 10,
+      renderedConversationMessageCount: 4,
+      hiddenOlderConversationMessageCount: 6,
+      orderedConversationMessagePartCount: 18,
+    }),
+  ).toEqual({
+    rows: 24,
+    columns: 120,
+    terminalSizeTier: "comfortable",
+    conversationMessageCount: 10,
+    renderedConversationMessageCount: 4,
+    hiddenOlderConversationMessageCount: 6,
+    conversationMessagePartCount: 18,
+  });
+
+  expect(
+    buildChatScreenPromptRenderDiagnosticFields({
+      conversationTurnStatus: "streaming_assistant_response",
+      selectedAssistantOperatingMode: "implementation",
+      selectedModelId: "gpt-5.5",
+      selectedModelDefaultReasoningEffort: undefined,
+      selectedReasoningEffort: "high",
+      promptDraftLength: 12,
+      pendingPromptImageAttachmentCount: 1,
+      selectedPromptContextReferenceCount: 2,
+      queuedPromptCount: 3,
+      totalContextTokensUsed: undefined,
+      contextWindowTokenCapacity: 400_000,
+    }),
+  ).toMatchObject({
+    conversationTurnStatus: "streaming_assistant_response",
+    selectedAssistantOperatingMode: "implementation",
+    selectedModelDefaultReasoningEffort: null,
+    selectedReasoningEffort: "high",
+    queuedPromptCount: 3,
+    totalContextTokensUsed: null,
+  });
+
+  expect(
+    buildChatScreenInteractionStatusDiagnosticFields({
+      conversationTurnStatus: "waiting_for_user_input",
+      selectionState: createChatSessionState({ isCommandHelpModalVisible: true }),
+      conversationSessionCompactionStatus: { step: "idle" },
+      hasPendingToolApprovalRequest: false,
+      isReasoningSummaryVisible: true,
+    }),
+  ).toMatchObject({
+    conversationTurnStatus: "waiting_for_user_input",
+    conversationCompactionStep: "idle",
+    conversationCompactionSource: null,
+    isCommandHelpModalVisible: true,
+    isReasoningSummaryVisible: true,
   });
 });

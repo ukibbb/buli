@@ -1,15 +1,22 @@
-import type { ChatSessionState } from "@buli/chat-session-state";
+import type { PendingPromptImageAttachment } from "@buli/chat-session-state";
+import type { ConversationTurnStatus } from "@buli/contracts";
 import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { InputPanel } from "./InputPanel.tsx";
 import { InputStatusStrip } from "./InputStatusStrip.tsx";
 import { MinimumHeightPromptStrip } from "./MinimumHeightPromptStrip.tsx";
 import type { PromptTextareaEdit } from "./PromptTextarea.tsx";
 
 export type PromptComposerChromeProps = {
-  chatSessionState: ChatSessionState;
+  conversationTurnStatus: ConversationTurnStatus;
+  promptDraft: string;
+  promptDraftCursorOffset: number;
+  pendingPromptImageAttachments: readonly PendingPromptImageAttachment[];
+  selectedPromptContextReferenceTexts: readonly string[];
+  selectedModelId: string;
   shouldRenderMinimumHeightPromptStrip: boolean;
   isPromptInputDisabled: boolean;
+  queuedPromptCount: number;
   isActiveTurnInterruptConfirmationArmed: boolean;
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   promptInputHintOverride: string | undefined;
@@ -24,8 +31,8 @@ export type PromptComposerChromeProps = {
   onNativeClipboardPasteRequested: () => void | Promise<void>;
 };
 
-export function PromptComposerChrome(props: PromptComposerChromeProps): ReactNode {
-  const promptImageAttachmentPlaceholderTexts = props.chatSessionState.pendingPromptImageAttachments.map(
+function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactNode {
+  const promptImageAttachmentPlaceholderTexts = props.pendingPromptImageAttachments.map(
     (pendingPromptImageAttachment) => pendingPromptImageAttachment.promptDraftPlaceholderText,
   );
 
@@ -34,13 +41,14 @@ export function PromptComposerChrome(props: PromptComposerChromeProps): ReactNod
       {props.shouldRenderMinimumHeightPromptStrip ? (
         <box paddingX={2} width="100%">
           <MinimumHeightPromptStrip
-            promptDraft={props.chatSessionState.promptDraft}
-            promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
+            promptDraft={props.promptDraft}
+            promptDraftCursorOffset={props.promptDraftCursorOffset}
             promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
-            selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
+            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
             isPromptInputDisabled={props.isPromptInputDisabled}
+            queuedPromptCount={props.queuedPromptCount}
             accentColor={props.inputPanelAccentColor}
-            assistantResponseStatus={props.chatSessionState.conversationTurnStatus}
+            assistantResponseStatus={props.conversationTurnStatus}
             isActiveTurnInterruptConfirmationArmed={props.isActiveTurnInterruptConfirmationArmed}
             onPromptDraftEdited={props.onPromptDraftEdited}
             onPromptSubmitted={props.onPromptSubmitted}
@@ -50,10 +58,10 @@ export function PromptComposerChrome(props: PromptComposerChromeProps): ReactNod
       ) : (
         <box flexDirection="column" flexShrink={0} width="100%">
           <InputPanel
-            promptDraft={props.chatSessionState.promptDraft}
-            promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
+            promptDraft={props.promptDraft}
+            promptDraftCursorOffset={props.promptDraftCursorOffset}
             promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
-            selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
+            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
             isPromptInputDisabled={props.isPromptInputDisabled}
             accentColor={props.inputPanelAccentColor}
             onPromptDraftEdited={props.onPromptDraftEdited}
@@ -61,14 +69,15 @@ export function PromptComposerChrome(props: PromptComposerChromeProps): ReactNod
             onNativeClipboardPasteRequested={props.onNativeClipboardPasteRequested}
           />
           <InputStatusStrip
-            assistantResponseStatus={props.chatSessionState.conversationTurnStatus}
-            pendingPromptImageAttachmentCount={props.chatSessionState.pendingPromptImageAttachments.length}
+            assistantResponseStatus={props.conversationTurnStatus}
+            pendingPromptImageAttachmentCount={props.pendingPromptImageAttachments.length}
+            queuedPromptCount={props.queuedPromptCount}
             {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}
             accentColor={props.inputPanelAccentColor}
             shortModeLabel={props.shortModeLabel}
             nextShortModeLabel={props.nextShortModeLabel}
             nextModeAccentColor={props.nextModeAccentColor}
-            modelIdentifier={props.chatSessionState.selectedModelId}
+            modelIdentifier={props.selectedModelId}
             reasoningEffortLabel={props.reasoningEffortLabel}
             totalContextTokensUsed={props.totalContextTokensUsed}
             contextWindowTokenCapacity={props.contextWindowTokenCapacity}
@@ -78,3 +87,5 @@ export function PromptComposerChrome(props: PromptComposerChromeProps): ReactNod
     </box>
   );
 }
+
+export const PromptComposerChrome = memo(PromptComposerChromeComponent);

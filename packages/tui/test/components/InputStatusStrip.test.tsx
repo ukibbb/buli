@@ -8,6 +8,7 @@ test("idle strip in Understand mode shows the mode word, model id, effort and de
     <InputStatusStrip
       assistantResponseStatus="waiting_for_user_input"
       pendingPromptImageAttachmentCount={0}
+      queuedPromptCount={0}
       accentColor={chatScreenTheme.accentPink}
       shortModeLabel="Understand"
       nextShortModeLabel="Plan"
@@ -34,6 +35,7 @@ test("streaming state renders the snake indicator and the meter, omits mode chip
     <InputStatusStrip
       assistantResponseStatus="streaming_assistant_response"
       pendingPromptImageAttachmentCount={0}
+      queuedPromptCount={0}
       accentColor={chatScreenTheme.accentPink}
       shortModeLabel="Understand"
       nextShortModeLabel="Plan"
@@ -52,11 +54,34 @@ test("streaming state renders the snake indicator and the meter, omits mode chip
   expect(frame).toContain("22.9k");
 });
 
+test("streaming state shows queued prompt count", async () => {
+  const { captureCharFrame, renderOnce } = await testRender(
+    <InputStatusStrip
+      assistantResponseStatus="streaming_assistant_response"
+      pendingPromptImageAttachmentCount={0}
+      queuedPromptCount={2}
+      accentColor={chatScreenTheme.accentPink}
+      shortModeLabel="Understand"
+      nextShortModeLabel="Plan"
+      nextModeAccentColor={chatScreenTheme.accentAmber}
+      modelIdentifier="gpt-5.5"
+      reasoningEffortLabel="xhigh"
+      totalContextTokensUsed={22_900}
+      contextWindowTokenCapacity={400_000}
+    />,
+    { width: 120, height: 3 },
+  );
+  await renderOnce();
+  const frame = captureCharFrame();
+  expect(frame).toContain("Queued: 2");
+});
+
 test("pending images state renders the attachment hint and the meter", async () => {
   const { captureCharFrame, renderOnce } = await testRender(
     <InputStatusStrip
       assistantResponseStatus="waiting_for_user_input"
       pendingPromptImageAttachmentCount={2}
+      queuedPromptCount={0}
       accentColor={chatScreenTheme.accentPink}
       shortModeLabel="Understand"
       nextShortModeLabel="Plan"
@@ -79,6 +104,7 @@ test("hint override replaces the mode cluster", async () => {
     <InputStatusStrip
       assistantResponseStatus="waiting_for_user_input"
       pendingPromptImageAttachmentCount={0}
+      queuedPromptCount={0}
       promptInputHintOverride="press enter again to confirm"
       accentColor={chatScreenTheme.accentPink}
       shortModeLabel="Understand"

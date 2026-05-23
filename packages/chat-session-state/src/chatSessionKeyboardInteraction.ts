@@ -37,6 +37,7 @@ import {
   movePromptDraftCursorRight,
   movePromptDraftCursorToEnd,
   movePromptDraftCursorToStart,
+  queuePromptDraftForLaterSubmission,
   removePromptImageAttachmentPlaceholderAtCursor,
   removePromptImageAttachmentPlaceholderBeforeCursor,
   removePromptDraftCharacterAtCursor,
@@ -93,6 +94,11 @@ export type ChatSessionKeyboardEffect =
     }
   | {
       effectType: "stream_assistant_response_for_submitted_prompt";
+      submittedPromptText: string;
+      submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+    }
+  | {
+      effectType: "enqueue_submitted_prompt";
       submittedPromptText: string;
       submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
     }
@@ -177,7 +183,14 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
     });
   }
 
-  if (shouldIgnorePromptDraftEditingDuringActiveConversationTurn(input.chatSessionState, interactionScope)) {
+  if (shouldIgnorePromptDraftEditingDuringToolApproval(input.chatSessionState, interactionScope)) {
+    return createChatSessionKeyboardInteraction({
+      nextChatSessionState: input.chatSessionState,
+      shouldConsumeKeyboardInput: true,
+    });
+  }
+
+  if (shouldConsumeModeCycleDuringActiveConversationTurn(input.chatSessionState, input.chatSessionKeyboardInput, interactionScope)) {
     return createChatSessionKeyboardInteraction({
       nextChatSessionState: input.chatSessionState,
       shouldConsumeKeyboardInput: true,
@@ -226,12 +239,24 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
   });
 }
 
-function shouldIgnorePromptDraftEditingDuringActiveConversationTurn(
+function shouldIgnorePromptDraftEditingDuringToolApproval(
   chatSessionState: ChatSessionState,
   interactionScope: ChatSessionInteractionScope,
 ): boolean {
   return interactionScope === "prompt_draft_editing" &&
-    chatSessionState.conversationTurnStatus === "streaming_assistant_response";
+    chatSessionState.conversationTurnStatus === "waiting_for_tool_approval";
+}
+
+function shouldConsumeModeCycleDuringActiveConversationTurn(
+  chatSessionState: ChatSessionState,
+  chatSessionKeyboardInput: ChatSessionKeyboardInput,
+  interactionScope: ChatSessionInteractionScope,
+): boolean {
+  return interactionScope === "prompt_draft_editing" &&
+    chatSessionState.conversationTurnStatus === "streaming_assistant_response" &&
+    chatSessionKeyboardInput.keyName === "tab" &&
+    !chatSessionKeyboardInput.isCtrlPressed &&
+    !chatSessionKeyboardInput.isMetaPressed;
 }
 
 function shouldRequestActiveConversationTurnInterrupt(
@@ -536,6 +561,27 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
   isPromptSubmissionInFlight: boolean;
 }): ChatSessionKeyboardInteraction {
   if (input.chatSessionKeyboardInput.keyName === "return") {
+    if (input.chatSessionState.conversationTurnStatus === "streaming_assistant_response") {
+      const queuedPromptDraftSubmission = queuePromptDraftForLaterSubmission(input.chatSessionState);
+      if (queuedPromptDraftSubmission.submittedPromptText === undefined) {
+        return createChatSessionKeyboardInteraction({
+          nextChatSessionState: queuedPromptDraftSubmission.nextChatSessionState,
+          shouldConsumeKeyboardInput: true,
+          promptSubmissionRejectionReason: "not_submittable",
+        });
+      }
+
+      return createChatSessionKeyboardInteraction({
+        nextChatSessionState: queuedPromptDraftSubmission.nextChatSessionState,
+        shouldConsumeKeyboardInput: true,
+        chatSessionKeyboardEffect: {
+          effectType: "enqueue_submitted_prompt",
+          submittedPromptText: queuedPromptDraftSubmission.submittedPromptText,
+          submittedPromptImageAttachments: queuedPromptDraftSubmission.submittedPromptImageAttachments,
+        },
+      });
+    }
+
     if (input.isPromptSubmissionInFlight) {
       return createChatSessionKeyboardInteraction({
         nextChatSessionState: input.chatSessionState,

@@ -3,6 +3,7 @@ import type { ConversationSessionSummary, PendingToolApprovalRequest } from "@bu
 import type { PromptContextCandidate } from "@buli/engine";
 import {
   applyChatSessionKeyboardInputToChatSessionState,
+  appendPromptImageAttachmentToDraft,
   buildChatSlashCommands,
   createInitialChatSessionState,
   insertTextIntoPromptDraftAtCursor,
@@ -331,7 +332,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_interrupt_effect_o
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });
 
-test("applyChatSessionKeyboardInputToChatSessionState_ignores_prompt_edits_while_streaming", () => {
+test("applyChatSessionKeyboardInputToChatSessionState_edits_prompt_draft_while_streaming", () => {
   const chatSessionState: ChatSessionState = {
     ...insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "next prompt"),
     conversationTurnStatus: "streaming_assistant_response",
@@ -343,9 +344,39 @@ test("applyChatSessionKeyboardInputToChatSessionState_ignores_prompt_edits_while
     isPromptSubmissionInFlight: false,
   });
 
-  expect(interaction.nextChatSessionState.promptDraft).toBe("next prompt");
-  expect(interaction.nextChatSessionState.promptDraftCursorOffset).toBe("next prompt".length);
+  expect(interaction.nextChatSessionState.promptDraft).toBe("next promptx");
+  expect(interaction.nextChatSessionState.promptDraftCursorOffset).toBe("next promptx".length);
   expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
+  expect(interaction.shouldConsumeKeyboardInput).toBe(true);
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState_returns_enqueue_effect_while_streaming", () => {
+  const promptImageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
+  const chatSessionState: ChatSessionState = {
+    ...appendPromptImageAttachmentToDraft(
+      insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "Run this next "),
+      promptImageAttachment,
+    ),
+    conversationTurnStatus: "streaming_assistant_response",
+  };
+
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: enterKeyboardInput,
+    isPromptSubmissionInFlight: true,
+  });
+
+  expect(interaction.nextChatSessionState.conversationTurnStatus).toBe("streaming_assistant_response");
+  expect(interaction.nextChatSessionState.promptDraft).toBe("");
+  expect(interaction.chatSessionKeyboardEffect).toEqual({
+    effectType: "enqueue_submitted_prompt",
+    submittedPromptText: "Run this next [Image 1]",
+    submittedPromptImageAttachments: [promptImageAttachment],
+  });
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });
 

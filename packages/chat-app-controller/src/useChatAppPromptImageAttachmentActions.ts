@@ -78,6 +78,17 @@ export function useChatAppPromptImageAttachmentActions(
       }
 
       const latestChatSessionStateAfterClipboardRead = input.latestChatSessionStateRef.current;
+      if (didPromptSubmissionStartDuringClipboardImageRead({
+        previousChatSessionState,
+        latestChatSessionStateAfterClipboardRead,
+      })) {
+        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
+          conversationTurnStatus: latestChatSessionStateAfterClipboardRead.conversationTurnStatus,
+          reason: "prompt_submitted_during_clipboard_read",
+        });
+        return;
+      }
+
       if (!canChatAppPromptDraftBeEdited({
         chatSessionState: latestChatSessionStateAfterClipboardRead,
         isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
@@ -108,6 +119,14 @@ export function useChatAppPromptImageAttachmentActions(
     removePromptImageAttachmentPlaceholderAtCursorFromChatApp,
     pasteClipboardImageAttachmentIntoChatAppPrompt,
   };
+}
+
+function didPromptSubmissionStartDuringClipboardImageRead(input: {
+  previousChatSessionState: ChatSessionState;
+  latestChatSessionStateAfterClipboardRead: ChatSessionState;
+}): boolean {
+  return input.previousChatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
+    input.latestChatSessionStateAfterClipboardRead.conversationTurnStatus !== "waiting_for_user_input";
 }
 
 function removePromptImageAttachmentPlaceholderFromChatApp(input: {

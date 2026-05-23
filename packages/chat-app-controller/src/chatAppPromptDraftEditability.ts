@@ -1,7 +1,8 @@
 import type { ChatSessionState } from "@buli/chat-session-state";
 
 export function canChatSessionPromptDraftBeEdited(chatSessionState: ChatSessionState): boolean {
-  return chatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
+  return (chatSessionState.conversationTurnStatus === "waiting_for_user_input" ||
+    chatSessionState.conversationTurnStatus === "streaming_assistant_response") &&
     !chatSessionState.isCommandHelpModalVisible &&
     chatSessionState.modelAndReasoningSelectionState.step === "hidden" &&
     chatSessionState.conversationSessionSelectionState.step === "hidden";

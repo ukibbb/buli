@@ -20,6 +20,7 @@ export const INPUT_STATUS_STRIP_ROW_COUNT = 2;
 export type InputStatusStripProps = {
   assistantResponseStatus: ConversationTurnStatus;
   pendingPromptImageAttachmentCount: number;
+  queuedPromptCount: number;
   promptInputHintOverride?: string | undefined;
   accentColor: string;
   shortModeLabel: string;
@@ -59,7 +60,7 @@ function renderLeftCluster(props: InputStatusStripProps): ReactNode {
     props.assistantResponseStatus === "streaming_assistant_response" ||
     props.assistantResponseStatus === "waiting_for_tool_approval";
   if (isAssistantTurnActive) {
-    return <SnakeAnimationIndicator variant="sixCell" />;
+    return renderActiveAssistantTurnLeftCluster(props.queuedPromptCount);
   }
   if (props.pendingPromptImageAttachmentCount > 0) {
     return renderPendingImagesHint(props.pendingPromptImageAttachmentCount);
@@ -72,6 +73,19 @@ function renderLeftCluster(props: InputStatusStripProps): ReactNode {
     );
   }
   return renderIdleLeftCluster(props);
+}
+
+function renderActiveAssistantTurnLeftCluster(queuedPromptCount: number): ReactNode {
+  return (
+    <>
+      <SnakeAnimationIndicator variant="sixCell" />
+      {queuedPromptCount > 0 ? (
+        <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
+          {`Queued: ${queuedPromptCount}`}
+        </text>
+      ) : null}
+    </>
+  );
 }
 
 function renderPendingImagesHint(pendingPromptImageAttachmentCount: number): ReactNode {

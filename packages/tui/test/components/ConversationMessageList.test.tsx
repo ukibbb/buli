@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import type { ConversationMessage, ConversationMessagePart, WorkspacePatch } from "@buli/contracts";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "../testRenderWithCleanup.ts";
-import { ConversationMessageList, type ConversationMessageListProps } from "../../src/components/ConversationMessageList.tsx";
+import {
+  ConversationMessageList,
+  createConversationMessageListPreparationCache,
+  prepareRenderableConversationMessages,
+  type ConversationMessageListProps,
+} from "../../src/components/ConversationMessageList.tsx";
 
 type ConversationHistoryRevealTestProps = Pick<
   ConversationMessageListProps,
@@ -43,7 +48,110 @@ function createSingleFileWorkspacePatch(input: {
   };
 }
 
+function collectConversationMessagePartsById(
+  conversationMessagePartsByMessageId: Record<string, readonly ConversationMessagePart[]>,
+): Record<string, ConversationMessagePart> {
+  const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
+  for (const conversationMessageParts of Object.values(conversationMessagePartsByMessageId)) {
+    for (const conversationMessagePart of conversationMessageParts) {
+      conversationMessagePartsById[conversationMessagePart.id] = conversationMessagePart;
+    }
+  }
+
+  return conversationMessagePartsById;
+}
+
 describe("ConversationMessageList", () => {
+  test("prepareRenderableConversationMessages reuses unchanged prepared rows", () => {
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "user-1",
+        role: "user",
+        messageStatus: "completed",
+        createdAtMs: 1,
+        partIds: ["user-text-1"],
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: 2,
+        partIds: ["assistant-text-1"],
+      },
+    ];
+    const userTextPart = { id: "user-text-1", partKind: "user_text", text: "Initial prompt" } satisfies ConversationMessagePart;
+    const initialAssistantTextPart = {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Streaming one",
+    } satisfies ConversationMessagePart;
+    const updatedAssistantTextPart = {
+      ...initialAssistantTextPart,
+      rawMarkdownText: "Streaming two",
+    } satisfies ConversationMessagePart;
+    const preparationCache = createConversationMessageListPreparationCache();
+    const firstPreparedMessages = prepareRenderableConversationMessages({
+      conversationMessages,
+      conversationMessagePartsById: {
+        "user-text-1": userTextPart,
+        "assistant-text-1": initialAssistantTextPart,
+      },
+      isReasoningSummaryVisible: true,
+      preparationCache,
+    });
+
+    const secondPreparedMessages = prepareRenderableConversationMessages({
+      conversationMessages,
+      conversationMessagePartsById: {
+        "user-text-1": userTextPart,
+        "assistant-text-1": updatedAssistantTextPart,
+      },
+      isReasoningSummaryVisible: true,
+      preparationCache,
+    });
+
+    expect(secondPreparedMessages[0]?.conversationMessageParts).toBe(firstPreparedMessages[0]?.conversationMessageParts);
+    expect(secondPreparedMessages[1]?.conversationMessageParts).not.toBe(firstPreparedMessages[1]?.conversationMessageParts);
+  });
+
+  test("prepareRenderableConversationMessages invalidates reasoning rows when reasoning visibility changes", () => {
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "completed",
+        createdAtMs: 2,
+        partIds: ["reasoning-1"],
+      },
+    ];
+    const conversationMessagePartsById: Record<string, ConversationMessagePart> = {
+      "reasoning-1": {
+        id: "reasoning-1",
+        partKind: "assistant_reasoning",
+        partStatus: "completed",
+        reasoningSummaryText: "Visible reasoning.",
+        reasoningStartedAtMs: 2,
+      },
+    };
+    const preparationCache = createConversationMessageListPreparationCache();
+    const visibleReasoningMessages = prepareRenderableConversationMessages({
+      conversationMessages,
+      conversationMessagePartsById,
+      isReasoningSummaryVisible: true,
+      preparationCache,
+    });
+    const hiddenReasoningMessages = prepareRenderableConversationMessages({
+      conversationMessages,
+      conversationMessagePartsById,
+      isReasoningSummaryVisible: false,
+      preparationCache,
+    });
+
+    expect(visibleReasoningMessages).toHaveLength(1);
+    expect(hiddenReasoningMessages).toHaveLength(0);
+  });
+
   test("renders Thinking for an empty streaming assistant message", async () => {
     const conversationMessages: ConversationMessage[] = [
       {
@@ -59,7 +167,7 @@ describe("ConversationMessageList", () => {
       <ConversationMessageList
         conversationMessages={conversationMessages}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={() => []}
+        conversationMessagePartsById={{}}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -127,11 +235,12 @@ describe("ConversationMessageList", () => {
         },
       ],
     };
+    const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={conversationMessages}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
+        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -204,12 +313,13 @@ describe("ConversationMessageList", () => {
         },
       ],
     };
+    const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={conversationMessages}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
+        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -271,12 +381,13 @@ describe("ConversationMessageList", () => {
         },
       ],
     };
+    const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={conversationMessages}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
+        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -316,11 +427,12 @@ describe("ConversationMessageList", () => {
         },
       ],
     };
+    const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={conversationMessages}
         isReasoningSummaryVisible={false}
-        resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
+        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -359,11 +471,12 @@ describe("ConversationMessageList", () => {
         },
       ],
     };
+    const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={conversationMessages}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={(messageId) => conversationMessagePartsByMessageId[messageId] ?? []}
+        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -380,21 +493,28 @@ describe("ConversationMessageList", () => {
 
   test("lets the OpenTUI scrollbox own mouse wheel scrolling", async () => {
     const conversationMessageScrollBoxRef: { current: ScrollBoxRenderable | null } = { current: null };
+    const conversationMessages: ConversationMessage[] = Array.from({ length: 20 }, (_, index) => ({
+      id: `message-${index}`,
+      role: "user" as const,
+      messageStatus: "completed" as const,
+      createdAtMs: index,
+      partIds: [`part-${index}`],
+    }));
+    const conversationMessagePartsById: Record<string, ConversationMessagePart> = Object.fromEntries(
+      conversationMessages.map((conversationMessage, messageIndex) => [
+        `part-${messageIndex}`,
+        {
+          id: `part-${messageIndex}`,
+          partKind: "user_text",
+          text: `Message ${conversationMessage.id}`,
+        } satisfies ConversationMessagePart,
+      ]),
+    );
     const { mockMouse, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={Array.from({ length: 20 }, (_, index) => ({
-          id: `message-${index}`,
-          role: "user" as const,
-          messageStatus: "completed" as const,
-          createdAtMs: index,
-          partIds: [`part-${index}`],
-        }))}
+        conversationMessages={conversationMessages}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={(messageId) => [{
-          id: `part-${messageId}`,
-          partKind: "user_text",
-          text: `Message ${messageId}`,
-        }]}
+        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -419,17 +539,23 @@ describe("ConversationMessageList", () => {
       partIds: [`part-${messageIndex}`],
     }));
     const latestMessageIndex = conversationMessages.length - 1;
+    const conversationMessagePartsById: Record<string, ConversationMessagePart> = Object.fromEntries(
+      conversationMessages.map((conversationMessage, messageIndex) => [
+        `part-${messageIndex}`,
+        {
+          id: `part-${messageIndex}`,
+          partKind: "assistant_text",
+          partStatus: "completed",
+          rawMarkdownText: `Transcript message ${conversationMessage.id}`,
+        } satisfies ConversationMessagePart,
+      ]),
+    );
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         conversationMessages={conversationMessages}
         isReasoningSummaryVisible={true}
-        resolveConversationMessageParts={(messageId) => [{
-          id: `part-${messageId}`,
-          partKind: "assistant_text",
-          partStatus: "completed",
-          rawMarkdownText: `Transcript message ${messageId}`,
-        }]}
+        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}

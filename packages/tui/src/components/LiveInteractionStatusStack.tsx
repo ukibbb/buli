@@ -1,10 +1,16 @@
-import type { ChatSessionState } from "@buli/chat-session-state";
+import type {
+  ConversationSessionSelectionState,
+  ModelAndReasoningSelectionState,
+  PromptContextSelectionState,
+  SlashCommandSelectionState,
+} from "@buli/chat-session-state";
+import type { PendingToolApprovalRequest } from "@buli/contracts";
 import type {
   ConversationSessionCompactionStatus,
   ConversationSessionExportStatus,
 } from "@buli/chat-app-controller";
 import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { ConversationSessionSelectionPane } from "./ConversationSessionSelectionPane.tsx";
 import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
 import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
@@ -14,7 +20,11 @@ import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.tsx";
 
 export type LiveInteractionStatusStackProps = {
-  chatSessionState: ChatSessionState;
+  pendingToolApprovalRequest: PendingToolApprovalRequest | undefined;
+  conversationSessionSelectionState: ConversationSessionSelectionState;
+  modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
+  slashCommandSelectionState: SlashCommandSelectionState;
+  promptContextSelectionState: PromptContextSelectionState;
   conversationSessionExportStatus: ConversationSessionExportStatus;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
@@ -23,13 +33,13 @@ export type LiveInteractionStatusStackProps = {
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };
 
-export function LiveInteractionStatusStack(props: LiveInteractionStatusStackProps): ReactNode {
+function LiveInteractionStatusStackComponent(props: LiveInteractionStatusStackProps): ReactNode {
   return (
     <>
-      {props.chatSessionState.pendingToolApprovalRequest ? (
+      {props.pendingToolApprovalRequest ? (
         <box paddingX={2}>
           <ToolApprovalRequestBlock
-            riskExplanation={props.chatSessionState.pendingToolApprovalRequest.riskExplanation}
+            riskExplanation={props.pendingToolApprovalRequest.riskExplanation}
             onApprove={props.onPendingToolApprovalApproved}
             onDeny={props.onPendingToolApprovalDenied}
           />
@@ -44,6 +54,8 @@ export function LiveInteractionStatusStack(props: LiveInteractionStatusStackProp
     </>
   );
 }
+
+export const LiveInteractionStatusStack = memo(LiveInteractionStatusStackComponent);
 
 function renderConversationSessionExportStatusPane(conversationSessionExportStatus: ConversationSessionExportStatus): ReactNode {
   return conversationSessionExportStatus.step === "failed" ? (
@@ -70,26 +82,26 @@ function renderConversationSessionCompactionStatusPane(
 }
 
 function renderConversationSessionSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  return props.chatSessionState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
+  return props.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
     <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
       <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
     </SelectionPaneFrame>
-  ) : props.chatSessionState.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
+  ) : props.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
     <box paddingX={2}>
       <ErrorBannerBlock
         titleText="Could not load sessions"
-        errorText={props.chatSessionState.conversationSessionSelectionState.errorMessage}
+        errorText={props.conversationSessionSelectionState.errorMessage}
       />
     </box>
-  ) : props.chatSessionState.conversationSessionSelectionState.step === "showing_conversation_sessions" ? (
+  ) : props.conversationSessionSelectionState.step === "showing_conversation_sessions" ? (
     <ConversationSessionSelectionPane
-      conversationSessions={props.chatSessionState.conversationSessionSelectionState.conversationSessions}
+      conversationSessions={props.conversationSessionSelectionState.conversationSessions}
       highlightedConversationSessionIndex={
-        props.chatSessionState.conversationSessionSelectionState.highlightedConversationSessionIndex
+        props.conversationSessionSelectionState.highlightedConversationSessionIndex
       }
-      activeConversationSessionId={props.chatSessionState.conversationSessionSelectionState.activeConversationSessionId}
+      activeConversationSessionId={props.conversationSessionSelectionState.activeConversationSessionId}
       pendingDeletionConversationSessionId={
-        props.chatSessionState.conversationSessionSelectionState.pendingDeletionConversationSessionId
+        props.conversationSessionSelectionState.pendingDeletionConversationSessionId
       }
       accentColor={props.inputPanelAccentColor}
       onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
@@ -98,11 +110,11 @@ function renderConversationSessionSelectionPane(props: LiveInteractionStatusStac
 }
 
 function renderPromptContextSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  return props.chatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
+  return props.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
     <PromptContextSelectionPane
-      promptContextCandidates={props.chatSessionState.promptContextSelectionState.promptContextCandidates}
+      promptContextCandidates={props.promptContextSelectionState.promptContextCandidates}
       highlightedPromptContextCandidateIndex={
-        props.chatSessionState.promptContextSelectionState.highlightedPromptContextCandidateIndex
+        props.promptContextSelectionState.highlightedPromptContextCandidateIndex
       }
       accentColor={props.inputPanelAccentColor}
     />
@@ -110,7 +122,7 @@ function renderPromptContextSelectionPane(props: LiveInteractionStatusStackProps
 }
 
 function renderModelAndReasoningSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  const modelAndReasoningSelectionState = props.chatSessionState.modelAndReasoningSelectionState;
+  const modelAndReasoningSelectionState = props.modelAndReasoningSelectionState;
   return modelAndReasoningSelectionState.step === "loading_available_models" ? (
     <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
       <text fg={chatScreenTheme.textSecondary}>Loading models...</text>
@@ -139,10 +151,10 @@ function renderModelAndReasoningSelectionPane(props: LiveInteractionStatusStackP
 }
 
 function renderSlashCommandSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  return props.chatSessionState.slashCommandSelectionState.step === "showing_slash_commands" ? (
+  return props.slashCommandSelectionState.step === "showing_slash_commands" ? (
     <SlashCommandSelectionPane
-      availableSlashCommands={props.chatSessionState.slashCommandSelectionState.availableSlashCommands}
-      highlightedSlashCommandIndex={props.chatSessionState.slashCommandSelectionState.highlightedSlashCommandIndex}
+      availableSlashCommands={props.slashCommandSelectionState.availableSlashCommands}
+      highlightedSlashCommandIndex={props.slashCommandSelectionState.highlightedSlashCommandIndex}
       accentColor={props.inputPanelAccentColor}
     />
   ) : null;

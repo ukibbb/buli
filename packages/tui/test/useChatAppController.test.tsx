@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { ConversationSessionEntry, UserPromptImageAttachment } from "@buli/contracts";
-import type { AssistantConversationRunner } from "@buli/engine";
+import type { ConversationSessionEntry, TokenUsage, UserPromptImageAttachment } from "@buli/contracts";
+import type { AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
 import {
   useChatAppController,
   type UseChatAppControllerInput,
@@ -13,8 +13,29 @@ type RenderedChatAppControllerHook = {
   readCurrentController: () => UseChatAppControllerResult;
   typeText: (text: string) => Promise<void>;
   pressReturn: () => Promise<void>;
+  pressEscape: () => Promise<void>;
   flushHookEffects: () => Promise<void>;
 };
+
+type ControlledAssistantTurn = {
+  conversationTurnRequest: ConversationTurnRequest;
+  complete: () => void;
+  interrupt: () => void;
+  readWasInterrupted: () => boolean;
+};
+
+type ControlledAssistantConversationRunner = {
+  assistantConversationRunner: AssistantConversationRunner;
+  startedTurns: ControlledAssistantTurn[];
+};
+
+const zeroTokenUsage = {
+  input: 0,
+  output: 0,
+  reasoning: 0,
+  total: undefined,
+  cache: { read: 0, write: 0 },
+} satisfies TokenUsage;
 
 const neverEmittingAssistantConversationRunner: AssistantConversationRunner = {
   startConversationTurn() {
@@ -80,6 +101,19 @@ async function renderChatAppControllerHook(
       });
       await renderedHook.renderOnce();
     },
+    async pressEscape(): Promise<void> {
+      await act(async () => {
+        readCurrentController().applyChatAppKeyboardInput({
+          chatSessionKeyboardInput: {
+            keyName: "escape",
+            textInput: undefined,
+            isCtrlPressed: false,
+            isMetaPressed: false,
+          },
+        });
+      });
+      await renderedHook.renderOnce();
+    },
     async flushHookEffects(): Promise<void> {
       await act(async () => {
         await Promise.resolve();
@@ -87,6 +121,94 @@ async function renderChatAppControllerHook(
       await renderedHook.renderOnce();
     },
   };
+}
+
+function createControlledAssistantConversationRunner(): ControlledAssistantConversationRunner {
+  const startedTurns: ControlledAssistantTurn[] = [];
+
+  return {
+    startedTurns,
+    assistantConversationRunner: {
+      startConversationTurn(conversationTurnRequest) {
+        const turnIndex = startedTurns.length;
+        const messageId = `assistant-${turnIndex}`;
+        let wasInterrupted = false;
+        let wasSettled = false;
+        let settleTurn: (outcome: "completed" | "interrupted") => void = () => {};
+        const turnOutcomePromise = new Promise<"completed" | "interrupted">((resolve) => {
+          settleTurn = resolve;
+        });
+        const settleOnce = (outcome: "completed" | "interrupted"): void => {
+          if (wasSettled) {
+            return;
+          }
+
+          wasSettled = true;
+          settleTurn(outcome);
+        };
+
+        const controlledAssistantTurn: ControlledAssistantTurn = {
+          conversationTurnRequest,
+          complete: () => settleOnce("completed"),
+          interrupt: () => {
+            wasInterrupted = true;
+            settleOnce("interrupted");
+          },
+          readWasInterrupted: () => wasInterrupted,
+        };
+        startedTurns.push(controlledAssistantTurn);
+
+        return {
+          async *streamAssistantResponseEvents() {
+            yield { type: "assistant_turn_started" as const, messageId, startedAtMs: turnIndex };
+            const turnOutcome = await turnOutcomePromise;
+            if (turnOutcome === "completed") {
+              yield { type: "assistant_message_completed" as const, messageId, usage: zeroTokenUsage };
+              return;
+            }
+
+            yield {
+              type: "assistant_message_interrupted" as const,
+              messageId,
+              interruptionReason: "Interrupted by test.",
+            };
+          },
+          async approvePendingToolCall() {},
+          async denyPendingToolCall() {},
+          interrupt: controlledAssistantTurn.interrupt,
+        };
+      },
+    },
+  };
+}
+
+async function waitForStartedTurnCount(input: {
+  renderedHook: RenderedChatAppControllerHook;
+  controlledRunner: ControlledAssistantConversationRunner;
+  expectedStartedTurnCount: number;
+}): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await input.renderedHook.flushHookEffects();
+    if (input.controlledRunner.startedTurns.length >= input.expectedStartedTurnCount) {
+      return;
+    }
+  }
+
+  throw new Error(`Expected ${input.expectedStartedTurnCount} started turns.`);
+}
+
+async function waitForConversationTurnStatus(input: {
+  renderedHook: RenderedChatAppControllerHook;
+  conversationTurnStatus: UseChatAppControllerResult["chatSessionState"]["conversationTurnStatus"];
+}): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await input.renderedHook.flushHookEffects();
+    if (input.renderedHook.readCurrentController().chatSessionState.conversationTurnStatus === input.conversationTurnStatus) {
+      return;
+    }
+  }
+
+  throw new Error(`Expected conversation turn status ${input.conversationTurnStatus}.`);
 }
 
 function ChatAppControllerHookProbe(props: {
@@ -135,6 +257,39 @@ test("useChatAppController hydrates initial entries and closes command help", as
   await renderedHook.flushHookEffects();
 
   expect(renderedHook.readCurrentController().chatSessionState.isCommandHelpModalVisible).toBe(false);
+});
+
+test("useChatAppController keeps non-prompt slices stable across prompt-only edits", async () => {
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Initial prompt",
+        modelFacingPromptText: "Initial prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Initial answer",
+      },
+    ],
+  });
+  const previousController = renderedHook.readCurrentController();
+
+  await act(async () => {
+    previousController.applyPromptDraftEditToChatApp({
+      promptDraft: "Next prompt",
+      promptDraftCursorOffset: "Next prompt".length,
+    });
+  });
+  await renderedHook.flushHookEffects();
+
+  const nextController = renderedHook.readCurrentController();
+  expect(nextController.promptComposerState.promptDraft).toBe("Next prompt");
+  expect(nextController.promptComposerState).not.toBe(previousController.promptComposerState);
+  expect(nextController.transcriptState).toBe(previousController.transcriptState);
+  expect(nextController.interactionStatusState).toBe(previousController.interactionStatusState);
+  expect(nextController.selectionState).toBe(previousController.selectionState);
 });
 
 test("useChatAppController switches to a selected conversation session from keyboard actions", async () => {
@@ -274,4 +429,85 @@ test("useChatAppController ignores delayed clipboard images after prompt submiss
     resolveAssistantTurn?.();
     await assistantTurnPromise;
   });
+});
+
+test("useChatAppController queues prompts typed while streaming and drains them FIFO", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+  });
+
+  await renderedHook.typeText("First prompt");
+  await renderedHook.pressReturn();
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 1 });
+
+  await renderedHook.typeText("Second prompt");
+  await renderedHook.pressReturn();
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+  expect(renderedHook.readCurrentController().chatSessionState.promptDraft).toBe("");
+
+  await renderedHook.typeText("Third prompt");
+  await renderedHook.pressReturn();
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(2);
+  expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
+    "First prompt",
+  ]);
+
+  await act(async () => {
+    controlledRunner.startedTurns[0]?.complete();
+  });
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 2 });
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+  expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
+    "First prompt",
+    "Second prompt",
+  ]);
+
+  await act(async () => {
+    controlledRunner.startedTurns[1]?.complete();
+  });
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 3 });
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(0);
+  expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
+    "First prompt",
+    "Second prompt",
+    "Third prompt",
+  ]);
+
+  await act(async () => {
+    controlledRunner.startedTurns[2]?.complete();
+  });
+  await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
+});
+
+test("useChatAppController drains queued prompts after confirmed interruption settles", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+  });
+
+  await renderedHook.typeText("Interruptible prompt");
+  await renderedHook.pressReturn();
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 1 });
+
+  await renderedHook.typeText("Continue after interrupt");
+  await renderedHook.pressReturn();
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+
+  await renderedHook.pressEscape();
+  expect(renderedHook.readCurrentController().isActiveTurnInterruptConfirmationArmed).toBe(true);
+  await renderedHook.pressEscape();
+
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 2 });
+  expect(controlledRunner.startedTurns[0]?.readWasInterrupted()).toBe(true);
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(0);
+  expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
+    "Interruptible prompt",
+    "Continue after interrupt",
+  ]);
+
+  await act(async () => {
+    controlledRunner.startedTurns[1]?.complete();
+  });
+  await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
 });
