@@ -78,18 +78,9 @@ export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode 
             promptDraft={props.chatSessionState.promptDraft}
             promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
             promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
-            pendingPromptImageAttachmentCount={props.chatSessionState.pendingPromptImageAttachments.length}
             selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
             isPromptInputDisabled={props.isPromptInputDisabled}
-            {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}
             accentColor={props.inputPanelAccentColor}
-            modeLabel={props.modeLabel}
-            modelIdentifier={props.chatSessionState.selectedModelId}
-            reasoningEffortLabel={props.reasoningEffortLabel}
-            assistantResponseStatus={props.chatSessionState.conversationTurnStatus}
-            isActiveTurnInterruptConfirmationArmed={props.isActiveTurnInterruptConfirmationArmed}
-            totalContextTokensUsed={props.totalContextTokensUsed}
-            contextWindowTokenCapacity={props.contextWindowTokenCapacity}
             onPromptDraftEdited={props.onPromptDraftEdited}
             onPromptSubmitted={props.onPromptSubmitted}
             onNativeClipboardPasteRequested={props.onNativeClipboardPasteRequested}

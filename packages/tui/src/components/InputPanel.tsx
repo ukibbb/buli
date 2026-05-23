@@ -1,8 +1,5 @@
 import type { ReactNode } from "react";
-import type { ConversationTurnStatus } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
-import { glyphs } from "./glyphs.ts";
 import { PromptDraftText } from "./PromptDraftText.tsx";
 import {
   PromptTextarea,
@@ -10,43 +7,27 @@ import {
   PROMPT_TEXTAREA_MIN_ROW_COUNT,
   type PromptTextareaEdit,
 } from "./PromptTextarea.tsx";
-import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
-// Pen frame HOeet. Owns a header strip with mode + model chips, a body with
-// the prompt draft and caret, and a footer that shows the activity indicator
-// while streaming, a contextual override message when one is supplied, or only
-// the context meter when idle.
-//
-// Exported max row count = 2 (rounded border) + 1 (header) + max textarea rows
-// + 1 (footer). It is the source of truth for ChatScreen's responsive budgeting
-// math — keep it in sync with the rendered output below.
-export const INPUT_PANEL_MAX_ROW_COUNT = 2 + 1 + PROMPT_TEXTAREA_MAX_ROW_COUNT + 1;
+// Frame is now pure prompt: 2 border rows + the textarea body. The
+// previously-in-frame header (mode/model chip row) and footer (hint + meter)
+// moved to InputStatusStrip below the frame; the strip owns 2 rows of its own,
+// keeping the total input region row count identical to the pre-redesign
+// value enforced by InputPanelMaxRowCount.test.ts.
+export const INPUT_PANEL_MAX_ROW_COUNT = 2 + PROMPT_TEXTAREA_MAX_ROW_COUNT;
 
 export type InputPanelProps = {
   promptDraft: string;
   promptDraftCursorOffset: number;
   promptImageAttachmentPlaceholderTexts?: readonly string[] | undefined;
-  pendingPromptImageAttachmentCount?: number;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
-  promptInputHintOverride?: string;
   accentColor: string;
-  modeLabel: string;
-  modelIdentifier: string;
-  reasoningEffortLabel: string;
-  assistantResponseStatus: ConversationTurnStatus;
-  isActiveTurnInterruptConfirmationArmed?: boolean;
-  totalContextTokensUsed: number | undefined;
-  contextWindowTokenCapacity: number | undefined;
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
   onNativeClipboardPasteRequested?: () => void | Promise<void>;
 };
 
 export function InputPanel(props: InputPanelProps): ReactNode {
-  const pendingPromptImageAttachmentCount = props.pendingPromptImageAttachmentCount ?? 0;
-  const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
-    props.assistantResponseStatus === "waiting_for_tool_approval";
   return (
     <box
       borderStyle="rounded"
@@ -56,14 +37,6 @@ export function InputPanel(props: InputPanelProps): ReactNode {
       flexShrink={0}
       marginX={2}
     >
-      <box flexDirection="row" justifyContent="space-between" paddingX={1}>
-        <text fg={props.accentColor}>
-          {`[ ${glyphs.statusDot} ${props.modeLabel} ]`}
-        </text>
-        <text fg={chatScreenTheme.textMuted}>
-          {`[ ${props.modelIdentifier} · ${props.reasoningEffortLabel} ]`}
-        </text>
-      </box>
       <box
         flexDirection="row"
         paddingX={1}
@@ -99,28 +72,6 @@ export function InputPanel(props: InputPanelProps): ReactNode {
             />
           )}
         </box>
-      </box>
-      <box
-        backgroundColor={chatScreenTheme.bg}
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingX={1}
-      >
-        {isAssistantTurnActive ? (
-          <box flexDirection="row" gap={1} minWidth={0} overflow="hidden">
-            <SnakeAnimationIndicator variant="sixCell" />
-          </box>
-        ) : pendingPromptImageAttachmentCount > 0 ? (
-          <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
-            {`${pendingPromptImageAttachmentCount} image${pendingPromptImageAttachmentCount === 1 ? "" : "s"} attached · delete placeholder to remove`}
-          </text>
-        ) : props.promptInputHintOverride !== undefined ? (
-          <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">{props.promptInputHintOverride}</text>
-        ) : <text />}
-        <ContextWindowMeter
-          totalTokensUsed={props.totalContextTokensUsed}
-          contextWindowTokenCapacity={props.contextWindowTokenCapacity}
-        />
       </box>
     </box>
   );
