@@ -10,8 +10,12 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 // column span: marginX={2} matches the frame's outer margin, paddingX={2}
 // matches the frame's border (1 cell) plus internal padding (1 cell) so the
 // strip content area aligns visually with the prompt content area inside the
-// frame.
-export const INPUT_STATUS_STRIP_ROW_COUNT = 1;
+// frame. A 1-row marginBottom leaves a breathing gap between the chip line
+// and whatever the host shell renders below (tmux bar, prompt, etc.) — the
+// strip's effective row footprint is 2 (1 content + 1 gap) which is what
+// INPUT_STATUS_STRIP_ROW_COUNT must report so the view-model's row budget
+// keeps the chip line visible above the terminal floor.
+export const INPUT_STATUS_STRIP_ROW_COUNT = 2;
 
 export type InputStatusStripProps = {
   assistantResponseStatus: ConversationTurnStatus;
@@ -34,6 +38,7 @@ export function InputStatusStrip(props: InputStatusStripProps): ReactNode {
       justifyContent="space-between"
       flexShrink={0}
       marginX={2}
+      marginBottom={1}
       paddingX={2}
     >
       <box flexDirection="row" gap={1} minWidth={0} overflow="hidden">
