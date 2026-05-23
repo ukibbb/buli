@@ -1,7 +1,6 @@
 import type { AssistantOperatingMode, ConversationMessage } from "@buli/contracts";
 import {
   buildChatSlashCommands,
-  listOrderedConversationMessages,
   type ChatSessionState,
   type ChatSlashCommand,
 } from "@buli/chat-session-state";
@@ -16,6 +15,10 @@ import { INPUT_PANEL_MAX_ROW_COUNT } from "../components/InputPanel.tsx";
 import { MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT } from "../components/MinimumHeightPromptStrip.tsx";
 import { TOP_BAR_NATURAL_ROW_COUNT } from "../components/TopBar.tsx";
 import type { ConversationSessionCompactionStatus } from "./chatScreenConversationSessionStatus.ts";
+import {
+  buildConversationTranscriptMessageIndexWindow,
+  type ConversationTranscriptWindow,
+} from "./conversationTranscriptWindow.ts";
 
 const CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT = 1;
 
@@ -30,7 +33,7 @@ export type ChatScreenViewModel = {
   availableCommandHelpModalRowCount: number;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
-  orderedConversationMessages: readonly ConversationMessage[];
+  conversationTranscriptWindow: ConversationTranscriptWindow;
   orderedConversationMessagePartCount: number;
   shouldRenderMinimumHeightPromptStrip: boolean;
 };
@@ -41,6 +44,7 @@ export function buildChatScreenViewModel(input: {
   terminalRowCount: number;
   terminalColumnCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
+  requestedVisibleConversationMessageCount?: number | undefined;
 }): ChatScreenViewModel {
   const isConversationCompactionRunning = input.conversationSessionCompactionStatus.step === "compacting";
   const isPromptInputDisabled =
@@ -59,7 +63,16 @@ export function buildChatScreenViewModel(input: {
   const totalContextTokensUsed = input.chatSessionState.latestContextWindowUsage
     ? calculateContextTokensUsedFromTokenUsage(input.chatSessionState.latestContextWindowUsage)
     : undefined;
-  const orderedConversationMessages = listOrderedConversationMessages(input.chatSessionState);
+  const orderedConversationSummary = summarizeOrderedConversationMessages(input.chatSessionState);
+  const conversationTranscriptMessageIndexWindow = buildConversationTranscriptMessageIndexWindow({
+    totalConversationMessageCount: orderedConversationSummary.conversationMessageCount,
+    requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
+  });
+  const visibleConversationMessages = listVisibleOrderedConversationMessages({
+    chatSessionState: input.chatSessionState,
+    firstVisibleConversationMessageIndex: conversationTranscriptMessageIndexWindow.firstVisibleConversationMessageIndex,
+    visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
+  });
 
   return {
     isPromptInputDisabled,
@@ -78,13 +91,68 @@ export function buildChatScreenViewModel(input: {
     ),
     totalContextTokensUsed,
     contextWindowTokenCapacity: lookupContextWindowTokenCapacityForModel(input.chatSessionState.selectedModelId),
-    orderedConversationMessages,
-    orderedConversationMessagePartCount: orderedConversationMessages.reduce(
-      (conversationMessagePartCount, conversationMessage) => conversationMessagePartCount + conversationMessage.partIds.length,
-      0,
-    ),
+    conversationTranscriptWindow: {
+      visibleConversationMessages,
+      totalConversationMessageCount: conversationTranscriptMessageIndexWindow.totalConversationMessageCount,
+      visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
+      hiddenOlderConversationMessageCount: conversationTranscriptMessageIndexWindow.hiddenOlderConversationMessageCount,
+      olderConversationMessageRevealCount: conversationTranscriptMessageIndexWindow.olderConversationMessageRevealCount,
+    },
+    orderedConversationMessagePartCount: orderedConversationSummary.conversationMessagePartCount,
     shouldRenderMinimumHeightPromptStrip: input.terminalSizeTierForChatScreen === minimumTerminalSizeTier,
   };
+}
+
+type OrderedConversationSummary = {
+  conversationMessageCount: number;
+  conversationMessagePartCount: number;
+};
+
+function summarizeOrderedConversationMessages(chatSessionState: ChatSessionState): OrderedConversationSummary {
+  return chatSessionState.orderedConversationMessageIds.reduce<OrderedConversationSummary>(
+    (orderedConversationSummary, conversationMessageId) => {
+      const conversationMessage = chatSessionState.conversationMessagesById[conversationMessageId];
+      if (!conversationMessage) {
+        return orderedConversationSummary;
+      }
+
+      return {
+        conversationMessageCount: orderedConversationSummary.conversationMessageCount + 1,
+        conversationMessagePartCount:
+          orderedConversationSummary.conversationMessagePartCount + conversationMessage.partIds.length,
+      };
+    },
+    { conversationMessageCount: 0, conversationMessagePartCount: 0 },
+  );
+}
+
+function listVisibleOrderedConversationMessages(input: {
+  chatSessionState: ChatSessionState;
+  firstVisibleConversationMessageIndex: number;
+  visibleConversationMessageCount: number;
+}): ConversationMessage[] {
+  const visibleConversationMessages: ConversationMessage[] = [];
+  const firstHiddenAfterVisibleConversationMessageIndex = input.firstVisibleConversationMessageIndex +
+    input.visibleConversationMessageCount;
+  let currentConversationMessageIndex = 0;
+
+  for (const conversationMessageId of input.chatSessionState.orderedConversationMessageIds) {
+    const conversationMessage = input.chatSessionState.conversationMessagesById[conversationMessageId];
+    if (!conversationMessage) {
+      continue;
+    }
+
+    if (currentConversationMessageIndex >= input.firstVisibleConversationMessageIndex) {
+      visibleConversationMessages.push(conversationMessage);
+    }
+    currentConversationMessageIndex += 1;
+
+    if (currentConversationMessageIndex >= firstHiddenAfterVisibleConversationMessageIndex) {
+      break;
+    }
+  }
+
+  return visibleConversationMessages;
 }
 
 function formatAssistantOperatingModeLabel(assistantOperatingMode: AssistantOperatingMode): string {

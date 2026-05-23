@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
+import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
 import { chatScreenTheme, minimumTerminalSizeTier } from "@buli/assistant-design-tokens";
-import { createInitialChatSessionState, insertTextIntoPromptDraftAtCursor } from "@buli/chat-session-state";
+import {
+  createInitialChatSessionState,
+  insertTextIntoPromptDraftAtCursor,
+  type ChatSessionState,
+} from "@buli/chat-session-state";
 import { buildChatScreenViewModel } from "../src/behavior/chatScreenViewModel.ts";
 
 test("buildChatScreenViewModel disables prompt input while a turn is streaming", () => {
@@ -101,3 +106,66 @@ test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at c
   expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(false);
   expect(viewModel.inputRegionRowCount).toBe(10);
 });
+
+test("buildChatScreenViewModel hydrates only the requested visible tail for large transcripts", () => {
+  const chatSessionState = createChatSessionStateWithTranscript({ conversationMessageCount: 10_000 });
+
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState,
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+    requestedVisibleConversationMessageCount: 12,
+  });
+
+  expect(viewModel.conversationTranscriptWindow.totalConversationMessageCount).toBe(10_000);
+  expect(viewModel.conversationTranscriptWindow.visibleConversationMessageCount).toBe(12);
+  expect(viewModel.conversationTranscriptWindow.hiddenOlderConversationMessageCount).toBe(9_988);
+  expect(viewModel.conversationTranscriptWindow.visibleConversationMessages.map((message) => message.id)).toEqual([
+    "message-9988",
+    "message-9989",
+    "message-9990",
+    "message-9991",
+    "message-9992",
+    "message-9993",
+    "message-9994",
+    "message-9995",
+    "message-9996",
+    "message-9997",
+    "message-9998",
+    "message-9999",
+  ]);
+  expect(viewModel.orderedConversationMessagePartCount).toBe(10_000);
+});
+
+function createChatSessionStateWithTranscript(input: { conversationMessageCount: number }): ChatSessionState {
+  const conversationMessagesById: Record<string, ConversationMessage> = {};
+  const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
+  const orderedConversationMessageIds: string[] = [];
+
+  for (let messageIndex = 0; messageIndex < input.conversationMessageCount; messageIndex += 1) {
+    const messageId = `message-${messageIndex}`;
+    const partId = `part-${messageIndex}`;
+    orderedConversationMessageIds.push(messageId);
+    conversationMessagesById[messageId] = {
+      id: messageId,
+      role: "user",
+      messageStatus: "completed",
+      createdAtMs: messageIndex,
+      partIds: [partId],
+    };
+    conversationMessagePartsById[partId] = {
+      id: partId,
+      partKind: "user_text",
+      text: `Prompt ${messageIndex}`,
+    };
+  }
+
+  return {
+    ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationMessagesById,
+    conversationMessagePartsById,
+    orderedConversationMessageIds,
+  };
+}

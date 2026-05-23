@@ -33,7 +33,6 @@ import { buildChatScreenViewModel } from "./behavior/chatScreenViewModel.ts";
 import { buildChatScreenRenderSnapshotDiagnosticFields } from "./behavior/chatScreenRenderSnapshotDiagnostics.ts";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
 import {
-  buildConversationTranscriptWindow,
   DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT,
   revealOlderConversationTranscriptMessages,
 } from "./behavior/conversationTranscriptWindow.ts";
@@ -270,7 +269,7 @@ export function ChatScreen(props: ChatScreenProps) {
     availableCommandHelpModalRowCount,
     totalContextTokensUsed,
     contextWindowTokenCapacity,
-    orderedConversationMessages,
+    conversationTranscriptWindow,
     orderedConversationMessagePartCount,
     shouldRenderMinimumHeightPromptStrip,
   } = buildChatScreenViewModel({
@@ -279,16 +278,13 @@ export function ChatScreen(props: ChatScreenProps) {
     terminalRowCount: rows,
     terminalColumnCount: columns,
     terminalSizeTierForChatScreen,
-  });
-  const conversationTranscriptWindow = buildConversationTranscriptWindow({
-    conversationMessages: orderedConversationMessages,
     requestedVisibleConversationMessageCount,
   });
   const revealOlderConversationMessages = useEffectEvent(() => {
     setRequestedVisibleConversationMessageCount((currentVisibleConversationMessageCount) =>
       revealOlderConversationTranscriptMessages({
         currentVisibleConversationMessageCount,
-        totalConversationMessageCount: orderedConversationMessages.length,
+        totalConversationMessageCount: conversationTranscriptWindow.totalConversationMessageCount,
       })
     );
   });
@@ -303,7 +299,7 @@ export function ChatScreen(props: ChatScreenProps) {
         terminalRowCount: rows,
         terminalColumnCount: columns,
         terminalSizeTierForChatScreen,
-        orderedConversationMessageCount: orderedConversationMessages.length,
+        orderedConversationMessageCount: conversationTranscriptWindow.totalConversationMessageCount,
         renderedConversationMessageCount: conversationTranscriptWindow.visibleConversationMessageCount,
         hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
         orderedConversationMessagePartCount,
@@ -332,7 +328,7 @@ export function ChatScreen(props: ChatScreenProps) {
     columns,
     diagnosticLogger,
     orderedConversationMessagePartCount,
-    orderedConversationMessages.length,
+    conversationTranscriptWindow.totalConversationMessageCount,
     conversationTranscriptWindow.hiddenOlderConversationMessageCount,
     conversationTranscriptWindow.visibleConversationMessageCount,
     rows,

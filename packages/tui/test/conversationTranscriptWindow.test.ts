@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ConversationMessage } from "@buli/contracts";
 import {
+  buildConversationTranscriptMessageIndexWindow,
   buildConversationTranscriptWindow,
   revealOlderConversationTranscriptMessages,
 } from "../src/behavior/conversationTranscriptWindow.ts";
@@ -48,6 +49,22 @@ test("buildConversationTranscriptWindow hides no messages when the visible windo
     visibleConversationMessageCount: 3,
     hiddenOlderConversationMessageCount: 0,
     olderConversationMessageRevealCount: 0,
+  });
+});
+
+test("buildConversationTranscriptMessageIndexWindow identifies the visible tail without message allocation", () => {
+  expect(
+    buildConversationTranscriptMessageIndexWindow({
+      totalConversationMessageCount: 10_000,
+      requestedVisibleConversationMessageCount: 160,
+      revealChunkConversationMessageCount: 80,
+    }),
+  ).toEqual({
+    totalConversationMessageCount: 10_000,
+    firstVisibleConversationMessageIndex: 9_840,
+    visibleConversationMessageCount: 160,
+    hiddenOlderConversationMessageCount: 9_840,
+    olderConversationMessageRevealCount: 80,
   });
 });
 

@@ -11,12 +11,42 @@ export type ConversationTranscriptWindow = {
   olderConversationMessageRevealCount: number;
 };
 
+export type ConversationTranscriptMessageIndexWindow = {
+  totalConversationMessageCount: number;
+  firstVisibleConversationMessageIndex: number;
+  visibleConversationMessageCount: number;
+  hiddenOlderConversationMessageCount: number;
+  olderConversationMessageRevealCount: number;
+};
+
 export function buildConversationTranscriptWindow(input: {
   conversationMessages: readonly ConversationMessage[];
   requestedVisibleConversationMessageCount?: number | undefined;
   revealChunkConversationMessageCount?: number | undefined;
 }): ConversationTranscriptWindow {
-  const totalConversationMessageCount = input.conversationMessages.length;
+  const conversationTranscriptMessageIndexWindow = buildConversationTranscriptMessageIndexWindow({
+    totalConversationMessageCount: input.conversationMessages.length,
+    requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
+    revealChunkConversationMessageCount: input.revealChunkConversationMessageCount,
+  });
+
+  return {
+    visibleConversationMessages: input.conversationMessages.slice(
+      conversationTranscriptMessageIndexWindow.firstVisibleConversationMessageIndex,
+    ),
+    totalConversationMessageCount: conversationTranscriptMessageIndexWindow.totalConversationMessageCount,
+    visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
+    hiddenOlderConversationMessageCount: conversationTranscriptMessageIndexWindow.hiddenOlderConversationMessageCount,
+    olderConversationMessageRevealCount: conversationTranscriptMessageIndexWindow.olderConversationMessageRevealCount,
+  };
+}
+
+export function buildConversationTranscriptMessageIndexWindow(input: {
+  totalConversationMessageCount: number;
+  requestedVisibleConversationMessageCount?: number | undefined;
+  revealChunkConversationMessageCount?: number | undefined;
+}): ConversationTranscriptMessageIndexWindow {
+  const totalConversationMessageCount = Math.max(0, input.totalConversationMessageCount);
   const requestedVisibleConversationMessageCount = normalizePositiveInteger(
     input.requestedVisibleConversationMessageCount,
     DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT,
@@ -35,10 +65,8 @@ export function buildConversationTranscriptWindow(input: {
   );
 
   return {
-    visibleConversationMessages: input.conversationMessages.slice(
-      totalConversationMessageCount - visibleConversationMessageCount,
-    ),
     totalConversationMessageCount,
+    firstVisibleConversationMessageIndex: totalConversationMessageCount - visibleConversationMessageCount,
     visibleConversationMessageCount,
     hiddenOlderConversationMessageCount,
     olderConversationMessageRevealCount: Math.min(
