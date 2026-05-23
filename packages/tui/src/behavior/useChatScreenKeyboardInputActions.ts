@@ -29,7 +29,10 @@ import {
   isPromptInteractionKeyboardInput,
   shouldPromptTextareaHandleKeyboardInput,
 } from "./chatScreenPromptTextareaKeyboardOwnership.ts";
-import { normalizeOpenTuiPasteEventText } from "./normalizeOpenTuiPasteEventText.ts";
+import {
+  normalizeOpenTuiPasteEventText,
+  readOpenTuiNonTextPasteMetadata,
+} from "./normalizeOpenTuiPasteEventText.ts";
 import { normalizeOpenTuiKeyEventForChatSession } from "./openTuiKeyboardInputAdapter.ts";
 import type {
   PendingToolApprovalDecisionSubmission,
@@ -377,6 +380,17 @@ export function useChatScreenKeyboardInputActions(
 
     pasteEvent.preventDefault();
     pasteEvent.stopPropagation();
+
+    const nonTextPasteMetadata = readOpenTuiNonTextPasteMetadata(pasteEvent);
+    if (nonTextPasteMetadata) {
+      logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.non_text_paste_ignored", {
+        conversationTurnStatus: input.latestChatSessionStateRef.current.conversationTurnStatus,
+        pasteKind: nonTextPasteMetadata.pasteKind,
+        mimeType: nonTextPasteMetadata.mimeType ?? null,
+        pastedByteLength: pasteEvent.bytes.length,
+      });
+      return;
+    }
 
     const pastedText = normalizeOpenTuiPasteEventText(pasteEvent);
     if (pastedText.length === 0) {
