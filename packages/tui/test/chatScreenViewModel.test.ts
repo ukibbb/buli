@@ -104,7 +104,7 @@ test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at c
   });
 
   expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(false);
-  expect(viewModel.inputRegionRowCount).toBe(10);
+  expect(viewModel.inputRegionRowCount).toBe(9);
 });
 
 test("buildChatScreenViewModel hydrates only the requested visible tail for large transcripts", () => {

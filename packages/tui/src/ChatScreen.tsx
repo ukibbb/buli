@@ -262,7 +262,9 @@ export function ChatScreen(props: ChatScreenProps) {
   const {
     isPromptInputDisabled,
     availableChatSlashCommands,
-    modeLabel,
+    shortModeLabel,
+    nextShortModeLabel,
+    nextModeAccentColor,
     inputPanelAccentColor,
     promptInputHintOverride,
     reasoningEffortLabel,
@@ -367,7 +369,9 @@ export function ChatScreen(props: ChatScreenProps) {
         isActiveTurnInterruptConfirmationArmed={isActiveTurnInterruptConfirmationArmed}
         inputPanelAccentColor={inputPanelAccentColor}
         promptInputHintOverride={promptInputHintOverride}
-        modeLabel={modeLabel}
+        shortModeLabel={shortModeLabel}
+        nextShortModeLabel={nextShortModeLabel}
+        nextModeAccentColor={nextModeAccentColor}
         reasoningEffortLabel={reasoningEffortLabel}
         totalContextTokensUsed={totalContextTokensUsed}
         contextWindowTokenCapacity={contextWindowTokenCapacity}

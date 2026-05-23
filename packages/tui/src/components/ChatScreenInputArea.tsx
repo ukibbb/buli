@@ -3,6 +3,7 @@ import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-to
 import type { ReactNode } from "react";
 import { ConversationSessionSelectionPane } from "./ConversationSessionSelectionPane.tsx";
 import { InputPanel } from "./InputPanel.tsx";
+import { InputStatusStrip } from "./InputStatusStrip.tsx";
 import { MinimumHeightPromptStrip } from "./MinimumHeightPromptStrip.tsx";
 import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
 import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
@@ -22,7 +23,9 @@ export type ChatScreenInputAreaProps = {
   isActiveTurnInterruptConfirmationArmed: boolean;
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   promptInputHintOverride: string | undefined;
-  modeLabel: string;
+  shortModeLabel: string;
+  nextShortModeLabel: string;
+  nextModeAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   reasoningEffortLabel: string;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
@@ -74,17 +77,32 @@ export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode 
             />
           </box>
         ) : (
-          <InputPanel
-            promptDraft={props.chatSessionState.promptDraft}
-            promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
-            promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
-            selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
-            isPromptInputDisabled={props.isPromptInputDisabled}
-            accentColor={props.inputPanelAccentColor}
-            onPromptDraftEdited={props.onPromptDraftEdited}
-            onPromptSubmitted={props.onPromptSubmitted}
-            onNativeClipboardPasteRequested={props.onNativeClipboardPasteRequested}
-          />
+          <box flexDirection="column" flexShrink={0} width="100%">
+            <InputPanel
+              promptDraft={props.chatSessionState.promptDraft}
+              promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
+              promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
+              selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
+              isPromptInputDisabled={props.isPromptInputDisabled}
+              accentColor={props.inputPanelAccentColor}
+              onPromptDraftEdited={props.onPromptDraftEdited}
+              onPromptSubmitted={props.onPromptSubmitted}
+              onNativeClipboardPasteRequested={props.onNativeClipboardPasteRequested}
+            />
+            <InputStatusStrip
+              assistantResponseStatus={props.chatSessionState.conversationTurnStatus}
+              pendingPromptImageAttachmentCount={props.chatSessionState.pendingPromptImageAttachments.length}
+              {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}
+              accentColor={props.inputPanelAccentColor}
+              shortModeLabel={props.shortModeLabel}
+              nextShortModeLabel={props.nextShortModeLabel}
+              nextModeAccentColor={props.nextModeAccentColor}
+              modelIdentifier={props.chatSessionState.selectedModelId}
+              reasoningEffortLabel={props.reasoningEffortLabel}
+              totalContextTokensUsed={props.totalContextTokensUsed}
+              contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+            />
+          </box>
         )}
       </box>
     </box>
