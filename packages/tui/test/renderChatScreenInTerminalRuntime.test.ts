@@ -177,6 +177,7 @@ test("renderChatScreenInTerminalWithRuntime disables OpenTUI console capture whi
     expect(runtimeHarness.getCreatedRendererOptions()).toEqual([
       {
         screenMode: "alternate-screen",
+        clearOnShutdown: true,
         autoFocus: false,
         useMouse: true,
         enableMouseMovement: true,

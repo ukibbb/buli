@@ -80,6 +80,7 @@ export type RenderChatScreenInTerminalInput = {
 
 export type TerminalRendererCreateOptionsForChatScreen = {
   screenMode: "alternate-screen";
+  clearOnShutdown: boolean;
   autoFocus: boolean;
   useMouse: boolean;
   enableMouseMovement: boolean;
@@ -129,6 +130,7 @@ export async function renderChatScreenInTerminalWithRuntime<
     screenMode: "alternate-screen",
     consoleMode,
     openTuiUseConsole: process.env["OTUI_USE_CONSOLE"] ?? null,
+    clearOnShutdown: true,
     autoFocus: false,
     useMouse: true,
     enableMouseMovement: true,
@@ -137,6 +139,7 @@ export async function renderChatScreenInTerminalWithRuntime<
   try {
     cliRenderer = await runtime.createTerminalRenderer({
       screenMode: "alternate-screen",
+      clearOnShutdown: true,
       autoFocus: false,
       useMouse: true,
       enableMouseMovement: true,
