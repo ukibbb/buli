@@ -75,6 +75,7 @@ export type RenderChatScreenInTerminalInput = {
   readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
+  onConversationSessionModelSelectionChanged?: ChatScreenProps["onConversationSessionModelSelectionChanged"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
@@ -238,6 +239,9 @@ export async function renderChatScreenInTerminalWithRuntime<
           ? { readClipboardImageAttachment: input.readClipboardImageAttachment }
           : {}),
         ...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {}),
+        ...(input.onConversationSessionModelSelectionChanged
+          ? { onConversationSessionModelSelectionChanged: input.onConversationSessionModelSelectionChanged }
+          : {}),
         selectedModelId: input.selectedModelId,
         ...(input.initialConversationSessionId !== undefined
           ? { initialConversationSessionId: input.initialConversationSessionId }

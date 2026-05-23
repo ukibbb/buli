@@ -45,11 +45,13 @@ export { listOrderedConversationMessageParts, listOrderedConversationMessages } 
 export {
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
+  applyConversationSessionModelSelectionToChatSessionState,
   hideModelAndReasoningSelection,
   moveHighlightedModelSelectionDown,
   moveHighlightedModelSelectionUp,
   moveHighlightedReasoningEffortChoiceDown,
   moveHighlightedReasoningEffortChoiceUp,
+  readConversationSessionModelSelectionFromChatSessionState,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingError,
   showModelSelectionLoadingState,

@@ -1,6 +1,7 @@
 import {
   type AvailableAssistantModel,
   type BuliDiagnosticLogger,
+  type ConversationSessionModelSelection,
   type UserPromptImageAttachment,
 } from "@buli/contracts";
 import {
@@ -11,6 +12,7 @@ import {
   removePromptImageAttachmentPlaceholderAtCursor,
   removePromptImageAttachmentPlaceholderBeforeCursor,
   replacePromptDraftFromEditor,
+  readConversationSessionModelSelectionFromChatSessionState,
   type ChatSessionKeyboardEffect,
   type ChatSessionKeyboardInput,
   type ChatSessionState,
@@ -59,6 +61,9 @@ export type UseChatScreenKeyboardInputActionsInput = {
   exportCurrentConversationSession: () => Promise<void>;
   compactCurrentConversationSession: () => Promise<void>;
   clearCurrentConversationSession: () => void;
+  onConversationSessionModelSelectionChanged?:
+    | ((modelSelection: ConversationSessionModelSelection) => void | Promise<void>)
+    | undefined;
   streamAssistantResponseForSubmittedPrompt: (submittedPrompt: SubmittedChatScreenPrompt) => Promise<void>;
   submitPendingToolApprovalDecision: (submission: PendingToolApprovalDecisionSubmission) => void;
   scrollConversationMessagesToBottom: () => void;
@@ -272,6 +277,11 @@ export function useChatScreenKeyboardInputActions(
     }
 
     if (keyboardInteraction.nextChatSessionState !== previousChatSessionState) {
+      const shouldReportModelSelection = shouldReportConversationSessionModelSelection({
+        previousChatSessionState,
+        nextChatSessionState: keyboardInteraction.nextChatSessionState,
+        chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
+      });
       if (
         previousChatSessionState.selectedAssistantOperatingMode !==
           keyboardInteraction.nextChatSessionState.selectedAssistantOperatingMode
@@ -283,6 +293,17 @@ export function useChatScreenKeyboardInputActions(
 
       input.latestChatSessionStateRef.current = keyboardInteraction.nextChatSessionState;
       input.setChatSessionState(keyboardInteraction.nextChatSessionState);
+      if (shouldReportModelSelection) {
+        const modelSelection = readConversationSessionModelSelectionFromChatSessionState(
+          keyboardInteraction.nextChatSessionState,
+        );
+        logChatScreenDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_changed", {
+          selectedModelId: modelSelection.selectedModelId,
+          selectedModelDefaultReasoningEffort: modelSelection.selectedModelDefaultReasoningEffort ?? null,
+          selectedReasoningEffort: modelSelection.selectedReasoningEffort ?? null,
+        });
+        void input.onConversationSessionModelSelectionChanged?.(modelSelection);
+      }
     }
 
     if (keyboardInteraction.chatSessionKeyboardEffect) {
@@ -417,4 +438,39 @@ export function useChatScreenKeyboardInputActions(
     submitPromptDraftFromPromptTextarea,
     pasteClipboardImageAttachmentIntoPrompt,
   };
+}
+
+function shouldReportConversationSessionModelSelection(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+  chatSessionKeyboardInput: ChatSessionKeyboardInput;
+}): boolean {
+  return hasConversationSessionModelSelectionChanged(input) || hasConversationSessionModelSelectionBeenCommitted(input);
+}
+
+function hasConversationSessionModelSelectionChanged(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+}): boolean {
+  return input.previousChatSessionState.selectedModelId !== input.nextChatSessionState.selectedModelId ||
+    input.previousChatSessionState.selectedModelDefaultReasoningEffort !==
+      input.nextChatSessionState.selectedModelDefaultReasoningEffort ||
+    input.previousChatSessionState.selectedReasoningEffort !== input.nextChatSessionState.selectedReasoningEffort;
+}
+
+function hasConversationSessionModelSelectionBeenCommitted(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+  chatSessionKeyboardInput: ChatSessionKeyboardInput;
+}): boolean {
+  if (input.chatSessionKeyboardInput.keyName !== "return") {
+    return false;
+  }
+
+  if (input.nextChatSessionState.modelAndReasoningSelectionState.step !== "hidden") {
+    return false;
+  }
+
+  return input.previousChatSessionState.modelAndReasoningSelectionState.step === "showing_available_models" ||
+    input.previousChatSessionState.modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices";
 }

@@ -7,6 +7,8 @@ import {
   type ConversationSessionEntry,
   type ConversationSessionEntryRecord,
   type ConversationSessionHeaderRecord,
+  type ConversationSessionModelSelection,
+  type ConversationSessionSettingsRecord,
   type ConversationSessionSummary,
 } from "@buli/contracts";
 import {
@@ -25,7 +27,16 @@ import {
 export type ActiveConversationSession = {
   sessionId: string;
   filePath: string;
+  modelSelection: ConversationSessionModelSelection | undefined;
   conversationSessionEntries: readonly ConversationSessionEntry[];
+};
+
+export type StartNewConversationSessionInput = {
+  modelSelection?: ConversationSessionModelSelection | undefined;
+};
+
+export type DeleteConversationSessionInput = {
+  replacementModelSelection?: ConversationSessionModelSelection | undefined;
 };
 
 export type ConversationSessionStore = {
@@ -34,11 +45,12 @@ export type ConversationSessionStore = {
   loadActiveConversationSession(): ActiveConversationSession;
   loadConversationSessionEntries(): readonly ConversationSessionEntry[];
   appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void;
+  saveActiveConversationSessionModelSelection(modelSelection: ConversationSessionModelSelection): void;
   saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void;
-  startNewConversationSession(): ActiveConversationSession;
+  startNewConversationSession(input?: StartNewConversationSessionInput): ActiveConversationSession;
   listConversationSessions(): readonly ConversationSessionSummary[];
   switchActiveConversationSession(sessionId: string): ActiveConversationSession;
-  deleteConversationSession(sessionId: string): ActiveConversationSession;
+  deleteConversationSession(sessionId: string, input?: DeleteConversationSessionInput): ActiveConversationSession;
 };
 
 type ConversationSessionIdFactory = () => string;
@@ -132,6 +144,23 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     });
   }
 
+  saveActiveConversationSessionModelSelection(modelSelection: ConversationSessionModelSelection): void {
+    this.runWithConversationSessionWriteLock(() => {
+      const activeConversationSession = this.loadActiveConversationSessionWithoutLock();
+      if (areConversationSessionModelSelectionsEqual(activeConversationSession.modelSelection, modelSelection)) {
+        return;
+      }
+
+      appendConversationSessionTextFileLineAtomically({
+        filePath: activeConversationSession.filePath,
+        lineText: JSON.stringify(createConversationSessionSettingsRecord({
+          modelSelection,
+          nowMs: this.nowMs,
+        })),
+      });
+    });
+  }
+
   saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void {
     this.runWithConversationSessionWriteLock(() => {
       const activeConversationSession = this.loadActiveConversationSessionWithoutLock();
@@ -144,6 +173,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
         filePath: activeConversationSession.filePath,
         text: buildConversationSessionJsonlText({
           headerRecord: activeConversationSessionFile.headerRecord,
+          settingsRecords: activeConversationSessionFile.settingsRecords,
           conversationSessionEntries,
           createSessionEntryId: this.createSessionEntryId,
           nowMs: this.nowMs,
@@ -153,8 +183,8 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     });
   }
 
-  startNewConversationSession(): ActiveConversationSession {
-    return this.runWithConversationSessionWriteLock(() => this.startNewConversationSessionWithoutLock());
+  startNewConversationSession(input: StartNewConversationSessionInput = {}): ActiveConversationSession {
+    return this.runWithConversationSessionWriteLock(() => this.startNewConversationSessionWithoutLock(input));
   }
 
   listConversationSessions(): readonly ConversationSessionSummary[] {
@@ -174,7 +204,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     });
   }
 
-  deleteConversationSession(sessionId: string): ActiveConversationSession {
+  deleteConversationSession(sessionId: string, input: DeleteConversationSessionInput = {}): ActiveConversationSession {
     return this.runWithConversationSessionWriteLock(() => {
       const conversationSessionFilePath = this.findConversationSessionFilePathById(sessionId);
       if (!conversationSessionFilePath) {
@@ -192,7 +222,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
         return this.loadActiveConversationSessionFromFile(mostRecentlyUpdatedSessionFilePath);
       }
 
-      return this.startNewConversationSessionWithoutLock();
+      return this.startNewConversationSessionWithoutLock({ modelSelection: input.replacementModelSelection });
     });
   }
 
@@ -226,7 +256,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     return this.startNewConversationSessionWithoutLock();
   }
 
-  private startNewConversationSessionWithoutLock(): ActiveConversationSession {
+  private startNewConversationSessionWithoutLock(input: StartNewConversationSessionInput = {}): ActiveConversationSession {
     this.ensureSessionDirectoriesExist();
     const sessionId = this.createSessionId();
     const createdAtMs = this.nowMs();
@@ -239,11 +269,19 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       createdAtMs,
     };
 
-    writeConversationSessionTextFileAtomically({ filePath: sessionFilePath, text: `${JSON.stringify(headerRecord)}\n` });
+    const settingsRecords = input.modelSelection
+      ? [createConversationSessionSettingsRecord({ modelSelection: input.modelSelection, nowMs: this.nowMs })]
+      : [];
+
+    writeConversationSessionTextFileAtomically({
+      filePath: sessionFilePath,
+      text: [headerRecord, ...settingsRecords].map((record) => JSON.stringify(record)).join("\n") + "\n",
+    });
     this.writeActiveConversationSessionId(sessionId);
     return {
       sessionId,
       filePath: sessionFilePath,
+      modelSelection: input.modelSelection,
       conversationSessionEntries: [],
     };
   }
@@ -287,6 +325,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     return {
       sessionId: conversationSessionFile.headerRecord.sessionId,
       filePath,
+      modelSelection: readLatestConversationSessionModelSelection(conversationSessionFile.settingsRecords),
       conversationSessionEntries: listActiveConversationSessionEntryRecords(conversationSessionFile.entryRecords).map(
         (entryRecord) => entryRecord.conversationSessionEntry,
       ),
@@ -339,6 +378,7 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     return {
       sessionId,
       filePath: sessionFilePath,
+      modelSelection: undefined,
       conversationSessionEntries: legacyConversationSessionSnapshot.conversationSessionEntries,
     };
   }
@@ -427,6 +467,7 @@ function listActiveConversationSessionEntryRecords<EntryRecord extends Conversat
 
 function buildConversationSessionJsonlText(input: {
   headerRecord: ConversationSessionHeaderRecord;
+  settingsRecords: readonly ConversationSessionSettingsRecord[];
   conversationSessionEntries: readonly ConversationSessionEntry[];
   createSessionEntryId: ConversationSessionEntryIdFactory;
   nowMs: ClockMilliseconds;
@@ -447,7 +488,39 @@ function buildConversationSessionJsonlText(input: {
     },
   );
 
-  return [input.headerRecord, ...conversationSessionEntryRecords].map((record) => JSON.stringify(record)).join("\n") + "\n";
+  return [input.headerRecord, ...input.settingsRecords, ...conversationSessionEntryRecords]
+    .map((record) => JSON.stringify(record))
+    .join("\n") + "\n";
+}
+
+function createConversationSessionSettingsRecord(input: {
+  modelSelection: ConversationSessionModelSelection;
+  nowMs: ClockMilliseconds;
+}): ConversationSessionSettingsRecord {
+  return {
+    recordKind: "conversation_session_settings",
+    recordedAtMs: input.nowMs(),
+    modelSelection: input.modelSelection,
+  };
+}
+
+function readLatestConversationSessionModelSelection(
+  conversationSessionSettingsRecords: readonly ConversationSessionSettingsRecord[],
+): ConversationSessionModelSelection | undefined {
+  return conversationSessionSettingsRecords.at(-1)?.modelSelection;
+}
+
+function areConversationSessionModelSelectionsEqual(
+  left: ConversationSessionModelSelection | undefined,
+  right: ConversationSessionModelSelection,
+): boolean {
+  if (!left) {
+    return false;
+  }
+
+  return left.selectedModelId === right.selectedModelId &&
+    left.selectedModelDefaultReasoningEffort === right.selectedModelDefaultReasoningEffort &&
+    left.selectedReasoningEffort === right.selectedReasoningEffort;
 }
 
 function createDefaultSessionWorkspaceDirectoryPath(input: {

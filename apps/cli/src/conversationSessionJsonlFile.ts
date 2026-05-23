@@ -4,9 +4,11 @@ import { basename, dirname, join } from "node:path";
 import {
   ConversationSessionHeaderRecordSchema,
   ConversationSessionJsonLineRecordSchema,
+  ConversationSessionSettingsRecordSchema,
   type ConversationSessionEntryRecord,
   type ConversationSessionHeaderRecord,
   type ConversationSessionJsonLineRecord,
+  type ConversationSessionSettingsRecord,
 } from "@buli/contracts";
 import { writeConversationSessionTextFileAtomically } from "./conversationSessionFileWrite.ts";
 
@@ -15,6 +17,7 @@ export type ConversationSessionClockMilliseconds = () => number;
 export type LoadedConversationSessionJsonlFile = {
   filePath: string;
   headerRecord: ConversationSessionHeaderRecord;
+  settingsRecords: ConversationSessionSettingsRecord[];
   entryRecords: ConversationSessionEntryRecord[];
 };
 
@@ -44,6 +47,7 @@ export function loadRecoverableConversationSessionFile(input: {
   return {
     filePath: input.filePath,
     headerRecord,
+    settingsRecords: conversationSessionRecords.filter(isConversationSessionSettingsRecord),
     entryRecords: conversationSessionRecords.filter(isConversationSessionEntryRecord),
   };
 }
@@ -76,6 +80,8 @@ export function loadRecoverableConversationSessionFileMetadata(input: {
     try {
       if (!headerRecord) {
         headerRecord = parseConversationSessionHeaderRecord(rawJsonLineText);
+      } else if (isConversationSessionSettingsRawJsonLine(rawJsonLineText)) {
+        parseConversationSessionSettingsRecord(rawJsonLineText);
       } else {
         entryRecords.push(parseConversationSessionEntryRecordMetadata(rawJsonLineText));
       }
@@ -199,6 +205,18 @@ function parseConversationSessionJsonLineRecord(rawJsonLineText: string): Conver
 
 function parseConversationSessionHeaderRecord(rawJsonLineText: string): ConversationSessionHeaderRecord {
   return ConversationSessionHeaderRecordSchema.parse(JSON.parse(rawJsonLineText) as unknown);
+}
+
+function parseConversationSessionSettingsRecord(rawJsonLineText: string): ConversationSessionSettingsRecord {
+  return ConversationSessionSettingsRecordSchema.parse(JSON.parse(rawJsonLineText) as unknown);
+}
+
+function isConversationSessionSettingsRawJsonLine(rawJsonLineText: string): boolean {
+  return readStringPropertyFromRawJson({
+    rawJsonText: rawJsonLineText,
+    propertyName: "recordKind",
+    startIndex: 0,
+  }) === "conversation_session_settings";
 }
 
 function parseConversationSessionEntryRecordMetadata(rawJsonLineText: string): ConversationSessionEntryRecordMetadata {
@@ -366,6 +384,12 @@ function isConversationSessionEntryRecord(
   conversationSessionJsonLineRecord: ConversationSessionJsonLineRecord,
 ): conversationSessionJsonLineRecord is ConversationSessionEntryRecord {
   return conversationSessionJsonLineRecord.recordKind === "conversation_entry";
+}
+
+function isConversationSessionSettingsRecord(
+  conversationSessionJsonLineRecord: ConversationSessionJsonLineRecord,
+): conversationSessionJsonLineRecord is ConversationSessionSettingsRecord {
+  return conversationSessionJsonLineRecord.recordKind === "conversation_session_settings";
 }
 
 function readRequiredNonEmptyStringProperty(record: Record<string, unknown>, propertyName: string): string {

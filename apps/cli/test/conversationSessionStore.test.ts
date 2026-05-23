@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ConversationSessionEntry, ModelContextItem } from "@buli/contracts";
+import type { ConversationSessionEntry, ConversationSessionModelSelection, ModelContextItem } from "@buli/contracts";
 import { InMemoryConversationHistory } from "@buli/engine";
 import { FileConversationSessionStore } from "../src/conversationSessionStore.ts";
 
@@ -91,6 +91,106 @@ test("FileConversationSessionStore appends JSONL session records with parent lin
       assistantMessageStatus: "completed",
       assistantMessageText: "Hello.",
     },
+  ]);
+});
+
+test("FileConversationSessionStore persists the latest active session model selection", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-model-selection-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    nowMs: createIncrementingClockMilliseconds(),
+  });
+  const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
+  const firstModelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.4",
+    selectedModelDefaultReasoningEffort: "medium",
+    selectedReasoningEffort: "high",
+  };
+  const latestModelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.5",
+    selectedModelDefaultReasoningEffort: "medium",
+  };
+
+  conversationSessionStore.saveActiveConversationSessionModelSelection(firstModelSelection);
+  conversationSessionStore.saveActiveConversationSessionModelSelection(latestModelSelection);
+
+  expect(conversationSessionStore.loadActiveConversationSession().modelSelection).toEqual(latestModelSelection);
+  const persistedJsonLines = (await readFile(activeConversationSession.filePath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as unknown);
+  expect(persistedJsonLines).toMatchObject([
+    { recordKind: "conversation_session", sessionId: "session-1" },
+    { recordKind: "conversation_session_settings", modelSelection: firstModelSelection },
+    { recordKind: "conversation_session_settings", modelSelection: latestModelSelection },
+  ]);
+});
+
+test("FileConversationSessionStore carries model selection into new sessions", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-new-session-model-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    nowMs: createIncrementingClockMilliseconds(),
+  });
+  const modelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "low",
+  };
+
+  const activeConversationSession = conversationSessionStore.startNewConversationSession({ modelSelection });
+
+  expect(activeConversationSession.modelSelection).toEqual(modelSelection);
+  const persistedJsonLines = (await readFile(activeConversationSession.filePath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as unknown);
+  expect(persistedJsonLines).toMatchObject([
+    { recordKind: "conversation_session", sessionId: "session-1" },
+    { recordKind: "conversation_session_settings", modelSelection },
+  ]);
+  expect(conversationSessionStore.listConversationSessions()).toMatchObject([
+    {
+      sessionId: "session-1",
+      title: "New session",
+      conversationSessionEntryCount: 0,
+    },
+  ]);
+});
+
+test("FileConversationSessionStore preserves settings records when rewriting entries", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-preserve-model-selection-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createIncrementingClockMilliseconds(),
+  });
+  const modelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.4",
+    selectedModelDefaultReasoningEffort: "medium",
+  };
+  const activeConversationSession = conversationSessionStore.startNewConversationSession({ modelSelection });
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Keep settings",
+      modelFacingPromptText: "Keep settings",
+    },
+  ];
+
+  conversationSessionStore.saveConversationSessionEntries(conversationSessionEntries);
+
+  expect(conversationSessionStore.loadActiveConversationSession().modelSelection).toEqual(modelSelection);
+  const persistedJsonLines = (await readFile(activeConversationSession.filePath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as unknown);
+  expect(persistedJsonLines).toMatchObject([
+    { recordKind: "conversation_session", sessionId: "session-1" },
+    { recordKind: "conversation_session_settings", modelSelection },
+    { recordKind: "conversation_entry", conversationSessionEntry: conversationSessionEntries[0] },
   ]);
 });
 

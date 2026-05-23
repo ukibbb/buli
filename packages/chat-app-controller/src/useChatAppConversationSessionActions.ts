@@ -1,7 +1,13 @@
-import type { BuliDiagnosticLogger, ConversationSessionEntry, ConversationSessionSummary } from "@buli/contracts";
+import type {
+  BuliDiagnosticLogger,
+  ConversationSessionEntry,
+  ConversationSessionModelSelection,
+  ConversationSessionSummary,
+} from "@buli/contracts";
 import type { ConversationAutoCompactionRequest, ConversationAutoCompactionResult, ConversationCompactionRequest } from "@buli/engine";
 import {
   clearConversationTranscript,
+  applyConversationSessionModelSelectionToChatSessionState,
   hydrateConversationTranscriptFromSessionEntries,
   requestConversationSessionDeletionConfirmation,
   showAvailableConversationSessionsForSelection,
@@ -17,12 +23,14 @@ type MutableValueRef<T> = { current: T };
 
 export type ConversationSessionSwitchResult = {
   conversationSessionId: string;
+  modelSelection?: ConversationSessionModelSelection | undefined;
   conversationSessionEntries: readonly ConversationSessionEntry[];
 };
 
 export type ConversationSessionDeleteResult = {
   deletedConversationSessionId: string;
   activeConversationSessionId: string;
+  activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
   activeConversationSessionEntries: readonly ConversationSessionEntry[];
   conversationSessions: readonly ConversationSessionSummary[];
 };
@@ -34,6 +42,11 @@ export type ConversationSessionExportResult = {
 
 export type ConversationSessionCompactionResult = {
   conversationSessionEntries: readonly ConversationSessionEntry[];
+};
+
+type ConversationSessionHydrationInput = {
+  conversationSessionEntries: readonly ConversationSessionEntry[];
+  modelSelection?: ConversationSessionModelSelection | undefined;
 };
 
 export type UseChatAppConversationSessionActionsInput = {
@@ -80,16 +93,27 @@ export function useChatAppConversationSessionActions(
   const latestConversationSessionListLoadRequestSequenceRef = useRef(0);
   const latestConversationSessionMutationRequestSequenceRef = useRef(0);
 
-  const hydrateConversationSessionEntriesIntoChatApp = useEffectEvent(
-    (conversationSessionEntries: readonly ConversationSessionEntry[]): void => {
-      const nextChatSessionState = hydrateConversationTranscriptFromSessionEntries(
+  const hydrateConversationSessionIntoChatApp = useEffectEvent(
+    (conversationSessionHydrationInput: ConversationSessionHydrationInput): void => {
+      const hydratedChatSessionState = hydrateConversationTranscriptFromSessionEntries(
         input.latestChatSessionStateRef.current,
-        conversationSessionEntries,
+        conversationSessionHydrationInput.conversationSessionEntries,
       );
+      const nextChatSessionState = conversationSessionHydrationInput.modelSelection
+        ? applyConversationSessionModelSelectionToChatSessionState(
+          hydratedChatSessionState,
+          conversationSessionHydrationInput.modelSelection,
+        )
+        : hydratedChatSessionState;
       input.latestChatSessionStateRef.current = nextChatSessionState;
       startTransition(() => {
         input.setChatSessionState(nextChatSessionState);
       });
+    },
+  );
+  const hydrateConversationSessionEntriesIntoChatApp = useEffectEvent(
+    (conversationSessionEntries: readonly ConversationSessionEntry[]): void => {
+      hydrateConversationSessionIntoChatApp({ conversationSessionEntries });
     },
   );
 
@@ -148,7 +172,12 @@ export function useChatAppConversationSessionActions(
       }
       input.latestActiveConversationSessionIdRef.current = switchedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(switchedConversationSession.conversationSessionId);
-      hydrateConversationSessionEntriesIntoChatApp(switchedConversationSession.conversationSessionEntries);
+      hydrateConversationSessionIntoChatApp({
+        conversationSessionEntries: switchedConversationSession.conversationSessionEntries,
+        ...(switchedConversationSession.modelSelection
+          ? { modelSelection: switchedConversationSession.modelSelection }
+          : {}),
+      });
     } catch (error) {
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
         return;
@@ -211,8 +240,14 @@ export function useChatAppConversationSessionActions(
             currentChatSessionState,
             deletedConversationSession.activeConversationSessionEntries,
           );
+          const hydratedChatSessionStateWithModelSelection = deletedConversationSession.activeConversationSessionModelSelection
+            ? applyConversationSessionModelSelectionToChatSessionState(
+              hydratedChatSessionState,
+              deletedConversationSession.activeConversationSessionModelSelection,
+            )
+            : hydratedChatSessionState;
           const nextChatSessionState = showAvailableConversationSessionsForSelection(
-            hydratedChatSessionState,
+            hydratedChatSessionStateWithModelSelection,
             deletedConversationSession.conversationSessions,
             deletedConversationSession.activeConversationSessionId,
             { highlightedConversationSessionIndex: nextHighlightedConversationSessionIndex },
@@ -351,7 +386,12 @@ export function useChatAppConversationSessionActions(
     if (clearedConversationSession) {
       input.latestActiveConversationSessionIdRef.current = clearedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(clearedConversationSession.conversationSessionId);
-      hydrateConversationSessionEntriesIntoChatApp(clearedConversationSession.conversationSessionEntries);
+      hydrateConversationSessionIntoChatApp({
+        conversationSessionEntries: clearedConversationSession.conversationSessionEntries,
+        ...(clearedConversationSession.modelSelection
+          ? { modelSelection: clearedConversationSession.modelSelection }
+          : {}),
+      });
     } else {
       input.setChatSessionState((currentChatSessionState) => {
         const nextChatSessionState = clearConversationTranscript(currentChatSessionState);

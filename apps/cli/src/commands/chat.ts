@@ -3,6 +3,7 @@ import {
   emitBuliDiagnosticLogEvent,
   type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
+  type ConversationSessionModelSelection,
   type ReasoningEffort,
 } from "@buli/contracts";
 import {
@@ -63,6 +64,12 @@ type PromptContextScopeResolution = {
   promptContextStartingDirectoryPath: string;
 };
 
+type InitialConversationSessionModelSelectionResolution = {
+  modelSelection: ConversationSessionModelSelection;
+  selectedModelDefaultReasoningEffort?: ReasoningEffort | undefined;
+  selectedReasoningEffort?: ReasoningEffort | undefined;
+};
+
 export async function runInteractiveChat(input: {
   selectedModelId?: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -88,9 +95,6 @@ export async function runInteractiveChat(input: {
     return INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE;
   }
   const autoCompactionThresholdRatio = autoCompactionThresholdResolution.thresholdRatio;
-  const selectedModelId = input.selectedModelId ?? DEFAULT_MODEL_ID;
-  const selectedReasoningEffort = input.selectedReasoningEffort ?? DEFAULT_REASONING_EFFORT;
-  const selectedModelDefaultReasoningEffort = lookupKnownModelDefaultReasoningEffort(selectedModelId);
 
   const store = input.store ?? new OpenAiAuthStore();
   const auth = await store.loadOpenAi();
@@ -102,6 +106,20 @@ export async function runInteractiveChat(input: {
   if (!stdin.isTTY) {
     return "Interactive chat requires a TTY. Run `buli` in a terminal.";
   }
+
+  const conversationSessionStore = input.conversationSessionStore ?? new FileConversationSessionStore();
+  const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
+  const initialConversationSessionEntries = activeConversationSession.conversationSessionEntries;
+  const initialModelSelectionResolution = resolveInitialConversationSessionModelSelection({
+    requestedModelId: input.selectedModelId,
+    requestedReasoningEffort: input.selectedReasoningEffort,
+    persistedModelSelection: activeConversationSession.modelSelection,
+  });
+  let activeConversationSessionModelSelection = initialModelSelectionResolution.modelSelection;
+  conversationSessionStore.saveActiveConversationSessionModelSelection(activeConversationSessionModelSelection);
+  const selectedModelId = activeConversationSessionModelSelection.selectedModelId;
+  const selectedModelDefaultReasoningEffort = initialModelSelectionResolution.selectedModelDefaultReasoningEffort;
+  const selectedReasoningEffort = initialModelSelectionResolution.selectedReasoningEffort;
 
   const workspaceRootPath = process.cwd();
   const promptContextScope = resolveInteractiveChatPromptContextScope({
@@ -115,17 +133,14 @@ export async function runInteractiveChat(input: {
   logCliDiagnosticEvent(diagnosticLogger, "interactive_chat.starting", {
     selectedModelId,
     selectedModelDefaultReasoningEffort: selectedModelDefaultReasoningEffort ?? null,
-    selectedReasoningEffort,
+    selectedReasoningEffort: selectedReasoningEffort ?? null,
     bashToolApprovalMode,
     workingDirectoryPath: workspaceRootPath,
     promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
     promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
     logFilePath: consoleFileLoggerInstallation.logFilePath ?? null,
   });
-  const conversationSessionStore = input.conversationSessionStore ?? new FileConversationSessionStore();
-  const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
   let activeConversationSessionId = activeConversationSession.sessionId;
-  const initialConversationSessionEntries = activeConversationSession.conversationSessionEntries;
   logCliDiagnosticEvent(diagnosticLogger, "conversation_session.loaded", {
     conversationSessionFilePath: activeConversationSession.filePath,
     conversationSessionId: activeConversationSession.sessionId,
@@ -172,20 +187,30 @@ export async function runInteractiveChat(input: {
     switchConversationSession: async (conversationSessionId: string) => {
       const switchedConversationSession = conversationSessionStore.switchActiveConversationSession(conversationSessionId);
       activeConversationSessionId = switchedConversationSession.sessionId;
+      if (switchedConversationSession.modelSelection) {
+        activeConversationSessionModelSelection = switchedConversationSession.modelSelection;
+      }
       conversationHistory.replaceConversationSessionEntries(switchedConversationSession.conversationSessionEntries);
       logCliDiagnosticEvent(diagnosticLogger, "conversation_session.switched", {
         conversationSessionId: switchedConversationSession.sessionId,
         conversationSessionFilePath: switchedConversationSession.filePath,
         conversationSessionEntryCount: switchedConversationSession.conversationSessionEntries.length,
+        selectedModelId: switchedConversationSession.modelSelection?.selectedModelId ?? null,
       });
       return {
         conversationSessionId: switchedConversationSession.sessionId,
+        ...(switchedConversationSession.modelSelection ? { modelSelection: switchedConversationSession.modelSelection } : {}),
         conversationSessionEntries: switchedConversationSession.conversationSessionEntries,
       };
     },
     deleteConversationSession: async (conversationSessionId: string) => {
-      const activeConversationSessionAfterDelete = conversationSessionStore.deleteConversationSession(conversationSessionId);
+      const activeConversationSessionAfterDelete = conversationSessionStore.deleteConversationSession(conversationSessionId, {
+        replacementModelSelection: activeConversationSessionModelSelection,
+      });
       activeConversationSessionId = activeConversationSessionAfterDelete.sessionId;
+      if (activeConversationSessionAfterDelete.modelSelection) {
+        activeConversationSessionModelSelection = activeConversationSessionAfterDelete.modelSelection;
+      }
       conversationHistory.replaceConversationSessionEntries(activeConversationSessionAfterDelete.conversationSessionEntries);
       const conversationSessionsAfterDelete = conversationSessionStore.listConversationSessions();
       logCliDiagnosticEvent(diagnosticLogger, "conversation_session.deleted", {
@@ -197,20 +222,28 @@ export async function runInteractiveChat(input: {
       return {
         deletedConversationSessionId: conversationSessionId,
         activeConversationSessionId: activeConversationSessionAfterDelete.sessionId,
+        ...(activeConversationSessionAfterDelete.modelSelection
+          ? { activeConversationSessionModelSelection: activeConversationSessionAfterDelete.modelSelection }
+          : {}),
         activeConversationSessionEntries: activeConversationSessionAfterDelete.conversationSessionEntries,
         conversationSessions: conversationSessionsAfterDelete,
       };
     },
     onConversationCleared: () => {
-      const newConversationSession = conversationSessionStore.startNewConversationSession();
+      const newConversationSession = conversationSessionStore.startNewConversationSession({
+        modelSelection: activeConversationSessionModelSelection,
+      });
       activeConversationSessionId = newConversationSession.sessionId;
+      activeConversationSessionModelSelection = newConversationSession.modelSelection ?? activeConversationSessionModelSelection;
       conversationHistory.replaceConversationSessionEntries(newConversationSession.conversationSessionEntries);
       logCliDiagnosticEvent(diagnosticLogger, "conversation_session.created", {
         conversationSessionId: newConversationSession.sessionId,
         conversationSessionFilePath: newConversationSession.filePath,
+        selectedModelId: activeConversationSessionModelSelection.selectedModelId,
       });
       return {
         conversationSessionId: newConversationSession.sessionId,
+        ...(newConversationSession.modelSelection ? { modelSelection: newConversationSession.modelSelection } : {}),
         conversationSessionEntries: newConversationSession.conversationSessionEntries,
       };
     },
@@ -276,7 +309,17 @@ export async function runInteractiveChat(input: {
     initialConversationSessionEntries,
     selectedModelId,
     ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
-    selectedReasoningEffort,
+    ...(selectedReasoningEffort ? { selectedReasoningEffort } : {}),
+    onConversationSessionModelSelectionChanged: (modelSelection: ConversationSessionModelSelection) => {
+      activeConversationSessionModelSelection = modelSelection;
+      conversationSessionStore.saveActiveConversationSessionModelSelection(modelSelection);
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.model_selection_saved", {
+        conversationSessionId: activeConversationSessionId,
+        selectedModelId: modelSelection.selectedModelId,
+        selectedModelDefaultReasoningEffort: modelSelection.selectedModelDefaultReasoningEffort ?? null,
+        selectedReasoningEffort: modelSelection.selectedReasoningEffort ?? null,
+      });
+    },
     ...(diagnosticLogger ? { diagnosticLogger } : {}),
   };
 
@@ -286,12 +329,42 @@ export async function runInteractiveChat(input: {
 
     await chatScreen.waitUntilExit();
     logCliDiagnosticEvent(diagnosticLogger, "interactive_chat.exited", {
-      selectedModelId: renderArgs.selectedModelId,
+      selectedModelId: activeConversationSessionModelSelection.selectedModelId,
     });
     return "";
   } finally {
     consoleFileLoggerInstallation.restore();
   }
+}
+
+function resolveInitialConversationSessionModelSelection(input: {
+  requestedModelId: string | undefined;
+  requestedReasoningEffort: ReasoningEffort | undefined;
+  persistedModelSelection: ConversationSessionModelSelection | undefined;
+}): InitialConversationSessionModelSelectionResolution {
+  const selectedModelId = input.requestedModelId ?? input.persistedModelSelection?.selectedModelId ?? DEFAULT_MODEL_ID;
+  const selectedModelDefaultReasoningEffort = input.requestedModelId
+    ? lookupKnownModelDefaultReasoningEffort(selectedModelId)
+    : input.persistedModelSelection?.selectedModelDefaultReasoningEffort ??
+      lookupKnownModelDefaultReasoningEffort(selectedModelId);
+  const selectedReasoningEffort = input.requestedReasoningEffort ?? (
+    input.requestedModelId
+      ? DEFAULT_REASONING_EFFORT
+      : input.persistedModelSelection
+        ? input.persistedModelSelection.selectedReasoningEffort
+        : DEFAULT_REASONING_EFFORT
+  );
+  const modelSelection: ConversationSessionModelSelection = {
+    selectedModelId,
+    ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
+    ...(selectedReasoningEffort ? { selectedReasoningEffort } : {}),
+  };
+
+  return {
+    modelSelection,
+    ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
+    ...(selectedReasoningEffort ? { selectedReasoningEffort } : {}),
+  };
 }
 
 function lookupKnownModelDefaultReasoningEffort(selectedModelId: string): ReasoningEffort | undefined {

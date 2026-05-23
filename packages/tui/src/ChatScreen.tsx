@@ -3,6 +3,7 @@ import type {
   AvailableAssistantModel,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
+  ConversationSessionModelSelection,
   ConversationSessionSummary,
   ReasoningEffort,
   UserPromptImageAttachment,
@@ -72,6 +73,9 @@ export type ChatScreenProps = {
   readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: () => ConversationSessionSwitchResult | void;
+  onConversationSessionModelSelectionChanged?:
+    | ((modelSelection: ConversationSessionModelSelection) => void | Promise<void>)
+    | undefined;
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
@@ -242,6 +246,7 @@ export function ChatScreen(props: ChatScreenProps) {
     exportCurrentConversationSession,
     compactCurrentConversationSession,
     clearCurrentConversationSession,
+    onConversationSessionModelSelectionChanged: props.onConversationSessionModelSelectionChanged,
     streamAssistantResponseForSubmittedPrompt,
     submitPendingToolApprovalDecision,
     scrollConversationMessagesToBottom,

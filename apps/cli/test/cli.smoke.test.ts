@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { ConversationSessionEntry, ConversationSessionSummary, ReasoningEffort } from "@buli/contracts";
+import type {
+  ConversationSessionEntry,
+  ConversationSessionModelSelection,
+  ConversationSessionSummary,
+  ReasoningEffort,
+} from "@buli/contracts";
 import {
   AssistantConversationRuntime,
   type ConversationAutoCompactionRequest,
@@ -265,6 +270,112 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
   });
 });
 
+test("runInteractiveChat uses persisted session model selection before app defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-persisted-model-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const persistedModelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.4",
+    selectedModelDefaultReasoningEffort: "low",
+    selectedReasoningEffort: "high",
+  };
+  const conversationSessionStoreStub = createConversationSessionStoreStub({
+    directoryPath: dir,
+    activeModelSelection: persistedModelSelection,
+  });
+  let receivedSelection: {
+    selectedModelId: string;
+    selectedModelDefaultReasoningEffort: ReasoningEffort | undefined;
+    selectedReasoningEffort: ReasoningEffort | undefined;
+  } | undefined;
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {},
+    renderChatScreen: async (renderInput) => {
+      receivedSelection = {
+        selectedModelId: renderInput.selectedModelId,
+        selectedModelDefaultReasoningEffort: renderInput.selectedModelDefaultReasoningEffort,
+        selectedReasoningEffort: renderInput.selectedReasoningEffort,
+      };
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(receivedSelection).toEqual({
+    selectedModelId: persistedModelSelection.selectedModelId,
+    selectedModelDefaultReasoningEffort: persistedModelSelection.selectedModelDefaultReasoningEffort,
+    selectedReasoningEffort: persistedModelSelection.selectedReasoningEffort,
+  });
+});
+
+test("runInteractiveChat lets startup model flags override persisted session settings", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-model-override-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({
+    directoryPath: dir,
+    activeModelSelection: {
+      selectedModelId: "gpt-5.4",
+      selectedModelDefaultReasoningEffort: "low",
+      selectedReasoningEffort: "high",
+    },
+  });
+  let receivedSelection: {
+    selectedModelId: string;
+    selectedModelDefaultReasoningEffort: ReasoningEffort | undefined;
+    selectedReasoningEffort: ReasoningEffort | undefined;
+  } | undefined;
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    selectedModelId: "gpt-5.5",
+    selectedReasoningEffort: "medium",
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {},
+    renderChatScreen: async (renderInput) => {
+      receivedSelection = {
+        selectedModelId: renderInput.selectedModelId,
+        selectedModelDefaultReasoningEffort: renderInput.selectedModelDefaultReasoningEffort,
+        selectedReasoningEffort: renderInput.selectedReasoningEffort,
+      };
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(receivedSelection).toEqual({
+    selectedModelId: "gpt-5.5",
+    selectedModelDefaultReasoningEffort: "medium",
+    selectedReasoningEffort: "medium",
+  });
+  expect(conversationSessionStoreStub.savedModelSelections.at(-1)).toEqual({
+    selectedModelId: "gpt-5.5",
+    selectedModelDefaultReasoningEffort: "medium",
+    selectedReasoningEffort: "medium",
+  });
+});
+
 test("runInteractiveChat restores console logging after the renderer exits", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-console-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
@@ -340,6 +451,8 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     },
   ];
   const savedConversationSessionEntries: ConversationSessionEntry[][] = [];
+  const savedModelSelections: ConversationSessionModelSelection[] = [];
+  let activeModelSelection: ConversationSessionModelSelection | undefined;
   let listedConversationSessions: ConversationSessionSummary[] = [
     {
       sessionId: "session-a",
@@ -362,6 +475,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     loadActiveConversationSession: () => ({
       sessionId: "session-a",
       filePath: join(dir, "session-a.jsonl"),
+      modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),
     loadConversationSessionEntries: () => initialConversationSessionEntries,
@@ -371,15 +485,24 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     saveConversationSessionEntries: (conversationSessionEntries) => {
       savedConversationSessionEntries.push([...conversationSessionEntries]);
     },
-    startNewConversationSession: () => ({
-      sessionId: "session-new",
-      filePath: join(dir, "session-new.jsonl"),
-      conversationSessionEntries: [],
-    }),
+    saveActiveConversationSessionModelSelection: (modelSelection) => {
+      activeModelSelection = modelSelection;
+      savedModelSelections.push(modelSelection);
+    },
+    startNewConversationSession: (startNewConversationSessionInput) => {
+      activeModelSelection = startNewConversationSessionInput?.modelSelection;
+      return {
+        sessionId: "session-new",
+        filePath: join(dir, "session-new.jsonl"),
+        modelSelection: activeModelSelection,
+        conversationSessionEntries: [],
+      };
+    },
     listConversationSessions: () => listedConversationSessions,
     switchActiveConversationSession: (sessionId) => ({
       sessionId,
       filePath: join(dir, `${sessionId}.jsonl`),
+      modelSelection: undefined,
       conversationSessionEntries: [
         {
           entryKind: "user_prompt",
@@ -395,6 +518,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       return {
         sessionId: "session-a",
         filePath: join(dir, "session-a.jsonl"),
+        modelSelection: undefined,
         conversationSessionEntries: initialConversationSessionEntries,
       };
     },
@@ -403,20 +527,30 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   let capturedClearConversation: (() => void) | undefined;
   let capturedSwitchConversationSession:
     | ((conversationSessionId: string) =>
-      | Promise<{ conversationSessionId: string; conversationSessionEntries: readonly ConversationSessionEntry[] }>
-      | { conversationSessionId: string; conversationSessionEntries: readonly ConversationSessionEntry[] })
+      | Promise<{
+        conversationSessionId: string;
+        modelSelection?: ConversationSessionModelSelection | undefined;
+        conversationSessionEntries: readonly ConversationSessionEntry[];
+      }>
+      | {
+        conversationSessionId: string;
+        modelSelection?: ConversationSessionModelSelection | undefined;
+        conversationSessionEntries: readonly ConversationSessionEntry[];
+      })
     | undefined;
   let capturedDeleteConversationSession:
     | ((conversationSessionId: string) =>
       | Promise<{
         deletedConversationSessionId: string;
         activeConversationSessionId: string;
+        activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
         activeConversationSessionEntries: readonly ConversationSessionEntry[];
         conversationSessions: readonly ConversationSessionSummary[];
       }>
       | {
         deletedConversationSessionId: string;
         activeConversationSessionId: string;
+        activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
         activeConversationSessionEntries: readonly ConversationSessionEntry[];
         conversationSessions: readonly ConversationSessionSummary[];
       })
@@ -650,3 +784,57 @@ test("main prints usage for an unknown command", async () => {
   expect(outputs).toEqual([CLI_USAGE]);
   expect(Number(observedExitCode)).toBe(1);
 });
+
+function createConversationSessionStoreStub(input: {
+  directoryPath: string;
+  activeModelSelection?: ConversationSessionModelSelection | undefined;
+  initialConversationSessionEntries?: readonly ConversationSessionEntry[] | undefined;
+}): {
+  conversationSessionStore: ConversationSessionStore;
+  savedModelSelections: ConversationSessionModelSelection[];
+} {
+  const initialConversationSessionEntries = input.initialConversationSessionEntries ?? [];
+  const savedModelSelections: ConversationSessionModelSelection[] = [];
+  let activeModelSelection = input.activeModelSelection;
+  const conversationSessionStore = {
+    filePath: join(input.directoryPath, "conversation-session.json"),
+    promptCacheKey: "buli:test-workspace",
+    loadActiveConversationSession: () => ({
+      sessionId: "session-a",
+      filePath: join(input.directoryPath, "session-a.jsonl"),
+      modelSelection: activeModelSelection,
+      conversationSessionEntries: initialConversationSessionEntries,
+    }),
+    loadConversationSessionEntries: () => initialConversationSessionEntries,
+    appendConversationSessionEntry: () => {},
+    saveActiveConversationSessionModelSelection: (modelSelection) => {
+      activeModelSelection = modelSelection;
+      savedModelSelections.push(modelSelection);
+    },
+    saveConversationSessionEntries: () => {},
+    startNewConversationSession: (startNewConversationSessionInput) => {
+      activeModelSelection = startNewConversationSessionInput?.modelSelection;
+      return {
+        sessionId: "session-new",
+        filePath: join(input.directoryPath, "session-new.jsonl"),
+        modelSelection: activeModelSelection,
+        conversationSessionEntries: [],
+      };
+    },
+    listConversationSessions: () => [],
+    switchActiveConversationSession: (sessionId) => ({
+      sessionId,
+      filePath: join(input.directoryPath, `${sessionId}.jsonl`),
+      modelSelection: activeModelSelection,
+      conversationSessionEntries: initialConversationSessionEntries,
+    }),
+    deleteConversationSession: () => ({
+      sessionId: "session-a",
+      filePath: join(input.directoryPath, "session-a.jsonl"),
+      modelSelection: activeModelSelection,
+      conversationSessionEntries: initialConversationSessionEntries,
+    }),
+  } satisfies ConversationSessionStore;
+
+  return { conversationSessionStore, savedModelSelections };
+}

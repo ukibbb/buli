@@ -142,6 +142,8 @@ export {
   ConversationSessionEntryRecordSchema,
   ConversationSessionHeaderRecordSchema,
   ConversationSessionJsonLineRecordSchema,
+  ConversationSessionModelSelectionSchema,
+  ConversationSessionSettingsRecordSchema,
   ConversationSessionSummarySchema,
 } from "./conversationSessionRecord.ts";
 export type {
@@ -176,6 +178,8 @@ export type {
   ConversationSessionEntryRecord,
   ConversationSessionHeaderRecord,
   ConversationSessionJsonLineRecord,
+  ConversationSessionModelSelection,
+  ConversationSessionSettingsRecord,
   ConversationSessionSummary,
 } from "./conversationSessionRecord.ts";
 export {

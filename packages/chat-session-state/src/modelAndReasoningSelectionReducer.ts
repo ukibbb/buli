@@ -1,4 +1,4 @@
-import type { AvailableAssistantModel } from "@buli/contracts";
+import type { AvailableAssistantModel, ConversationSessionModelSelection } from "@buli/contracts";
 import type { ChatSessionState, ReasoningEffortChoice } from "./chatSessionState.ts";
 
 function clampHighlightIndex(index: number, numberOfChoices: number): number {
@@ -27,6 +27,32 @@ export function showModelSelectionLoadingState(chatSessionState: ChatSessionStat
   return {
     ...chatSessionState,
     modelAndReasoningSelectionState: { step: "loading_available_models" },
+  };
+}
+
+export function readConversationSessionModelSelectionFromChatSessionState(
+  chatSessionState: ChatSessionState,
+): ConversationSessionModelSelection {
+  return {
+    selectedModelId: chatSessionState.selectedModelId,
+    ...(chatSessionState.selectedModelDefaultReasoningEffort !== undefined
+      ? { selectedModelDefaultReasoningEffort: chatSessionState.selectedModelDefaultReasoningEffort }
+      : {}),
+    ...(chatSessionState.selectedReasoningEffort !== undefined
+      ? { selectedReasoningEffort: chatSessionState.selectedReasoningEffort }
+      : {}),
+  };
+}
+
+export function applyConversationSessionModelSelectionToChatSessionState(
+  chatSessionState: ChatSessionState,
+  modelSelection: ConversationSessionModelSelection,
+): ChatSessionState {
+  return {
+    ...chatSessionState,
+    selectedModelId: modelSelection.selectedModelId,
+    selectedModelDefaultReasoningEffort: modelSelection.selectedModelDefaultReasoningEffort,
+    selectedReasoningEffort: modelSelection.selectedReasoningEffort,
   };
 }
 

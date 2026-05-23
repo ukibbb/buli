@@ -3,6 +3,7 @@ import type {
   AssistantResponseEvent,
   AvailableAssistantModel,
   ConversationSessionEntry,
+  ConversationSessionModelSelection,
   ConversationSessionSummary,
 } from "@buli/contracts";
 import type {
@@ -112,6 +113,7 @@ async function renderChatScreen(input: {
     input: ConversationAutoCompactionRequest,
   ) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult;
   onConversationCleared?: () => void;
+  onConversationSessionModelSelectionChanged?: (modelSelection: ConversationSessionModelSelection) => void;
 } = {}): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
     <ChatScreen
@@ -130,6 +132,9 @@ async function renderChatScreen(input: {
         ? { autoCompactCurrentConversationSession: input.autoCompactCurrentConversationSession }
         : {})}
       {...(input.onConversationCleared ? { onConversationCleared: input.onConversationCleared } : {})}
+      {...(input.onConversationSessionModelSelectionChanged
+        ? { onConversationSessionModelSelectionChanged: input.onConversationSessionModelSelectionChanged }
+        : {})}
     />,
     { width: 120, height: 28 },
   );
@@ -802,6 +807,35 @@ test("ChatScreen shows the model default reasoning label after choosing the mode
   const selectedDefaultReasoningFrame = await renderedChatScreen.pressEnter();
   expect(selectedDefaultReasoningFrame).toContain("gpt-5.4");
   expect(selectedDefaultReasoningFrame).toContain("medium");
+});
+
+test("ChatScreen reports committed model selection changes", async () => {
+  const committedModelSelections: ConversationSessionModelSelection[] = [];
+  const renderedChatScreen = await renderChatScreen({
+    loadAvailableAssistantModels: async () => [
+      {
+        id: "gpt-5.4",
+        displayName: "GPT 5.4",
+        defaultReasoningEffort: "medium",
+        supportedReasoningEfforts: ["low", "medium", "high"],
+      },
+    ],
+    onConversationSessionModelSelectionChanged: (modelSelection) => {
+      committedModelSelections.push(modelSelection);
+    },
+  });
+
+  await renderedChatScreen.typeText("/model");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.pressEnter();
+
+  expect(committedModelSelections).toEqual([
+    {
+      selectedModelId: "gpt-5.4",
+      selectedModelDefaultReasoningEffort: "medium",
+    },
+  ]);
 });
 
 test("ChatScreen toggles reasoning summary visibility through thinking slash command", async () => {

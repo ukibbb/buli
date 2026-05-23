@@ -134,11 +134,12 @@ Current persistence supports:
 - `/sessions` selection across saved sessions
 - `/clear` creating a new persisted session
 - `/export-session` HTML transcript export
+- selected model and reasoning settings per conversation session
 - normal TUI shutdown interrupts any active assistant turn and waits for runtime settlement before returning
 
 Pending approval UI state is not restored after restart. If shutdown or restart leaves a persisted tool call without a result, hydration marks that tool call as interrupted instead of showing a stale approval prompt.
 
-It does not yet persist live React/runtime object state, selected model/reasoning settings per session, or branch UI.
+It does not yet persist live React/runtime object state or branch UI.
 
 ## Why This Shape Works
 
