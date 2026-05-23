@@ -1,31 +1,88 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { resolveContextMeterUsedTokenColor } from "../../src/components/ContextWindowMeter.tsx";
+import { testRender } from "../testRenderWithCleanup.ts";
+import {
+  ContextWindowMeter,
+  resolveContextMeterUsedTokenColor,
+} from "../../src/components/ContextWindowMeter.tsx";
 
-test("used color is muted when used count is undefined", () => {
-  expect(resolveContextMeterUsedTokenColor(undefined, 400_000)).toBe(chatScreenTheme.textMuted);
+describe("resolveContextMeterUsedTokenColor", () => {
+  test("used color is muted when used count is undefined", () => {
+    expect(resolveContextMeterUsedTokenColor(undefined, 400_000)).toBe(chatScreenTheme.textMuted);
+  });
+
+  test("used color is muted when capacity is undefined", () => {
+    expect(resolveContextMeterUsedTokenColor(1000, undefined)).toBe(chatScreenTheme.textMuted);
+  });
+
+  test("fill below 60 percent colors used token as accentGreen", () => {
+    expect(resolveContextMeterUsedTokenColor(50_000, 100_000)).toBe(chatScreenTheme.accentGreen);
+  });
+
+  test("fill at exactly 60 percent colors used token as accentAmber", () => {
+    expect(resolveContextMeterUsedTokenColor(60_000, 100_000)).toBe(chatScreenTheme.accentAmber);
+  });
+
+  test("fill between 60 and 85 percent colors used token as accentAmber", () => {
+    expect(resolveContextMeterUsedTokenColor(80_000, 100_000)).toBe(chatScreenTheme.accentAmber);
+  });
+
+  test("fill at exactly 85 percent colors used token as accentPink", () => {
+    expect(resolveContextMeterUsedTokenColor(85_000, 100_000)).toBe(chatScreenTheme.accentPink);
+  });
+
+  test("fill above 85 percent colors used token as accentPink", () => {
+    expect(resolveContextMeterUsedTokenColor(99_000, 100_000)).toBe(chatScreenTheme.accentPink);
+  });
 });
 
-test("used color is muted when capacity is undefined", () => {
-  expect(resolveContextMeterUsedTokenColor(1000, undefined)).toBe(chatScreenTheme.textMuted);
-});
+describe("ContextWindowMeter (opentui)", () => {
+  test("renders_fallback_when_no_tokens_used", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={undefined} />,
+      { width: 40, height: 3 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("--");
+  });
 
-test("fill below 60 percent colors used token as accentGreen", () => {
-  expect(resolveContextMeterUsedTokenColor(50_000, 100_000)).toBe(chatScreenTheme.accentGreen);
-});
+  test("renders_used_token_count_when_no_capacity", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ContextWindowMeter totalTokensUsed={500} contextWindowTokenCapacity={undefined} />,
+      { width: 40, height: 3 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("500");
+  });
 
-test("fill at exactly 60 percent colors used token as accentAmber", () => {
-  expect(resolveContextMeterUsedTokenColor(60_000, 100_000)).toBe(chatScreenTheme.accentAmber);
-});
+  test("renders_used_and_limit_when_capacity_known", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ContextWindowMeter totalTokensUsed={50000} contextWindowTokenCapacity={200000} />,
+      { width: 40, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("50k / 200k");
+    expect(frame).not.toContain("ctx");
+  });
 
-test("fill between 60 and 85 percent colors used token as accentAmber", () => {
-  expect(resolveContextMeterUsedTokenColor(80_000, 100_000)).toBe(chatScreenTheme.accentAmber);
-});
+  test("renders_decimal_thousands_without_ctx_label", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ContextWindowMeter totalTokensUsed={22_200} contextWindowTokenCapacity={320_000} />,
+      { width: 60, height: 2 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("22.2k / 320k");
+    expect(frame).not.toContain("ctx");
+  });
 
-test("fill at exactly 85 percent colors used token as accentPink", () => {
-  expect(resolveContextMeterUsedTokenColor(85_000, 100_000)).toBe(chatScreenTheme.accentPink);
-});
-
-test("fill above 85 percent colors used token as accentPink", () => {
-  expect(resolveContextMeterUsedTokenColor(99_000, 100_000)).toBe(chatScreenTheme.accentPink);
+  test("falls_back_to_double_dash_without_usage", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={100_000} />,
+      { width: 30, height: 2 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("--");
+  });
 });
