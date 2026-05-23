@@ -171,3 +171,66 @@ test("listPromptContextCandidates starts from the configured directory and allow
     },
   ]);
 });
+
+test("listPromptContextCandidates resolves multi-level parent path queries outside the browse root", async () => {
+  const desktopRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-parent-outside-"));
+  const repositoryPath = join(desktopRootPath, "workspaces", "client", "repo");
+  const sharedFilePath = join(desktopRootPath, "shared-notes.md");
+  await mkdir(repositoryPath, { recursive: true });
+  await writeFile(sharedFilePath, "shared", "utf8");
+  const realSharedFilePath = await realpath(sharedFilePath);
+
+  await expect(
+    listPromptContextCandidates({
+      promptContextBrowseRootPath: repositoryPath,
+      promptContextQueryText: "../../../sha",
+    }),
+  ).resolves.toEqual([
+    {
+      kind: "file",
+      displayPath: toPortablePath(realSharedFilePath),
+      promptReferenceText: `@${toPortablePath(realSharedFilePath)}`,
+    },
+  ]);
+});
+
+test("listPromptContextCandidates resolves quoted absolute path queries outside the browse root", async () => {
+  const desktopRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-absolute-outside-"));
+  const repositoryPath = join(desktopRootPath, "repo");
+  const externalDirectoryPath = join(desktopRootPath, "External Notes");
+  const targetFilePath = join(externalDirectoryPath, "target note.md");
+  await mkdir(repositoryPath);
+  await mkdir(externalDirectoryPath);
+  await writeFile(targetFilePath, "target", "utf8");
+  const realExternalDirectoryPath = await realpath(externalDirectoryPath);
+  const realTargetFilePath = await realpath(targetFilePath);
+
+  await expect(
+    listPromptContextCandidates({
+      promptContextBrowseRootPath: repositoryPath,
+      promptContextQueryText: `"${toPortablePath(realExternalDirectoryPath)}/tar`,
+    }),
+  ).resolves.toEqual([
+    {
+      kind: "file",
+      displayPath: toPortablePath(realTargetFilePath),
+      promptReferenceText: `@"${toPortablePath(realTargetFilePath)}"`,
+    },
+  ]);
+});
+
+test("listPromptContextCandidates keeps fuzzy search scoped to the browse root", async () => {
+  const desktopRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-fuzzy-scope-"));
+  const repositoryPath = join(desktopRootPath, "repo");
+  const outsideDirectoryPath = join(desktopRootPath, "outside");
+  await mkdir(repositoryPath);
+  await mkdir(outsideDirectoryPath);
+  await writeFile(join(outsideDirectoryPath, "outside-target.md"), "outside", "utf8");
+
+  await expect(
+    listPromptContextCandidates({
+      promptContextBrowseRootPath: repositoryPath,
+      promptContextQueryText: "outside-target",
+    }),
+  ).resolves.toEqual([]);
+});

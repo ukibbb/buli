@@ -5,7 +5,6 @@ import { buildPromptContextFileSnapshotText } from "./buildPromptContextFileSnap
 import { parsePromptContextReferencesFromPromptText } from "./parsePromptContextReferencesFromPromptText.ts";
 import {
   buildPromptContextDisplayPathFromAbsolutePath,
-  isPathInsidePromptContextBrowseRoot,
   resolvePromptContextPathFromReference,
   resolvePromptContextPathScope,
   type PromptContextPathScope,
@@ -50,29 +49,42 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
     seenPromptContextKeys.add(dedupeKey);
     if (resolvedPromptContextReference.kind === "unresolved") {
       promptContextBlocks.push(
-        `<context_reference_error reference="${escapeModelFacingXmlAttributeValue(parsedPromptContextReference.promptReferenceText)}">\n${escapeModelFacingXmlText(resolvedPromptContextReference.errorMessage)}\n</context_reference_error>`,
-      );
-      continue;
-    }
-
-    if (resolvedPromptContextReference.entryType === "directory") {
-      promptContextBlocks.push(
-        await buildPromptContextDirectorySnapshotText({
-          absoluteDirectoryPath: resolvedPromptContextReference.absolutePath,
-          displayPath: resolvedPromptContextReference.displayPath,
-          ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+        buildPromptContextReferenceErrorBlock({
+          promptReferenceText: parsedPromptContextReference.promptReferenceText,
+          errorMessage: resolvedPromptContextReference.errorMessage,
         }),
       );
       continue;
     }
 
-    promptContextBlocks.push(
-      await buildPromptContextFileSnapshotText({
-        absoluteFilePath: resolvedPromptContextReference.absolutePath,
-        displayPath: resolvedPromptContextReference.displayPath,
-        ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-      }),
-    );
+    try {
+      if (resolvedPromptContextReference.entryType === "directory") {
+        promptContextBlocks.push(
+          await buildPromptContextDirectorySnapshotText({
+            absoluteDirectoryPath: resolvedPromptContextReference.absolutePath,
+            displayPath: resolvedPromptContextReference.displayPath,
+            ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+          }),
+        );
+        continue;
+      }
+
+      promptContextBlocks.push(
+        await buildPromptContextFileSnapshotText({
+          absoluteFilePath: resolvedPromptContextReference.absolutePath,
+          displayPath: resolvedPromptContextReference.displayPath,
+          ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+        }),
+      );
+    } catch {
+      throwIfPromptContextExpansionAborted(input.abortSignal);
+      promptContextBlocks.push(
+        buildPromptContextReferenceErrorBlock({
+          promptReferenceText: parsedPromptContextReference.promptReferenceText,
+          errorMessage: "The referenced path could not be read.",
+        }),
+      );
+    }
   }
 
   if (promptContextBlocks.length === 0) {
@@ -80,6 +92,13 @@ export async function buildModelFacingPromptTextFromPromptContextReferences(inpu
   }
 
   return `${input.promptText}\n\nAttached prompt context:\n\n${promptContextBlocks.join("\n\n")}`;
+}
+
+function buildPromptContextReferenceErrorBlock(input: {
+  promptReferenceText: string;
+  errorMessage: string;
+}): string {
+  return `<context_reference_error reference="${escapeModelFacingXmlAttributeValue(input.promptReferenceText)}">\n${escapeModelFacingXmlText(input.errorMessage)}\n</context_reference_error>`;
 }
 
 async function resolvePromptContextReference(input: {
@@ -116,13 +135,6 @@ async function resolvePromptContextReference(input: {
 
     const candidateRealPath = await realpath(candidateAbsolutePath);
     throwIfPromptContextExpansionAborted(input.abortSignal);
-    if (!isPathInsidePromptContextBrowseRoot(input.promptContextPathScope.promptContextBrowseRootPath, candidateRealPath)) {
-      return {
-        kind: "unresolved",
-        errorMessage: "The referenced path resolves outside the allowed prompt-context root.",
-      };
-    }
-
     if (!candidateStats.isFile() && !candidateStats.isDirectory()) {
       return {
         kind: "unresolved",
@@ -145,7 +157,7 @@ async function resolvePromptContextReference(input: {
     throwIfPromptContextExpansionAborted(input.abortSignal);
     return {
       kind: "unresolved",
-      errorMessage: "The referenced path does not exist under the allowed prompt-context root.",
+      errorMessage: "The referenced path does not exist or is not readable.",
     };
   }
 }

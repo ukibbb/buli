@@ -322,10 +322,6 @@ async function resolvePromptContextQueryDirectoryRealPath(input: {
     }
 
     const candidateRealPath = await realpath(candidateAbsolutePath);
-    if (!isPathInsidePromptContextBrowseRoot(input.promptContextPathScope.promptContextBrowseRootPath, candidateRealPath)) {
-      return undefined;
-    }
-
     return candidateRealPath;
   } catch {
     return undefined;
