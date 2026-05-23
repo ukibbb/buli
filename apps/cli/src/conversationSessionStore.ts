@@ -123,12 +123,12 @@ export class FileConversationSessionStore implements ConversationSessionStore {
 
   appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void {
     this.runWithConversationSessionWriteLock(() => {
-      const activeConversationSession = this.loadActiveConversationSessionWithoutLock();
-      const activeConversationSessionFile = loadRecoverableConversationSessionFile({
-        filePath: activeConversationSession.filePath,
+      const activeConversationSessionFilePath = this.loadActiveConversationSessionFilePathWithoutLock();
+      const activeConversationSessionFileMetadata = loadRecoverableConversationSessionFileMetadata({
+        filePath: activeConversationSessionFilePath,
         nowMs: this.nowMs,
       });
-      const parentSessionEntryId = activeConversationSessionFile.entryRecords.at(-1)?.sessionEntryId ?? null;
+      const parentSessionEntryId = activeConversationSessionFileMetadata.entryRecords.at(-1)?.sessionEntryId ?? null;
       const conversationSessionEntryRecord: ConversationSessionEntryRecord = {
         recordKind: "conversation_entry",
         sessionEntryId: this.createSessionEntryId(),
@@ -138,9 +138,10 @@ export class FileConversationSessionStore implements ConversationSessionStore {
       };
 
       appendConversationSessionTextFileLineAtomically({
-        filePath: activeConversationSession.filePath,
+        filePath: activeConversationSessionFilePath,
         lineText: JSON.stringify(conversationSessionEntryRecord),
       });
+      this.writeActiveConversationSessionId(activeConversationSessionFileMetadata.headerRecord.sessionId);
     });
   }
 
@@ -254,6 +255,33 @@ export class FileConversationSessionStore implements ConversationSessionStore {
     }
 
     return this.startNewConversationSessionWithoutLock();
+  }
+
+  private loadActiveConversationSessionFilePathWithoutLock(): string {
+    this.ensureSessionDirectoriesExist();
+
+    const activeSessionFilePath = this.findConversationSessionFilePathById(this.readActiveConversationSessionId());
+    if (activeSessionFilePath) {
+      return activeSessionFilePath;
+    }
+
+    if (this.listConversationSessionFiles().length === 0) {
+      const migratedConversationSession = this.importLegacySnapshotIfPresent();
+      if (migratedConversationSession) {
+        return migratedConversationSession.filePath;
+      }
+    }
+
+    const mostRecentlyUpdatedSessionFilePath = this.listConversationSessionsWithFilePaths()[0]?.filePath;
+    if (mostRecentlyUpdatedSessionFilePath) {
+      const mostRecentlyUpdatedSessionHeader = loadConversationSessionFileHeaderRecord({
+        filePath: mostRecentlyUpdatedSessionFilePath,
+      });
+      this.writeActiveConversationSessionId(mostRecentlyUpdatedSessionHeader.sessionId);
+      return mostRecentlyUpdatedSessionFilePath;
+    }
+
+    return this.startNewConversationSessionWithoutLock().filePath;
   }
 
   private startNewConversationSessionWithoutLock(input: StartNewConversationSessionInput = {}): ActiveConversationSession {

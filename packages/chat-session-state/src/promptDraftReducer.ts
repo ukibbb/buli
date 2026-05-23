@@ -58,6 +58,9 @@ function appendConversationMessage(input: {
     }),
     {},
   );
+  const appendedConversationMessagePartCount = Object.keys(appendedConversationMessagePartsById).filter(
+    (conversationMessagePartId) => !input.chatSessionState.conversationMessagePartsById[conversationMessagePartId],
+  ).length;
 
   return {
     ...input.chatSessionState,
@@ -70,6 +73,7 @@ function appendConversationMessage(input: {
       ...appendedConversationMessagePartsById,
     },
     orderedConversationMessageIds: [...input.chatSessionState.orderedConversationMessageIds, input.conversationMessage.id],
+    conversationMessagePartCount: input.chatSessionState.conversationMessagePartCount + appendedConversationMessagePartCount,
   };
 }
 

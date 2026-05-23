@@ -108,7 +108,13 @@ test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at c
 });
 
 test("buildChatScreenViewModel hydrates only the requested visible tail for large transcripts", () => {
-  const chatSessionState = createChatSessionStateWithTranscript({ conversationMessageCount: 10_000 });
+  const readConversationMessageIds: string[] = [];
+  const chatSessionState = createChatSessionStateWithTranscript({
+    conversationMessageCount: 10_000,
+    onConversationMessageRead: (conversationMessageId) => {
+      readConversationMessageIds.push(conversationMessageId);
+    },
+  });
 
   const viewModel = buildChatScreenViewModel({
     chatSessionState,
@@ -123,6 +129,20 @@ test("buildChatScreenViewModel hydrates only the requested visible tail for larg
   expect(viewModel.conversationTranscriptWindow.visibleConversationMessageCount).toBe(12);
   expect(viewModel.conversationTranscriptWindow.hiddenOlderConversationMessageCount).toBe(9_988);
   expect(viewModel.conversationTranscriptWindow.visibleConversationMessages.map((message) => message.id)).toEqual([
+    "message-9988",
+    "message-9989",
+    "message-9990",
+    "message-9991",
+    "message-9992",
+    "message-9993",
+    "message-9994",
+    "message-9995",
+    "message-9996",
+    "message-9997",
+    "message-9998",
+    "message-9999",
+  ]);
+  expect(readConversationMessageIds).toEqual([
     "message-9988",
     "message-9989",
     "message-9990",
@@ -190,7 +210,10 @@ test("buildChatScreenViewModel derives the short mode label and the destination 
   expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentPink);
 });
 
-function createChatSessionStateWithTranscript(input: { conversationMessageCount: number }): ChatSessionState {
+function createChatSessionStateWithTranscript(input: {
+  conversationMessageCount: number;
+  onConversationMessageRead?: (conversationMessageId: string) => void;
+}): ChatSessionState {
   const conversationMessagesById: Record<string, ConversationMessage> = {};
   const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
   const orderedConversationMessageIds: string[] = [];
@@ -198,14 +221,21 @@ function createChatSessionStateWithTranscript(input: { conversationMessageCount:
   for (let messageIndex = 0; messageIndex < input.conversationMessageCount; messageIndex += 1) {
     const messageId = `message-${messageIndex}`;
     const partId = `part-${messageIndex}`;
-    orderedConversationMessageIds.push(messageId);
-    conversationMessagesById[messageId] = {
+    const conversationMessage: ConversationMessage = {
       id: messageId,
       role: "user",
       messageStatus: "completed",
       createdAtMs: messageIndex,
       partIds: [partId],
     };
+    orderedConversationMessageIds.push(messageId);
+    Object.defineProperty(conversationMessagesById, messageId, {
+      enumerable: true,
+      get() {
+        input.onConversationMessageRead?.(messageId);
+        return conversationMessage;
+      },
+    });
     conversationMessagePartsById[partId] = {
       id: partId,
       partKind: "user_text",
@@ -218,5 +248,6 @@ function createChatSessionStateWithTranscript(input: { conversationMessageCount:
     conversationMessagesById,
     conversationMessagePartsById,
     orderedConversationMessageIds,
+    conversationMessagePartCount: input.conversationMessageCount,
   };
 }

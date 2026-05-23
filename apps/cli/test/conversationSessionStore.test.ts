@@ -373,6 +373,54 @@ test("FileConversationSessionStore lists sessions from metadata without validati
   ]);
 });
 
+test("FileConversationSessionStore appends using entry metadata without validating full previous payloads", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-metadata-append-"));
+  const conversationSessionStore = new FileConversationSessionStore({
+    filePath: join(directoryPath, "legacy-session.json"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: () => "entry-2",
+    nowMs: createQueuedNumberFactory([1000, 1002]),
+  });
+  const activeConversationSession = conversationSessionStore.startNewConversationSession();
+  const headerRecordText = (await readFile(activeConversationSession.filePath, "utf8")).trim();
+  const invalidToolCallEntryRecord = {
+    recordKind: "conversation_entry" as const,
+    sessionEntryId: "entry-1",
+    parentSessionEntryId: null,
+    recordedAtMs: 1001,
+    conversationSessionEntry: {
+      entryKind: "tool_call",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+      },
+      unvalidatedLargePayloadText: "x".repeat(10_000),
+    },
+  };
+  await writeFile(
+    activeConversationSession.filePath,
+    [headerRecordText, JSON.stringify(invalidToolCallEntryRecord), ""].join("\n"),
+    "utf8",
+  );
+
+  conversationSessionStore.appendConversationSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Appended after metadata-only parent lookup.",
+  });
+
+  const persistedJsonLines = (await readFile(activeConversationSession.filePath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as unknown);
+  expect(persistedJsonLines).toMatchObject([
+    { recordKind: "conversation_session", sessionId: "session-1" },
+    { recordKind: "conversation_entry", sessionEntryId: "entry-1", parentSessionEntryId: null },
+    { recordKind: "conversation_entry", sessionEntryId: "entry-2", parentSessionEntryId: "entry-1" },
+  ]);
+});
+
 test("FileConversationSessionStore deletes a session by header without validating entry payloads", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-metadata-delete-"));
   const conversationSessionStore = new FileConversationSessionStore({
@@ -753,6 +801,15 @@ function createQueuedStringFactory(queuedValues: readonly string[]): () => strin
     const queuedValue = queuedValues[nextValueIndex];
     nextValueIndex += 1;
     return queuedValue ?? `queued-value-${nextValueIndex}`;
+  };
+}
+
+function createQueuedNumberFactory(queuedValues: readonly number[]): () => number {
+  let nextValueIndex = 0;
+  return () => {
+    const queuedValue = queuedValues[nextValueIndex];
+    nextValueIndex += 1;
+    return queuedValue ?? nextValueIndex;
   };
 }
 

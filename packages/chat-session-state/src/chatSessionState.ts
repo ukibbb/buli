@@ -102,6 +102,7 @@ export type ChatSessionState = {
   conversationMessagesById: Record<string, ConversationMessage>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   orderedConversationMessageIds: string[];
+  conversationMessagePartCount: number;
   pendingToolApprovalRequest: PendingToolApprovalRequest | undefined;
   isReasoningSummaryVisible: boolean;
   promptContextSelectionState: PromptContextSelectionState;
@@ -137,6 +138,7 @@ export function createInitialChatSessionState(input: {
     conversationMessagesById: {},
     conversationMessagePartsById: {},
     orderedConversationMessageIds: [],
+    conversationMessagePartCount: 0,
     pendingToolApprovalRequest: undefined,
     isReasoningSummaryVisible: true,
     promptContextSelectionState: { step: "hidden" },

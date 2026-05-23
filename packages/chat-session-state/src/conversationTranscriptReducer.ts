@@ -18,6 +18,7 @@ type HydratedConversationTranscript = {
   conversationMessagesById: Record<string, ConversationMessage>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   orderedConversationMessageIds: string[];
+  conversationMessagePartCount: number;
 };
 
 type HydratedToolResultPartBase = {
@@ -41,6 +42,7 @@ export function clearConversationTranscript(chatSessionState: ChatSessionState):
     conversationMessagesById: {},
     conversationMessagePartsById: {},
     orderedConversationMessageIds: [],
+    conversationMessagePartCount: 0,
     pendingToolApprovalRequest: undefined,
     promptContextSelectionState: { step: "hidden" },
     slashCommandSelectionState: { step: "hidden" },
@@ -61,6 +63,7 @@ export function hydrateConversationTranscriptFromSessionEntries(
     conversationMessagesById: hydratedConversationTranscript.conversationMessagesById,
     conversationMessagePartsById: hydratedConversationTranscript.conversationMessagePartsById,
     orderedConversationMessageIds: hydratedConversationTranscript.orderedConversationMessageIds,
+    conversationMessagePartCount: hydratedConversationTranscript.conversationMessagePartCount,
   };
 }
 
@@ -390,6 +393,7 @@ function buildHydratedConversationTranscript(
     conversationMessagesById,
     conversationMessagePartsById,
     orderedConversationMessageIds,
+    conversationMessagePartCount: Object.keys(conversationMessagePartsById).length,
   };
 }
 

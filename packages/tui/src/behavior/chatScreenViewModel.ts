@@ -68,9 +68,8 @@ export function buildChatScreenViewModel(input: {
   const totalContextTokensUsed = input.chatSessionState.latestContextWindowUsage
     ? calculateContextTokensUsedFromTokenUsage(input.chatSessionState.latestContextWindowUsage)
     : undefined;
-  const orderedConversationSummary = summarizeOrderedConversationMessages(input.chatSessionState);
   const conversationTranscriptMessageIndexWindow = buildConversationTranscriptMessageIndexWindow({
-    totalConversationMessageCount: orderedConversationSummary.conversationMessageCount,
+    totalConversationMessageCount: input.chatSessionState.orderedConversationMessageIds.length,
     requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
   });
   const visibleConversationMessages = listVisibleOrderedConversationMessages({
@@ -110,32 +109,9 @@ export function buildChatScreenViewModel(input: {
       hiddenOlderConversationMessageCount: conversationTranscriptMessageIndexWindow.hiddenOlderConversationMessageCount,
       olderConversationMessageRevealCount: conversationTranscriptMessageIndexWindow.olderConversationMessageRevealCount,
     },
-    orderedConversationMessagePartCount: orderedConversationSummary.conversationMessagePartCount,
+    orderedConversationMessagePartCount: input.chatSessionState.conversationMessagePartCount,
     shouldRenderMinimumHeightPromptStrip: input.terminalSizeTierForChatScreen === minimumTerminalSizeTier,
   };
-}
-
-type OrderedConversationSummary = {
-  conversationMessageCount: number;
-  conversationMessagePartCount: number;
-};
-
-function summarizeOrderedConversationMessages(chatSessionState: ChatSessionState): OrderedConversationSummary {
-  return chatSessionState.orderedConversationMessageIds.reduce<OrderedConversationSummary>(
-    (orderedConversationSummary, conversationMessageId) => {
-      const conversationMessage = chatSessionState.conversationMessagesById[conversationMessageId];
-      if (!conversationMessage) {
-        return orderedConversationSummary;
-      }
-
-      return {
-        conversationMessageCount: orderedConversationSummary.conversationMessageCount + 1,
-        conversationMessagePartCount:
-          orderedConversationSummary.conversationMessagePartCount + conversationMessage.partIds.length,
-      };
-    },
-    { conversationMessageCount: 0, conversationMessagePartCount: 0 },
-  );
 }
 
 function listVisibleOrderedConversationMessages(input: {
@@ -143,25 +119,21 @@ function listVisibleOrderedConversationMessages(input: {
   firstVisibleConversationMessageIndex: number;
   visibleConversationMessageCount: number;
 }): ConversationMessage[] {
-  const visibleConversationMessages: ConversationMessage[] = [];
   const firstHiddenAfterVisibleConversationMessageIndex = input.firstVisibleConversationMessageIndex +
     input.visibleConversationMessageCount;
-  let currentConversationMessageIndex = 0;
+  const visibleConversationMessageIds = input.chatSessionState.orderedConversationMessageIds.slice(
+    input.firstVisibleConversationMessageIndex,
+    firstHiddenAfterVisibleConversationMessageIndex,
+  );
 
-  for (const conversationMessageId of input.chatSessionState.orderedConversationMessageIds) {
+  const visibleConversationMessages: ConversationMessage[] = [];
+  for (const conversationMessageId of visibleConversationMessageIds) {
     const conversationMessage = input.chatSessionState.conversationMessagesById[conversationMessageId];
     if (!conversationMessage) {
       continue;
     }
 
-    if (currentConversationMessageIndex >= input.firstVisibleConversationMessageIndex) {
-      visibleConversationMessages.push(conversationMessage);
-    }
-    currentConversationMessageIndex += 1;
-
-    if (currentConversationMessageIndex >= firstHiddenAfterVisibleConversationMessageIndex) {
-      break;
-    }
+    visibleConversationMessages.push(conversationMessage);
   }
 
   return visibleConversationMessages;

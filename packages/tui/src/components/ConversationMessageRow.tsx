@@ -213,14 +213,10 @@ export function listRenderableConversationMessageParts(input: {
 }
 
 export function ConversationMessageRow(props: ConversationMessageRowProps): ReactNode {
-  const visibleConversationMessageParts = listRenderableConversationMessageParts({
-    conversationMessageParts: props.conversationMessageParts,
-    isReasoningSummaryVisible: props.isReasoningSummaryVisible,
-  });
   const {
     renderableConversationMessageParts,
     workspacePatchByToolCallPartId,
-  } = mergeMatchingWorkspacePatchesIntoToolCallParts(visibleConversationMessageParts);
+  } = mergeMatchingWorkspacePatchesIntoToolCallParts(props.conversationMessageParts);
   const shouldRenderEmptyAssistantThinkingLine = props.conversationMessage.role === "assistant" &&
     props.conversationMessage.messageStatus === "streaming" &&
     renderableConversationMessageParts.length === 0;

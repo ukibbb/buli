@@ -42,6 +42,9 @@ function upsertConversationMessagePart(input: {
   const nextPartIds = existingConversationMessage.partIds.includes(input.conversationMessagePart.id)
     ? existingConversationMessage.partIds
     : [...existingConversationMessage.partIds, input.conversationMessagePart.id];
+  const hasExistingConversationMessagePart = Boolean(
+    input.chatSessionState.conversationMessagePartsById[input.conversationMessagePart.id],
+  );
 
   return {
     ...input.chatSessionState,
@@ -56,6 +59,9 @@ function upsertConversationMessagePart(input: {
       ...input.chatSessionState.conversationMessagePartsById,
       [input.conversationMessagePart.id]: input.conversationMessagePart,
     },
+    conversationMessagePartCount: hasExistingConversationMessagePart
+      ? input.chatSessionState.conversationMessagePartCount
+      : input.chatSessionState.conversationMessagePartCount + 1,
   };
 }
 

@@ -109,6 +109,7 @@ test("submitPromptDraft appends a completed user message and enters streaming st
 
   expect(promptDraftSubmission.submittedPromptText).toBe("Hello");
   expect(promptDraftSubmission.nextChatSessionState.conversationTurnStatus).toBe("streaming_assistant_response");
+  expect(promptDraftSubmission.nextChatSessionState.conversationMessagePartCount).toBe(1);
 
   const orderedConversationMessages = listOrderedConversationMessages(promptDraftSubmission.nextChatSessionState);
   expect(orderedConversationMessages).toHaveLength(1);
@@ -339,6 +340,7 @@ test("submitPromptDraft submits image attachments with the user message", () => 
   expect(promptDraftSubmission.submittedPromptText).toBe("Describe this [Image 1]");
   expect(promptDraftSubmission.submittedPromptImageAttachments).toEqual([promptImageAttachment]);
   expect(promptDraftSubmission.nextChatSessionState.pendingPromptImageAttachments).toEqual([]);
+  expect(promptDraftSubmission.nextChatSessionState.conversationMessagePartCount).toBe(2);
   const userMessage = listOrderedConversationMessages(promptDraftSubmission.nextChatSessionState)[0];
   expect(userMessage?.partIds).toHaveLength(2);
   expect(Object.values(promptDraftSubmission.nextChatSessionState.conversationMessagePartsById)).toEqual(
@@ -390,6 +392,7 @@ test("hydrateConversationTranscriptFromSessionEntries restores user image attach
       expect.objectContaining({ partKind: "user_image_attachment", attachment: promptImageAttachment }),
     ]),
   );
+  expect(chatSessionState.conversationMessagePartCount).toBe(2);
 });
 
 test("hydrateConversationTranscriptFromSessionEntries restores workspace patch parts", () => {
@@ -478,6 +481,7 @@ test("clearConversationTranscript clears visible conversation while preserving s
   expect(clearedChatSessionState.isReasoningSummaryVisible).toBe(false);
   expect(clearedChatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(listOrderedConversationMessages(clearedChatSessionState)).toEqual([]);
+  expect(clearedChatSessionState.conversationMessagePartCount).toBe(0);
   expect(clearedChatSessionState.latestTokenUsage).toBeUndefined();
   expect(clearedChatSessionState.latestContextWindowUsage).toBeUndefined();
 });
@@ -531,6 +535,7 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
     "assistant_tool_call",
     "assistant_text",
   ]);
+  expect(chatSessionState.conversationMessagePartCount).toBe(3);
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
 });
 
@@ -958,6 +963,7 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
   expect(assistantConversationMessage.messageStatus).toBe("completed");
   expect(chatSessionState.latestTokenUsage?.reasoning).toBe(2);
   expect(chatSessionState.latestContextWindowUsage?.total).toBe(8);
+  expect(chatSessionState.conversationMessagePartCount).toBe(3);
   expect(listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id)).toEqual([
     {
       id: "reasoning-1",
@@ -986,6 +992,45 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
         reasoning: 2,
         cache: { read: 0, write: 0 },
       },
+    },
+  ]);
+});
+
+test("assistant_message_part_updated keeps the cached conversation part count stable", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hel",
+    },
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_updated",
+    messageId: "assistant-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hello",
+    },
+  });
+
+  expect(chatSessionState.conversationMessagePartCount).toBe(1);
+  expect(listOrderedConversationMessageParts(chatSessionState, "assistant-1")).toEqual([
+    {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hello",
     },
   ]);
 });
