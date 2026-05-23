@@ -139,6 +139,57 @@ test("buildChatScreenViewModel hydrates only the requested visible tail for larg
   expect(viewModel.orderedConversationMessagePartCount).toBe(10_000);
 });
 
+test("buildChatScreenViewModel derives the short mode label and the destination mode in Understand", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "understand",
+    },
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.shortModeLabel).toBe("Understand");
+  expect(viewModel.nextShortModeLabel).toBe("Plan");
+  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentAmber);
+});
+
+test("buildChatScreenViewModel derives the short mode label and the destination mode in Plan", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "plan",
+    },
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.shortModeLabel).toBe("Plan");
+  expect(viewModel.nextShortModeLabel).toBe("Implementation");
+  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentGreen);
+});
+
+test("buildChatScreenViewModel derives the short mode label and the destination mode in Implementation", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "implementation",
+    },
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.shortModeLabel).toBe("Implementation");
+  expect(viewModel.nextShortModeLabel).toBe("Understand");
+  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentPink);
+});
+
 function createChatSessionStateWithTranscript(input: { conversationMessageCount: number }): ChatSessionState {
   const conversationMessagesById: Record<string, ConversationMessage> = {};
   const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};

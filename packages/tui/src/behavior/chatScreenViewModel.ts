@@ -1,6 +1,7 @@
 import type { AssistantOperatingMode, ConversationMessage } from "@buli/contracts";
 import {
   buildChatSlashCommands,
+  resolveNextAssistantOperatingMode,
   type ChatSessionState,
   type ChatSlashCommand,
 } from "@buli/chat-session-state";
@@ -26,6 +27,9 @@ export type ChatScreenViewModel = {
   isPromptInputDisabled: boolean;
   availableChatSlashCommands: readonly ChatSlashCommand[];
   modeLabel: string;
+  shortModeLabel: string;
+  nextShortModeLabel: string;
+  nextModeAccentColor: ChatScreenViewModel["inputPanelAccentColor"];
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   promptInputHintOverride: string | undefined;
   reasoningEffortLabel: string;
@@ -74,10 +78,15 @@ export function buildChatScreenViewModel(input: {
     visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
   });
 
+  const nextAssistantOperatingMode = resolveNextAssistantOperatingMode(input.chatSessionState.selectedAssistantOperatingMode);
+
   return {
     isPromptInputDisabled,
     availableChatSlashCommands,
     modeLabel: formatAssistantOperatingModeLabel(input.chatSessionState.selectedAssistantOperatingMode),
+    shortModeLabel: formatAssistantOperatingModeShortLabel(input.chatSessionState.selectedAssistantOperatingMode),
+    nextShortModeLabel: formatAssistantOperatingModeShortLabel(nextAssistantOperatingMode),
+    nextModeAccentColor: resolveAssistantOperatingModeAccentColor(nextAssistantOperatingMode),
     inputPanelAccentColor: resolveAssistantOperatingModeAccentColor(input.chatSessionState.selectedAssistantOperatingMode),
     promptInputHintOverride: isPromptInputDisabled
       ? undefined
@@ -161,6 +170,14 @@ function formatAssistantOperatingModeLabel(assistantOperatingMode: AssistantOper
     : assistantOperatingMode === "plan"
     ? "Plan Agent"
     : "Implementation Agent";
+}
+
+function formatAssistantOperatingModeShortLabel(assistantOperatingMode: AssistantOperatingMode): string {
+  return assistantOperatingMode === "understand"
+    ? "Understand"
+    : assistantOperatingMode === "plan"
+    ? "Plan"
+    : "Implementation";
 }
 
 function resolveAssistantOperatingModeAccentColor(
