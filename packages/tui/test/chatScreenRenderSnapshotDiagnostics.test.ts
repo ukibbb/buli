@@ -54,6 +54,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields summarizes render state with
     renderedConversationMessageCount: 2,
     hiddenOlderConversationMessageCount: 0,
     orderedConversationMessagePartCount: 5,
+    renderedConversationMessagePartCount: 4,
     queuedPromptCount: 2,
     totalContextTokensUsed: 123,
     contextWindowTokenCapacity: 400000,
@@ -78,6 +79,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields summarizes render state with
     renderedConversationMessageCount: 2,
     hiddenOlderConversationMessageCount: 0,
     conversationMessagePartCount: 5,
+    renderedConversationMessagePartCount: 4,
     hasPendingToolApprovalRequest: true,
     promptContextSelectionStep: "showing_prompt_context_candidates",
     slashCommandSelectionStep: "showing_slash_commands",
@@ -108,6 +110,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields normalizes missing token cou
       renderedConversationMessageCount: 0,
       hiddenOlderConversationMessageCount: 0,
       orderedConversationMessagePartCount: 0,
+      renderedConversationMessagePartCount: 0,
       queuedPromptCount: 0,
       totalContextTokensUsed: undefined,
       contextWindowTokenCapacity: undefined,
@@ -132,6 +135,7 @@ test("split render diagnostic builders keep transcript, prompt, and status field
       renderedConversationMessageCount: 4,
       hiddenOlderConversationMessageCount: 6,
       orderedConversationMessagePartCount: 18,
+      renderedConversationMessagePartCount: 7,
     }),
   ).toEqual({
     rows: 24,
@@ -141,6 +145,7 @@ test("split render diagnostic builders keep transcript, prompt, and status field
     renderedConversationMessageCount: 4,
     hiddenOlderConversationMessageCount: 6,
     conversationMessagePartCount: 18,
+    renderedConversationMessagePartCount: 7,
   });
 
   expect(

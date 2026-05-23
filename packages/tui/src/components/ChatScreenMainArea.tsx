@@ -1,8 +1,8 @@
 import type { ChatSlashCommand } from "@buli/chat-session-state";
 import type { ChatScreenTheme, TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
-import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo, type ReactNode, type RefObject } from "react";
+import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
 import { CommandHelpModal } from "./CommandHelpModal.tsx";
 import { ConversationTranscriptSurface } from "./ConversationTranscriptSurface.tsx";
 import type { PendingToolApprovalDecision } from "./ConversationMessageRow.tsx";
@@ -15,8 +15,7 @@ export type ChatScreenMainAreaProps = {
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
   terminalColumnCount: number;
   availableChatSlashCommands: readonly ChatSlashCommand[];
-  orderedConversationMessages: readonly ConversationMessage[];
-  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+  visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
@@ -41,7 +40,7 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
 
   return (
     <ConversationTranscriptSurface
-      conversationMessages={props.orderedConversationMessages}
+      visibleConversationMessageRows={props.visibleConversationMessageRows}
       hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
       isReasoningSummaryVisible={props.isReasoningSummaryVisible}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
@@ -49,7 +48,6 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
       {...(props.pendingToolApprovalDecision !== undefined
         ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
         : {})}
-      conversationMessagePartsById={props.conversationMessagePartsById}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       accentColor={props.inputPanelAccentColor}
       terminalColumnCount={props.terminalColumnCount}

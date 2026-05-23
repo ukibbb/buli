@@ -87,10 +87,8 @@ function buildHydratedConversationTranscript(
       return;
     }
 
-    conversationMessagesById[messageId] = {
-      ...conversationMessage,
-      partIds: [...conversationMessage.partIds, conversationMessagePart.id],
-    };
+    // This private builder owns draft messages, so local mutation avoids quadratic copies during large-session hydration.
+    conversationMessage.partIds.push(conversationMessagePart.id);
     conversationMessagePartsById[conversationMessagePart.id] = conversationMessagePart;
   };
   const updateAssistantTextPartStatuses = (messageId: string, partStatus: AssistantTextPartStatus): void => {

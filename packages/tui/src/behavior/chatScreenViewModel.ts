@@ -1,4 +1,4 @@
-import type { AssistantOperatingMode, ConversationMessage } from "@buli/contracts";
+import type { AssistantOperatingMode, ConversationMessage, ConversationMessagePart } from "@buli/contracts";
 import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import {
   buildChatSlashCommands,
@@ -45,14 +45,21 @@ export type ChatScreenInteractionViewModel = {
 
 export type ChatScreenTranscriptViewModel = {
   conversationTranscriptWindow: ConversationTranscriptWindow;
+  visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
   orderedConversationMessagePartCount: number;
+  visibleConversationMessagePartCount: number;
+};
+
+export type VisibleConversationMessageRow = {
+  conversationMessage: ConversationMessage;
+  conversationMessageParts: readonly ConversationMessagePart[];
 };
 
 export type ChatScreenViewModel = ChatScreenInteractionViewModel & ChatScreenTranscriptViewModel;
 
 type ChatScreenTranscriptState = Pick<
   ChatSessionState,
-  "conversationMessagesById" | "orderedConversationMessageIds" | "conversationMessagePartCount"
+  "conversationMessagesById" | "conversationMessagePartsById" | "orderedConversationMessageIds" | "conversationMessagePartCount"
 >;
 
 export type ChatScreenTranscriptViewModelCache = {
@@ -160,11 +167,14 @@ export function buildChatScreenTranscriptViewModel(input: {
     totalConversationMessageCount: input.chatSessionState.orderedConversationMessageIds.length,
     requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
   });
-  const visibleConversationMessages = listVisibleOrderedConversationMessages({
+  const visibleConversationMessageRows = listVisibleOrderedConversationMessageRows({
     chatSessionState: input.chatSessionState,
     firstVisibleConversationMessageIndex: conversationTranscriptMessageIndexWindow.firstVisibleConversationMessageIndex,
     visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
   });
+  const visibleConversationMessages = visibleConversationMessageRows.map(
+    (visibleConversationMessageRow) => visibleConversationMessageRow.conversationMessage,
+  );
 
   return {
     conversationTranscriptWindow: {
@@ -174,7 +184,9 @@ export function buildChatScreenTranscriptViewModel(input: {
       hiddenOlderConversationMessageCount: conversationTranscriptMessageIndexWindow.hiddenOlderConversationMessageCount,
       olderConversationMessageRevealCount: conversationTranscriptMessageIndexWindow.olderConversationMessageRevealCount,
     },
+    visibleConversationMessageRows,
     orderedConversationMessagePartCount: input.chatSessionState.conversationMessagePartCount,
+    visibleConversationMessagePartCount: countVisibleConversationMessageParts(visibleConversationMessageRows),
   };
 }
 
@@ -194,16 +206,21 @@ export function buildStableChatScreenTranscriptViewModel(input: {
   }
 
   const transcriptViewModel = buildChatScreenTranscriptViewModel(input);
+  const stableTranscriptViewModel = selectStableChatScreenTranscriptViewModel({
+    previousTranscriptViewModel: input.previousCache?.transcriptViewModel,
+    nextTranscriptViewModel: transcriptViewModel,
+  });
   return {
-    transcriptViewModel,
+    transcriptViewModel: stableTranscriptViewModel,
     nextCache: {
       chatSessionState: {
         conversationMessagesById: input.chatSessionState.conversationMessagesById,
+        conversationMessagePartsById: input.chatSessionState.conversationMessagePartsById,
         orderedConversationMessageIds: input.chatSessionState.orderedConversationMessageIds,
         conversationMessagePartCount: input.chatSessionState.conversationMessagePartCount,
       },
       requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
-      transcriptViewModel,
+      transcriptViewModel: stableTranscriptViewModel,
     },
   };
 }
@@ -215,9 +232,71 @@ function canReuseChatScreenTranscriptViewModelCache(input: {
 }): input is typeof input & { previousCache: ChatScreenTranscriptViewModelCache } {
   return input.previousCache !== undefined &&
     input.previousCache.chatSessionState.conversationMessagesById === input.chatSessionState.conversationMessagesById &&
+    input.previousCache.chatSessionState.conversationMessagePartsById === input.chatSessionState.conversationMessagePartsById &&
     input.previousCache.chatSessionState.orderedConversationMessageIds === input.chatSessionState.orderedConversationMessageIds &&
     input.previousCache.chatSessionState.conversationMessagePartCount === input.chatSessionState.conversationMessagePartCount &&
     input.previousCache.requestedVisibleConversationMessageCount === input.requestedVisibleConversationMessageCount;
+}
+
+function selectStableChatScreenTranscriptViewModel(input: {
+  previousTranscriptViewModel: ChatScreenTranscriptViewModel | undefined;
+  nextTranscriptViewModel: ChatScreenTranscriptViewModel;
+}): ChatScreenTranscriptViewModel {
+  if (
+    input.previousTranscriptViewModel &&
+    input.previousTranscriptViewModel.conversationTranscriptWindow.totalConversationMessageCount ===
+      input.nextTranscriptViewModel.conversationTranscriptWindow.totalConversationMessageCount &&
+    input.previousTranscriptViewModel.conversationTranscriptWindow.visibleConversationMessageCount ===
+      input.nextTranscriptViewModel.conversationTranscriptWindow.visibleConversationMessageCount &&
+    input.previousTranscriptViewModel.conversationTranscriptWindow.hiddenOlderConversationMessageCount ===
+      input.nextTranscriptViewModel.conversationTranscriptWindow.hiddenOlderConversationMessageCount &&
+    input.previousTranscriptViewModel.conversationTranscriptWindow.olderConversationMessageRevealCount ===
+      input.nextTranscriptViewModel.conversationTranscriptWindow.olderConversationMessageRevealCount &&
+    input.previousTranscriptViewModel.orderedConversationMessagePartCount ===
+      input.nextTranscriptViewModel.orderedConversationMessagePartCount &&
+    input.previousTranscriptViewModel.visibleConversationMessagePartCount ===
+      input.nextTranscriptViewModel.visibleConversationMessagePartCount &&
+    areVisibleConversationMessageRowsEqual(
+      input.previousTranscriptViewModel.visibleConversationMessageRows,
+      input.nextTranscriptViewModel.visibleConversationMessageRows,
+    )
+  ) {
+    return input.previousTranscriptViewModel;
+  }
+
+  return input.nextTranscriptViewModel;
+}
+
+function areVisibleConversationMessageRowsEqual(
+  previousVisibleConversationMessageRows: readonly VisibleConversationMessageRow[],
+  nextVisibleConversationMessageRows: readonly VisibleConversationMessageRow[],
+): boolean {
+  if (previousVisibleConversationMessageRows.length !== nextVisibleConversationMessageRows.length) {
+    return false;
+  }
+
+  return previousVisibleConversationMessageRows.every((previousVisibleConversationMessageRow, rowIndex) => {
+    const nextVisibleConversationMessageRow = nextVisibleConversationMessageRows[rowIndex];
+    return nextVisibleConversationMessageRow !== undefined &&
+      previousVisibleConversationMessageRow.conversationMessage === nextVisibleConversationMessageRow.conversationMessage &&
+      areConversationMessagePartReferencesEqual(
+        previousVisibleConversationMessageRow.conversationMessageParts,
+        nextVisibleConversationMessageRow.conversationMessageParts,
+      );
+  });
+}
+
+function areConversationMessagePartReferencesEqual(
+  previousConversationMessageParts: readonly ConversationMessagePart[],
+  nextConversationMessageParts: readonly ConversationMessagePart[],
+): boolean {
+  if (previousConversationMessageParts.length !== nextConversationMessageParts.length) {
+    return false;
+  }
+
+  return previousConversationMessageParts.every(
+    (conversationMessagePart, partIndex) => conversationMessagePart === nextConversationMessageParts[partIndex],
+  );
 }
 
 function listStableChatSlashCommands(isReasoningSummaryVisible: boolean): readonly ChatSlashCommand[] {
@@ -226,11 +305,11 @@ function listStableChatSlashCommands(isReasoningSummaryVisible: boolean): readon
     : CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_HIDDEN;
 }
 
-function listVisibleOrderedConversationMessages(input: {
+function listVisibleOrderedConversationMessageRows(input: {
   chatSessionState: ChatScreenTranscriptState;
   firstVisibleConversationMessageIndex: number;
   visibleConversationMessageCount: number;
-}): ConversationMessage[] {
+}): VisibleConversationMessageRow[] {
   const firstHiddenAfterVisibleConversationMessageIndex = input.firstVisibleConversationMessageIndex +
     input.visibleConversationMessageCount;
   const visibleConversationMessageIds = input.chatSessionState.orderedConversationMessageIds.slice(
@@ -238,17 +317,48 @@ function listVisibleOrderedConversationMessages(input: {
     firstHiddenAfterVisibleConversationMessageIndex,
   );
 
-  const visibleConversationMessages: ConversationMessage[] = [];
+  const visibleConversationMessageRows: VisibleConversationMessageRow[] = [];
   for (const conversationMessageId of visibleConversationMessageIds) {
     const conversationMessage = input.chatSessionState.conversationMessagesById[conversationMessageId];
     if (!conversationMessage) {
       continue;
     }
 
-    visibleConversationMessages.push(conversationMessage);
+    visibleConversationMessageRows.push({
+      conversationMessage,
+      conversationMessageParts: listConversationMessageParts({
+        conversationMessage,
+        conversationMessagePartsById: input.chatSessionState.conversationMessagePartsById,
+      }),
+    });
   }
 
-  return visibleConversationMessages;
+  return visibleConversationMessageRows;
+}
+
+function listConversationMessageParts(input: {
+  conversationMessage: ConversationMessage;
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+}): ConversationMessagePart[] {
+  const conversationMessageParts: ConversationMessagePart[] = [];
+  for (const conversationMessagePartId of input.conversationMessage.partIds) {
+    const conversationMessagePart = input.conversationMessagePartsById[conversationMessagePartId];
+    if (conversationMessagePart) {
+      conversationMessageParts.push(conversationMessagePart);
+    }
+  }
+
+  return conversationMessageParts;
+}
+
+function countVisibleConversationMessageParts(
+  visibleConversationMessageRows: readonly VisibleConversationMessageRow[],
+): number {
+  return visibleConversationMessageRows.reduce(
+    (visibleConversationMessagePartCount, visibleConversationMessageRow) =>
+      visibleConversationMessagePartCount + visibleConversationMessageRow.conversationMessageParts.length,
+    0,
+  );
 }
 
 function formatAssistantOperatingModeLabel(assistantOperatingMode: AssistantOperatingMode): string {

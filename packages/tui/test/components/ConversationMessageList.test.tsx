@@ -8,6 +8,7 @@ import {
   prepareRenderableConversationMessages,
   type ConversationMessageListProps,
 } from "../../src/components/ConversationMessageList.tsx";
+import type { VisibleConversationMessageRow } from "../../src/behavior/chatScreenViewModel.ts";
 
 type ConversationHistoryRevealTestProps = Pick<
   ConversationMessageListProps,
@@ -61,6 +62,19 @@ function collectConversationMessagePartsById(
   return conversationMessagePartsById;
 }
 
+function createVisibleConversationMessageRows(input: {
+  conversationMessages: readonly ConversationMessage[];
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+}): VisibleConversationMessageRow[] {
+  return input.conversationMessages.map((conversationMessage) => ({
+    conversationMessage,
+    conversationMessageParts: conversationMessage.partIds.flatMap((conversationMessagePartId) => {
+      const conversationMessagePart = input.conversationMessagePartsById[conversationMessagePartId];
+      return conversationMessagePart ? [conversationMessagePart] : [];
+    }),
+  }));
+}
+
 function findRenderedLineContaining(frame: string, targetText: string): string {
   const renderedLine = frame.split("\n").find((line) => line.includes(targetText));
   if (!renderedLine) {
@@ -100,21 +114,25 @@ describe("ConversationMessageList", () => {
     } satisfies ConversationMessagePart;
     const preparationCache = createConversationMessageListPreparationCache();
     const firstPreparedMessages = prepareRenderableConversationMessages({
-      conversationMessages,
-      conversationMessagePartsById: {
-        "user-text-1": userTextPart,
-        "assistant-text-1": initialAssistantTextPart,
-      },
+      visibleConversationMessageRows: createVisibleConversationMessageRows({
+        conversationMessages,
+        conversationMessagePartsById: {
+          "user-text-1": userTextPart,
+          "assistant-text-1": initialAssistantTextPart,
+        },
+      }),
       isReasoningSummaryVisible: true,
       preparationCache,
     });
 
     const secondPreparedMessages = prepareRenderableConversationMessages({
-      conversationMessages,
-      conversationMessagePartsById: {
-        "user-text-1": userTextPart,
-        "assistant-text-1": updatedAssistantTextPart,
-      },
+      visibleConversationMessageRows: createVisibleConversationMessageRows({
+        conversationMessages,
+        conversationMessagePartsById: {
+          "user-text-1": userTextPart,
+          "assistant-text-1": updatedAssistantTextPart,
+        },
+      }),
       isReasoningSummaryVisible: true,
       preparationCache,
     });
@@ -144,20 +162,47 @@ describe("ConversationMessageList", () => {
     };
     const preparationCache = createConversationMessageListPreparationCache();
     const visibleReasoningMessages = prepareRenderableConversationMessages({
-      conversationMessages,
-      conversationMessagePartsById,
+      visibleConversationMessageRows: createVisibleConversationMessageRows({
+        conversationMessages,
+        conversationMessagePartsById,
+      }),
       isReasoningSummaryVisible: true,
       preparationCache,
     });
     const hiddenReasoningMessages = prepareRenderableConversationMessages({
-      conversationMessages,
-      conversationMessagePartsById,
+      visibleConversationMessageRows: createVisibleConversationMessageRows({
+        conversationMessages,
+        conversationMessagePartsById,
+      }),
       isReasoningSummaryVisible: false,
       preparationCache,
     });
 
     expect(visibleReasoningMessages).toHaveLength(1);
     expect(hiddenReasoningMessages).toHaveLength(0);
+  });
+
+  test("renders show older messages reveal row", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        visibleConversationMessageRows={[]}
+        isReasoningSummaryVisible={true}
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+        hiddenOlderConversationMessageCount={42}
+        olderConversationMessageRevealCount={10}
+        onRevealOlderConversationMessages={() => {}}
+        userMessageBorderColor="#10B981"
+      />,
+      { width: 80, height: 4 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("↑ Show older messages");
+    expect(frame).toContain("10 older");
+    expect(frame).toContain("42 hidden");
   });
 
   test("renders Thinking for an empty streaming assistant message", async () => {
@@ -173,9 +218,11 @@ describe("ConversationMessageList", () => {
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById: {},
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={{}}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -246,9 +293,11 @@ describe("ConversationMessageList", () => {
     const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -325,9 +374,11 @@ describe("ConversationMessageList", () => {
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -359,6 +410,13 @@ describe("ConversationMessageList", () => {
     };
     const conversationMessages: ConversationMessage[] = [
       {
+        id: "assistant-unmatched",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: 1,
+        partIds: ["tool-unmatched"],
+      },
+      {
         id: "assistant-1",
         role: "assistant",
         messageStatus: "streaming",
@@ -367,6 +425,16 @@ describe("ConversationMessageList", () => {
       },
     ];
     const conversationMessagePartsByMessageId: Record<string, ConversationMessagePart[]> = {
+      "assistant-unmatched": [
+        {
+          id: "tool-unmatched",
+          partKind: "assistant_tool_call",
+          toolCallId: "call-edit-unmatched",
+          toolCallStatus: "pending_approval",
+          toolCallStartedAtMs: 1,
+          toolCallDetail: { toolName: "edit", editedFilePath: "src/unrelated.ts" },
+        },
+      ],
       "assistant-1": [
         {
           id: "tool-1",
@@ -382,9 +450,11 @@ describe("ConversationMessageList", () => {
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -395,15 +465,18 @@ describe("ConversationMessageList", () => {
         }}
         userMessageBorderColor="#10B981"
       />,
-      { width: 120, height: 8 },
+      { width: 120, height: 16 },
     );
 
     await renderOnce();
     const frame = captureCharFrame();
-    const editHeaderLine = findRenderedLineContaining(frame, "Edit");
-    expect(editHeaderLine).toContain("packages/engine/test/systemPrompt.test.ts");
-    expect(editHeaderLine).toContain("Yes");
-    expect(editHeaderLine).toContain("No");
+    const editHeaderLine = findRenderedLineContaining(frame, "src/unrelated.ts");
+    expect(editHeaderLine).toContain("src/unrelated.ts");
+    expect(editHeaderLine).not.toContain("Yes");
+    expect(editHeaderLine).not.toContain("No");
+    const matchingEditHeaderLine = findRenderedLineContaining(frame, "packages/engine/test/systemPrompt.test.ts");
+    expect(matchingEditHeaderLine).toContain("Yes");
+    expect(matchingEditHeaderLine).toContain("No");
     expect(frame).not.toContain("This edit will modify");
     expect(frame).not.toContain("Review");
   });
@@ -454,9 +527,11 @@ describe("ConversationMessageList", () => {
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -499,9 +574,11 @@ describe("ConversationMessageList", () => {
     const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={false}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -543,9 +620,11 @@ describe("ConversationMessageList", () => {
     const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -581,9 +660,11 @@ describe("ConversationMessageList", () => {
     );
     const { mockMouse, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -622,9 +703,11 @@ describe("ConversationMessageList", () => {
 
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
-        conversationMessages={conversationMessages}
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
         isReasoningSummaryVisible={true}
-        conversationMessagePartsById={conversationMessagePartsById}
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}

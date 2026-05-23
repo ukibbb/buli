@@ -1,14 +1,13 @@
 import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
-import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ReactNode, RefObject } from "react";
+import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
 import { ConversationMessageList } from "./ConversationMessageList.tsx";
 import type { PendingToolApprovalDecision } from "./ConversationMessageRow.tsx";
 
 export type ConversationTranscriptSurfaceProps = {
-  conversationMessages: readonly ConversationMessage[];
+  visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
   isReasoningSummaryVisible: boolean;
-  conversationMessagePartsById: Record<string, ConversationMessagePart>;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
@@ -21,7 +20,7 @@ export type ConversationTranscriptSurfaceProps = {
 export function ConversationTranscriptSurface(props: ConversationTranscriptSurfaceProps): ReactNode {
   return (
     <ConversationMessageList
-      conversationMessages={props.conversationMessages}
+      visibleConversationMessageRows={props.visibleConversationMessageRows}
       hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
       isReasoningSummaryVisible={props.isReasoningSummaryVisible}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
@@ -29,7 +28,6 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
       {...(props.pendingToolApprovalDecision !== undefined
         ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
         : {})}
-      conversationMessagePartsById={props.conversationMessagePartsById}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       horizontalRuleColor={props.accentColor}
       userMessageBorderColor={props.accentColor}

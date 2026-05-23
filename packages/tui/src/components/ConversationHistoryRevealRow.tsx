@@ -31,9 +31,9 @@ export function ConversationHistoryRevealRow(props: ConversationHistoryRevealRow
       width="100%"
     >
       <text selectable={false} truncate={true} wrapMode="none" width="100%">
-        <span fg={actionColor}><b>Earlier messages hidden</b></span>
+        <span fg={actionColor}><b>↑ Show older messages</b></span>
         <span fg={detailColor}>
-          {` · Show ${props.olderConversationMessageRevealCount} older · ${props.hiddenOlderConversationMessageCount} hidden`}
+          {` · ${props.olderConversationMessageRevealCount} older · ${props.hiddenOlderConversationMessageCount} hidden`}
         </span>
       </text>
     </box>

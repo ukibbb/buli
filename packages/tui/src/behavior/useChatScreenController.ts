@@ -152,6 +152,8 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const {
     conversationTranscriptWindow,
     orderedConversationMessagePartCount,
+    visibleConversationMessageRows,
+    visibleConversationMessagePartCount,
   } = stableTranscriptViewModel.transcriptViewModel;
   const revealOlderConversationMessages = useEffectEvent(() => {
     setRequestedVisibleConversationMessageCount((currentVisibleConversationMessageCount) =>
@@ -180,6 +182,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
         renderedConversationMessageCount: conversationTranscriptWindow.visibleConversationMessageCount,
         hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
         orderedConversationMessagePartCount,
+        renderedConversationMessagePartCount: visibleConversationMessagePartCount,
       }),
     );
   }, [
@@ -188,6 +191,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     conversationTranscriptWindow.totalConversationMessageCount,
     conversationTranscriptWindow.hiddenOlderConversationMessageCount,
     conversationTranscriptWindow.visibleConversationMessageCount,
+    visibleConversationMessagePartCount,
     terminalColumnCount,
     terminalRowCount,
     terminalSizeTierForChatScreen,
@@ -268,8 +272,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     terminalSizeTierForChatScreen,
     terminalColumnCount,
     availableChatSlashCommands,
-    orderedConversationMessages: conversationTranscriptWindow.visibleConversationMessages,
-    conversationMessagePartsById: chatAppController.transcriptState.conversationMessagePartsById,
+    visibleConversationMessageRows,
     hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
     olderConversationMessageRevealCount: conversationTranscriptWindow.olderConversationMessageRevealCount,
     ...(pendingToolApprovalDecision !== undefined ? { pendingToolApprovalDecision } : {}),
@@ -356,8 +359,7 @@ function selectStableChatScreenMainAreaProps(input: {
     input.previousMainAreaProps.terminalSizeTierForChatScreen === input.nextMainAreaProps.terminalSizeTierForChatScreen &&
     input.previousMainAreaProps.terminalColumnCount === input.nextMainAreaProps.terminalColumnCount &&
     input.previousMainAreaProps.availableChatSlashCommands === input.nextMainAreaProps.availableChatSlashCommands &&
-    input.previousMainAreaProps.orderedConversationMessages === input.nextMainAreaProps.orderedConversationMessages &&
-    input.previousMainAreaProps.conversationMessagePartsById === input.nextMainAreaProps.conversationMessagePartsById &&
+    input.previousMainAreaProps.visibleConversationMessageRows === input.nextMainAreaProps.visibleConversationMessageRows &&
     input.previousMainAreaProps.hiddenOlderConversationMessageCount === input.nextMainAreaProps.hiddenOlderConversationMessageCount &&
     input.previousMainAreaProps.olderConversationMessageRevealCount === input.nextMainAreaProps.olderConversationMessageRevealCount &&
     arePendingToolApprovalDecisionsEqual(

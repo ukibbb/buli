@@ -129,10 +129,14 @@ test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at c
 
 test("buildChatScreenViewModel hydrates only the requested visible tail for large transcripts", () => {
   const readConversationMessageIds: string[] = [];
+  const readConversationMessagePartIds: string[] = [];
   const chatSessionState = createChatSessionStateWithTranscript({
     conversationMessageCount: 10_000,
     onConversationMessageRead: (conversationMessageId) => {
       readConversationMessageIds.push(conversationMessageId);
+    },
+    onConversationMessagePartRead: (conversationMessagePartId) => {
+      readConversationMessagePartIds.push(conversationMessagePartId);
     },
   });
 
@@ -176,6 +180,21 @@ test("buildChatScreenViewModel hydrates only the requested visible tail for larg
     "message-9998",
     "message-9999",
   ]);
+  expect(readConversationMessagePartIds).toEqual([
+    "part-9988",
+    "part-9989",
+    "part-9990",
+    "part-9991",
+    "part-9992",
+    "part-9993",
+    "part-9994",
+    "part-9995",
+    "part-9996",
+    "part-9997",
+    "part-9998",
+    "part-9999",
+  ]);
+  expect(viewModel.visibleConversationMessagePartCount).toBe(12);
   expect(viewModel.orderedConversationMessagePartCount).toBe(10_000);
 });
 
@@ -200,6 +219,32 @@ test("buildStableChatScreenTranscriptViewModel reuses transcript output across p
   expect(secondTranscriptSelection.transcriptViewModel.conversationTranscriptWindow.visibleConversationMessages).toBe(
     firstTranscriptSelection.transcriptViewModel.conversationTranscriptWindow.visibleConversationMessages,
   );
+});
+
+test("buildStableChatScreenTranscriptViewModel reuses transcript output when only hidden parts change", () => {
+  const chatSessionState = createChatSessionStateWithTranscript({
+    conversationMessageCount: 100,
+  });
+  const firstTranscriptSelection = buildStableChatScreenTranscriptViewModel({
+    chatSessionState,
+    requestedVisibleConversationMessageCount: 12,
+    previousCache: undefined,
+  });
+  const chatSessionStateWithHiddenPartEdit: ChatSessionState = {
+    ...chatSessionState,
+    conversationMessagePartsById: {
+      ...chatSessionState.conversationMessagePartsById,
+      "part-0": { id: "part-0", partKind: "user_text", text: "Hidden prompt changed" },
+    },
+  };
+
+  const secondTranscriptSelection = buildStableChatScreenTranscriptViewModel({
+    chatSessionState: chatSessionStateWithHiddenPartEdit,
+    requestedVisibleConversationMessageCount: 12,
+    previousCache: firstTranscriptSelection.nextCache,
+  });
+
+  expect(secondTranscriptSelection.transcriptViewModel).toBe(firstTranscriptSelection.transcriptViewModel);
 });
 
 test("buildChatScreenViewModel derives the short mode label and the destination mode in Understand", () => {
@@ -256,6 +301,7 @@ test("buildChatScreenViewModel derives the short mode label and the destination 
 function createChatSessionStateWithTranscript(input: {
   conversationMessageCount: number;
   onConversationMessageRead?: (conversationMessageId: string) => void;
+  onConversationMessagePartRead?: (conversationMessagePartId: string) => void;
 }): ChatSessionState {
   const conversationMessagesById: Record<string, ConversationMessage> = {};
   const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
@@ -279,11 +325,18 @@ function createChatSessionStateWithTranscript(input: {
         return conversationMessage;
       },
     });
-    conversationMessagePartsById[partId] = {
+    const conversationMessagePart: ConversationMessagePart = {
       id: partId,
       partKind: "user_text",
       text: `Prompt ${messageIndex}`,
     };
+    Object.defineProperty(conversationMessagePartsById, partId, {
+      enumerable: true,
+      get() {
+        input.onConversationMessagePartRead?.(partId);
+        return conversationMessagePart;
+      },
+    });
   }
 
   return {

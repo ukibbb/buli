@@ -23,6 +23,7 @@ export function buildChatScreenRenderSnapshotDiagnosticFields(input: {
   renderedConversationMessageCount: number;
   hiddenOlderConversationMessageCount: number;
   orderedConversationMessagePartCount: number;
+  renderedConversationMessagePartCount: number;
   queuedPromptCount: number;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
@@ -48,6 +49,7 @@ export function buildChatScreenRenderSnapshotDiagnosticFields(input: {
     renderedConversationMessageCount: input.renderedConversationMessageCount,
     hiddenOlderConversationMessageCount: input.hiddenOlderConversationMessageCount,
     conversationMessagePartCount: input.orderedConversationMessagePartCount,
+    renderedConversationMessagePartCount: input.renderedConversationMessagePartCount,
     hasPendingToolApprovalRequest: input.chatSessionState.pendingToolApprovalRequest !== undefined,
     promptContextSelectionStep: input.chatSessionState.promptContextSelectionState.step,
     slashCommandSelectionStep: input.chatSessionState.slashCommandSelectionState.step,
@@ -67,6 +69,7 @@ export function buildChatScreenTranscriptRenderDiagnosticFields(input: {
   renderedConversationMessageCount: number;
   hiddenOlderConversationMessageCount: number;
   orderedConversationMessagePartCount: number;
+  renderedConversationMessagePartCount: number;
 }): BuliDiagnosticLogFields {
   return {
     rows: input.terminalRowCount,
@@ -76,6 +79,7 @@ export function buildChatScreenTranscriptRenderDiagnosticFields(input: {
     renderedConversationMessageCount: input.renderedConversationMessageCount,
     hiddenOlderConversationMessageCount: input.hiddenOlderConversationMessageCount,
     conversationMessagePartCount: input.orderedConversationMessagePartCount,
+    renderedConversationMessagePartCount: input.renderedConversationMessagePartCount,
   };
 }
 

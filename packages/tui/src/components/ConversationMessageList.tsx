@@ -1,6 +1,7 @@
 import { memo, useRef, type ReactNode, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
+import type { ConversationMessagePart } from "@buli/contracts";
+import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
 import {
   ConversationMessageRow,
   listRenderableConversationMessageParts,
@@ -10,9 +11,8 @@ import {
 import { ConversationHistoryRevealRow } from "./ConversationHistoryRevealRow.tsx";
 
 export type ConversationMessageListProps = {
-  conversationMessages: readonly ConversationMessage[];
+  visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
   isReasoningSummaryVisible: boolean;
-  conversationMessagePartsById: Record<string, ConversationMessagePart>;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   horizontalRuleColor: string;
   hiddenOlderConversationMessageCount: number;
@@ -25,13 +25,10 @@ export type ConversationMessageListProps = {
 
 const MemoizedConversationMessageRow = memo(ConversationMessageRow, areConversationMessageRowPropsEqual);
 
-export type RenderableConversationMessage = {
-  conversationMessage: ConversationMessage;
-  conversationMessageParts: readonly ConversationMessagePart[];
-};
+export type RenderableConversationMessage = VisibleConversationMessageRow;
 
 type ConversationMessageListPreparationCacheEntry = {
-  conversationMessage: ConversationMessage;
+  conversationMessage: VisibleConversationMessageRow["conversationMessage"];
   conversationMessageParts: readonly ConversationMessagePart[];
   isReasoningSummaryVisible: boolean;
   renderableConversationMessageParts: readonly ConversationMessagePart[];
@@ -73,8 +70,7 @@ function areConversationMessagePartReferencesEqual(
 export function ConversationMessageList(props: ConversationMessageListProps): ReactNode {
   const preparationCacheRef = useRef(createConversationMessageListPreparationCache());
   const renderableConversationMessages = prepareRenderableConversationMessages({
-    conversationMessages: props.conversationMessages,
-    conversationMessagePartsById: props.conversationMessagePartsById,
+    visibleConversationMessageRows: props.visibleConversationMessageRows,
     isReasoningSummaryVisible: props.isReasoningSummaryVisible,
     preparationCache: preparationCacheRef.current,
   });
@@ -103,30 +99,54 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
             onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
           />
         ) : null}
-        {renderableConversationMessages.map(({ conversationMessage, conversationMessageParts }, index) => (
-          <box
-            flexDirection="column"
-            flexShrink={0}
-            key={conversationMessage.id}
-            marginTop={index === 0 && !shouldRenderHistoryRevealRow ? 0 : 1}
-            width="100%"
-          >
-            <MemoizedConversationMessageRow
-              conversationMessage={conversationMessage}
-              conversationMessageParts={conversationMessageParts}
-              isReasoningSummaryVisible={props.isReasoningSummaryVisible}
-              horizontalRuleColor={props.horizontalRuleColor}
-              {...(props.pendingToolApprovalDecision !== undefined
-                ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
-                : {})}
-              userMessageBorderColor={props.userMessageBorderColor}
-              terminalColumnCount={props.terminalColumnCount}
-            />
-          </box>
-        ))}
+        {renderableConversationMessages.map(({ conversationMessage, conversationMessageParts }, index) => {
+          const pendingToolApprovalDecision = resolvePendingToolApprovalDecisionForConversationMessageRow({
+            conversationMessageParts,
+            pendingToolApprovalDecision: props.pendingToolApprovalDecision,
+          });
+
+          return (
+            <box
+              flexDirection="column"
+              flexShrink={0}
+              key={conversationMessage.id}
+              marginTop={index === 0 && !shouldRenderHistoryRevealRow ? 0 : 1}
+              width="100%"
+            >
+              <MemoizedConversationMessageRow
+                conversationMessage={conversationMessage}
+                conversationMessageParts={conversationMessageParts}
+                isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+                horizontalRuleColor={props.horizontalRuleColor}
+                {...(pendingToolApprovalDecision !== undefined
+                  ? { pendingToolApprovalDecision }
+                  : {})}
+                userMessageBorderColor={props.userMessageBorderColor}
+                terminalColumnCount={props.terminalColumnCount}
+              />
+            </box>
+          );
+        })}
       </scrollbox>
     </box>
   );
+}
+
+function resolvePendingToolApprovalDecisionForConversationMessageRow(input: {
+  conversationMessageParts: readonly ConversationMessagePart[];
+  pendingToolApprovalDecision: PendingToolApprovalDecision | undefined;
+}): PendingToolApprovalDecision | undefined {
+  const pendingToolCallId = input.pendingToolApprovalDecision?.pendingToolApprovalRequest.pendingToolCallId;
+  if (!pendingToolCallId) {
+    return undefined;
+  }
+
+  return input.conversationMessageParts.some(
+    (conversationMessagePart) => conversationMessagePart.partKind === "assistant_tool_call" &&
+      conversationMessagePart.toolCallId === pendingToolCallId,
+  )
+    ? input.pendingToolApprovalDecision
+    : undefined;
 }
 
 export function createConversationMessageListPreparationCache(): ConversationMessageListPreparationCache {
@@ -134,19 +154,14 @@ export function createConversationMessageListPreparationCache(): ConversationMes
 }
 
 export function prepareRenderableConversationMessages(input: {
-  conversationMessages: readonly ConversationMessage[];
-  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+  visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
   isReasoningSummaryVisible: boolean;
   preparationCache: ConversationMessageListPreparationCache;
 }): RenderableConversationMessage[] {
   const nextCacheEntriesByConversationMessageId = new Map<string, ConversationMessageListPreparationCacheEntry>();
   const renderableConversationMessages: RenderableConversationMessage[] = [];
 
-  for (const conversationMessage of input.conversationMessages) {
-    const conversationMessageParts = listConversationMessageParts({
-      conversationMessage,
-      conversationMessagePartsById: input.conversationMessagePartsById,
-    });
+  for (const { conversationMessage, conversationMessageParts } of input.visibleConversationMessageRows) {
     const cachedPreparation = input.preparationCache.cacheEntriesByConversationMessageId.get(conversationMessage.id);
     const renderableConversationMessageParts = cachedPreparation && canReuseConversationMessagePreparation({
         cachedPreparation,
@@ -187,26 +202,11 @@ export function prepareRenderableConversationMessages(input: {
 
 function canReuseConversationMessagePreparation(input: {
   cachedPreparation: ConversationMessageListPreparationCacheEntry;
-  conversationMessage: ConversationMessage;
+  conversationMessage: VisibleConversationMessageRow["conversationMessage"];
   conversationMessageParts: readonly ConversationMessagePart[];
   isReasoningSummaryVisible: boolean;
 }): boolean {
   return input.cachedPreparation.conversationMessage === input.conversationMessage &&
     input.cachedPreparation.isReasoningSummaryVisible === input.isReasoningSummaryVisible &&
     areConversationMessagePartReferencesEqual(input.cachedPreparation.conversationMessageParts, input.conversationMessageParts);
-}
-
-function listConversationMessageParts(input: {
-  conversationMessage: ConversationMessage;
-  conversationMessagePartsById: Record<string, ConversationMessagePart>;
-}): ConversationMessagePart[] {
-  const conversationMessageParts: ConversationMessagePart[] = [];
-  for (const conversationMessagePartId of input.conversationMessage.partIds) {
-    const conversationMessagePart = input.conversationMessagePartsById[conversationMessagePartId];
-    if (conversationMessagePart) {
-      conversationMessageParts.push(conversationMessagePart);
-    }
-  }
-
-  return conversationMessageParts;
 }
