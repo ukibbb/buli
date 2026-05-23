@@ -31,6 +31,7 @@ export type ConversationSessionEntryRecordMetadata = {
 export type LoadedConversationSessionJsonlFileMetadata = {
   filePath: string;
   headerRecord: ConversationSessionHeaderRecord;
+  settingsRecords: ConversationSessionSettingsRecord[];
   entryRecords: ConversationSessionEntryRecordMetadata[];
 };
 
@@ -68,6 +69,7 @@ export function loadRecoverableConversationSessionFileMetadata(input: {
   const rawConversationSessionJsonlText = readFileSync(input.filePath, "utf8");
   const rawConversationSessionJsonLines = splitConversationSessionJsonlTextIntoRecordLines(rawConversationSessionJsonlText);
   const validRawConversationSessionJsonLines: string[] = [];
+  const settingsRecords: ConversationSessionSettingsRecord[] = [];
   const entryRecords: ConversationSessionEntryRecordMetadata[] = [];
   let headerRecord: ConversationSessionHeaderRecord | undefined;
 
@@ -81,7 +83,7 @@ export function loadRecoverableConversationSessionFileMetadata(input: {
       if (!headerRecord) {
         headerRecord = parseConversationSessionHeaderRecord(rawJsonLineText);
       } else if (isConversationSessionSettingsRawJsonLine(rawJsonLineText)) {
-        parseConversationSessionSettingsRecord(rawJsonLineText);
+        settingsRecords.push(parseConversationSessionSettingsRecord(rawJsonLineText));
       } else {
         entryRecords.push(parseConversationSessionEntryRecordMetadata(rawJsonLineText));
       }
@@ -102,6 +104,7 @@ export function loadRecoverableConversationSessionFileMetadata(input: {
       return {
         filePath: input.filePath,
         headerRecord,
+        settingsRecords,
         entryRecords,
       };
     }
@@ -114,6 +117,7 @@ export function loadRecoverableConversationSessionFileMetadata(input: {
   return {
     filePath: input.filePath,
     headerRecord,
+    settingsRecords,
     entryRecords,
   };
 }

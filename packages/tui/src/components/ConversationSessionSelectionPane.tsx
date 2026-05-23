@@ -183,5 +183,19 @@ function formatConversationSessionOptionLabel(
   isActiveConversationSession: boolean,
 ): string {
   const activeMarker = isActiveConversationSession ? " active" : "";
-  return `${conversationSession.title} ${conversationSession.conversationSessionEntryCount} entries${activeMarker}`;
+  const modelSelectionLabel = formatConversationSessionModelSelectionLabel(conversationSession);
+  const modelSelectionFragment = modelSelectionLabel ? ` ${modelSelectionLabel}` : "";
+  return `${conversationSession.title}${modelSelectionFragment} ${conversationSession.conversationSessionEntryCount} entries${activeMarker}`;
+}
+
+function formatConversationSessionModelSelectionLabel(conversationSession: ConversationSessionSummary): string | undefined {
+  const modelSelection = conversationSession.modelSelection;
+  if (!modelSelection) {
+    return undefined;
+  }
+
+  const reasoningEffortLabel = modelSelection.selectedReasoningEffort ??
+    modelSelection.selectedModelDefaultReasoningEffort ??
+    "default";
+  return `${modelSelection.selectedModelId}/${reasoningEffortLabel}`;
 }

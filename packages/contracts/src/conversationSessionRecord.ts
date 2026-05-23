@@ -52,6 +52,7 @@ export const ConversationSessionSummarySchema = z
     createdAtMs: z.number().int().nonnegative(),
     updatedAtMs: z.number().int().nonnegative(),
     conversationSessionEntryCount: z.number().int().nonnegative(),
+    modelSelection: ConversationSessionModelSelectionSchema.optional(),
   })
   .strict();
 

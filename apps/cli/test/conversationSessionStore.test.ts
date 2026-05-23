@@ -155,6 +155,7 @@ test("FileConversationSessionStore carries model selection into new sessions", a
       sessionId: "session-1",
       title: "New session",
       conversationSessionEntryCount: 0,
+      modelSelection,
     },
   ]);
 });

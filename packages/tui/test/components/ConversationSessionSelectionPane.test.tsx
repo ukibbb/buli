@@ -44,6 +44,51 @@ describe("ConversationSessionSelectionPane", () => {
     expect(frame).toContain("delete");
   });
 
+  test("renders_session_model_and_reasoning_metadata_when_available", async () => {
+    const updatedAtMs = new Date(2000, 0, 1, 12).getTime();
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationSessionSelectionPane
+        conversationSessions={[
+          {
+            sessionId: "session-1",
+            title: "Planning session",
+            createdAtMs: 1,
+            updatedAtMs,
+            conversationSessionEntryCount: 3,
+            modelSelection: {
+              selectedModelId: "gpt-5.5",
+              selectedModelDefaultReasoningEffort: "medium",
+              selectedReasoningEffort: "high",
+            },
+          },
+          {
+            sessionId: "session-2",
+            title: "Implementation session",
+            createdAtMs: 3,
+            updatedAtMs,
+            conversationSessionEntryCount: 5,
+            modelSelection: {
+              selectedModelId: "gpt-5.4",
+              selectedModelDefaultReasoningEffort: "medium",
+            },
+          },
+        ]}
+        highlightedConversationSessionIndex={0}
+        activeConversationSessionId="session-1"
+        pendingDeletionConversationSessionId={undefined}
+        accentColor="#00ff00"
+        onConversationSessionDeletionRequested={() => {}}
+      />,
+      { width: 100, height: 8 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Planning session gpt-5.5/high 3 entries active");
+    expect(frame).toContain("Implementation session gpt-5.4/medium 5 entries");
+  });
+
   test("groups_sessions_by_updated_day", async () => {
     const firstUpdatedAtMs = new Date(2000, 0, 2, 12).getTime();
     const secondUpdatedAtMs = new Date(2000, 0, 1, 12).getTime();

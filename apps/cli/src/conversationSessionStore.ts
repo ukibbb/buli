@@ -427,6 +427,7 @@ function summarizeConversationSessionFileMetadata(
     (entryRecord) => entryRecord.userPromptTitle !== undefined,
   );
   const title = firstUserPromptEntry?.userPromptTitle?.trim() || "New session";
+  const modelSelection = readLatestConversationSessionModelSelection(conversationSessionFile.settingsRecords);
 
   return {
     sessionId: conversationSessionFile.headerRecord.sessionId,
@@ -434,6 +435,7 @@ function summarizeConversationSessionFileMetadata(
     createdAtMs: conversationSessionFile.headerRecord.createdAtMs,
     updatedAtMs: activeConversationSessionEntryRecords.at(-1)?.recordedAtMs ?? conversationSessionFile.headerRecord.createdAtMs,
     conversationSessionEntryCount: activeConversationSessionEntryRecords.length,
+    ...(modelSelection ? { modelSelection } : {}),
   };
 }
 
