@@ -34,6 +34,15 @@ function splitRenderedViewportRows(renderedOutput: string): string[] {
   return renderedRows[renderedRows.length - 1] === "" ? renderedRows.slice(0, -1) : renderedRows;
 }
 
+function findLastNonBlankRenderedRow(renderedRows: readonly string[]): string {
+  const renderedRow = renderedRows.findLast((row) => row.trim().length > 0);
+  if (!renderedRow) {
+    throw new Error("expected rendered output to contain a non-blank row");
+  }
+
+  return renderedRow;
+}
+
 function countLeadingBlankCells(renderedRow: string): number {
   const firstVisibleCellIndex = renderedRow.search(/\S/);
   return firstVisibleCellIndex === -1 ? renderedRow.length : firstVisibleCellIndex;
@@ -103,10 +112,10 @@ describe("ChatScreen responsive layout", () => {
     await renderOnce();
     const renderedRows = splitRenderedViewportRows(captureCharFrame());
     const inputHeaderRow = findRenderedRowContaining(renderedRows.join("\n"), "Understand");
-    const bottomViewportRow = renderedRows[renderedRows.length - 1] ?? "";
+    const bottomInputRegionRow = findLastNonBlankRenderedRow(renderedRows);
 
     expectRenderedRowToSpanViewportWithTextMargin(inputHeaderRow);
-    expectRenderedRowToSpanViewportWithTextMargin(bottomViewportRow);
+    expectRenderedRowToSpanViewportWithTextMargin(bottomInputRegionRow);
   });
 
   test("left_aligns_minimum_height_prompt_strip_at_bottom_of_wide_viewport", async () => {

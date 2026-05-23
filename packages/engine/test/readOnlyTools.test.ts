@@ -88,7 +88,28 @@ test("runReadToolCall suggests obvious nearby filenames when a file is missing",
   expect(readToolCallOutcome.toolResultText).toContain("File not found: packages/chat-session-state/src/chatSlashCommand.ts");
   expect(readToolCallOutcome.toolResultText).toContain("Did you mean one of these?");
   expect(readToolCallOutcome.toolResultText).toContain("packages/chat-session-state/src/chatSlashCommands.ts");
+  expect(readToolCallOutcome.toolResultText).toContain("Do not retry guessed path variants");
   expect(readToolCallOutcome.toolResultText).not.toContain("ENOENT");
+});
+
+test("runReadToolCall tells the assistant to discover actual paths after a missing file", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-discovery-guidance-"));
+  await mkdir(join(workspaceRootPath, "apps", "api", "app", "shared", "generated_illustrations"), { recursive: true });
+  await writeFile(join(workspaceRootPath, "apps", "api", "app", "shared", "generated_illustrations", "models.py"), "# models\n", "utf8");
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "app/shared/generated_illustrations/models.py",
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("failed");
+  expect(readToolCallOutcome.toolResultText).toContain("File not found: app/shared/generated_illustrations/models.py");
+  expect(readToolCallOutcome.toolResultText).toContain(
+    "Do not retry guessed path variants. Use glob or grep to discover the actual workspace path before reading again.",
+  );
 });
 
 test("runReadToolCall returns full visible lines without shortening long lines", async () => {

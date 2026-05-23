@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import type { AssistantResponseEvent } from "@buli/contracts";
+import {
+  ActiveConversationTurnShutdownCoordinator,
+} from "@buli/chat-app-controller";
 import type {
   ActiveConversationTurn,
   AssistantConversationRunner,
@@ -8,7 +11,6 @@ import type {
 } from "@buli/engine";
 import { act } from "react";
 import { ChatScreen } from "../src/ChatScreen.tsx";
-import { ActiveConversationTurnShutdownCoordinator } from "../src/activeConversationTurnShutdown.ts";
 import { testRender } from "./testRenderWithCleanup.ts";
 
 const noopAvailableModelsLoader = async () => [];

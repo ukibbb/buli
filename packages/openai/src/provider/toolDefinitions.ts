@@ -116,7 +116,7 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
   return {
     type: "function",
     name: "read",
-    description: "Read a file or directory inside the current workspace. Use this instead of bash for known files and directories. For files, lines are returned with 1-indexed line numbers. If output is truncated and the missing lines may affect the answer, continue with offset before concluding.",
+    description: "Read a file or directory inside the current workspace. Use this instead of bash for paths already known from the user, glob, grep, or a previous directory read. Do not guess paths from imports, symbols, filenames, or extensions; discover uncertain paths with glob or grep first. For files, lines are returned with 1-indexed line numbers. If output is truncated and the missing lines may affect the answer, continue with offset before concluding.",
     parameters: {
       type: "object",
       properties: {

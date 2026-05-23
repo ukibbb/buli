@@ -36,6 +36,12 @@ test("uses file-by-file apply plans for non-trivial work", () => {
   );
   expect(systemPromptText).toContain("Inspect the files that define the behavior before explaining or planning around them.");
   expect(systemPromptText).toContain(
+    "Do not guess workspace file paths from imports, symbols, filenames, or likely extensions; before reading an inferred path, verify it with glob, grep, a directory read, or an exact user-provided path.",
+  );
+  expect(systemPromptText).toContain(
+    "After a File not found result, do not retry another guessed path variant; first discover the actual path with glob or grep.",
+  );
+  expect(systemPromptText).toContain(
     "Delegate read-only exploration when the relevant area is broad, unfamiliar, or connected across multiple files.",
   );
   expect(systemPromptText).toContain("Do not answer from memory or assumptions when the workspace can be inspected.");
@@ -391,6 +397,12 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   expect(systemPromptText).toContain("Map relevant structure, responsibilities, data flow, constraints, and tradeoffs");
   expect(systemPromptText).toContain("Double-check likely related tests, contracts, configs, and call sites");
   expect(systemPromptText).toContain("Follow imports and nearby collaborators when they define behavior, contracts, types, adapters, policies, or ownership boundaries relevant to the prompt.");
+  expect(systemPromptText).toContain(
+    "Do not guess workspace file paths from imports, symbols, filenames, or likely extensions; before reading an inferred path, verify it with glob, grep, a directory read, or an exact parent-provided path.",
+  );
+  expect(systemPromptText).toContain(
+    "After a File not found result, do not retry another guessed path variant; first discover the actual path with glob or grep.",
+  );
   expect(systemPromptText).toContain("Use only read-only inspection capabilities.");
   expect(systemPromptText).toContain(
     "When multiple inspections are independent, request them together so they can run concurrently.",

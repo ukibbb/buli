@@ -61,26 +61,39 @@ This package owns normalized conversation state, persisted transcript hydration,
 Important files:
 
 - `packages/chat-app-controller/src/useChatAppAssistantTurnActions.ts`
+- `packages/chat-app-controller/src/useChatAppController.ts`
 - `packages/chat-app-controller/src/useChatAppConversationSessionActions.ts`
+- `packages/chat-app-controller/src/useChatAppKeyboardActions.ts`
 - `packages/chat-app-controller/src/useChatAppModelSelectionActions.ts`
+- `packages/chat-app-controller/src/useChatAppPromptImageAttachmentActions.ts`
 - `packages/chat-app-controller/src/useChatAppPromptContextSelectionRefresh.ts`
 - `packages/chat-app-controller/src/relayAssistantResponseRunnerEvents.ts`
 - `packages/chat-app-controller/src/activeConversationTurnShutdown.ts`
 
-This package owns renderer-neutral chat app orchestration: assistant turn submission, streamed event batching, active turn interruption, tool approval decisions, model/session loading actions, conversation session mutations, prompt-context refresh timing, and compaction/export status. Renderers use it as the shared UI-use-case layer instead of duplicating that behavior.
+This package owns renderer-neutral chat app orchestration: live chat app state, assistant turn submission, streamed event batching, normalized keyboard action effects, prompt image attachment state changes, active turn interruption, tool approval decisions, model/session loading actions, conversation session mutations, prompt-context refresh timing, and compaction/export status. Renderers use it as the shared UI-use-case layer instead of duplicating that behavior.
 
 ### `@buli/tui`
 
 Important files:
 
 - `packages/tui/src/ChatScreen.tsx`
+- `packages/tui/src/behavior/useChatScreenController.ts`
+- `packages/tui/src/terminalChatScreenRuntime.ts`
+- `packages/tui/src/components/ChatScreenLayout.tsx`
+- `packages/tui/src/components/ChatScreenMainArea.tsx`
+- `packages/tui/src/components/ConversationTranscriptSurface.tsx`
+- `packages/tui/src/components/LiveInteractionChrome.tsx`
+- `packages/tui/src/components/LiveInteractionStatusStack.tsx`
+- `packages/tui/src/components/PromptComposerChrome.tsx`
 - `packages/tui/src/behavior/chatScreenViewModel.ts`
 - `packages/tui/src/behavior/openTuiKeyboardInputAdapter.ts`
+- `packages/tui/src/behavior/useChatScreenKeyboardInputActions.ts`
+- `packages/tui/src/behavior/useConversationTranscriptViewport.ts`
 - `packages/tui/src/components/ConversationMessageList.tsx`
 - `packages/tui/src/components/ConversationMessageRow.tsx`
 - `packages/tui/src/components/messageParts/*`
 
-This is the OpenTUI-backed renderer. It owns the fullscreen chat shell, follow-bottom transcript behavior through OpenTUI scrollbox mechanics, renderer-specific keyboard normalization, paste handling, viewport-derived render data, and visible component composition. Domain state transitions stay in `@buli/chat-session-state`; UI-use-case orchestration lives in `@buli/chat-app-controller`.
+This is the OpenTUI-backed renderer. It owns the fullscreen chat shell, terminal renderer lifecycle, transcript viewport mechanics, renderer-specific keyboard and paste normalization, viewport-derived render data, and visible component composition. `ChatScreen` is now the terminal-aware shell entry, `useChatScreenController` adapts `useChatAppController` to terminal viewport and layout props, `ChatScreenLayout` owns region layout, `ConversationTranscriptSurface` separates transcript rendering from live controls, and `LiveInteractionChrome` coordinates explicitly grouped status-stack and prompt-composer props. Domain state transitions stay in `@buli/chat-session-state`; renderer-neutral UI-use-case orchestration lives in `@buli/chat-app-controller`.
 
 ## What A Streaming Turn Looks Like
 
@@ -181,8 +194,9 @@ or engine.
 Current constraints:
 
 - `apps/cli/src/commands/chat.ts` creates the long-lived runtime and provider objects once at startup
-- `packages/tui/src/index.ts` mounts one OpenTUI root once per process
-- `packages/tui/src/ChatScreen.tsx` keeps active UI state in React hooks
+- `packages/tui/src/terminalChatScreenRuntime.ts` mounts one OpenTUI root once per process
+- `packages/chat-app-controller/src/useChatAppController.ts` keeps active chat app state in React hooks
+- `packages/tui/src/behavior/useChatScreenController.ts` adapts chat app state to OpenTUI viewport and layout props
 - `packages/openai/src/provider/turnSession.ts` snapshots one `systemPromptText` for the whole active provider turn
 - session persistence restores canonical transcript history, not live in-memory runtime objects during an active code reload
 - there is no reload command surface
@@ -356,6 +370,7 @@ If dev-only full process hot restart is implemented later:
 - `packages/chat-session-state/src/*` for any extra UI snapshot state beyond existing transcript hydration
 - `packages/tui/src/ChatScreen.tsx`
 - `packages/tui/src/index.ts`
+- `packages/tui/src/terminalChatScreenRuntime.ts`
 - `apps/cli/src/commands/chat.ts`
 - `apps/cli` tests and selected `@buli/tui` tests
 
@@ -377,7 +392,15 @@ Read these files in order:
 6. `packages/engine/src/assistantTextMessagePartBuilder.ts`
 7. `packages/engine/src/runtime.ts`
 8. `packages/tui/src/ChatScreen.tsx`
-9. `packages/tui/src/components/ConversationMessageList.tsx`
+9. `packages/tui/src/behavior/useChatScreenController.ts`
+10. `packages/chat-app-controller/src/useChatAppController.ts`
+11. `packages/tui/src/components/ChatScreenLayout.tsx`
+12. `packages/tui/src/components/ConversationTranscriptSurface.tsx`
+13. `packages/tui/src/components/LiveInteractionChrome.tsx`
+14. `packages/tui/src/components/LiveInteractionStatusStack.tsx`
+15. `packages/tui/src/components/PromptComposerChrome.tsx`
+16. `packages/tui/src/components/ConversationMessageList.tsx`
+17. `packages/chat-app-controller/src/useChatAppKeyboardActions.ts`
 
 ## Further Reading
 

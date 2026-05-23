@@ -6,18 +6,18 @@ import {
   type ChatSessionState,
 } from "@buli/chat-session-state";
 import type { PromptContextCandidate } from "@buli/engine";
-import { act, useState } from "react";
 import {
-  useChatScreenPromptContextSelectionRefresh,
-  type LoadChatScreenPromptContextCandidates,
-  type UseChatScreenPromptContextSelectionRefreshResult,
-} from "../src/behavior/useChatScreenPromptContextSelectionRefresh.ts";
+  useChatAppPromptContextSelectionRefresh,
+  type LoadChatAppPromptContextCandidates,
+  type UseChatAppPromptContextSelectionRefreshResult,
+} from "@buli/chat-app-controller";
+import { act, useState } from "react";
 import { testRender } from "./testRenderWithCleanup.ts";
 
 type PromptContextRefreshHarnessApi = {
   chatSessionState: ChatSessionState;
   replacePromptDraft: (promptDraft: string) => void;
-  dismissActivePromptContextQuery: UseChatScreenPromptContextSelectionRefreshResult["dismissActivePromptContextQuery"];
+  dismissActivePromptContextQuery: UseChatAppPromptContextSelectionRefreshResult["dismissActivePromptContextQuery"];
 };
 
 type RenderedPromptContextRefreshHook = {
@@ -32,7 +32,7 @@ type PendingPromptContextLoad = {
 };
 
 async function renderPromptContextRefreshHook(input: {
-  loadPromptContextCandidates: LoadChatScreenPromptContextCandidates;
+  loadPromptContextCandidates: LoadChatAppPromptContextCandidates;
   diagnosticLogEvents: BuliDiagnosticLogEvent[];
 }): Promise<RenderedPromptContextRefreshHook> {
   let latestHarnessApi: PromptContextRefreshHarnessApi | undefined;
@@ -78,14 +78,14 @@ async function renderPromptContextRefreshHook(input: {
 }
 
 function PromptContextRefreshHookProbe(props: {
-  loadPromptContextCandidates: LoadChatScreenPromptContextCandidates;
+  loadPromptContextCandidates: LoadChatAppPromptContextCandidates;
   diagnosticLogEvents: BuliDiagnosticLogEvent[];
   observeHarnessApi: (harnessApi: PromptContextRefreshHarnessApi) => void;
 }) {
   const [chatSessionState, setChatSessionState] = useState(() =>
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" })
   );
-  const hookResult = useChatScreenPromptContextSelectionRefresh({
+  const hookResult = useChatAppPromptContextSelectionRefresh({
     chatSessionState,
     setChatSessionState,
     loadPromptContextCandidates: props.loadPromptContextCandidates,
@@ -111,7 +111,7 @@ function PromptContextRefreshHookProbe(props: {
   return <box />;
 }
 
-test("useChatScreenPromptContextSelectionRefresh loads current-directory candidates immediately", async () => {
+test("useChatAppPromptContextSelectionRefresh loads current-directory candidates immediately", async () => {
   const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const requestedPromptContextQueryTexts: string[] = [];
   const promptContextCandidates = [createPromptContextCandidate("README.md")];
@@ -135,7 +135,7 @@ test("useChatScreenPromptContextSelectionRefresh loads current-directory candida
   });
 });
 
-test("useChatScreenPromptContextSelectionRefresh debounces fuzzy candidate loads", async () => {
+test("useChatAppPromptContextSelectionRefresh debounces fuzzy candidate loads", async () => {
   const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const requestedPromptContextQueryTexts: string[] = [];
   const renderedHook = await renderPromptContextRefreshHook({
@@ -160,7 +160,7 @@ test("useChatScreenPromptContextSelectionRefresh debounces fuzzy candidate loads
   });
 });
 
-test("useChatScreenPromptContextSelectionRefresh discards stale resolved loads", async () => {
+test("useChatAppPromptContextSelectionRefresh discards stale resolved loads", async () => {
   const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const pendingPromptContextLoads: PendingPromptContextLoad[] = [];
   const renderedHook = await renderPromptContextRefreshHook({
@@ -210,7 +210,7 @@ test("useChatScreenPromptContextSelectionRefresh discards stale resolved loads",
   });
 });
 
-test("useChatScreenPromptContextSelectionRefresh hides candidates when loading fails", async () => {
+test("useChatAppPromptContextSelectionRefresh hides candidates when loading fails", async () => {
   const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const renderedHook = await renderPromptContextRefreshHook({
     diagnosticLogEvents,

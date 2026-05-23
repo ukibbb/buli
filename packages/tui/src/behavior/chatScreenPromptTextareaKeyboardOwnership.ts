@@ -1,17 +1,18 @@
 import type { ChatSessionKeyboardInput, ChatSessionState } from "@buli/chat-session-state";
+import {
+  canChatAppPromptDraftBeEdited,
+  canChatSessionPromptDraftBeEdited,
+} from "@buli/chat-app-controller";
 
 export function canPromptTextareaEditChatSessionState(chatSessionState: ChatSessionState): boolean {
-  return chatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
-    !chatSessionState.isCommandHelpModalVisible &&
-    chatSessionState.modelAndReasoningSelectionState.step === "hidden" &&
-    chatSessionState.conversationSessionSelectionState.step === "hidden";
+  return canChatSessionPromptDraftBeEdited(chatSessionState);
 }
 
 export function canPromptTextareaEditChatScreenInput(input: {
   chatSessionState: ChatSessionState;
   isConversationCompactionInFlight: boolean;
 }): boolean {
-  return !input.isConversationCompactionInFlight && canPromptTextareaEditChatSessionState(input.chatSessionState);
+  return canChatAppPromptDraftBeEdited(input);
 }
 
 export function isPromptInteractionKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {

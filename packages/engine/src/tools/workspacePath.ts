@@ -109,8 +109,9 @@ async function buildMissingWorkspacePathError(input: {
 }): Promise<string> {
   const missingDisplayPath = formatWorkspaceDisplayPath(input.workspaceRootPath, input.candidateAbsolutePath);
   const parentAbsolutePath = dirname(input.candidateAbsolutePath);
+  const missingPathErrorText = buildMissingWorkspacePathErrorText(missingDisplayPath);
   if (!isPathInsideWorkspace(input.workspaceRootPath, parentAbsolutePath)) {
-    return `File not found: ${missingDisplayPath}`;
+    return missingPathErrorText;
   }
 
   const parentDirectoryEntries = await readdir(parentAbsolutePath, { withFileTypes: true }).catch(() => []);
@@ -121,7 +122,7 @@ async function buildMissingWorkspacePathError(input: {
     parentDirectoryEntries,
   });
   if (suggestedDisplayPaths.length === 0) {
-    return `File not found: ${missingDisplayPath}`;
+    return missingPathErrorText;
   }
 
   return [
@@ -129,7 +130,21 @@ async function buildMissingWorkspacePathError(input: {
     "",
     "Did you mean one of these?",
     ...suggestedDisplayPaths,
+    "",
+    buildMissingWorkspacePathDiscoveryGuidance(),
   ].join("\n");
+}
+
+function buildMissingWorkspacePathErrorText(missingDisplayPath: string): string {
+  return [
+    `File not found: ${missingDisplayPath}`,
+    "",
+    buildMissingWorkspacePathDiscoveryGuidance(),
+  ].join("\n");
+}
+
+function buildMissingWorkspacePathDiscoveryGuidance(): string {
+  return "Do not retry guessed path variants. Use glob or grep to discover the actual workspace path before reading again.";
 }
 
 function listClosestMissingWorkspacePathSuggestions(input: {

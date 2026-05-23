@@ -42,6 +42,21 @@ test("interruptActiveConversationTurnAndWaitForSettlement waits for the active t
   expect(hasShutdownSettled).toBe(true);
 });
 
+test("clearActiveConversationTurn lets a later turn be interrupted independently", () => {
+  const shutdownCoordinator = new ActiveConversationTurnShutdownCoordinator();
+  const firstTurn = createCountingActiveConversationTurn();
+  const secondTurn = createCountingActiveConversationTurn();
+
+  shutdownCoordinator.registerActiveConversationTurn(firstTurn.activeConversationTurn);
+  expect(shutdownCoordinator.interruptActiveConversationTurn()).toBe(true);
+  shutdownCoordinator.clearActiveConversationTurn(firstTurn.activeConversationTurn);
+  shutdownCoordinator.registerActiveConversationTurn(secondTurn.activeConversationTurn);
+  expect(shutdownCoordinator.interruptActiveConversationTurn()).toBe(true);
+
+  expect(firstTurn.getInterruptCount()).toBe(1);
+  expect(secondTurn.getInterruptCount()).toBe(1);
+});
+
 function createCountingActiveConversationTurn(): {
   activeConversationTurn: ActiveConversationTurn;
   getInterruptCount: () => number;

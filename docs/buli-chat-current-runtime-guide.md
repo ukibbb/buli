@@ -47,10 +47,10 @@ The current chat app is split across these packages.
 | `apps/cli` | Command-line entrypoints and composition root. |
 | `packages/contracts` | Shared typed shapes for messages, parts, events, usage, tools, and history. |
 | `packages/chat-session-state` | Reducers and selectors for local UI/session state. |
-| `packages/chat-app-controller` | Renderer-neutral chat app actions: assistant turn relay, active turn interruption, tool approval, session/model loading, prompt-context refresh, and session compaction/export orchestration. |
+| `packages/chat-app-controller` | Renderer-neutral chat app state and actions: normalized keyboard effects, assistant turn relay, prompt image attachment state, active turn interruption, tool approval, session/model loading, prompt-context refresh, and session compaction/export orchestration. |
 | `packages/engine` | Provider-independent assistant runtime, in-memory history, prompt-context expansion, bash execution, and tool approval. |
 | `packages/openai` | Auth, model discovery, Responses API request building, SSE parsing, and tool-continuation loop. |
-| `packages/tui` | OpenTUI React renderer, chat screen, renderer-specific keyboard/paste behavior, transcript rendering, and component dispatch. |
+| `packages/tui` | OpenTUI React renderer, terminal runtime lifecycle, renderer-specific keyboard/paste adapters, transcript rendering, live interaction chrome, and component dispatch. |
 
 ## Mental Model
 
@@ -446,14 +446,17 @@ These objects stay alive for the fullscreen session.
 | `OpenAiProvider` | `apps/cli/src/commands/chat.ts` | Talks to OpenAI. |
 | `PromptContextCandidateCatalog` | `apps/cli/src/commands/chat.ts` | Lists files/folders for the `@` picker. |
 | `AssistantConversationRuntime` | `apps/cli/src/commands/chat.ts` | Runs assistant turns and tool calls. |
-| OpenTUI renderer | `packages/tui/src/index.ts` | Owns fullscreen terminal rendering. |
-| `ChatScreen` | `packages/tui/src/index.ts` | Owns chat state, keyboard behavior, and layout. |
+| TUI entrypoint | `packages/tui/src/index.ts` | Wires the production OpenTUI renderer, React root, and app element factory. |
+| OpenTUI terminal runtime | `packages/tui/src/terminalChatScreenRuntime.ts` | Owns alternate-screen renderer creation, React root lifetime, console-capture environment restoration, and active-turn shutdown. |
+| `ChatScreen` | `packages/tui/src/ChatScreen.tsx` | Owns current chat screen state and connects controller actions to layout props. |
 
 ### TUI Mount
 
 Source file:
 
 `packages/tui/src/index.ts`
+
+`packages/tui/src/terminalChatScreenRuntime.ts`
 
 ```ts
 const cliRenderer = await createCliRenderer({
@@ -469,12 +472,13 @@ The terminal switches into alternate-screen mode.
 That means the app owns the visible screen while it is running, and the previous
 terminal content is restored after exit.
 
-Then the root renders `ChatScreen`:
+Then the root renders `TerminalChatScreenApp`, which contains `ChatScreen` and the terminal selection clipboard bridge:
 
 ```ts
 root.render(
-  React.createElement(ChatScreen, {
+  runtime.createChatScreenElement({
     assistantConversationRunner: input.assistantConversationRunner,
+    activeConversationTurnShutdownCoordinator,
     loadAvailableAssistantModels: input.loadAvailableAssistantModels,
     loadPromptContextCandidates: input.loadPromptContextCandidates,
     selectedModelId: input.selectedModelId,
@@ -482,19 +486,22 @@ root.render(
 );
 ```
 
-The returned instance waits until OpenTUI is destroyed:
+The returned instance can request shutdown and then wait for both renderer destruction and active-turn settlement:
 
 ```ts
-waitUntilExit(): Promise<void> {
-  return new Promise<void>((resolve) => {
-    cliRenderer.once("destroy", () => resolve());
-  });
+destroy(): void {
+  destroyRendererOnce();
+}
+
+async waitUntilExit(): Promise<void> {
+  await rendererDestroyedPromise;
+  await activeConversationTurnShutdownCoordinator.interruptActiveConversationTurnAndWaitForSettlement();
 }
 ```
 
 Current note: `ChatScreen` does not define a custom quit shortcut. Process exit
-is handled outside this component, for example by the terminal/runtime interrupt
-behavior.
+is handled outside this component, and terminal shutdown is coordinated by
+`terminalChatScreenRuntime.ts`.
 
 ## Initial Chat State
 
@@ -541,7 +548,9 @@ The first real state is simple:
 
 Source file:
 
-`packages/tui/src/ChatScreen.tsx`
+`packages/chat-app-controller/src/useChatAppController.ts`
+
+`packages/tui/src/behavior/useChatScreenController.ts`
 
 ```ts
 const [chatSessionState, setChatSessionState] = useState(() =>
@@ -552,18 +561,23 @@ const [chatSessionState, setChatSessionState] = useState(() =>
 );
 ```
 
-`ChatScreen` owns the live state for the current UI session.
+`useChatAppController` owns the live state for the current UI session.
+`useChatScreenController` adapts that renderer-neutral state to transcript
+viewport callbacks, OpenTUI keyboard/paste actions, render diagnostics, and
+`ChatScreenLayout` props. `ChatScreen` reads terminal dimensions, formats the
+working-directory label, and renders `ChatScreenLayout`.
 
 That state is not persisted to disk. If the process exits, the visible chat
 session is lost.
 
-`ChatScreen` also stores refs for things that need current values inside async
+The app controller also stores refs for things that need current values inside async
 callbacks:
 
 ```ts
 const latestChatSessionStateRef = useRef<ChatSessionState>(chatSessionState);
-const latestActiveConversationTurnRef = useRef<ActiveConversationTurn | undefined>(undefined);
-const conversationMessageScrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
+const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
+const isPromptSubmissionInFlightRef = useRef(false);
+const isConversationCompactionInFlightRef = useRef(false);
 ```
 
 These refs matter because streaming and keyboard handlers can run after React
@@ -579,17 +593,20 @@ Top region
 
 Middle region
   -> CommandHelpModal
-  -> model loading text
-  -> model loading error
-  -> ModelAndReasoningSelectionPane
-  -> empty/blank area before first message
-  -> ConversationMessageList after messages exist
+  -> ConversationTranscriptSurface
+     -> ConversationMessageList, even before the first message
 
 Bottom region
-  -> ToolApprovalRequestBlock when approval is pending
-  -> SlashCommandSelectionPane when / picker is active
-  -> PromptContextSelectionPane when @ picker is active
-  -> InputPanel or MinimumHeightPromptStrip
+  -> LiveInteractionChrome
+     -> LiveInteractionStatusStack
+        -> ToolApprovalRequestBlock when approval is pending
+        -> export or compaction status panes when active
+        -> ConversationSessionSelectionPane when session selection is active
+        -> ModelAndReasoningSelectionPane when model/reasoning selection is active
+        -> SlashCommandSelectionPane when / picker is active
+        -> PromptContextSelectionPane when @ picker is active
+     -> PromptComposerChrome
+        -> InputPanel or MinimumHeightPromptStrip
 ```
 
 The middle region is mutually exclusive. Only one primary thing wins.
@@ -600,35 +617,27 @@ The bottom region is additive. Several support surfaces can stack at once.
 
 Source file:
 
-`packages/tui/src/ChatScreen.tsx`
+`packages/tui/src/components/ChatScreenLayout.tsx`
+
+`packages/tui/src/components/ChatScreenMainArea.tsx`
 
 ```tsx
 {chatSessionState.isCommandHelpModalVisible ? (
   <CommandHelpModal ... />
-) : modelAndReasoningSelectionPane ? (
-  modelAndReasoningSelectionPane
 ) : (
-  <ConversationMessageList ... />
+  <ConversationTranscriptSurface ... />
 )}
 ```
 
-The production middle branch is `ConversationMessageList`. It renders even when
-the ordered message list is empty, so a fresh session starts with an empty
-transcript area rather than a separate demo surface.
+The production middle branch is `ConversationTranscriptSurface`, which wraps
+`ConversationMessageList`. It renders even when the ordered message list is
+empty, so a fresh session starts with an empty transcript area rather than a
+separate demo surface.
 
 The bottom region is independent:
 
 ```tsx
-{chatSessionState.pendingToolApprovalRequest ? (
-  <ToolApprovalRequestBlock ... />
-) : null}
-{slashCommandSelectionPane}
-{promptContextSelectionPane}
-{terminalSizeTierForChatScreen === minimumTerminalSizeTier ? (
-  <MinimumHeightPromptStrip ... />
-) : (
-  <InputPanel ... />
-)}
+<LiveInteractionChrome statusStackProps={...} promptComposerProps={...} />
 ```
 
 This is why tool approval can appear below the transcript instead of replacing
@@ -638,53 +647,48 @@ the transcript.
 
 Source file:
 
-`packages/tui/src/ChatScreen.tsx`
+`packages/tui/src/behavior/useChatScreenKeyboardInputActions.ts`
 
-The keyboard handler first resolves the current interaction scope:
+`packages/chat-app-controller/src/useChatAppKeyboardActions.ts`
+
+`packages/chat-session-state/src/chatSessionKeyboardInteraction.ts`
+
+The TUI owns OpenTUI event plumbing, then delegates normalized chat actions to
+the renderer-neutral controller.
 
 ```ts
-function resolveChatScreenInteractionScope(chatSessionState: ChatSessionState): ChatScreenInteractionScope {
-  if (chatSessionState.isCommandHelpModalVisible) {
-    return "command_help_modal";
-  }
-
-  if (chatSessionState.modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices") {
-    return "reasoning_effort_selection";
-  }
-
-  if (chatSessionState.modelAndReasoningSelectionState.step !== "hidden") {
-    return "model_selection";
-  }
-
-  if (chatSessionState.slashCommandSelectionState.step !== "hidden") {
-    return "slash_command_selection";
-  }
-
-  if (chatSessionState.promptContextSelectionState.step !== "hidden") {
-    return "prompt_context_selection";
-  }
-
-  if (
-    chatSessionState.conversationTurnStatus === "waiting_for_tool_approval" &&
-    chatSessionState.pendingToolApprovalRequest
-  ) {
-    return "tool_approval";
-  }
-
-  return "prompt_draft_editing";
-}
+useKeyboard((keyEvent: KeyEvent) => {
+  applyKeyboardInputToChatScreen({
+    chatSessionKeyboardInput: normalizeOpenTuiKeyEventForChatSession(keyEvent),
+    inputEvent: keyEvent,
+  });
+});
 ```
+
+The TUI adapter still handles renderer-only concerns:
+
+- preventing default OpenTUI behavior when a key is consumed
+- paste events and native clipboard image reads
+- respecting when `PromptTextarea` already owns a key
+
+After that, `useChatAppKeyboardActions` applies the shared keyboard reducer and
+executes typed effects such as prompt submission, slash-command execution,
+model/session loading, tool approval decisions, active-turn interruption, and
+transcript page scrolling.
+Prompt image placeholder deletion and pasted-image state changes are handled by
+`useChatAppPromptImageAttachmentActions`; the TUI only supplies the native
+clipboard image reader and consumes the OpenTUI event.
 
 This decides what keys mean.
 
-| Scope | Example key behavior |
+| State scope | Example key behavior |
 | --- | --- |
-| `model_selection` | Up/down move model highlight. Enter selects. Esc closes. |
-| `reasoning_effort_selection` | Up/down move reasoning highlight. Enter selects. Esc closes. |
-| `slash_command_selection` | Up/down move command highlight. Enter executes. Esc closes. |
-| `prompt_context_selection` | Up/down move context candidate. Enter inserts. Esc dismisses. |
-| `tool_approval` | `Y` approves, `N` denies, and `Esc` requests active-turn interruption. |
-| `prompt_draft_editing` | Text edits draft. Enter submits. Left/right move caret. |
+| model selection | Up/down move model highlight. Enter selects. Esc closes. |
+| reasoning-effort selection | Up/down move reasoning highlight. Enter selects. Esc closes. |
+| slash-command selection | Up/down move command highlight. Enter executes. Esc closes. |
+| prompt-context selection | Up/down move context candidate. Enter inserts. Esc dismisses. |
+| tool approval | `Y` approves, `N` denies, and `Esc` requests active-turn interruption. |
+| prompt draft editing | Text edits draft. Enter submits. Left/right move caret. |
 
 ## Typing Flow
 
@@ -694,16 +698,23 @@ The user types a normal character.
 
 ### Keyboard Handler
 
-Source file:
+Source files:
 
-`packages/tui/src/ChatScreen.tsx`
+`packages/tui/src/behavior/openTuiKeyboardInputAdapter.ts`
+
+`packages/tui/src/behavior/useChatScreenKeyboardInputActions.ts`
+
+`packages/chat-app-controller/src/useChatAppKeyboardActions.ts`
+
+The OpenTUI key event becomes a `ChatSessionKeyboardInput`, then the controller
+applies it to shared session state.
 
 ```ts
-if (keyEvent.sequence && !keyEvent.ctrl && !keyEvent.meta && keyEvent.sequence.length === 1) {
-  setChatSessionState((currentChatSessionState) =>
-    insertTextIntoPromptDraftAtCursor(currentChatSessionState, keyEvent.sequence),
-  );
-}
+const keyboardInteraction = applyChatSessionKeyboardInputToChatSessionState({
+  chatSessionState: previousChatSessionState,
+  chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
+  isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || input.isConversationCompactionInFlightRef.current,
+});
 ```
 
 ### State Update
@@ -711,6 +722,8 @@ if (keyEvent.sequence && !keyEvent.ctrl && !keyEvent.meta && keyEvent.sequence.l
 Source file:
 
 `packages/chat-session-state/src/promptDraftReducer.ts`
+
+For ordinary text, the keyboard reducer reaches the prompt draft reducer:
 
 ```ts
 export function insertTextIntoPromptDraftAtCursor(chatSessionState: ChatSessionState, insertedText: string): ChatSessionState {
@@ -734,12 +747,13 @@ Source file:
 `packages/tui/src/components/InputPanel.tsx`
 
 ```tsx
-<PromptDraftText
+<PromptTextarea
   promptDraft={props.promptDraft}
   promptDraftCursorOffset={props.promptDraftCursorOffset}
   selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
-  cursorCharacter={cursorCharacter}
-  shouldRenderPromptDraftOnSingleLine={true}
+  isFocused={true}
+  onPromptDraftEdited={props.onPromptDraftEdited}
+  onPromptSubmitted={props.onPromptSubmitted}
 />
 ```
 
@@ -2998,19 +3012,20 @@ Execution path:
 
 ```text
 User types text
-  -> ChatScreen keyboard handler
+  -> OpenTUI keyboard adapter
+  -> useChatAppKeyboardActions
   -> insertTextIntoPromptDraftAtCursor
   -> chatSessionState.promptDraft updates
   -> InputPanel renders draft
 
 User presses Enter
-  -> submitPromptDraft
+  -> useChatAppKeyboardActions applies submit-prompt effect
   -> user message added to chatSessionState
   -> promptDraft cleared
   -> conversationTurnStatus = streaming_assistant_response
   -> ConversationMessageList renders user message
 
-ChatScreen starts streaming
+Assistant-turn action starts streaming
   -> relayAssistantResponseRunnerEvents
   -> AssistantConversationRuntime.startConversationTurn
   -> RuntimeConversationTurn.streamAssistantResponseEvents
@@ -3044,7 +3059,7 @@ Execution path:
 
 ```text
 User types @packages...
-  -> ChatScreen detects active prompt-context query
+  -> prompt-context refresh hook detects active prompt-context query
   -> PromptContextCandidateCatalog lists matching candidates
   -> promptContextSelectionState shows candidates
   -> PromptContextSelectionPane renders bottom picker
@@ -3128,10 +3143,11 @@ OpenAI streams function call
   -> runtime emits assistant_pending_tool_approval_requested
   -> reducer sets conversationTurnStatus = waiting_for_tool_approval
   -> reducer stores pendingToolApprovalRequest
-  -> ChatScreen renders ToolApprovalRequestBlock in bottom region
+  -> LiveInteractionStatusStack renders ToolApprovalRequestBlock in bottom region
 
 User presses y
-  -> ChatScreen calls activeTurn.approvePendingToolCall(approvalId)
+  -> useChatAppKeyboardActions submits an approved tool decision
+  -> active turn approves approvalId
   -> runtime promise resolves approved
   -> runtime clears pending approval
   -> tool-call part updates to running
@@ -3139,7 +3155,8 @@ User presses y
   -> result goes back to OpenAI
 
 User presses n
-  -> ChatScreen calls activeTurn.denyPendingToolCall(approvalId)
+  -> useChatAppKeyboardActions submits a denied tool decision
+  -> active turn denies approvalId
   -> runtime promise resolves denied
   -> command is not executed
   -> tool-call part updates to denied
@@ -3228,14 +3245,16 @@ Use this map when you are trying to answer “where does this happen?”
 | Why did chat not start? | `apps/cli/src/commands/chat.ts` |
 | How is auth loaded? | `packages/openai/src/auth/store.ts` |
 | How is auth refreshed? | `packages/openai/src/auth/refresh.ts` |
-| How is the TUI mounted? | `packages/tui/src/index.ts` |
-| Who owns chat state? | `packages/chat-session-state/src/chatSessionState.ts` and reducers in `packages/chat-session-state/src/*` |
+| How is the TUI mounted? | `packages/tui/src/index.ts` and `packages/tui/src/terminalChatScreenRuntime.ts` |
+| Who owns chat app state wiring? | `packages/chat-app-controller/src/useChatAppController.ts` |
+| Who adapts chat state to OpenTUI layout? | `packages/tui/src/behavior/useChatScreenController.ts` |
+| Who owns chat state transitions? | `packages/chat-session-state/src/chatSessionState.ts` and reducers in `packages/chat-session-state/src/*` |
 | What is initial state? | `packages/chat-session-state/src/chatSessionState.ts` |
-| How does typing update draft? | `packages/chat-session-state/src/promptDraftReducer.ts` |
-| How does Enter submit? | `packages/chat-session-state/src/promptDraftReducer.ts` |
+| How does typing update draft? | `packages/tui/src/behavior/useChatScreenKeyboardInputActions.ts`, `packages/chat-app-controller/src/useChatAppKeyboardActions.ts`, and `packages/chat-session-state/src/promptDraftReducer.ts` |
+| How does Enter submit? | `packages/chat-app-controller/src/useChatAppKeyboardActions.ts` and `packages/chat-session-state/src/chatSessionKeyboardInteraction.ts` |
 | How does `/` command selection work? | `packages/chat-session-state/src/slashCommandSelectionReducer.ts`, `packages/chat-session-state/src/chatSlashCommands.ts`, and `packages/chat-session-state/src/chatSlashCommandApplication.ts` |
 | How does `@` picker work? | `packages/chat-session-state/src/promptContextSelectionRefresh.ts`, `packages/chat-session-state/src/promptContextSelectionReducer.ts`, and `packages/engine/src/prompt-context/*` |
-| How does a turn start? | `packages/tui/src/relayAssistantResponseRunnerEvents.ts` |
+| How does a turn start? | `packages/chat-app-controller/src/useChatAppAssistantTurnActions.ts` and `packages/chat-app-controller/src/relayAssistantResponseRunnerEvents.ts` |
 | How does the runtime work? | `packages/engine/src/runtime.ts` |
 | How is OpenAI request built? | `packages/openai/src/provider/turnSession.ts` |
 | How is history reconstructed? | `packages/openai/src/provider/request.ts` |
@@ -3256,27 +3275,37 @@ Read these files in this order if you want to build understanding gradually.
 1. `apps/cli/src/main.ts`
 2. `apps/cli/src/commands/chat.ts`
 3. `packages/tui/src/index.ts`
-4. `packages/tui/src/ChatScreen.tsx`
-5. `packages/chat-session-state/src/chatSessionState.ts`
-6. `packages/chat-session-state/src/promptDraftReducer.ts`
-7. `packages/chat-session-state/src/slashCommandSelectionReducer.ts`
-8. `packages/chat-session-state/src/chatSlashCommands.ts`
-9. `packages/chat-session-state/src/chatSlashCommandApplication.ts`
-10. `packages/chat-session-state/src/promptContextSelectionRefresh.ts`
-11. `packages/tui/src/relayAssistantResponseRunnerEvents.ts`
-12. `packages/engine/src/provider.ts`
-13. `packages/engine/src/runtime.ts`
-14. `packages/openai/src/provider/client.ts`
-15. `packages/openai/src/provider/turnSession.ts`
-16. `packages/openai/src/provider/stream.ts`
-17. `packages/openai/src/provider/request.ts`
-16. `packages/chat-session-state/src/assistantTurnEventReducer.ts`
-17. `packages/tui/src/components/ConversationMessageList.tsx`
-18. `packages/tui/src/components/ConversationMessageRow.tsx`
-19. `packages/tui/src/components/messageParts/AssistantTextPartView.tsx`
-20. `packages/tui/src/richText/renderAssistantResponseTree.tsx`
-21. `packages/engine/src/tools/bashToolApprovalPolicy.ts`
-22. `packages/engine/src/tools/bashTool.ts`
+4. `packages/tui/src/terminalChatScreenRuntime.ts`
+5. `packages/tui/src/ChatScreen.tsx`
+6. `packages/tui/src/behavior/useChatScreenController.ts`
+7. `packages/chat-app-controller/src/useChatAppController.ts`
+8. `packages/tui/src/components/ChatScreenLayout.tsx`
+9. `packages/tui/src/components/ConversationTranscriptSurface.tsx`
+10. `packages/tui/src/components/LiveInteractionChrome.tsx`
+11. `packages/tui/src/components/LiveInteractionStatusStack.tsx`
+12. `packages/tui/src/components/PromptComposerChrome.tsx`
+13. `packages/chat-session-state/src/chatSessionState.ts`
+14. `packages/chat-app-controller/src/useChatAppKeyboardActions.ts`
+15. `packages/chat-app-controller/src/useChatAppPromptImageAttachmentActions.ts`
+16. `packages/chat-session-state/src/promptDraftReducer.ts`
+17. `packages/chat-session-state/src/slashCommandSelectionReducer.ts`
+18. `packages/chat-session-state/src/chatSlashCommands.ts`
+19. `packages/chat-session-state/src/chatSlashCommandApplication.ts`
+20. `packages/chat-session-state/src/promptContextSelectionRefresh.ts`
+21. `packages/chat-app-controller/src/relayAssistantResponseRunnerEvents.ts`
+22. `packages/engine/src/provider.ts`
+23. `packages/engine/src/runtime.ts`
+24. `packages/openai/src/provider/client.ts`
+25. `packages/openai/src/provider/turnSession.ts`
+26. `packages/openai/src/provider/stream.ts`
+27. `packages/openai/src/provider/request.ts`
+28. `packages/chat-session-state/src/assistantTurnEventReducer.ts`
+29. `packages/tui/src/components/ConversationMessageList.tsx`
+30. `packages/tui/src/components/ConversationMessageRow.tsx`
+31. `packages/tui/src/components/messageParts/AssistantTextPartView.tsx`
+32. `packages/tui/src/richText/renderAssistantResponseTree.tsx`
+33. `packages/engine/src/tools/bashToolApprovalPolicy.ts`
+34. `packages/engine/src/tools/bashTool.ts`
 
 ## One Complete Data Flow Example
 
@@ -3284,13 +3313,14 @@ This is the whole path for a prompt that produces text and no tools.
 
 ```text
 User presses keys
-  -> ChatScreen useKeyboard
+  -> useChatScreenKeyboardInputActions useKeyboard
+  -> useChatAppKeyboardActions
   -> insertTextIntoPromptDraftAtCursor
   -> chatSessionState.promptDraft
-  -> InputPanel / PromptDraftText
+  -> InputPanel / PromptTextarea
 
 User presses Enter
-  -> submitPromptDraft
+  -> useChatAppKeyboardActions submit-prompt effect
   -> user ConversationMessage + user_text part
   -> conversationTurnStatus = streaming_assistant_response
   -> ConversationMessageList renders UserPromptBlock

@@ -4,7 +4,7 @@ import type { ConversationMessage, ConversationMessagePart } from "@buli/contrac
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ReactNode, RefObject } from "react";
 import { CommandHelpModal } from "./CommandHelpModal.tsx";
-import { ConversationMessageList } from "./ConversationMessageList.tsx";
+import { ConversationTranscriptSurface } from "./ConversationTranscriptSurface.tsx";
 
 export type ChatScreenMainAreaProps = {
   chatSessionState: ChatSessionState;
@@ -37,7 +37,7 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
   }
 
   return (
-    <ConversationMessageList
+    <ConversationTranscriptSurface
       conversationMessages={props.orderedConversationMessages}
       hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
       isReasoningSummaryVisible={props.chatSessionState.isReasoningSummaryVisible}
@@ -45,8 +45,7 @@ export function ChatScreenMainArea(props: ChatScreenMainAreaProps): ReactNode {
       onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
       resolveConversationMessageParts={props.resolveConversationMessageParts}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
-      horizontalRuleColor={props.inputPanelAccentColor}
-      userMessageBorderColor={props.inputPanelAccentColor}
+      accentColor={props.inputPanelAccentColor}
       terminalColumnCount={props.terminalColumnCount}
     />
   );

@@ -1,7 +1,7 @@
 import type { BuliDiagnosticLogFields } from "@buli/contracts";
+import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import type { ChatSessionState } from "@buli/chat-session-state";
 import type { TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
-import type { ConversationSessionCompactionStatus } from "./chatScreenConversationSessionStatus.ts";
 
 export function buildChatScreenRenderSnapshotDiagnosticFields(input: {
   chatSessionState: ChatSessionState;

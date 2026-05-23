@@ -1,49 +1,31 @@
 import type { ChatSessionState } from "@buli/chat-session-state";
+import type {
+  ConversationSessionCompactionStatus,
+  ConversationSessionExportStatus,
+} from "@buli/chat-app-controller";
 import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
 import type { ReactNode } from "react";
 import { ConversationSessionSelectionPane } from "./ConversationSessionSelectionPane.tsx";
-import { InputPanel } from "./InputPanel.tsx";
-import { InputStatusStrip } from "./InputStatusStrip.tsx";
-import { MinimumHeightPromptStrip } from "./MinimumHeightPromptStrip.tsx";
 import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
 import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
-import type { PromptTextareaEdit } from "./PromptTextarea.tsx";
 import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
 import { SlashCommandSelectionPane } from "./SlashCommandSelectionPane.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { ToolApprovalRequestBlock } from "./behavior/ToolApprovalRequestBlock.tsx";
-import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "../behavior/chatScreenConversationSessionStatus.ts";
 
-export type ChatScreenInputAreaProps = {
+export type LiveInteractionStatusStackProps = {
   chatSessionState: ChatSessionState;
   conversationSessionExportStatus: ConversationSessionExportStatus;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
-  shouldRenderMinimumHeightPromptStrip: boolean;
-  isPromptInputDisabled: boolean;
-  isActiveTurnInterruptConfirmationArmed: boolean;
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
-  promptInputHintOverride: string | undefined;
-  shortModeLabel: string;
-  nextShortModeLabel: string;
-  nextModeAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
-  reasoningEffortLabel: string;
-  totalContextTokensUsed: number | undefined;
-  contextWindowTokenCapacity: number | undefined;
   onPendingToolApprovalApproved: () => void;
   onPendingToolApprovalDenied: () => void;
-  onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
-  onPromptSubmitted: () => void;
-  onNativeClipboardPasteRequested: () => void | Promise<void>;
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };
 
-export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode {
-  const promptImageAttachmentPlaceholderTexts = props.chatSessionState.pendingPromptImageAttachments.map(
-    (pendingPromptImageAttachment) => pendingPromptImageAttachment.promptDraftPlaceholderText,
-  );
-
+export function LiveInteractionStatusStack(props: LiveInteractionStatusStackProps): ReactNode {
   return (
-    <box flexDirection="column" flexShrink={0}>
+    <>
       {props.chatSessionState.pendingToolApprovalRequest ? (
         <box paddingX={2}>
           <ToolApprovalRequestBlock
@@ -59,53 +41,7 @@ export function ChatScreenInputArea(props: ChatScreenInputAreaProps): ReactNode 
       {renderModelAndReasoningSelectionPane(props)}
       {renderSlashCommandSelectionPane(props)}
       {renderPromptContextSelectionPane(props)}
-      <box flexDirection="column" flexShrink={0} width="100%">
-        {props.shouldRenderMinimumHeightPromptStrip ? (
-          <box paddingX={2} width="100%">
-            <MinimumHeightPromptStrip
-              promptDraft={props.chatSessionState.promptDraft}
-              promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
-              promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
-              selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
-              isPromptInputDisabled={props.isPromptInputDisabled}
-              accentColor={props.inputPanelAccentColor}
-              assistantResponseStatus={props.chatSessionState.conversationTurnStatus}
-              isActiveTurnInterruptConfirmationArmed={props.isActiveTurnInterruptConfirmationArmed}
-              onPromptDraftEdited={props.onPromptDraftEdited}
-              onPromptSubmitted={props.onPromptSubmitted}
-              onNativeClipboardPasteRequested={props.onNativeClipboardPasteRequested}
-            />
-          </box>
-        ) : (
-          <box flexDirection="column" flexShrink={0} width="100%">
-            <InputPanel
-              promptDraft={props.chatSessionState.promptDraft}
-              promptDraftCursorOffset={props.chatSessionState.promptDraftCursorOffset}
-              promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
-              selectedPromptContextReferenceTexts={props.chatSessionState.selectedPromptContextReferenceTexts}
-              isPromptInputDisabled={props.isPromptInputDisabled}
-              accentColor={props.inputPanelAccentColor}
-              onPromptDraftEdited={props.onPromptDraftEdited}
-              onPromptSubmitted={props.onPromptSubmitted}
-              onNativeClipboardPasteRequested={props.onNativeClipboardPasteRequested}
-            />
-            <InputStatusStrip
-              assistantResponseStatus={props.chatSessionState.conversationTurnStatus}
-              pendingPromptImageAttachmentCount={props.chatSessionState.pendingPromptImageAttachments.length}
-              {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}
-              accentColor={props.inputPanelAccentColor}
-              shortModeLabel={props.shortModeLabel}
-              nextShortModeLabel={props.nextShortModeLabel}
-              nextModeAccentColor={props.nextModeAccentColor}
-              modelIdentifier={props.chatSessionState.selectedModelId}
-              reasoningEffortLabel={props.reasoningEffortLabel}
-              totalContextTokensUsed={props.totalContextTokensUsed}
-              contextWindowTokenCapacity={props.contextWindowTokenCapacity}
-            />
-          </box>
-        )}
-      </box>
-    </box>
+    </>
   );
 }
 
@@ -133,7 +69,7 @@ function renderConversationSessionCompactionStatusPane(
   ) : null;
 }
 
-function renderConversationSessionSelectionPane(props: ChatScreenInputAreaProps): ReactNode {
+function renderConversationSessionSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
   return props.chatSessionState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
     <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
       <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
@@ -161,7 +97,7 @@ function renderConversationSessionSelectionPane(props: ChatScreenInputAreaProps)
   ) : null;
 }
 
-function renderPromptContextSelectionPane(props: ChatScreenInputAreaProps): ReactNode {
+function renderPromptContextSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
   return props.chatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
     <PromptContextSelectionPane
       promptContextCandidates={props.chatSessionState.promptContextSelectionState.promptContextCandidates}
@@ -173,7 +109,7 @@ function renderPromptContextSelectionPane(props: ChatScreenInputAreaProps): Reac
   ) : null;
 }
 
-function renderModelAndReasoningSelectionPane(props: ChatScreenInputAreaProps): ReactNode {
+function renderModelAndReasoningSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
   const modelAndReasoningSelectionState = props.chatSessionState.modelAndReasoningSelectionState;
   return modelAndReasoningSelectionState.step === "loading_available_models" ? (
     <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
@@ -202,7 +138,7 @@ function renderModelAndReasoningSelectionPane(props: ChatScreenInputAreaProps): 
   ) : null;
 }
 
-function renderSlashCommandSelectionPane(props: ChatScreenInputAreaProps): ReactNode {
+function renderSlashCommandSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
   return props.chatSessionState.slashCommandSelectionState.step === "showing_slash_commands" ? (
     <SlashCommandSelectionPane
       availableSlashCommands={props.chatSessionState.slashCommandSelectionState.availableSlashCommands}

@@ -1,29 +1,29 @@
 import { expect, test } from "bun:test";
 import type { BuliDiagnosticLogEvent } from "@buli/contracts";
 import type { ActiveConversationTurn } from "@buli/engine";
-import { act } from "react";
-import { ActiveConversationTurnShutdownCoordinator } from "../src/activeConversationTurnShutdown.ts";
 import {
-  useChatScreenActiveTurnInterrupt,
-  type UseChatScreenActiveTurnInterruptResult,
-} from "../src/behavior/useChatScreenActiveTurnInterrupt.ts";
+  ActiveConversationTurnShutdownCoordinator,
+  useChatAppActiveTurnInterrupt,
+  type UseChatAppActiveTurnInterruptResult,
+} from "@buli/chat-app-controller";
+import { act } from "react";
 import { testRender } from "./testRenderWithCleanup.ts";
 
 type RenderedActiveTurnInterruptHook = {
-  readCurrentHookResult: () => UseChatScreenActiveTurnInterruptResult;
+  readCurrentHookResult: () => UseChatAppActiveTurnInterruptResult;
 };
 
 type ActiveTurnInterruptHookProbeProps = {
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
   diagnosticLogEvents: BuliDiagnosticLogEvent[];
-  observeHookResult: (hookResult: UseChatScreenActiveTurnInterruptResult) => void;
+  observeHookResult: (hookResult: UseChatAppActiveTurnInterruptResult) => void;
 };
 
 async function renderActiveTurnInterruptHook(input: {
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
   diagnosticLogEvents: BuliDiagnosticLogEvent[];
 }): Promise<RenderedActiveTurnInterruptHook> {
-  let latestHookResult: UseChatScreenActiveTurnInterruptResult | undefined;
+  let latestHookResult: UseChatAppActiveTurnInterruptResult | undefined;
 
   await testRender(
     <ActiveTurnInterruptHookProbe
@@ -38,7 +38,7 @@ async function renderActiveTurnInterruptHook(input: {
   );
 
   return {
-    readCurrentHookResult(): UseChatScreenActiveTurnInterruptResult {
+    readCurrentHookResult(): UseChatAppActiveTurnInterruptResult {
       if (!latestHookResult) {
         throw new Error("Active turn interrupt hook did not render.");
       }
@@ -49,7 +49,7 @@ async function renderActiveTurnInterruptHook(input: {
 }
 
 function ActiveTurnInterruptHookProbe(props: ActiveTurnInterruptHookProbeProps) {
-  const hookResult = useChatScreenActiveTurnInterrupt({
+  const hookResult = useChatAppActiveTurnInterrupt({
     diagnosticLogger: (diagnosticLogEvent) => {
       props.diagnosticLogEvents.push(diagnosticLogEvent);
     },

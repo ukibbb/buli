@@ -65,7 +65,7 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
         statusKind="success"
         statusLabel="1-110:199"
         toolNameLabel="Read"
-        toolTargetText="packages/tui/src/components/behavior/useChatScreenAssistantTurnActions.ts"
+        toolTargetText="packages/chat-app-controller/src/useChatAppAssistantTurnActions.ts"
       />,
       { width: 54, height: 6 },
     );

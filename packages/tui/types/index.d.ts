@@ -3,6 +3,7 @@ import type {
   AvailableAssistantModel,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
+  ConversationSessionModelSelection,
   ConversationSessionSummary,
   ReasoningEffort,
   UserPromptImageAttachment,
@@ -16,6 +17,7 @@ import type {
   ConversationTurnRequest,
   PromptContextCandidate,
 } from "@buli/engine";
+import type { ReactNode } from "react";
 
 export type ChatScreenProps = {
   selectedModelId: string;
@@ -38,17 +40,23 @@ export type ChatScreenProps = {
   readClipboardImageAttachment?: () => Promise<UserPromptImageAttachment | undefined>;
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: () => ConversationSessionSwitchResult | void;
+  onConversationSessionModelSelectionChanged?:
+    | ((modelSelection: ConversationSessionModelSelection) => void | Promise<void>)
+    | undefined;
+  activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type ConversationSessionSwitchResult = {
   conversationSessionId: string;
+  modelSelection?: ConversationSessionModelSelection | undefined;
   conversationSessionEntries: readonly ConversationSessionEntry[];
 };
 
 export type ConversationSessionDeleteResult = {
   deletedConversationSessionId: string;
   activeConversationSessionId: string;
+  activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
   activeConversationSessionEntries: readonly ConversationSessionEntry[];
   conversationSessions: readonly ConversationSessionSummary[];
 };
@@ -67,7 +75,15 @@ export type TuiChatScreenInstance = {
   waitUntilExit(): Promise<void>;
 };
 
-export declare function renderChatScreenInTerminal(input: {
+export declare class ActiveConversationTurnShutdownCoordinator {
+  registerActiveConversationTurn(activeConversationTurn: ActiveConversationTurn): void;
+  registerActiveConversationTurnSettlement(activeConversationTurnSettlementPromise: Promise<void>): void;
+  clearActiveConversationTurn(activeConversationTurn: ActiveConversationTurn): void;
+  interruptActiveConversationTurn(): boolean;
+  interruptActiveConversationTurnAndWaitForSettlement(): Promise<void>;
+}
+
+export type RenderChatScreenInTerminalInput = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
@@ -84,8 +100,48 @@ export declare function renderChatScreenInTerminal(input: {
   readClipboardImageAttachment?: ChatScreenProps["readClipboardImageAttachment"];
   assistantConversationRunner: AssistantConversationRunner;
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
+  onConversationSessionModelSelectionChanged?: ChatScreenProps["onConversationSessionModelSelectionChanged"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
-}): Promise<TuiChatScreenInstance>;
+};
+
+export type TerminalRendererCreateOptionsForChatScreen = {
+  screenMode: "alternate-screen";
+  clearOnShutdown: boolean;
+  autoFocus: boolean;
+  useMouse: boolean;
+  enableMouseMovement: boolean;
+  consoleMode: "console-overlay" | "disabled";
+};
+
+export type TerminalRendererForChatScreenRuntime = {
+  readonly isDestroyed: boolean;
+  destroy(): void;
+  once(eventName: "destroy", listener: () => void): void;
+};
+
+export type ReactRootForChatScreenRuntime = {
+  render(node: ReactNode): void;
+  unmount(): void;
+};
+
+export type RenderChatScreenInTerminalRuntime<
+  TerminalRenderer extends TerminalRendererForChatScreenRuntime,
+> = {
+  createTerminalRenderer: (options: TerminalRendererCreateOptionsForChatScreen) => Promise<TerminalRenderer>;
+  createChatScreenRoot: (terminalRenderer: TerminalRenderer) => ReactRootForChatScreenRuntime;
+  createChatScreenElement: (chatScreenProps: ChatScreenProps) => ReactNode;
+};
+
+export declare function ChatScreen(props: ChatScreenProps): ReactNode;
+
+export declare function renderChatScreenInTerminal(input: RenderChatScreenInTerminalInput): Promise<TuiChatScreenInstance>;
+
+export declare function renderChatScreenInTerminalWithRuntime<
+  TerminalRenderer extends TerminalRendererForChatScreenRuntime,
+>(
+  input: RenderChatScreenInTerminalInput,
+  runtime: RenderChatScreenInTerminalRuntime<TerminalRenderer>,
+): Promise<TuiChatScreenInstance>;
 
 export declare function relayAssistantResponseRunnerEvents(input: {
   assistantConversationRunner: AssistantConversationRunner;

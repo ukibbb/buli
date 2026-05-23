@@ -825,7 +825,9 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const taskToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "task");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
-  expect(readToolDefinition?.description).toContain("Use this instead of bash for known files and directories");
+  expect(readToolDefinition?.description).toContain("Use this instead of bash for paths already known");
+  expect(readToolDefinition?.description).toContain("Do not guess paths from imports, symbols, filenames, or extensions");
+  expect(readToolDefinition?.description).toContain("discover uncertain paths with glob or grep first");
   expect(readToolDefinition?.description).toContain("continue with offset before concluding");
   expect(globToolDefinition?.description).toContain("Use this instead of bash for file discovery");
   expect(globToolDefinition?.parameters.properties["path"]?.description).toContain("Single directory");

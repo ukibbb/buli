@@ -9,6 +9,12 @@ export type {
   ConversationSessionExportStatus,
 } from "./conversationSessionStatus.ts";
 export {
+  useChatAppController,
+  type ChatAppConversationTranscriptScrollDirection,
+  type UseChatAppControllerInput,
+  type UseChatAppControllerResult,
+} from "./useChatAppController.ts";
+export {
   useChatAppActiveTurnInterrupt,
   type FinishedChatAppActiveTurn,
   type StartedChatAppActiveTurn,
@@ -36,6 +42,25 @@ export {
   type UseChatAppModelSelectionActionsInput,
   type UseChatAppModelSelectionActionsResult,
 } from "./useChatAppModelSelectionActions.ts";
+export {
+  useChatAppKeyboardActions,
+  type ChatAppKeyboardInputApplication,
+  type ChatAppPromptDraftEdit,
+  type UseChatAppKeyboardActionsInput,
+  type UseChatAppKeyboardActionsResult,
+} from "./useChatAppKeyboardActions.ts";
+export {
+  canChatAppPromptDraftBeEdited,
+  canChatSessionPromptDraftBeEdited,
+} from "./chatAppPromptDraftEditability.ts";
+export {
+  useChatAppPromptImageAttachmentActions,
+  type ChatAppPromptImageAttachmentRemovalResult,
+  type PasteClipboardImageAttachmentIntoChatAppPromptInput,
+  type ReadChatAppPromptImageAttachment,
+  type UseChatAppPromptImageAttachmentActionsInput,
+  type UseChatAppPromptImageAttachmentActionsResult,
+} from "./useChatAppPromptImageAttachmentActions.ts";
 export {
   useChatAppPromptContextSelectionRefresh,
   type LoadChatAppPromptContextCandidates,
