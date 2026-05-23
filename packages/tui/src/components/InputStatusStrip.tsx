@@ -4,6 +4,7 @@ import { TextAttributes } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { resolveReasoningEffortColor } from "./resolveReasoningEffortColor.ts";
+import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 
 // The strip lives directly under the input frame and reuses the same outer
 // column span: marginX={2} matches the frame's outer margin, paddingX={2}
@@ -36,7 +37,7 @@ export function InputStatusStrip(props: InputStatusStripProps): ReactNode {
       paddingX={2}
     >
       <box flexDirection="row" gap={1} minWidth={0} overflow="hidden">
-        {renderIdleLeftCluster(props)}
+        {renderLeftCluster(props)}
       </box>
       <box flexShrink={0}>
         <ContextWindowMeter
@@ -45,6 +46,35 @@ export function InputStatusStrip(props: InputStatusStripProps): ReactNode {
         />
       </box>
     </box>
+  );
+}
+
+function renderLeftCluster(props: InputStatusStripProps): ReactNode {
+  const isAssistantTurnActive =
+    props.assistantResponseStatus === "streaming_assistant_response" ||
+    props.assistantResponseStatus === "waiting_for_tool_approval";
+  if (isAssistantTurnActive) {
+    return <SnakeAnimationIndicator variant="sixCell" />;
+  }
+  if (props.pendingPromptImageAttachmentCount > 0) {
+    return renderPendingImagesHint(props.pendingPromptImageAttachmentCount);
+  }
+  if (props.promptInputHintOverride !== undefined) {
+    return (
+      <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
+        {props.promptInputHintOverride}
+      </text>
+    );
+  }
+  return renderIdleLeftCluster(props);
+}
+
+function renderPendingImagesHint(pendingPromptImageAttachmentCount: number): ReactNode {
+  const imageNoun = pendingPromptImageAttachmentCount === 1 ? "image" : "images";
+  return (
+    <text fg={chatScreenTheme.textMuted} truncate={true} wrapMode="none">
+      {`${pendingPromptImageAttachmentCount} ${imageNoun} attached · delete placeholder to remove`}
+    </text>
   );
 }
 
