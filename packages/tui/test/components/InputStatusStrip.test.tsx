@@ -6,7 +6,7 @@ import { InputStatusStrip } from "../../src/components/InputStatusStrip.tsx";
 test("idle strip in Understand mode shows the mode word, model id, effort and destination keycap", async () => {
   const { captureCharFrame, renderOnce } = await testRender(
     <InputStatusStrip
-      assistantResponseStatus="idle"
+      assistantResponseStatus="waiting_for_user_input"
       pendingPromptImageAttachmentCount={0}
       accentColor={chatScreenTheme.accentPink}
       shortModeLabel="Understand"
