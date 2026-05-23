@@ -88,7 +88,7 @@ function renderIdleLeftCluster(props: InputStatusStripProps): ReactNode {
     <text wrapMode="none" truncate={true}>
       <span fg={props.accentColor} attributes={TextAttributes.UNDERLINE}>{props.shortModeLabel}</span>
       <span fg={chatScreenTheme.textDim}>{"  "}</span>
-      <span fg={chatScreenTheme.accentPrimary}>{props.modelIdentifier}</span>
+      <span fg={chatScreenTheme.accentAmber}>{props.modelIdentifier}</span>
       <span fg={chatScreenTheme.textDim}>{" / "}</span>
       <span fg={resolveReasoningEffortColor(props.reasoningEffortLabel)}>{props.reasoningEffortLabel}</span>
       <span fg={chatScreenTheme.textDim}>{"   "}</span>
