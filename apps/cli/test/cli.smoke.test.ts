@@ -551,12 +551,20 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   const conversationSessionStore = {
     storagePath: join(dir, "session-store.sqlite"),
     promptCacheKey: "buli:test-workspace",
+    loadActiveConversationSessionMetadata: () => ({
+      sessionId: "session-a",
+      modelSelection: activeModelSelection,
+      conversationSessionEntryCount: initialConversationSessionEntries.length,
+    }),
     loadActiveConversationSession: () => ({
       sessionId: "session-a",
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),
-    loadConversationSessionEntries: () => initialConversationSessionEntries,
+    loadConversationSessionEntries: (conversationSessionId) => {
+      expect(conversationSessionId).toBe("session-a");
+      return initialConversationSessionEntries;
+    },
     appendConversationSessionEntry: (conversationSessionEntry) => {
       savedConversationSessionEntries.push([...initialConversationSessionEntries, conversationSessionEntry]);
     },
@@ -641,6 +649,21 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   let capturedAutoCompactCurrentConversationSession:
     | ((input: ConversationAutoCompactionRequest) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult)
     | undefined;
+  let capturedLoadInitialConversationSessionEntries:
+    | ((conversationSessionId: string) => Promise<{
+      conversationSessionId: string;
+      conversationSessionEntries: readonly ConversationSessionEntry[];
+    }> | {
+      conversationSessionId: string;
+      conversationSessionEntries: readonly ConversationSessionEntry[];
+    })
+    | undefined;
+  let capturedOnInitialConversationSessionEntriesHydrated:
+    | ((initialConversationSessionEntriesLoadResult: {
+      conversationSessionId: string;
+      conversationSessionEntries: readonly ConversationSessionEntry[];
+    }) => void | Promise<void>)
+    | undefined;
   const openedBrowserUrls: string[] = [];
   await store.saveOpenAi({
     provider: "openai",
@@ -668,13 +691,24 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       capturedExportCurrentConversationSession = renderInput.exportCurrentConversationSession;
       capturedCompactCurrentConversationSession = renderInput.compactCurrentConversationSession;
       capturedAutoCompactCurrentConversationSession = renderInput.autoCompactCurrentConversationSession;
-      expect(renderInput.initialConversationSessionEntries).toEqual(initialConversationSessionEntries);
+      capturedLoadInitialConversationSessionEntries = renderInput.loadInitialConversationSessionEntries;
+      capturedOnInitialConversationSessionEntriesHydrated = renderInput.onInitialConversationSessionEntriesHydrated;
+      expect(renderInput.initialConversationSessionEntries).toBeUndefined();
+      expect(renderInput.loadInitialConversationSessionEntries).toBeDefined();
       expect(renderInput.initialConversationSessionId).toBe("session-a");
       return { destroy: () => {}, waitUntilExit: async () => {} };
     },
   });
 
   expect(output).toBe("");
+  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual([]);
+  if (!capturedLoadInitialConversationSessionEntries || !capturedOnInitialConversationSessionEntriesHydrated) {
+    throw new Error("expected lazy session hydration callbacks");
+  }
+  const initialConversationSessionEntriesLoadResult = await Promise.resolve(
+    capturedLoadInitialConversationSessionEntries("session-a"),
+  );
+  await Promise.resolve(capturedOnInitialConversationSessionEntriesHydrated(initialConversationSessionEntriesLoadResult));
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
   expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(dirname(process.cwd()));
   expect(capturedConversationRuntime?.promptContextStartingDirectoryPath).toBe(process.cwd());
@@ -887,6 +921,11 @@ function createConversationSessionStoreStub(input: {
   const conversationSessionStore = {
     storagePath: join(input.directoryPath, "session-store.sqlite"),
     promptCacheKey: "buli:test-workspace",
+    loadActiveConversationSessionMetadata: () => ({
+      sessionId: "session-a",
+      modelSelection: activeModelSelection,
+      conversationSessionEntryCount: initialConversationSessionEntries.length,
+    }),
     loadActiveConversationSession: () => ({
       sessionId: "session-a",
       modelSelection: activeModelSelection,

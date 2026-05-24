@@ -6,6 +6,7 @@ import { DEFAULT_EXCLUDED_SEARCH_DIRECTORY_NAMES } from "./workspaceFileSearch.t
 import { formatWorkspaceDisplayPath, isPathInsideWorkspace } from "./workspacePath.ts";
 
 const DEFAULT_RIPGREP_EXECUTABLE_PATH = "rg";
+const DEFAULT_RIPGREP_PROCESS_TIMEOUT_MILLISECONDS = 30_000;
 const MAX_RIPGREP_STDOUT_CAPTURE_CHARACTERS = 1_000_000;
 const MAX_RIPGREP_STDERR_CAPTURE_CHARACTERS = 100_000;
 
@@ -85,6 +86,7 @@ export async function listWorkspaceFilesWithRipgrep(input: {
   includeGlobPattern?: string;
   ripgrepExecutablePath?: string;
   maximumCapturedOutputCharacters?: number;
+  timeoutMilliseconds?: number;
   abortSignal?: AbortSignal;
 }): Promise<RipgrepFileSearchAttempt> {
   const workspaceRootPath = await realpath(input.workspaceRootPath);
@@ -96,6 +98,7 @@ export async function listWorkspaceFilesWithRipgrep(input: {
     ...(input.maximumCapturedOutputCharacters !== undefined
       ? { maximumStdoutCaptureCharacters: input.maximumCapturedOutputCharacters }
       : {}),
+    ...(input.timeoutMilliseconds !== undefined ? { timeoutMilliseconds: input.timeoutMilliseconds } : {}),
     abortSignal: input.abortSignal,
   });
   if (ripgrepProcessAttempt.attemptKind !== "completed") {
@@ -138,6 +141,7 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
   includeGlobPattern?: string;
   ripgrepExecutablePath?: string;
   maximumCapturedOutputCharacters?: number;
+  timeoutMilliseconds?: number;
   abortSignal?: AbortSignal;
 }): Promise<RipgrepGrepSearchAttempt> {
   const workspaceRootPath = await realpath(input.workspaceRootPath);
@@ -156,6 +160,7 @@ export async function searchWorkspaceFilesWithRipgrep(input: {
     ...(input.maximumCapturedOutputCharacters !== undefined
       ? { maximumStdoutCaptureCharacters: input.maximumCapturedOutputCharacters }
       : {}),
+    ...(input.timeoutMilliseconds !== undefined ? { timeoutMilliseconds: input.timeoutMilliseconds } : {}),
     abortSignal: input.abortSignal,
   });
   if (ripgrepProcessAttempt.attemptKind !== "completed") {
@@ -258,6 +263,7 @@ async function runRipgrepProcess(input: {
   workingDirectoryPath: string;
   maximumStdoutCaptureCharacters?: number;
   maximumStderrCaptureCharacters?: number;
+  timeoutMilliseconds?: number;
   abortSignal: AbortSignal | undefined;
 }): Promise<RipgrepProcessAttempt> {
   if (input.abortSignal?.aborted) {
@@ -276,6 +282,8 @@ async function runRipgrepProcess(input: {
       input.maximumStderrCaptureCharacters ?? MAX_RIPGREP_STDERR_CAPTURE_CHARACTERS,
     );
     let hasSettled = false;
+    const timeoutMilliseconds = input.timeoutMilliseconds ?? DEFAULT_RIPGREP_PROCESS_TIMEOUT_MILLISECONDS;
+    const timeoutId = setTimeout(() => failRipgrepForTimeout(timeoutMilliseconds), timeoutMilliseconds);
 
     const settleProcess = (settle: () => void): void => {
       if (hasSettled) {
@@ -283,6 +291,7 @@ async function runRipgrepProcess(input: {
       }
 
       hasSettled = true;
+      clearTimeout(timeoutId);
       input.abortSignal?.removeEventListener("abort", interruptRipgrepProcess);
       settle();
     };
@@ -290,6 +299,14 @@ async function runRipgrepProcess(input: {
     function interruptRipgrepProcess(): void {
       childProcess.kill("SIGTERM");
       settleProcess(() => rejectProcess(new Error("Ripgrep interrupted")));
+    }
+
+    function failRipgrepForTimeout(timeoutMilliseconds: number): void {
+      childProcess.kill("SIGTERM");
+      settleProcess(() => resolveProcess({
+        attemptKind: "failed",
+        failureExplanation: `Ripgrep exceeded ${timeoutMilliseconds}ms timeout`,
+      }));
     }
 
     function failRipgrepForCapturedOutputLimit(outputName: "stderr" | "stdout", maximumCharacterCount: number): void {

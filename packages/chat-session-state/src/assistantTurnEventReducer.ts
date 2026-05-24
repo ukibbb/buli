@@ -11,6 +11,75 @@ import type {
 } from "@buli/contracts";
 import type { ChatSessionState } from "./chatSessionState.ts";
 
+type ConversationMessagePartsByIdOverlay = {
+  baseConversationMessagePartsById: Record<string, ConversationMessagePart>;
+  changedConversationMessagePartsById: Record<string, ConversationMessagePart>;
+};
+
+const conversationMessagePartsByIdOverlayMetadata = new WeakMap<
+  Record<string, ConversationMessagePart>,
+  ConversationMessagePartsByIdOverlay
+>();
+
+function overlayConversationMessagePartById(input: {
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+  conversationMessagePart: ConversationMessagePart;
+}): Record<string, ConversationMessagePart> {
+  const existingOverlay = conversationMessagePartsByIdOverlayMetadata.get(input.conversationMessagePartsById);
+  const baseConversationMessagePartsById = existingOverlay?.baseConversationMessagePartsById ??
+    input.conversationMessagePartsById;
+  const changedConversationMessagePartsById: Record<string, ConversationMessagePart> = {
+    ...(existingOverlay?.changedConversationMessagePartsById ?? {}),
+    [input.conversationMessagePart.id]: input.conversationMessagePart,
+  };
+
+  // Streaming updates usually replace one part at a time. This preserves Record semantics
+  // without copying every historical part on each chunk.
+  const nextConversationMessagePartsById = new Proxy(changedConversationMessagePartsById, {
+    get(target, propertyKey) {
+      if (typeof propertyKey === "string" && Object.prototype.hasOwnProperty.call(target, propertyKey)) {
+        return target[propertyKey];
+      }
+
+      return Reflect.get(baseConversationMessagePartsById, propertyKey);
+    },
+    has(target, propertyKey) {
+      return Reflect.has(target, propertyKey) || Reflect.has(baseConversationMessagePartsById, propertyKey);
+    },
+    ownKeys(target) {
+      const conversationMessagePartIds = new Set<string | symbol>();
+      for (const conversationMessagePartId of Reflect.ownKeys(baseConversationMessagePartsById)) {
+        conversationMessagePartIds.add(conversationMessagePartId);
+      }
+      for (const conversationMessagePartId of Reflect.ownKeys(target)) {
+        conversationMessagePartIds.add(conversationMessagePartId);
+      }
+      return [...conversationMessagePartIds];
+    },
+    getOwnPropertyDescriptor(target, propertyKey) {
+      const targetDescriptor = Reflect.getOwnPropertyDescriptor(target, propertyKey);
+      if (targetDescriptor) {
+        return targetDescriptor;
+      }
+
+      const baseDescriptor = Reflect.getOwnPropertyDescriptor(baseConversationMessagePartsById, propertyKey);
+      if (!baseDescriptor) {
+        return undefined;
+      }
+
+      return {
+        ...baseDescriptor,
+        configurable: true,
+      };
+    },
+  });
+  conversationMessagePartsByIdOverlayMetadata.set(nextConversationMessagePartsById, {
+    baseConversationMessagePartsById,
+    changedConversationMessagePartsById,
+  });
+  return nextConversationMessagePartsById;
+}
+
 function appendConversationMessageIfMissing(input: {
   chatSessionState: ChatSessionState;
   conversationMessage: ConversationMessage;
@@ -47,10 +116,10 @@ function upsertConversationMessagePart(input: {
   if (doesConversationMessageAlreadyReferencePart) {
     return {
       ...input.chatSessionState,
-      conversationMessagePartsById: {
-        ...input.chatSessionState.conversationMessagePartsById,
-        [input.conversationMessagePart.id]: input.conversationMessagePart,
-      },
+      conversationMessagePartsById: overlayConversationMessagePartById({
+        conversationMessagePartsById: input.chatSessionState.conversationMessagePartsById,
+        conversationMessagePart: input.conversationMessagePart,
+      }),
       conversationMessagePartCount: hasExistingConversationMessagePart
         ? input.chatSessionState.conversationMessagePartCount
         : input.chatSessionState.conversationMessagePartCount + 1,

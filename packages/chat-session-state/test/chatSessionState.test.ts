@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
-import type { AvailableAssistantModel } from "@buli/contracts";
+import type { AvailableAssistantModel, ConversationMessagePart } from "@buli/contracts";
 import {
   appendPromptImageAttachmentToDraft,
   applyAssistantResponseEventToChatSessionState,
   applyChatSessionKeyboardInputToChatSessionState,
   clearConversationTranscript,
+  type ChatSessionState,
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatSessionState,
@@ -1068,6 +1069,14 @@ test("assistant_message_part_updated preserves message map identity when part id
 
   expect(chatSessionState.conversationMessagesById).toBe(conversationMessagesByIdBeforePartUpdate);
   expect(chatSessionState.conversationMessagesById["assistant-1"]).toBe(assistantConversationMessageBeforePartUpdate);
+  expect(Object.values(chatSessionState.conversationMessagePartsById)).toEqual([
+    {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hello",
+    },
+  ]);
   expect(listOrderedConversationMessageParts(chatSessionState, "assistant-1")).toEqual([
     {
       id: "assistant-text-1",
@@ -1076,6 +1085,54 @@ test("assistant_message_part_updated preserves message map identity when part id
       rawMarkdownText: "Hello",
     },
   ]);
+});
+
+test("assistant_message_part_updated avoids enumerating unrelated message parts", () => {
+  const stablePart: ConversationMessagePart = {
+    id: "assistant-text-1",
+    partKind: "assistant_text",
+    partStatus: "streaming",
+    rawMarkdownText: "Hel",
+  };
+  const conversationMessagePartsById: Record<string, ConversationMessagePart> = {
+    [stablePart.id]: stablePart,
+  };
+  Object.defineProperty(conversationMessagePartsById, "unrelated-part", {
+    enumerable: true,
+    get() {
+      throw new Error("Unrelated conversation message part was enumerated.");
+    },
+  });
+  const chatSessionState: ChatSessionState = {
+    ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationMessagesById: {
+      "assistant-1": {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: 1,
+        partIds: [stablePart.id],
+      },
+    },
+    orderedConversationMessageIds: ["assistant-1"],
+    conversationMessagePartsById,
+    conversationMessagePartCount: 2,
+  };
+
+  const nextChatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_updated",
+    messageId: "assistant-1",
+    part: {
+      ...stablePart,
+      rawMarkdownText: "Hello",
+    },
+  });
+
+  expect(nextChatSessionState.conversationMessagePartsById).not.toBe(conversationMessagePartsById);
+  expect(nextChatSessionState.conversationMessagePartsById[stablePart.id]).toEqual({
+    ...stablePart,
+    rawMarkdownText: "Hello",
+  });
 });
 
 test("assistant_message_completed does not copy total reasoning tokens onto multiple reasoning parts", () => {

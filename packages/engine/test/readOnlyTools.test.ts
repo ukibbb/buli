@@ -376,6 +376,28 @@ test("runGlobToolCall falls back when ripgrep is unavailable", async () => {
   expect(globToolCallOutcome.toolResultText).toContain("fallback.ts");
 });
 
+test("runGlobToolCall falls back when ripgrep times out", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-rg-timeout-"));
+  await writeFile(join(workspaceRootPath, "fallback.ts"), "export const fallback = true;\n", "utf8");
+  const fakeRipgrepPath = await writeFakeRipgrepExecutable(
+    workspaceRootPath,
+    "setInterval(() => {}, 1000);",
+  );
+
+  const globToolCallOutcome = await runGlobToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: fakeRipgrepPath,
+    ripgrepTimeoutMilliseconds: 10,
+    globToolCallRequest: {
+      toolName: "glob",
+      globPattern: "*.ts",
+    },
+  });
+
+  expect(globToolCallOutcome.outcomeKind).toBe("completed");
+  expect(globToolCallOutcome.toolResultText).toContain("fallback.ts");
+});
+
 test("runGlobToolCall ignores default excluded directories", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-excluded-"));
   await mkdir(join(workspaceRootPath, "src"));
@@ -584,6 +606,34 @@ test("runGrepToolCall falls back when ripgrep is unavailable", async () => {
   const grepToolCallOutcome = await runGrepToolCall({
     workspaceRootPath,
     ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "fallbackNeedle",
+      includeGlobPattern: "*.ts",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    matchedFileCount: 1,
+    totalMatchCount: 1,
+    matchHits: [{ matchFilePath: "fallback.ts", matchLineNumber: 1, matchSnippet: "const fallbackNeedle = true;" }],
+  });
+});
+
+test("runGrepToolCall falls back when ripgrep times out", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-rg-timeout-"));
+  await writeFile(join(workspaceRootPath, "fallback.ts"), "const fallbackNeedle = true;\n", "utf8");
+  const fakeRipgrepPath = await writeFakeRipgrepExecutable(
+    workspaceRootPath,
+    "setInterval(() => {}, 1000);",
+  );
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: fakeRipgrepPath,
+    ripgrepTimeoutMilliseconds: 10,
     grepToolCallRequest: {
       toolName: "grep",
       regexPattern: "fallbackNeedle",

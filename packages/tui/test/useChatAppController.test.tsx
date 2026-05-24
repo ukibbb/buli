@@ -261,6 +261,62 @@ test("useChatAppController hydrates initial entries and closes command help", as
   expect(renderedHook.readCurrentController().chatSessionState.isCommandHelpModalVisible).toBe(false);
 });
 
+test("useChatAppController hydrates lazy initial session entries before prompt submission", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const initialConversationSessionEntries: readonly ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Initial prompt",
+      modelFacingPromptText: "Initial prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Initial answer",
+    },
+  ];
+  let initialConversationSessionEntryLoadCount = 0;
+  const hydratedConversationSessionEntryCounts: number[] = [];
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadInitialConversationSessionEntries: () => {
+      initialConversationSessionEntryLoadCount += 1;
+      return {
+        conversationSessionId: "session-a",
+        conversationSessionEntries: initialConversationSessionEntries,
+      };
+    },
+    onInitialConversationSessionEntriesHydrated: (initialConversationSessionEntriesLoadResult) => {
+      hydratedConversationSessionEntryCounts.push(
+        initialConversationSessionEntriesLoadResult.conversationSessionEntries.length,
+      );
+    },
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+  });
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await renderedHook.flushHookEffects();
+    if (!renderedHook.readCurrentController().promptComposerState.isInitialConversationSessionHydrationPending) {
+      break;
+    }
+  }
+
+  expect(renderedHook.readCurrentController().promptComposerState.isInitialConversationSessionHydrationPending).toBe(false);
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(2);
+  expect(initialConversationSessionEntryLoadCount).toBe(1);
+  expect(hydratedConversationSessionEntryCounts).toEqual([2]);
+
+  await renderedHook.typeText("After hydration");
+  await renderedHook.pressReturn();
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 1 });
+
+  expect(controlledRunner.startedTurns[0]?.conversationTurnRequest.userPromptText).toBe("After hydration");
+
+  controlledRunner.startedTurns[0]?.complete();
+  await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
+  expect(initialConversationSessionEntryLoadCount).toBe(1);
+});
+
 test("useChatAppController keeps non-prompt slices stable across prompt-only edits", async () => {
   const renderedHook = await renderChatAppControllerHook({
     initialConversationSessionEntries: [

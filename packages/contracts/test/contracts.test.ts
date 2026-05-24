@@ -15,7 +15,13 @@ import {
   FILE_MUTATION_TOOL_REQUEST_NAMES,
   CodeExecutionWalkthroughSchema,
   formatCodeExecutionWalkthroughAsMarkdownText,
+  MAX_BASH_TOOL_COMMAND_LENGTH,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH,
+  MAX_GREP_TOOL_PATTERN_LENGTH,
+  MAX_TASK_TOOL_PROMPT_LENGTH,
+  MAX_TOOL_CALL_PATH_LENGTH,
+  MAX_WRITE_TOOL_FILE_CONTENT_LENGTH,
   ModelContextItemSchema,
   PendingToolApprovalRequestSchema,
   ProviderStreamEventSchema,
@@ -376,6 +382,51 @@ test("ToolCallRequestSchema rejects bash timeouts above the safety cap", () => {
       commandDescription: "Print working directory",
       timeoutMilliseconds: MAX_BASH_TOOL_TIMEOUT_MILLISECONDS + 1,
     }),
+  ).toThrow();
+});
+
+test("ToolCallRequestSchema rejects oversized tool request payloads", () => {
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "read",
+      readTargetPath: "a".repeat(MAX_TOOL_CALL_PATH_LENGTH + 1),
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "bash",
+      shellCommand: "x".repeat(MAX_BASH_TOOL_COMMAND_LENGTH + 1),
+      commandDescription: "Run oversized command",
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "grep",
+      regexPattern: "x".repeat(MAX_GREP_TOOL_PATTERN_LENGTH + 1),
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "edit",
+      editTargetPath: "src/file.ts",
+      oldString: "x".repeat(MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH + 1),
+      newString: "replacement",
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "write",
+      writeTargetPath: "src/file.ts",
+      fileContent: "x".repeat(MAX_WRITE_TOOL_FILE_CONTENT_LENGTH + 1),
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map files",
+      subagentPrompt: "x".repeat(MAX_TASK_TOOL_PROMPT_LENGTH + 1),
+    })
   ).toThrow();
 });
 

@@ -28,6 +28,7 @@ export type UseChatAppPromptContextSelectionRefreshInput = {
 
 export type UseChatAppPromptContextSelectionRefreshResult = {
   dismissActivePromptContextQuery: (dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined) => void;
+  refreshPromptContextSelectionForChatSessionState: (chatSessionState: ChatSessionState) => void;
 };
 
 export function useChatAppPromptContextSelectionRefresh(
@@ -40,16 +41,16 @@ export function useChatAppPromptContextSelectionRefresh(
 
   latestChatSessionStateRef.current = input.chatSessionState;
 
-  useEffect(() => {
+  const clearDismissedPromptContextQueryWhenDraftChanges = (chatSessionState: ChatSessionState): void => {
     if (
       shouldClearDismissedPromptContextQueryForPromptDraft({
-        chatSessionState: input.chatSessionState,
+        chatSessionState,
         dismissedPromptContextQueryIdentity: dismissedPromptContextQueryRef.current,
       })
     ) {
       dismissedPromptContextQueryRef.current = undefined;
     }
-  }, [input.chatSessionState.promptDraft, input.chatSessionState.promptDraftCursorOffset]);
+  };
 
   const invalidatePendingPromptContextLoads = useEffectEvent(() => {
     latestPromptContextLoadRequestSequenceRef.current += 1;
@@ -80,7 +81,11 @@ export function useChatAppPromptContextSelectionRefresh(
           errorMessage: error instanceof Error ? error.message : String(error),
         });
         if (loadRequest.requestSequence === latestPromptContextLoadRequestSequenceRef.current) {
-          input.setChatSessionState((currentChatSessionState) => hidePromptContextSelection(currentChatSessionState));
+          input.setChatSessionState((currentChatSessionState) => {
+            const nextChatSessionState = hidePromptContextSelection(currentChatSessionState);
+            latestChatSessionStateRef.current = nextChatSessionState;
+            return nextChatSessionState;
+          });
         }
         return;
       }
@@ -114,9 +119,10 @@ export function useChatAppPromptContextSelectionRefresh(
         promptContextCandidateCount: promptContextCandidates.length,
       });
 
-      input.setChatSessionState((currentChatSessionState) =>
-        currentChatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates" &&
-          currentChatSessionState.promptContextSelectionState.promptContextQueryText === loadRequest.promptContextQueryText
+      input.setChatSessionState((currentChatSessionState) => {
+        const nextChatSessionState = currentChatSessionState.promptContextSelectionState.step ===
+            "showing_prompt_context_candidates" &&
+            currentChatSessionState.promptContextSelectionState.promptContextQueryText === loadRequest.promptContextQueryText
           ? refreshPromptContextCandidatesForSelection(
             currentChatSessionState,
             loadRequest.promptContextQueryText,
@@ -126,32 +132,39 @@ export function useChatAppPromptContextSelectionRefresh(
             currentChatSessionState,
             loadRequest.promptContextQueryText,
             promptContextCandidates,
-          ),
-      );
+          );
+        latestChatSessionStateRef.current = nextChatSessionState;
+        return nextChatSessionState;
+      });
     },
   );
 
-  const refreshPromptContextSelectionForCurrentDraft = useEffectEvent(async () => {
-    const latestChatSessionState = latestChatSessionStateRef.current;
+  const refreshPromptContextSelectionForChatSessionState = useEffectEvent((chatSessionState: ChatSessionState) => {
+    latestChatSessionStateRef.current = chatSessionState;
+    clearDismissedPromptContextQueryWhenDraftChanges(chatSessionState);
     const promptContextSelectionRefreshDecision = decidePromptContextSelectionRefreshForCurrentDraft({
-      chatSessionState: latestChatSessionState,
+      chatSessionState,
       dismissedPromptContextQueryIdentity: dismissedPromptContextQueryRef.current,
     });
 
     if (promptContextSelectionRefreshDecision.decisionType === "hide_prompt_context_selection") {
       invalidatePendingPromptContextLoads();
       if (
-        latestChatSessionState.promptContextSelectionState.step !== "hidden" ||
+        chatSessionState.promptContextSelectionState.step !== "hidden" ||
         promptContextSelectionRefreshDecision.reason === "query_dismissed"
       ) {
         logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_selection_hidden", {
           reason: promptContextSelectionRefreshDecision.reason,
-          conversationTurnStatus: latestChatSessionState.conversationTurnStatus,
-          modelSelectionStep: latestChatSessionState.modelAndReasoningSelectionState.step,
+          conversationTurnStatus: chatSessionState.conversationTurnStatus,
+          modelSelectionStep: chatSessionState.modelAndReasoningSelectionState.step,
           promptContextQueryLength: promptContextSelectionRefreshDecision.promptContextQueryLength ?? null,
         });
       }
-      input.setChatSessionState((currentChatSessionState) => hidePromptContextSelection(currentChatSessionState));
+      input.setChatSessionState((currentChatSessionState) => {
+        const nextChatSessionState = hidePromptContextSelection(currentChatSessionState);
+        latestChatSessionStateRef.current = nextChatSessionState;
+        return nextChatSessionState;
+      });
       return;
     }
 
@@ -197,23 +210,11 @@ export function useChatAppPromptContextSelectionRefresh(
     [],
   );
 
-  useEffect(() => {
-    void refreshPromptContextSelectionForCurrentDraft();
-  }, [
-    input.chatSessionState.promptDraft,
-    input.chatSessionState.promptDraftCursorOffset,
-    input.chatSessionState.conversationTurnStatus,
-    input.chatSessionState.modelAndReasoningSelectionState.step,
-    input.chatSessionState.conversationSessionSelectionState.step,
-    input.chatSessionState.slashCommandSelectionState.step,
-    input.chatSessionState.isCommandHelpModalVisible,
-  ]);
-
   const dismissActivePromptContextQuery = useEffectEvent((
     dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined,
   ): void => {
     dismissedPromptContextQueryRef.current = dismissedPromptContextQueryIdentity;
   });
 
-  return { dismissActivePromptContextQuery };
+  return { dismissActivePromptContextQuery, refreshPromptContextSelectionForChatSessionState };
 }

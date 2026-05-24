@@ -101,17 +101,16 @@ export async function runInteractiveChat(input: {
     const conversationSessionLoadStartedAtMs = Date.now();
     const conversationSessionStore = input.conversationSessionStore ??
       (defaultConversationSessionStore = new SqliteConversationSessionStore());
-    const activeConversationSession = conversationSessionStore.loadActiveConversationSession();
-    const initialConversationSessionEntries = activeConversationSession.conversationSessionEntries;
+    const activeConversationSessionMetadata = conversationSessionStore.loadActiveConversationSessionMetadata();
     const initialModelSelectionResolution = resolveInitialConversationSessionModelSelection({
       requestedModelId: input.selectedModelId,
       requestedReasoningEffort: input.selectedReasoningEffort,
-      persistedModelSelection: activeConversationSession.modelSelection,
+      persistedModelSelection: activeConversationSessionMetadata.modelSelection,
     });
     const activeConversationSessionModelSelection = initialModelSelectionResolution.modelSelection;
     if (
       !areConversationSessionModelSelectionsEqual(
-        activeConversationSession.modelSelection,
+        activeConversationSessionMetadata.modelSelection,
         activeConversationSessionModelSelection,
       )
     ) {
@@ -125,7 +124,7 @@ export async function runInteractiveChat(input: {
       startupStartedAtMs,
       phaseStartedAtMs: conversationSessionLoadStartedAtMs,
       fields: {
-        conversationSessionEntryCount: initialConversationSessionEntries.length,
+        conversationSessionEntryCount: activeConversationSessionMetadata.conversationSessionEntryCount,
       },
     });
 
@@ -142,8 +141,8 @@ export async function runInteractiveChat(input: {
     });
     logCliDiagnosticEvent(diagnosticLogger, "conversation_session.loaded", {
       conversationSessionStoragePath: conversationSessionStore.storagePath ?? null,
-      conversationSessionId: activeConversationSession.sessionId,
-      conversationSessionEntryCount: initialConversationSessionEntries.length,
+      conversationSessionId: activeConversationSessionMetadata.sessionId,
+      conversationSessionEntryCount: activeConversationSessionMetadata.conversationSessionEntryCount,
     });
 
     const provider = new OpenAiProvider({ store, diagnosticLogger });
@@ -153,7 +152,6 @@ export async function runInteractiveChat(input: {
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
     });
     const conversationHistory = new InMemoryConversationHistory({
-      initialConversationSessionEntries,
       onConversationSessionEntryAppended: (conversationSessionEntry, conversationSessionEntries) => {
         conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
         logCliDiagnosticEvent(diagnosticLogger, "conversation_session.saved", {
@@ -165,6 +163,28 @@ export async function runInteractiveChat(input: {
         });
       },
     });
+    const loadInitialConversationSessionEntries = (conversationSessionId: string) => {
+      const conversationSessionEntriesLoadStartedAtMs = Date.now();
+      const conversationSessionEntries = conversationSessionStore.loadConversationSessionEntries(conversationSessionId);
+      logInteractiveChatStartupTiming(diagnosticLogger, {
+        phase: "session_entries_load",
+        startupStartedAtMs,
+        phaseStartedAtMs: conversationSessionEntriesLoadStartedAtMs,
+        fields: {
+          conversationSessionEntryCount: conversationSessionEntries.length,
+        },
+      });
+      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.entries_loaded", {
+        conversationSessionStoragePath: conversationSessionStore.storagePath ?? null,
+        conversationSessionId,
+        conversationSessionEntryCount: conversationSessionEntries.length,
+      });
+
+      return {
+        conversationSessionId,
+        conversationSessionEntries,
+      };
+    };
     const assistantConversationRunner = new AssistantConversationRuntime({
       conversationTurnProvider: provider,
       workspaceRootPath,
@@ -181,21 +201,30 @@ export async function runInteractiveChat(input: {
       conversationSessionStore,
       conversationHistory,
       assistantConversationRunner,
-      initialConversationSessionId: activeConversationSession.sessionId,
+      initialConversationSessionId: activeConversationSessionMetadata.sessionId,
       initialConversationSessionModelSelection: activeConversationSessionModelSelection,
       workspaceRootPath,
       conversationSessionExportDirectoryPath: input.conversationSessionExportDirectoryPath,
       openBrowserUrl: input.openBrowserUrl,
       diagnosticLogger,
     });
-    const renderArgs = {
+    const renderArgs: RenderChatScreenInTerminalInput = {
       assistantConversationRunner,
       loadAvailableAssistantModels: () => provider.listAvailableAssistantModels(),
       loadPromptContextCandidates: (promptContextQueryText: string) =>
         promptContextCandidateCatalog.listPromptContextCandidates(promptContextQueryText),
       ...conversationSessionBindings.renderInput,
-      initialConversationSessionId: activeConversationSession.sessionId,
-      initialConversationSessionEntries,
+      initialConversationSessionId: activeConversationSessionMetadata.sessionId,
+      ...(activeConversationSessionMetadata.conversationSessionEntryCount > 0
+        ? {
+            loadInitialConversationSessionEntries,
+            onInitialConversationSessionEntriesHydrated: (initialConversationSessionEntriesLoadResult) => {
+              conversationHistory.replaceConversationSessionEntries(
+                initialConversationSessionEntriesLoadResult.conversationSessionEntries,
+              );
+            },
+          }
+        : { initialConversationSessionEntries: [] }),
       selectedModelId,
       ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
       ...(selectedReasoningEffort ? { selectedReasoningEffort } : {}),

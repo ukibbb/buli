@@ -10,6 +10,12 @@ export type ActiveConversationSession = {
   conversationSessionEntries: readonly ConversationSessionEntry[];
 };
 
+export type ActiveConversationSessionMetadata = {
+  sessionId: string;
+  modelSelection: ConversationSessionModelSelection | undefined;
+  conversationSessionEntryCount: number;
+};
+
 export type StartNewConversationSessionInput = {
   modelSelection?: ConversationSessionModelSelection | undefined;
 };
@@ -21,8 +27,9 @@ export type DeleteConversationSessionInput = {
 export type ConversationSessionStore = {
   readonly storagePath?: string;
   readonly promptCacheKey?: string;
+  loadActiveConversationSessionMetadata(): ActiveConversationSessionMetadata;
   loadActiveConversationSession(): ActiveConversationSession;
-  loadConversationSessionEntries(): readonly ConversationSessionEntry[];
+  loadConversationSessionEntries(conversationSessionId?: string | undefined): readonly ConversationSessionEntry[];
   appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void;
   saveActiveConversationSessionModelSelection(modelSelection: ConversationSessionModelSelection): void;
   saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void;

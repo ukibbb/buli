@@ -109,10 +109,11 @@ function captureOriginalConsoleMethods(consoleTarget: ConsoleMethodTarget): Cons
 }
 
 function ensurePrivateConsoleLogDirectory(logDirectoryPath: string): void {
-  mkdirSync(logDirectoryPath, {
-    recursive: true,
-    mode: privateConsoleLogDirectoryMode,
-  });
+  if (existsSync(logDirectoryPath)) {
+    return;
+  }
+
+  mkdirSync(logDirectoryPath, { recursive: true, mode: privateConsoleLogDirectoryMode });
   chmodSync(logDirectoryPath, privateConsoleLogDirectoryMode);
 }
 

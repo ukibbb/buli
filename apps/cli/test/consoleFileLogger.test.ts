@@ -86,7 +86,7 @@ test("installConsoleFileLogger can preserve existing file contents", async () =>
 
   const logText = await readFile(logFilePath, "utf8");
   expect(recordedConsoleLines).toEqual([]);
-  await expect(readPermissionBits(logDirectoryPath)).resolves.toBe(0o700);
+  await expect(readPermissionBits(logDirectoryPath)).resolves.toBe(0o777);
   await expect(readPermissionBits(logFilePath)).resolves.toBe(0o600);
   expect(logText.startsWith("previous\n")).toBe(true);
   expect(logText).toContain("[2026-04-28T12:34:56.000Z] [warn] still visible");

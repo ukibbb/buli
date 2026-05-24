@@ -25,6 +25,7 @@ import type { ConversationTurnProvider, ProviderConversationTurn } from "./provi
 import { escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 import { toProjectInstructionSnapshots, type ProjectInstructionTracker } from "./projectInstructions.ts";
 import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+import type { RuntimeSubagentConversationConcurrencyLimiter } from "./runtimeSubagentConversationConcurrencyLimiter.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
@@ -71,6 +72,7 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   workspaceRootPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+  subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   canSpawnSubagent: boolean;
@@ -132,18 +134,22 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
   input.throwIfConversationTurnInterrupted();
   let latestSubagentChildToolCalls: SubagentChildToolCall[] = [];
   let taskSubagentConversationOutcome: TaskSubagentConversationOutcome | undefined;
-  for await (const taskSubagentConversationProgress of streamTaskSubagentConversationProgress({
-    conversationTurnProvider: input.conversationTurnProvider,
-    taskToolCallRequest: input.taskToolCallRequest,
-    selectedModelId: input.selectedModelId,
-    ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
-    workspaceRootPath: input.workspaceRootPath,
-    projectInstructionTracker: input.projectInstructionTracker,
-    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
-    abortSignal: input.abortSignal,
-    throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
-    diagnosticLogger: input.diagnosticLogger,
-  })) {
+  for await (
+    const taskSubagentConversationProgress of input.subagentConversationConcurrencyLimiter.stream(() =>
+      streamTaskSubagentConversationProgress({
+        conversationTurnProvider: input.conversationTurnProvider,
+        taskToolCallRequest: input.taskToolCallRequest,
+        selectedModelId: input.selectedModelId,
+        ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+        workspaceRootPath: input.workspaceRootPath,
+        projectInstructionTracker: input.projectInstructionTracker,
+        readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+        abortSignal: input.abortSignal,
+        throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+        diagnosticLogger: input.diagnosticLogger,
+      })
+    )
+  ) {
     input.throwIfConversationTurnInterrupted();
     if (taskSubagentConversationProgress.progressKind === "subagent_child_tool_calls_changed") {
       latestSubagentChildToolCalls = taskSubagentConversationProgress.subagentChildToolCalls;

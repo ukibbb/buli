@@ -19,6 +19,7 @@ export async function runGlobToolCall(input: {
   globToolCallRequest: GlobToolCallRequest;
   workspaceRootPath: string;
   ripgrepExecutablePath?: string;
+  ripgrepTimeoutMilliseconds?: number;
   abortSignal?: AbortSignal;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
@@ -46,6 +47,7 @@ export async function runGlobToolCall(input: {
       includeGlobPattern: input.globToolCallRequest.globPattern,
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       ...(input.ripgrepExecutablePath ? { ripgrepExecutablePath: input.ripgrepExecutablePath } : {}),
+      ...(input.ripgrepTimeoutMilliseconds !== undefined ? { timeoutMilliseconds: input.ripgrepTimeoutMilliseconds } : {}),
     });
     const workspaceFiles = ripgrepSearchAttempt.attemptKind === "completed"
       ? ripgrepSearchAttempt.files

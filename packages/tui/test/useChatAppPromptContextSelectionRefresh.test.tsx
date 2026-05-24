@@ -18,6 +18,7 @@ type PromptContextRefreshHarnessApi = {
   chatSessionState: ChatSessionState;
   replacePromptDraft: (promptDraft: string) => void;
   dismissActivePromptContextQuery: UseChatAppPromptContextSelectionRefreshResult["dismissActivePromptContextQuery"];
+  refreshPromptContextSelectionForChatSessionState: UseChatAppPromptContextSelectionRefreshResult["refreshPromptContextSelectionForChatSessionState"];
 };
 
 type RenderedPromptContextRefreshHook = {
@@ -97,15 +98,16 @@ function PromptContextRefreshHookProbe(props: {
   props.observeHarnessApi({
     chatSessionState,
     replacePromptDraft(promptDraft) {
-      setChatSessionState((currentChatSessionState) =>
-        replacePromptDraftFromEditor({
-          chatSessionState: currentChatSessionState,
-          promptDraft,
-          promptDraftCursorOffset: promptDraft.length,
-        })
-      );
+      const nextChatSessionState = replacePromptDraftFromEditor({
+        chatSessionState,
+        promptDraft,
+        promptDraftCursorOffset: promptDraft.length,
+      });
+      setChatSessionState(nextChatSessionState);
+      hookResult.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
     },
     dismissActivePromptContextQuery: hookResult.dismissActivePromptContextQuery,
+    refreshPromptContextSelectionForChatSessionState: hookResult.refreshPromptContextSelectionForChatSessionState,
   });
 
   return <box />;

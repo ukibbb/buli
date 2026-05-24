@@ -35,6 +35,7 @@ import {
   type ConversationSessionSwitchResult,
 } from "./useChatAppConversationSessionActions.ts";
 import { useChatAppActiveTurnInterrupt } from "./useChatAppActiveTurnInterrupt.ts";
+import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 import {
   useChatAppKeyboardActions,
   type UseChatAppKeyboardActionsResult,
@@ -53,6 +54,12 @@ export type UseChatAppControllerInput = {
   selectedReasoningEffort?: ReasoningEffort | undefined;
   initialConversationSessionId?: string | undefined;
   initialConversationSessionEntries?: readonly ConversationSessionEntry[] | undefined;
+  loadInitialConversationSessionEntries?:
+    | ((conversationSessionId: string) => Promise<InitialConversationSessionEntriesLoadResult> | InitialConversationSessionEntriesLoadResult)
+    | undefined;
+  onInitialConversationSessionEntriesHydrated?:
+    | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void | Promise<void>)
+    | undefined;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: (() => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[]) | undefined;
@@ -78,6 +85,11 @@ export type UseChatAppControllerInput = {
   scrollConversationMessagesToBottom: () => void;
   scrollConversationMessagesByPage: (direction: ChatAppConversationTranscriptScrollDirection) => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+};
+
+export type InitialConversationSessionEntriesLoadResult = {
+  conversationSessionId: string;
+  conversationSessionEntries: readonly ConversationSessionEntry[];
 };
 
 export type UseChatAppControllerResult = {
@@ -133,6 +145,7 @@ export type ChatAppPromptComposerState = Pick<
   queuedPromptCount: number;
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
+  isInitialConversationSessionHydrationPending: boolean;
 };
 
 export type QueuedChatAppPromptPreview = {
@@ -160,8 +173,14 @@ export type ChatAppSelectionState = Pick<
 >;
 
 export function useChatAppController(input: UseChatAppControllerInput): UseChatAppControllerResult {
+  const shouldLoadInitialConversationSessionEntries = input.initialConversationSessionEntries === undefined &&
+    input.initialConversationSessionId !== undefined &&
+    input.loadInitialConversationSessionEntries !== undefined;
   const [activeConversationSessionId, setActiveConversationSessionId] = useState<string | undefined>(
     input.initialConversationSessionId,
+  );
+  const [isInitialConversationSessionHydrationPending, setIsInitialConversationSessionHydrationPending] = useState(
+    shouldLoadInitialConversationSessionEntries,
   );
   const [conversationSessionExportStatus, setConversationSessionExportStatus] = useState<ConversationSessionExportStatus>({
     step: "idle",
@@ -186,9 +205,10 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
 
   const latestChatSessionStateRef = useRef<ChatSessionState>(chatSessionState);
   const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
-  const isPromptSubmissionInFlightRef = useRef(false);
+  const isPromptSubmissionInFlightRef = useRef(shouldLoadInitialConversationSessionEntries);
   const isConversationCompactionInFlightRef = useRef(false);
   const isChatAppControllerMountedRef = useRef(true);
+  const hasStartedInitialConversationSessionHydrationRef = useRef(false);
   const submittedToolApprovalDecisionApprovalIdRef = useRef<string | undefined>(undefined);
   const queuedChatAppPromptsRef = useRef<StoredQueuedChatAppPrompt[]>([]);
   const nextQueuedPromptIdRef = useRef(0);
@@ -219,7 +239,10 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     activeConversationTurnShutdownCoordinator: input.activeConversationTurnShutdownCoordinator,
     diagnosticLogger: input.diagnosticLogger,
   });
-  const { dismissActivePromptContextQuery } = useChatAppPromptContextSelectionRefresh({
+  const {
+    dismissActivePromptContextQuery,
+    refreshPromptContextSelectionForChatSessionState,
+  } = useChatAppPromptContextSelectionRefresh({
     chatSessionState,
     setChatSessionState,
     loadPromptContextCandidates: input.loadPromptContextCandidates,
@@ -251,6 +274,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     return nextQueuedChatAppPrompt;
   });
   const {
+    hydrateConversationSessionEntriesIntoChatApp,
     loadConversationSessionsForSelection,
     switchToConversationSession,
     requestConversationSessionDeletion,
@@ -276,6 +300,92 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     setConversationSessionCompactionStatus,
     diagnosticLogger: input.diagnosticLogger,
   });
+
+  useEffect(() => {
+    if (!shouldLoadInitialConversationSessionEntries) {
+      return;
+    }
+
+    if (hasStartedInitialConversationSessionHydrationRef.current) {
+      return;
+    }
+
+    const initialConversationSessionId = input.initialConversationSessionId;
+    const loadInitialConversationSessionEntries = input.loadInitialConversationSessionEntries;
+    if (!initialConversationSessionId || !loadInitialConversationSessionEntries) {
+      return;
+    }
+
+    hasStartedInitialConversationSessionHydrationRef.current = true;
+    let isInitialConversationSessionHydrationCancelled = false;
+    isPromptSubmissionInFlightRef.current = true;
+    setIsInitialConversationSessionHydrationPending(true);
+
+    void Promise.resolve()
+      .then(() => loadInitialConversationSessionEntries(initialConversationSessionId))
+      .then(async (initialConversationSessionEntriesLoadResult) => {
+        if (
+          isInitialConversationSessionHydrationCancelled ||
+          latestActiveConversationSessionIdRef.current !== initialConversationSessionEntriesLoadResult.conversationSessionId
+        ) {
+          return;
+        }
+
+        await input.onInitialConversationSessionEntriesHydrated?.(initialConversationSessionEntriesLoadResult);
+        if (
+          isInitialConversationSessionHydrationCancelled ||
+          latestActiveConversationSessionIdRef.current !== initialConversationSessionEntriesLoadResult.conversationSessionId
+        ) {
+          return;
+        }
+
+        hydrateConversationSessionEntriesIntoChatApp(
+          initialConversationSessionEntriesLoadResult.conversationSessionEntries,
+        );
+      })
+      .catch((error: unknown) => {
+        if (isInitialConversationSessionHydrationCancelled) {
+          return;
+        }
+
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.initial_conversation_session_hydration_failed", {
+          conversationSessionId: initialConversationSessionId,
+          errorMessage,
+        });
+        if (latestActiveConversationSessionIdRef.current !== initialConversationSessionId) {
+          return;
+        }
+
+        hydrateConversationSessionEntriesIntoChatApp([
+          {
+            entryKind: "assistant_message",
+            assistantMessageStatus: "failed",
+            assistantMessageText: "",
+            failureExplanation: `Could not load persisted conversation session: ${errorMessage}`,
+          },
+        ]);
+      })
+      .finally(() => {
+        if (isInitialConversationSessionHydrationCancelled) {
+          return;
+        }
+
+        isPromptSubmissionInFlightRef.current = false;
+        setIsInitialConversationSessionHydrationPending(false);
+      });
+
+    return () => {
+      isInitialConversationSessionHydrationCancelled = true;
+      hasStartedInitialConversationSessionHydrationRef.current = false;
+    };
+  }, [
+    shouldLoadInitialConversationSessionEntries,
+    input.initialConversationSessionId,
+    input.loadInitialConversationSessionEntries,
+    input.onInitialConversationSessionEntriesHydrated,
+    input.diagnosticLogger,
+  ]);
   const {
     streamAssistantResponseForSubmittedPrompt,
     submitPendingToolApprovalDecision,
@@ -308,6 +418,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     setChatSessionState,
     requestActiveConversationTurnInterrupt,
     dismissActivePromptContextQuery,
+    refreshPromptContextSelectionForChatSessionState,
     loadConversationSessionsForSelection,
     switchToConversationSession,
     requestConversationSessionDeletion,
@@ -354,6 +465,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
       queuedPromptCount,
       queuedPromptPreviews,
       isActiveTurnInterruptConfirmationArmed,
+      isInitialConversationSessionHydrationPending,
     }),
   });
   const interactionStatusState = selectStableChatAppInteractionStatusState({
@@ -414,6 +526,7 @@ function buildChatAppPromptComposerState(input: {
   queuedPromptCount: number;
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
+  isInitialConversationSessionHydrationPending: boolean;
 }): ChatAppPromptComposerState {
   return {
     conversationTurnStatus: input.chatSessionState.conversationTurnStatus,
@@ -429,6 +542,7 @@ function buildChatAppPromptComposerState(input: {
     queuedPromptCount: input.queuedPromptCount,
     queuedPromptPreviews: input.queuedPromptPreviews,
     isActiveTurnInterruptConfirmationArmed: input.isActiveTurnInterruptConfirmationArmed,
+    isInitialConversationSessionHydrationPending: input.isInitialConversationSessionHydrationPending,
   };
 }
 
@@ -502,7 +616,9 @@ function selectStableChatAppPromptComposerState(input: {
     input.previousState.latestContextWindowUsage === input.nextState.latestContextWindowUsage &&
     input.previousState.queuedPromptCount === input.nextState.queuedPromptCount &&
     input.previousState.queuedPromptPreviews === input.nextState.queuedPromptPreviews &&
-    input.previousState.isActiveTurnInterruptConfirmationArmed === input.nextState.isActiveTurnInterruptConfirmationArmed
+    input.previousState.isActiveTurnInterruptConfirmationArmed === input.nextState.isActiveTurnInterruptConfirmationArmed &&
+    input.previousState.isInitialConversationSessionHydrationPending ===
+      input.nextState.isInitialConversationSessionHydrationPending
   ) {
     return input.previousState;
   }

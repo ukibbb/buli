@@ -76,7 +76,9 @@ type ChatScreenInteractionPromptState = Pick<
   | "selectedModelDefaultReasoningEffort"
   | "selectedReasoningEffort"
   | "latestContextWindowUsage"
->;
+> & {
+  isInitialConversationSessionHydrationPending?: boolean | undefined;
+};
 
 type ChatScreenInteractionSelectionState = Pick<
   ChatSessionState,
@@ -120,6 +122,7 @@ export function buildChatScreenInteractionViewModel(input: {
   const isConversationCompactionRunning = input.conversationSessionCompactionStatus.step === "compacting";
   const isPromptInputDisabled =
     isConversationCompactionRunning ||
+    input.promptState.isInitialConversationSessionHydrationPending === true ||
     input.promptState.conversationTurnStatus === "waiting_for_tool_approval" ||
     input.selectionState.modelAndReasoningSelectionState.step !== "hidden" ||
     input.selectionState.conversationSessionSelectionState.step !== "hidden";

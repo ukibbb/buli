@@ -16,6 +16,7 @@ export {
   type QueuedChatAppPromptPreview,
   type ChatAppSelectionState,
   type ChatAppTranscriptState,
+  type InitialConversationSessionEntriesLoadResult,
   type UseChatAppControllerInput,
   type UseChatAppControllerResult,
 } from "./useChatAppController.ts";

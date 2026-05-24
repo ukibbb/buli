@@ -186,6 +186,52 @@ class ConcurrentExplorerStartBarrier {
   }
 }
 
+class LimitedExplorerConcurrencyTracker {
+  activeExplorerCount = 0;
+  startedExplorerCount = 0;
+  maximumObservedActiveExplorerCount = 0;
+  private readonly startedExplorerCountWaiters: Array<{
+    expectedStartedExplorerCount: number;
+    resolveWaiter: () => void;
+  }> = [];
+
+  recordExplorerStarted(): void {
+    this.startedExplorerCount += 1;
+    this.activeExplorerCount += 1;
+    this.maximumObservedActiveExplorerCount = Math.max(
+      this.maximumObservedActiveExplorerCount,
+      this.activeExplorerCount,
+    );
+    this.resolveSatisfiedStartedExplorerCountWaiters();
+  }
+
+  recordExplorerFinished(): void {
+    this.activeExplorerCount -= 1;
+  }
+
+  waitForStartedExplorerCount(expectedStartedExplorerCount: number): Promise<void> {
+    if (this.startedExplorerCount >= expectedStartedExplorerCount) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolveWaiter) => {
+      this.startedExplorerCountWaiters.push({ expectedStartedExplorerCount, resolveWaiter });
+    });
+  }
+
+  private resolveSatisfiedStartedExplorerCountWaiters(): void {
+    for (let waiterIndex = this.startedExplorerCountWaiters.length - 1; waiterIndex >= 0; waiterIndex -= 1) {
+      const waiter = this.startedExplorerCountWaiters[waiterIndex];
+      if (!waiter || this.startedExplorerCount < waiter.expectedStartedExplorerCount) {
+        continue;
+      }
+
+      this.startedExplorerCountWaiters.splice(waiterIndex, 1);
+      waiter.resolveWaiter();
+    }
+  }
+}
+
 class BlockingExplorerProviderTurn extends ScriptedProviderTurn {
   readonly explorerSummaryText: string;
   readonly recordExplorerStarted: () => void;
@@ -211,6 +257,34 @@ class BlockingExplorerProviderTurn extends ScriptedProviderTurn {
     this.recordExplorerStarted();
     await this.waitBeforeCompleting();
     yield* super.streamProviderEvents();
+  }
+}
+
+class ConcurrencyLimitedExplorerProviderTurn extends ScriptedProviderTurn {
+  readonly explorerConcurrencyTracker: LimitedExplorerConcurrencyTracker;
+  readonly allowCompletion = new DeferredCompletion();
+
+  constructor(input: {
+    explorerSummaryText: string;
+    explorerConcurrencyTracker: LimitedExplorerConcurrencyTracker;
+  }) {
+    super({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: input.explorerSummaryText },
+        { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    });
+    this.explorerConcurrencyTracker = input.explorerConcurrencyTracker;
+  }
+
+  override async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
+    this.explorerConcurrencyTracker.recordExplorerStarted();
+    try {
+      await this.allowCompletion.promise;
+      yield* super.streamProviderEvents();
+    } finally {
+      this.explorerConcurrencyTracker.recordExplorerFinished();
+    }
   }
 }
 
@@ -3036,6 +3110,113 @@ test("AssistantConversationRuntime runs sibling task tool calls concurrently", a
   expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolResultText).join("\n")).toContain(
     "Runtime Explorer summary",
   );
+});
+
+test("AssistantConversationRuntime limits concurrent sibling task subagent turns", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-limited-sibling-explorers-"));
+  const explorerConcurrencyTracker = new LimitedExplorerConcurrencyTracker();
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_explore_docs",
+            toolCallRequest: {
+              toolName: "task",
+              subagentName: "explore",
+              subagentDescription: "map docs",
+              subagentPrompt: "Summarize docs responsibilities.",
+            },
+          },
+          {
+            toolCallId: "call_explore_runtime",
+            toolCallRequest: {
+              toolName: "task",
+              subagentName: "explore",
+              subagentDescription: "map runtime",
+              subagentPrompt: "Summarize runtime responsibilities.",
+            },
+          },
+          {
+            toolCallId: "call_explore_tests",
+            toolCallRequest: {
+              toolName: "task",
+              subagentName: "explore",
+              subagentDescription: "map tests",
+              subagentPrompt: "Summarize test responsibilities.",
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Limited sibling Explorer results acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const docsExplorerProviderTurn = new ConcurrencyLimitedExplorerProviderTurn({
+    explorerSummaryText: "Docs Explorer summary.",
+    explorerConcurrencyTracker,
+  });
+  const runtimeExplorerProviderTurn = new ConcurrencyLimitedExplorerProviderTurn({
+    explorerSummaryText: "Runtime Explorer summary.",
+    explorerConcurrencyTracker,
+  });
+  const testsExplorerProviderTurn = new ConcurrencyLimitedExplorerProviderTurn({
+    explorerSummaryText: "Tests Explorer summary.",
+    explorerConcurrencyTracker,
+  });
+  const provider = new RecordingConversationTurnProvider([
+    parentProviderTurn,
+    docsExplorerProviderTurn,
+    runtimeExplorerProviderTurn,
+    testsExplorerProviderTurn,
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    maximumConcurrentSubagentConversations: 2,
+  });
+
+  const emittedAssistantEventsPromise = collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs, runtime, and tests independently",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  await waitForPromiseWithTimeout({
+    promise: explorerConcurrencyTracker.waitForStartedExplorerCount(2),
+    timeoutMilliseconds: 500,
+    createTimeoutError: () =>
+      new Error(`Expected two Explorer turns to start, got ${explorerConcurrencyTracker.startedExplorerCount}.`),
+  });
+  expect(explorerConcurrencyTracker.startedExplorerCount).toBe(2);
+  expect(explorerConcurrencyTracker.maximumObservedActiveExplorerCount).toBe(2);
+  expect(provider.startedTurnRequests).toHaveLength(3);
+
+  docsExplorerProviderTurn.allowCompletion.resolve();
+  await waitForPromiseWithTimeout({
+    promise: explorerConcurrencyTracker.waitForStartedExplorerCount(3),
+    timeoutMilliseconds: 500,
+    createTimeoutError: () =>
+      new Error(`Expected the queued Explorer turn to start, got ${explorerConcurrencyTracker.startedExplorerCount}.`),
+  });
+  expect(explorerConcurrencyTracker.maximumObservedActiveExplorerCount).toBe(2);
+
+  runtimeExplorerProviderTurn.allowCompletion.resolve();
+  testsExplorerProviderTurn.allowCompletion.resolve();
+  const emittedAssistantEvents = await emittedAssistantEventsPromise;
+
+  expect(provider.startedTurnRequests).toHaveLength(4);
+  expect(parentProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).sort()).toEqual([
+    "call_explore_docs",
+    "call_explore_runtime",
+    "call_explore_tests",
+  ]);
+  expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({ type: "assistant_message_completed" }));
 });
 
 test("AssistantConversationRuntime denies nested task calls inside subagent turns", async () => {

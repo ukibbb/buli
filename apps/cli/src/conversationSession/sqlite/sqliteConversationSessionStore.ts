@@ -7,6 +7,7 @@ import type {
   ConversationSessionSummary,
 } from "@buli/contracts";
 import {
+  type ActiveConversationSessionMetadata,
   type ActiveConversationSession,
   type ConversationSessionStore,
   type DeleteConversationSessionInput,
@@ -68,12 +69,22 @@ export class SqliteConversationSessionStore implements ConversationSessionStore 
     this.database.close();
   }
 
+  loadActiveConversationSessionMetadata(): ActiveConversationSessionMetadata {
+    return mapPersistedConversationSessionMetadataToActiveConversationSessionMetadata(
+      this.runImmediateTransaction(() => this.loadActiveConversationSessionMetadataInTransaction()),
+    );
+  }
+
   loadActiveConversationSession(): ActiveConversationSession {
     return this.runImmediateTransaction(() => this.loadActiveConversationSessionInTransaction());
   }
 
-  loadConversationSessionEntries(): readonly ConversationSessionEntry[] {
-    return this.loadActiveConversationSession().conversationSessionEntries;
+  loadConversationSessionEntries(conversationSessionId?: string | undefined): readonly ConversationSessionEntry[] {
+    return this.runImmediateTransaction(() => {
+      const sessionId = conversationSessionId ?? this.loadActiveConversationSessionMetadataInTransaction().sessionId;
+      this.loadConversationSessionMetadataOrThrow(sessionId);
+      return this.gateway.loadConversationSessionEntries(sessionId);
+    });
   }
 
   appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void {
@@ -290,4 +301,14 @@ function areConversationSessionModelSelectionsEqual(
   return left.selectedModelId === right.selectedModelId &&
     left.selectedModelDefaultReasoningEffort === right.selectedModelDefaultReasoningEffort &&
     left.selectedReasoningEffort === right.selectedReasoningEffort;
+}
+
+function mapPersistedConversationSessionMetadataToActiveConversationSessionMetadata(
+  conversationSession: PersistedConversationSessionMetadata,
+): ActiveConversationSessionMetadata {
+  return {
+    sessionId: conversationSession.sessionId,
+    modelSelection: conversationSession.modelSelection,
+    conversationSessionEntryCount: conversationSession.conversationSessionEntryCount,
+  };
 }

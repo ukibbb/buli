@@ -13,6 +13,7 @@ import {
   type ConversationSessionCompactionResult,
   type ConversationSessionDeleteResult,
   type ConversationSessionExportResult,
+  type InitialConversationSessionEntriesLoadResult,
   type ConversationSessionSwitchResult,
 } from "@buli/chat-app-controller";
 import {
@@ -34,6 +35,12 @@ export type ChatScreenProps = {
   selectedReasoningEffort?: ReasoningEffort;
   initialConversationSessionId?: string;
   initialConversationSessionEntries?: readonly ConversationSessionEntry[];
+  loadInitialConversationSessionEntries?:
+    | ((conversationSessionId: string) => Promise<InitialConversationSessionEntriesLoadResult> | InitialConversationSessionEntriesLoadResult)
+    | undefined;
+  onInitialConversationSessionEntriesHydrated?:
+    | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void | Promise<void>)
+    | undefined;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];

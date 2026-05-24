@@ -1,0 +1,112 @@
+import type {
+  AssistantMarkdownBlockquoteToken,
+  AssistantMarkdownCallout,
+  AssistantMarkdownCalloutKind,
+  AssistantMarkdownCodeToken,
+  AssistantMarkdownHeadingToken,
+  AssistantMarkdownListToken,
+  AssistantMarkdownParagraphToken,
+  AssistantMarkdownToken,
+} from "./assistantMarkdownRenderSectionTypes.ts";
+
+const minimumAssistantMarkdownChromeRuleLength = 8;
+const maximumAssistantMarkdownChromeRuleLength = 120;
+const calloutMarkerPattern = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n?([\s\S]*)$/i;
+
+export const assistantMarkdownDashOnlyParagraphPattern = /^[-*_\s]{3,}$/;
+
+export function isAssistantMarkdownCodeToken(token: AssistantMarkdownToken): token is AssistantMarkdownCodeToken {
+  return token.type === "code" && "text" in token && typeof token.text === "string";
+}
+
+export function isAssistantMarkdownHeadingToken(token: AssistantMarkdownToken): token is AssistantMarkdownHeadingToken {
+  return (
+    token.type === "heading" &&
+    "text" in token &&
+    typeof token.text === "string" &&
+    "depth" in token &&
+    typeof token.depth === "number"
+  );
+}
+
+export function isAssistantMarkdownBlockquoteToken(token: AssistantMarkdownToken): token is AssistantMarkdownBlockquoteToken {
+  return token.type === "blockquote" && "text" in token && typeof token.text === "string";
+}
+
+export function isAssistantMarkdownListToken(token: AssistantMarkdownToken): token is AssistantMarkdownListToken {
+  return token.type === "list" && "items" in token && Array.isArray(token.items);
+}
+
+export function isAssistantMarkdownDashOnlyParagraphToken(
+  token: AssistantMarkdownToken,
+): token is AssistantMarkdownParagraphToken {
+  return (
+    token.type === "paragraph" &&
+    "text" in token &&
+    typeof token.text === "string" &&
+    assistantMarkdownDashOnlyParagraphPattern.test(token.text.trim())
+  );
+}
+
+export function isAssistantMarkdownParagraphToken(token: AssistantMarkdownToken): token is AssistantMarkdownParagraphToken {
+  return token.type === "paragraph" && "text" in token && typeof token.text === "string";
+}
+
+export function formatAssistantMarkdownInlineTextForStyledText(inlineMarkdownText: string): string {
+  return inlineMarkdownText
+    .replace(/~~([^~\n]+)~~/g, "$1")
+    .replace(/!?\[([^\]\n]+)\]\([^\n)]+\)/g, "$1");
+}
+
+export function formatAssistantMarkdownHeadingText(headingText: string, depth: number): string {
+  const visibleHeadingText = formatAssistantMarkdownInlineTextForStyledText(headingText);
+  if (depth === 1) {
+    return `\n▌ ${visibleHeadingText}`;
+  }
+
+  if (depth === 2) {
+    return `\n◆ ${visibleHeadingText}`;
+  }
+
+  if (depth === 3) {
+    return `\n${visibleHeadingText}`;
+  }
+
+  return `\n• ${visibleHeadingText}`;
+}
+
+export function parseAssistantMarkdownCallout(inputText: string): AssistantMarkdownCallout | undefined {
+  const calloutMarkerMatch = calloutMarkerPattern.exec(inputText.trimStart());
+  if (!calloutMarkerMatch) {
+    return undefined;
+  }
+
+  return {
+    calloutKind: calloutMarkerMatch[1]!.toUpperCase() as AssistantMarkdownCalloutKind,
+    bodyText: calloutMarkerMatch[2]?.trimStart() ?? "",
+  };
+}
+
+export function formatAssistantMarkdownQuoteText(quoteText: string): string {
+  const quoteLines = quoteText.trim().split("\n");
+  return quoteLines.map((quoteLine) => `│ ${formatAssistantMarkdownInlineTextForStyledText(quoteLine)}`).join("\n");
+}
+
+export function formatAssistantMarkdownCalloutText(input: AssistantMarkdownCallout): string {
+  const bodyLines = input.bodyText.trim().length > 0 ? input.bodyText.trim().split("\n") : [];
+  return [
+    `▌ ${input.calloutKind}`,
+    "├" + "─".repeat(Math.max(12, input.calloutKind.length + 2)),
+    ...bodyLines.map((bodyLine) => `│ ${formatAssistantMarkdownInlineTextForStyledText(bodyLine)}`),
+  ].join("\n");
+}
+
+export function repeatAssistantMarkdownChromeRule(input: { availableColumnCount: number; occupiedColumnCount?: number }): string {
+  const availableRuleColumnCount = input.availableColumnCount - (input.occupiedColumnCount ?? 0);
+  return "─".repeat(
+    Math.max(
+      minimumAssistantMarkdownChromeRuleLength,
+      Math.min(maximumAssistantMarkdownChromeRuleLength, availableRuleColumnCount),
+    ),
+  );
+}

@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import type { ConversationSessionEntry, ConversationSessionModelSelection, ModelContextItem } from "@buli/contracts";
 import { InMemoryConversationHistory } from "@buli/engine";
+import { summarizeConversationSessionTitle } from "../src/conversationSession/conversationSessionTitle.ts";
 import { SqliteConversationSessionStore } from "../src/conversationSession/index.ts";
 
 test("SqliteConversationSessionStore creates an empty active session when the database is missing", async () => {
@@ -63,6 +65,113 @@ test("SqliteConversationSessionStore saves and loads conversation session entrie
     ]);
   } finally {
     conversationSessionStore.close();
+  }
+});
+
+test("SqliteConversationSessionStore bounds generated titles", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-title-"));
+  const conversationSessionStore = new SqliteConversationSessionStore({
+    databasePath: join(directoryPath, "session-store.sqlite"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createQueuedNumberFactory([1000, 1001]),
+  });
+
+  try {
+    conversationSessionStore.appendConversationSessionEntry({
+      entryKind: "user_prompt",
+      promptText: `${"Summarize ".repeat(20)}\nwith details`,
+      modelFacingPromptText: "Long prompt",
+    });
+
+    expect(conversationSessionStore.listConversationSessions()[0]?.title).toBe(
+      summarizeConversationSessionTitle([
+        {
+          entryKind: "user_prompt",
+          promptText: `${"Summarize ".repeat(20)}\nwith details`,
+          modelFacingPromptText: "Long prompt",
+        },
+      ]),
+    );
+  } finally {
+    conversationSessionStore.close();
+  }
+});
+
+test("SqliteConversationSessionStore recovers corrupt persisted entry JSON", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-corrupt-entry-"));
+  const databasePath = join(directoryPath, "session-store.sqlite");
+  const conversationSessionStore = new SqliteConversationSessionStore({
+    databasePath,
+    createSessionId: () => "session-1",
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createQueuedNumberFactory([1000, 1001, 1002]),
+  });
+
+  try {
+    conversationSessionStore.saveConversationSessionEntries([
+      {
+        entryKind: "user_prompt",
+        promptText: "Prompt before corruption",
+        modelFacingPromptText: "Prompt before corruption",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "This row will be corrupted.",
+      },
+    ]);
+  } finally {
+    conversationSessionStore.close();
+  }
+
+  const database = new Database(databasePath);
+  database.run(
+    "UPDATE conversation_session_entry SET conversation_session_entry_json = ? WHERE session_id = ? AND entry_sequence = ?",
+    ["{", "session-1", 1],
+  );
+  database.close();
+
+  const reloadedConversationSessionStore = new SqliteConversationSessionStore({ databasePath });
+  try {
+    expect(reloadedConversationSessionStore.loadConversationSessionEntries()).toMatchObject([
+      { entryKind: "user_prompt", promptText: "Prompt before corruption" },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "failed",
+        failureExplanation: expect.stringContaining("Could not load persisted conversation session entry 2"),
+      },
+    ]);
+  } finally {
+    reloadedConversationSessionStore.close();
+  }
+});
+
+test("SqliteConversationSessionStore ignores corrupt persisted model selection JSON", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-corrupt-model-"));
+  const databasePath = join(directoryPath, "session-store.sqlite");
+  const conversationSessionStore = new SqliteConversationSessionStore({
+    databasePath,
+    createSessionId: () => "session-1",
+    nowMs: () => 1000,
+  });
+
+  try {
+    conversationSessionStore.saveActiveConversationSessionModelSelection({ selectedModelId: "gpt-5.4" });
+  } finally {
+    conversationSessionStore.close();
+  }
+
+  const database = new Database(databasePath);
+  database.run("UPDATE conversation_session SET current_model_selection_json = ? WHERE session_id = ?", ["{", "session-1"]);
+  database.close();
+
+  const reloadedConversationSessionStore = new SqliteConversationSessionStore({ databasePath });
+  try {
+    expect(reloadedConversationSessionStore.loadActiveConversationSession().modelSelection).toBeUndefined();
+    expect(reloadedConversationSessionStore.listConversationSessions()[0]?.modelSelection).toBeUndefined();
+  } finally {
+    reloadedConversationSessionStore.close();
   }
 });
 

@@ -46,6 +46,37 @@ test("openConversationSessionSqliteDatabase rejects newer schema versions", asyn
   );
 });
 
+test("openConversationSessionSqliteDatabase rejects a current-version database with missing schema objects", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-partial-schema-"));
+  const databasePath = join(directoryPath, "session-store.sqlite");
+  const partialDatabase = new Database(databasePath, { create: true });
+  partialDatabase.run("PRAGMA user_version = 1");
+  partialDatabase.close();
+
+  expect(() => openConversationSessionSqliteDatabase(databasePath)).toThrow(
+    "Conversation session database schema is missing table active_conversation_session.",
+  );
+});
+
+test("openConversationSessionSqliteDatabase rejects a pre-existing table with the wrong schema", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-wrong-table-schema-"));
+  const databasePath = join(directoryPath, "session-store.sqlite");
+  const wrongSchemaDatabase = new Database(databasePath, { create: true });
+  wrongSchemaDatabase.run(`CREATE TABLE conversation_session (
+    session_id TEXT PRIMARY KEY,
+    workspace_root_path TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    conversation_session_entry_count INTEGER NOT NULL DEFAULT 0
+  )`);
+  wrongSchemaDatabase.close();
+
+  expect(() => openConversationSessionSqliteDatabase(databasePath)).toThrow(
+    "Conversation session database schema object conversation_session does not match expected table definition.",
+  );
+});
+
 function readConversationSessionSqliteSchemaVersion(database: Database): number {
   return database
     .query<ConversationSessionSqliteUserVersionRow, []>("PRAGMA user_version")

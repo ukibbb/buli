@@ -49,6 +49,32 @@ function createModelListErrorResponse(input: {
   });
 }
 
+function createCancellableModelListErrorResponse(input: {
+  status: number;
+  message: string;
+  headers?: Record<string, string>;
+  onBodyCanceled: () => void;
+}): Response {
+  const responseBodyBytes = new TextEncoder().encode(JSON.stringify({ error: { message: input.message } }));
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(responseBodyBytes);
+      },
+      cancel() {
+        input.onBodyCanceled();
+      },
+    }),
+    {
+      status: input.status,
+      headers: {
+        "content-type": "application/json",
+        ...(input.headers ?? {}),
+      },
+    },
+  );
+}
+
 function createModelListFetchImplWithQueuedOutcomes(input: {
   queuedOutcomes: QueuedModelListFetchOutcome[];
   requests: Array<{ url: string; headers: Headers }>;
@@ -318,6 +344,37 @@ test("OpenAiProvider.listAvailableAssistantModels retries transient model-list r
       retryAttemptCount: 2,
       status: 200,
     });
+});
+
+test("OpenAiProvider.listAvailableAssistantModels cancels retryable response bodies before retrying", async () => {
+  const requests: Array<{ url: string; headers: Headers }> = [];
+  let canceledRetryableResponseBodyCount = 0;
+  const provider = new OpenAiProvider({
+    endpoint: "https://example.test/backend-api/codex/responses",
+    store: await createFreshOpenAiAuthStore("buli-openai-models-retry-cancel-"),
+    fetchImpl: createModelListFetchImplWithQueuedOutcomes({
+      queuedOutcomes: [
+        {
+          outcomeKind: "response",
+          response: createCancellableModelListErrorResponse({
+            status: 429,
+            message: "slow down",
+            headers: { "retry-after-ms": "0" },
+            onBodyCanceled: () => {
+              canceledRetryableResponseBodyCount += 1;
+            },
+          }),
+        },
+        { outcomeKind: "response", response: createModelListSuccessResponse() },
+      ],
+      requests,
+    }),
+  });
+
+  await expect(provider.listAvailableAssistantModels()).resolves.toHaveLength(1);
+
+  expect(requests).toHaveLength(2);
+  expect(canceledRetryableResponseBodyCount).toBe(1);
 });
 
 test("OpenAiProvider.listAvailableAssistantModels retries transient model-list transport failures", async () => {

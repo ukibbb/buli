@@ -2,13 +2,25 @@ import { z } from "zod";
 import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
 
 export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 300_000;
+export const MAX_TOOL_CALL_PATH_LENGTH = 4_096;
+export const MAX_BASH_TOOL_COMMAND_LENGTH = 20_000;
+export const MAX_BASH_TOOL_DESCRIPTION_LENGTH = 2_000;
+export const MAX_GLOB_TOOL_PATTERN_LENGTH = 4_096;
+export const MAX_GREP_TOOL_PATTERN_LENGTH = 4_096;
+export const MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH = 1_000_000;
+export const MAX_EDIT_TOOL_REPLACEMENT_TEXT_LENGTH = 1_000_000;
+export const MAX_WRITE_TOOL_FILE_CONTENT_LENGTH = 1_000_000;
+export const MAX_TASK_TOOL_DESCRIPTION_LENGTH = 2_000;
+export const MAX_TASK_TOOL_PROMPT_LENGTH = 100_000;
+
+const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
 
 export const BashToolCallRequestSchema = z
   .object({
     toolName: z.literal("bash"),
-    shellCommand: z.string().min(1),
-    commandDescription: z.string().min(1),
-    workingDirectoryPath: z.string().min(1).optional(),
+    shellCommand: z.string().min(1).max(MAX_BASH_TOOL_COMMAND_LENGTH),
+    commandDescription: z.string().min(1).max(MAX_BASH_TOOL_DESCRIPTION_LENGTH),
+    workingDirectoryPath: WorkspacePathSchema.optional(),
     timeoutMilliseconds: z.number().int().positive().max(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS).optional(),
   })
   .strict();
@@ -16,7 +28,7 @@ export const BashToolCallRequestSchema = z
 export const ReadToolCallRequestSchema = z
   .object({
     toolName: z.literal("read"),
-    readTargetPath: z.string().min(1),
+    readTargetPath: WorkspacePathSchema,
     offsetLineNumber: z.number().int().positive().optional(),
     maximumLineCount: z.number().int().positive().optional(),
   })
@@ -25,34 +37,34 @@ export const ReadToolCallRequestSchema = z
 export const GlobToolCallRequestSchema = z
   .object({
     toolName: z.literal("glob"),
-    globPattern: z.string().min(1),
-    searchDirectoryPath: z.string().min(1).optional(),
+    globPattern: z.string().min(1).max(MAX_GLOB_TOOL_PATTERN_LENGTH),
+    searchDirectoryPath: WorkspacePathSchema.optional(),
   })
   .strict();
 
 export const GrepToolCallRequestSchema = z
   .object({
     toolName: z.literal("grep"),
-    regexPattern: z.string().min(1),
-    searchPath: z.string().min(1).optional(),
-    includeGlobPattern: z.string().min(1).optional(),
+    regexPattern: z.string().min(1).max(MAX_GREP_TOOL_PATTERN_LENGTH),
+    searchPath: WorkspacePathSchema.optional(),
+    includeGlobPattern: z.string().min(1).max(MAX_GLOB_TOOL_PATTERN_LENGTH).optional(),
   })
   .strict();
 
 export const EditToolCallRequestSchema = z
   .object({
     toolName: z.literal("edit"),
-    editTargetPath: z.string().min(1),
-    oldString: z.string().min(1),
-    newString: z.string(),
+    editTargetPath: WorkspacePathSchema,
+    oldString: z.string().min(1).max(MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH),
+    newString: z.string().max(MAX_EDIT_TOOL_REPLACEMENT_TEXT_LENGTH),
   })
   .strict();
 
 export const WriteToolCallRequestSchema = z
   .object({
     toolName: z.literal("write"),
-    writeTargetPath: z.string().min(1),
-    fileContent: z.string(),
+    writeTargetPath: WorkspacePathSchema,
+    fileContent: z.string().max(MAX_WRITE_TOOL_FILE_CONTENT_LENGTH),
   })
   .strict();
 
@@ -60,8 +72,8 @@ export const TaskToolCallRequestSchema = z
   .object({
     toolName: z.literal("task"),
     subagentName: AssistantSubagentNameSchema,
-    subagentDescription: z.string().min(1),
-    subagentPrompt: z.string().min(1),
+    subagentDescription: z.string().min(1).max(MAX_TASK_TOOL_DESCRIPTION_LENGTH),
+    subagentPrompt: z.string().min(1).max(MAX_TASK_TOOL_PROMPT_LENGTH),
   })
   .strict();
 

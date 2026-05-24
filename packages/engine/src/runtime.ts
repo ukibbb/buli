@@ -47,6 +47,7 @@ import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTur
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
 import { ProjectInstructionTracker } from "./projectInstructions.ts";
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+import { RuntimeSubagentConversationConcurrencyLimiter } from "./runtimeSubagentConversationConcurrencyLimiter.ts";
 import { startAcceptedRuntimeConversationTurn } from "./runtimeConversationTurnStart.ts";
 import { streamAssistantResponseEventsFromProviderStream } from "./runtimeProviderStreamProcessor.ts";
 import {
@@ -69,6 +70,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly canSpawnSubagent: boolean;
+  readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
@@ -86,6 +88,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     canSpawnSubagent?: boolean;
+    maximumConcurrentSubagentConversations?: number | undefined;
     projectInstructionTracker?: ProjectInstructionTracker;
     autoCompactionThresholdRatio?: number | undefined;
     autoCompactionReservedTokenCount?: number | undefined;
@@ -104,6 +107,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
     this.canSpawnSubagent = input.canSpawnSubagent ?? true;
+    this.maximumConcurrentSubagentConversations = input.maximumConcurrentSubagentConversations;
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
     });
@@ -168,6 +172,9 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       promptCacheKey: this.promptCacheKey,
       availableToolNames: this.availableToolNames,
       canSpawnSubagent: this.canSpawnSubagent,
+      ...(this.maximumConcurrentSubagentConversations !== undefined
+        ? { maximumConcurrentSubagentConversations: this.maximumConcurrentSubagentConversations }
+        : {}),
       projectInstructionTracker: this.projectInstructionTracker,
       onConversationTurnFinished: () => {
         if (this.currentPendingConversationTurn === runtimeConversationTurn) {
@@ -219,11 +226,13 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly canSpawnSubagent: boolean;
+  readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly onConversationTurnFinished: () => void;
   readonly pendingToolApprovalController: RuntimePendingToolApprovalController;
   readonly conversationTurnLifecycle: RuntimeConversationTurnLifecycle;
   readonly readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+  readonly subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
 
   constructor(input: {
     conversationTurnInput: ConversationTurnRequest;
@@ -240,6 +249,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     canSpawnSubagent: boolean;
+    maximumConcurrentSubagentConversations?: number | undefined;
     projectInstructionTracker: ProjectInstructionTracker;
     onConversationTurnFinished: () => void;
   }) {
@@ -257,12 +267,18 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
     this.canSpawnSubagent = input.canSpawnSubagent;
+    this.maximumConcurrentSubagentConversations = input.maximumConcurrentSubagentConversations;
     this.projectInstructionTracker = input.projectInstructionTracker;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
     this.pendingToolApprovalController = new RuntimePendingToolApprovalController({
       diagnosticLogger: this.diagnosticLogger,
     });
     this.readOnlyToolCallConcurrencyLimiter = new RuntimeReadOnlyToolCallConcurrencyLimiter();
+    this.subagentConversationConcurrencyLimiter = new RuntimeSubagentConversationConcurrencyLimiter({
+      ...(this.maximumConcurrentSubagentConversations !== undefined
+        ? { maximumConcurrentSubagentConversations: this.maximumConcurrentSubagentConversations }
+        : {}),
+    });
     this.conversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
       selectedModelId: this.conversationTurnInput.selectedModelId,
       diagnosticLogger: this.diagnosticLogger,
@@ -453,6 +469,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       conversationHistory: this.conversationHistory,
       abortSignal: this.conversationTurnLifecycle.abortSignal,
       readOnlyToolCallConcurrencyLimiter: this.readOnlyToolCallConcurrencyLimiter,
+      subagentConversationConcurrencyLimiter: this.subagentConversationConcurrencyLimiter,
       canSpawnSubagent: this.canSpawnSubagent,
       createPendingToolApproval: (pendingToolApprovalInput) => this.createPendingToolApproval(pendingToolApprovalInput),
       throwIfConversationTurnInterrupted: () => {

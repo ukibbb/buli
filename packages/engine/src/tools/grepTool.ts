@@ -24,6 +24,7 @@ export async function runGrepToolCall(input: {
   workspaceRootPath: string;
   ripgrepExecutablePath?: string;
   maximumRipgrepCapturedOutputCharacters?: number;
+  ripgrepTimeoutMilliseconds?: number;
   abortSignal?: AbortSignal;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
@@ -63,6 +64,7 @@ export async function runGrepToolCall(input: {
           ...(input.maximumRipgrepCapturedOutputCharacters !== undefined
             ? { maximumCapturedOutputCharacters: input.maximumRipgrepCapturedOutputCharacters }
             : {}),
+          ...(input.ripgrepTimeoutMilliseconds !== undefined ? { timeoutMilliseconds: input.ripgrepTimeoutMilliseconds } : {}),
           ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
         })
       : undefined;

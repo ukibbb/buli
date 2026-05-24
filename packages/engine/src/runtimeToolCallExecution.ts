@@ -29,6 +29,7 @@ import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
 } from "./runtimeReadOnlyToolCallExecution.ts";
 import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+import type { RuntimeSubagentConversationConcurrencyLimiter } from "./runtimeSubagentConversationConcurrencyLimiter.ts";
 import type {
   RuntimePendingToolApproval,
   RuntimePendingToolApprovalInput,
@@ -64,6 +65,7 @@ export type RuntimeToolCallExecutionContext = {
   conversationHistory: InMemoryConversationHistory;
   abortSignal: AbortSignal;
   canSpawnSubagent: boolean;
+  subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -272,6 +274,7 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+    subagentConversationConcurrencyLimiter: input.subagentConversationConcurrencyLimiter,
     abortSignal: input.abortSignal,
     canSpawnSubagent: input.canSpawnSubagent,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,

@@ -15,7 +15,7 @@ import {
   type ChatSlashCommandApplicationEffect,
   type PromptContextQueryIdentity,
 } from "@buli/chat-session-state";
-import { useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
+import { useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 import type {
   PendingToolApprovalDecisionSubmission,
@@ -44,6 +44,7 @@ export type UseChatAppKeyboardActionsInput = {
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   requestActiveConversationTurnInterrupt: () => void;
   dismissActivePromptContextQuery: (dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined) => void;
+  refreshPromptContextSelectionForChatSessionState: (chatSessionState: ChatSessionState) => void;
   loadConversationSessionsForSelection: () => Promise<void>;
   switchToConversationSession: (conversationSessionId: string) => Promise<void>;
   requestConversationSessionDeletion: (conversationSessionId: string) => Promise<void>;
@@ -73,22 +74,6 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     setChatSessionState: input.setChatSessionState,
     diagnosticLogger: input.diagnosticLogger,
   });
-
-  useEffect(() => {
-    input.setChatSessionState((currentChatSessionState) =>
-      refreshChatSlashCommandSelectionForCurrentState(currentChatSessionState)
-    );
-  }, [
-    input.chatSessionState.promptDraft,
-    input.chatSessionState.promptDraftCursorOffset,
-    input.chatSessionState.conversationTurnStatus,
-    input.chatSessionState.modelAndReasoningSelectionState.step,
-    input.chatSessionState.conversationSessionSelectionState.step,
-    input.chatSessionState.promptContextSelectionState.step,
-    input.chatSessionState.isCommandHelpModalVisible,
-    input.chatSessionState.isReasoningSummaryVisible,
-    input.chatSessionState.selectedAssistantOperatingMode,
-  ]);
 
   const applyChatSlashCommandApplicationEffectToChatApp = useEffectEvent(
     (chatSlashCommandApplicationEffect: ChatSlashCommandApplicationEffect | undefined) => {
@@ -135,8 +120,12 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       input.latestChatSessionStateRef.current,
       slashCommandValue,
     );
-    input.latestChatSessionStateRef.current = chatSlashCommandApplication.nextChatSessionState;
-    input.setChatSessionState(chatSlashCommandApplication.nextChatSessionState);
+    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(
+      chatSlashCommandApplication.nextChatSessionState,
+    );
+    input.latestChatSessionStateRef.current = nextChatSessionState;
+    input.setChatSessionState(nextChatSessionState);
+    input.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
     applyChatSlashCommandApplicationEffectToChatApp(chatSlashCommandApplication.chatSlashCommandApplicationEffect);
   });
 
@@ -228,26 +217,29 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       });
     }
 
-    if (keyboardInteraction.nextChatSessionState !== previousChatSessionState) {
+    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(keyboardInteraction.nextChatSessionState);
+
+    if (nextChatSessionState !== previousChatSessionState) {
       const shouldReportModelSelection = shouldReportConversationSessionModelSelection({
         previousChatSessionState,
-        nextChatSessionState: keyboardInteraction.nextChatSessionState,
+        nextChatSessionState,
         chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
       });
       if (
         previousChatSessionState.selectedAssistantOperatingMode !==
-          keyboardInteraction.nextChatSessionState.selectedAssistantOperatingMode
+          nextChatSessionState.selectedAssistantOperatingMode
       ) {
         logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.assistant_operating_mode_cycled", {
-          selectedAssistantOperatingMode: keyboardInteraction.nextChatSessionState.selectedAssistantOperatingMode,
+          selectedAssistantOperatingMode: nextChatSessionState.selectedAssistantOperatingMode,
         });
       }
 
-      input.latestChatSessionStateRef.current = keyboardInteraction.nextChatSessionState;
-      input.setChatSessionState(keyboardInteraction.nextChatSessionState);
+      input.latestChatSessionStateRef.current = nextChatSessionState;
+      input.setChatSessionState(nextChatSessionState);
+      input.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
       if (shouldReportModelSelection) {
         const modelSelection = readConversationSessionModelSelectionFromChatSessionState(
-          keyboardInteraction.nextChatSessionState,
+          nextChatSessionState,
         );
         logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_changed", {
           selectedModelId: modelSelection.selectedModelId,
@@ -274,11 +266,12 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     }
 
     const previousChatSessionState = input.latestChatSessionStateRef.current;
-    const nextChatSessionState = replacePromptDraftFromEditor({
+    const editedChatSessionState = replacePromptDraftFromEditor({
       chatSessionState: previousChatSessionState,
       promptDraft: promptDraftEdit.promptDraft,
       promptDraftCursorOffset: promptDraftEdit.promptDraftCursorOffset,
     });
+    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(editedChatSessionState);
 
     if (nextChatSessionState === previousChatSessionState) {
       return;
@@ -286,6 +279,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
 
     input.latestChatSessionStateRef.current = nextChatSessionState;
     input.setChatSessionState(nextChatSessionState);
+    input.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
   });
 
   return {

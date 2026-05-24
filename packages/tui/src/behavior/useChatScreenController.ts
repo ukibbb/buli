@@ -63,6 +63,8 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     selectedReasoningEffort: chatScreenProps.selectedReasoningEffort,
     initialConversationSessionId: chatScreenProps.initialConversationSessionId,
     initialConversationSessionEntries: chatScreenProps.initialConversationSessionEntries,
+    loadInitialConversationSessionEntries: chatScreenProps.loadInitialConversationSessionEntries,
+    onInitialConversationSessionEntriesHydrated: chatScreenProps.onInitialConversationSessionEntriesHydrated,
     loadAvailableAssistantModels: chatScreenProps.loadAvailableAssistantModels,
     loadPromptContextCandidates: chatScreenProps.loadPromptContextCandidates,
     loadConversationSessions: chatScreenProps.loadConversationSessions,
@@ -293,13 +295,21 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     inputPanelAccentColor,
     onConversationSessionDeletionRequested: chatAppController.requestConversationSessionDeletion,
   };
-  const mainAreaProps = selectStableChatScreenMainAreaProps({
-    previousMainAreaProps: stableMainAreaPropsRef.current,
-    nextMainAreaProps: currentMainAreaProps,
+  const mainAreaProps = selectShallowStableObject({
+    previousValue: stableMainAreaPropsRef.current,
+    nextValue: currentMainAreaProps,
+    equalityByProperty: {
+      pendingToolApprovalDecision: arePendingToolApprovalDecisionsEqual,
+      onRevealOlderConversationMessages: () => true,
+      onCommandHelpCloseRequested: () => true,
+    },
   });
-  const statusStackProps = selectStableLiveInteractionStatusStackProps({
-    previousStatusStackProps: stableStatusStackPropsRef.current,
-    nextStatusStackProps: currentStatusStackProps,
+  const statusStackProps = selectShallowStableObject({
+    previousValue: stableStatusStackPropsRef.current,
+    nextValue: currentStatusStackProps,
+    equalityByProperty: {
+      onConversationSessionDeletionRequested: () => true,
+    },
   });
   const currentPromptComposerProps: PromptComposerChromeProps = {
     conversationTurnStatus: chatAppController.promptComposerState.conversationTurnStatus,
@@ -324,13 +334,13 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     onPromptSubmitted: submitPromptDraftFromPromptTextarea,
     onNativeClipboardPasteRequested: pasteClipboardImageAttachmentIntoPrompt,
   };
-  const promptComposerProps = selectStablePromptComposerChromeProps({
-    previousPromptComposerProps: stablePromptComposerPropsRef.current,
-    nextPromptComposerProps: currentPromptComposerProps,
+  const promptComposerProps = selectShallowStableObject({
+    previousValue: stablePromptComposerPropsRef.current,
+    nextValue: currentPromptComposerProps,
   });
-  const liveInteractionChromeProps = selectStableLiveInteractionChromeProps({
-    previousLiveInteractionChromeProps: stableLiveInteractionChromePropsRef.current,
-    nextLiveInteractionChromeProps: {
+  const liveInteractionChromeProps = selectShallowStableObject({
+    previousValue: stableLiveInteractionChromePropsRef.current,
+    nextValue: {
       statusStackProps,
       promptComposerProps,
     },
@@ -346,32 +356,40 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   };
 }
 
-function selectStableChatScreenMainAreaProps(input: {
-  previousMainAreaProps: ChatScreenMainAreaProps | undefined;
-  nextMainAreaProps: ChatScreenMainAreaProps;
-}): ChatScreenMainAreaProps {
-  if (
-    input.previousMainAreaProps &&
-    input.previousMainAreaProps.isCommandHelpModalVisible === input.nextMainAreaProps.isCommandHelpModalVisible &&
-    input.previousMainAreaProps.isReasoningSummaryVisible === input.nextMainAreaProps.isReasoningSummaryVisible &&
-    input.previousMainAreaProps.inputPanelAccentColor === input.nextMainAreaProps.inputPanelAccentColor &&
-    input.previousMainAreaProps.availableCommandHelpModalRowCount === input.nextMainAreaProps.availableCommandHelpModalRowCount &&
-    input.previousMainAreaProps.terminalSizeTierForChatScreen === input.nextMainAreaProps.terminalSizeTierForChatScreen &&
-    input.previousMainAreaProps.terminalColumnCount === input.nextMainAreaProps.terminalColumnCount &&
-    input.previousMainAreaProps.availableChatSlashCommands === input.nextMainAreaProps.availableChatSlashCommands &&
-    input.previousMainAreaProps.visibleConversationMessageRows === input.nextMainAreaProps.visibleConversationMessageRows &&
-    input.previousMainAreaProps.hiddenOlderConversationMessageCount === input.nextMainAreaProps.hiddenOlderConversationMessageCount &&
-    input.previousMainAreaProps.olderConversationMessageRevealCount === input.nextMainAreaProps.olderConversationMessageRevealCount &&
-    arePendingToolApprovalDecisionsEqual(
-      input.previousMainAreaProps.pendingToolApprovalDecision,
-      input.nextMainAreaProps.pendingToolApprovalDecision,
-    ) &&
-    input.previousMainAreaProps.conversationMessageScrollBoxRef === input.nextMainAreaProps.conversationMessageScrollBoxRef
-  ) {
-    return input.previousMainAreaProps;
+type ShallowStablePropertyEquality<T extends object> = {
+  readonly [Property in keyof T]?: (previousProperty: T[Property], nextProperty: T[Property]) => boolean;
+};
+
+function selectShallowStableObject<T extends object>(input: {
+  previousValue: T | undefined;
+  nextValue: T;
+  equalityByProperty?: ShallowStablePropertyEquality<T> | undefined;
+}): T {
+  if (!input.previousValue) {
+    return input.nextValue;
   }
 
-  return input.nextMainAreaProps;
+  const nextPropertyKeys = Object.keys(input.nextValue) as (keyof T)[];
+  const previousPropertyKeys = Object.keys(input.previousValue) as (keyof T)[];
+  if (previousPropertyKeys.length !== nextPropertyKeys.length) {
+    return input.nextValue;
+  }
+
+  for (const propertyKey of nextPropertyKeys) {
+    if (!(propertyKey in input.previousValue)) {
+      return input.nextValue;
+    }
+
+    const arePropertiesEqual = input.equalityByProperty?.[propertyKey];
+    const isPropertyStable = arePropertiesEqual
+      ? arePropertiesEqual(input.previousValue[propertyKey], input.nextValue[propertyKey])
+      : Object.is(input.previousValue[propertyKey], input.nextValue[propertyKey]);
+    if (!isPropertyStable) {
+      return input.nextValue;
+    }
+  }
+
+  return input.previousValue;
 }
 
 function arePendingToolApprovalDecisionsEqual(
@@ -389,77 +407,4 @@ function arePendingToolApprovalDecisionsEqual(
       previousPendingToolApprovalDecision.onPendingToolApprovalDenied ===
         nextPendingToolApprovalDecision.onPendingToolApprovalDenied
     );
-}
-
-function selectStableLiveInteractionStatusStackProps(input: {
-  previousStatusStackProps: LiveInteractionStatusStackProps | undefined;
-  nextStatusStackProps: LiveInteractionStatusStackProps;
-}): LiveInteractionStatusStackProps {
-  if (
-    input.previousStatusStackProps &&
-    input.previousStatusStackProps.conversationSessionSelectionState === input.nextStatusStackProps.conversationSessionSelectionState &&
-    input.previousStatusStackProps.modelAndReasoningSelectionState === input.nextStatusStackProps.modelAndReasoningSelectionState &&
-    input.previousStatusStackProps.slashCommandSelectionState === input.nextStatusStackProps.slashCommandSelectionState &&
-    input.previousStatusStackProps.promptContextSelectionState === input.nextStatusStackProps.promptContextSelectionState &&
-    input.previousStatusStackProps.conversationSessionExportStatus === input.nextStatusStackProps.conversationSessionExportStatus &&
-    input.previousStatusStackProps.conversationSessionCompactionStatus === input.nextStatusStackProps.conversationSessionCompactionStatus &&
-    input.previousStatusStackProps.queuedPromptPreviews === input.nextStatusStackProps.queuedPromptPreviews &&
-    input.previousStatusStackProps.inputPanelAccentColor === input.nextStatusStackProps.inputPanelAccentColor
-  ) {
-    return input.previousStatusStackProps;
-  }
-
-  return input.nextStatusStackProps;
-}
-
-function selectStablePromptComposerChromeProps(input: {
-  previousPromptComposerProps: PromptComposerChromeProps | undefined;
-  nextPromptComposerProps: PromptComposerChromeProps;
-}): PromptComposerChromeProps {
-  if (
-    input.previousPromptComposerProps &&
-    input.previousPromptComposerProps.conversationTurnStatus === input.nextPromptComposerProps.conversationTurnStatus &&
-    input.previousPromptComposerProps.promptDraft === input.nextPromptComposerProps.promptDraft &&
-    input.previousPromptComposerProps.promptDraftCursorOffset === input.nextPromptComposerProps.promptDraftCursorOffset &&
-    input.previousPromptComposerProps.pendingPromptImageAttachments === input.nextPromptComposerProps.pendingPromptImageAttachments &&
-    input.previousPromptComposerProps.selectedPromptContextReferenceTexts ===
-      input.nextPromptComposerProps.selectedPromptContextReferenceTexts &&
-    input.previousPromptComposerProps.selectedModelId === input.nextPromptComposerProps.selectedModelId &&
-    input.previousPromptComposerProps.shouldRenderMinimumHeightPromptStrip ===
-      input.nextPromptComposerProps.shouldRenderMinimumHeightPromptStrip &&
-    input.previousPromptComposerProps.isPromptInputDisabled === input.nextPromptComposerProps.isPromptInputDisabled &&
-    input.previousPromptComposerProps.queuedPromptCount === input.nextPromptComposerProps.queuedPromptCount &&
-    input.previousPromptComposerProps.isActiveTurnInterruptConfirmationArmed ===
-      input.nextPromptComposerProps.isActiveTurnInterruptConfirmationArmed &&
-    input.previousPromptComposerProps.inputPanelAccentColor === input.nextPromptComposerProps.inputPanelAccentColor &&
-    input.previousPromptComposerProps.promptInputHintOverride === input.nextPromptComposerProps.promptInputHintOverride &&
-    input.previousPromptComposerProps.shortModeLabel === input.nextPromptComposerProps.shortModeLabel &&
-    input.previousPromptComposerProps.nextShortModeLabel === input.nextPromptComposerProps.nextShortModeLabel &&
-    input.previousPromptComposerProps.nextModeAccentColor === input.nextPromptComposerProps.nextModeAccentColor &&
-    input.previousPromptComposerProps.reasoningEffortLabel === input.nextPromptComposerProps.reasoningEffortLabel &&
-    input.previousPromptComposerProps.totalContextTokensUsed === input.nextPromptComposerProps.totalContextTokensUsed &&
-    input.previousPromptComposerProps.contextWindowTokenCapacity === input.nextPromptComposerProps.contextWindowTokenCapacity &&
-    input.previousPromptComposerProps.onPromptDraftEdited === input.nextPromptComposerProps.onPromptDraftEdited &&
-    input.previousPromptComposerProps.onPromptSubmitted === input.nextPromptComposerProps.onPromptSubmitted &&
-    input.previousPromptComposerProps.onNativeClipboardPasteRequested === input.nextPromptComposerProps.onNativeClipboardPasteRequested
-  ) {
-    return input.previousPromptComposerProps;
-  }
-
-  return input.nextPromptComposerProps;
-}
-
-function selectStableLiveInteractionChromeProps(input: {
-  previousLiveInteractionChromeProps: LiveInteractionChromeProps | undefined;
-  nextLiveInteractionChromeProps: LiveInteractionChromeProps;
-}): LiveInteractionChromeProps {
-  if (
-    input.previousLiveInteractionChromeProps &&
-    input.previousLiveInteractionChromeProps.statusStackProps === input.nextLiveInteractionChromeProps.statusStackProps &&
-    input.previousLiveInteractionChromeProps.promptComposerProps === input.nextLiveInteractionChromeProps.promptComposerProps
-  ) {
-    return input.previousLiveInteractionChromeProps;
-  }
-
-  return input.nextLiveInteractionChromeProps;
 }

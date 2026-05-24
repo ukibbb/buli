@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -94,6 +94,8 @@ type RenderedEntry = {
   traceLabel: string;
 };
 
+type RenderedRailEntry = Pick<RenderedEntry, "entryAnchorId" | "entryNumberLabel" | "traceLabel">;
+
 export function defaultConversationSessionExportDirectoryPath(): string {
   return join(homedir(), ".buli", "session-exports");
 }
@@ -111,16 +113,22 @@ export function writeConversationSessionHtmlExport(input: {
     exportDirectoryPath,
     `${new Date(exportedAtMs).toISOString().replace(/[:.]/g, "-")}-${safeFileNameSegment(input.conversationSessionId)}.html`,
   );
-  const html = renderConversationSessionHtmlDocument({
-    conversationSessionEntries: input.conversationSessionEntries,
-    workspaceRootPath: input.workspaceRootPath,
-    conversationSessionId: input.conversationSessionId,
-    exportedAtMs,
-  });
-
   mkdirSync(exportDirectoryPath, { recursive: true, mode: privateConversationSessionExportDirectoryMode });
   chmodSync(exportDirectoryPath, privateConversationSessionExportDirectoryMode);
-  writeFileSync(exportFilePath, html, { encoding: "utf8", mode: privateConversationSessionExportFileMode });
+  const exportFileDescriptor = openSync(exportFilePath, "w", privateConversationSessionExportFileMode);
+  try {
+    writeConversationSessionHtmlDocument({
+      conversationSessionEntries: input.conversationSessionEntries,
+      workspaceRootPath: input.workspaceRootPath,
+      conversationSessionId: input.conversationSessionId,
+      exportedAtMs,
+      writeHtmlChunk: (htmlChunk) => {
+        writeSync(exportFileDescriptor, htmlChunk);
+      },
+    });
+  } finally {
+    closeSync(exportFileDescriptor);
+  }
   chmodSync(exportFilePath, privateConversationSessionExportFileMode);
   return {
     exportFilePath,
@@ -134,22 +142,27 @@ export function renderConversationSessionHtmlDocument(input: {
   conversationSessionId: string;
   exportedAtMs: number;
 }): string {
+  let html = "";
+  writeConversationSessionHtmlDocument({
+    ...input,
+    writeHtmlChunk: (htmlChunk) => {
+      html += htmlChunk;
+    },
+  });
+  return html;
+}
+
+function writeConversationSessionHtmlDocument(input: {
+  conversationSessionEntries: readonly ConversationSessionEntry[];
+  workspaceRootPath: string;
+  conversationSessionId: string;
+  exportedAtMs: number;
+  writeHtmlChunk: (htmlChunk: string) => void;
+}): void {
   const documentTitle = `Buli Session ${input.conversationSessionId}`;
   const exportedAtDisplayDateTime = formatExportedDateTimeForDisplay(input.exportedAtMs);
 
-  const renderedEntries = input.conversationSessionEntries.length === 0
-    ? []
-    : renderConversationSessionTranscriptEntries(input.conversationSessionEntries);
-
-  const transcriptHtml = renderedEntries.length === 0
-    ? '<p class="empty-state">This session has no messages yet.</p>'
-    : renderedEntries.map((renderedEntry) => renderedEntry.html).join("\n");
-
-  const railHtml = renderedEntries.length === 0
-    ? ""
-    : renderRail(renderedEntries);
-
-  return `<!doctype html>
+  input.writeHtmlChunk(`<!doctype html>
 <html lang="en" data-theme="auto">
 <head>
 <meta charset="utf-8">
@@ -203,10 +216,24 @@ export function renderConversationSessionHtmlDocument(input: {
       <div class="trace-cells" id="trace-cells"></div>
     </nav>
     <section class="transcript" id="transcript">
-      ${transcriptHtml}
-    </section>
+`);
+
+  const railEntries: RenderedRailEntry[] = [];
+  if (input.conversationSessionEntries.length === 0) {
+    input.writeHtmlChunk('      <p class="empty-state">This session has no messages yet.</p>\n');
+  } else {
+    writeConversationSessionTranscriptEntries({
+      conversationSessionEntries: input.conversationSessionEntries,
+      writeHtmlChunk: input.writeHtmlChunk,
+      onRenderedRailEntry: (renderedRailEntry) => {
+        railEntries.push(renderedRailEntry);
+      },
+    });
+  }
+
+  input.writeHtmlChunk(`    </section>
   </main>
-  ${railHtml}
+  ${renderRail(railEntries)}
 </div>
 <button class="totop" id="totop" type="button" aria-label="Back to top">${renderUpChevronIcon()}</button>
 <div class="dialog-backdrop" id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
@@ -224,15 +251,14 @@ export function renderConversationSessionHtmlDocument(input: {
 </div>
 <script>${renderConversationSessionExportRuntimeScript()}</script>
 </body>
-</html>`;
+</html>`);
 }
 
-function renderRail(renderedEntries: readonly RenderedEntry[]): string {
-  const userEntries = renderedEntries.filter((renderedEntry) => renderedEntry.roleKind === "user");
-  if (userEntries.length === 0) {
+function renderRail(railEntries: readonly RenderedRailEntry[]): string {
+  if (railEntries.length === 0) {
     return "";
   }
-  const railItemsHtml = userEntries
+  const railItemsHtml = railEntries
     .map((renderedEntry) => {
       const label = renderedEntry.traceLabel.length > 80 ? `${renderedEntry.traceLabel.slice(0, 77)}...` : renderedEntry.traceLabel;
       return `<li class="rail-item" data-target="${renderedEntry.entryAnchorId}"><a href="#${renderedEntry.entryAnchorId}"><span class="rail-num">#${escapeHtml(renderedEntry.entryNumberLabel)}</span>${escapeHtml(label)}</a></li>`;
@@ -244,13 +270,14 @@ function renderRail(renderedEntries: readonly RenderedEntry[]): string {
   </aside>`;
 }
 
-function renderConversationSessionTranscriptEntries(
-  conversationSessionEntries: readonly ConversationSessionEntry[],
-): RenderedEntry[] {
+function writeConversationSessionTranscriptEntries(input: {
+  conversationSessionEntries: readonly ConversationSessionEntry[];
+  writeHtmlChunk: (htmlChunk: string) => void;
+  onRenderedRailEntry: (renderedRailEntry: RenderedRailEntry) => void;
+}): void {
   let hasRenderedAssistantSegmentInCurrentTurn = false;
-  const renderedEntries: RenderedEntry[] = [];
 
-  conversationSessionEntries.forEach((conversationSessionEntry, entryIndex) => {
+  input.conversationSessionEntries.forEach((conversationSessionEntry, entryIndex) => {
     let nextRenderedEntry: RenderedEntry | undefined;
 
     if (conversationSessionEntry.entryKind === "user_prompt" || conversationSessionEntry.entryKind === "conversation_compaction_summary") {
@@ -274,11 +301,12 @@ function renderConversationSessionTranscriptEntries(
     }
 
     if (nextRenderedEntry !== undefined) {
-      renderedEntries.push(nextRenderedEntry);
+      input.writeHtmlChunk(`      ${nextRenderedEntry.html}\n`);
+      if (nextRenderedEntry.roleKind === "user") {
+        input.onRenderedRailEntry(nextRenderedEntry);
+      }
     }
   });
-
-  return renderedEntries;
 }
 
 function renderConversationSessionTranscriptEntry(

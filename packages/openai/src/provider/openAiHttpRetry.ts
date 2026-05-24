@@ -162,6 +162,7 @@ export async function* requestOpenAiHttpResponseWithRetries(
       status: currentResponse.status,
       retryDelayMilliseconds,
     });
+    await cancelRetryableOpenAiHttpResponseBody(currentResponse);
     if (input.shouldYieldRetryPendingEvents) {
       yield retryPendingEvent;
     }
@@ -169,6 +170,14 @@ export async function* requestOpenAiHttpResponseWithRetries(
       retryDelayMilliseconds,
       abortSignal: input.abortSignal,
     });
+  }
+}
+
+async function cancelRetryableOpenAiHttpResponseBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Retrying should not be blocked by cleanup failure on an already-closed body.
   }
 }
 

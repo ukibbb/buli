@@ -34,6 +34,7 @@ type ConversationSessionRow = {
 };
 
 type ConversationSessionEntryRow = {
+  entry_sequence: number;
   conversation_session_entry_json: string;
 };
 
@@ -255,13 +256,13 @@ export class ConversationSessionSqliteGateway {
   loadConversationSessionEntries(sessionId: string): readonly ConversationSessionEntry[] {
     return this.database
       .query<ConversationSessionEntryRow, [string]>(
-        `SELECT conversation_session_entry_json
+        `SELECT entry_sequence, conversation_session_entry_json
          FROM conversation_session_entry
          WHERE session_id = ?
          ORDER BY entry_sequence ASC`,
       )
       .all(sessionId)
-      .map((row) => parseConversationSessionEntryJson(row.conversation_session_entry_json));
+      .map((row) => parseConversationSessionEntryJson(row));
   }
 }
 
@@ -292,16 +293,32 @@ function mapConversationSessionRowToSummary(conversationSessionRow: Conversation
   };
 }
 
-function parseConversationSessionEntryJson(conversationSessionEntryJson: string): ConversationSessionEntry {
-  return ConversationSessionEntrySchema.parse(JSON.parse(conversationSessionEntryJson) as unknown);
+function parseConversationSessionEntryJson(conversationSessionEntryRow: ConversationSessionEntryRow): ConversationSessionEntry {
+  try {
+    return ConversationSessionEntrySchema.parse(JSON.parse(conversationSessionEntryRow.conversation_session_entry_json) as unknown);
+  } catch (error) {
+    const failureExplanation = error instanceof Error ? error.message : String(error);
+    return {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "",
+      failureExplanation: `Could not load persisted conversation session entry ${conversationSessionEntryRow.entry_sequence + 1}: ${failureExplanation}`,
+    };
+  }
 }
 
 function parseOptionalConversationSessionModelSelectionJson(
   modelSelectionJson: string | null,
 ): ConversationSessionModelSelection | undefined {
-  return modelSelectionJson
-    ? ConversationSessionModelSelectionSchema.parse(JSON.parse(modelSelectionJson) as unknown)
-    : undefined;
+  if (!modelSelectionJson) {
+    return undefined;
+  }
+
+  try {
+    return ConversationSessionModelSelectionSchema.parse(JSON.parse(modelSelectionJson) as unknown);
+  } catch {
+    return undefined;
+  }
 }
 
 function serializeOptionalConversationSessionModelSelection(
