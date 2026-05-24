@@ -1,6 +1,5 @@
 import {
   type AssistantResponseEvent,
-  type BuliDiagnosticLogger,
   type UserPromptSource,
   type UserPromptImageAttachment,
 } from "@buli/contracts";
@@ -16,10 +15,7 @@ import {
   type ChatSessionState,
 } from "@buli/chat-session-state";
 import { startTransition, useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
-import { summarizeAssistantResponseEventsForDiagnostics } from "./assistantResponseEventDiagnostics.ts";
-import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
-import type { FinishedChatAppActiveTurn, StartedChatAppActiveTurn } from "./useChatAppActiveTurnInterrupt.ts";
 
 type MutableValueRef<T> = { current: T };
 
@@ -35,8 +31,8 @@ export type UseChatAppAssistantTurnActionsInput = {
   submittedToolApprovalDecisionApprovalIdRef: MutableValueRef<string | undefined>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   getActiveConversationTurn: () => ActiveConversationTurn | undefined;
-  registerActiveConversationTurnStarted: (startedActiveConversationTurn: StartedChatAppActiveTurn) => void;
-  registerActiveConversationTurnFinished: (finishedActiveConversationTurn: FinishedChatAppActiveTurn) => void;
+  registerActiveConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
+  registerActiveConversationTurnFinished: () => void;
   registerActiveConversationTurnSettlement: (activeConversationTurnSettlementPromise: Promise<void>) => void;
   dequeueQueuedSubmittedPrompt: () => QueuedChatAppPrompt | undefined;
   scrollConversationMessagesToBottom: () => void;
@@ -44,7 +40,6 @@ export type UseChatAppAssistantTurnActionsInput = {
     | Promise<ConversationAutoCompactionResult | undefined>
     | ConversationAutoCompactionResult
     | undefined;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type SubmittedChatAppPrompt = {
@@ -79,10 +74,6 @@ export function useChatAppAssistantTurnActions(
   }, [input.chatSessionState.pendingToolApprovalRequest?.approvalId]);
 
   const applyIncomingAssistantResponseEventsToChatAppState = useEffectEvent((assistantResponseEvents: readonly AssistantResponseEvent[]): void => {
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.assistant_event_batch_applied", {
-      ...summarizeAssistantResponseEventsForDiagnostics(assistantResponseEvents),
-      previousConversationTurnStatus: input.latestChatSessionStateRef.current.conversationTurnStatus,
-    });
     const nextChatSessionState = applyAssistantResponseEventsToChatSessionState(
       input.latestChatSessionStateRef.current,
       assistantResponseEvents,
@@ -102,12 +93,6 @@ export function useChatAppAssistantTurnActions(
     input.latestChatSessionStateRef.current = nextChatSessionState;
     input.setChatSessionState(nextChatSessionState);
     input.scrollConversationMessagesToBottom();
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.queued_prompt_started", {
-      submittedPromptLength: queuedChatAppPrompt.submittedPromptText.length,
-      submittedPromptImageAttachmentCount: queuedChatAppPrompt.submittedPromptImageAttachments.length,
-      selectedModelId: nextChatSessionState.selectedModelId,
-      selectedReasoningEffort: nextChatSessionState.selectedReasoningEffort ?? null,
-    });
     return {
       submittedPromptText: queuedChatAppPrompt.submittedPromptText,
       submittedPromptImageAttachments: queuedChatAppPrompt.submittedPromptImageAttachments,
@@ -133,31 +118,16 @@ export function useChatAppAssistantTurnActions(
           ...(activeSubmittedPrompt.submittedPromptSource ? { promptSource: activeSubmittedPrompt.submittedPromptSource } : {}),
         };
 
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.assistant_turn_request_created", {
-          selectedModelId: conversationTurnRequest.selectedModelId,
-          selectedReasoningEffort: conversationTurnRequest.selectedReasoningEffort ?? null,
-          assistantOperatingMode: conversationTurnRequest.assistantOperatingMode ?? null,
-          promptSource: conversationTurnRequest.promptSource ?? null,
-          submittedPromptLength: activeSubmittedPrompt.submittedPromptText.length,
-          submittedPromptImageAttachmentCount: activeSubmittedPrompt.submittedPromptImageAttachments.length,
-        });
-
         const assistantResponseRelayPromise = relayAssistantResponseRunnerEvents({
           assistantConversationRunner: input.assistantConversationRunner,
           conversationTurnRequest,
           onConversationTurnStarted: (activeConversationTurn) => {
-            input.registerActiveConversationTurnStarted({
-              activeConversationTurn,
-              selectedModelId: conversationTurnRequest.selectedModelId,
-            });
+            input.registerActiveConversationTurnStarted(activeConversationTurn);
           },
           onConversationTurnFinished: () => {
-            input.registerActiveConversationTurnFinished({
-              selectedModelId: conversationTurnRequest.selectedModelId,
-            });
+            input.registerActiveConversationTurnFinished();
           },
           onAssistantResponseEvents: applyIncomingAssistantResponseEventsToChatAppState,
-          diagnosticLogger: input.diagnosticLogger,
         });
         input.registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
         await assistantResponseRelayPromise;
@@ -171,10 +141,6 @@ export function useChatAppAssistantTurnActions(
           return;
         }
         if (autoCompactionResult?.didCompact && activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_continue") {
-          logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.auto_compaction_continue_prompt_queued", {
-            selectedModelId: conversationTurnRequest.selectedModelId,
-            conversationSessionEntryCount: autoCompactionResult.conversationSessionEntries.length,
-          });
           nextSubmittedPrompt = {
             submittedPromptText: AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
             submittedPromptImageAttachments: [],
@@ -196,54 +162,20 @@ export function useChatAppAssistantTurnActions(
   const submitPendingToolApprovalDecision = useEffectEvent((submission: PendingToolApprovalDecisionSubmission): void => {
     const pendingToolApprovalRequest = input.latestChatSessionStateRef.current.pendingToolApprovalRequest;
     if (!pendingToolApprovalRequest) {
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.tool_approval_decision_ignored", {
-        decision: submission.decision,
-        source: submission.source,
-        reason: "no_pending_approval",
-      });
       return;
     }
 
     if (input.submittedToolApprovalDecisionApprovalIdRef.current === pendingToolApprovalRequest.approvalId) {
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.tool_approval_decision_ignored", {
-        approvalId: pendingToolApprovalRequest.approvalId,
-        pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-        decision: submission.decision,
-        source: submission.source,
-        reason: "decision_already_submitted",
-      });
       return;
     }
 
     const activeConversationTurn = input.getActiveConversationTurn();
     if (!activeConversationTurn) {
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.tool_approval_decision_ignored", {
-        approvalId: pendingToolApprovalRequest.approvalId,
-        pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-        decision: submission.decision,
-        source: submission.source,
-        reason: "no_active_turn",
-      });
       return;
     }
 
     input.submittedToolApprovalDecisionApprovalIdRef.current = pendingToolApprovalRequest.approvalId;
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.tool_approval_decision_submitted", {
-      approvalId: pendingToolApprovalRequest.approvalId,
-      pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-      decision: submission.decision,
-      source: submission.source,
-    });
-
-    const resetApprovalDecisionGuardAfterFailure = (error: unknown): void => {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.tool_approval_decision_failed", {
-        approvalId: pendingToolApprovalRequest.approvalId,
-        pendingToolCallId: pendingToolApprovalRequest.pendingToolCallId,
-        decision: submission.decision,
-        source: submission.source,
-        errorMessage,
-      });
+    const resetApprovalDecisionGuardAfterFailure = (): void => {
       if (input.latestChatSessionStateRef.current.pendingToolApprovalRequest?.approvalId === pendingToolApprovalRequest.approvalId) {
         input.submittedToolApprovalDecisionApprovalIdRef.current = undefined;
       }
@@ -254,8 +186,8 @@ export function useChatAppAssistantTurnActions(
         ? activeConversationTurn.approvePendingToolCall(pendingToolApprovalRequest.approvalId)
         : activeConversationTurn.denyPendingToolCall(pendingToolApprovalRequest.approvalId);
       void approvalDecisionPromise.catch(resetApprovalDecisionGuardAfterFailure);
-    } catch (error) {
-      resetApprovalDecisionGuardAfterFailure(error);
+    } catch {
+      resetApprovalDecisionGuardAfterFailure();
     }
   });
 

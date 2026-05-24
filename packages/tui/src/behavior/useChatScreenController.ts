@@ -79,7 +79,6 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     activeConversationTurnShutdownCoordinator: chatScreenProps.activeConversationTurnShutdownCoordinator,
     scrollConversationMessagesToBottom,
     scrollConversationMessagesByPage,
-    diagnosticLogger,
   });
 
   useEffect(() => {

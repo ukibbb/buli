@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import type { BuliDiagnosticLogEvent } from "@buli/contracts";
 import type { ActiveConversationTurn } from "@buli/engine";
 import {
   ActiveConversationTurnShutdownCoordinator,
@@ -15,19 +14,16 @@ type RenderedActiveTurnInterruptHook = {
 
 type ActiveTurnInterruptHookProbeProps = {
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
-  diagnosticLogEvents: BuliDiagnosticLogEvent[];
   observeHookResult: (hookResult: UseChatAppActiveTurnInterruptResult) => void;
 };
 
 async function renderActiveTurnInterruptHook(input: {
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
-  diagnosticLogEvents: BuliDiagnosticLogEvent[];
-}): Promise<RenderedActiveTurnInterruptHook> {
+} = {}): Promise<RenderedActiveTurnInterruptHook> {
   let latestHookResult: UseChatAppActiveTurnInterruptResult | undefined;
 
   await testRender(
     <ActiveTurnInterruptHookProbe
-      diagnosticLogEvents={input.diagnosticLogEvents}
       observeHookResult={(hookResult) => {
         latestHookResult = hookResult;
       }}
@@ -50,9 +46,6 @@ async function renderActiveTurnInterruptHook(input: {
 
 function ActiveTurnInterruptHookProbe(props: ActiveTurnInterruptHookProbeProps) {
   const hookResult = useChatAppActiveTurnInterrupt({
-    diagnosticLogger: (diagnosticLogEvent) => {
-      props.diagnosticLogEvents.push(diagnosticLogEvent);
-    },
     ...(props.activeConversationTurnShutdownCoordinator
       ? { activeConversationTurnShutdownCoordinator: props.activeConversationTurnShutdownCoordinator }
       : {}),
@@ -64,15 +57,11 @@ function ActiveTurnInterruptHookProbe(props: ActiveTurnInterruptHookProbeProps) 
 }
 
 test("requestActiveConversationTurnInterrupt requires a confirmation press before interrupting", async () => {
-  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const activeConversationTurn = createCountingActiveConversationTurn();
-  const renderedHook = await renderActiveTurnInterruptHook({ diagnosticLogEvents });
+  const renderedHook = await renderActiveTurnInterruptHook();
 
   await act(async () => {
-    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted({
-      activeConversationTurn: activeConversationTurn.activeConversationTurn,
-      selectedModelId: "gpt-5.4",
-    });
+    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted(activeConversationTurn.activeConversationTurn);
   });
 
   expect(renderedHook.readCurrentHookResult().getActiveConversationTurn()).toBe(
@@ -85,7 +74,6 @@ test("requestActiveConversationTurnInterrupt requires a confirmation press befor
 
   expect(activeConversationTurn.getInterruptCount()).toBe(0);
   expect(renderedHook.readCurrentHookResult().isActiveTurnInterruptConfirmationArmed).toBe(true);
-  expect(diagnosticLogEvents.at(-1)?.eventName).toBe("chat_screen.active_turn_interrupt_armed");
 
   await act(async () => {
     renderedHook.readCurrentHookResult().requestActiveConversationTurnInterrupt();
@@ -93,47 +81,35 @@ test("requestActiveConversationTurnInterrupt requires a confirmation press befor
 
   expect(activeConversationTurn.getInterruptCount()).toBe(1);
   expect(renderedHook.readCurrentHookResult().isActiveTurnInterruptConfirmationArmed).toBe(false);
-  expect(diagnosticLogEvents.at(-1)?.eventName).toBe("chat_screen.active_turn_interrupt_confirmed");
 
   await act(async () => {
     renderedHook.readCurrentHookResult().requestActiveConversationTurnInterrupt();
   });
 
   expect(activeConversationTurn.getInterruptCount()).toBe(1);
-  expect(diagnosticLogEvents.at(-1)).toMatchObject({
-    eventName: "chat_screen.active_turn_interrupt_ignored",
-    fields: { reason: "interrupt_already_requested" },
-  });
 });
 
 test("registerActiveConversationTurnFinished clears confirmation and allows a later active turn", async () => {
-  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const firstActiveConversationTurn = createCountingActiveConversationTurn();
   const secondActiveConversationTurn = createCountingActiveConversationTurn();
-  const renderedHook = await renderActiveTurnInterruptHook({ diagnosticLogEvents });
+  const renderedHook = await renderActiveTurnInterruptHook();
 
   await act(async () => {
-    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted({
-      activeConversationTurn: firstActiveConversationTurn.activeConversationTurn,
-      selectedModelId: "gpt-5.4",
-    });
+    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted(firstActiveConversationTurn.activeConversationTurn);
     renderedHook.readCurrentHookResult().requestActiveConversationTurnInterrupt();
   });
 
   expect(renderedHook.readCurrentHookResult().isActiveTurnInterruptConfirmationArmed).toBe(true);
 
   await act(async () => {
-    renderedHook.readCurrentHookResult().registerActiveConversationTurnFinished({ selectedModelId: "gpt-5.4" });
+    renderedHook.readCurrentHookResult().registerActiveConversationTurnFinished();
   });
 
   expect(renderedHook.readCurrentHookResult().getActiveConversationTurn()).toBeUndefined();
   expect(renderedHook.readCurrentHookResult().isActiveTurnInterruptConfirmationArmed).toBe(false);
 
   await act(async () => {
-    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted({
-      activeConversationTurn: secondActiveConversationTurn.activeConversationTurn,
-      selectedModelId: "gpt-5.4",
-    });
+    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted(secondActiveConversationTurn.activeConversationTurn);
     renderedHook.readCurrentHookResult().requestActiveConversationTurnInterrupt();
     renderedHook.readCurrentHookResult().requestActiveConversationTurnInterrupt();
   });
@@ -143,26 +119,21 @@ test("registerActiveConversationTurnFinished clears confirmation and allows a la
 });
 
 test("registerActiveConversationTurnStarted makes the active turn available to the shutdown coordinator", async () => {
-  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const shutdownCoordinator = new ActiveConversationTurnShutdownCoordinator();
   const activeConversationTurn = createCountingActiveConversationTurn();
   const renderedHook = await renderActiveTurnInterruptHook({
     activeConversationTurnShutdownCoordinator: shutdownCoordinator,
-    diagnosticLogEvents,
   });
 
   await act(async () => {
-    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted({
-      activeConversationTurn: activeConversationTurn.activeConversationTurn,
-      selectedModelId: "gpt-5.4",
-    });
+    renderedHook.readCurrentHookResult().registerActiveConversationTurnStarted(activeConversationTurn.activeConversationTurn);
   });
 
   expect(shutdownCoordinator.interruptActiveConversationTurn()).toBe(true);
   expect(activeConversationTurn.getInterruptCount()).toBe(1);
 
   await act(async () => {
-    renderedHook.readCurrentHookResult().registerActiveConversationTurnFinished({ selectedModelId: "gpt-5.4" });
+    renderedHook.readCurrentHookResult().registerActiveConversationTurnFinished();
   });
 
   expect(shutdownCoordinator.interruptActiveConversationTurn()).toBe(false);

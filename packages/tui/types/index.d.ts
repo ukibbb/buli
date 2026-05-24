@@ -162,5 +162,4 @@ export declare function relayAssistantResponseRunnerEvents(input: {
   onConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
   onConversationTurnFinished: () => void;
   onAssistantResponseEvents: (assistantResponseEvents: readonly AssistantResponseEvent[]) => void;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<void>;

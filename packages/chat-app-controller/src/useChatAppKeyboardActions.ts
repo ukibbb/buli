@@ -1,6 +1,5 @@
 import type {
   AvailableAssistantModel,
-  BuliDiagnosticLogger,
   ConversationSessionModelSelection,
 } from "@buli/contracts";
 import {
@@ -16,7 +15,6 @@ import {
   type PromptContextQueryIdentity,
 } from "@buli/chat-session-state";
 import { useEffectEvent, type Dispatch, type SetStateAction } from "react";
-import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 import type {
   PendingToolApprovalDecisionSubmission,
   QueuedChatAppPrompt,
@@ -59,7 +57,6 @@ export type UseChatAppKeyboardActionsInput = {
   submitPendingToolApprovalDecision: (submission: PendingToolApprovalDecisionSubmission) => void;
   scrollConversationMessagesToBottom: () => void;
   scrollConversationMessagesByPage: (direction: "up" | "down") => void;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type UseChatAppKeyboardActionsResult = {
@@ -70,9 +67,7 @@ export type UseChatAppKeyboardActionsResult = {
 export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput): UseChatAppKeyboardActionsResult {
   const { loadAvailableModelsForSelection } = useChatAppModelSelectionActions({
     loadAvailableAssistantModels: input.loadAvailableAssistantModels,
-    latestChatSessionStateRef: input.latestChatSessionStateRef,
     setChatSessionState: input.setChatSessionState,
-    diagnosticLogger: input.diagnosticLogger,
   });
 
   const applyChatSlashCommandApplicationEffectToChatApp = useEffectEvent(
@@ -102,16 +97,9 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       }
 
       if (chatSlashCommandApplicationEffect.effectType === "load_available_assistant_models") {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_open_requested", {
-          source: "slash_command",
-        });
         void loadAvailableModelsForSelection();
         return;
       }
-
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.reasoning_summary_visibility_toggled", {
-        isReasoningSummaryVisible: chatSlashCommandApplicationEffect.isReasoningSummaryVisible,
-      });
     },
   );
 
@@ -131,36 +119,19 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
 
   const applyChatSessionKeyboardEffectToChatApp = useEffectEvent((keyboardEffectInput: {
     chatSessionKeyboardEffect: ChatSessionKeyboardEffect;
-    previousChatSessionState: ChatSessionState;
   }) => {
     switch (keyboardEffectInput.chatSessionKeyboardEffect.effectType) {
       case "active_conversation_turn_interrupt_key_pressed":
         input.requestActiveConversationTurnInterrupt();
         return;
       case "dismiss_active_prompt_context_query":
-        if (keyboardEffectInput.previousChatSessionState.promptContextSelectionState.step === "showing_prompt_context_candidates") {
-          logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_selection_closed", {
-            reason: "keyboard_escape",
-            promptContextCandidateCount:
-              keyboardEffectInput.previousChatSessionState.promptContextSelectionState.promptContextCandidates.length,
-          });
-        }
         input.dismissActivePromptContextQuery(keyboardEffectInput.chatSessionKeyboardEffect.dismissedPromptContextQueryIdentity);
         return;
       case "execute_selected_slash_command":
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.slash_command_selected", {
-          slashCommand: keyboardEffectInput.chatSessionKeyboardEffect.selectedSlashCommand.value,
-        });
         executeSlashCommand(keyboardEffectInput.chatSessionKeyboardEffect.selectedSlashCommand.value);
         return;
       case "stream_assistant_response_for_submitted_prompt":
         input.isPromptSubmissionInFlightRef.current = true;
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_submitted", {
-          submittedPromptLength: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText.length,
-          submittedPromptImageAttachmentCount: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments.length,
-          selectedModelId: keyboardEffectInput.previousChatSessionState.selectedModelId,
-          selectedReasoningEffort: keyboardEffectInput.previousChatSessionState.selectedReasoningEffort ?? null,
-        });
         input.scrollConversationMessagesToBottom();
         void input.streamAssistantResponseForSubmittedPrompt({
           submittedPromptText: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText,
@@ -168,14 +139,9 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         });
         return;
       case "enqueue_submitted_prompt": {
-        const queuedPromptCount = input.enqueueQueuedSubmittedPrompt({
+        input.enqueueQueuedSubmittedPrompt({
           submittedPromptText: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText,
           submittedPromptImageAttachments: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments,
-        });
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_queued", {
-          submittedPromptLength: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText.length,
-          submittedPromptImageAttachmentCount: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments.length,
-          queuedPromptCount,
         });
         return;
       }
@@ -207,16 +173,6 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || input.isConversationCompactionInFlightRef.current,
     });
 
-    if (keyboardInteraction.promptSubmissionRejectionReason) {
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_submission_ignored", {
-        promptDraftLength: previousChatSessionState.promptDraft.length,
-        conversationTurnStatus: previousChatSessionState.conversationTurnStatus,
-        promptContextSelectionStep: previousChatSessionState.promptContextSelectionState.step,
-        modelSelectionStep: previousChatSessionState.modelAndReasoningSelectionState.step,
-        reason: keyboardInteraction.promptSubmissionRejectionReason,
-      });
-    }
-
     const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(keyboardInteraction.nextChatSessionState);
 
     if (nextChatSessionState !== previousChatSessionState) {
@@ -225,14 +181,6 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         nextChatSessionState,
         chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
       });
-      if (
-        previousChatSessionState.selectedAssistantOperatingMode !==
-          nextChatSessionState.selectedAssistantOperatingMode
-      ) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.assistant_operating_mode_cycled", {
-          selectedAssistantOperatingMode: nextChatSessionState.selectedAssistantOperatingMode,
-        });
-      }
 
       input.latestChatSessionStateRef.current = nextChatSessionState;
       input.setChatSessionState(nextChatSessionState);
@@ -241,11 +189,6 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         const modelSelection = readConversationSessionModelSelectionFromChatSessionState(
           nextChatSessionState,
         );
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.model_selection_changed", {
-          selectedModelId: modelSelection.selectedModelId,
-          selectedModelDefaultReasoningEffort: modelSelection.selectedModelDefaultReasoningEffort ?? null,
-          selectedReasoningEffort: modelSelection.selectedReasoningEffort ?? null,
-        });
         void input.onConversationSessionModelSelectionChanged?.(modelSelection);
       }
     }
@@ -253,7 +196,6 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     if (keyboardInteraction.chatSessionKeyboardEffect) {
       applyChatSessionKeyboardEffectToChatApp({
         chatSessionKeyboardEffect: keyboardInteraction.chatSessionKeyboardEffect,
-        previousChatSessionState,
       });
     }
 

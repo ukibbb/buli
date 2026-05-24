@@ -1,4 +1,4 @@
-import type { BuliDiagnosticLogger, UserPromptImageAttachment } from "@buli/contracts";
+import type { UserPromptImageAttachment } from "@buli/contracts";
 import {
   appendPromptImageAttachmentToDraft,
   removePromptImageAttachmentPlaceholderAtCursor,
@@ -7,7 +7,6 @@ import {
 } from "@buli/chat-session-state";
 import { useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { canChatAppPromptDraftBeEdited } from "./chatAppPromptDraftEditability.ts";
-import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 
 type MutableValueRef<T> = { current: T };
 
@@ -25,7 +24,6 @@ export type UseChatAppPromptImageAttachmentActionsInput = {
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   isConversationCompactionInFlightRef: MutableValueRef<boolean>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type UseChatAppPromptImageAttachmentActionsResult = {
@@ -64,16 +62,11 @@ export function useChatAppPromptImageAttachmentActions(
         chatSessionState: previousChatSessionState,
         isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
       })) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
-          conversationTurnStatus: previousChatSessionState.conversationTurnStatus,
-          reason: input.isConversationCompactionInFlightRef.current ? "conversation_compaction_in_flight" : "prompt_not_editable",
-        });
         return;
       }
 
       const clipboardImageAttachment = await pasteInput.readClipboardImageAttachment().catch(() => undefined);
       if (!clipboardImageAttachment) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_paste_no_image");
         return;
       }
 
@@ -82,10 +75,6 @@ export function useChatAppPromptImageAttachmentActions(
         previousChatSessionState,
         latestChatSessionStateAfterClipboardRead,
       })) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
-          conversationTurnStatus: latestChatSessionStateAfterClipboardRead.conversationTurnStatus,
-          reason: "prompt_submitted_during_clipboard_read",
-        });
         return;
       }
 
@@ -93,10 +82,6 @@ export function useChatAppPromptImageAttachmentActions(
         chatSessionState: latestChatSessionStateAfterClipboardRead,
         isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
       })) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_paste_ignored", {
-          conversationTurnStatus: latestChatSessionStateAfterClipboardRead.conversationTurnStatus,
-          reason: input.isConversationCompactionInFlightRef.current ? "conversation_compaction_in_flight" : "prompt_not_editable",
-        });
         return;
       }
 
@@ -106,11 +91,6 @@ export function useChatAppPromptImageAttachmentActions(
       );
       input.latestChatSessionStateRef.current = nextChatSessionState;
       input.setChatSessionState(nextChatSessionState);
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.clipboard_image_pasted", {
-        pendingPromptImageAttachmentCount: nextChatSessionState.pendingPromptImageAttachments.length,
-        mimeType: clipboardImageAttachment.mimeType,
-        dataUrlLength: clipboardImageAttachment.dataUrl.length,
-      });
     },
   );
 

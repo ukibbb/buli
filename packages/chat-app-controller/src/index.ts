@@ -1,8 +1,4 @@
 export { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
-export {
-  summarizeAssistantResponseEventForDiagnostics,
-  summarizeAssistantResponseEventsForDiagnostics,
-} from "./assistantResponseEventDiagnostics.ts";
 export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 export type {
   ConversationSessionCompactionStatus,
@@ -22,8 +18,6 @@ export {
 } from "./useChatAppController.ts";
 export {
   useChatAppActiveTurnInterrupt,
-  type FinishedChatAppActiveTurn,
-  type StartedChatAppActiveTurn,
   type UseChatAppActiveTurnInterruptInput,
   type UseChatAppActiveTurnInterruptResult,
 } from "./useChatAppActiveTurnInterrupt.ts";

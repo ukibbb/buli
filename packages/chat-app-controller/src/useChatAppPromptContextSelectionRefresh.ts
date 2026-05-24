@@ -1,4 +1,3 @@
-import type { BuliDiagnosticLogger } from "@buli/contracts";
 import {
   decidePromptContextSelectionRefreshForCurrentDraft,
   hidePromptContextSelection,
@@ -11,7 +10,6 @@ import {
 } from "@buli/chat-session-state";
 import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import { useEffect, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
-import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 
 const FUZZY_PROMPT_CONTEXT_QUERY_DEBOUNCE_MS = 120;
 
@@ -23,7 +21,6 @@ export type UseChatAppPromptContextSelectionRefreshInput = {
   chatSessionState: ChatSessionState;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   loadPromptContextCandidates: LoadChatAppPromptContextCandidates;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type UseChatAppPromptContextSelectionRefreshResult = {
@@ -66,20 +63,10 @@ export function useChatAppPromptContextSelectionRefresh(
       promptContextQueryIdentity: PromptContextQueryIdentity;
       promptContextQueryText: string;
     }) => {
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_started", {
-        requestSequence: loadRequest.requestSequence,
-        promptContextQueryLength: loadRequest.promptContextQueryText.length,
-      });
       let promptContextCandidates: readonly PromptContextCandidate[];
       try {
         promptContextCandidates = await input.loadPromptContextCandidates(loadRequest.promptContextQueryText);
-      } catch (error) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_failed", {
-          requestSequence: loadRequest.requestSequence,
-          activeRequestSequence: latestPromptContextLoadRequestSequenceRef.current,
-          promptContextQueryLength: loadRequest.promptContextQueryText.length,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
+      } catch {
         if (loadRequest.requestSequence === latestPromptContextLoadRequestSequenceRef.current) {
           input.setChatSessionState((currentChatSessionState) => {
             const nextChatSessionState = hidePromptContextSelection(currentChatSessionState);
@@ -91,11 +78,6 @@ export function useChatAppPromptContextSelectionRefresh(
       }
 
       if (loadRequest.requestSequence !== latestPromptContextLoadRequestSequenceRef.current) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_discarded", {
-          requestSequence: loadRequest.requestSequence,
-          activeRequestSequence: latestPromptContextLoadRequestSequenceRef.current,
-          promptContextCandidateCount: promptContextCandidates.length,
-        });
         return;
       }
 
@@ -106,18 +88,8 @@ export function useChatAppPromptContextSelectionRefresh(
           requestedPromptContextQueryIdentity: loadRequest.promptContextQueryIdentity,
         })
       ) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_hidden_after_resolution", {
-          requestSequence: loadRequest.requestSequence,
-          promptContextCandidateCount: promptContextCandidates.length,
-        });
         return;
       }
-
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_completed", {
-        requestSequence: loadRequest.requestSequence,
-        promptContextQueryLength: loadRequest.promptContextQueryText.length,
-        promptContextCandidateCount: promptContextCandidates.length,
-      });
 
       input.setChatSessionState((currentChatSessionState) => {
         const nextChatSessionState = currentChatSessionState.promptContextSelectionState.step ===
@@ -149,17 +121,6 @@ export function useChatAppPromptContextSelectionRefresh(
 
     if (promptContextSelectionRefreshDecision.decisionType === "hide_prompt_context_selection") {
       invalidatePendingPromptContextLoads();
-      if (
-        chatSessionState.promptContextSelectionState.step !== "hidden" ||
-        promptContextSelectionRefreshDecision.reason === "query_dismissed"
-      ) {
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_selection_hidden", {
-          reason: promptContextSelectionRefreshDecision.reason,
-          conversationTurnStatus: chatSessionState.conversationTurnStatus,
-          modelSelectionStep: chatSessionState.modelAndReasoningSelectionState.step,
-          promptContextQueryLength: promptContextSelectionRefreshDecision.promptContextQueryLength ?? null,
-        });
-      }
       input.setChatSessionState((currentChatSessionState) => {
         const nextChatSessionState = hidePromptContextSelection(currentChatSessionState);
         latestChatSessionStateRef.current = nextChatSessionState;
@@ -174,11 +135,6 @@ export function useChatAppPromptContextSelectionRefresh(
 
     invalidatePendingPromptContextLoads();
     const requestSequence = latestPromptContextLoadRequestSequenceRef.current;
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.prompt_context_load_scheduled", {
-      requestSequence,
-      promptContextQueryLength: promptContextSelectionRefreshDecision.promptContextQueryText.length,
-      promptContextQueryLoadStrategy: promptContextSelectionRefreshDecision.promptContextQueryLoadStrategy,
-    });
 
     if (promptContextSelectionRefreshDecision.promptContextQueryLoadStrategy === "fuzzy_query") {
       pendingPromptContextLoadTimeoutRef.current = setTimeout(() => {

@@ -1,6 +1,5 @@
 import type {
   AvailableAssistantModel,
-  BuliDiagnosticLogger,
   ConversationSessionEntry,
   ConversationSessionModelSelection,
   ConversationSessionSummary,
@@ -35,7 +34,6 @@ import {
   type ConversationSessionSwitchResult,
 } from "./useChatAppConversationSessionActions.ts";
 import { useChatAppActiveTurnInterrupt } from "./useChatAppActiveTurnInterrupt.ts";
-import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 import {
   useChatAppKeyboardActions,
   type UseChatAppKeyboardActionsResult,
@@ -84,7 +82,6 @@ export type UseChatAppControllerInput = {
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator | undefined;
   scrollConversationMessagesToBottom: () => void;
   scrollConversationMessagesByPage: (direction: ChatAppConversationTranscriptScrollDirection) => void;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type InitialConversationSessionEntriesLoadResult = {
@@ -237,7 +234,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     requestActiveConversationTurnInterrupt,
   } = useChatAppActiveTurnInterrupt({
     activeConversationTurnShutdownCoordinator: input.activeConversationTurnShutdownCoordinator,
-    diagnosticLogger: input.diagnosticLogger,
   });
   const {
     dismissActivePromptContextQuery,
@@ -246,7 +242,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     chatSessionState,
     setChatSessionState,
     loadPromptContextCandidates: input.loadPromptContextCandidates,
-    diagnosticLogger: input.diagnosticLogger,
   });
   const enqueueQueuedSubmittedPrompt = useEffectEvent((queuedChatAppPrompt: QueuedChatAppPrompt): number => {
     nextQueuedPromptIdRef.current += 1;
@@ -298,7 +293,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     setActiveConversationSessionId,
     setConversationSessionExportStatus,
     setConversationSessionCompactionStatus,
-    diagnosticLogger: input.diagnosticLogger,
   });
 
   useEffect(() => {
@@ -349,10 +343,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
         }
 
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.initial_conversation_session_hydration_failed", {
-          conversationSessionId: initialConversationSessionId,
-          errorMessage,
-        });
         if (latestActiveConversationSessionIdRef.current !== initialConversationSessionId) {
           return;
         }
@@ -384,7 +374,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     input.initialConversationSessionId,
     input.loadInitialConversationSessionEntries,
     input.onInitialConversationSessionEntriesHydrated,
-    input.diagnosticLogger,
   ]);
   const {
     streamAssistantResponseForSubmittedPrompt,
@@ -404,7 +393,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     dequeueQueuedSubmittedPrompt,
     scrollConversationMessagesToBottom: input.scrollConversationMessagesToBottom,
     autoCompactCurrentConversationSessionAfterAssistantTurn,
-    diagnosticLogger: input.diagnosticLogger,
   });
   const {
     applyChatAppKeyboardInput,
@@ -431,7 +419,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     submitPendingToolApprovalDecision,
     scrollConversationMessagesToBottom: input.scrollConversationMessagesToBottom,
     scrollConversationMessagesByPage: input.scrollConversationMessagesByPage,
-    diagnosticLogger: input.diagnosticLogger,
   });
   const {
     removePromptImageAttachmentPlaceholderBeforeCursorFromChatApp,
@@ -441,7 +428,6 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     latestChatSessionStateRef,
     isConversationCompactionInFlightRef,
     setChatSessionState,
-    diagnosticLogger: input.diagnosticLogger,
   });
 
   const hideCommandHelpModalInChatApp = useEffectEvent(() => {

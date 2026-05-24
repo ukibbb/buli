@@ -1,14 +1,6 @@
 import { randomUUID } from "node:crypto";
-import {
-  type AssistantResponseEvent,
-  type BuliDiagnosticLogger,
-} from "@buli/contracts";
+import type { AssistantResponseEvent } from "@buli/contracts";
 import type { ActiveConversationTurn, AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
-import {
-  summarizeAssistantResponseEventForDiagnostics,
-  summarizeAssistantResponseEventsForDiagnostics,
-} from "./assistantResponseEventDiagnostics.ts";
-import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 
 const ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS = 16;
 
@@ -39,13 +31,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
   onConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
   onConversationTurnFinished: () => void;
   onAssistantResponseEvents: (assistantResponseEvents: readonly AssistantResponseEvent[]) => void;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<void> {
-  logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.turn_start_requested", {
-    selectedModelId: input.conversationTurnRequest.selectedModelId,
-    selectedReasoningEffort: input.conversationTurnRequest.selectedReasoningEffort ?? null,
-    userPromptLength: input.conversationTurnRequest.userPromptText.length,
-  });
   let queuedAssistantResponseEvents: AssistantResponseEvent[] = [];
   let scheduledFlushTimeout: ReturnType<typeof setTimeout> | undefined;
   let lastFlushAtMs = 0;
@@ -68,10 +54,6 @@ export async function relayAssistantResponseRunnerEvents(input: {
     queuedAssistantResponseEvents = [];
     scheduledFlushTimeout = undefined;
     const flushedAtMs = Date.now();
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.event_batch_flushed", {
-      ...summarizeAssistantResponseEventsForDiagnostics(assistantResponseEventsToFlush),
-      elapsedSinceLastFlushMs: lastFlushAtMs === 0 ? null : flushedAtMs - lastFlushAtMs,
-    });
     lastFlushAtMs = flushedAtMs;
     try {
       input.onAssistantResponseEvents(assistantResponseEventsToFlush);
@@ -114,11 +96,6 @@ export async function relayAssistantResponseRunnerEvents(input: {
     }
 
     queuedAssistantResponseEvents.push(assistantResponseEvent);
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.event_queued", {
-      eventType: assistantResponseEvent.type,
-      queueLength: queuedAssistantResponseEvents.length,
-      ...summarizeAssistantResponseEventForDiagnostics(assistantResponseEvent),
-    });
     scheduleAssistantResponseEventFlush();
   }
 
@@ -145,32 +122,19 @@ export async function relayAssistantResponseRunnerEvents(input: {
   try {
     activeConversationTurn = input.assistantConversationRunner.startConversationTurn(input.conversationTurnRequest);
     input.onConversationTurnStarted(activeConversationTurn);
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.turn_started", {
-      selectedModelId: input.conversationTurnRequest.selectedModelId,
-    });
 
     for await (const assistantResponseEvent of activeConversationTurn.streamAssistantResponseEvents()) {
       queueAssistantResponseEvent(assistantResponseEvent);
     }
 
     if (!hasSeenTerminalAssistantResponseEvent && assistantResponseEventDeliveryError === undefined) {
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.non_terminal_stream_finished", {
-        selectedModelId: input.conversationTurnRequest.selectedModelId,
-        hasAssistantMessageId: currentAssistantResponseMessageId !== undefined,
-      });
       queueSyntheticFailedAssistantTurn("Assistant turn ended without a terminal event.");
     }
   } catch (error) {
     if (assistantResponseEventDeliveryError !== undefined) {
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.event_delivery_error", {
-        errorText: error instanceof Error ? error.message : String(error),
-      });
       return;
     }
     const errorText = error instanceof Error ? error.message : String(error);
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.runner_error", {
-      errorText,
-    });
     queueSyntheticFailedAssistantTurn(errorText);
   } finally {
     if (scheduledFlushTimeout) {
@@ -187,9 +151,6 @@ export async function relayAssistantResponseRunnerEvents(input: {
     }
     try {
       input.onConversationTurnFinished();
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "relay.turn_finished", {
-        selectedModelId: input.conversationTurnRequest.selectedModelId,
-      });
     } finally {
       activeConversationTurn = undefined;
     }

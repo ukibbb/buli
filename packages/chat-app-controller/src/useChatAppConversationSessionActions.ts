@@ -1,5 +1,4 @@
 import type {
-  BuliDiagnosticLogger,
   ConversationSessionEntry,
   ConversationSessionModelSelection,
   ConversationSessionSummary,
@@ -17,7 +16,6 @@ import {
 } from "@buli/chat-session-state";
 import { startTransition, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./conversationSessionStatus.ts";
-import { logChatAppControllerDiagnosticEvent } from "./diagnostics.ts";
 
 type MutableValueRef<T> = { current: T };
 
@@ -73,7 +71,6 @@ export type UseChatAppConversationSessionActionsInput = {
   setActiveConversationSessionId: Dispatch<SetStateAction<string | undefined>>;
   setConversationSessionExportStatus: Dispatch<SetStateAction<ConversationSessionExportStatus>>;
   setConversationSessionCompactionStatus: Dispatch<SetStateAction<ConversationSessionCompactionStatus>>;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type UseChatAppConversationSessionActionsResult = {
@@ -256,11 +253,6 @@ export function useChatAppConversationSessionActions(
           return nextChatSessionState;
         });
       });
-      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.conversation_session_deleted", {
-        deletedConversationSessionId: deletedConversationSession.deletedConversationSessionId,
-        activeConversationSessionId: deletedConversationSession.activeConversationSessionId,
-        conversationSessionCount: deletedConversationSession.conversationSessions.length,
-      });
     } catch (error) {
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
         return;
@@ -399,7 +391,6 @@ export function useChatAppConversationSessionActions(
         return nextChatSessionState;
       });
     }
-    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "chat_screen.conversation_cleared");
   });
 
   return {

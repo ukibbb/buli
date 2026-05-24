@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import type { BuliDiagnosticLogEvent } from "@buli/contracts";
 import {
   createInitialChatSessionState,
   replacePromptDraftFromEditor,
@@ -34,13 +33,11 @@ type PendingPromptContextLoad = {
 
 async function renderPromptContextRefreshHook(input: {
   loadPromptContextCandidates: LoadChatAppPromptContextCandidates;
-  diagnosticLogEvents: BuliDiagnosticLogEvent[];
 }): Promise<RenderedPromptContextRefreshHook> {
   let latestHarnessApi: PromptContextRefreshHarnessApi | undefined;
   const renderedHook = await testRender(
     <PromptContextRefreshHookProbe
       loadPromptContextCandidates={input.loadPromptContextCandidates}
-      diagnosticLogEvents={input.diagnosticLogEvents}
       observeHarnessApi={(harnessApi) => {
         latestHarnessApi = harnessApi;
       }}
@@ -80,7 +77,6 @@ async function renderPromptContextRefreshHook(input: {
 
 function PromptContextRefreshHookProbe(props: {
   loadPromptContextCandidates: LoadChatAppPromptContextCandidates;
-  diagnosticLogEvents: BuliDiagnosticLogEvent[];
   observeHarnessApi: (harnessApi: PromptContextRefreshHarnessApi) => void;
 }) {
   const [chatSessionState, setChatSessionState] = useState(() =>
@@ -90,9 +86,6 @@ function PromptContextRefreshHookProbe(props: {
     chatSessionState,
     setChatSessionState,
     loadPromptContextCandidates: props.loadPromptContextCandidates,
-    diagnosticLogger: (diagnosticLogEvent) => {
-      props.diagnosticLogEvents.push(diagnosticLogEvent);
-    },
   });
 
   props.observeHarnessApi({
@@ -114,11 +107,9 @@ function PromptContextRefreshHookProbe(props: {
 }
 
 test("useChatAppPromptContextSelectionRefresh loads current-directory candidates immediately", async () => {
-  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const requestedPromptContextQueryTexts: string[] = [];
   const promptContextCandidates = [createPromptContextCandidate("README.md")];
   const renderedHook = await renderPromptContextRefreshHook({
-    diagnosticLogEvents,
     async loadPromptContextCandidates(promptContextQueryText) {
       requestedPromptContextQueryTexts.push(promptContextQueryText);
       return promptContextCandidates;
@@ -138,10 +129,8 @@ test("useChatAppPromptContextSelectionRefresh loads current-directory candidates
 });
 
 test("useChatAppPromptContextSelectionRefresh debounces fuzzy candidate loads", async () => {
-  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const requestedPromptContextQueryTexts: string[] = [];
   const renderedHook = await renderPromptContextRefreshHook({
-    diagnosticLogEvents,
     async loadPromptContextCandidates(promptContextQueryText) {
       requestedPromptContextQueryTexts.push(promptContextQueryText);
       return [createPromptContextCandidate(`${promptContextQueryText}.ts`)];
@@ -163,10 +152,8 @@ test("useChatAppPromptContextSelectionRefresh debounces fuzzy candidate loads", 
 });
 
 test("useChatAppPromptContextSelectionRefresh discards stale resolved loads", async () => {
-  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const pendingPromptContextLoads: PendingPromptContextLoad[] = [];
   const renderedHook = await renderPromptContextRefreshHook({
-    diagnosticLogEvents,
     loadPromptContextCandidates(promptContextQueryText) {
       return new Promise<readonly PromptContextCandidate[]>((resolvePromptContextCandidates) => {
         pendingPromptContextLoads.push({ promptContextQueryText, resolvePromptContextCandidates });
@@ -191,9 +178,6 @@ test("useChatAppPromptContextSelectionRefresh discards stale resolved loads", as
   await renderedHook.flushHookEffects();
 
   expect(renderedHook.readCurrentChatSessionState().promptContextSelectionState.step).toBe("hidden");
-  expect(diagnosticLogEvents.some((diagnosticLogEvent) =>
-    diagnosticLogEvent.eventName === "chat_screen.prompt_context_load_discarded"
-  )).toBe(true);
 
   const currentPromptContextLoad = pendingPromptContextLoads[1];
   if (!currentPromptContextLoad) {
@@ -213,9 +197,7 @@ test("useChatAppPromptContextSelectionRefresh discards stale resolved loads", as
 });
 
 test("useChatAppPromptContextSelectionRefresh hides candidates when loading fails", async () => {
-  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
   const renderedHook = await renderPromptContextRefreshHook({
-    diagnosticLogEvents,
     async loadPromptContextCandidates(promptContextQueryText) {
       if (promptContextQueryText === "") {
         return [createPromptContextCandidate("README.md")];
@@ -236,15 +218,6 @@ test("useChatAppPromptContextSelectionRefresh hides candidates when loading fail
   await renderedHook.flushHookEffects();
 
   expect(renderedHook.readCurrentChatSessionState().promptContextSelectionState.step).toBe("hidden");
-  expect(diagnosticLogEvents).toContainEqual(
-    expect.objectContaining({
-      eventName: "chat_screen.prompt_context_load_failed",
-      fields: expect.objectContaining({
-        promptContextQueryLength: 8,
-        errorMessage: "prompt context index unavailable",
-      }),
-    }),
-  );
 });
 
 function createPromptContextCandidate(displayPath: string): PromptContextCandidate {
