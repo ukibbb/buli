@@ -85,7 +85,7 @@ test("summarizeOpenAiRateLimitHeadersForDiagnostics avoids raw header values", (
 });
 
 test("OpenAI transport diagnostics classify retryable errors without raw messages", () => {
-  const retryableTransportError = new TypeError("fetch failed with secret-token");
+  const retryableTransportError = new TypeError("fetch failed with secret-token", { cause: { code: "ECONNRESET" } });
 
   expect(isRetryableOpenAiTransportError(retryableTransportError)).toBe(true);
   expect(isRetryableOpenAiTransportError(new DOMException("request aborted", "AbortError"))).toBe(false);
@@ -93,6 +93,7 @@ test("OpenAI transport diagnostics classify retryable errors without raw message
   expect(summarizeOpenAiTransportErrorForDiagnostics(retryableTransportError)).toEqual({
     transportErrorName: "TypeError",
     transportErrorMessageLength: "fetch failed with secret-token".length,
+    transportErrorCode: "ECONNRESET",
   });
   expect(JSON.stringify(summarizeOpenAiTransportErrorForDiagnostics(retryableTransportError))).not.toContain("secret-token");
 });

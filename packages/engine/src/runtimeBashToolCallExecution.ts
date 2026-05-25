@@ -131,7 +131,13 @@ export async function* streamAssistantResponseEventsForBashToolCall(
         riskExplanation: bashToolApprovalDecision.riskExplanation,
       },
     }));
+    const approvalWaitStartedAtMs = Date.now();
     const approvalDecision = await approvalDecisionPromise;
+    logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.bash_approval_wait_finished", {
+      toolCallId: input.toolCallId,
+      approvalDecision,
+      durationMs: Date.now() - approvalWaitStartedAtMs,
+    });
     yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantPendingToolApprovalClearedEventSchema.parse({
       type: "assistant_pending_tool_approval_cleared",
       approvalId,

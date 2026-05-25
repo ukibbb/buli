@@ -179,6 +179,7 @@ export class ConversationSessionCompactor {
       selectedModelId: input.selectedModelId,
       compactionSource: "auto",
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      ...(input.requestTriggerKind === "context_window_overflow" ? { retainedRecentConversationTurnCount: 0 } : {}),
       ...(input.onCompactionSummaryTextUpdated
         ? { onCompactionSummaryTextUpdated: input.onCompactionSummaryTextUpdated }
         : {}),

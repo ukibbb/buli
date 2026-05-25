@@ -25,7 +25,7 @@ import {
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingState,
   submitPromptDraft,
-  toggleReasoningSummaryVisibility,
+  toggleReasoningSummaryDisplayMode,
   upsertConversationCompactionProgressInTranscript,
 } from "../src/index.ts";
 
@@ -90,16 +90,16 @@ test("selectAssistantOperatingMode sets a specific mode", () => {
 test("createInitialChatSessionState shows reasoning summaries by default", () => {
   const chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
 
-  expect(chatSessionState.isReasoningSummaryVisible).toBe(true);
+  expect(chatSessionState.reasoningSummaryDisplayMode).toBe("expanded");
 });
 
-test("toggleReasoningSummaryVisibility flips reasoning summary display", () => {
+test("toggleReasoningSummaryDisplayMode flips reasoning summary display", () => {
   const visibleChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
-  const hiddenChatSessionState = toggleReasoningSummaryVisibility(visibleChatSessionState);
-  const visibleAgainChatSessionState = toggleReasoningSummaryVisibility(hiddenChatSessionState);
+  const hiddenChatSessionState = toggleReasoningSummaryDisplayMode(visibleChatSessionState);
+  const visibleAgainChatSessionState = toggleReasoningSummaryDisplayMode(hiddenChatSessionState);
 
-  expect(hiddenChatSessionState.isReasoningSummaryVisible).toBe(false);
-  expect(visibleAgainChatSessionState.isReasoningSummaryVisible).toBe(true);
+  expect(hiddenChatSessionState.reasoningSummaryDisplayMode).toBe("collapsed");
+  expect(visibleAgainChatSessionState.reasoningSummaryDisplayMode).toBe("expanded");
 });
 
 test("submitPromptDraft appends a completed user message and enters streaming state", () => {
@@ -469,7 +469,7 @@ test("clearConversationTranscript clears visible conversation while preserving s
     selectedReasoningEffort: "high",
   });
   chatSessionState = selectAssistantOperatingMode(chatSessionState, "plan");
-  chatSessionState = toggleReasoningSummaryVisibility(chatSessionState);
+  chatSessionState = toggleReasoningSummaryDisplayMode(chatSessionState);
   const promptDraftSubmission = submitPromptDraft(insertTextIntoPromptDraftAtCursor(chatSessionState, "Hello"));
   if (!promptDraftSubmission.submittedPromptText) {
     throw new Error("expected submitted prompt");
@@ -481,7 +481,7 @@ test("clearConversationTranscript clears visible conversation while preserving s
   expect(clearedChatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
   expect(clearedChatSessionState.selectedReasoningEffort).toBe("high");
   expect(clearedChatSessionState.selectedAssistantOperatingMode).toBe("plan");
-  expect(clearedChatSessionState.isReasoningSummaryVisible).toBe(false);
+  expect(clearedChatSessionState.reasoningSummaryDisplayMode).toBe("collapsed");
   expect(clearedChatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(listOrderedConversationMessages(clearedChatSessionState)).toEqual([]);
   expect(clearedChatSessionState.conversationMessagePartCount).toBe(0);
@@ -521,6 +521,10 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
         assistantMessageText: "Done.",
+        selectedModelId: "gpt-5.4",
+        assistantOperatingMode: "implementation",
+        turnDurationMs: 1250,
+        usage: { total: 10, input: 4, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
       },
     ],
   );
@@ -537,8 +541,17 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
   expect(listOrderedConversationMessageParts(chatSessionState, conversationMessages[1]!.id).map((conversationMessagePart) => conversationMessagePart.partKind)).toEqual([
     "assistant_tool_call",
     "assistant_text",
+    "assistant_turn_summary",
   ]);
-  expect(chatSessionState.conversationMessagePartCount).toBe(3);
+  expect(listOrderedConversationMessageParts(chatSessionState, conversationMessages[1]!.id).at(-1)).toEqual({
+    id: "persisted-entry-3-assistant-turn-summary",
+    partKind: "assistant_turn_summary",
+    turnDurationMs: 1250,
+    modelDisplayName: "gpt-5.4",
+    assistantOperatingMode: "implementation",
+    usage: { total: 10, input: 4, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
+  });
+  expect(chatSessionState.conversationMessagePartCount).toBe(4);
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
 });
 

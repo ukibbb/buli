@@ -1,4 +1,4 @@
-import type { ChatSlashCommand } from "@buli/chat-session-state";
+import type { ChatSlashCommand, ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { ChatScreenTheme, TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo, type ReactNode, type RefObject } from "react";
@@ -9,7 +9,7 @@ import type { PendingToolApprovalDecision } from "./ConversationMessageRow.tsx";
 
 export type ChatScreenMainAreaProps = {
   isCommandHelpModalVisible: boolean;
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   availableCommandHelpModalRowCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
@@ -42,7 +42,7 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
     <ConversationTranscriptSurface
       visibleConversationMessageRows={props.visibleConversationMessageRows}
       hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
-      isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+      reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
       onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
       {...(props.pendingToolApprovalDecision !== undefined

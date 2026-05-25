@@ -15,6 +15,7 @@ test("finalizeFailedConversationTurn records accepted prompt, flushes text, and 
     assistantResponseMessageId: "assistant-message-1",
     assistantTextPartId: "assistant-text-1",
     conversationTurnStartedAtMilliseconds: 1_000,
+    assistantOperatingMode: "implementation",
     selectedModelId: "gpt-5.4",
   });
   providerStreamEventTranslator.translateProviderStreamEvent({

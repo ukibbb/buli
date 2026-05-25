@@ -20,6 +20,8 @@ export type TaskToolCallCardProps = {
   errorText?: string;
 };
 
+const MAX_AUTO_EXPANDED_TASK_RESULT_CHARACTER_COUNT = 600;
+
 export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
   const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
   const streamingElapsedDurationLabel = useStreamingTaskElapsedDurationLabel(
@@ -32,7 +34,7 @@ export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
       {...(props.approvalDecisionControl !== undefined
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
-      defaultIsContentExpanded={props.renderState === "streaming"}
+      defaultIsContentExpanded={props.renderState === "streaming" || shouldAutoExpandTaskBodyContent(props)}
       hasExpandableContent={hasSubagentContent}
       renderExpandedContent={() => buildTaskBodyContent({
         accentColor: toolCallPresentation.accentColor,
@@ -47,6 +49,15 @@ export function TaskToolCallCard(props: TaskToolCallCardProps): ReactNode {
       toolTargetText={formatTaskTargetText(props.toolCallDetail)}
     />
   );
+}
+
+function shouldAutoExpandTaskBodyContent(props: TaskToolCallCardProps): boolean {
+  return props.renderState === "completed" &&
+    props.toolCallDetail.subagentPrompt === undefined &&
+    props.toolCallDetail.subagentResearchCheckpoint === undefined &&
+    (props.toolCallDetail.subagentChildToolCalls?.length ?? 0) === 0 &&
+    props.toolCallDetail.subagentResultSummary !== undefined &&
+    props.toolCallDetail.subagentResultSummary.length <= MAX_AUTO_EXPANDED_TASK_RESULT_CHARACTER_COUNT;
 }
 
 function hasTaskBodyContent(props: TaskToolCallCardProps): boolean {

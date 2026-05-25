@@ -1,5 +1,6 @@
 import type {
   AvailableAssistantModel,
+  BuliDiagnosticLogger,
   ConversationSessionEntry,
   ConversationSessionModelSelection,
   ConversationSessionSummary,
@@ -80,6 +81,7 @@ export type UseChatAppControllerInput = {
     | ((modelSelection: ConversationSessionModelSelection) => void | Promise<void>)
     | undefined;
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator | undefined;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
   scrollConversationMessagesToBottom: () => void;
   scrollConversationMessagesByPage: (direction: ChatAppConversationTranscriptScrollDirection) => void;
 };
@@ -123,7 +125,7 @@ export type ChatAppTranscriptState = Pick<
   | "conversationMessagePartsById"
   | "orderedConversationMessageIds"
   | "conversationMessagePartCount"
-  | "isReasoningSummaryVisible"
+  | "reasoningSummaryDisplayMode"
   | "isCommandHelpModalVisible"
 >;
 
@@ -395,6 +397,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     dequeueQueuedSubmittedPrompt,
     scrollConversationMessagesToBottom: input.scrollConversationMessagesToBottom,
     autoCompactCurrentConversationSessionAfterAssistantTurn,
+    diagnosticLogger: input.diagnosticLogger,
   });
   const {
     applyChatAppKeyboardInput,
@@ -506,7 +509,7 @@ function buildChatAppTranscriptState(chatSessionState: ChatSessionState): ChatAp
     conversationMessagePartsById: chatSessionState.conversationMessagePartsById,
     orderedConversationMessageIds: chatSessionState.orderedConversationMessageIds,
     conversationMessagePartCount: chatSessionState.conversationMessagePartCount,
-    isReasoningSummaryVisible: chatSessionState.isReasoningSummaryVisible,
+    reasoningSummaryDisplayMode: chatSessionState.reasoningSummaryDisplayMode,
     isCommandHelpModalVisible: chatSessionState.isCommandHelpModalVisible,
   };
 }
@@ -580,7 +583,7 @@ function selectStableChatAppTranscriptState(input: {
     input.previousState.conversationMessagePartsById === input.nextState.conversationMessagePartsById &&
     input.previousState.orderedConversationMessageIds === input.nextState.orderedConversationMessageIds &&
     input.previousState.conversationMessagePartCount === input.nextState.conversationMessagePartCount &&
-    input.previousState.isReasoningSummaryVisible === input.nextState.isReasoningSummaryVisible &&
+    input.previousState.reasoningSummaryDisplayMode === input.nextState.reasoningSummaryDisplayMode &&
     input.previousState.isCommandHelpModalVisible === input.nextState.isCommandHelpModalVisible
   ) {
     return input.previousState;

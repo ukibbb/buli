@@ -101,11 +101,18 @@ export const ProviderToolCallsRequestedEventSchema = z
   })
   .strict();
 
+export const ProviderRetryPendingReasonSchema = z.enum([
+  "rate_limit",
+  "transient_http_response",
+  "transport_error",
+]);
+
 export const ProviderRateLimitPendingEventSchema = z
   .object({
     type: z.literal("rate_limit_pending"),
     retryAfterSeconds: z.number().int().nonnegative(),
     retryWaitStartedAtMs: z.number().int().nonnegative().optional(),
+    retryReason: ProviderRetryPendingReasonSchema.optional(),
     limitExplanation: z.string().min(1),
   })
   .strict();
@@ -144,6 +151,7 @@ export type ProviderReasoningSummaryCompletedEvent = z.infer<typeof ProviderReas
 export type ProviderRequestedToolCall = z.infer<typeof ProviderRequestedToolCallSchema>;
 export type ProviderToolCallRequestedEvent = z.infer<typeof ProviderToolCallRequestedEventSchema>;
 export type ProviderToolCallsRequestedEvent = z.infer<typeof ProviderToolCallsRequestedEventSchema>;
+export type ProviderRetryPendingReason = z.infer<typeof ProviderRetryPendingReasonSchema>;
 export type ProviderRateLimitPendingEvent = z.infer<typeof ProviderRateLimitPendingEventSchema>;
 export type ProviderPlanProposedEvent = z.infer<typeof ProviderPlanProposedEventSchema>;
 export type ProviderStreamEvent = z.infer<typeof ProviderStreamEventSchema>;

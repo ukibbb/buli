@@ -5,6 +5,7 @@ export {
   type ModelAndReasoningSelectionState,
   type ConversationSessionSelectionState,
   type PromptContextSelectionState,
+  type ReasoningSummaryDisplayMode,
   type ReasoningEffortChoice,
   type SlashCommand,
   type SlashCommandSelectionState,
@@ -113,7 +114,7 @@ export {
   showConversationSessionSelectionLoadingState,
 } from "./sessionSelectionReducer.ts";
 export { hideCommandHelpModal, showCommandHelpModal } from "./commandHelpModalReducer.ts";
-export { toggleReasoningSummaryVisibility } from "./reasoningSummaryVisibilityReducer.ts";
+export { toggleReasoningSummaryDisplayMode } from "./reasoningSummaryVisibilityReducer.ts";
 export {
   clearConversationTranscript,
   hydrateConversationTranscriptFromSessionEntries,

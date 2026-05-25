@@ -71,11 +71,11 @@ export async function listPromptContextCandidates(input: {
           promptContextPathQuery,
           promptContextPathScope,
         })
-      : await listFuzzyPromptContextEntries({
+      : (await listFuzzyPromptContextEntries({
           promptContextPathScope,
           maximumSearchEntryCount,
           promptContextQueryText: normalizedPromptContextQueryText,
-        });
+        })).promptContextEntries;
 
   return filterAndSortPromptContextEntries({
     promptContextEntries: visiblePromptContextEntries,
@@ -89,6 +89,11 @@ export async function listPromptContextCandidates(input: {
 export type PromptContextEntry = Omit<PromptContextCandidate, "promptReferenceText"> & {
   absolutePath: string;
 };
+
+export type PromptContextEntryScanResult = Readonly<{
+  promptContextEntries: PromptContextEntry[];
+  scannedPromptContextEntryCount: number;
+}>;
 
 export async function listCurrentDirectoryPromptContextEntries(input: {
   promptContextPathScope: PromptContextPathScope;
@@ -131,7 +136,7 @@ export async function listRecursivePromptContextEntries(input: {
   recursiveSearchRootPath?: string;
   promptContextQueryText?: string;
   excludedDescendantDirectoryPaths?: readonly string[];
-}): Promise<PromptContextEntry[]> {
+}): Promise<PromptContextEntryScanResult> {
   const promptContextEntries: PromptContextEntry[] = [];
   const recursiveSearchRootPath = input.recursiveSearchRootPath ?? input.promptContextPathScope.promptContextBrowseRootPath;
   const normalizedPromptContextQueryText = input.promptContextQueryText
@@ -162,7 +167,7 @@ export async function listRecursivePromptContextEntries(input: {
 
     for (const directoryEntry of directoryEntries) {
       if (searchedPromptContextEntryCount >= input.maximumSearchEntryCount) {
-        return promptContextEntries;
+        return { promptContextEntries, scannedPromptContextEntryCount: searchedPromptContextEntryCount };
       }
 
       if (directoryEntry.isSymbolicLink()) {
@@ -204,7 +209,7 @@ export async function listRecursivePromptContextEntries(input: {
     }
   }
 
-  return promptContextEntries;
+  return { promptContextEntries, scannedPromptContextEntryCount: searchedPromptContextEntryCount };
 }
 
 async function readPromptContextDirectoryEntriesIfAccessible(directoryPath: string): Promise<Dirent[] | undefined> {
@@ -219,29 +224,32 @@ export async function listFuzzyPromptContextEntries(input: {
   promptContextPathScope: PromptContextPathScope;
   maximumSearchEntryCount: number;
   promptContextQueryText: string;
-}): Promise<PromptContextEntry[]> {
+}): Promise<PromptContextEntryScanResult> {
   const promptContextEntries: PromptContextEntry[] = [];
   const seenPromptContextAbsolutePaths = new Set<string>();
+  let scannedPromptContextEntryCount = 0;
 
   async function appendPromptContextEntriesFromRoot(appendInput: {
     recursiveSearchRootPath: string;
     excludedDescendantDirectoryPaths?: readonly string[];
   }): Promise<void> {
+    // Use the limit per search root so a noisy starting directory cannot starve sibling-project matches.
     if (promptContextEntries.length >= input.maximumSearchEntryCount) {
       return;
     }
 
-    const candidatePromptContextEntries = await listRecursivePromptContextEntries({
+    const candidatePromptContextEntryScanResult = await listRecursivePromptContextEntries({
       promptContextPathScope: input.promptContextPathScope,
-      maximumSearchEntryCount: input.maximumSearchEntryCount - promptContextEntries.length,
+      maximumSearchEntryCount: input.maximumSearchEntryCount,
       recursiveSearchRootPath: appendInput.recursiveSearchRootPath,
       promptContextQueryText: input.promptContextQueryText,
       ...(appendInput.excludedDescendantDirectoryPaths
         ? { excludedDescendantDirectoryPaths: appendInput.excludedDescendantDirectoryPaths }
         : {}),
     });
+    scannedPromptContextEntryCount += candidatePromptContextEntryScanResult.scannedPromptContextEntryCount;
 
-    for (const promptContextEntry of candidatePromptContextEntries) {
+    for (const promptContextEntry of candidatePromptContextEntryScanResult.promptContextEntries) {
       if (seenPromptContextAbsolutePaths.has(promptContextEntry.absolutePath)) {
         continue;
       }
@@ -264,7 +272,7 @@ export async function listFuzzyPromptContextEntries(input: {
     });
   }
 
-  return promptContextEntries;
+  return { promptContextEntries, scannedPromptContextEntryCount };
 }
 
 function doesPromptContextEntryMatchQuery(input: {

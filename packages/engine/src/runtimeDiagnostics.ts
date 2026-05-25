@@ -85,6 +85,7 @@ export function summarizeProviderStreamEventForDiagnostics(
       ...(providerStreamEvent.retryWaitStartedAtMs !== undefined
         ? { retryWaitStartedAtMs: providerStreamEvent.retryWaitStartedAtMs }
         : {}),
+      ...(providerStreamEvent.retryReason !== undefined ? { retryReason: providerStreamEvent.retryReason } : {}),
       limitExplanationLength: providerStreamEvent.limitExplanation.length,
     };
   }

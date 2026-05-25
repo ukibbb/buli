@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import type { ToolCallGrepMatch, ToolCallSearchManyDetail, ToolCallSearchManyResult } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
 import { FileReference } from "../primitives/FileReference.tsx";
 import { limitVisibleItems, VisibleContentLimitNotice } from "../primitives/VisibleContentLimit.tsx";
 import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+import { GrepMatchResultsBlock } from "./GrepMatchResultsBlock.tsx";
 
 const MAX_EXPANDED_SEARCH_MANY_GLOB_PATH_COUNT = 25;
 const MAX_EXPANDED_SEARCH_MANY_GREP_MATCH_HIT_COUNT = 25;
@@ -15,14 +15,6 @@ export type SearchManyToolCallCardProps = {
   approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
-};
-
-type GrepMatchFileSection = {
-  matchFilePath: string;
-  matchLines: {
-    lineNumber: number;
-    lineText: string;
-  }[];
 };
 
 export function SearchManyToolCallCard(props: SearchManyToolCallCardProps): ReactNode {
@@ -91,9 +83,7 @@ function buildSearchManyBodyContent(searchResults: readonly ToolCallSearchManyRe
           width="100%"
         >
           <box width="100%">
-            <text fg={chatScreenTheme.textMuted} wrapMode="char" width="100%">
-              {formatSearchManyResultHeader(searchResult, searchResultIndex)}
-            </text>
+            <SearchManyResultHeader searchResult={searchResult} />
           </box>
           <SearchManyResultBody searchResult={searchResult} />
         </box>
@@ -102,13 +92,30 @@ function buildSearchManyBodyContent(searchResults: readonly ToolCallSearchManyRe
   );
 }
 
-function formatSearchManyResultHeader(searchResult: ToolCallSearchManyResult, searchResultIndex: number): string {
-  const searchDetail = searchResult.searchDetail;
+function SearchManyResultHeader(props: { searchResult: ToolCallSearchManyResult }): ReactNode {
+  const searchDetail = props.searchResult.searchDetail;
+  const searchManyResultAccentColor = props.searchResult.searchStatus === "failed"
+    ? chatScreenTheme.accentRed
+    : chatScreenTheme.accentGreen;
   if (searchDetail.toolName === "glob") {
-    return `${searchResultIndex + 1}. glob ${searchDetail.globPattern} - ${searchResult.searchStatus}`;
+    return (
+      <text wrapMode="char" width="100%">
+        <span fg={chatScreenTheme.textPrimary}>Glob</span>
+        <span fg={searchManyResultAccentColor}>{" ["}</span>
+        <span fg={chatScreenTheme.textMuted}>{searchDetail.globPattern}</span>
+        <span fg={searchManyResultAccentColor}>{"]"}</span>
+      </text>
+    );
   }
 
-  return `${searchResultIndex + 1}. grep ${searchDetail.searchPattern} - ${searchResult.searchStatus}`;
+  return (
+    <text wrapMode="char" width="100%">
+      <span fg={chatScreenTheme.textPrimary}>Grep</span>
+      <span fg={searchManyResultAccentColor}>{" ["}</span>
+      <span fg={chatScreenTheme.textMuted}>{searchDetail.searchPattern}</span>
+      <span fg={searchManyResultAccentColor}>{"]"}</span>
+    </text>
+  );
 }
 
 function SearchManyResultBody(props: { searchResult: ToolCallSearchManyResult }): ReactNode {
@@ -157,37 +164,13 @@ function SearchManyGrepResultBody(props: { matchHits: readonly ToolCallGrepMatch
   if (props.matchHits.length === 0) {
     return <SearchManyEmptyResultNotice noticeText="No matches found" />;
   }
-  const limitedMatchHits = limitVisibleItems({
-    items: props.matchHits,
-    maximumVisibleItemCount: MAX_EXPANDED_SEARCH_MANY_GREP_MATCH_HIT_COUNT,
-  });
-  const grepMatchFileSections = groupGrepMatchesByFile(limitedMatchHits.visibleItems);
 
   return (
     <box flexDirection="column" width="100%">
-      <VisibleContentLimitNotice
-        visibleItemCount={limitedMatchHits.visibleItems.length}
-        totalItemCount={limitedMatchHits.totalItemCount}
-        itemLabelPlural="matches"
+      <GrepMatchResultsBlock
+        matchHits={props.matchHits}
+        maximumVisibleMatchHitCount={MAX_EXPANDED_SEARCH_MANY_GREP_MATCH_HIT_COUNT}
       />
-      {grepMatchFileSections.map((grepMatchFileSection, index) => (
-        <box
-          key={grepMatchFileSection.matchFilePath}
-          flexDirection="column"
-          width="100%"
-          {...(index > 0 ? { marginTop: 1 } : {})}
-        >
-          <text fg={chatScreenTheme.textSecondary} wrapMode="char" width="100%">
-            {grepMatchFileSection.matchFilePath}
-          </text>
-          <FencedCodeBlock
-            variant="embedded"
-            filePath={grepMatchFileSection.matchFilePath}
-            wrapMode="char"
-            codeLines={grepMatchFileSection.matchLines}
-          />
-        </box>
-      ))}
     </box>
   );
 }
@@ -198,45 +181,4 @@ function SearchManyEmptyResultNotice(props: { noticeText: string }): ReactNode {
       <text fg={chatScreenTheme.textDim} wrapMode="word">{props.noticeText}</text>
     </box>
   );
-}
-
-function groupGrepMatchesByFile(matchHits: readonly ToolCallGrepMatch[]): GrepMatchFileSection[] {
-  const grepMatchFileSections: GrepMatchFileSection[] = [];
-  const sectionIndexByMatchFilePath = new Map<string, number>();
-
-  for (const matchHit of matchHits) {
-    const existingSectionIndex = sectionIndexByMatchFilePath.get(matchHit.matchFilePath);
-    if (existingSectionIndex !== undefined) {
-      const existingGrepMatchFileSection = grepMatchFileSections[existingSectionIndex];
-      if (existingGrepMatchFileSection === undefined) {
-        continue;
-      }
-      appendGrepMatchLines(existingGrepMatchFileSection, matchHit);
-      continue;
-    }
-
-    const grepMatchFileSection: GrepMatchFileSection = {
-      matchFilePath: matchHit.matchFilePath,
-      matchLines: [],
-    };
-    appendGrepMatchLines(grepMatchFileSection, matchHit);
-    sectionIndexByMatchFilePath.set(matchHit.matchFilePath, grepMatchFileSections.length);
-    grepMatchFileSections.push(grepMatchFileSection);
-  }
-
-  return grepMatchFileSections;
-}
-
-function appendGrepMatchLines(grepMatchFileSection: GrepMatchFileSection, matchHit: ToolCallGrepMatch): void {
-  for (const matchLine of [
-    ...(matchHit.contextBeforeLines ?? []),
-    { lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet },
-    ...(matchHit.contextAfterLines ?? []),
-  ]) {
-    if (grepMatchFileSection.matchLines.some((existingLine) => existingLine.lineNumber === matchLine.lineNumber)) {
-      continue;
-    }
-
-    grepMatchFileSection.matchLines.push(matchLine);
-  }
 }

@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
-import type { ToolCallReadManyDetail, ToolCallReadManyResult } from "@buli/contracts";
+import type { ToolCallReadManyDetail, ToolCallReadManyResult, ToolCallReadPreviewLine } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { ReadFilePreviewBlock } from "../primitives/ReadFilePreviewBlock.tsx";
+import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
+import { SourceLocationLabel, type SourceLineRange } from "../primitives/SourceLocationLabel.tsx";
 import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
-
-const readManyResultSeparatorText = "─".repeat(120);
 
 export type ReadManyToolCallCardProps = {
   toolCallDetail: ToolCallReadManyDetail;
@@ -69,15 +68,16 @@ function buildReadManyBodyContent(readResults: readonly ToolCallReadManyResult[]
         <box
           key={`read-many-result-${readResultIndex}`}
           flexDirection="column"
-          {...(readResultIndex > 0 ? { marginTop: 1 } : {})}
+          {...(readResultIndex > 0
+            ? {
+                border: ["top"] as const,
+                borderColor: chatScreenTheme.borderSubtle,
+                marginTop: 1,
+                paddingTop: 1,
+              }
+            : {})}
           width="100%"
         >
-          {readResultIndex > 0 ? <ReadManyResultSeparator /> : null}
-          <box width="100%">
-            <text fg={chatScreenTheme.textMuted}>
-              {formatReadManyResultHeader(readResult, readResultIndex)}
-            </text>
-          </box>
           <ReadManyResultBody readResult={readResult} />
         </box>
       ))}
@@ -85,41 +85,53 @@ function buildReadManyBodyContent(readResults: readonly ToolCallReadManyResult[]
   );
 }
 
-function ReadManyResultSeparator(): ReactNode {
-  return (
-    <box marginBottom={1} width="100%">
-      <text fg={chatScreenTheme.accentGreen} wrapMode="none" width="100%">
-        {readManyResultSeparatorText}
-      </text>
-    </box>
-  );
-}
-
-function formatReadManyResultHeader(readResult: ToolCallReadManyResult, readResultIndex: number): string {
-  return `${readResultIndex + 1}. ${readResult.readDetail.readFilePath} - ${readResult.readStatus}`;
-}
-
 function ReadManyResultBody(props: { readResult: ToolCallReadManyResult }): ReactNode {
+  const readDetail = props.readResult.readDetail;
   if (props.readResult.readStatus === "failed") {
     return (
-      <box width="100%">
+      <box flexDirection="column" width="100%">
+        <SourceLocationLabel filePath={readDetail.readFilePath} />
         <text fg={chatScreenTheme.accentRed} wrapMode="word">{props.readResult.failureExplanation}</text>
       </box>
     );
   }
 
-  const readDetail = props.readResult.readDetail;
   if (!readDetail.previewLines || readDetail.previewLines.length === 0) {
-    return undefined;
+    return <SourceLocationLabel filePath={readDetail.readFilePath} />;
   }
 
   return (
-    <ReadFilePreviewBlock
-      previewLines={readDetail.previewLines}
-      readFilePath={readDetail.readFilePath}
-      {...(readDetail.readLineCount !== undefined ? { readLineCount: readDetail.readLineCount } : {})}
-      {...(readDetail.returnedLineCount !== undefined ? { returnedLineCount: readDetail.returnedLineCount } : {})}
-      {...(readDetail.wasLineCountTruncated !== undefined ? { wasLineCountTruncated: readDetail.wasLineCountTruncated } : {})}
-    />
+    <box flexDirection="column" width="100%">
+      <SourceLocationLabel
+        filePath={readDetail.readFilePath}
+        sourceLineRange={resolveReadPreviewSourceLineRange(readDetail.previewLines)}
+      />
+      <FencedCodeBlock
+        variant="embedded"
+        filePath={readDetail.readFilePath}
+        showLineNumbers={false}
+        wrapMode="char"
+        codeLines={readDetail.previewLines.map((previewLine) => ({
+          lineNumber: previewLine.lineNumber,
+          lineText: previewLine.lineText,
+          ...(previewLine.syntaxHighlightSpans
+            ? { syntaxHighlightSpans: previewLine.syntaxHighlightSpans }
+            : {}),
+        }))}
+      />
+    </box>
   );
+}
+
+function resolveReadPreviewSourceLineRange(previewLines: readonly ToolCallReadPreviewLine[]): SourceLineRange | undefined {
+  const firstPreviewLine = previewLines.at(0);
+  const lastPreviewLine = previewLines.at(-1);
+  if (!firstPreviewLine || !lastPreviewLine) {
+    return undefined;
+  }
+
+  return {
+    sourceStartLineNumber: firstPreviewLine.lineNumber,
+    sourceEndLineNumber: lastPreviewLine.lineNumber,
+  };
 }

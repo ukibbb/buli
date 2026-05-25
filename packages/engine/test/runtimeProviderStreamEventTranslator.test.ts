@@ -26,6 +26,7 @@ function createRuntimeProviderStreamEventTranslator(input?: {
     assistantResponseMessageId: "assistant-message-1",
     assistantTextPartId: "assistant-text-1",
     conversationTurnStartedAtMilliseconds: 1_000,
+    assistantOperatingMode: "implementation",
     selectedModelId: "gpt-5.4",
     createConversationMessagePartId: () => {
       nextPartNumber += 1;
@@ -260,6 +261,8 @@ test("RuntimeProviderStreamEventTranslator translates completed provider events 
         partKind: "assistant_turn_summary",
         turnDurationMs: 500,
         modelDisplayName: "gpt-5.4",
+        assistantOperatingMode: "implementation",
+        usage: completedTokenUsage,
       },
     },
     {
@@ -277,6 +280,10 @@ test("RuntimeProviderStreamEventTranslator translates completed provider events 
     entryKind: "assistant_message",
     assistantMessageStatus: "completed",
     assistantMessageText: "Done.",
+    selectedModelId: "gpt-5.4",
+    assistantOperatingMode: "implementation",
+    turnDurationMs: 500,
+    usage: completedTokenUsage,
     providerTurnReplay: {
       provider: "openai",
       inputItems: [
@@ -323,6 +330,8 @@ test("RuntimeProviderStreamEventTranslator translates incomplete provider events
         partKind: "assistant_turn_summary",
         turnDurationMs: 750,
         modelDisplayName: "gpt-5.4",
+        assistantOperatingMode: "implementation",
+        usage: completedTokenUsage,
       },
     },
     {
@@ -340,6 +349,10 @@ test("RuntimeProviderStreamEventTranslator translates incomplete provider events
     entryKind: "assistant_message",
     assistantMessageStatus: "incomplete",
     assistantMessageText: "Partial",
+    selectedModelId: "gpt-5.4",
+    assistantOperatingMode: "implementation",
+    turnDurationMs: 750,
+    usage: completedTokenUsage,
     incompleteReason: "max_output_tokens",
   });
   expect(terminalTranslation.terminalAssistantResponseEvent).toEqual({
@@ -385,6 +398,7 @@ test("RuntimeProviderStreamEventTranslator anchors rate-limit notices to provide
       type: "rate_limit_pending",
       retryAfterSeconds: 3,
       retryWaitStartedAtMs: 4_250,
+      retryReason: "rate_limit",
       limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
     },
   });
@@ -401,6 +415,7 @@ test("RuntimeProviderStreamEventTranslator anchors rate-limit notices to provide
         id: "generated-part-1",
         partKind: "assistant_rate_limit_notice",
         retryAfterSeconds: 3,
+        retryReason: "rate_limit",
         limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
         noticeStartedAtMs: 4_250,
       },

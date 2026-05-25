@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
 import { PlanStepSchema } from "./planProposal.ts";
-import { TokenUsageSchema } from "./provider.ts";
+import { ProviderRetryPendingReasonSchema, TokenUsageSchema } from "./provider.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { WorkspacePatchSchema } from "./workspacePatch.ts";
@@ -135,6 +136,7 @@ export const AssistantRateLimitNoticeConversationMessagePartSchema = z
     id: z.string().min(1),
     partKind: z.literal("assistant_rate_limit_notice"),
     retryAfterSeconds: z.number().int().nonnegative(),
+    retryReason: ProviderRetryPendingReasonSchema.optional(),
     limitExplanation: z.string().min(1),
     noticeStartedAtMs: z.number().int().nonnegative(),
   })
@@ -170,6 +172,7 @@ export const AssistantTurnSummaryConversationMessagePartSchema = z
     partKind: z.literal("assistant_turn_summary"),
     turnDurationMs: z.number().int().nonnegative(),
     modelDisplayName: z.string().min(1),
+    assistantOperatingMode: AssistantOperatingModeSchema.optional(),
     usage: TokenUsageSchema.optional(),
   })
   .strict();

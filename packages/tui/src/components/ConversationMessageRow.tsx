@@ -8,6 +8,7 @@ import type {
   WorkspacePatch,
 } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
+import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoticeBlock.tsx";
 import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
@@ -16,6 +17,7 @@ import { ThinkingStatusLine } from "./ThinkingStatusLine.tsx";
 import { UserImageAttachmentBlock } from "./UserImageAttachmentBlock.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
+import { AssistantTurnSummaryPartView } from "./messageParts/AssistantTurnSummaryPartView.tsx";
 import { CompactionSeparatorPartView } from "./messageParts/CompactionSeparatorPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
@@ -24,7 +26,7 @@ import { hasVisibleReasoningSummaryText } from "./messageParts/reasoningSummaryT
 
 type ConversationMessagePartViewProps = {
   conversationMessagePart: ConversationMessagePart;
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   horizontalRuleColor: string;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
@@ -61,7 +63,7 @@ const conversationMessagePartRendererByKind: {
   assistant_incomplete_notice: renderAssistantIncompleteNoticeConversationMessagePart,
   assistant_error_notice: renderAssistantErrorNoticeConversationMessagePart,
   assistant_interrupted_notice: renderAssistantInterruptedNoticeConversationMessagePart,
-  assistant_turn_summary: renderHiddenConversationMessagePart,
+  assistant_turn_summary: renderAssistantTurnSummaryConversationMessagePart,
   assistant_compaction_separator: renderAssistantCompactionSeparatorConversationMessagePart,
 };
 
@@ -120,7 +122,7 @@ function renderAssistantReasoningConversationMessagePart(
   return (
     <ReasoningPartView
       assistantReasoningConversationMessagePart={props.conversationMessagePart}
-      isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+      reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
     />
   );
 }
@@ -166,6 +168,9 @@ function renderAssistantRateLimitNoticeConversationMessagePart(
   return (
     <RateLimitNoticeBlock
       retryAfterSeconds={props.conversationMessagePart.retryAfterSeconds}
+      {...(props.conversationMessagePart.retryReason !== undefined
+        ? { retryReason: props.conversationMessagePart.retryReason }
+        : {})}
       limitExplanation={props.conversationMessagePart.limitExplanation}
       noticeStartedAtMs={props.conversationMessagePart.noticeStartedAtMs}
     />
@@ -190,10 +195,10 @@ function renderAssistantInterruptedNoticeConversationMessagePart(
   return <ErrorBannerBlock titleText="Interrupted" errorText={props.conversationMessagePart.interruptionReason} />;
 }
 
-function renderHiddenConversationMessagePart(
-  _props: ConversationMessagePartRendererProps<"assistant_turn_summary">,
+function renderAssistantTurnSummaryConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_turn_summary">,
 ): ReactNode {
-  return null;
+  return <AssistantTurnSummaryPartView assistantTurnSummaryConversationMessagePart={props.conversationMessagePart} />;
 }
 
 function CompactedOutOfModelContextNotice(): ReactNode {
@@ -203,7 +208,7 @@ function CompactedOutOfModelContextNotice(): ReactNode {
 export type ConversationMessageRowProps = {
   conversationMessage: ConversationMessage;
   conversationMessageParts: readonly ConversationMessagePart[];
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   horizontalRuleColor: string;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
@@ -243,18 +248,18 @@ function shouldUseCompactSpacingBetweenParts(input: {
 
 function shouldRenderConversationMessagePart(input: {
   conversationMessagePart: ConversationMessagePart;
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
 }): boolean {
   if (input.conversationMessagePart.partKind === "assistant_text") {
     return input.conversationMessagePart.rawMarkdownText.trim().length > 0;
   }
 
   if (input.conversationMessagePart.partKind === "assistant_reasoning") {
-    return input.isReasoningSummaryVisible && hasVisibleReasoningSummaryText(input.conversationMessagePart.reasoningSummaryText);
+    return hasVisibleReasoningSummaryText(input.conversationMessagePart.reasoningSummaryText);
   }
 
   if (input.conversationMessagePart.partKind === "assistant_turn_summary") {
-    return false;
+    return true;
   }
 
   return true;
@@ -335,12 +340,12 @@ function canToolCallRenderMergedWorkspacePatch(
 
 export function listRenderableConversationMessageParts(input: {
   conversationMessageParts: readonly ConversationMessagePart[];
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
 }): ConversationMessagePart[] {
   return input.conversationMessageParts.filter((conversationMessagePart) =>
     shouldRenderConversationMessagePart({
       conversationMessagePart,
-      isReasoningSummaryVisible: input.isReasoningSummaryVisible,
+      reasoningSummaryDisplayMode: input.reasoningSummaryDisplayMode,
     })
   );
 }
@@ -384,7 +389,7 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
           >
             <ConversationMessagePartView
               conversationMessagePart={conversationMessagePart}
-              isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+              reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
               horizontalRuleColor={props.horizontalRuleColor}
               {...(props.pendingToolApprovalDecision !== undefined
                 ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }

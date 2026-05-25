@@ -43,16 +43,16 @@ test("applyChatSlashCommandToChatSessionState ignores removed mode command strin
   });
 });
 
-test("applyChatSlashCommandToChatSessionState toggles reasoning summaries and reports the next visibility", () => {
+test("applyChatSlashCommandToChatSessionState toggles reasoning summaries and reports the next display mode", () => {
   const application = applyChatSlashCommandToChatSessionState(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     "thinking",
   );
 
-  expect(application.nextChatSessionState.isReasoningSummaryVisible).toBe(false);
+  expect(application.nextChatSessionState.reasoningSummaryDisplayMode).toBe("collapsed");
   expect(application.chatSlashCommandApplicationEffect).toEqual({
-    effectType: "reasoning_summary_visibility_changed",
-    isReasoningSummaryVisible: false,
+    effectType: "reasoning_summary_display_mode_changed",
+    reasoningSummaryDisplayMode: "collapsed",
   } satisfies ChatSlashCommandApplicationEffect);
 });
 

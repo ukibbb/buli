@@ -1,4 +1,6 @@
 import { resolvePromptContextPathScope } from "./promptContextPathScope.ts";
+import type { BuliDiagnosticLogger } from "@buli/contracts";
+import { logEngineDiagnosticEvent } from "../runtimeDiagnostics.ts";
 import {
   DEFAULT_MAXIMUM_PROMPT_CONTEXT_CANDIDATE_COUNT,
   DEFAULT_MAXIMUM_PROMPT_CONTEXT_SEARCH_ENTRY_COUNT,
@@ -22,6 +24,7 @@ export class PromptContextCandidateCatalog {
   readonly maximumSearchEntryCount: number;
   readonly recursiveSnapshotTimeToLiveMs: number;
   readonly nowMs: () => number;
+  readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   private promptContextPathScopePromise: Promise<Awaited<ReturnType<typeof resolvePromptContextPathScope>>> | undefined;
   private recursivePromptContextEntrySnapshot: RecursivePromptContextEntrySnapshot | undefined;
 
@@ -32,6 +35,7 @@ export class PromptContextCandidateCatalog {
     maximumSearchEntryCount?: number;
     recursiveSnapshotTimeToLiveMs?: number;
     nowMs?: () => number;
+    diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
     this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath;
@@ -40,32 +44,50 @@ export class PromptContextCandidateCatalog {
     this.recursiveSnapshotTimeToLiveMs =
       input.recursiveSnapshotTimeToLiveMs ?? DEFAULT_RECURSIVE_PROMPT_CONTEXT_ENTRY_SNAPSHOT_TIME_TO_LIVE_MS;
     this.nowMs = input.nowMs ?? Date.now;
+    this.diagnosticLogger = input.diagnosticLogger;
   }
 
   async listPromptContextCandidates(promptContextQueryText: string): Promise<readonly PromptContextCandidate[]> {
+    const candidatesLoadStartedAtMs = Date.now();
     const promptContextQueryLoadStrategy = determinePromptContextQueryLoadStrategy(promptContextQueryText);
     if (promptContextQueryLoadStrategy !== "fuzzy_query") {
-      return listPromptContextCandidates({
+      const promptContextCandidates = await listPromptContextCandidates({
         promptContextBrowseRootPath: this.promptContextBrowseRootPath,
         promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
         promptContextQueryText,
         maximumCandidateCount: this.maximumCandidateCount,
         maximumSearchEntryCount: this.maximumSearchEntryCount,
       });
+      this.logPromptContextCandidatesLoaded({
+        promptContextQueryLoadStrategy,
+        cacheStatus: "bypassed",
+        durationMs: Date.now() - candidatesLoadStartedAtMs,
+        candidateCount: promptContextCandidates.length,
+      });
+      return promptContextCandidates;
     }
 
     const promptContextPathScope = await this.resolvePromptContextPathScope();
-    const recursivePromptContextEntrySnapshot = await this.listFreshRecursivePromptContextEntrySnapshot(
+    const recursivePromptContextEntrySnapshotResult = await this.listFreshRecursivePromptContextEntrySnapshot(
       promptContextPathScope,
       promptContextQueryText,
     );
-    return filterAndSortPromptContextEntries({
-      promptContextEntries: recursivePromptContextEntrySnapshot.promptContextEntries,
+    const promptContextCandidates = filterAndSortPromptContextEntries({
+      promptContextEntries: recursivePromptContextEntrySnapshotResult.recursivePromptContextEntrySnapshot.promptContextEntries,
       promptContextQueryText,
       maximumCandidateCount: this.maximumCandidateCount,
       promptContextStartingDirectoryPath: promptContextPathScope.promptContextStartingDirectoryPath,
       treatsEntriesAsPathQueryResults: false,
     });
+    this.logPromptContextCandidatesLoaded({
+      promptContextQueryLoadStrategy,
+      cacheStatus: recursivePromptContextEntrySnapshotResult.cacheStatus,
+      durationMs: Date.now() - candidatesLoadStartedAtMs,
+      candidateCount: promptContextCandidates.length,
+      scannedEntryCount:
+        recursivePromptContextEntrySnapshotResult.recursivePromptContextEntrySnapshot.scannedPromptContextEntryCount,
+    });
+    return promptContextCandidates;
   }
 
   private resolvePromptContextPathScope() {
@@ -82,7 +104,10 @@ export class PromptContextCandidateCatalog {
   private async listFreshRecursivePromptContextEntrySnapshot(
     promptContextPathScope: Awaited<ReturnType<typeof resolvePromptContextPathScope>>,
     promptContextQueryText: string,
-  ): Promise<RecursivePromptContextEntrySnapshot> {
+  ): Promise<{
+    recursivePromptContextEntrySnapshot: RecursivePromptContextEntrySnapshot;
+    cacheStatus: "hit" | "miss";
+  }> {
     const nowMs = this.nowMs();
     if (
       this.recursivePromptContextEntrySnapshot &&
@@ -95,10 +120,10 @@ export class PromptContextCandidateCatalog {
         promptContextQueryText,
       })
     ) {
-      return this.recursivePromptContextEntrySnapshot;
+      return { recursivePromptContextEntrySnapshot: this.recursivePromptContextEntrySnapshot, cacheStatus: "hit" };
     }
 
-    const promptContextEntries = await listFuzzyPromptContextEntries({
+    const promptContextEntryScanResult = await listFuzzyPromptContextEntries({
       promptContextPathScope,
       maximumSearchEntryCount: this.maximumSearchEntryCount,
       promptContextQueryText,
@@ -107,9 +132,26 @@ export class PromptContextCandidateCatalog {
       promptContextBrowseRootPath: promptContextPathScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextPathScope.promptContextStartingDirectoryPath,
       promptContextQueryText,
-      promptContextEntries,
+      promptContextEntries: promptContextEntryScanResult.promptContextEntries,
+      scannedPromptContextEntryCount: promptContextEntryScanResult.scannedPromptContextEntryCount,
       scannedAtMs: nowMs,
     };
-    return this.recursivePromptContextEntrySnapshot;
+    return { recursivePromptContextEntrySnapshot: this.recursivePromptContextEntrySnapshot, cacheStatus: "miss" };
+  }
+
+  private logPromptContextCandidatesLoaded(input: {
+    promptContextQueryLoadStrategy: ReturnType<typeof determinePromptContextQueryLoadStrategy>;
+    cacheStatus: "hit" | "miss" | "bypassed";
+    durationMs: number;
+    candidateCount: number;
+    scannedEntryCount?: number | undefined;
+  }): void {
+    logEngineDiagnosticEvent(this.diagnosticLogger, "prompt_context.candidates_loaded", {
+      promptContextQueryLoadStrategy: input.promptContextQueryLoadStrategy,
+      cacheStatus: input.cacheStatus,
+      durationMs: input.durationMs,
+      candidateCount: input.candidateCount,
+      ...(input.scannedEntryCount !== undefined ? { scannedEntryCount: input.scannedEntryCount } : {}),
+    });
   }
 }

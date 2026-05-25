@@ -936,10 +936,12 @@ test("OpenAiProviderConversationTurn retries transient response-step failures", 
   expect(emittedEvents[0]).toMatchObject({
     type: "rate_limit_pending",
     retryAfterSeconds: 0,
+    retryReason: "rate_limit",
   });
   expect(emittedEvents[1]).toMatchObject({
     type: "rate_limit_pending",
     retryAfterSeconds: 0,
+    retryReason: "transient_http_response",
   });
   expect(requestBodies).toHaveLength(3);
   expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.retry_scheduled"))
@@ -1074,7 +1076,7 @@ test("OpenAiProviderConversationTurn stops waiting for a response-step retry whe
 
   await expect(providerEventIterator.next()).resolves.toMatchObject({
     done: false,
-    value: { type: "rate_limit_pending", retryAfterSeconds: 60 },
+    value: { type: "rate_limit_pending", retryAfterSeconds: 60, retryReason: "rate_limit" },
   });
   abortController.abort();
 
@@ -1119,6 +1121,7 @@ test("OpenAiProviderConversationTurn retries transient response-step transport f
   expect(emittedEvents[0]).toMatchObject({
     type: "rate_limit_pending",
     retryAfterSeconds: 1,
+    retryReason: "transport_error",
   });
   expect(requestBodies).toHaveLength(3);
   expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_scheduled"))

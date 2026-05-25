@@ -252,22 +252,36 @@ function areAllRequestedToolCallsAllowedForRuntimeContext(input: {
 async function* streamAssistantResponseEventsForPolicyCheckedRequestedToolCall(
   input: RuntimeRequestedToolCallExecutorInput,
 ): AsyncGenerator<AssistantResponseEvent> {
+  const toolCallExecutionStartedAtMs = Date.now();
+  let toolCallExecutionOutcomeKind: "completed" | "failed" = "completed";
   const toolAccessDecision = resolveAssistantOperatingModeToolAccess({
     assistantOperatingMode: input.assistantOperatingMode,
     requestedAvailableToolNames: input.availableToolNames,
     requestedToolName: input.toolCallRequest.toolName,
   });
 
-  if (toolAccessDecision.accessKind === "denied") {
-    yield* streamAssistantResponseEventsForDeniedByPolicyRequestedToolCall({
-      ...input,
-      denialText: toolAccessDecision.denialText,
-      effectiveAvailableToolNames: toolAccessDecision.effectiveAvailableToolNames,
-    });
-    return;
-  }
+  try {
+    if (toolAccessDecision.accessKind === "denied") {
+      yield* streamAssistantResponseEventsForDeniedByPolicyRequestedToolCall({
+        ...input,
+        denialText: toolAccessDecision.denialText,
+        effectiveAvailableToolNames: toolAccessDecision.effectiveAvailableToolNames,
+      });
+      return;
+    }
 
-  yield* resolveRequestedToolCallExecutor(input.toolCallRequest)(input);
+    yield* resolveRequestedToolCallExecutor(input.toolCallRequest)(input);
+  } catch (error) {
+    toolCallExecutionOutcomeKind = "failed";
+    throw error;
+  } finally {
+    logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.execution_finished", {
+      toolCallId: input.toolCallId,
+      toolName: input.toolCallRequest.toolName,
+      outcomeKind: toolCallExecutionOutcomeKind,
+      durationMs: Date.now() - toolCallExecutionStartedAtMs,
+    });
+  }
 }
 
 async function* streamAssistantResponseEventsForDeniedByPolicyRequestedToolCall(

@@ -1,7 +1,7 @@
 import type { ChatSessionState } from "./chatSessionState.ts";
 import type { ChatSlashCommandValue } from "./chatSlashCommands.ts";
 import { showCommandHelpModal } from "./commandHelpModalReducer.ts";
-import { toggleReasoningSummaryVisibility } from "./reasoningSummaryVisibilityReducer.ts";
+import { toggleReasoningSummaryDisplayMode } from "./reasoningSummaryVisibilityReducer.ts";
 
 export type ChatSlashCommandApplicationEffect =
   | { effectType: "clear_current_conversation_session" }
@@ -9,7 +9,10 @@ export type ChatSlashCommandApplicationEffect =
   | { effectType: "export_current_conversation_session" }
   | { effectType: "load_available_assistant_models" }
   | { effectType: "load_conversation_sessions" }
-  | { effectType: "reasoning_summary_visibility_changed"; isReasoningSummaryVisible: boolean };
+  | {
+      effectType: "reasoning_summary_display_mode_changed";
+      reasoningSummaryDisplayMode: ChatSessionState["reasoningSummaryDisplayMode"];
+    };
 
 export type ChatSlashCommandApplication = {
   nextChatSessionState: ChatSessionState;
@@ -62,12 +65,12 @@ export function applyChatSlashCommandToChatSessionState(
   }
 
   if (slashCommandValue === "thinking") {
-    const nextChatSessionState = toggleReasoningSummaryVisibility(chatSessionState);
+    const nextChatSessionState = toggleReasoningSummaryDisplayMode(chatSessionState);
     return createChatSlashCommandApplication({
       nextChatSessionState,
       chatSlashCommandApplicationEffect: {
-        effectType: "reasoning_summary_visibility_changed",
-        isReasoningSummaryVisible: nextChatSessionState.isReasoningSummaryVisible,
+        effectType: "reasoning_summary_display_mode_changed",
+        reasoningSummaryDisplayMode: nextChatSessionState.reasoningSummaryDisplayMode,
       },
     });
   }

@@ -338,6 +338,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       assistantResponseMessageId,
       assistantTextPartId,
       conversationTurnStartedAtMilliseconds,
+      assistantOperatingMode: this.assistantOperatingMode,
       selectedModelId: this.conversationTurnInput.selectedModelId,
     });
     let modelFacingPromptTextForAcceptedTurn: string | undefined;

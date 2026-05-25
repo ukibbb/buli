@@ -21,6 +21,9 @@ export type BashToolCallCardProps = {
   workspacePatch?: WorkspacePatch;
 };
 
+const MAX_AUTO_EXPANDED_BASH_OUTPUT_LINE_COUNT = 8;
+const MAX_AUTO_EXPANDED_BASH_OUTPUT_CHARACTER_COUNT = 800;
+
 export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
   const bashToolCallPresentation = resolveBashToolCallRenderStatePresentation(props);
   const accentColor = props.workspacePatch && bashToolCallPresentation.statusKind === "success"
@@ -34,6 +37,7 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
       hasExpandableContent={hasBashOutputContent}
+      defaultIsContentExpanded={shouldAutoExpandBashBodyContent(props)}
       renderExpandedContent={() => buildBashBodyContent(props)}
       statusKind={bashToolCallPresentation.statusKind}
       statusLabel={buildBashStatusLabel(props)}
@@ -41,6 +45,23 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
       toolTargetText={props.toolCallDetail.commandLine}
     />
   );
+}
+
+function shouldAutoExpandBashBodyContent(props: BashToolCallCardProps): boolean {
+  if (props.workspacePatch) {
+    return false;
+  }
+
+  const outputLines = props.toolCallDetail.outputLines ?? [];
+  if (outputLines.length === 0 || outputLines.length > MAX_AUTO_EXPANDED_BASH_OUTPUT_LINE_COUNT) {
+    return false;
+  }
+
+  const outputCharacterCount = outputLines.reduce(
+    (totalCharacterCount, outputLine) => totalCharacterCount + outputLine.lineText.length,
+    0,
+  );
+  return outputCharacterCount <= MAX_AUTO_EXPANDED_BASH_OUTPUT_CHARACTER_COUNT;
 }
 
 function resolveBashToolCallRenderStatePresentation(props: BashToolCallCardProps): ToolCallRenderStatePresentation {

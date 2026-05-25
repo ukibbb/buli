@@ -94,12 +94,51 @@ describe("GrepToolCallCard", () => {
     expect(frame).toContain("[-]");
     expect(frame).not.toContain("click to hide content");
     expect(frame.split("/src/App.tsx").length - 1).toBe(1);
-    expect(frame).not.toContain("/src/App.tsx:10");
-    expect(frame).not.toContain("/src/App.tsx:12");
+    expect(frame).toContain("/src/App.tsx:9-12");
+    expect(frame).not.toContain("9 function App()");
+    expect(frame).not.toContain("10 const [state");
     expect(frame).toContain("function App()");
     expect(frame).toContain("useState(null)");
     expect(frame).toContain("return null");
     expect(frame).toContain("useState(false)");
+  });
+
+  test("completed_splits_discontiguous_match_hits_into_source_ranges", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <GrepToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "grep",
+          searchPattern: "useState",
+          totalMatchCount: 2,
+          matchedFileCount: 1,
+          matchHits: [
+            {
+              matchFilePath: "/src/App.tsx",
+              matchLineNumber: 10,
+              matchSnippet: "const [state, setState] = useState(null);",
+            },
+            {
+              matchFilePath: "/src/App.tsx",
+              matchLineNumber: 40,
+              matchSnippet: "const [enabled] = useState(false);",
+            },
+          ],
+        }}
+      />,
+      { width: 90, height: 18 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("/src/App.tsx:10");
+    expect(frame).toContain("/src/App.tsx:40");
+    expect(frame).not.toContain("/src/App.tsx:10-40");
   });
 
   test("completed_limits_expanded_match_hits", async () => {

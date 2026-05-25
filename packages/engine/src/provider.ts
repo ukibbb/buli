@@ -23,6 +23,7 @@ export type ConversationCompactionRequest = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   compactionSource?: "manual" | "auto";
+  retainedRecentConversationTurnCount?: number;
   abortSignal?: AbortSignal;
   onCompactionSummaryTextUpdated?: (summaryText: string) => void;
 };

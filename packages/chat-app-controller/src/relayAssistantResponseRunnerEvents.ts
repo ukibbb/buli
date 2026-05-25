@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantResponseEvent } from "@buli/contracts";
+import type { AssistantResponseEvent, BuliDiagnosticLogger } from "@buli/contracts";
 import type { ActiveConversationTurn, AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
+import { logChatAppControllerDiagnosticEvent } from "./logChatAppControllerDiagnosticEvent.ts";
 
 const STREAMING_ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS = 48;
 
@@ -49,6 +50,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
   onConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
   onConversationTurnFinished: () => void;
   onAssistantResponseEvents: (assistantResponseEvents: readonly AssistantResponseEvent[]) => void;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<AssistantResponseRelayResult> {
   let queuedAssistantResponseEvents: AssistantResponseEvent[] = [];
   let scheduledFlushTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -74,8 +76,13 @@ export async function relayAssistantResponseRunnerEvents(input: {
     scheduledFlushTimeout = undefined;
     const flushedAtMs = Date.now();
     lastFlushAtMs = flushedAtMs;
+    const assistantResponseEventDeliveryStartedAtMs = Date.now();
     try {
       input.onAssistantResponseEvents(assistantResponseEventsToFlush);
+      logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "assistant_response_event_batch.flushed", {
+        assistantResponseEventCount: assistantResponseEventsToFlush.length,
+        durationMs: Date.now() - assistantResponseEventDeliveryStartedAtMs,
+      });
     } catch (error) {
       recordAssistantResponseEventDeliveryError(error);
       throw error;

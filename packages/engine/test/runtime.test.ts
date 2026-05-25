@@ -2894,6 +2894,82 @@ test("AssistantConversationRuntime sends compaction-safe entries during automati
   });
 });
 
+test("AssistantConversationRuntime does not retain recent turns after overflow auto-compaction", async () => {
+  const initialConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Old prompt",
+      modelFacingPromptText: "Old prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Old answer",
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Recent large prompt one",
+      modelFacingPromptText: `Recent large prompt one ${"x".repeat(4_000)}`,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: `Recent large answer one ${"y".repeat(4_000)}`,
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Recent large prompt two",
+      modelFacingPromptText: `Recent large prompt two ${"z".repeat(4_000)}`,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: `Recent large answer two ${"w".repeat(4_000)}`,
+    },
+  ];
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Goal: continue after overflow compaction." },
+      { type: "completed", usage: { total: 10, input: 8, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({ initialConversationSessionEntries });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory,
+  });
+
+  await expect(
+    runtime.autoCompactConversationSession({
+      selectedModelId: "gpt-5.4",
+      requestTriggerKind: "context_window_overflow",
+    }),
+  ).resolves.toMatchObject({
+    didCompact: true,
+    decision: { reason: "context_window_overflow" },
+  });
+
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toHaveLength(
+    initialConversationSessionEntries.length + 1,
+  );
+  expect(conversationHistory.listConversationSessionEntries()).toContainEqual({
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: continue after overflow compaction.",
+    compactedEntryCount: initialConversationSessionEntries.length,
+    retainedRecentConversationSessionEntryCount: 0,
+    compactionSource: "auto",
+  });
+  expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "compaction_summary",
+      summaryText: "Goal: continue after overflow compaction.",
+    },
+  ]);
+});
+
 test("AssistantConversationRuntime compacts the full visible context into a clean summary", async () => {
   const firstTurnEntries: ConversationSessionEntry[] = [
     {

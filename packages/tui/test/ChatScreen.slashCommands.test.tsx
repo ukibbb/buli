@@ -1143,7 +1143,8 @@ test("ChatScreen toggles reasoning summary visibility through thinking slash com
 
   await renderedChatScreen.typeText("/thinking");
   const hiddenReasoningFrame = await renderedChatScreen.pressEnter();
-  expect(hiddenReasoningFrame).not.toContain("Thought");
+  expect(hiddenReasoningFrame).toContain("Thought");
+  expect(hiddenReasoningFrame).toContain("[+]");
   expect(hiddenReasoningFrame).not.toContain("7 reasoning tok");
   expect(hiddenReasoningFrame).not.toContain("click to show content");
   expect(hiddenReasoningFrame).not.toContain("I inspected the available context before answering.");

@@ -121,7 +121,7 @@ describe("ConversationMessageList", () => {
           "assistant-text-1": initialAssistantTextPart,
         },
       }),
-      isReasoningSummaryVisible: true,
+      reasoningSummaryDisplayMode: "expanded",
       preparationCache,
     });
 
@@ -133,7 +133,7 @@ describe("ConversationMessageList", () => {
           "assistant-text-1": updatedAssistantTextPart,
         },
       }),
-      isReasoningSummaryVisible: true,
+      reasoningSummaryDisplayMode: "expanded",
       preparationCache,
     });
 
@@ -141,7 +141,7 @@ describe("ConversationMessageList", () => {
     expect(secondPreparedMessages[1]?.conversationMessageParts).not.toBe(firstPreparedMessages[1]?.conversationMessageParts);
   });
 
-  test("prepareRenderableConversationMessages invalidates reasoning rows when reasoning visibility changes", () => {
+  test("prepareRenderableConversationMessages keeps reasoning rows when reasoning display mode changes", () => {
     const conversationMessages: ConversationMessage[] = [
       {
         id: "assistant-1",
@@ -166,7 +166,7 @@ describe("ConversationMessageList", () => {
         conversationMessages,
         conversationMessagePartsById,
       }),
-      isReasoningSummaryVisible: true,
+      reasoningSummaryDisplayMode: "expanded",
       preparationCache,
     });
     const hiddenReasoningMessages = prepareRenderableConversationMessages({
@@ -174,19 +174,19 @@ describe("ConversationMessageList", () => {
         conversationMessages,
         conversationMessagePartsById,
       }),
-      isReasoningSummaryVisible: false,
+      reasoningSummaryDisplayMode: "collapsed",
       preparationCache,
     });
 
     expect(visibleReasoningMessages).toHaveLength(1);
-    expect(hiddenReasoningMessages).toHaveLength(0);
+    expect(hiddenReasoningMessages).toHaveLength(1);
   });
 
   test("renders show older messages reveal row", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         visibleConversationMessageRows={[]}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         hiddenOlderConversationMessageCount={42}
@@ -222,7 +222,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById: {},
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -267,7 +267,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -283,7 +283,7 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Continue after auto compaction");
   });
 
-  test("renders user, reasoning, assistant text, and tool call parts while hiding turn summary metadata", async () => {
+  test("renders user, reasoning, assistant text, tool call, and turn summary parts", async () => {
     const conversationMessages: ConversationMessage[] = [
       {
         id: "user-1",
@@ -332,6 +332,7 @@ describe("ConversationMessageList", () => {
           partKind: "assistant_turn_summary",
           turnDurationMs: 1500,
           modelDisplayName: "gpt-5.4",
+          assistantOperatingMode: "implementation",
           usage: { total: 100, input: 60, output: 30, reasoning: 10, cache: { read: 5, write: 0 } },
         },
       ],
@@ -343,7 +344,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -361,10 +362,12 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Done");
     expect(frame).toContain("Read");
     expect(frame).toContain("src/index.ts");
-    expect(frame).not.toContain("100 tokens");
-    expect(frame).not.toContain("10 reasoning");
-    expect(frame).not.toContain("5 cached");
-    expect(frame).not.toContain("gpt-5.4");
+    expect(frame).toContain("gpt-5.4");
+    expect(frame).toContain("implementation");
+    expect(frame).toContain("1.5s");
+    expect(frame).toContain("100 tokens");
+    expect(frame).toContain("10 reasoning");
+    expect(frame).toContain("5 cached");
   });
 
   test("merges_matching_workspace_patch_into_edit_tool_call_card", async () => {
@@ -424,7 +427,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -500,7 +503,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -577,7 +580,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -624,7 +627,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={false}
+        reasoningSummaryDisplayMode="collapsed"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -635,7 +638,8 @@ describe("ConversationMessageList", () => {
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).not.toContain("Thought");
+    expect(frame).toContain("[+]");
+    expect(frame).toContain("Thought");
     expect(frame).not.toContain("12 reasoning tok");
     expect(frame).not.toContain("Hidden chain summary.");
   });
@@ -670,7 +674,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -710,7 +714,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
@@ -753,7 +757,7 @@ describe("ConversationMessageList", () => {
           conversationMessages,
           conversationMessagePartsById,
         })}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         horizontalRuleColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}

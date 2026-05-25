@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { BuliDiagnosticLogEvent } from "@buli/contracts";
 import { PromptContextCandidateCatalog } from "../src/index.ts";
 
 function toPortablePath(pathText: string): string {
@@ -139,4 +140,34 @@ test("PromptContextCandidateCatalog finds fuzzy matches from the configured star
       promptReferenceText: `@${toPortablePath(realTargetFilePath)}`,
     },
   ]);
+});
+
+test("PromptContextCandidateCatalog logs scanned entries separately from matched candidates", async () => {
+  const promptContextBrowseRootPath = await mkdtemp(join(tmpdir(), "buli-prompt-context-catalog-diagnostics-"));
+  const nestedDirectoryPath = join(promptContextBrowseRootPath, "nested");
+  await mkdir(nestedDirectoryPath);
+  await writeFile(join(promptContextBrowseRootPath, "notes-a.txt"), "a", "utf8");
+  await writeFile(join(promptContextBrowseRootPath, "unmatched.txt"), "x", "utf8");
+  await writeFile(join(nestedDirectoryPath, "child.txt"), "x", "utf8");
+
+  const diagnosticLogEvents: BuliDiagnosticLogEvent[] = [];
+  const promptContextCandidateCatalog = new PromptContextCandidateCatalog({
+    promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath: promptContextBrowseRootPath,
+    diagnosticLogger: (diagnosticLogEvent) => diagnosticLogEvents.push(diagnosticLogEvent),
+  });
+
+  await expect(promptContextCandidateCatalog.listPromptContextCandidates("notes")).resolves.toHaveLength(1);
+
+  expect(diagnosticLogEvents.at(-1)).toEqual({
+    subsystem: "engine",
+    eventName: "prompt_context.candidates_loaded",
+    fields: {
+      promptContextQueryLoadStrategy: "fuzzy_query",
+      cacheStatus: "miss",
+      durationMs: expect.any(Number),
+      candidateCount: 1,
+      scannedEntryCount: 4,
+    },
+  });
 });

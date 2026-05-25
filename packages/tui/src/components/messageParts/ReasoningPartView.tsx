@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { AssistantReasoningConversationMessagePart } from "@buli/contracts";
+import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { InlineSnakeAnimationIndicator } from "../SnakeAnimationIndicator.tsx";
 import { createClickableControlMouseDownHandler } from "../primitives/clickableControl.ts";
@@ -8,19 +9,21 @@ import { normalizeVisibleReasoningSummaryText, readReasoningSummaryTitle } from 
 
 export function ReasoningPartView(props: {
   assistantReasoningConversationMessagePart: AssistantReasoningConversationMessagePart;
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
 }): ReactNode {
   const visibleReasoningSummaryText = normalizeVisibleReasoningSummaryText(
     props.assistantReasoningConversationMessagePart.reasoningSummaryText,
   );
   const reasoningSummaryTitle = readReasoningSummaryTitle(visibleReasoningSummaryText);
-  const [isReasoningSummaryExpanded, setIsReasoningSummaryExpanded] = useState(props.isReasoningSummaryVisible);
+  const [isReasoningSummaryExpanded, setIsReasoningSummaryExpanded] = useState(
+    props.reasoningSummaryDisplayMode === "expanded",
+  );
 
   useEffect(() => {
-    setIsReasoningSummaryExpanded(props.isReasoningSummaryVisible);
-  }, [props.assistantReasoningConversationMessagePart.id, props.isReasoningSummaryVisible]);
+    setIsReasoningSummaryExpanded(props.reasoningSummaryDisplayMode === "expanded");
+  }, [props.assistantReasoningConversationMessagePart.id, props.reasoningSummaryDisplayMode]);
 
-  if (!props.isReasoningSummaryVisible || visibleReasoningSummaryText.length === 0) {
+  if (visibleReasoningSummaryText.length === 0) {
     return null;
   }
 

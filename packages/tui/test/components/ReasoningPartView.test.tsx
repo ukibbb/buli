@@ -19,7 +19,7 @@ describe("ReasoningPartView", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={completedReasoningPart}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
       />,
       { width: 90, height: 8 },
     );
@@ -35,19 +35,19 @@ describe("ReasoningPartView", () => {
     expect(frame).not.toContain("click to");
   });
 
-  test("renders_nothing_when_reasoning_summaries_are_hidden", async () => {
+  test("renders_collapsed_header_when_reasoning_summaries_are_collapsed", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={completedReasoningPart}
-        isReasoningSummaryVisible={false}
+        reasoningSummaryDisplayMode="collapsed"
       />,
       { width: 90, height: 4 },
     );
 
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).not.toContain("[+]");
-    expect(frame).not.toContain("Thought");
+    expect(frame).toContain("[+]");
+    expect(frame).toContain("Thought");
     expect(frame).not.toContain("I checked the route before answering.");
   });
 
@@ -55,7 +55,7 @@ describe("ReasoningPartView", () => {
     const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={completedReasoningPart}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
       />,
       { width: 90, height: 8 },
     );
@@ -94,7 +94,7 @@ describe("ReasoningPartView", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={streamingReasoningPart}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
       />,
       { width: 90, height: 8 },
     );
@@ -116,7 +116,7 @@ describe("ReasoningPartView", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={emptyReasoningPart}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
       />,
       { width: 90, height: 4 },
     );
@@ -135,7 +135,7 @@ describe("ReasoningPartView", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReasoningPartView
         assistantReasoningConversationMessagePart={longTitleReasoningPart}
-        isReasoningSummaryVisible={true}
+        reasoningSummaryDisplayMode="expanded"
       />,
       { width: 44, height: 12 },
     );

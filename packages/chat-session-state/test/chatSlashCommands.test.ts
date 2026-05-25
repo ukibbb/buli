@@ -3,10 +3,10 @@ import { buildChatSlashCommands } from "../src/index.ts";
 
 test("buildChatSlashCommands_describes_current_reasoning_summary_visibility", () => {
   const visibleReasoningSlashCommands = buildChatSlashCommands({
-    isReasoningSummaryVisible: true,
+    reasoningSummaryDisplayMode: "expanded",
   });
   const hiddenReasoningSlashCommands = buildChatSlashCommands({
-    isReasoningSummaryVisible: false,
+    reasoningSummaryDisplayMode: "collapsed",
   });
 
   expect(visibleReasoningSlashCommands.find((slashCommand) => slashCommand.value === "thinking")?.description).toBe(
@@ -19,7 +19,7 @@ test("buildChatSlashCommands_describes_current_reasoning_summary_visibility", ()
 
 test("buildChatSlashCommands_includes_manual_compaction", () => {
   const slashCommands = buildChatSlashCommands({
-    isReasoningSummaryVisible: true,
+    reasoningSummaryDisplayMode: "expanded",
   });
 
   expect(slashCommands.find((slashCommand) => slashCommand.value === "compact")?.description).toBe(
@@ -29,7 +29,7 @@ test("buildChatSlashCommands_includes_manual_compaction", () => {
 
 test("buildChatSlashCommands_excludes_mode_switching_commands", () => {
   const slashCommands = buildChatSlashCommands({
-    isReasoningSummaryVisible: true,
+    reasoningSummaryDisplayMode: "expanded",
   });
 
   expect(slashCommands.map((slashCommand) => slashCommand.value)).toEqual([

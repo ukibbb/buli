@@ -40,6 +40,26 @@ describe("BashToolCallCard (opentui)", () => {
     expect(chatScreenTheme.accentGreen).toBe("#10B981");
   });
 
+  test("completed with small output expands output by default", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <BashToolCallCard
+        toolCallDetail={{
+          toolName: "bash",
+          commandLine: "pwd",
+          exitCode: 0,
+          outputLines: [{ lineKind: "stdout", lineText: "/tmp/demo" }],
+        }}
+        renderState="completed"
+        durationMs={250}
+      />,
+      { width: 120, height: 10 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("/tmp/demo");
+  });
+
   test("completed_with_workspace_patch_expands_output_and_actual_diff", async () => {
     const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <BashToolCallCard

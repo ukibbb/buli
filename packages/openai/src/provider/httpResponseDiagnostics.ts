@@ -15,6 +15,7 @@ const OpenAiErrorResponseBodySchema = z
 export type OpenAiHttpRequestOperation = "models" | "stream";
 
 const MAX_HUMAN_READABLE_ERROR_MESSAGE_LENGTH = 500;
+const SAFE_OPENAI_TRANSPORT_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,63}$/;
 const OPENAI_CONTEXT_WINDOW_OVERFLOW_ERROR_CODES = new Set([
   "context_length_exceeded",
   "model_context_window_exceeded",
@@ -66,9 +67,11 @@ export function isRetryableOpenAiTransportError(error: unknown): boolean {
 
 export function summarizeOpenAiTransportErrorForDiagnostics(error: unknown): BuliDiagnosticLogFields {
   const transportErrorMessageLength = readOpenAiTransportErrorMessageLength(error);
+  const transportErrorCode = readOpenAiTransportErrorCode(error);
   return {
     transportErrorName: readOpenAiTransportErrorName(error),
     ...(transportErrorMessageLength !== undefined ? { transportErrorMessageLength } : {}),
+    ...(transportErrorCode !== undefined ? { transportErrorCode } : {}),
   };
 }
 
@@ -340,4 +343,35 @@ function readOpenAiTransportErrorMessageLength(error: unknown): number | undefin
   }
 
   return undefined;
+}
+
+function readOpenAiTransportErrorCode(error: unknown): string | undefined {
+  return sanitizeOpenAiTransportErrorCode(readErrorLikeCode(error)) ??
+    sanitizeOpenAiTransportErrorCode(readErrorLikeCode(readErrorLikeCause(error)));
+}
+
+function readErrorLikeCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  const errorCode = (error as { readonly code?: unknown }).code;
+  return typeof errorCode === "string" ? errorCode : undefined;
+}
+
+function readErrorLikeCause(error: unknown): unknown {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  return (error as { readonly cause?: unknown }).cause;
+}
+
+function sanitizeOpenAiTransportErrorCode(errorCode: string | undefined): string | undefined {
+  const trimmedErrorCode = errorCode?.trim();
+  if (!trimmedErrorCode || !SAFE_OPENAI_TRANSPORT_ERROR_CODE_PATTERN.test(trimmedErrorCode)) {
+    return undefined;
+  }
+
+  return trimmedErrorCode;
 }

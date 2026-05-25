@@ -29,6 +29,7 @@ export type FencedCodeBlockProps = {
   languageLabel?: string;
   displayLabel?: string;
   showLabel?: boolean;
+  showLineNumbers?: boolean;
   filePath?: string;
   codeLines: FencedCodeBlockLine[];
   conceal?: boolean;
@@ -40,6 +41,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
   const variant: FencedCodeBlockVariant = props.variant ?? "standalone";
   const isStandalone = variant === "standalone";
   const codeWrapMode = props.wrapMode ?? "none";
+  const shouldShowLineNumbers = props.showLineNumbers ?? true;
   const visibleLabel = props.showLabel === false ? undefined : props.displayLabel ?? props.languageLabel;
   const hasAnyPreSuppliedSyntaxHighlightSpans = props.codeLines.some(
     (codeLine) => codeLine.syntaxHighlightSpans && codeLine.syntaxHighlightSpans.length > 0,
@@ -65,7 +67,11 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
         </box>
       ) : null}
       {hasAnyPreSuppliedSyntaxHighlightSpans ? (
-        <FencedCodeBlockPreSuppliedSpanContent codeLines={props.codeLines} wrapMode={codeWrapMode} />
+        <FencedCodeBlockPreSuppliedSpanContent
+          codeLines={props.codeLines}
+          showLineNumbers={shouldShowLineNumbers}
+          wrapMode={codeWrapMode}
+        />
       ) : (
         <OpenTuiFencedCodeContent
           codeLines={props.codeLines}
@@ -73,6 +79,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
           decorateTeachingComments={props.decorateTeachingComments}
           filePath={props.filePath}
           languageLabel={props.languageLabel}
+          showLineNumbers={shouldShowLineNumbers}
           wrapMode={codeWrapMode}
         />
       )}
@@ -86,11 +93,12 @@ function OpenTuiFencedCodeContent(props: {
   decorateTeachingComments: boolean | undefined;
   filePath: string | undefined;
   languageLabel: string | undefined;
+  showLineNumbers: boolean;
   wrapMode: "char" | "none" | "word";
 }): ReactNode {
   const codeText = props.codeLines.map((codeLine) => codeLine.lineText).join("\n");
   const codeFiletype = resolveOpenTuiCodeFiletype(props.filePath, props.languageLabel);
-  const hasAnyLineNumber = props.codeLines.some((codeLine) => codeLine.lineNumber !== undefined);
+  const hasAnyLineNumber = props.showLineNumbers && props.codeLines.some((codeLine) => codeLine.lineNumber !== undefined);
   if (!hasAnyLineNumber) {
     return (
       <code
@@ -202,8 +210,21 @@ function formatLineNumberGutterCell(
 // a flex-row gutter + text fallback to preserve the existing contract.
 function FencedCodeBlockPreSuppliedSpanContent(props: {
   codeLines: FencedCodeBlockLine[];
+  showLineNumbers: boolean;
   wrapMode: "char" | "none" | "word";
 }): ReactNode {
+  if (!props.showLineNumbers) {
+    return (
+      <>
+        {props.codeLines.map((codeLine, index) => (
+          <box key={`code-line-${index}`} minWidth={0} overflow="hidden" width="100%">
+            <FencedCodeBlockLineContent fencedCodeBlockLine={codeLine} wrapMode={props.wrapMode} />
+          </box>
+        ))}
+      </>
+    );
+  }
+
   const lineNumberGutterWidth = computeLineNumberGutterWidth(props.codeLines);
   return (
     <>

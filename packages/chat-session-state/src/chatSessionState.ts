@@ -69,6 +69,8 @@ export type SlashCommandSelectionState =
       highlightedSlashCommandIndex: number;
     };
 
+export type ReasoningSummaryDisplayMode = "expanded" | "collapsed";
+
 export type ConversationSessionSelectionState =
   | {
       step: "hidden";
@@ -105,7 +107,7 @@ export type ChatSessionState = {
   orderedConversationMessageIds: string[];
   conversationMessagePartCount: number;
   pendingToolApprovalRequest: PendingToolApprovalRequest | undefined;
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   promptContextSelectionState: PromptContextSelectionState;
   slashCommandSelectionState: SlashCommandSelectionState;
   conversationSessionSelectionState: ConversationSessionSelectionState;
@@ -147,7 +149,7 @@ export function createInitialChatSessionState(input: {
     orderedConversationMessageIds: [],
     conversationMessagePartCount: 0,
     pendingToolApprovalRequest: undefined,
-    isReasoningSummaryVisible: true,
+    reasoningSummaryDisplayMode: "expanded",
     promptContextSelectionState: { step: "hidden" },
     slashCommandSelectionState: { step: "hidden" },
     conversationSessionSelectionState: { step: "hidden" },

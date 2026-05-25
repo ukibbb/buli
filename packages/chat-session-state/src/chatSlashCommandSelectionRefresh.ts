@@ -17,7 +17,7 @@ export function refreshChatSlashCommandSelectionForCurrentState(chatSessionState
   return refreshSlashCommandSelectionForPromptDraft(
     chatSessionState,
     buildChatSlashCommands({
-      isReasoningSummaryVisible: chatSessionState.isReasoningSummaryVisible,
+      reasoningSummaryDisplayMode: chatSessionState.reasoningSummaryDisplayMode,
     }),
   );
 }

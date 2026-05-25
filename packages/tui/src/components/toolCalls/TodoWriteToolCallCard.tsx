@@ -11,6 +11,8 @@ export type TodoWriteToolCallCardProps = {
   errorText?: string;
 };
 
+const MAX_AUTO_EXPANDED_TODO_ITEM_COUNT = 6;
+
 export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactNode {
   const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
   const hasTodoListContent = props.renderState !== "failed" && props.toolCallDetail.todoItems.length > 0;
@@ -21,6 +23,7 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
       hasExpandableContent={hasTodoListContent}
+      defaultIsContentExpanded={shouldAutoExpandTodoBodyContent(props)}
       renderExpandedContent={() => buildTodoBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}
       statusLabel={buildTodoStatusLabel(props)}
@@ -28,6 +31,12 @@ export function TodoWriteToolCallCard(props: TodoWriteToolCallCardProps): ReactN
       toolTargetText={buildTodoTargetText(props)}
     />
   );
+}
+
+function shouldAutoExpandTodoBodyContent(props: TodoWriteToolCallCardProps): boolean {
+  return props.renderState !== "failed" &&
+    props.toolCallDetail.todoItems.length > 0 &&
+    props.toolCallDetail.todoItems.length <= MAX_AUTO_EXPANDED_TODO_ITEM_COUNT;
 }
 
 function buildTodoBodyContent(props: TodoWriteToolCallCardProps): ReactNode {

@@ -1,4 +1,4 @@
-export type BuliDiagnosticSubsystem = "cli" | "engine" | "openai" | "tui";
+export type BuliDiagnosticSubsystem = "cli" | "engine" | "openai" | "tui" | "chat_app_controller";
 
 export type BuliDiagnosticLogPrimitive = boolean | number | string | null;
 

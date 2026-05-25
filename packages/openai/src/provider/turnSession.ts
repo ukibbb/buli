@@ -52,6 +52,7 @@ type OpenAiProviderToolResultSubmission = {
 };
 
 type PendingOpenAiToolResultSubmissionWait = {
+  waitStartedAtMs: number;
   resolveSubmission: (toolResultSubmission: OpenAiProviderToolResultSubmission) => void;
   rejectSubmission: (error: Error) => void;
   abortListener?: (() => void) | undefined;
@@ -194,6 +195,7 @@ export class OpenAiProviderConversationTurn {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.resolved_pending_wait", {
         toolCallId: input.toolCallId,
         toolResultTextLength: input.toolResultText.length,
+        waitDurationMs: Date.now() - pendingSubmissionWait.waitStartedAtMs,
       });
       pendingSubmissionWait.resolveSubmission(input);
       return;
@@ -284,8 +286,13 @@ export class OpenAiProviderConversationTurn {
 
       let terminalState: OpenAiResponseStepTerminalState | undefined;
       let terminalUsageProviderEvent: OpenAiTerminalUsageProviderEvent | undefined;
+      const responseStepStreamSlotWaitStartedAtMs = Date.now();
       const responseStepStreamSlot = await this.rateLimitCoordinator?.acquireResponseStepStreamSlot({
         abortSignal: this.abortSignal,
+      });
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.stream_slot_wait_finished", {
+        responseStepIndex,
+        durationMs: Date.now() - responseStepStreamSlotWaitStartedAtMs,
       });
       try {
         const responseRetryIterator = requestOpenAiHttpResponseWithRetries({
@@ -402,6 +409,11 @@ export class OpenAiProviderConversationTurn {
       if (!terminalState) {
         throw new Error("OpenAI response step ended without a terminal state");
       }
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.finished", {
+        responseStepIndex,
+        terminalKind: terminalState.terminalKind,
+        durationMs: Date.now() - responseStepStartedAtMs,
+      });
 
       if (isOpenAiResponseStepFunctionCallTerminalState(terminalState)) {
         const providerFunctionCallIntents = listProviderFunctionCallIntentsFromTerminalState(terminalState);
@@ -557,6 +569,7 @@ export class OpenAiProviderConversationTurn {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.consumed_queued", {
         toolCallId,
         toolResultTextLength: queuedToolResultSubmission.toolResultText.length,
+        waitDurationMs: 0,
       });
       return Promise.resolve(queuedToolResultSubmission);
     }
@@ -568,8 +581,10 @@ export class OpenAiProviderConversationTurn {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.wait_started", {
       toolCallId,
     });
+    const waitStartedAtMs = Date.now();
     return new Promise<OpenAiProviderToolResultSubmission>((resolveSubmission, rejectSubmission) => {
       const pendingSubmissionWait: PendingOpenAiToolResultSubmissionWait = {
+        waitStartedAtMs,
         resolveSubmission,
         rejectSubmission,
       };
@@ -846,6 +861,7 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
       ...(providerStreamEvent.retryWaitStartedAtMs !== undefined
         ? { retryWaitStartedAtMs: providerStreamEvent.retryWaitStartedAtMs }
         : {}),
+      ...(providerStreamEvent.retryReason !== undefined ? { retryReason: providerStreamEvent.retryReason } : {}),
       limitExplanationLength: providerStreamEvent.limitExplanation.length,
     };
   }

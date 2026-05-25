@@ -1,30 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { CapturedFrame, RGBA } from "@opentui/core";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { ReadManyToolCallCard } from "../../../src/components/toolCalls/ReadManyToolCallCard.tsx";
-
-const readManySeparatorProbeText = "─".repeat(8);
-
-function formatCapturedColorAsHex(capturedColor: RGBA): string {
-  const [red, green, blue] = capturedColor.toInts();
-  const formatChannel = (channel: number): string => channel.toString(16).padStart(2, "0").toUpperCase();
-  return `#${formatChannel(red)}${formatChannel(green)}${formatChannel(blue)}`;
-}
-
-function listForegroundColorsForRenderedText(capturedFrame: CapturedFrame, renderedText: string): string[] {
-  const foregroundColors: string[] = [];
-  for (const capturedLine of capturedFrame.lines) {
-    for (const capturedSpan of capturedLine.spans) {
-      if (capturedSpan.text.includes(renderedText)) {
-        foregroundColors.push(formatCapturedColorAsHex(capturedSpan.fg));
-      }
-    }
-  }
-
-  return foregroundColors;
-}
 
 describe("ReadManyToolCallCard", () => {
   test("completed_starts_collapsed_with_batch_summary", async () => {
@@ -69,8 +46,8 @@ describe("ReadManyToolCallCard", () => {
     expect(frame).not.toContain("File not found");
   });
 
-  test("completed_expands_child_previews_and_failures", async () => {
-    const { captureCharFrame, captureSpans, mockMouse, renderOnce } = await testRender(
+  test("completed_expands_source_location_previews_and_failures", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
       <ReadManyToolCallCard
         renderState="completed"
         toolCallDetail={{
@@ -108,14 +85,13 @@ describe("ReadManyToolCallCard", () => {
 
     const frame = captureCharFrame();
     expect(frame).toContain("[-]");
-    expect(frame).toContain("1. README.md - completed");
-    expect(frame).toContain("Project");
-    expect(frame).toContain(readManySeparatorProbeText);
-    expect(frame).toContain("2. missing.txt - failed");
+    expect(frame).toContain("README.md:1");
+    expect(frame).toContain("# Project");
+    expect(frame).toContain("missing.txt");
     expect(frame).toContain("File not found: missing.txt");
-    expect(listForegroundColorsForRenderedText(captureSpans(), readManySeparatorProbeText)).toContain(
-      chatScreenTheme.accentGreen.toUpperCase(),
-    );
+    expect(frame).not.toContain("1. README.md - completed");
+    expect(frame).not.toContain("2. missing.txt - failed");
+    expect(frame).not.toContain("1 # Project");
   });
 
   test("streaming_shows_path_count", async () => {

@@ -1,4 +1,5 @@
 import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
+import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ReactNode, RefObject } from "react";
 import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
@@ -7,7 +8,7 @@ import type { PendingToolApprovalDecision } from "./ConversationMessageRow.tsx";
 
 export type ConversationTranscriptSurfaceProps = {
   visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
@@ -22,7 +23,7 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
     <ConversationMessageList
       visibleConversationMessageRows={props.visibleConversationMessageRows}
       hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
-      isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+      reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
       olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
       onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
       {...(props.pendingToolApprovalDecision !== undefined

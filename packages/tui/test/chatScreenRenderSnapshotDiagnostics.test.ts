@@ -44,7 +44,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields summarizes render state with
       },
       modelAndReasoningSelectionState: { step: "loading_available_models" },
       isCommandHelpModalVisible: true,
-      isReasoningSummaryVisible: false,
+      reasoningSummaryDisplayMode: "collapsed",
     }),
     conversationSessionCompactionStatus: { step: "compacting", source: "auto" },
     terminalRowCount: 24,
@@ -85,7 +85,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields summarizes render state with
     slashCommandSelectionStep: "showing_slash_commands",
     modelSelectionStep: "loading_available_models",
     isCommandHelpModalVisible: true,
-    isReasoningSummaryVisible: false,
+    reasoningSummaryDisplayMode: "collapsed",
     totalContextTokensUsed: 123,
     contextWindowTokenCapacity: 400000,
   });
@@ -177,13 +177,13 @@ test("split render diagnostic builders keep transcript, prompt, and status field
       selectionState: createChatSessionState({ isCommandHelpModalVisible: true }),
       conversationSessionCompactionStatus: { step: "idle" },
       hasPendingToolApprovalRequest: false,
-      isReasoningSummaryVisible: true,
+      reasoningSummaryDisplayMode: "expanded",
     }),
   ).toMatchObject({
     conversationTurnStatus: "waiting_for_user_input",
     conversationCompactionStep: "idle",
     conversationCompactionSource: null,
     isCommandHelpModalVisible: true,
-    isReasoningSummaryVisible: true,
+    reasoningSummaryDisplayMode: "expanded",
   });
 });

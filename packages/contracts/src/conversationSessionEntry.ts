@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TokenUsageSchema } from "./provider.ts";
 import { ProviderTurnReplaySchema } from "./providerTurnReplay.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
@@ -42,6 +43,10 @@ const AssistantMessageConversationSessionEntryBaseSchema = z
     entryKind: z.literal("assistant_message"),
     providerTurnReplay: ProviderTurnReplaySchema.optional(),
     assistantMessageText: z.string(),
+    selectedModelId: z.string().min(1).optional(),
+    assistantOperatingMode: AssistantOperatingModeSchema.optional(),
+    turnDurationMs: z.number().int().nonnegative().optional(),
+    usage: TokenUsageSchema.optional(),
   })
   .strict();
 

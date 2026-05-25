@@ -11,6 +11,7 @@ import {
   resolveNextAssistantOperatingMode,
   type ChatSessionState,
   type ChatSlashCommand,
+  type ReasoningSummaryDisplayMode,
 } from "@buli/chat-session-state";
 import {
   chatScreenTheme,
@@ -28,8 +29,12 @@ import {
 } from "./conversationTranscriptWindow.ts";
 
 const CHAT_SCREEN_MIDDLE_AREA_TOP_PADDING_ROW_COUNT = 1;
-const CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_VISIBLE = buildChatSlashCommands({ isReasoningSummaryVisible: true });
-const CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_HIDDEN = buildChatSlashCommands({ isReasoningSummaryVisible: false });
+const CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_EXPANDED = buildChatSlashCommands({
+  reasoningSummaryDisplayMode: "expanded",
+});
+const CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_COLLAPSED = buildChatSlashCommands({
+  reasoningSummaryDisplayMode: "collapsed",
+});
 
 export type ChatScreenInteractionViewModel = {
   isPromptInputDisabled: boolean;
@@ -110,7 +115,7 @@ export function buildChatScreenViewModel(input: {
       promptState: input.chatSessionState,
       selectionState: input.chatSessionState,
       conversationSessionCompactionStatus: input.conversationSessionCompactionStatus,
-      isReasoningSummaryVisible: input.chatSessionState.isReasoningSummaryVisible,
+      reasoningSummaryDisplayMode: input.chatSessionState.reasoningSummaryDisplayMode,
       terminalRowCount: input.terminalRowCount,
       terminalColumnCount: input.terminalColumnCount,
       terminalSizeTierForChatScreen: input.terminalSizeTierForChatScreen,
@@ -126,7 +131,7 @@ export function buildChatScreenInteractionViewModel(input: {
   promptState: ChatScreenInteractionPromptState;
   selectionState: ChatScreenInteractionSelectionState;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   terminalRowCount: number;
   terminalColumnCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
@@ -149,7 +154,7 @@ export function buildChatScreenInteractionViewModel(input: {
 
   return {
     isPromptInputDisabled,
-    availableChatSlashCommands: listStableChatSlashCommands(input.isReasoningSummaryVisible),
+    availableChatSlashCommands: listStableChatSlashCommands(input.reasoningSummaryDisplayMode),
     shortModeLabel: formatAssistantOperatingModeShortLabel(input.promptState.selectedAssistantOperatingMode),
     nextShortModeLabel: formatAssistantOperatingModeShortLabel(nextAssistantOperatingMode),
     nextModeAccentColor: resolveAssistantOperatingModeAccentColor(nextAssistantOperatingMode),
@@ -332,10 +337,10 @@ function areConversationMessagePartReferencesEqual(
   );
 }
 
-function listStableChatSlashCommands(isReasoningSummaryVisible: boolean): readonly ChatSlashCommand[] {
-  return isReasoningSummaryVisible
-    ? CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_VISIBLE
-    : CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_HIDDEN;
+function listStableChatSlashCommands(reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode): readonly ChatSlashCommand[] {
+  return reasoningSummaryDisplayMode === "expanded"
+    ? CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_EXPANDED
+    : CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_COLLAPSED;
 }
 
 function listVisibleOrderedConversationMessageRows(input: {

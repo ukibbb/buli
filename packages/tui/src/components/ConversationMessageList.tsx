@@ -1,6 +1,7 @@
 import { memo, useRef, type ReactNode, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ConversationMessagePart } from "@buli/contracts";
+import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
 import {
   ConversationMessageRow,
@@ -12,7 +13,7 @@ import { ConversationHistoryRevealRow } from "./ConversationHistoryRevealRow.tsx
 
 export type ConversationMessageListProps = {
   visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   horizontalRuleColor: string;
   hiddenOlderConversationMessageCount: number;
@@ -30,7 +31,7 @@ export type RenderableConversationMessage = VisibleConversationMessageRow;
 type ConversationMessageListPreparationCacheEntry = {
   conversationMessage: VisibleConversationMessageRow["conversationMessage"];
   conversationMessageParts: readonly ConversationMessagePart[];
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   renderableConversationMessageParts: readonly ConversationMessagePart[];
 };
 
@@ -43,7 +44,7 @@ function areConversationMessageRowPropsEqual(
   nextProps: ConversationMessageRowProps,
 ): boolean {
   return previousProps.conversationMessage === nextProps.conversationMessage &&
-    previousProps.isReasoningSummaryVisible === nextProps.isReasoningSummaryVisible &&
+    previousProps.reasoningSummaryDisplayMode === nextProps.reasoningSummaryDisplayMode &&
     previousProps.horizontalRuleColor === nextProps.horizontalRuleColor &&
     previousProps.userMessageBorderColor === nextProps.userMessageBorderColor &&
     previousProps.terminalColumnCount === nextProps.terminalColumnCount &&
@@ -71,7 +72,7 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
   const preparationCacheRef = useRef(createConversationMessageListPreparationCache());
   const renderableConversationMessages = prepareRenderableConversationMessages({
     visibleConversationMessageRows: props.visibleConversationMessageRows,
-    isReasoningSummaryVisible: props.isReasoningSummaryVisible,
+    reasoningSummaryDisplayMode: props.reasoningSummaryDisplayMode,
     preparationCache: preparationCacheRef.current,
   });
   const shouldRenderHistoryRevealRow = props.hiddenOlderConversationMessageCount > 0 &&
@@ -116,7 +117,7 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
               <MemoizedConversationMessageRow
                 conversationMessage={conversationMessage}
                 conversationMessageParts={conversationMessageParts}
-                isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+                reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
                 horizontalRuleColor={props.horizontalRuleColor}
                 {...(pendingToolApprovalDecision !== undefined
                   ? { pendingToolApprovalDecision }
@@ -155,7 +156,7 @@ export function createConversationMessageListPreparationCache(): ConversationMes
 
 export function prepareRenderableConversationMessages(input: {
   visibleConversationMessageRows: readonly VisibleConversationMessageRow[];
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   preparationCache: ConversationMessageListPreparationCache;
 }): RenderableConversationMessage[] {
   const nextCacheEntriesByConversationMessageId = new Map<string, ConversationMessageListPreparationCacheEntry>();
@@ -167,18 +168,18 @@ export function prepareRenderableConversationMessages(input: {
         cachedPreparation,
         conversationMessage,
         conversationMessageParts,
-        isReasoningSummaryVisible: input.isReasoningSummaryVisible,
+        reasoningSummaryDisplayMode: input.reasoningSummaryDisplayMode,
       })
       ? cachedPreparation.renderableConversationMessageParts
       : listRenderableConversationMessageParts({
         conversationMessageParts,
-        isReasoningSummaryVisible: input.isReasoningSummaryVisible,
+        reasoningSummaryDisplayMode: input.reasoningSummaryDisplayMode,
       });
 
     nextCacheEntriesByConversationMessageId.set(conversationMessage.id, {
       conversationMessage,
       conversationMessageParts,
-      isReasoningSummaryVisible: input.isReasoningSummaryVisible,
+      reasoningSummaryDisplayMode: input.reasoningSummaryDisplayMode,
       renderableConversationMessageParts,
     });
 
@@ -204,9 +205,9 @@ function canReuseConversationMessagePreparation(input: {
   cachedPreparation: ConversationMessageListPreparationCacheEntry;
   conversationMessage: VisibleConversationMessageRow["conversationMessage"];
   conversationMessageParts: readonly ConversationMessagePart[];
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
 }): boolean {
   return input.cachedPreparation.conversationMessage === input.conversationMessage &&
-    input.cachedPreparation.isReasoningSummaryVisible === input.isReasoningSummaryVisible &&
+    input.cachedPreparation.reasoningSummaryDisplayMode === input.reasoningSummaryDisplayMode &&
     areConversationMessagePartReferencesEqual(input.cachedPreparation.conversationMessageParts, input.conversationMessageParts);
 }

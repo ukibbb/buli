@@ -1,8 +1,8 @@
 import type { ChatSessionState } from "./chatSessionState.ts";
 
-export function toggleReasoningSummaryVisibility(chatSessionState: ChatSessionState): ChatSessionState {
+export function toggleReasoningSummaryDisplayMode(chatSessionState: ChatSessionState): ChatSessionState {
   return {
     ...chatSessionState,
-    isReasoningSummaryVisible: !chatSessionState.isReasoningSummaryVisible,
+    reasoningSummaryDisplayMode: chatSessionState.reasoningSummaryDisplayMode === "expanded" ? "collapsed" : "expanded",
   };
 }

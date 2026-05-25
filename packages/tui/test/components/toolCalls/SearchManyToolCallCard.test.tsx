@@ -103,12 +103,78 @@ describe("SearchManyToolCallCard", () => {
 
     const frame = captureCharFrame();
     expect(frame).toContain("[-]");
-    expect(frame).toContain("1. glob src/**/*.ts - completed");
+    expect(frame).toContain("Glob [src/**/*.ts]");
     expect(frame).toContain("src/app.ts");
-    expect(frame).toContain("2. grep SearchMany - completed");
+    expect(frame).toContain("Grep [SearchMany]");
+    expect(frame).toContain("src/app.ts:6-8");
     expect(frame).toContain("function label()");
     expect(frame).toContain("const label = 'SearchMany';");
     expect(frame).toContain("─");
+    expect(frame).not.toContain("1. glob");
+    expect(frame).not.toContain("2. grep");
+    expect(frame).not.toContain("- completed");
+    expect(frame).not.toContain("6 function label()");
+  });
+
+  test("completed_limits_expanded_glob_paths_and_grep_matches", async () => {
+    const matchedPaths = Array.from({ length: 30 }, (_value, index) => `src/file-${index + 1}.ts`);
+    const matchHits = Array.from({ length: 30 }, (_value, index) => ({
+      matchFilePath: "src/app.ts",
+      matchLineNumber: index + 1,
+      matchSnippet: `match ${index + 1}`,
+    }));
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <SearchManyToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "search_many",
+          requestedSearches: [
+            { searchKind: "glob", globPattern: "src/**/*.ts" },
+            { searchKind: "grep", regexPattern: "match" },
+          ],
+          completedSearchCount: 2,
+          failedSearchCount: 0,
+          searchResults: [
+            {
+              searchStatus: "completed",
+              searchDetail: {
+                toolName: "glob",
+                globPattern: "src/**/*.ts",
+                matchedPathCount: 30,
+                returnedPathCount: 30,
+                matchedPaths,
+              },
+            },
+            {
+              searchStatus: "completed",
+              searchDetail: {
+                toolName: "grep",
+                searchPattern: "match",
+                totalMatchCount: 30,
+                returnedMatchHitCount: 30,
+                matchedFileCount: 1,
+                matchHits,
+              },
+            },
+          ],
+        }}
+      />,
+      { width: 100, height: 80 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("showing first 25 of 30 paths");
+    expect(frame).toContain("showing first 25 of 30 matches");
+    expect(frame).toContain("src/file-25.ts");
+    expect(frame).not.toContain("src/file-26.ts");
+    expect(frame).toContain("match 25");
+    expect(frame).not.toContain("match 26");
   });
 
   test("streaming_shows_search_count", async () => {

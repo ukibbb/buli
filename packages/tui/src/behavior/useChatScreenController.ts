@@ -77,6 +77,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     onConversationCleared: chatScreenProps.onConversationCleared,
     onConversationSessionModelSelectionChanged: chatScreenProps.onConversationSessionModelSelectionChanged,
     activeConversationTurnShutdownCoordinator: chatScreenProps.activeConversationTurnShutdownCoordinator,
+    diagnosticLogger,
     scrollConversationMessagesToBottom,
     scrollConversationMessagesByPage,
   });
@@ -122,6 +123,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     diagnosticLogger,
   });
 
+  const interactionViewModelBuildStartedAtMs = Date.now();
   const {
     isPromptInputDisabled,
     availableChatSlashCommands,
@@ -139,16 +141,19 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     promptState: chatAppController.promptComposerState,
     selectionState: chatAppController.selectionState,
     conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
-    isReasoningSummaryVisible: chatAppController.transcriptState.isReasoningSummaryVisible,
+    reasoningSummaryDisplayMode: chatAppController.transcriptState.reasoningSummaryDisplayMode,
     terminalRowCount,
     terminalColumnCount,
     terminalSizeTierForChatScreen,
   });
+  const interactionViewModelBuildDurationMs = Date.now() - interactionViewModelBuildStartedAtMs;
+  const transcriptViewModelBuildStartedAtMs = Date.now();
   const stableTranscriptViewModel = buildStableChatScreenTranscriptViewModel({
     chatSessionState: chatAppController.transcriptState,
     requestedVisibleConversationMessageCount,
     previousCache: chatScreenTranscriptViewModelCacheRef.current,
   });
+  const transcriptViewModelBuildDurationMs = Date.now() - transcriptViewModelBuildStartedAtMs;
   chatScreenTranscriptViewModelCacheRef.current = stableTranscriptViewModel.nextCache;
   const {
     conversationTranscriptWindow,
@@ -184,6 +189,8 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
         hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
         orderedConversationMessagePartCount,
         renderedConversationMessagePartCount: visibleConversationMessagePartCount,
+        interactionViewModelBuildDurationMs,
+        transcriptViewModelBuildDurationMs,
       }),
     );
   }, [
@@ -193,6 +200,8 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     conversationTranscriptWindow.hiddenOlderConversationMessageCount,
     conversationTranscriptWindow.visibleConversationMessageCount,
     visibleConversationMessagePartCount,
+    interactionViewModelBuildDurationMs,
+    transcriptViewModelBuildDurationMs,
     terminalColumnCount,
     terminalRowCount,
     terminalSizeTierForChatScreen,
@@ -240,7 +249,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
         selectionState: chatAppController.selectionState,
         conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
         hasPendingToolApprovalRequest: chatAppController.interactionStatusState.pendingToolApprovalRequest !== undefined,
-        isReasoningSummaryVisible: chatAppController.transcriptState.isReasoningSummaryVisible,
+        reasoningSummaryDisplayMode: chatAppController.transcriptState.reasoningSummaryDisplayMode,
       }),
     );
   }, [
@@ -252,7 +261,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     chatAppController.selectionState.modelAndReasoningSelectionState.step,
     chatAppController.selectionState.promptContextSelectionState.step,
     chatAppController.selectionState.slashCommandSelectionState.step,
-    chatAppController.transcriptState.isReasoningSummaryVisible,
+    chatAppController.transcriptState.reasoningSummaryDisplayMode,
     diagnosticLogger,
   ]);
 
@@ -267,7 +276,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
 
   const currentMainAreaProps: ChatScreenMainAreaProps = {
     isCommandHelpModalVisible: chatAppController.transcriptState.isCommandHelpModalVisible,
-    isReasoningSummaryVisible: chatAppController.transcriptState.isReasoningSummaryVisible,
+    reasoningSummaryDisplayMode: chatAppController.transcriptState.reasoningSummaryDisplayMode,
     inputPanelAccentColor,
     availableCommandHelpModalRowCount,
     terminalSizeTierForChatScreen,

@@ -20,6 +20,7 @@ describe("RateLimitNoticeBlock", () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <RateLimitNoticeBlock
         retryAfterSeconds={60}
+        retryReason="rate_limit"
         limitExplanation="Requests per minute exceeded"
         noticeStartedAtMs={Date.now()}
       />,
@@ -30,5 +31,21 @@ describe("RateLimitNoticeBlock", () => {
     expect(frame).toContain("Rate limit pending");
     expect(frame).toContain("Requests per minute exceeded");
     expect(frame).toContain("retrying in");
+  });
+
+  test("shows_connection_retry_title_for_transport_failures", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <RateLimitNoticeBlock
+        retryAfterSeconds={1}
+        retryReason="transport_error"
+        limitExplanation="OpenAI request failed before receiving a response. Retrying after 1 second."
+        noticeStartedAtMs={Date.now() - 1_000}
+      />,
+      { width: 100, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Connection retry pending");
+    expect(frame).toContain("retrying now");
   });
 });

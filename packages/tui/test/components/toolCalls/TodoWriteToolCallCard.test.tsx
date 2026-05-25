@@ -21,12 +21,12 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("[+]");
+    expect(frame).toContain("[-]");
     expect(frame).toContain("TodoWrite");
     expect(frame).toMatch(/\[\d+ items/);
     expect(frame).toContain("◆");
     expect(frame).toContain("updating");
-    expect(frame).not.toContain("draft palette");
+    expect(frame).toContain("draft palette");
   });
 
   test("completed: renders one-line summary and expands checklist when clicked", async () => {
@@ -46,12 +46,12 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     );
     await renderOnce();
     const collapsedFrame = captureCharFrame();
-    expect(collapsedFrame).toContain("[+]");
+    expect(collapsedFrame).toContain("[-]");
     expect(collapsedFrame).toContain("TodoWrite");
     expect(collapsedFrame).toMatch(/\[\d+ items/);
     expect(collapsedFrame).toContain("updated");
-    expect(collapsedFrame).not.toContain("palette");
-    expect(collapsedFrame).not.toContain("gallery");
+    expect(collapsedFrame).toContain("palette");
+    expect(collapsedFrame).toContain("gallery");
 
     await act(async () => {
       await mockMouse.click(3, 0);
@@ -59,9 +59,9 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     await renderOnce();
 
     const expandedFrame = captureCharFrame();
-    expect(expandedFrame).toContain("[-]");
-    expect(expandedFrame).toContain("palette");
-    expect(expandedFrame).toContain("gallery");
+    expect(expandedFrame).toContain("[+]");
+    expect(expandedFrame).not.toContain("palette");
+    expect(expandedFrame).not.toContain("gallery");
     expect(chatScreenTheme.accentGreen).toBeDefined();
   });
 

@@ -38,7 +38,7 @@ const initialConversationSessionEntries = [
 
 const chatScreenMainAreaPropKeys = [
   "isCommandHelpModalVisible",
-  "isReasoningSummaryVisible",
+  "reasoningSummaryDisplayMode",
   "inputPanelAccentColor",
   "availableCommandHelpModalRowCount",
   "terminalSizeTierForChatScreen",

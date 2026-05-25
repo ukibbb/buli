@@ -8,11 +8,14 @@ import {
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
+  type AssistantOperatingMode,
+  type AssistantTurnSummaryConversationMessagePart,
   type AssistantTextPartStatus,
   type AssistantSegmentConversationSessionEntry,
   type AssistantMessageConversationSessionEntry,
   type AssistantResponseEvent,
   type ProviderPlanProposedEvent,
+  type ProviderRetryPendingReason,
   type ProviderStreamEvent,
   type ProviderToolCallRequestedEvent,
   type ProviderToolCallsRequestedEvent,
@@ -71,6 +74,7 @@ type RuntimeProviderStreamEventTranslatorInput = {
   assistantResponseMessageId: string;
   assistantTextPartId: string;
   conversationTurnStartedAtMilliseconds: number;
+  assistantOperatingMode: AssistantOperatingMode;
   selectedModelId: string;
   createConversationMessagePartId?: (() => string) | undefined;
   readCurrentTimeInMilliseconds?: (() => number) | undefined;
@@ -84,6 +88,7 @@ const streamedReasoningSummaryUpdateCharacterThreshold = 96;
 export class RuntimeProviderStreamEventTranslator {
   readonly assistantResponseMessageId: string;
   readonly conversationTurnStartedAtMilliseconds: number;
+  readonly assistantOperatingMode: AssistantOperatingMode;
   readonly selectedModelId: string;
   readonly createConversationMessagePartId: () => string;
   readonly readCurrentTimeInMilliseconds: () => number;
@@ -104,6 +109,7 @@ export class RuntimeProviderStreamEventTranslator {
   constructor(input: RuntimeProviderStreamEventTranslatorInput) {
     this.assistantResponseMessageId = input.assistantResponseMessageId;
     this.conversationTurnStartedAtMilliseconds = input.conversationTurnStartedAtMilliseconds;
+    this.assistantOperatingMode = input.assistantOperatingMode;
     this.selectedModelId = input.selectedModelId;
     this.createConversationMessagePartId = input.createConversationMessagePartId ?? randomUUID;
     this.readCurrentTimeInMilliseconds = input.readCurrentTimeInMilliseconds ?? Date.now;
@@ -178,6 +184,7 @@ export class RuntimeProviderStreamEventTranslator {
       return this.translateRateLimitPendingProviderStreamEvent({
         retryAfterSeconds: input.providerStreamEvent.retryAfterSeconds,
         retryWaitStartedAtMs: input.providerStreamEvent.retryWaitStartedAtMs,
+        retryReason: input.providerStreamEvent.retryReason,
         limitExplanation: input.providerStreamEvent.limitExplanation,
       });
     }
@@ -467,6 +474,7 @@ export class RuntimeProviderStreamEventTranslator {
   private translateRateLimitPendingProviderStreamEvent(input: {
     retryAfterSeconds: number;
     retryWaitStartedAtMs: number | undefined;
+    retryReason: ProviderRetryPendingReason | undefined;
     limitExplanation: string;
   }): RuntimeProviderStreamAssistantEventsTranslation {
     return {
@@ -479,6 +487,7 @@ export class RuntimeProviderStreamEventTranslator {
             id: this.createConversationMessagePartId(),
             partKind: "assistant_rate_limit_notice",
             retryAfterSeconds: input.retryAfterSeconds,
+            ...(input.retryReason !== undefined ? { retryReason: input.retryReason } : {}),
             limitExplanation: input.limitExplanation,
             noticeStartedAtMs: input.retryWaitStartedAtMs ?? this.readCurrentTimeInMilliseconds(),
           }),
@@ -521,7 +530,10 @@ export class RuntimeProviderStreamEventTranslator {
       shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.shouldRecordAssistantTextSegmentSessionEntries(),
     });
-    const assistantResponseEventsBeforeTerminalSessionEntry: AssistantResponseEvent[] = [this.createAssistantTurnSummaryEvent()];
+    const assistantTurnSummaryPart = this.createAssistantTurnSummaryPart({ usage: input.usage });
+    const assistantResponseEventsBeforeTerminalSessionEntry: AssistantResponseEvent[] = [
+      this.createAssistantTurnSummaryEvent(assistantTurnSummaryPart),
+    ];
     if (assistantSegmentFlush) {
       assistantResponseEventsBeforeTerminalSessionEntry.push(...assistantSegmentFlush.assistantResponseEvents);
     }
@@ -535,6 +547,10 @@ export class RuntimeProviderStreamEventTranslator {
         entryKind: "assistant_message",
         assistantMessageStatus: "incomplete",
         assistantMessageText: this.assistantMessageText,
+        selectedModelId: this.selectedModelId,
+        assistantOperatingMode: this.assistantOperatingMode,
+        turnDurationMs: assistantTurnSummaryPart.turnDurationMs,
+        usage: input.usage,
         incompleteReason: input.incompleteReason,
         ...(input.providerTurnReplay ? { providerTurnReplay: input.providerTurnReplay } : {}),
       },
@@ -558,7 +574,10 @@ export class RuntimeProviderStreamEventTranslator {
       shouldEmitPartUpdatedEvent: true,
       shouldRecordSessionEntry: this.shouldRecordAssistantTextSegmentSessionEntries(),
     });
-    const assistantResponseEventsBeforeTerminalSessionEntry: AssistantResponseEvent[] = [this.createAssistantTurnSummaryEvent()];
+    const assistantTurnSummaryPart = this.createAssistantTurnSummaryPart({ usage: input.usage });
+    const assistantResponseEventsBeforeTerminalSessionEntry: AssistantResponseEvent[] = [
+      this.createAssistantTurnSummaryEvent(assistantTurnSummaryPart),
+    ];
     if (assistantSegmentFlush) {
       assistantResponseEventsBeforeTerminalSessionEntry.push(...assistantSegmentFlush.assistantResponseEvents);
     }
@@ -573,6 +592,10 @@ export class RuntimeProviderStreamEventTranslator {
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
         assistantMessageText: this.assistantMessageText,
+        selectedModelId: this.selectedModelId,
+        assistantOperatingMode: this.assistantOperatingMode,
+        turnDurationMs: assistantTurnSummaryPart.turnDurationMs,
+        usage: input.usage,
         ...(input.providerTurnReplay ? { providerTurnReplay: input.providerTurnReplay } : {}),
       },
       terminalAssistantResponseEvent: AssistantMessageCompletedEventSchema.parse({
@@ -584,16 +607,24 @@ export class RuntimeProviderStreamEventTranslator {
     };
   }
 
-  private createAssistantTurnSummaryEvent(): AssistantResponseEvent {
+  private createAssistantTurnSummaryPart(input: { usage: TokenUsage }): AssistantTurnSummaryConversationMessagePart {
+    return AssistantTurnSummaryConversationMessagePartSchema.parse({
+      id: this.createConversationMessagePartId(),
+      partKind: "assistant_turn_summary",
+      turnDurationMs: this.readCurrentTimeInMilliseconds() - this.conversationTurnStartedAtMilliseconds,
+      modelDisplayName: this.selectedModelId,
+      assistantOperatingMode: this.assistantOperatingMode,
+      usage: input.usage,
+    });
+  }
+
+  private createAssistantTurnSummaryEvent(
+    assistantTurnSummaryPart: AssistantTurnSummaryConversationMessagePart,
+  ): AssistantResponseEvent {
     return AssistantMessagePartAddedEventSchema.parse({
       type: "assistant_message_part_added",
       messageId: this.assistantResponseMessageId,
-      part: AssistantTurnSummaryConversationMessagePartSchema.parse({
-        id: this.createConversationMessagePartId(),
-        partKind: "assistant_turn_summary",
-        turnDurationMs: this.readCurrentTimeInMilliseconds() - this.conversationTurnStartedAtMilliseconds,
-        modelDisplayName: this.selectedModelId,
-      }),
+      part: assistantTurnSummaryPart,
     });
   }
 }

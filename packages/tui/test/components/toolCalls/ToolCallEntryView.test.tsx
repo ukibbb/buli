@@ -212,10 +212,10 @@ describe("ToolCallEntryView", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("[+]");
+    expect(frame).toContain("[-]");
     expect(frame).toContain("2 items");
-    expect(frame).not.toContain("Step one");
-    expect(frame).not.toContain("Step two");
+    expect(frame).toContain("Step one");
+    expect(frame).toContain("Step two");
   });
 
   test("dispatches_task", async () => {
@@ -234,8 +234,8 @@ describe("ToolCallEntryView", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("returned");
-    expect(frame).toContain("[+]");
-    expect(frame).not.toContain("Analysis complete.");
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("Analysis complete.");
   });
 
 });

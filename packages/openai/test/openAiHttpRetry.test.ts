@@ -33,6 +33,7 @@ test("requestOpenAiHttpResponseWithRetries starts retry wait before yielding pen
   expect(pendingRetryResult.value).toMatchObject({
     type: "rate_limit_pending",
     retryAfterSeconds: 1,
+    retryReason: "rate_limit",
     limitExplanation: "OpenAI request was rate limited. Retrying after 1 second.",
   });
   expect(pendingRetryResult.value.retryWaitStartedAtMs).toBeGreaterThanOrEqual(retryIteratorStartedAtMs);

@@ -5,6 +5,7 @@ export type RecursivePromptContextEntrySnapshot = {
   promptContextStartingDirectoryPath: string;
   promptContextQueryText: string;
   promptContextEntries: PromptContextEntry[];
+  scannedPromptContextEntryCount: number;
   scannedAtMs: number;
 };
 

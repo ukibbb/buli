@@ -197,6 +197,27 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(frame).toContain("1.2s");
   });
 
+  test("completed with small result summary expands result by default", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "summarize docs",
+          subagentResultSummary: "README.md explains the project.",
+        }}
+        renderState="completed"
+        durationMs={1200}
+      />,
+      { width: 120, height: 12 },
+    );
+    await renderSettledMarkdownFrame(renderOnce);
+    const frame = captureCharFrame();
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("result");
+    expect(frame).toContain("README.md explains");
+  });
+
   test("completed renders full long prompt and result sections", async () => {
     const longSubagentPrompt = Array.from({ length: 30 }, (_, index) => `prompt line ${index + 1}`).join("\n");
     const longSubagentResultSummary = Array.from({ length: 30 }, (_, index) => `result line ${index + 1}`).join("\n");

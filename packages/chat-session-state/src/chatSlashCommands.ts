@@ -1,4 +1,4 @@
-import type { SlashCommand } from "./chatSessionState.ts";
+import type { ReasoningSummaryDisplayMode, SlashCommand } from "./chatSessionState.ts";
 
 export type ChatSlashCommandValue =
   | "clear"
@@ -14,7 +14,7 @@ export type ChatSlashCommand = SlashCommand & {
 };
 
 export function buildChatSlashCommands(input: {
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
 }): readonly ChatSlashCommand[] {
   return [
     { name: "help", value: "help", description: "Show available commands and shortcuts" },
@@ -26,7 +26,7 @@ export function buildChatSlashCommands(input: {
     {
       name: "thinking",
       value: "thinking",
-      description: input.isReasoningSummaryVisible ? "Collapse thinking" : "Expand thinking",
+      description: input.reasoningSummaryDisplayMode === "expanded" ? "Collapse thinking" : "Expand thinking",
     },
   ] as const satisfies readonly ChatSlashCommand[];
 }

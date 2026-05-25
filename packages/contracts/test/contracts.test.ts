@@ -227,13 +227,35 @@ test("ProviderStreamEventSchema parses rate-limit retry wait timing", () => {
       type: "rate_limit_pending",
       retryAfterSeconds: 3,
       retryWaitStartedAtMs: 1_250,
+      retryReason: "rate_limit",
       limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
     }),
   ).toEqual({
     type: "rate_limit_pending",
     retryAfterSeconds: 3,
     retryWaitStartedAtMs: 1_250,
+    retryReason: "rate_limit",
     limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
+  });
+});
+
+test("ConversationMessagePartSchema parses retry-pending notice reason", () => {
+  expect(
+    ConversationMessagePartSchema.parse({
+      id: "retry-notice-1",
+      partKind: "assistant_rate_limit_notice",
+      retryAfterSeconds: 1,
+      retryReason: "transport_error",
+      limitExplanation: "OpenAI request failed before receiving a response. Retrying after 1 second.",
+      noticeStartedAtMs: 1_250,
+    }),
+  ).toEqual({
+    id: "retry-notice-1",
+    partKind: "assistant_rate_limit_notice",
+    retryAfterSeconds: 1,
+    retryReason: "transport_error",
+    limitExplanation: "OpenAI request failed before receiving a response. Retrying after 1 second.",
+    noticeStartedAtMs: 1_250,
   });
 });
 
@@ -1193,11 +1215,19 @@ test("ConversationSessionEntrySchema parses completed assistant history entries"
       entryKind: "assistant_message",
       assistantMessageStatus: "completed",
       assistantMessageText: "Done.",
+      selectedModelId: "gpt-5.4",
+      assistantOperatingMode: "implementation",
+      turnDurationMs: 1200,
+      usage: { total: 10, input: 4, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
     }),
   ).toEqual({
     entryKind: "assistant_message",
     assistantMessageStatus: "completed",
     assistantMessageText: "Done.",
+    selectedModelId: "gpt-5.4",
+    assistantOperatingMode: "implementation",
+    turnDurationMs: 1200,
+    usage: { total: 10, input: 4, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
   });
 });
 

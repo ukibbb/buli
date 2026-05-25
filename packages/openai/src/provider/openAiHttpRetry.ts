@@ -2,6 +2,7 @@ import type {
   BuliDiagnosticLogFields,
   BuliDiagnosticLogger,
   ProviderRateLimitPendingEvent,
+  ProviderRetryPendingReason,
 } from "@buli/contracts";
 import { writeOpenAiDebugLog } from "./debugLog.ts";
 import { logOpenAiDiagnosticEvent } from "./diagnostics.ts";
@@ -110,6 +111,12 @@ export async function* requestOpenAiHttpResponseWithRetries(
         yield retryPendingEvent;
       }
       await retryDelayPromise;
+      logOpenAiDiagnosticEvent(input.diagnosticLogger, `${input.diagnosticEventPrefix}.transport_retry_wait_finished`, {
+        ...input.diagnosticFields,
+        ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
+        retryDelayMilliseconds,
+        durationMs: Date.now() - retryWaitStartedAtMs,
+      });
       continue;
     }
 
@@ -206,6 +213,13 @@ export async function* requestOpenAiHttpResponseWithRetries(
       yield retryPendingEvent;
     }
     await retryDelayPromise;
+    logOpenAiDiagnosticEvent(input.diagnosticLogger, `${input.diagnosticEventPrefix}.retry_wait_finished`, {
+      ...input.diagnosticFields,
+      ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
+      status: currentResponse.status,
+      retryDelayMilliseconds,
+      durationMs: Date.now() - retryWaitStartedAtMs,
+    });
   }
 }
 
@@ -246,10 +260,12 @@ function createOpenAiHttpRetryPendingEvent(input: {
 }): ProviderRateLimitPendingEvent {
   const retryAfterSeconds = convertRetryDelayMillisecondsToProviderRetryAfterSeconds(input.retryDelayMilliseconds);
   const retryAfterDescription = `${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
+  const retryReason: ProviderRetryPendingReason = input.status === 429 ? "rate_limit" : "transient_http_response";
   return {
     type: "rate_limit_pending",
     retryAfterSeconds,
     retryWaitStartedAtMs: input.retryWaitStartedAtMs,
+    retryReason,
     limitExplanation: input.status === 429
       ? `OpenAI request was rate limited. Retrying after ${retryAfterDescription}.`
       : `OpenAI request failed with transient HTTP ${input.status}. Retrying after ${retryAfterDescription}.`,
@@ -266,6 +282,7 @@ function createOpenAiTransportRetryPendingEvent(input: {
     type: "rate_limit_pending",
     retryAfterSeconds,
     retryWaitStartedAtMs: input.retryWaitStartedAtMs,
+    retryReason: "transport_error",
     limitExplanation: `OpenAI request failed before receiving a response. Retrying after ${retryAfterDescription}.`,
   };
 }

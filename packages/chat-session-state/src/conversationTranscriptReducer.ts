@@ -1,6 +1,7 @@
 import {
   createStartedToolCallDetailFromRequest,
   findLatestConversationCompactionBoundary,
+  type AssistantMessageConversationSessionEntry,
   type AssistantToolCallConversationMessagePart,
   type AssistantTextPartStatus,
   type ConversationMessage,
@@ -503,6 +504,14 @@ function buildHydratedConversationTranscript(
         });
       }
 
+      const assistantTurnSummaryPart = createHydratedAssistantTurnSummaryPart({
+        conversationSessionEntry,
+        entryIndex,
+      });
+      if (assistantTurnSummaryPart) {
+        appendConversationMessagePart(assistantMessageId, assistantTurnSummaryPart);
+      }
+
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
     }
@@ -515,6 +524,29 @@ function buildHydratedConversationTranscript(
     conversationMessagePartsById,
     orderedConversationMessageIds,
     conversationMessagePartCount: Object.keys(conversationMessagePartsById).length,
+  };
+}
+
+function createHydratedAssistantTurnSummaryPart(input: {
+  conversationSessionEntry: AssistantMessageConversationSessionEntry;
+  entryIndex: number;
+}): ConversationMessagePart | undefined {
+  if (
+    input.conversationSessionEntry.selectedModelId === undefined ||
+    input.conversationSessionEntry.turnDurationMs === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    id: `persisted-entry-${input.entryIndex}-assistant-turn-summary`,
+    partKind: "assistant_turn_summary",
+    turnDurationMs: input.conversationSessionEntry.turnDurationMs,
+    modelDisplayName: input.conversationSessionEntry.selectedModelId,
+    ...(input.conversationSessionEntry.assistantOperatingMode !== undefined
+      ? { assistantOperatingMode: input.conversationSessionEntry.assistantOperatingMode }
+      : {}),
+    ...(input.conversationSessionEntry.usage !== undefined ? { usage: input.conversationSessionEntry.usage } : {}),
   };
 }
 

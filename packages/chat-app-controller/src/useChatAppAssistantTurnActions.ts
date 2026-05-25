@@ -1,6 +1,7 @@
 import {
   type AssistantOperatingMode,
   type AssistantResponseEvent,
+  type BuliDiagnosticLogger,
   type UserPromptSource,
   type UserPromptImageAttachment,
 } from "@buli/contracts";
@@ -18,6 +19,7 @@ import {
 } from "@buli/chat-session-state";
 import { startTransition, useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
+import { logChatAppControllerDiagnosticEvent } from "./logChatAppControllerDiagnosticEvent.ts";
 
 type MutableValueRef<T> = { current: T };
 
@@ -54,6 +56,7 @@ export type UseChatAppAssistantTurnActionsInput = {
     | Promise<ConversationAutoCompactionResult | undefined>
     | ConversationAutoCompactionResult
     | undefined;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
 export type SubmittedChatAppPrompt = {
@@ -144,10 +147,17 @@ export function useChatAppAssistantTurnActions(
   }, [input.chatSessionState.pendingToolApprovalRequest?.approvalId]);
 
   const applyIncomingAssistantResponseEventsToChatAppState = useEffectEvent((assistantResponseEvents: readonly AssistantResponseEvent[]): void => {
+    const reducerStartedAtMs = Date.now();
     const nextChatSessionState = applyAssistantResponseEventsToChatSessionState(
       input.latestChatSessionStateRef.current,
       assistantResponseEvents,
     );
+    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "assistant_response_events.reduced", {
+      assistantResponseEventCount: assistantResponseEvents.length,
+      durationMs: Date.now() - reducerStartedAtMs,
+      conversationMessageCount: nextChatSessionState.orderedConversationMessageIds.length,
+      conversationMessagePartCount: nextChatSessionState.conversationMessagePartCount,
+    });
     input.latestChatSessionStateRef.current = nextChatSessionState;
     startTransition(() => {
       input.setChatSessionState(nextChatSessionState);
@@ -199,6 +209,7 @@ export function useChatAppAssistantTurnActions(
             input.registerActiveConversationTurnFinished();
           },
           onAssistantResponseEvents: applyIncomingAssistantResponseEventsToChatAppState,
+          diagnosticLogger: input.diagnosticLogger,
         });
         input.registerActiveConversationTurnSettlement(assistantResponseRelayPromise);
         const assistantResponseRelayResult = await assistantResponseRelayPromise;

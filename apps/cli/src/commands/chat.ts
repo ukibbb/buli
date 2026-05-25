@@ -17,6 +17,10 @@ import { type BrowserUrlLauncher } from "../browserLauncher.ts";
 import { installConsoleFileLogger } from "../diagnostics/consoleFileLogger.ts";
 import { type ConversationSessionStore, SqliteConversationSessionStore } from "../conversationSession/index.ts";
 import { createDiagnosticFileLogger } from "../diagnostics/diagnosticFileLogger.ts";
+import {
+  combineBuliDiagnosticLoggers,
+  installBuliProfileLogger,
+} from "../profiling/buliProfileLogger.ts";
 import { createInteractiveChatConversationSessionBindings } from "../interactiveChat/interactiveChatConversationSessionBindings.ts";
 import { logCliDiagnosticEvent } from "../diagnostics/cliDiagnosticLog.ts";
 import {
@@ -127,9 +131,14 @@ export async function runInteractiveChat(input: {
   }
 
   const consoleFileLoggerInstallation = installConsoleFileLogger({ environment });
-  const diagnosticLogger = consoleFileLoggerInstallation.logFilePath
+  const profileLoggerInstallation = installBuliProfileLogger({ environment });
+  const consoleFileDiagnosticLogger = consoleFileLoggerInstallation.logFilePath
     ? createDiagnosticFileLogger({ logFilePath: consoleFileLoggerInstallation.logFilePath })
     : undefined;
+  const diagnosticLogger = combineBuliDiagnosticLoggers([
+    consoleFileDiagnosticLogger,
+    profileLoggerInstallation.diagnosticLogger,
+  ]);
   let defaultConversationSessionStore: SqliteConversationSessionStore | undefined;
   let conversationTurnProviderResolution: InteractiveChatConversationTurnProviderResolution | undefined;
   try {
@@ -181,6 +190,7 @@ export async function runInteractiveChat(input: {
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
       logFilePath: consoleFileLoggerInstallation.logFilePath ?? null,
+      profileFilePath: profileLoggerInstallation.profileFilePath ?? null,
       maximumConcurrentReadOnlyToolCalls: maximumConcurrentReadOnlyToolCalls ?? null,
       maximumConcurrentSubagentConversations: maximumConcurrentSubagentConversations ?? null,
       maximumConcurrentResponseStepStreams: maximumConcurrentResponseStepStreams ?? null,
@@ -220,10 +230,17 @@ export async function runInteractiveChat(input: {
     const promptContextCandidateCatalog = new PromptContextCandidateCatalog({
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
+      diagnosticLogger,
     });
     const conversationHistory = new InMemoryConversationHistory({
       onConversationSessionEntryAppended: (conversationSessionEntry, appendMetadata) => {
+        const conversationSessionAppendStartedAtMs = Date.now();
         conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
+        logCliDiagnosticEvent(diagnosticLogger, "conversation_session.append_entry_timing", {
+          conversationSessionEntryKind: conversationSessionEntry.entryKind,
+          durationMs: Date.now() - conversationSessionAppendStartedAtMs,
+          conversationSessionEntryCount: appendMetadata.conversationSessionEntryCount,
+        });
         logCliDiagnosticEvent(diagnosticLogger, "conversation_session.saved", {
           conversationSessionEntryKind: conversationSessionEntry.entryKind,
           assistantOperatingMode: conversationSessionEntry.entryKind === "user_prompt"
@@ -329,6 +346,7 @@ export async function runInteractiveChat(input: {
     return "";
   } finally {
     await conversationTurnProviderResolution?.dispose();
+    await profileLoggerInstallation.dispose();
     consoleFileLoggerInstallation.restore();
     defaultConversationSessionStore?.close();
   }

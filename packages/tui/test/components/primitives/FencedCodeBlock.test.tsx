@@ -144,6 +144,24 @@ describe("FencedCodeBlock", () => {
     expect(frame.replace(/\s/g, "")).toContain("ConversationMessageList.tsx");
   });
 
+  test("hides_line_number_gutter_when_requested", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <FencedCodeBlock
+        variant="embedded"
+        showLineNumbers={false}
+        codeLines={[
+          { lineNumber: 145, lineText: "const value = 1;" },
+        ]}
+      />,
+      { width: 60, height: 5 },
+    );
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("const value = 1;");
+    expect(frame).not.toContain("145 const value = 1;");
+  });
+
   test("normalizes_markdown_fence_info_strings_with_OpenTUI_filetype_resolution", () => {
     expect(resolveOpenTuiCodeFiletype(undefined, "TSX title=Button.tsx")).toBe("typescriptreact");
     expect(resolveOpenTuiCodeFiletype(undefined, ".jsx")).toBe("javascriptreact");

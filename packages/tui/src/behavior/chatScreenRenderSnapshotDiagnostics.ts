@@ -1,6 +1,6 @@
 import type { BuliDiagnosticLogFields } from "@buli/contracts";
 import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
-import type { ChatSessionState } from "@buli/chat-session-state";
+import type { ChatSessionState, ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import type { AssistantOperatingMode, ConversationTurnStatus, ReasoningEffort } from "@buli/contracts";
 
@@ -55,7 +55,7 @@ export function buildChatScreenRenderSnapshotDiagnosticFields(input: {
     slashCommandSelectionStep: input.chatSessionState.slashCommandSelectionState.step,
     modelSelectionStep: input.chatSessionState.modelAndReasoningSelectionState.step,
     isCommandHelpModalVisible: input.chatSessionState.isCommandHelpModalVisible,
-    isReasoningSummaryVisible: input.chatSessionState.isReasoningSummaryVisible,
+    reasoningSummaryDisplayMode: input.chatSessionState.reasoningSummaryDisplayMode,
     totalContextTokensUsed: input.totalContextTokensUsed ?? null,
     contextWindowTokenCapacity: input.contextWindowTokenCapacity ?? null,
   };
@@ -70,6 +70,8 @@ export function buildChatScreenTranscriptRenderDiagnosticFields(input: {
   hiddenOlderConversationMessageCount: number;
   orderedConversationMessagePartCount: number;
   renderedConversationMessagePartCount: number;
+  interactionViewModelBuildDurationMs?: number | undefined;
+  transcriptViewModelBuildDurationMs?: number | undefined;
 }): BuliDiagnosticLogFields {
   return {
     rows: input.terminalRowCount,
@@ -80,6 +82,12 @@ export function buildChatScreenTranscriptRenderDiagnosticFields(input: {
     hiddenOlderConversationMessageCount: input.hiddenOlderConversationMessageCount,
     conversationMessagePartCount: input.orderedConversationMessagePartCount,
     renderedConversationMessagePartCount: input.renderedConversationMessagePartCount,
+    ...(input.interactionViewModelBuildDurationMs !== undefined
+      ? { interactionViewModelBuildDurationMs: input.interactionViewModelBuildDurationMs }
+      : {}),
+    ...(input.transcriptViewModelBuildDurationMs !== undefined
+      ? { transcriptViewModelBuildDurationMs: input.transcriptViewModelBuildDurationMs }
+      : {}),
   };
 }
 
@@ -116,7 +124,7 @@ export function buildChatScreenInteractionStatusDiagnosticFields(input: {
   selectionState: ChatScreenSelectionDiagnosticState;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   hasPendingToolApprovalRequest: boolean;
-  isReasoningSummaryVisible: boolean;
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
 }): BuliDiagnosticLogFields {
   return {
     conversationTurnStatus: input.conversationTurnStatus,
@@ -130,6 +138,6 @@ export function buildChatScreenInteractionStatusDiagnosticFields(input: {
     slashCommandSelectionStep: input.selectionState.slashCommandSelectionState.step,
     modelSelectionStep: input.selectionState.modelAndReasoningSelectionState.step,
     isCommandHelpModalVisible: input.selectionState.isCommandHelpModalVisible,
-    isReasoningSummaryVisible: input.isReasoningSummaryVisible,
+    reasoningSummaryDisplayMode: input.reasoningSummaryDisplayMode,
   };
 }

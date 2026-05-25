@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
-import type { ToolCallGrepDetail, ToolCallGrepMatch } from "@buli/contracts";
-import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
-import { limitVisibleItems, VisibleContentLimitNotice } from "../primitives/VisibleContentLimit.tsx";
+import type { ToolCallGrepDetail } from "@buli/contracts";
+import { GrepMatchResultsBlock } from "./GrepMatchResultsBlock.tsx";
 import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 const MAX_EXPANDED_GREP_MATCH_HIT_COUNT = 50;
@@ -13,14 +11,6 @@ export type GrepToolCallCardProps = {
   approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
-};
-
-type GrepMatchFileSection = {
-  matchFilePath: string;
-  matchLines: {
-    lineNumber: number;
-    lineText: string;
-  }[];
 };
 
 export function GrepToolCallCard(props: GrepToolCallCardProps): ReactNode {
@@ -70,85 +60,14 @@ function buildGrepBodyContent(props: GrepToolCallCardProps): ReactNode {
   if (!matchHits || matchHits.length === 0) {
     return undefined;
   }
-  const limitedMatchHits = limitVisibleItems({
-    items: matchHits,
-    maximumVisibleItemCount: MAX_EXPANDED_GREP_MATCH_HIT_COUNT,
-  });
-  const grepMatchFileSections = groupGrepMatchesByFile(limitedMatchHits.visibleItems);
   return (
     <box flexDirection="column" width="100%">
       <box flexDirection="column" paddingX={1} width="100%">
-        <VisibleContentLimitNotice
-          visibleItemCount={limitedMatchHits.visibleItems.length}
-          totalItemCount={limitedMatchHits.totalItemCount}
-          itemLabelPlural="matches"
+        <GrepMatchResultsBlock
+          matchHits={matchHits}
+          maximumVisibleMatchHitCount={MAX_EXPANDED_GREP_MATCH_HIT_COUNT}
         />
-        {grepMatchFileSections.map((grepMatchFileSection, index) => (
-          <box
-            key={grepMatchFileSection.matchFilePath}
-            flexDirection="column"
-            width="100%"
-            {...(index > 0 ? { marginTop: 1 } : {})}
-          >
-            <GrepMatchFileHeading matchFilePath={grepMatchFileSection.matchFilePath} />
-            <FencedCodeBlock
-              variant="embedded"
-              filePath={grepMatchFileSection.matchFilePath}
-              wrapMode="char"
-              codeLines={grepMatchFileSection.matchLines}
-            />
-          </box>
-        ))}
       </box>
     </box>
-  );
-}
-
-function groupGrepMatchesByFile(matchHits: readonly ToolCallGrepMatch[]): GrepMatchFileSection[] {
-  const grepMatchFileSections: GrepMatchFileSection[] = [];
-  const sectionIndexByMatchFilePath = new Map<string, number>();
-
-  for (const matchHit of matchHits) {
-    const existingSectionIndex = sectionIndexByMatchFilePath.get(matchHit.matchFilePath);
-    if (existingSectionIndex !== undefined) {
-      const existingGrepMatchFileSection = grepMatchFileSections[existingSectionIndex];
-      if (existingGrepMatchFileSection === undefined) {
-        continue;
-      }
-      appendGrepMatchLines(existingGrepMatchFileSection, matchHit);
-      continue;
-    }
-
-    const grepMatchFileSection: GrepMatchFileSection = {
-      matchFilePath: matchHit.matchFilePath,
-      matchLines: [],
-    };
-    appendGrepMatchLines(grepMatchFileSection, matchHit);
-    sectionIndexByMatchFilePath.set(matchHit.matchFilePath, grepMatchFileSections.length);
-    grepMatchFileSections.push(grepMatchFileSection);
-  }
-
-  return grepMatchFileSections;
-}
-
-function appendGrepMatchLines(grepMatchFileSection: GrepMatchFileSection, matchHit: ToolCallGrepMatch): void {
-  for (const matchLine of [
-    ...(matchHit.contextBeforeLines ?? []),
-    { lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet },
-    ...(matchHit.contextAfterLines ?? []),
-  ]) {
-    if (grepMatchFileSection.matchLines.some((existingLine) => existingLine.lineNumber === matchLine.lineNumber)) {
-      continue;
-    }
-
-    grepMatchFileSection.matchLines.push(matchLine);
-  }
-}
-
-function GrepMatchFileHeading(props: { matchFilePath: string }): ReactNode {
-  return (
-    <text fg={chatScreenTheme.textSecondary} wrapMode="char" width="100%">
-      {props.matchFilePath}
-    </text>
   );
 }
