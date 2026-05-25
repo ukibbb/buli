@@ -92,10 +92,11 @@ bun run link:cli
 
 `bun run link:cli` links `buli` to this repo's source runner. That means every new `buli` command runs the current TypeScript source from this checkout; no rebuild is needed after source changes.
 
-If `buli` is not found afterward, make sure Bun's global bin directory is on your `PATH`:
+If `buli` is not found afterward, make sure Bun's install bin directory is on your `PATH`:
 
 ```bash
-export PATH="$(bun pm bin -g):$PATH"
+export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+export PATH="$BUN_INSTALL/bin:$PATH"
 ```
 
 ## Usage
