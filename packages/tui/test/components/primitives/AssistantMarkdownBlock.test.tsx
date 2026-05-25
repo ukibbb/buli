@@ -658,7 +658,8 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("ts · src/app.ts");
+    expect(frame).toContain("src/app.ts");
+    expect(frame).not.toContain("ts · src/app.ts");
     expect(frame).not.toContain("// ts");
   });
 
@@ -703,7 +704,8 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("ts · src/runtime.ts:10-12");
+    expect(frame).toContain("src/runtime.ts:10-12");
+    expect(frame).not.toContain("ts · src/runtime.ts:10-12");
     expect(frame).toContain("// explain: The guard decides whether this branch should run.");
     expect(frame).toContain("// plain pseudocode: If the runtime is ready, start it.");
     expect(frame).toContain("if (isReady) {");
@@ -790,7 +792,8 @@ describe("AssistantMarkdownBlock", () => {
 
     const frame = captureCharFrame();
     expect(frame).toContain("Narrow");
-    expect(frame).toContain("ts · src/narrow.ts");
+    expect(frame).toContain("src/narrow.ts");
+    expect(frame).not.toContain("ts · src/narrow.ts");
     expect(frame).not.toContain("// ts");
     expect(frame).toContain("const narrow");
     expect(frame).not.toContain("---");

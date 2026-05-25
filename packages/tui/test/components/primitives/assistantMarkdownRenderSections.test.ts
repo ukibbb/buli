@@ -60,7 +60,7 @@ describe("assistantMarkdownRenderSections", () => {
       sectionKind: "codeFence",
       codeFenceInfo: {
         codeLanguageLabel: "ts",
-        codeFenceDisplayLabel: "ts · src/runtime.ts:10-12",
+        codeFenceDisplayLabel: "src/runtime.ts:10-12",
         codeFenceFilePath: "src/runtime.ts",
         sourceLineRange: {
           sourceStartLineNumber: 10,

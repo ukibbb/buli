@@ -410,8 +410,9 @@ test("renderConversationSessionHtmlDocument parses code fence title labels like 
     conversationSessionId: "session-code-title",
   });
 
-  expect(html).toContain("ts · src/app.ts");
+  expect(html).toContain('<div class="code-tab">src/app.ts</div>');
   expect(html).toContain('data-lang="typescript"');
+  expect(html).not.toContain("ts · src/app.ts");
   expect(html).not.toContain("ts title=src/app.ts");
 });
 
@@ -429,8 +430,9 @@ test("renderConversationSessionHtmlDocument parses quoted code fence path labels
     conversationSessionId: "session-code-path",
   });
 
-  expect(html).toContain("ts · src/runtime.ts:10-12");
+  expect(html).toContain('<div class="code-tab">src/runtime.ts:10-12</div>');
   expect(html).toContain('data-lang="typescript"');
+  expect(html).not.toContain("ts · src/runtime.ts:10-12");
   expect(html).not.toContain('path=&quot;src/runtime.ts:10-12&quot;');
 });
 

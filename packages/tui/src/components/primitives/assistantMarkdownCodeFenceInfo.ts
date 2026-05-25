@@ -1,6 +1,5 @@
 import type { AssistantMarkdownCodeFenceInfo, AssistantMarkdownSourceLineRange } from "./assistantMarkdownRenderSectionTypes.ts";
 
-const assistantMarkdownGenericCodeFenceLanguageLabels = new Set(["code", "plain", "plaintext", "text", "txt"]);
 const codeFenceFileLabelPattern = /(?:^|\s)(?:title|filename|file|path)=("[^"]+"|'[^']+'|[^\s]+)/i;
 const codeFenceFileMetadataTokenPattern = /^(?:title|filename|file|path)=/i;
 const codeFenceFallbackFileLabelPattern = /(?:^|\s)(\S+\/\S+\.\S+)/;
@@ -20,12 +19,11 @@ export function parseAssistantMarkdownCodeFenceInfo(codeFenceInfoString: string 
     : firstCodeFenceInfoToken;
   const codeFenceFileLabel = resolveAssistantMarkdownCodeFenceFileLabel(normalizedCodeFenceInfoString);
   const parsedCodeFenceSourceLabel = codeFenceFileLabel ? parseCodeFenceSourceLabel(codeFenceFileLabel) : undefined;
-  const shouldShowCodeLanguageLabel = !isGenericAssistantMarkdownCodeFenceLanguageLabel(codeLanguageLabel);
   return {
     codeLanguageLabel,
     ...(codeFenceFileLabel
       ? {
-          codeFenceDisplayLabel: shouldShowCodeLanguageLabel ? `${codeLanguageLabel} · ${codeFenceFileLabel}` : codeFenceFileLabel,
+          codeFenceDisplayLabel: codeFenceFileLabel,
           codeFenceFilePath: parsedCodeFenceSourceLabel?.codeFenceFilePath ?? codeFenceFileLabel,
         }
       : {}),
@@ -41,10 +39,6 @@ export function areAssistantMarkdownCodeFenceInfoValuesEqual(
     previousCodeFenceInfo.codeFenceDisplayLabel === nextCodeFenceInfo.codeFenceDisplayLabel &&
     previousCodeFenceInfo.codeFenceFilePath === nextCodeFenceInfo.codeFenceFilePath &&
     areAssistantMarkdownSourceLineRangesEqual(previousCodeFenceInfo.sourceLineRange, nextCodeFenceInfo.sourceLineRange);
-}
-
-function isGenericAssistantMarkdownCodeFenceLanguageLabel(codeLanguageLabel: string): boolean {
-  return assistantMarkdownGenericCodeFenceLanguageLabels.has(codeLanguageLabel.toLowerCase());
 }
 
 function isAssistantMarkdownCodeFenceSourceLabel(codeFenceInfoToken: string): boolean {

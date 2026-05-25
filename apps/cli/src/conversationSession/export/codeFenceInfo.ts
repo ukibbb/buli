@@ -1,4 +1,3 @@
-const genericConversationExportCodeFenceLanguageLabels = new Set(["code", "plain", "plaintext", "text", "txt"]);
 const codeFenceFileLabelPattern = /(?:^|\s)(?:title|filename|file|path)=("[^"]+"|'[^']+'|[^\s]+)/i;
 const codeFenceFileMetadataTokenPattern = /^(?:title|filename|file|path)=/i;
 const codeFenceFallbackFileLabelPattern = /(?:^|\s)(\S+\/\S+\.\S+)/;
@@ -30,12 +29,11 @@ export function parseConversationExportCodeFenceInfo(codeFenceInfoString: string
     : firstCodeFenceInfoToken;
   const codeFenceFileLabel = resolveConversationExportCodeFenceFileLabel(normalizedCodeFenceInfoString);
   const parsedCodeFenceSourceLabel = codeFenceFileLabel ? parseConversationExportCodeFenceSourceLabel(codeFenceFileLabel) : undefined;
-  const shouldShowCodeLanguageLabel = !genericConversationExportCodeFenceLanguageLabels.has(codeLanguageLabel.toLowerCase());
   return {
     codeLanguageLabel,
     ...(codeFenceFileLabel
       ? {
-          codeFenceDisplayLabel: shouldShowCodeLanguageLabel ? `${codeLanguageLabel} · ${codeFenceFileLabel}` : codeFenceFileLabel,
+          codeFenceDisplayLabel: codeFenceFileLabel,
           codeFenceFilePath: parsedCodeFenceSourceLabel?.codeFenceFilePath ?? codeFenceFileLabel,
         }
       : {}),

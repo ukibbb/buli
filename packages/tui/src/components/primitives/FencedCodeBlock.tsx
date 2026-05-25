@@ -12,6 +12,7 @@ import {
   syntaxHighlightSpanForegroundColors,
 } from "./codeRenderingTheme.ts";
 import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.ts";
+import { decorateTeachingCommentCodeChunks } from "./teachingCommentCodeChunks.ts";
 
 export type FencedCodeBlockLine = {
   lineNumber?: number;
@@ -31,6 +32,7 @@ export type FencedCodeBlockProps = {
   filePath?: string;
   codeLines: FencedCodeBlockLine[];
   conceal?: boolean;
+  decorateTeachingComments?: boolean;
   wrapMode?: "char" | "none" | "word";
 };
 
@@ -68,6 +70,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
         <OpenTuiFencedCodeContent
           codeLines={props.codeLines}
           conceal={props.conceal}
+          decorateTeachingComments={props.decorateTeachingComments}
           filePath={props.filePath}
           languageLabel={props.languageLabel}
           wrapMode={codeWrapMode}
@@ -80,6 +83,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
 function OpenTuiFencedCodeContent(props: {
   codeLines: FencedCodeBlockLine[];
   conceal: boolean | undefined;
+  decorateTeachingComments: boolean | undefined;
   filePath: string | undefined;
   languageLabel: string | undefined;
   wrapMode: "char" | "none" | "word";
@@ -95,6 +99,7 @@ function OpenTuiFencedCodeContent(props: {
         {...(props.conceal !== undefined ? { conceal: props.conceal } : {})}
         drawUnstyledText={true}
         filetype={codeFiletype}
+        {...(props.decorateTeachingComments ? { onChunks: decorateTeachingCommentCodeChunks } : {})}
         selectable={true}
         syntaxStyle={codeBlockSyntaxStyle}
         treeSitterClient={openTuiSharedTreeSitterClient}
@@ -120,6 +125,7 @@ function OpenTuiFencedCodeContent(props: {
         {...(props.conceal !== undefined ? { conceal: props.conceal } : {})}
         drawUnstyledText={true}
         filetype={codeFiletype}
+        {...(props.decorateTeachingComments ? { onChunks: decorateTeachingCommentCodeChunks } : {})}
         selectable={true}
         syntaxStyle={codeBlockSyntaxStyle}
         treeSitterClient={openTuiSharedTreeSitterClient}

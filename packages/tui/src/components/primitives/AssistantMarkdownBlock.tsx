@@ -506,12 +506,13 @@ function AssistantCodeFenceBlock(props: {
     <box flexDirection="column" marginBottom={1} width="100%">
       {props.codeFenceInfo.codeFenceDisplayLabel ? (
         <box width="100%">
-          <text fg={chatScreenTheme.textDim}>{props.codeFenceInfo.codeFenceDisplayLabel}</text>
+          <text fg={chatScreenTheme.accentCyan}>{props.codeFenceInfo.codeFenceDisplayLabel}</text>
         </box>
       ) : null}
       <FencedCodeBlock
         variant="embedded"
         codeLines={codeBlockLines}
+        decorateTeachingComments={true}
         {...(props.codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: props.codeFenceInfo.codeFenceFilePath } : {})}
         languageLabel={props.codeFenceInfo.codeLanguageLabel}
         showLabel={false}
