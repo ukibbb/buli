@@ -40,6 +40,10 @@ import {
   type DisposableProviderProtocolClientTransport,
   type InteractiveChatConversationTurnProviderResolution,
 } from "../providerProtocol/resolveInteractiveChatConversationTurnProvider.ts";
+import {
+  INVALID_PROVIDER_HOST_COMMAND_MESSAGE,
+  resolveProviderHostCommandFromEnvironment,
+} from "../providerProtocol/providerHostCommand.ts";
 
 type InteractiveChatRenderer = (input: RenderChatScreenInTerminalInput) => Promise<TuiChatScreenInstance>;
 
@@ -48,6 +52,28 @@ type LoadedInteractiveChatRenderer = {
   rendererLoadDurationMs: number;
   rendererSource: "default" | "injected";
 };
+
+type InteractiveChatStartupConfiguration = {
+  environment: InteractiveChatEnvironment;
+  externalProviderHostCommand: readonly string[] | undefined;
+  bashToolApprovalMode: BashToolApprovalMode;
+  autoCompactionThresholdRatio: number | undefined;
+  maximumConcurrentReadOnlyToolCalls: number | undefined;
+  maximumConcurrentSubagentConversations: number | undefined;
+  maximumConcurrentResponseStepStreams: number | undefined;
+  workspaceRootPath: string;
+  promptContextScope: ReturnType<typeof resolveInteractiveChatPromptContextScope>;
+};
+
+type InteractiveChatStartupConfigurationResolution =
+  | {
+      status: "ready";
+      configuration: InteractiveChatStartupConfiguration;
+    }
+  | {
+      status: "failed";
+      message: string;
+    };
 
 export async function runInteractiveChat(input: {
   selectedModelId?: string;
@@ -67,46 +93,32 @@ export async function runInteractiveChat(input: {
 } = {}): Promise<string> {
   const startupStartedAtMs = Date.now();
   const environment = input.environment ?? process.env;
-  const bashToolApprovalMode = resolveInteractiveChatBashToolApprovalMode({
-    requestedBashToolApprovalMode: input.bashToolApprovalMode,
+  const workspaceRootPath = process.cwd();
+  const startupConfigurationResolution = resolveInteractiveChatStartupConfiguration({
     environment,
+    requestedBashToolApprovalMode: input.bashToolApprovalMode,
+    workspaceRootPath,
   });
-  if (!bashToolApprovalMode) {
-    return INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE;
+  if (startupConfigurationResolution.status === "failed") {
+    return startupConfigurationResolution.message;
   }
-  const autoCompactionThresholdResolution = resolveConversationAutoCompactionThresholdRatio({ environment });
-  if (autoCompactionThresholdResolution.status === "invalid") {
-    return INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE;
-  }
-  const autoCompactionThresholdRatio = autoCompactionThresholdResolution.thresholdRatio;
-  const readOnlyToolConcurrencyResolution = resolveInteractiveChatReadOnlyToolConcurrency({ environment });
-  if (readOnlyToolConcurrencyResolution.status === "invalid") {
-    return INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE;
-  }
-  const maximumConcurrentReadOnlyToolCalls = readOnlyToolConcurrencyResolution.value;
-  const subagentConcurrencyResolution = resolveInteractiveChatSubagentConcurrency({ environment });
-  if (subagentConcurrencyResolution.status === "invalid") {
-    return INVALID_SUBAGENT_CONCURRENCY_MESSAGE;
-  }
-  const maximumConcurrentSubagentConversations = subagentConcurrencyResolution.value;
-  const openAiMaxConcurrentStreamsResolution = resolveInteractiveChatOpenAiMaxConcurrentStreams({ environment });
-  if (openAiMaxConcurrentStreamsResolution.status === "invalid") {
-    return INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE;
-  }
-  const maximumConcurrentResponseStepStreams = openAiMaxConcurrentStreamsResolution.value;
+  const {
+    externalProviderHostCommand,
+    bashToolApprovalMode,
+    autoCompactionThresholdRatio,
+    maximumConcurrentReadOnlyToolCalls,
+    maximumConcurrentSubagentConversations,
+    maximumConcurrentResponseStepStreams,
+    promptContextScope,
+  } = startupConfigurationResolution.configuration;
 
   const store = input.store ?? new OpenAiAuthStore();
   const authLoadStartedAtMs = Date.now();
-  const authTask = store.loadOpenAi();
+  const authTask = externalProviderHostCommand ? Promise.resolve(undefined) : store.loadOpenAi();
   const stdin = input.stdin ?? process.stdin;
-  const workspaceRootPath = process.cwd();
-  const promptContextScope = resolveInteractiveChatPromptContextScope({
-    workspaceRootPath,
-    environment,
-  });
   const auth = await authTask;
   const authLoadDurationMs = Date.now() - authLoadStartedAtMs;
-  if (!auth) {
+  if (!externalProviderHostCommand && !auth) {
     return "OpenAI auth not found. Run `buli login`.";
   }
 
@@ -180,17 +192,23 @@ export async function runInteractiveChat(input: {
       conversationSessionEntryCount: activeConversationSessionMetadata.conversationSessionEntryCount,
     });
 
-    const provider = new OpenAiProvider({
-      store,
-      ...(maximumConcurrentResponseStepStreams !== undefined ? { maximumConcurrentResponseStepStreams } : {}),
-      diagnosticLogger,
-    });
+    const provider = externalProviderHostCommand
+      ? undefined
+      : new OpenAiProvider({
+          store,
+          ...(maximumConcurrentResponseStepStreams !== undefined ? { maximumConcurrentResponseStepStreams } : {}),
+          diagnosticLogger,
+        });
     conversationTurnProviderResolution = resolveInteractiveChatConversationTurnProvider({
-      openAiProvider: provider,
+      ...(provider !== undefined ? { openAiProvider: provider } : {}),
       store,
       environment,
       workspaceRootPath,
-      ...(input.providerHostCommand !== undefined ? { providerHostCommand: input.providerHostCommand } : {}),
+      ...(externalProviderHostCommand !== undefined
+        ? { providerHostCommand: externalProviderHostCommand, providerHostKind: "external" }
+        : input.providerHostCommand !== undefined
+        ? { providerHostCommand: input.providerHostCommand }
+        : {}),
       ...(input.createProviderProtocolTransport !== undefined
         ? { createProviderProtocolTransport: input.createProviderProtocolTransport }
         : {}),
@@ -262,9 +280,10 @@ export async function runInteractiveChat(input: {
       openBrowserUrl: input.openBrowserUrl,
       diagnosticLogger,
     });
+    const resolvedConversationTurnProvider = conversationTurnProviderResolution;
     const renderArgs: RenderChatScreenInTerminalInput = {
       assistantConversationRunner,
-      loadAvailableAssistantModels: () => provider.listAvailableAssistantModels(),
+      loadAvailableAssistantModels: async () => [...await resolvedConversationTurnProvider.listAvailableAssistantModels()],
       loadPromptContextCandidates: (promptContextQueryText: string) =>
         promptContextCandidateCatalog.listPromptContextCandidates(promptContextQueryText),
       ...conversationSessionBindings.renderInput,
@@ -332,6 +351,67 @@ async function loadInteractiveChatRenderer(
     renderChatScreen: renderChatScreenInTerminal,
     rendererLoadDurationMs: Date.now() - rendererLoadStartedAtMs,
     rendererSource: "default",
+  };
+}
+
+function resolveInteractiveChatStartupConfiguration(input: {
+  environment: InteractiveChatEnvironment;
+  requestedBashToolApprovalMode: BashToolApprovalMode | undefined;
+  workspaceRootPath: string;
+}): InteractiveChatStartupConfigurationResolution {
+  const externalProviderHostCommandResolution = resolveProviderHostCommandFromEnvironment({ environment: input.environment });
+  if (externalProviderHostCommandResolution.status === "invalid") {
+    return { status: "failed", message: INVALID_PROVIDER_HOST_COMMAND_MESSAGE };
+  }
+
+  const bashToolApprovalMode = resolveInteractiveChatBashToolApprovalMode({
+    requestedBashToolApprovalMode: input.requestedBashToolApprovalMode,
+    environment: input.environment,
+  });
+  if (!bashToolApprovalMode) {
+    return { status: "failed", message: INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE };
+  }
+
+  const autoCompactionThresholdResolution = resolveConversationAutoCompactionThresholdRatio({
+    environment: input.environment,
+  });
+  if (autoCompactionThresholdResolution.status === "invalid") {
+    return { status: "failed", message: INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE };
+  }
+
+  const readOnlyToolConcurrencyResolution = resolveInteractiveChatReadOnlyToolConcurrency({ environment: input.environment });
+  if (readOnlyToolConcurrencyResolution.status === "invalid") {
+    return { status: "failed", message: INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE };
+  }
+
+  const subagentConcurrencyResolution = resolveInteractiveChatSubagentConcurrency({ environment: input.environment });
+  if (subagentConcurrencyResolution.status === "invalid") {
+    return { status: "failed", message: INVALID_SUBAGENT_CONCURRENCY_MESSAGE };
+  }
+
+  const openAiMaxConcurrentStreamsResolution = resolveInteractiveChatOpenAiMaxConcurrentStreams({
+    environment: input.environment,
+  });
+  if (openAiMaxConcurrentStreamsResolution.status === "invalid") {
+    return { status: "failed", message: INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE };
+  }
+
+  return {
+    status: "ready",
+    configuration: {
+      environment: input.environment,
+      externalProviderHostCommand: externalProviderHostCommandResolution.providerHostCommand,
+      bashToolApprovalMode,
+      autoCompactionThresholdRatio: autoCompactionThresholdResolution.thresholdRatio,
+      maximumConcurrentReadOnlyToolCalls: readOnlyToolConcurrencyResolution.value,
+      maximumConcurrentSubagentConversations: subagentConcurrencyResolution.value,
+      maximumConcurrentResponseStepStreams: openAiMaxConcurrentStreamsResolution.value,
+      workspaceRootPath: input.workspaceRootPath,
+      promptContextScope: resolveInteractiveChatPromptContextScope({
+        workspaceRootPath: input.workspaceRootPath,
+        environment: input.environment,
+      }),
+    },
   };
 }
 

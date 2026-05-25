@@ -133,6 +133,36 @@ export type ChatSessionKeyboardInteraction = {
   promptSubmissionRejectionReason: PromptSubmissionRejectionReason | undefined;
 };
 
+type ChatSessionKeyboardScopeHandlerInput = {
+  chatSessionState: ChatSessionState;
+  chatSessionKeyboardInput: ChatSessionKeyboardInput;
+  isPromptSubmissionInFlight: boolean;
+};
+
+type ChatSessionKeyboardScopeHandler = (
+  input: ChatSessionKeyboardScopeHandlerInput,
+) => ChatSessionKeyboardInteraction;
+
+const chatSessionKeyboardScopeHandlerByScope: {
+  readonly [Scope in ChatSessionInteractionScope]: ChatSessionKeyboardScopeHandler;
+} = {
+  command_help_modal: (input) =>
+    applyKeyboardInputToCommandHelpModalState(input.chatSessionState, input.chatSessionKeyboardInput),
+  model_selection: (input) =>
+    applyKeyboardInputToModelSelectionState(input.chatSessionState, input.chatSessionKeyboardInput),
+  reasoning_effort_selection: (input) =>
+    applyKeyboardInputToReasoningEffortSelectionState(input.chatSessionState, input.chatSessionKeyboardInput),
+  conversation_session_selection: (input) =>
+    applyKeyboardInputToConversationSessionSelectionState(input.chatSessionState, input.chatSessionKeyboardInput),
+  slash_command_selection: (input) =>
+    applyKeyboardInputToSlashCommandSelectionState(input.chatSessionState, input.chatSessionKeyboardInput),
+  prompt_context_selection: (input) =>
+    applyKeyboardInputToPromptContextSelectionState(input.chatSessionState, input.chatSessionKeyboardInput),
+  tool_approval: (input) =>
+    applyKeyboardInputToToolApprovalState(input.chatSessionState, input.chatSessionKeyboardInput),
+  prompt_draft_editing: applyKeyboardInputToPromptDraftEditingState,
+};
+
 export function resolveChatSessionInteractionScope(chatSessionState: ChatSessionState): ChatSessionInteractionScope {
   if (chatSessionState.isCommandHelpModalVisible) {
     return "command_help_modal";
@@ -203,39 +233,7 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
     });
   }
 
-  if (interactionScope === "command_help_modal") {
-    return applyKeyboardInputToCommandHelpModalState(input.chatSessionState, input.chatSessionKeyboardInput);
-  }
-
-  if (interactionScope === "conversation_session_selection") {
-    return applyKeyboardInputToConversationSessionSelectionState(input.chatSessionState, input.chatSessionKeyboardInput);
-  }
-
-  if (interactionScope === "model_selection") {
-    return applyKeyboardInputToModelSelectionState(input.chatSessionState, input.chatSessionKeyboardInput);
-  }
-
-  if (interactionScope === "reasoning_effort_selection") {
-    return applyKeyboardInputToReasoningEffortSelectionState(input.chatSessionState, input.chatSessionKeyboardInput);
-  }
-
-  if (interactionScope === "slash_command_selection") {
-    return applyKeyboardInputToSlashCommandSelectionState(input.chatSessionState, input.chatSessionKeyboardInput);
-  }
-
-  if (interactionScope === "prompt_context_selection") {
-    return applyKeyboardInputToPromptContextSelectionState(input.chatSessionState, input.chatSessionKeyboardInput);
-  }
-
-  if (interactionScope === "tool_approval") {
-    return applyKeyboardInputToToolApprovalState(input.chatSessionState, input.chatSessionKeyboardInput);
-  }
-
-  return applyKeyboardInputToPromptDraftEditingState({
-    chatSessionState: input.chatSessionState,
-    chatSessionKeyboardInput: input.chatSessionKeyboardInput,
-    isPromptSubmissionInFlight: input.isPromptSubmissionInFlight,
-  });
+  return chatSessionKeyboardScopeHandlerByScope[interactionScope](input);
 }
 
 function shouldIgnorePromptDraftEditingDuringToolApproval(

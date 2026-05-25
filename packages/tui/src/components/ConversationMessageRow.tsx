@@ -21,7 +21,7 @@ import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
 import { WorkspacePatchPartView } from "./messageParts/WorkspacePatchPartView.tsx";
 import { hasVisibleReasoningSummaryText } from "./messageParts/reasoningSummaryText.ts";
 
-function ConversationMessagePartView(props: {
+type ConversationMessagePartViewProps = {
   conversationMessagePart: ConversationMessagePart;
   isReasoningSummaryVisible: boolean;
   horizontalRuleColor: string;
@@ -29,83 +29,169 @@ function ConversationMessagePartView(props: {
   userMessageBorderColor: string;
   workspacePatch?: WorkspacePatch;
   terminalColumnCount?: number | undefined;
-}): ReactNode {
-  const { conversationMessagePart } = props;
-  if (conversationMessagePart.partKind === "user_text") {
-    return (
-      <UserPromptBlock
-        promptText={conversationMessagePart.text}
-        userPromptBorderColor={props.userMessageBorderColor}
-      />
-    );
-  }
-  if (conversationMessagePart.partKind === "user_image_attachment") {
-    return <UserImageAttachmentBlock attachment={conversationMessagePart.attachment} />;
-  }
-  if (conversationMessagePart.partKind === "assistant_text") {
-    return (
-      <AssistantTextPartView
-        assistantTextConversationMessagePart={conversationMessagePart}
-        horizontalRuleColor={props.horizontalRuleColor}
-        terminalColumnCount={props.terminalColumnCount}
-      />
-    );
-  }
-  if (conversationMessagePart.partKind === "assistant_compaction_separator") {
-    return (
-      <CompactionSeparatorPartView
-        assistantCompactionSeparatorConversationMessagePart={conversationMessagePart}
-        accentColor={props.horizontalRuleColor}
-      />
-    );
-  }
-  if (conversationMessagePart.partKind === "assistant_reasoning") {
-    return (
-      <ReasoningPartView
-        assistantReasoningConversationMessagePart={conversationMessagePart}
-        isReasoningSummaryVisible={props.isReasoningSummaryVisible}
-      />
-    );
-  }
-  if (conversationMessagePart.partKind === "assistant_tool_call") {
-    const pendingToolCallApprovalDecisionActions = resolvePendingToolCallApprovalDecisionActions({
-      conversationMessagePart,
-      pendingToolApprovalDecision: props.pendingToolApprovalDecision,
-    });
-    return (
-      <ToolCallPartView
-        assistantToolCallConversationMessagePart={conversationMessagePart}
-        {...(pendingToolCallApprovalDecisionActions !== undefined
-          ? { pendingToolCallApprovalDecisionActions }
-          : {})}
-        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
-      />
-    );
-  }
-  if (conversationMessagePart.partKind === "assistant_workspace_patch") {
-    return <WorkspacePatchPartView assistantWorkspacePatchConversationMessagePart={conversationMessagePart} />;
-  }
-  if (conversationMessagePart.partKind === "assistant_plan_proposal") {
-    return <PlanProposalBlock planTitle={conversationMessagePart.planTitle} planSteps={conversationMessagePart.planSteps} />;
-  }
-  if (conversationMessagePart.partKind === "assistant_rate_limit_notice") {
-    return (
-      <RateLimitNoticeBlock
-        retryAfterSeconds={conversationMessagePart.retryAfterSeconds}
-        limitExplanation={conversationMessagePart.limitExplanation}
-        noticeStartedAtMs={conversationMessagePart.noticeStartedAtMs}
-      />
-    );
-  }
-  if (conversationMessagePart.partKind === "assistant_incomplete_notice") {
-    return <IncompleteResponseNoticeBlock incompleteReason={conversationMessagePart.incompleteReason} />;
-  }
-  if (conversationMessagePart.partKind === "assistant_error_notice") {
-    return <ErrorBannerBlock errorText={conversationMessagePart.errorText} />;
-  }
-  if (conversationMessagePart.partKind === "assistant_interrupted_notice") {
-    return <ErrorBannerBlock titleText="Interrupted" errorText={conversationMessagePart.interruptionReason} />;
-  }
+};
+
+type ConversationMessagePartKind = ConversationMessagePart["partKind"];
+type ConversationMessagePartByKind<PartKind extends ConversationMessagePartKind> = Extract<
+  ConversationMessagePart,
+  { partKind: PartKind }
+>;
+type ConversationMessagePartRendererProps<PartKind extends ConversationMessagePartKind> = Omit<
+  ConversationMessagePartViewProps,
+  "conversationMessagePart"
+> & {
+  conversationMessagePart: ConversationMessagePartByKind<PartKind>;
+};
+type ConversationMessagePartRenderer<PartKind extends ConversationMessagePartKind> = (
+  props: ConversationMessagePartRendererProps<PartKind>,
+) => ReactNode;
+
+const conversationMessagePartRendererByKind: {
+  readonly [PartKind in ConversationMessagePartKind]: ConversationMessagePartRenderer<PartKind>;
+} = {
+  user_text: renderUserTextConversationMessagePart,
+  user_image_attachment: renderUserImageAttachmentConversationMessagePart,
+  assistant_text: renderAssistantTextConversationMessagePart,
+  assistant_reasoning: renderAssistantReasoningConversationMessagePart,
+  assistant_tool_call: renderAssistantToolCallConversationMessagePart,
+  assistant_workspace_patch: renderAssistantWorkspacePatchConversationMessagePart,
+  assistant_plan_proposal: renderAssistantPlanProposalConversationMessagePart,
+  assistant_rate_limit_notice: renderAssistantRateLimitNoticeConversationMessagePart,
+  assistant_incomplete_notice: renderAssistantIncompleteNoticeConversationMessagePart,
+  assistant_error_notice: renderAssistantErrorNoticeConversationMessagePart,
+  assistant_interrupted_notice: renderAssistantInterruptedNoticeConversationMessagePart,
+  assistant_turn_summary: renderHiddenConversationMessagePart,
+  assistant_compaction_separator: renderAssistantCompactionSeparatorConversationMessagePart,
+};
+
+function ConversationMessagePartView(props: ConversationMessagePartViewProps): ReactNode {
+  const renderConversationMessagePart = resolveConversationMessagePartRenderer(props.conversationMessagePart);
+  return renderConversationMessagePart(props);
+}
+
+function resolveConversationMessagePartRenderer<PartKind extends ConversationMessagePartKind>(
+  conversationMessagePart: ConversationMessagePartByKind<PartKind>,
+): ConversationMessagePartRenderer<PartKind> {
+  return conversationMessagePartRendererByKind[conversationMessagePart.partKind] as ConversationMessagePartRenderer<PartKind>;
+}
+
+function renderUserTextConversationMessagePart(props: ConversationMessagePartRendererProps<"user_text">): ReactNode {
+  return (
+    <UserPromptBlock
+      promptText={props.conversationMessagePart.text}
+      userPromptBorderColor={props.userMessageBorderColor}
+    />
+  );
+}
+
+function renderUserImageAttachmentConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"user_image_attachment">,
+): ReactNode {
+  return <UserImageAttachmentBlock attachment={props.conversationMessagePart.attachment} />;
+}
+
+function renderAssistantTextConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_text">,
+): ReactNode {
+  return (
+    <AssistantTextPartView
+      assistantTextConversationMessagePart={props.conversationMessagePart}
+      horizontalRuleColor={props.horizontalRuleColor}
+      terminalColumnCount={props.terminalColumnCount}
+    />
+  );
+}
+
+function renderAssistantCompactionSeparatorConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_compaction_separator">,
+): ReactNode {
+  return (
+    <CompactionSeparatorPartView
+      assistantCompactionSeparatorConversationMessagePart={props.conversationMessagePart}
+      accentColor={props.horizontalRuleColor}
+    />
+  );
+}
+
+function renderAssistantReasoningConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_reasoning">,
+): ReactNode {
+  return (
+    <ReasoningPartView
+      assistantReasoningConversationMessagePart={props.conversationMessagePart}
+      isReasoningSummaryVisible={props.isReasoningSummaryVisible}
+    />
+  );
+}
+
+function renderAssistantToolCallConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_tool_call">,
+): ReactNode {
+  const pendingToolCallApprovalDecisionActions = resolvePendingToolCallApprovalDecisionActions({
+    conversationMessagePart: props.conversationMessagePart,
+    pendingToolApprovalDecision: props.pendingToolApprovalDecision,
+  });
+  return (
+    <ToolCallPartView
+      assistantToolCallConversationMessagePart={props.conversationMessagePart}
+      {...(pendingToolCallApprovalDecisionActions !== undefined
+        ? { pendingToolCallApprovalDecisionActions }
+        : {})}
+      {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
+    />
+  );
+}
+
+function renderAssistantWorkspacePatchConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_workspace_patch">,
+): ReactNode {
+  return <WorkspacePatchPartView assistantWorkspacePatchConversationMessagePart={props.conversationMessagePart} />;
+}
+
+function renderAssistantPlanProposalConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_plan_proposal">,
+): ReactNode {
+  return (
+    <PlanProposalBlock
+      planTitle={props.conversationMessagePart.planTitle}
+      planSteps={props.conversationMessagePart.planSteps}
+    />
+  );
+}
+
+function renderAssistantRateLimitNoticeConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_rate_limit_notice">,
+): ReactNode {
+  return (
+    <RateLimitNoticeBlock
+      retryAfterSeconds={props.conversationMessagePart.retryAfterSeconds}
+      limitExplanation={props.conversationMessagePart.limitExplanation}
+      noticeStartedAtMs={props.conversationMessagePart.noticeStartedAtMs}
+    />
+  );
+}
+
+function renderAssistantIncompleteNoticeConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_incomplete_notice">,
+): ReactNode {
+  return <IncompleteResponseNoticeBlock incompleteReason={props.conversationMessagePart.incompleteReason} />;
+}
+
+function renderAssistantErrorNoticeConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_error_notice">,
+): ReactNode {
+  return <ErrorBannerBlock errorText={props.conversationMessagePart.errorText} />;
+}
+
+function renderAssistantInterruptedNoticeConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_interrupted_notice">,
+): ReactNode {
+  return <ErrorBannerBlock titleText="Interrupted" errorText={props.conversationMessagePart.interruptionReason} />;
+}
+
+function renderHiddenConversationMessagePart(
+  _props: ConversationMessagePartRendererProps<"assistant_turn_summary">,
+): ReactNode {
   return null;
 }
 
@@ -174,6 +260,15 @@ type WorkspacePatchMergeResult = {
   workspacePatchByToolCallPartId: Map<string, WorkspacePatch>;
 };
 
+const mergedWorkspacePatchToolNames = new Set<AssistantToolCallConversationMessagePart["toolCallDetail"]["toolName"]>([
+  "edit",
+  "edit_many",
+  "patch",
+  "patch_many",
+  "write",
+  "bash",
+]);
+
 function mergeMatchingWorkspacePatchesIntoToolCallParts(
   conversationMessageParts: readonly ConversationMessagePart[],
 ): WorkspacePatchMergeResult {
@@ -230,12 +325,7 @@ function collectWorkspacePatchPartsByToolCallId(
 function canToolCallRenderMergedWorkspacePatch(
   conversationMessagePart: AssistantToolCallConversationMessagePart,
 ): boolean {
-  return conversationMessagePart.toolCallDetail.toolName === "edit" ||
-    conversationMessagePart.toolCallDetail.toolName === "edit_many" ||
-    conversationMessagePart.toolCallDetail.toolName === "patch" ||
-    conversationMessagePart.toolCallDetail.toolName === "patch_many" ||
-    conversationMessagePart.toolCallDetail.toolName === "write" ||
-    conversationMessagePart.toolCallDetail.toolName === "bash";
+  return mergedWorkspacePatchToolNames.has(conversationMessagePart.toolCallDetail.toolName);
 }
 
 export function listRenderableConversationMessageParts(input: {

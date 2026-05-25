@@ -593,169 +593,225 @@ function clearPendingToolApprovalRequest(
   return chatSessionState.pendingToolApprovalRequest;
 }
 
+type AssistantResponseEventType = AssistantResponseEvent["type"];
+type AssistantResponseEventByType<EventType extends AssistantResponseEventType> = Extract<
+  AssistantResponseEvent,
+  { type: EventType }
+>;
+type AssistantResponseEventReducer<EventType extends AssistantResponseEventType> = (
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<EventType>,
+) => ChatSessionState;
+
+const assistantResponseEventReducerByType: {
+  readonly [EventType in AssistantResponseEventType]: AssistantResponseEventReducer<EventType>;
+} = {
+  assistant_turn_started: applyAssistantTurnStartedEvent,
+  assistant_message_part_added: applyAssistantMessagePartAddedEvent,
+  assistant_message_part_updated: applyAssistantMessagePartUpdatedEvent,
+  assistant_pending_tool_approval_requested: applyAssistantPendingToolApprovalRequestedEvent,
+  assistant_pending_tool_approval_cleared: applyAssistantPendingToolApprovalClearedEvent,
+  assistant_message_completed: applyAssistantMessageCompletedEvent,
+  assistant_message_incomplete: applyAssistantMessageIncompleteEvent,
+  assistant_message_failed: applyAssistantMessageFailedEvent,
+  assistant_message_interrupted: applyAssistantMessageInterruptedEvent,
+};
+
+function resolveAssistantResponseEventReducer<EventType extends AssistantResponseEventType>(
+  assistantResponseEvent: AssistantResponseEventByType<EventType>,
+): AssistantResponseEventReducer<EventType> {
+  return assistantResponseEventReducerByType[assistantResponseEvent.type] as AssistantResponseEventReducer<EventType>;
+}
+
 export function applyAssistantResponseEventToChatSessionState(
   chatSessionState: ChatSessionState,
   assistantResponseEvent: AssistantResponseEvent,
 ): ChatSessionState {
-  if (assistantResponseEvent.type === "assistant_turn_started") {
-    return appendConversationMessageIfMissing({
+  return resolveAssistantResponseEventReducer(assistantResponseEvent)(chatSessionState, assistantResponseEvent);
+}
+
+function applyAssistantTurnStartedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_turn_started">,
+): ChatSessionState {
+  return appendConversationMessageIfMissing({
+    chatSessionState: {
+      ...chatSessionState,
+      conversationTurnStatus: "streaming_assistant_response",
+      latestTokenUsage: undefined,
+      pendingToolApprovalRequest: undefined,
+    },
+    conversationMessage: {
+      id: assistantResponseEvent.messageId,
+      role: "assistant",
+      messageStatus: "streaming",
+      createdAtMs: assistantResponseEvent.startedAtMs,
+      partIds: [],
+    },
+  });
+}
+
+function applyAssistantMessagePartAddedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_message_part_added">,
+): ChatSessionState {
+  return upsertConversationMessagePart({
+    chatSessionState,
+    messageId: assistantResponseEvent.messageId,
+    conversationMessagePart: assistantResponseEvent.part,
+  });
+}
+
+function applyAssistantMessagePartUpdatedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_message_part_updated">,
+): ChatSessionState {
+  return upsertConversationMessagePart({
+    chatSessionState,
+    messageId: assistantResponseEvent.messageId,
+    conversationMessagePart: assistantResponseEvent.part,
+  });
+}
+
+function applyAssistantPendingToolApprovalRequestedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_pending_tool_approval_requested">,
+): ChatSessionState {
+  return {
+    ...chatSessionState,
+    conversationTurnStatus: "waiting_for_tool_approval",
+    pendingToolApprovalRequest: assistantResponseEvent.approvalRequest,
+  };
+}
+
+function applyAssistantPendingToolApprovalClearedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_pending_tool_approval_cleared">,
+): ChatSessionState {
+  return {
+    ...chatSessionState,
+    conversationTurnStatus:
+      chatSessionState.conversationTurnStatus === "waiting_for_tool_approval"
+        ? "streaming_assistant_response"
+        : chatSessionState.conversationTurnStatus,
+    pendingToolApprovalRequest: clearPendingToolApprovalRequest(chatSessionState, assistantResponseEvent.approvalId),
+  };
+}
+
+function applyAssistantMessageCompletedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_message_completed">,
+): ChatSessionState {
+  return backfillCompletedReasoningPartTokenCountForMessage(
+    backfillAssistantTurnSummaryUsageForMessage(
+      markCompletedConversationMessageParts(updateConversationMessage({
         chatSessionState: {
           ...chatSessionState,
-          conversationTurnStatus: "streaming_assistant_response",
-          latestTokenUsage: undefined,
+          conversationTurnStatus: "waiting_for_user_input",
+          latestTokenUsage: assistantResponseEvent.usage,
+          latestContextWindowUsage: assistantResponseEvent.contextWindowUsage ?? assistantResponseEvent.usage,
           pendingToolApprovalRequest: undefined,
         },
-      conversationMessage: {
-        id: assistantResponseEvent.messageId,
-        role: "assistant",
-        messageStatus: "streaming",
-        createdAtMs: assistantResponseEvent.startedAtMs,
-        partIds: [],
-      },
-    });
-  }
-
-  if (assistantResponseEvent.type === "assistant_message_part_added") {
-    return upsertConversationMessagePart({
-      chatSessionState,
-      messageId: assistantResponseEvent.messageId,
-      conversationMessagePart: assistantResponseEvent.part,
-    });
-  }
-
-  if (assistantResponseEvent.type === "assistant_message_part_updated") {
-    return upsertConversationMessagePart({
-      chatSessionState,
-      messageId: assistantResponseEvent.messageId,
-      conversationMessagePart: assistantResponseEvent.part,
-    });
-  }
-
-  if (assistantResponseEvent.type === "assistant_pending_tool_approval_requested") {
-    return {
-      ...chatSessionState,
-      conversationTurnStatus: "waiting_for_tool_approval",
-      pendingToolApprovalRequest: assistantResponseEvent.approvalRequest,
-    };
-  }
-
-  if (assistantResponseEvent.type === "assistant_pending_tool_approval_cleared") {
-    return {
-      ...chatSessionState,
-      conversationTurnStatus:
-        chatSessionState.conversationTurnStatus === "waiting_for_tool_approval"
-          ? "streaming_assistant_response"
-          : chatSessionState.conversationTurnStatus,
-      pendingToolApprovalRequest: clearPendingToolApprovalRequest(chatSessionState, assistantResponseEvent.approvalId),
-    };
-  }
-
-  if (assistantResponseEvent.type === "assistant_message_completed") {
-    return backfillCompletedReasoningPartTokenCountForMessage(
-      backfillAssistantTurnSummaryUsageForMessage(
-        markCompletedConversationMessageParts(updateConversationMessage({
-          chatSessionState: {
-            ...chatSessionState,
-            conversationTurnStatus: "waiting_for_user_input",
-            latestTokenUsage: assistantResponseEvent.usage,
-            latestContextWindowUsage: assistantResponseEvent.contextWindowUsage ?? assistantResponseEvent.usage,
-            pendingToolApprovalRequest: undefined,
-          },
-          messageId: assistantResponseEvent.messageId,
-          updateConversationMessage: (conversationMessage) => ({
-            ...conversationMessage,
-            messageStatus: "completed",
-          }),
-        }), assistantResponseEvent.messageId),
-        assistantResponseEvent.messageId,
-        assistantResponseEvent.usage,
-      ),
+        messageId: assistantResponseEvent.messageId,
+        updateConversationMessage: (conversationMessage) => ({
+          ...conversationMessage,
+          messageStatus: "completed",
+        }),
+      }), assistantResponseEvent.messageId),
       assistantResponseEvent.messageId,
-      assistantResponseEvent.usage.reasoning,
-    );
-  }
+      assistantResponseEvent.usage,
+    ),
+    assistantResponseEvent.messageId,
+    assistantResponseEvent.usage.reasoning,
+  );
+}
 
-  if (assistantResponseEvent.type === "assistant_message_incomplete") {
-    return backfillCompletedReasoningPartTokenCountForMessage(
-      backfillAssistantTurnSummaryUsageForMessage(
-        appendAssistantIncompleteNoticePartIfMissing(
-          markIncompleteConversationMessageParts({
-            chatSessionState: updateConversationMessage({
-              chatSessionState: {
-                ...chatSessionState,
-                conversationTurnStatus: "waiting_for_user_input",
-                latestTokenUsage: assistantResponseEvent.usage,
-                latestContextWindowUsage: assistantResponseEvent.contextWindowUsage ?? assistantResponseEvent.usage,
-                pendingToolApprovalRequest: undefined,
-              },
-              messageId: assistantResponseEvent.messageId,
-              updateConversationMessage: (conversationMessage) => ({
-                ...conversationMessage,
-                messageStatus: "incomplete",
-              }),
-            }),
+function applyAssistantMessageIncompleteEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_message_incomplete">,
+): ChatSessionState {
+  return backfillCompletedReasoningPartTokenCountForMessage(
+    backfillAssistantTurnSummaryUsageForMessage(
+      appendAssistantIncompleteNoticePartIfMissing(
+        markIncompleteConversationMessageParts({
+          chatSessionState: updateConversationMessage({
+            chatSessionState: {
+              ...chatSessionState,
+              conversationTurnStatus: "waiting_for_user_input",
+              latestTokenUsage: assistantResponseEvent.usage,
+              latestContextWindowUsage: assistantResponseEvent.contextWindowUsage ?? assistantResponseEvent.usage,
+              pendingToolApprovalRequest: undefined,
+            },
             messageId: assistantResponseEvent.messageId,
-            incompleteToolCallErrorText: `Assistant message became incomplete: ${assistantResponseEvent.incompleteReason}`,
+            updateConversationMessage: (conversationMessage) => ({
+              ...conversationMessage,
+              messageStatus: "incomplete",
+            }),
           }),
-          assistantResponseEvent.messageId,
-          assistantResponseEvent.incompleteReason,
-        ),
+          messageId: assistantResponseEvent.messageId,
+          incompleteToolCallErrorText: `Assistant message became incomplete: ${assistantResponseEvent.incompleteReason}`,
+        }),
         assistantResponseEvent.messageId,
-        assistantResponseEvent.usage,
+        assistantResponseEvent.incompleteReason,
       ),
       assistantResponseEvent.messageId,
-      assistantResponseEvent.usage.reasoning,
-    );
-  }
+      assistantResponseEvent.usage,
+    ),
+    assistantResponseEvent.messageId,
+    assistantResponseEvent.usage.reasoning,
+  );
+}
 
-  if (assistantResponseEvent.type === "assistant_message_failed") {
-    return appendAssistantErrorNoticePartIfMissing(
-      markFailedConversationMessageParts({
-        chatSessionState: updateConversationMessage({
-          chatSessionState: {
-            ...chatSessionState,
-            conversationTurnStatus: "waiting_for_user_input",
-            pendingToolApprovalRequest: undefined,
-          },
-          messageId: assistantResponseEvent.messageId,
-          updateConversationMessage: (conversationMessage) => ({
-            ...conversationMessage,
-            messageStatus: "failed",
-          }),
-        }),
+function applyAssistantMessageFailedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_message_failed">,
+): ChatSessionState {
+  return appendAssistantErrorNoticePartIfMissing(
+    markFailedConversationMessageParts({
+      chatSessionState: updateConversationMessage({
+        chatSessionState: {
+          ...chatSessionState,
+          conversationTurnStatus: "waiting_for_user_input",
+          pendingToolApprovalRequest: undefined,
+        },
         messageId: assistantResponseEvent.messageId,
-        failureExplanation: assistantResponseEvent.errorText,
-      }),
-      assistantResponseEvent.messageId,
-      assistantResponseEvent.errorText,
-    );
-  }
-
-  if (assistantResponseEvent.type === "assistant_message_interrupted") {
-    return appendAssistantInterruptedNoticePartIfMissing(
-      markInterruptedConversationMessageParts({
-        chatSessionState: updateConversationMessage({
-          chatSessionState: {
-            ...chatSessionState,
-            conversationTurnStatus: "waiting_for_user_input",
-            pendingToolApprovalRequest: undefined,
-          },
-          messageId: assistantResponseEvent.messageId,
-          updateConversationMessage: (conversationMessage) => ({
-            ...conversationMessage,
-            messageStatus: "interrupted",
-          }),
+        updateConversationMessage: (conversationMessage) => ({
+          ...conversationMessage,
+          messageStatus: "failed",
         }),
-        messageId: assistantResponseEvent.messageId,
-        interruptedToolCallErrorText: assistantResponseEvent.interruptionReason,
       }),
-      assistantResponseEvent.messageId,
-      assistantResponseEvent.interruptionReason,
-    );
-  }
+      messageId: assistantResponseEvent.messageId,
+      failureExplanation: assistantResponseEvent.errorText,
+    }),
+    assistantResponseEvent.messageId,
+    assistantResponseEvent.errorText,
+  );
+}
 
-  const unreachableAssistantResponseEvent: never = assistantResponseEvent;
-  return unreachableAssistantResponseEvent;
+function applyAssistantMessageInterruptedEvent(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEventByType<"assistant_message_interrupted">,
+): ChatSessionState {
+  return appendAssistantInterruptedNoticePartIfMissing(
+    markInterruptedConversationMessageParts({
+      chatSessionState: updateConversationMessage({
+        chatSessionState: {
+          ...chatSessionState,
+          conversationTurnStatus: "waiting_for_user_input",
+          pendingToolApprovalRequest: undefined,
+        },
+        messageId: assistantResponseEvent.messageId,
+        updateConversationMessage: (conversationMessage) => ({
+          ...conversationMessage,
+          messageStatus: "interrupted",
+        }),
+      }),
+      messageId: assistantResponseEvent.messageId,
+      interruptedToolCallErrorText: assistantResponseEvent.interruptionReason,
+    }),
+    assistantResponseEvent.messageId,
+    assistantResponseEvent.interruptionReason,
+  );
 }
 
 export function applyAssistantResponseEventsToChatSessionState(

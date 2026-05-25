@@ -33,6 +33,58 @@ export type PendingToolCallApprovalDecisionActions = {
   onDeny: () => void;
 };
 
+type ToolCallDetailName = ToolCallDetail["toolName"];
+type ToolCallDetailByName<ToolName extends ToolCallDetailName> = Extract<ToolCallDetail, { toolName: ToolName }>;
+
+type ToolCallCardSharedInput = {
+  renderState: ToolCallEntryViewProps["renderState"];
+  approvalDecisionControl: ReactNode | undefined;
+  durationMs?: number | undefined;
+  errorText?: string | undefined;
+};
+
+type ToolCallCardSharedProps = {
+  renderState: ToolCallEntryViewProps["renderState"];
+  approvalDecisionControl?: ReactNode;
+  durationMs?: number;
+  errorText?: string;
+};
+
+type ToolCallCardWorkspacePatchInput = ToolCallCardSharedInput & {
+  workspacePatch?: WorkspacePatch | undefined;
+};
+
+type ToolCallCardWorkspacePatchProps = ToolCallCardSharedProps & {
+  workspacePatch?: WorkspacePatch;
+};
+
+type ToolCallEntryRendererProps<ToolName extends ToolCallDetailName> = Omit<ToolCallEntryViewProps, "toolCallDetail"> & {
+  toolCallDetail: ToolCallDetailByName<ToolName>;
+  approvalDecisionControl: ReactNode | undefined;
+};
+
+type ToolCallEntryRenderer<ToolName extends ToolCallDetailName> = (
+  props: ToolCallEntryRendererProps<ToolName>,
+) => ReactNode;
+
+const toolCallEntryRendererByName: {
+  readonly [ToolName in ToolCallDetailName]: ToolCallEntryRenderer<ToolName>;
+} = {
+  read: renderReadToolCallEntry,
+  read_many: renderReadManyToolCallEntry,
+  search_many: renderSearchManyToolCallEntry,
+  grep: renderGrepToolCallEntry,
+  glob: renderGlobToolCallEntry,
+  edit: renderEditToolCallEntry,
+  edit_many: renderEditManyToolCallEntry,
+  patch: renderPatchToolCallEntry,
+  patch_many: renderPatchToolCallEntry,
+  write: renderWriteToolCallEntry,
+  bash: renderBashToolCallEntry,
+  todowrite: renderTodoWriteToolCallEntry,
+  task: renderTaskToolCallEntry,
+};
+
 export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   const { toolCallDetail } = props;
   const approvalDecisionControl = props.pendingToolCallApprovalDecisionActions ? (
@@ -41,138 +93,87 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       onDeny={props.pendingToolCallApprovalDecisionActions.onDeny}
     />
   ) : undefined;
-  if (toolCallDetail.toolName === "read") {
-    return (
-      <ReadToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "read_many") {
-    return (
-      <ReadManyToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "search_many") {
-    return (
-      <SearchManyToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "grep") {
-    return (
-      <GrepToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "glob") {
-    return (
-      <GlobToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "edit") {
-    return (
-      <EditToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "edit_many") {
-    return (
-      <EditManyToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "patch" || toolCallDetail.toolName === "patch_many") {
-    return (
-      <PatchToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "write") {
-    return (
-      <WriteToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "bash") {
-    return (
-      <BashToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  if (toolCallDetail.toolName === "todowrite") {
-    return (
-      <TodoWriteToolCallCard
-        renderState={props.renderState}
-        toolCallDetail={toolCallDetail}
-        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
-        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
-        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
-      />
-    );
-  }
-  // Remaining arm: task. Exhaustive over ToolCallDetail's discriminated union.
+
+  const renderToolCallEntry = resolveToolCallEntryRenderer(toolCallDetail);
+  return renderToolCallEntry({
+    ...props,
+    toolCallDetail,
+    approvalDecisionControl,
+  });
+}
+
+function resolveToolCallEntryRenderer<ToolName extends ToolCallDetailName>(
+  toolCallDetail: ToolCallDetailByName<ToolName>,
+): ToolCallEntryRenderer<ToolName> {
+  return toolCallEntryRendererByName[toolCallDetail.toolName] as ToolCallEntryRenderer<ToolName>;
+}
+
+function buildSharedToolCallCardProps(props: ToolCallCardSharedInput): ToolCallCardSharedProps {
+  return {
+    renderState: props.renderState,
+    ...(props.approvalDecisionControl !== undefined ? { approvalDecisionControl: props.approvalDecisionControl } : {}),
+    ...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {}),
+    ...(props.errorText !== undefined ? { errorText: props.errorText } : {}),
+  };
+}
+
+function buildWorkspacePatchToolCallCardProps(props: ToolCallCardWorkspacePatchInput): ToolCallCardWorkspacePatchProps {
+  return {
+    ...buildSharedToolCallCardProps(props),
+    ...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {}),
+  };
+}
+
+function renderReadToolCallEntry(props: ToolCallEntryRendererProps<"read">): ReactNode {
+  return <ReadToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderReadManyToolCallEntry(props: ToolCallEntryRendererProps<"read_many">): ReactNode {
+  return <ReadManyToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderSearchManyToolCallEntry(props: ToolCallEntryRendererProps<"search_many">): ReactNode {
+  return <SearchManyToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderGrepToolCallEntry(props: ToolCallEntryRendererProps<"grep">): ReactNode {
+  return <GrepToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderGlobToolCallEntry(props: ToolCallEntryRendererProps<"glob">): ReactNode {
+  return <GlobToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderEditToolCallEntry(props: ToolCallEntryRendererProps<"edit">): ReactNode {
+  return <EditToolCallCard {...buildWorkspacePatchToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderEditManyToolCallEntry(props: ToolCallEntryRendererProps<"edit_many">): ReactNode {
+  return <EditManyToolCallCard {...buildWorkspacePatchToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderPatchToolCallEntry(props: ToolCallEntryRendererProps<"patch" | "patch_many">): ReactNode {
+  return <PatchToolCallCard {...buildWorkspacePatchToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderWriteToolCallEntry(props: ToolCallEntryRendererProps<"write">): ReactNode {
+  return <WriteToolCallCard {...buildWorkspacePatchToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderBashToolCallEntry(props: ToolCallEntryRendererProps<"bash">): ReactNode {
+  return <BashToolCallCard {...buildWorkspacePatchToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderTodoWriteToolCallEntry(props: ToolCallEntryRendererProps<"todowrite">): ReactNode {
+  return <TodoWriteToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderTaskToolCallEntry(props: ToolCallEntryRendererProps<"task">): ReactNode {
   return (
     <TaskToolCallCard
       renderState={props.renderState}
-      toolCallDetail={toolCallDetail}
-      {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
+      toolCallDetail={props.toolCallDetail}
+      {...(props.approvalDecisionControl !== undefined ? { approvalDecisionControl: props.approvalDecisionControl } : {})}
       {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
       {...(props.toolCallStartedAtMs !== undefined ? { toolCallStartedAtMs: props.toolCallStartedAtMs } : {})}
       {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}

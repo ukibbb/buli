@@ -36,6 +36,7 @@ import {
   repeatAssistantMarkdownChromeRule,
   summarizeAssistantDiffSnippet,
   summarizeAssistantUnifiedDiffFiles,
+  type AssistantMarkdownRenderSection,
   type AssistantMarkdownCalloutKind,
   type AssistantMarkdownCodeFenceInfo,
   type AssistantMarkdownRenderSectionCache,
@@ -537,6 +538,40 @@ const MemoizedAssistantUnifiedDiffBlock = memo(AssistantUnifiedDiffBlock);
 const MemoizedAssistantDiffSnippetBlock = memo(AssistantDiffSnippetBlock);
 const MemoizedAssistantShellSnippetBlock = memo(AssistantShellSnippetBlock);
 
+type AssistantMarkdownRenderSectionKind = AssistantMarkdownRenderSection["sectionKind"];
+type AssistantMarkdownRenderSectionByKind<SectionKind extends AssistantMarkdownRenderSectionKind> = Extract<
+  AssistantMarkdownRenderSection,
+  { sectionKind: SectionKind }
+>;
+
+type AssistantMarkdownRenderSectionRendererInput<SectionKind extends AssistantMarkdownRenderSectionKind> = {
+  assistantMarkdownRenderSection: AssistantMarkdownRenderSectionByKind<SectionKind>;
+  horizontalRuleColor: string;
+  horizontalRuleText: string;
+  isStreaming: boolean;
+  renderNode: NonNullable<MarkdownOptions["renderNode"]>;
+};
+
+type AssistantMarkdownRenderSectionRenderer<SectionKind extends AssistantMarkdownRenderSectionKind> = (
+  input: AssistantMarkdownRenderSectionRendererInput<SectionKind>,
+) => ReactNode;
+
+const assistantMarkdownRenderSectionRendererByKind: {
+  readonly [SectionKind in AssistantMarkdownRenderSectionKind]: AssistantMarkdownRenderSectionRenderer<SectionKind>;
+} = {
+  markdown: renderMarkdownTextRenderSection,
+  paragraph: renderParagraphRenderSection,
+  heading: renderHeadingRenderSection,
+  horizontalRule: renderHorizontalRuleRenderSection,
+  table: renderTableRenderSection,
+  codeFence: renderCodeFenceRenderSection,
+  list: renderListRenderSection,
+  blockquote: renderBlockquoteRenderSection,
+  unifiedDiff: renderUnifiedDiffRenderSection,
+  shellSnippet: renderShellSnippetRenderSection,
+  diffSnippet: renderDiffSnippetRenderSection,
+};
+
 export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): ReactNode {
   const renderSectionCacheRef = useRef<AssistantMarkdownRenderSectionCache | undefined>(undefined);
   const terminalColumnCount = props.terminalColumnCount ?? defaultAssistantMarkdownTerminalColumnCount;
@@ -633,75 +668,142 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
 
   return (
     <box flexDirection="column" width="100%">
-      {assistantMarkdownRenderSections.map((assistantMarkdownRenderSection) => (
-        assistantMarkdownRenderSection.sectionKind === "markdown" ? (
-          <AssistantMarkdownTextSection
-            isStreaming={props.isStreaming}
-            key={assistantMarkdownRenderSection.sectionKey}
-            markdownText={assistantMarkdownRenderSection.markdownText}
-            renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "paragraph" ? (
-          <MemoizedAssistantMarkdownParagraphBlock
-            key={assistantMarkdownRenderSection.sectionKey}
-            paragraphText={assistantMarkdownRenderSection.paragraphText}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "heading" ? (
-          <MemoizedAssistantMarkdownHeadingBlock
-            headingDepth={assistantMarkdownRenderSection.headingDepth}
-            headingText={assistantMarkdownRenderSection.headingText}
-            key={assistantMarkdownRenderSection.sectionKey}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "horizontalRule" ? (
-          <MemoizedAssistantMarkdownHorizontalRuleBlock
-            horizontalRuleColor={props.horizontalRuleColor}
-            horizontalRuleText={horizontalRuleText}
-            key={assistantMarkdownRenderSection.sectionKey}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "table" ? (
-          <MemoizedAssistantMarkdownTableBlock
-            isStreaming={props.isStreaming}
-            key={assistantMarkdownRenderSection.sectionKey}
-            renderNode={renderMarkdownNodeWithBuliChromeEnhancements}
-            tableMarkdownText={assistantMarkdownRenderSection.tableMarkdownText}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "codeFence" ? (
-          <MemoizedAssistantCodeFenceBlock
-            codeFenceInfo={assistantMarkdownRenderSection.codeFenceInfo}
-            codeFenceText={assistantMarkdownRenderSection.codeFenceText}
-            key={assistantMarkdownRenderSection.sectionKey}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "list" ? (
-          <MemoizedAssistantMarkdownListBlock
-            hasLeadingBlankLine={assistantMarkdownRenderSection.hasLeadingBlankLine}
-            key={assistantMarkdownRenderSection.sectionKey}
-            listLines={assistantMarkdownRenderSection.listLines}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "blockquote" ? (
-          <MemoizedAssistantMarkdownQuoteBlock
-            key={assistantMarkdownRenderSection.sectionKey}
-            quoteText={assistantMarkdownRenderSection.quoteText}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "unifiedDiff" ? (
-          <MemoizedAssistantUnifiedDiffBlock
-            key={assistantMarkdownRenderSection.sectionKey}
-            unifiedDiffText={assistantMarkdownRenderSection.unifiedDiffText}
-          />
-        ) : assistantMarkdownRenderSection.sectionKind === "shellSnippet" ? (
-          <MemoizedAssistantShellSnippetBlock
-            key={assistantMarkdownRenderSection.sectionKey}
-            shellSnippetText={assistantMarkdownRenderSection.shellSnippetText}
-          />
-        ) : (
-          <MemoizedAssistantDiffSnippetBlock
-            diffSnippetText={assistantMarkdownRenderSection.diffSnippetText}
-            {...(assistantMarkdownRenderSection.filePath !== undefined
-              ? { filePath: assistantMarkdownRenderSection.filePath }
-              : {})}
-            key={assistantMarkdownRenderSection.sectionKey}
-          />
-        )
-      ))}
+      {assistantMarkdownRenderSections.map((assistantMarkdownRenderSection) =>
+        renderAssistantMarkdownRenderSection({
+          assistantMarkdownRenderSection,
+          horizontalRuleColor: props.horizontalRuleColor,
+          horizontalRuleText,
+          isStreaming: props.isStreaming,
+          renderNode: renderMarkdownNodeWithBuliChromeEnhancements,
+        })
+      )}
     </box>
+  );
+}
+
+function renderAssistantMarkdownRenderSection(input: {
+  assistantMarkdownRenderSection: AssistantMarkdownRenderSection;
+  horizontalRuleColor: string;
+  horizontalRuleText: string;
+  isStreaming: boolean;
+  renderNode: NonNullable<MarkdownOptions["renderNode"]>;
+}): ReactNode {
+  const renderSection = resolveAssistantMarkdownRenderSectionRenderer(input.assistantMarkdownRenderSection);
+  return renderSection(input);
+}
+
+function resolveAssistantMarkdownRenderSectionRenderer<SectionKind extends AssistantMarkdownRenderSectionKind>(
+  assistantMarkdownRenderSection: AssistantMarkdownRenderSectionByKind<SectionKind>,
+): AssistantMarkdownRenderSectionRenderer<SectionKind> {
+  return assistantMarkdownRenderSectionRendererByKind[assistantMarkdownRenderSection.sectionKind] as AssistantMarkdownRenderSectionRenderer<SectionKind>;
+}
+
+function renderMarkdownTextRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"markdown">): ReactNode {
+  return (
+    <AssistantMarkdownTextSection
+      isStreaming={input.isStreaming}
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      markdownText={input.assistantMarkdownRenderSection.markdownText}
+      renderNode={input.renderNode}
+    />
+  );
+}
+
+function renderParagraphRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"paragraph">): ReactNode {
+  return (
+    <MemoizedAssistantMarkdownParagraphBlock
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      paragraphText={input.assistantMarkdownRenderSection.paragraphText}
+    />
+  );
+}
+
+function renderHeadingRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"heading">): ReactNode {
+  return (
+    <MemoizedAssistantMarkdownHeadingBlock
+      headingDepth={input.assistantMarkdownRenderSection.headingDepth}
+      headingText={input.assistantMarkdownRenderSection.headingText}
+      key={input.assistantMarkdownRenderSection.sectionKey}
+    />
+  );
+}
+
+function renderHorizontalRuleRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"horizontalRule">): ReactNode {
+  return (
+    <MemoizedAssistantMarkdownHorizontalRuleBlock
+      horizontalRuleColor={input.horizontalRuleColor}
+      horizontalRuleText={input.horizontalRuleText}
+      key={input.assistantMarkdownRenderSection.sectionKey}
+    />
+  );
+}
+
+function renderTableRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"table">): ReactNode {
+  return (
+    <MemoizedAssistantMarkdownTableBlock
+      isStreaming={input.isStreaming}
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      renderNode={input.renderNode}
+      tableMarkdownText={input.assistantMarkdownRenderSection.tableMarkdownText}
+    />
+  );
+}
+
+function renderCodeFenceRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"codeFence">): ReactNode {
+  return (
+    <MemoizedAssistantCodeFenceBlock
+      codeFenceInfo={input.assistantMarkdownRenderSection.codeFenceInfo}
+      codeFenceText={input.assistantMarkdownRenderSection.codeFenceText}
+      key={input.assistantMarkdownRenderSection.sectionKey}
+    />
+  );
+}
+
+function renderListRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"list">): ReactNode {
+  return (
+    <MemoizedAssistantMarkdownListBlock
+      hasLeadingBlankLine={input.assistantMarkdownRenderSection.hasLeadingBlankLine}
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      listLines={input.assistantMarkdownRenderSection.listLines}
+    />
+  );
+}
+
+function renderBlockquoteRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"blockquote">): ReactNode {
+  return (
+    <MemoizedAssistantMarkdownQuoteBlock
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      quoteText={input.assistantMarkdownRenderSection.quoteText}
+    />
+  );
+}
+
+function renderUnifiedDiffRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"unifiedDiff">): ReactNode {
+  return (
+    <MemoizedAssistantUnifiedDiffBlock
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      unifiedDiffText={input.assistantMarkdownRenderSection.unifiedDiffText}
+    />
+  );
+}
+
+function renderShellSnippetRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"shellSnippet">): ReactNode {
+  return (
+    <MemoizedAssistantShellSnippetBlock
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      shellSnippetText={input.assistantMarkdownRenderSection.shellSnippetText}
+    />
+  );
+}
+
+function renderDiffSnippetRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"diffSnippet">): ReactNode {
+  return (
+    <MemoizedAssistantDiffSnippetBlock
+      diffSnippetText={input.assistantMarkdownRenderSection.diffSnippetText}
+      {...(input.assistantMarkdownRenderSection.filePath !== undefined
+        ? { filePath: input.assistantMarkdownRenderSection.filePath }
+        : {})}
+      key={input.assistantMarkdownRenderSection.sectionKey}
+    />
   );
 }

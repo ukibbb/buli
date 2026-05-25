@@ -23,37 +23,62 @@ import {
 import {
   prepareEditManyToolCall,
   runPreparedEditManyToolCall,
-  type PreparedEditManyToolCall,
 } from "./tools/editManyTool.ts";
 import {
   prepareEditToolCall,
   runPreparedEditToolCall,
-  type PreparedEditToolCall,
 } from "./tools/editTool.ts";
 import {
   preparePatchManyToolCall,
   preparePatchToolCall,
   runPreparedPatchManyToolCall,
   runPreparedPatchToolCall,
-  type PreparedPatchManyToolCall,
-  type PreparedPatchToolCall,
 } from "./tools/patchTool.ts";
 import type { FailedToolCallOutcome, ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 import {
   prepareWriteToolCall,
   runPreparedWriteToolCall,
-  type PreparedWriteToolCall,
 } from "./tools/writeTool.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export type FileMutationToolCallRequest = ContractFileMutationToolCallRequest;
 
-type PreparedFileMutationToolCall =
-  | { toolName: "edit"; preparedEditToolCall: PreparedEditToolCall }
-  | { toolName: "edit_many"; preparedEditManyToolCall: PreparedEditManyToolCall }
-  | { toolName: "patch"; preparedPatchToolCall: PreparedPatchToolCall }
-  | { toolName: "patch_many"; preparedPatchManyToolCall: PreparedPatchManyToolCall }
-  | { toolName: "write"; preparedWriteToolCall: PreparedWriteToolCall };
+type PreparedFileMutationToolCallRunInput = {
+  workspaceRootPath: string;
+  abortSignal: AbortSignal;
+};
+
+type PreparedFileMutationToolCall = {
+  toolName: FileMutationToolCallRequest["toolName"];
+  toolCallDetail: ToolCallDetail;
+  runPreparedToolCall(input: PreparedFileMutationToolCallRunInput): Promise<ToolCallOutcome>;
+};
+
+type FileMutationToolName = FileMutationToolCallRequest["toolName"];
+type FileMutationToolCallRequestByName<ToolName extends FileMutationToolName> = Extract<
+  FileMutationToolCallRequest,
+  { toolName: ToolName }
+>;
+
+type PrepareFileMutationToolCallInput<ToolName extends FileMutationToolName> = {
+  fileMutationToolCallRequest: FileMutationToolCallRequestByName<ToolName>;
+  workspaceRootPath: string;
+  abortSignal: AbortSignal;
+};
+
+type FileMutationToolCallPreparer<ToolName extends FileMutationToolName> = (
+  input: PrepareFileMutationToolCallInput<ToolName>,
+) => Promise<PreparedFileMutationToolCall | FailedToolCallOutcome>;
+
+const fileMutationToolCallPreparerByName: {
+  readonly [ToolName in FileMutationToolName]: FileMutationToolCallPreparer<ToolName>;
+} = {
+  edit: prepareEditFileMutationToolCall,
+  edit_many: prepareEditManyFileMutationToolCall,
+  patch: preparePatchFileMutationToolCall,
+  patch_many: preparePatchManyFileMutationToolCall,
+  write: prepareWriteFileMutationToolCall,
+};
 
 export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   assistantResponseMessageId: string;
@@ -146,19 +171,18 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
     return;
   }
 
-  const preparedToolCallDetail = getPreparedFileMutationToolCallDetail(preparedFileMutationToolCall);
   yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartAddedEventSchema.parse({
     type: "assistant_message_part_added",
     messageId: input.assistantResponseMessageId,
     part: AssistantToolCallConversationMessagePartSchema.parse({
       id: toolCallPartId,
       partKind: "assistant_tool_call",
-      toolCallId: input.toolCallId,
-      toolCallStatus: "running",
-      toolCallStartedAtMs,
-      toolCallDetail: preparedToolCallDetail,
-    }),
-  }));
+        toolCallId: input.toolCallId,
+        toolCallStatus: "running",
+        toolCallStartedAtMs,
+        toolCallDetail: preparedFileMutationToolCall.toolCallDetail,
+      }),
+    }));
 
   input.throwIfConversationTurnInterrupted();
   const workspacePatchCapture = await beginRuntimeWorkspacePatchCapture({
@@ -167,8 +191,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
     abortSignal: input.abortSignal,
     diagnosticLogger: input.diagnosticLogger,
   });
-  const toolCallOutcome = await runPreparedFileMutationToolCall({
-    preparedFileMutationToolCall,
+  const toolCallOutcome = await preparedFileMutationToolCall.runPreparedToolCall({
     workspaceRootPath: input.workspaceRootPath,
     abortSignal: input.abortSignal,
   });
@@ -260,144 +283,130 @@ async function prepareFileMutationToolCall(input: {
   workspaceRootPath: string;
   abortSignal: AbortSignal;
 }): Promise<PreparedFileMutationToolCall | FailedToolCallOutcome> {
-  if (input.fileMutationToolCallRequest.toolName === "edit") {
-    const editPreparationOutcome = await prepareEditToolCall({
-      editToolCallRequest: input.fileMutationToolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      abortSignal: input.abortSignal,
-    });
-    if (isFailedToolCallOutcome(editPreparationOutcome)) {
-      return editPreparationOutcome;
-    }
-
-    return { toolName: "edit", preparedEditToolCall: editPreparationOutcome.preparedEditToolCall };
-  }
-
-  if (input.fileMutationToolCallRequest.toolName === "edit_many") {
-    const editManyPreparationOutcome = await prepareEditManyToolCall({
-      editManyToolCallRequest: input.fileMutationToolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      abortSignal: input.abortSignal,
-    });
-    if (isFailedToolCallOutcome(editManyPreparationOutcome)) {
-      return editManyPreparationOutcome;
-    }
-
-    return { toolName: "edit_many", preparedEditManyToolCall: editManyPreparationOutcome.preparedEditManyToolCall };
-  }
-
-  if (input.fileMutationToolCallRequest.toolName === "patch") {
-    const patchPreparationOutcome = await preparePatchToolCall({
-      patchToolCallRequest: input.fileMutationToolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      abortSignal: input.abortSignal,
-    });
-    if (isFailedToolCallOutcome(patchPreparationOutcome)) {
-      return patchPreparationOutcome;
-    }
-
-    return { toolName: "patch", preparedPatchToolCall: patchPreparationOutcome.preparedPatchToolCall };
-  }
-
-  if (input.fileMutationToolCallRequest.toolName === "patch_many") {
-    const patchManyPreparationOutcome = await preparePatchManyToolCall({
-      patchManyToolCallRequest: input.fileMutationToolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      abortSignal: input.abortSignal,
-    });
-    if (isFailedToolCallOutcome(patchManyPreparationOutcome)) {
-      return patchManyPreparationOutcome;
-    }
-
-    return { toolName: "patch_many", preparedPatchManyToolCall: patchManyPreparationOutcome.preparedPatchManyToolCall };
-  }
-
-  if (input.fileMutationToolCallRequest.toolName === "write") {
-    const writePreparationOutcome = await prepareWriteToolCall({
-      writeToolCallRequest: input.fileMutationToolCallRequest,
-      workspaceRootPath: input.workspaceRootPath,
-      abortSignal: input.abortSignal,
-    });
-    if (isFailedToolCallOutcome(writePreparationOutcome)) {
-      return writePreparationOutcome;
-    }
-
-    return { toolName: "write", preparedWriteToolCall: writePreparationOutcome.preparedWriteToolCall };
-  }
-
-  return assertUnhandledFileMutationToolCallRequest(input.fileMutationToolCallRequest);
+  const fileMutationToolCallPreparer = resolveFileMutationToolCallPreparer(input.fileMutationToolCallRequest);
+  return fileMutationToolCallPreparer(input);
 }
 
-function getPreparedFileMutationToolCallDetail(preparedFileMutationToolCall: PreparedFileMutationToolCall): ToolCallDetail {
-  if (preparedFileMutationToolCall.toolName === "edit") {
-    return preparedFileMutationToolCall.preparedEditToolCall.toolCallDetail;
-  }
-  if (preparedFileMutationToolCall.toolName === "edit_many") {
-    return preparedFileMutationToolCall.preparedEditManyToolCall.toolCallDetail;
-  }
-  if (preparedFileMutationToolCall.toolName === "patch") {
-    return preparedFileMutationToolCall.preparedPatchToolCall.toolCallDetail;
-  }
-  if (preparedFileMutationToolCall.toolName === "patch_many") {
-    return preparedFileMutationToolCall.preparedPatchManyToolCall.toolCallDetail;
-  }
-  if (preparedFileMutationToolCall.toolName === "write") {
-    return preparedFileMutationToolCall.preparedWriteToolCall.toolCallDetail;
-  }
-
-  return assertUnhandledPreparedFileMutationToolCall(preparedFileMutationToolCall);
+function resolveFileMutationToolCallPreparer<ToolName extends FileMutationToolName>(
+  fileMutationToolCallRequest: FileMutationToolCallRequestByName<ToolName>,
+): FileMutationToolCallPreparer<ToolName> {
+  return fileMutationToolCallPreparerByName[fileMutationToolCallRequest.toolName] as FileMutationToolCallPreparer<ToolName>;
 }
 
-function runPreparedFileMutationToolCall(input: {
-  preparedFileMutationToolCall: PreparedFileMutationToolCall;
-  workspaceRootPath: string;
-  abortSignal: AbortSignal;
-}): Promise<ToolCallOutcome> {
-  if (input.preparedFileMutationToolCall.toolName === "edit") {
-    return runPreparedEditToolCall({
-      preparedEditToolCall: input.preparedFileMutationToolCall.preparedEditToolCall,
-      abortSignal: input.abortSignal,
-    });
+async function prepareEditFileMutationToolCall(
+  input: PrepareFileMutationToolCallInput<"edit">,
+): Promise<PreparedFileMutationToolCall | FailedToolCallOutcome> {
+  const editPreparationOutcome = await prepareEditToolCall({
+    editToolCallRequest: input.fileMutationToolCallRequest,
+    workspaceRootPath: input.workspaceRootPath,
+    abortSignal: input.abortSignal,
+  });
+  if (isFailedToolCallOutcome(editPreparationOutcome)) {
+    return editPreparationOutcome;
   }
 
-  if (input.preparedFileMutationToolCall.toolName === "edit_many") {
-    return runPreparedEditManyToolCall({
-      preparedEditManyToolCall: input.preparedFileMutationToolCall.preparedEditManyToolCall,
-      abortSignal: input.abortSignal,
-    });
-  }
-
-  if (input.preparedFileMutationToolCall.toolName === "patch") {
-    return runPreparedPatchToolCall({
-      preparedPatchToolCall: input.preparedFileMutationToolCall.preparedPatchToolCall,
-      abortSignal: input.abortSignal,
-    });
-  }
-
-  if (input.preparedFileMutationToolCall.toolName === "patch_many") {
-    return runPreparedPatchManyToolCall({
-      preparedPatchManyToolCall: input.preparedFileMutationToolCall.preparedPatchManyToolCall,
-      abortSignal: input.abortSignal,
-    });
-  }
-
-  if (input.preparedFileMutationToolCall.toolName === "write") {
-    return runPreparedWriteToolCall({
-      preparedWriteToolCall: input.preparedFileMutationToolCall.preparedWriteToolCall,
-      workspaceRootPath: input.workspaceRootPath,
-      abortSignal: input.abortSignal,
-    });
-  }
-
-  return assertUnhandledPreparedFileMutationToolCall(input.preparedFileMutationToolCall);
+  return {
+    toolName: "edit",
+    toolCallDetail: editPreparationOutcome.preparedEditToolCall.toolCallDetail,
+    runPreparedToolCall: (runInput) =>
+      runPreparedEditToolCall({
+        preparedEditToolCall: editPreparationOutcome.preparedEditToolCall,
+        abortSignal: runInput.abortSignal,
+      }),
+  };
 }
 
-function assertUnhandledFileMutationToolCallRequest(fileMutationToolCallRequest: never): never {
-  throw new Error(`Unhandled file mutation tool call request: ${JSON.stringify(fileMutationToolCallRequest)}`);
+async function prepareEditManyFileMutationToolCall(
+  input: PrepareFileMutationToolCallInput<"edit_many">,
+): Promise<PreparedFileMutationToolCall | FailedToolCallOutcome> {
+  const editManyPreparationOutcome = await prepareEditManyToolCall({
+    editManyToolCallRequest: input.fileMutationToolCallRequest,
+    workspaceRootPath: input.workspaceRootPath,
+    abortSignal: input.abortSignal,
+  });
+  if (isFailedToolCallOutcome(editManyPreparationOutcome)) {
+    return editManyPreparationOutcome;
+  }
+
+  return {
+    toolName: "edit_many",
+    toolCallDetail: editManyPreparationOutcome.preparedEditManyToolCall.toolCallDetail,
+    runPreparedToolCall: (runInput) =>
+      runPreparedEditManyToolCall({
+        preparedEditManyToolCall: editManyPreparationOutcome.preparedEditManyToolCall,
+        abortSignal: runInput.abortSignal,
+      }),
+  };
 }
 
-function assertUnhandledPreparedFileMutationToolCall(preparedFileMutationToolCall: never): never {
-  throw new Error(`Unhandled prepared file mutation tool call: ${JSON.stringify(preparedFileMutationToolCall)}`);
+async function preparePatchFileMutationToolCall(
+  input: PrepareFileMutationToolCallInput<"patch">,
+): Promise<PreparedFileMutationToolCall | FailedToolCallOutcome> {
+  const patchPreparationOutcome = await preparePatchToolCall({
+    patchToolCallRequest: input.fileMutationToolCallRequest,
+    workspaceRootPath: input.workspaceRootPath,
+    abortSignal: input.abortSignal,
+  });
+  if (isFailedToolCallOutcome(patchPreparationOutcome)) {
+    return patchPreparationOutcome;
+  }
+
+  return {
+    toolName: "patch",
+    toolCallDetail: patchPreparationOutcome.preparedPatchToolCall.toolCallDetail,
+    runPreparedToolCall: (runInput) =>
+      runPreparedPatchToolCall({
+        preparedPatchToolCall: patchPreparationOutcome.preparedPatchToolCall,
+        abortSignal: runInput.abortSignal,
+      }),
+  };
+}
+
+async function preparePatchManyFileMutationToolCall(
+  input: PrepareFileMutationToolCallInput<"patch_many">,
+): Promise<PreparedFileMutationToolCall | FailedToolCallOutcome> {
+  const patchManyPreparationOutcome = await preparePatchManyToolCall({
+    patchManyToolCallRequest: input.fileMutationToolCallRequest,
+    workspaceRootPath: input.workspaceRootPath,
+    abortSignal: input.abortSignal,
+  });
+  if (isFailedToolCallOutcome(patchManyPreparationOutcome)) {
+    return patchManyPreparationOutcome;
+  }
+
+  return {
+    toolName: "patch_many",
+    toolCallDetail: patchManyPreparationOutcome.preparedPatchManyToolCall.toolCallDetail,
+    runPreparedToolCall: (runInput) =>
+      runPreparedPatchManyToolCall({
+        preparedPatchManyToolCall: patchManyPreparationOutcome.preparedPatchManyToolCall,
+        abortSignal: runInput.abortSignal,
+      }),
+  };
+}
+
+async function prepareWriteFileMutationToolCall(
+  input: PrepareFileMutationToolCallInput<"write">,
+): Promise<PreparedFileMutationToolCall | FailedToolCallOutcome> {
+  const writePreparationOutcome = await prepareWriteToolCall({
+    writeToolCallRequest: input.fileMutationToolCallRequest,
+    workspaceRootPath: input.workspaceRootPath,
+    abortSignal: input.abortSignal,
+  });
+  if (isFailedToolCallOutcome(writePreparationOutcome)) {
+    return writePreparationOutcome;
+  }
+
+  return {
+    toolName: "write",
+    toolCallDetail: writePreparationOutcome.preparedWriteToolCall.toolCallDetail,
+    runPreparedToolCall: (runInput) =>
+      runPreparedWriteToolCall({
+        preparedWriteToolCall: writePreparationOutcome.preparedWriteToolCall,
+        workspaceRootPath: runInput.workspaceRootPath,
+        abortSignal: runInput.abortSignal,
+      }),
+  };
 }
 
 function isFailedToolCallOutcome(value: unknown): value is FailedToolCallOutcome {
