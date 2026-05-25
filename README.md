@@ -67,6 +67,15 @@ Buli's default workflow is:
 
 - Bun 1.3.12 or newer.
 
+If `bun` is not found, install Bun and make the install path available in the current shell:
+
+```bash
+curl -fsSL https://bun.com/install | bash
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+bun --version
+```
+
 ## Installation
 
 Install dependencies:
@@ -80,6 +89,8 @@ Register the global `buli` command once:
 ```bash
 bun run link:cli
 ```
+
+`bun run link:cli` links `buli` to this repo's source runner. That means every new `buli` command runs the current TypeScript source from this checkout; no rebuild is needed after source changes.
 
 If `buli` is not found afterward, make sure Bun's global bin directory is on your `PATH`:
 
@@ -140,7 +151,17 @@ Defaults:
 
 ## Repo-Only Development Start
 
-You can run the source CLI without registering the global command:
+The simplest development loop is to register the source-runner command once:
+
+```bash
+bun install
+bun run link:cli
+buli
+```
+
+After that, edit the repo and start a new `buli` process. The command reads the latest source directly, so there is no rebuild watcher to keep running for this workflow.
+
+You can also run the source CLI without registering the global command:
 
 ```bash
 bun install
@@ -150,6 +171,20 @@ bun run start:cli -- --model gpt-5.5 --reasoning high
 ```
 
 The source runner is the preferred development workflow while the product changes quickly because every run uses the latest repo code without a rebuild.
+
+Use the packaged build workflow only when you specifically need to test the built CLI bundle:
+
+```bash
+bun run build:cli
+```
+
+To rebuild the packaged CLI bundle on each change, run the watcher:
+
+```bash
+bun run dev:cli
+```
+
+`bun run dev:cli` watches and rebuilds `apps/cli/dist/cli.js`. It is separate from the global source-runner command created by `bun run link:cli`.
 
 ## In-App Commands
 
@@ -266,11 +301,13 @@ Build the CLI bundle:
 bun run build:cli
 ```
 
-Watch the packaged CLI bundle:
+Watch the packaged CLI bundle when testing built output:
 
 ```bash
 bun run dev:cli
 ```
+
+This watcher is optional for normal development. The globally linked `buli` command uses the source runner and picks up source changes on each new run.
 
 Register the global source-runner command:
 
