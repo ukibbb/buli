@@ -3,7 +3,6 @@ import type { ConversationCompactionSummaryConversationSessionEntry, Conversatio
 export type LatestConversationCompactionBoundary = {
   compactionSummaryEntry: ConversationCompactionSummaryConversationSessionEntry;
   compactionSummaryEntryIndex: number;
-  retainedRecentConversationSessionEntries: readonly ConversationSessionEntry[];
 };
 
 export function findLatestConversationCompactionBoundary(
@@ -21,15 +20,9 @@ export function findLatestConversationCompactionBoundary(
     return undefined;
   }
 
-  const retainedRecentConversationSessionEntries = conversationSessionEntries.slice(
-    Math.max(0, compactionSummaryEntryIndex - compactionSummaryEntry.retainedRecentConversationSessionEntryCount),
-    compactionSummaryEntryIndex,
-  );
-
   return {
     compactionSummaryEntry,
     compactionSummaryEntryIndex,
-    retainedRecentConversationSessionEntries,
   };
 }
 
@@ -43,7 +36,6 @@ export function listModelVisibleConversationSessionEntries(
 
   return [
     latestCompactionBoundary.compactionSummaryEntry,
-    ...latestCompactionBoundary.retainedRecentConversationSessionEntries,
     ...conversationSessionEntries.slice(latestCompactionBoundary.compactionSummaryEntryIndex + 1),
   ];
 }

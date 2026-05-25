@@ -304,7 +304,7 @@ test("createOpenAiResponsesInputItems starts at the latest compaction summary", 
   ]);
 });
 
-test("createOpenAiResponsesInputItems keeps retained recent entries after compaction summary", () => {
+test("createOpenAiResponsesInputItems ignores retained recent entries after compaction summary", () => {
   expect(
     createOpenAiResponsesInputItems([
       {
@@ -349,14 +349,6 @@ test("createOpenAiResponsesInputItems keeps retained recent entries after compac
         "Goal: continue the compaction implementation.",
         "</conversation_compaction_summary>",
       ].join("\n"),
-    },
-    {
-      role: "user",
-      content: "Retained prompt",
-    },
-    {
-      role: "assistant",
-      content: "Retained answer",
     },
     {
       role: "user",

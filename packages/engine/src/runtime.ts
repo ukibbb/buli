@@ -95,7 +95,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     projectInstructionTracker?: ProjectInstructionTracker;
     autoCompactionThresholdRatio?: number | undefined;
     autoCompactionReservedTokenCount?: number | undefined;
-    retainedRecentConversationTurnCount?: number | undefined;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.workspaceRootPath = input.workspaceRootPath;
@@ -127,9 +126,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
         : {}),
       ...(input.autoCompactionReservedTokenCount !== undefined
         ? { autoCompactionReservedTokenCount: input.autoCompactionReservedTokenCount }
-        : {}),
-      ...(input.retainedRecentConversationTurnCount !== undefined
-        ? { retainedRecentConversationTurnCount: input.retainedRecentConversationTurnCount }
         : {}),
     });
   }

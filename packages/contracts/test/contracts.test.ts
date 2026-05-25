@@ -173,6 +173,26 @@ test("ConversationMessageSchema parses a completed user message", () => {
   });
 });
 
+test("ConversationMessageSchema parses model-context visibility", () => {
+  expect(
+    ConversationMessageSchema.parse({
+      id: "user-1",
+      role: "user",
+      messageStatus: "completed",
+      createdAtMs: 1,
+      partIds: ["part-1"],
+      modelContextVisibility: "compacted_out_of_model_context",
+    }),
+  ).toEqual({
+    id: "user-1",
+    role: "user",
+    messageStatus: "completed",
+    createdAtMs: 1,
+    partIds: ["part-1"],
+    modelContextVisibility: "compacted_out_of_model_context",
+  });
+});
+
 test("ConversationMessagePartSchema parses an assistant text part with an open streaming tail", () => {
   expect(
     ConversationMessagePartSchema.parse({
@@ -1281,7 +1301,7 @@ test("ConversationSessionEntrySchema parses a conversation compaction summary wi
   });
 });
 
-test("listModelVisibleConversationSessionEntries keeps latest summary, retained recent entries, and new entries", () => {
+test("listModelVisibleConversationSessionEntries keeps only latest summary and new entries", () => {
   const oldPrompt = { entryKind: "user_prompt", promptText: "Old prompt", modelFacingPromptText: "Old prompt" } as const;
   const retainedPrompt = {
     entryKind: "user_prompt",
@@ -1309,7 +1329,7 @@ test("listModelVisibleConversationSessionEntries keeps latest summary, retained 
       compactionSummary,
       nextPrompt,
     ]),
-  ).toEqual([compactionSummary, retainedPrompt, retainedAnswer, nextPrompt]);
+  ).toEqual([compactionSummary, nextPrompt]);
 });
 
 test("ModelContextItemSchema parses a compaction summary", () => {

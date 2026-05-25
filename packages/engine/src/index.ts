@@ -51,7 +51,6 @@ export {
 } from "./conversationCompaction/conversationAutoCompactionPolicy.ts";
 export { ConversationSessionCompactor } from "./conversationCompaction/ConversationSessionCompactor.ts";
 export {
-  DEFAULT_RETAINED_RECENT_CONVERSATION_TURN_COUNT,
   selectConversationEntriesForCompaction,
 } from "./conversationCompaction/selectConversationEntriesForCompaction.ts";
 export {

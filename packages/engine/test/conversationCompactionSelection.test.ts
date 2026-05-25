@@ -20,7 +20,7 @@ function createCompletedConversationTurn(input: {
   ];
 }
 
-test("selectConversationEntriesForCompaction summarizes old head and keeps recent complete turns", () => {
+test("selectConversationEntriesForCompaction compacts all model-visible entries for clean context", () => {
   const firstTurn = createCompletedConversationTurn({ promptText: "First prompt", assistantMessageText: "First answer" });
   const secondTurn = createCompletedConversationTurn({ promptText: "Second prompt", assistantMessageText: "Second answer" });
   const thirdTurn = createCompletedConversationTurn({ promptText: "Third prompt", assistantMessageText: "Third answer" });
@@ -28,16 +28,28 @@ test("selectConversationEntriesForCompaction summarizes old head and keeps recen
   expect(
     selectConversationEntriesForCompaction({
       conversationSessionEntries: [...firstTurn, ...secondTurn, ...thirdTurn],
-      retainedRecentConversationTurnCount: 2,
     }),
   ).toEqual({
-    compactionSourceConversationSessionEntries: firstTurn,
-    retainedRecentConversationSessionEntries: [...secondTurn, ...thirdTurn],
-    retainedRecentConversationSessionEntryCount: 4,
+    compactionSourceConversationSessionEntries: [...firstTurn, ...secondTurn, ...thirdTurn],
+    retainedRecentConversationSessionEntryCount: 0,
   });
 });
 
-test("selectConversationEntriesForCompaction keeps new entries after an existing compaction as the new tail", () => {
+test("selectConversationEntriesForCompaction defaults to clean context without retained turns", () => {
+  const firstTurn = createCompletedConversationTurn({ promptText: "First prompt", assistantMessageText: "First answer" });
+  const secondTurn = createCompletedConversationTurn({ promptText: "Second prompt", assistantMessageText: "Second answer" });
+
+  expect(
+    selectConversationEntriesForCompaction({
+      conversationSessionEntries: [...firstTurn, ...secondTurn],
+    }),
+  ).toEqual({
+    compactionSourceConversationSessionEntries: [...firstTurn, ...secondTurn],
+    retainedRecentConversationSessionEntryCount: 0,
+  });
+});
+
+test("selectConversationEntriesForCompaction summarizes only latest summary and new entries after an existing compaction", () => {
   const oldRetainedTurn = createCompletedConversationTurn({ promptText: "Old retained prompt", assistantMessageText: "Old retained answer" });
   const newTurn = createCompletedConversationTurn({ promptText: "New prompt", assistantMessageText: "New answer" });
   const previousCompactionSummary: ConversationSessionEntry = {
@@ -50,26 +62,22 @@ test("selectConversationEntriesForCompaction keeps new entries after an existing
   expect(
     selectConversationEntriesForCompaction({
       conversationSessionEntries: [...oldRetainedTurn, previousCompactionSummary, ...newTurn],
-      retainedRecentConversationTurnCount: 2,
     }),
   ).toEqual({
-    compactionSourceConversationSessionEntries: [previousCompactionSummary, ...oldRetainedTurn],
-    retainedRecentConversationSessionEntries: newTurn,
-    retainedRecentConversationSessionEntryCount: 2,
+    compactionSourceConversationSessionEntries: [previousCompactionSummary, ...newTurn],
+    retainedRecentConversationSessionEntryCount: 0,
   });
 });
 
-test("selectConversationEntriesForCompaction summarizes everything when the retained tail would be the whole context", () => {
+test("selectConversationEntriesForCompaction summarizes the only visible turn", () => {
   const onlyTurn = createCompletedConversationTurn({ promptText: "Only prompt", assistantMessageText: "Only answer" });
 
   expect(
     selectConversationEntriesForCompaction({
       conversationSessionEntries: onlyTurn,
-      retainedRecentConversationTurnCount: 2,
     }),
   ).toEqual({
     compactionSourceConversationSessionEntries: onlyTurn,
-    retainedRecentConversationSessionEntries: [],
     retainedRecentConversationSessionEntryCount: 0,
   });
 });

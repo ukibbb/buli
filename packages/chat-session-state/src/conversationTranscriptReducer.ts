@@ -1,8 +1,10 @@
 import {
   createStartedToolCallDetailFromRequest,
+  findLatestConversationCompactionBoundary,
   type AssistantToolCallConversationMessagePart,
   type AssistantTextPartStatus,
   type ConversationMessage,
+  type ConversationMessageModelContextVisibility,
   type ConversationMessagePart,
   type ConversationSessionEntry,
   type ToolCallDetail,
@@ -202,6 +204,7 @@ function omitRecordKeys<T>(record: Record<string, T>, omittedKeys: ReadonlySet<s
 function buildHydratedConversationTranscript(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): HydratedConversationTranscript {
+  const latestCompactionBoundary = findLatestConversationCompactionBoundary(conversationSessionEntries);
   const conversationMessagesById: Record<string, ConversationMessage> = {};
   const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
   const orderedConversationMessageIds: string[] = [];
@@ -212,6 +215,17 @@ function buildHydratedConversationTranscript(
   const appendConversationMessage = (conversationMessage: ConversationMessage): void => {
     conversationMessagesById[conversationMessage.id] = conversationMessage;
     orderedConversationMessageIds.push(conversationMessage.id);
+  };
+  const createConversationMessageModelContextVisibilityFields = (
+    entryIndex: number,
+  ): { modelContextVisibility?: ConversationMessageModelContextVisibility } => {
+    if (!latestCompactionBoundary) {
+      return {};
+    }
+
+    return entryIndex < latestCompactionBoundary.compactionSummaryEntryIndex
+      ? { modelContextVisibility: "compacted_out_of_model_context" }
+      : {};
   };
   const appendConversationMessagePart = (messageId: string, conversationMessagePart: ConversationMessagePart): void => {
     const conversationMessage = conversationMessagesById[messageId];
@@ -265,6 +279,7 @@ function buildHydratedConversationTranscript(
       messageStatus: "completed",
       createdAtMs: entryIndex,
       partIds: [],
+      ...createConversationMessageModelContextVisibilityFields(entryIndex),
     });
     currentAssistantMessageId = assistantMessageId;
     return assistantMessageId;
@@ -347,6 +362,7 @@ function buildHydratedConversationTranscript(
         messageStatus: "completed",
         createdAtMs: entryIndex,
         partIds: [],
+        ...createConversationMessageModelContextVisibilityFields(entryIndex),
       });
       if (conversationSessionEntry.promptText.length > 0) {
         appendConversationMessagePart(userMessageId, {

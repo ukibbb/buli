@@ -273,12 +273,13 @@ describe("ConversationMessageList", () => {
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
-      { width: 90, height: 10 },
+      { width: 90, height: 12 },
     );
 
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("Auto Compaction");
+    expect(frame).toContain("History above remains visible here but is no longer sent to the model");
     expect(frame).toContain("Continue after auto compaction");
   });
 
