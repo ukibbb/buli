@@ -594,6 +594,44 @@ test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compa
   ]);
 });
 
+test("hydrateConversationTranscriptFromSessionEntries marks history excluded from model context", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Old prompt",
+        modelFacingPromptText: "Old prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Old answer",
+      },
+      {
+        entryKind: "conversation_compaction_summary",
+        summaryText: "Goal: continue after compaction.",
+        compactedEntryCount: 2,
+        retainedRecentConversationSessionEntryCount: 0,
+        compactionSource: "auto",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Next prompt",
+        modelFacingPromptText: "Next prompt",
+      },
+    ],
+  );
+
+  const conversationMessages = listOrderedConversationMessages(chatSessionState);
+  expect(conversationMessages.map((conversationMessage) => conversationMessage.modelContextVisibility)).toEqual([
+    "compacted_out_of_model_context",
+    "compacted_out_of_model_context",
+    undefined,
+    undefined,
+  ]);
+});
+
 test("upsertConversationCompactionProgressInTranscript streams a transient compaction message", () => {
   const initialChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
   const streamingCompactionState = upsertConversationCompactionProgressInTranscript({

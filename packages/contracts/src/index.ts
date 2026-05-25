@@ -17,10 +17,12 @@ export type { AssistantOperatingMode } from "./assistantOperatingMode.ts";
 export {
   ConversationMessageRoleSchema,
   ConversationMessageSchema,
+  ConversationMessageModelContextVisibilitySchema,
   ConversationMessageStatusSchema,
 } from "./conversationMessage.ts";
 export type {
   ConversationMessage,
+  ConversationMessageModelContextVisibility,
   ConversationMessageRole,
   ConversationMessageStatus,
 } from "./conversationMessage.ts";

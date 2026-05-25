@@ -7,6 +7,7 @@ import type {
   PendingToolApprovalRequest,
   WorkspacePatch,
 } from "@buli/contracts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoticeBlock.tsx";
 import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
@@ -195,6 +196,10 @@ function renderHiddenConversationMessagePart(
   return null;
 }
 
+function CompactedOutOfModelContextNotice(): ReactNode {
+  return <text fg={chatScreenTheme.textDim}>Compacted out of model context</text>;
+}
+
 export type ConversationMessageRowProps = {
   conversationMessage: ConversationMessage;
   conversationMessageParts: readonly ConversationMessagePart[];
@@ -351,9 +356,12 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
   const shouldRenderEmptyAssistantThinkingLine = props.conversationMessage.role === "assistant" &&
     props.conversationMessage.messageStatus === "streaming" &&
     renderableConversationMessageParts.length === 0;
+  const shouldRenderCompactedOutNotice = props.conversationMessage.modelContextVisibility ===
+    "compacted_out_of_model_context";
 
   return (
     <box flexDirection="column" width="100%">
+      {shouldRenderCompactedOutNotice ? <CompactedOutOfModelContextNotice /> : null}
       {shouldRenderEmptyAssistantThinkingLine ? (
         <ThinkingStatusLine thinkingStartedAtMs={props.conversationMessage.createdAtMs} />
       ) : null}

@@ -31,6 +31,8 @@ type TerminalAssistantResponseEvent = Extract<AssistantResponseEvent, {
 
 const AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT =
   "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.";
+const AUTO_COMPACTION_INCOMPLETE_CONTINUATION_PROMPT_TEXT =
+  "Continue the previous response from where it stopped. Do not repeat completed content.";
 
 export type UseChatAppAssistantTurnActionsInput = {
   chatSessionState: ChatSessionState;
@@ -93,24 +95,39 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
     didFailBecauseContextWindowOverflow &&
     input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_retry"
   ) {
-      return {
-        submittedPromptText: input.activeSubmittedPrompt.submittedPromptText,
-        submittedPromptImageAttachments: input.activeSubmittedPrompt.submittedPromptImageAttachments,
-        submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
-        submittedPromptSource: "auto_compaction_retry",
-      };
+    return {
+      submittedPromptText: input.activeSubmittedPrompt.submittedPromptText,
+      submittedPromptImageAttachments: input.activeSubmittedPrompt.submittedPromptImageAttachments,
+      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
+      submittedPromptSource: "auto_compaction_retry",
+    };
+  }
+
+  const didStopBecauseMaxOutputTokens =
+    input.terminalAssistantResponseEvent?.type === "assistant_message_incomplete" &&
+    input.terminalAssistantResponseEvent.incompleteReason === "max_output_tokens";
+  if (
+    didStopBecauseMaxOutputTokens &&
+    input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_continue"
+  ) {
+    return {
+      submittedPromptText: AUTO_COMPACTION_INCOMPLETE_CONTINUATION_PROMPT_TEXT,
+      submittedPromptImageAttachments: [],
+      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
+      submittedPromptSource: "auto_compaction_continue",
+    };
   }
 
   if (
     input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_continue" &&
     input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_retry"
   ) {
-      return {
-        submittedPromptText: AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
-        submittedPromptImageAttachments: [],
-        submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
-        submittedPromptSource: "auto_compaction_continue",
-      };
+    return {
+      submittedPromptText: AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
+      submittedPromptImageAttachments: [],
+      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
+      submittedPromptSource: "auto_compaction_continue",
+    };
   }
 
   return undefined;

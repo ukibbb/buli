@@ -20,7 +20,6 @@ import {
   createConversationCompactionPromptSessionEntry,
 } from "./conversationCompactionPrompt.ts";
 import {
-  DEFAULT_RETAINED_RECENT_CONVERSATION_TURN_COUNT,
   selectConversationEntriesForCompaction,
 } from "./selectConversationEntriesForCompaction.ts";
 import { prepareConversationEntriesForCompactionRequest } from "./prepareConversationEntriesForCompactionRequest.ts";
@@ -34,7 +33,6 @@ export class ConversationSessionCompactor {
   readonly isConversationTurnRunning: () => boolean;
   readonly autoCompactionThresholdRatio: number | undefined;
   readonly autoCompactionReservedTokenCount: number | undefined;
-  readonly retainedRecentConversationTurnCount: number;
   private isCompactingConversationSession = false;
 
   constructor(input: {
@@ -46,7 +44,6 @@ export class ConversationSessionCompactor {
     isConversationTurnRunning: () => boolean;
     autoCompactionThresholdRatio?: number | undefined;
     autoCompactionReservedTokenCount?: number | undefined;
-    retainedRecentConversationTurnCount?: number | undefined;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.conversationHistory = input.conversationHistory;
@@ -56,8 +53,6 @@ export class ConversationSessionCompactor {
     this.isConversationTurnRunning = input.isConversationTurnRunning;
     this.autoCompactionThresholdRatio = input.autoCompactionThresholdRatio;
     this.autoCompactionReservedTokenCount = input.autoCompactionReservedTokenCount;
-    this.retainedRecentConversationTurnCount = input.retainedRecentConversationTurnCount ??
-      DEFAULT_RETAINED_RECENT_CONVERSATION_TURN_COUNT;
   }
 
   isCompactingCurrentConversationSession(): boolean {
@@ -80,7 +75,6 @@ export class ConversationSessionCompactor {
 
     const selectedConversationEntriesForCompaction = selectConversationEntriesForCompaction({
       conversationSessionEntries: conversationSessionEntriesBeforeCompaction,
-      retainedRecentConversationTurnCount: this.retainedRecentConversationTurnCount,
     });
     const compactionRequestProjection = prepareConversationEntriesForCompactionRequest({
       conversationSessionEntries: selectedConversationEntriesForCompaction.compactionSourceConversationSessionEntries,
@@ -101,8 +95,6 @@ export class ConversationSessionCompactor {
       removedProviderTurnReplayCount: compactionRequestProjection.removedProviderTurnReplayCount,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });
-    input.onCompactionSummaryTextUpdated?.("");
-
     try {
       const compactionPromptEntry = createConversationCompactionPromptSessionEntry();
       const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({

@@ -402,7 +402,7 @@ test("projectConversationSessionEntriesToModelContextItems starts at the latest 
   ]);
 });
 
-test("projectConversationSessionEntriesToModelContextItems keeps retained recent entries after compaction summary", () => {
+test("projectConversationSessionEntriesToModelContextItems ignores retained recent entries after compaction summary", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
@@ -442,8 +442,6 @@ test("projectConversationSessionEntriesToModelContextItems keeps retained recent
       itemKind: "compaction_summary",
       summaryText: "Goal: continue the compaction implementation.",
     },
-    { itemKind: "user_message", messageText: "Retained prompt" },
-    { itemKind: "assistant_message", messageText: "Retained answer" },
     { itemKind: "user_message", messageText: "Next prompt" },
   ]);
 });

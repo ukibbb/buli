@@ -70,6 +70,50 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues after regu
   });
 });
 
+test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues after retry stops at max output tokens", () => {
+  const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
+    activeSubmittedPrompt: createSubmittedPrompt("auto_compaction_retry"),
+    terminalAssistantResponseEvent: createIncompleteAssistantResponseEvent("max_output_tokens"),
+    autoCompactionResult: createCompactedAutoCompactionResult({
+      reason: "context_usage_threshold_reached",
+      triggerKind: "threshold_ratio",
+    }),
+  });
+
+  expect(followUpPrompt).toEqual({
+    submittedPromptText: "Continue the previous response from where it stopped. Do not repeat completed content.",
+    submittedPromptImageAttachments: [],
+    submittedAssistantOperatingMode: "plan",
+    submittedPromptSource: "auto_compaction_continue",
+  });
+});
+
+test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not continue max output tokens twice", () => {
+  const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
+    activeSubmittedPrompt: createSubmittedPrompt("auto_compaction_continue"),
+    terminalAssistantResponseEvent: createIncompleteAssistantResponseEvent("max_output_tokens"),
+    autoCompactionResult: createCompactedAutoCompactionResult({
+      reason: "context_usage_threshold_reached",
+      triggerKind: "threshold_ratio",
+    }),
+  });
+
+  expect(followUpPrompt).toBeUndefined();
+});
+
+test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not continue retry for other incomplete reasons", () => {
+  const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
+    activeSubmittedPrompt: createSubmittedPrompt("auto_compaction_retry"),
+    terminalAssistantResponseEvent: createIncompleteAssistantResponseEvent("content_filter"),
+    autoCompactionResult: createCompactedAutoCompactionResult({
+      reason: "context_usage_threshold_reached",
+      triggerKind: "threshold_ratio",
+    }),
+  });
+
+  expect(followUpPrompt).toBeUndefined();
+});
+
 function createSubmittedPrompt(submittedPromptSource?: SubmittedChatAppPrompt["submittedPromptSource"]): SubmittedChatAppPrompt {
   return {
     submittedPromptText: "Explain the failing build",
@@ -83,6 +127,21 @@ function createCompletedAssistantResponseEvent(): TerminalAssistantResponseEvent
   return {
     type: "assistant_message_completed",
     messageId: "assistant-1",
+    usage: {
+      total: 10,
+      input: 4,
+      output: 5,
+      reasoning: 1,
+      cache: { read: 0, write: 0 },
+    },
+  };
+}
+
+function createIncompleteAssistantResponseEvent(incompleteReason: string): TerminalAssistantResponseEvent {
+  return {
+    type: "assistant_message_incomplete",
+    messageId: "assistant-1",
+    incompleteReason,
     usage: {
       total: 10,
       input: 4,

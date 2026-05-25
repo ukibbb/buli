@@ -2760,7 +2760,7 @@ test("AssistantConversationRuntime compacts the current session into an append-o
     summaryText: "Goal: continue the runtime compaction implementation.",
     compactedEntryCount: 2,
   });
-  expect(compactionSummaryProgressTexts).toEqual(["", "Goal: continue the runtime compaction implementation."]);
+  expect(compactionSummaryProgressTexts).toEqual(["Goal: continue the runtime compaction implementation."]);
 
   expect(provider.startedTurnRequests).toHaveLength(1);
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual([]);
@@ -2894,7 +2894,7 @@ test("AssistantConversationRuntime sends compaction-safe entries during automati
   });
 });
 
-test("AssistantConversationRuntime compacts old context while retaining recent turns", async () => {
+test("AssistantConversationRuntime compacts the full visible context into a clean summary", async () => {
   const firstTurnEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
@@ -2932,7 +2932,7 @@ test("AssistantConversationRuntime compacts old context while retaining recent t
   const initialConversationSessionEntries = [...firstTurnEntries, ...retainedConversationSessionEntries];
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
-      { type: "text_chunk", text: "Goal: continue after retaining recent turns." },
+      { type: "text_chunk", text: "Goal: continue after clean compaction." },
       { type: "completed", usage: { total: 10, input: 8, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } },
     ],
   });
@@ -2946,12 +2946,12 @@ test("AssistantConversationRuntime compacts old context while retaining recent t
   });
 
   await expect(runtime.compactConversationSession({ selectedModelId: "gpt-5.4" })).resolves.toEqual({
-    summaryText: "Goal: continue after retaining recent turns.",
-    compactedEntryCount: 2,
+    summaryText: "Goal: continue after clean compaction.",
+    compactedEntryCount: 6,
   });
 
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toEqual([
-    ...firstTurnEntries,
+    ...initialConversationSessionEntries,
     {
       entryKind: "user_prompt",
       promptText: expect.stringContaining("Create a compact continuation summary"),
@@ -2962,21 +2962,17 @@ test("AssistantConversationRuntime compacts old context while retaining recent t
     ...initialConversationSessionEntries,
     {
       entryKind: "conversation_compaction_summary",
-      summaryText: "Goal: continue after retaining recent turns.",
-      compactedEntryCount: 2,
-      retainedRecentConversationSessionEntryCount: 4,
+      summaryText: "Goal: continue after clean compaction.",
+      compactedEntryCount: 6,
+      retainedRecentConversationSessionEntryCount: 0,
       compactionSource: "manual",
     },
   ]);
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
     {
       itemKind: "compaction_summary",
-      summaryText: "Goal: continue after retaining recent turns.",
+      summaryText: "Goal: continue after clean compaction.",
     },
-    { itemKind: "user_message", messageText: "Second prompt" },
-    { itemKind: "assistant_message", messageText: "Second answer" },
-    { itemKind: "user_message", messageText: "Third prompt" },
-    { itemKind: "assistant_message", messageText: "Third answer" },
   ]);
 });
 
