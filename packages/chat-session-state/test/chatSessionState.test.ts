@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { AvailableAssistantModel, ConversationMessagePart } from "@buli/contracts";
+import type { AvailableAssistantModel, ConversationMessage, ConversationMessagePart } from "@buli/contracts";
 import {
   appendPromptImageAttachmentToDraft,
   applyAssistantResponseEventToChatSessionState,
@@ -1136,6 +1136,57 @@ test("assistant_message_part_updated avoids enumerating unrelated message parts"
   expect(nextChatSessionState.conversationMessagePartsById).not.toBe(conversationMessagePartsById);
   expect(nextChatSessionState.conversationMessagePartsById[stablePart.id]).toEqual({
     ...stablePart,
+    rawMarkdownText: "Hello",
+  });
+});
+
+test("assistant_message_part_added avoids enumerating unrelated messages and parts", () => {
+  const conversationMessagesById: Record<string, ConversationMessage> = {
+    "assistant-1": {
+      id: "assistant-1",
+      role: "assistant",
+      messageStatus: "streaming",
+      createdAtMs: 1,
+      partIds: [],
+    },
+  };
+  Object.defineProperty(conversationMessagesById, "unrelated-message", {
+    enumerable: true,
+    get() {
+      throw new Error("Unrelated conversation message was enumerated.");
+    },
+  });
+  const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
+  Object.defineProperty(conversationMessagePartsById, "unrelated-part", {
+    enumerable: true,
+    get() {
+      throw new Error("Unrelated conversation message part was enumerated.");
+    },
+  });
+  const chatSessionState: ChatSessionState = {
+    ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationMessagesById,
+    orderedConversationMessageIds: ["assistant-1"],
+    conversationMessagePartsById,
+    conversationMessagePartCount: 1,
+  };
+
+  const nextChatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_part_added",
+    messageId: "assistant-1",
+    part: {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Hello",
+    },
+  });
+
+  expect(nextChatSessionState.conversationMessagesById["assistant-1"]?.partIds).toEqual(["assistant-text-1"]);
+  expect(nextChatSessionState.conversationMessagePartsById["assistant-text-1"]).toEqual({
+    id: "assistant-text-1",
+    partKind: "assistant_text",
+    partStatus: "streaming",
     rawMarkdownText: "Hello",
   });
 });

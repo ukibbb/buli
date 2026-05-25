@@ -241,6 +241,49 @@ test("buildStableChatScreenTranscriptViewModel reuses transcript output when onl
   expect(secondTranscriptSelection.transcriptViewModel).toBe(firstTranscriptSelection.transcriptViewModel);
 });
 
+test("buildStableChatScreenTranscriptViewModel reuses unchanged visible rows when one visible part changes", () => {
+  const chatSessionState = createChatSessionStateWithTranscript({
+    conversationMessageCount: 100,
+  });
+  const firstTranscriptSelection = buildStableChatScreenTranscriptViewModel({
+    chatSessionState,
+    requestedVisibleConversationMessageCount: 3,
+    previousCache: undefined,
+  });
+  const changedVisiblePart: ConversationMessagePart = {
+    id: "part-99",
+    partKind: "user_text",
+    text: "Visible prompt changed",
+  };
+  const chatSessionStateWithVisiblePartEdit: ChatSessionState = {
+    ...chatSessionState,
+    conversationMessagePartsById: {
+      ...chatSessionState.conversationMessagePartsById,
+      [changedVisiblePart.id]: changedVisiblePart,
+    },
+  };
+
+  const secondTranscriptSelection = buildStableChatScreenTranscriptViewModel({
+    chatSessionState: chatSessionStateWithVisiblePartEdit,
+    requestedVisibleConversationMessageCount: 3,
+    previousCache: firstTranscriptSelection.nextCache,
+  });
+
+  expect(secondTranscriptSelection.transcriptViewModel).not.toBe(firstTranscriptSelection.transcriptViewModel);
+  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[0]).toBe(
+    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[0],
+  );
+  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[1]).toBe(
+    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[1],
+  );
+  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[2]).not.toBe(
+    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[2],
+  );
+  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[2]?.conversationMessageParts).toEqual([
+    changedVisiblePart,
+  ]);
+});
+
 function createChatSessionStateWithTranscript(input: {
   conversationMessageCount: number;
   onConversationMessageRead?: (conversationMessageId: string) => void;

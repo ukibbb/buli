@@ -65,6 +65,8 @@ export type AssistantMarkdownRenderSection =
 
 export type AssistantMarkdownRenderSectionCache = {
   renderSections: readonly AssistantMarkdownRenderSection[];
+  preparedMarkdownText?: string | undefined;
+  renderSectionStartOffsetByKey?: ReadonlyMap<string, number> | undefined;
 };
 
 export type AssistantMarkdownVisibleListLine = {

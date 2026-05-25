@@ -146,14 +146,14 @@ export function renderConversationSessionHtmlDocument(input: {
   conversationSessionId: string;
   exportedAtMs: number;
 }): string {
-  let html = "";
+  const htmlChunks: string[] = [];
   writeConversationSessionHtmlDocument({
     ...input,
     writeHtmlChunk: (htmlChunk) => {
-      html += htmlChunk;
+      htmlChunks.push(htmlChunk);
     },
   });
-  return html;
+  return htmlChunks.join("");
 }
 
 function writeConversationSessionHtmlDocument(input: {

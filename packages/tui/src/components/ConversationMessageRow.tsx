@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type {
   AssistantToolCallConversationMessagePart,
   AssistantWorkspacePatchConversationMessagePart,
@@ -254,7 +254,10 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
   const {
     renderableConversationMessageParts,
     workspacePatchByToolCallPartId,
-  } = mergeMatchingWorkspacePatchesIntoToolCallParts(props.conversationMessageParts);
+  } = useMemo(
+    () => mergeMatchingWorkspacePatchesIntoToolCallParts(props.conversationMessageParts),
+    [props.conversationMessageParts],
+  );
   const shouldRenderEmptyAssistantThinkingLine = props.conversationMessage.role === "assistant" &&
     props.conversationMessage.messageStatus === "streaming" &&
     renderableConversationMessageParts.length === 0;

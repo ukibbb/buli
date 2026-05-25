@@ -30,6 +30,8 @@ export class OpenAiFunctionCallStreamAccumulator {
   private readonly pendingProviderFunctionCallIntents: OpenAiProviderFunctionCallIntent[] = [];
   private readonly pendingProviderFunctionCallIntentIndexByFunctionCallId = new Map<string, number>();
   private readonly emittedExecutableToolCallIntentByFunctionCallId = new Map<string, OpenAiExecutableToolCallIntent>();
+  private readonly newExecutableToolCallIntents: OpenAiExecutableToolCallIntent[] = [];
+  private readonly newExecutableToolCallIntentIndexByFunctionCallId = new Map<string, number>();
   private readonly pendingFunctionCallStateByItemId = new Map<string, PendingFunctionCallState>();
   private readonly pendingFunctionCallArgumentChunksByItemId = new Map<string, string[]>();
   private readonly completedPendingFunctionCallArgumentsTextByItemId = new Map<string, string>();
@@ -123,23 +125,17 @@ export class OpenAiFunctionCallStreamAccumulator {
   }
 
   drainNewExecutableToolCallIntents(): OpenAiExecutableToolCallIntent[] {
-    const newExecutableToolCallIntents: OpenAiExecutableToolCallIntent[] = [];
-    for (const providerFunctionCallIntent of this.pendingProviderFunctionCallIntents) {
-      if (providerFunctionCallIntent.intentKind !== "executable_tool") {
-        continue;
-      }
-      if (this.emittedExecutableToolCallIntentByFunctionCallId.has(providerFunctionCallIntent.functionCallId)) {
-        continue;
-      }
-
+    const drainedExecutableToolCallIntents = [...this.newExecutableToolCallIntents];
+    for (const providerFunctionCallIntent of drainedExecutableToolCallIntents) {
       this.emittedExecutableToolCallIntentByFunctionCallId.set(
         providerFunctionCallIntent.functionCallId,
         providerFunctionCallIntent,
       );
-      newExecutableToolCallIntents.push(providerFunctionCallIntent);
     }
 
-    return newExecutableToolCallIntents;
+    this.newExecutableToolCallIntents.length = 0;
+    this.newExecutableToolCallIntentIndexByFunctionCallId.clear();
+    return drainedExecutableToolCallIntents;
   }
 
   private recordProviderFunctionCallIntent(input: {
@@ -157,6 +153,7 @@ export class OpenAiFunctionCallStreamAccumulator {
     if (existingProviderFunctionCallIndex !== undefined) {
       this.assertRecordedFunctionCallStillMatchesEmittedToolCall(providerFunctionCallIntent);
       this.pendingProviderFunctionCallIntents[existingProviderFunctionCallIndex] = providerFunctionCallIntent;
+      this.updateNewExecutableToolCallQueue(providerFunctionCallIntent);
       return;
     }
 
@@ -171,6 +168,7 @@ export class OpenAiFunctionCallStreamAccumulator {
         pendingFunctionCallState.hasRecordedFunctionCallIntent = true;
       }
     }
+    this.updateNewExecutableToolCallQueue(providerFunctionCallIntent);
     switch (providerFunctionCallIntent.intentKind) {
       case "executable_tool":
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.tool_call_ready", {
@@ -211,6 +209,44 @@ export class OpenAiFunctionCallStreamAccumulator {
       functionName: pendingFunctionCallState.functionName,
       argumentsText,
     });
+  }
+
+  private updateNewExecutableToolCallQueue(providerFunctionCallIntent: OpenAiProviderFunctionCallIntent): void {
+    const queuedExecutableToolCallIntentIndex = this.newExecutableToolCallIntentIndexByFunctionCallId.get(
+      providerFunctionCallIntent.functionCallId,
+    );
+    if (providerFunctionCallIntent.intentKind !== "executable_tool") {
+      if (queuedExecutableToolCallIntentIndex !== undefined) {
+        this.newExecutableToolCallIntents.splice(queuedExecutableToolCallIntentIndex, 1);
+        this.reindexNewExecutableToolCallQueue();
+      }
+      return;
+    }
+
+    if (this.emittedExecutableToolCallIntentByFunctionCallId.has(providerFunctionCallIntent.functionCallId)) {
+      return;
+    }
+
+    if (queuedExecutableToolCallIntentIndex !== undefined) {
+      this.newExecutableToolCallIntents[queuedExecutableToolCallIntentIndex] = providerFunctionCallIntent;
+      return;
+    }
+
+    this.newExecutableToolCallIntentIndexByFunctionCallId.set(
+      providerFunctionCallIntent.functionCallId,
+      this.newExecutableToolCallIntents.length,
+    );
+    this.newExecutableToolCallIntents.push(providerFunctionCallIntent);
+  }
+
+  private reindexNewExecutableToolCallQueue(): void {
+    this.newExecutableToolCallIntentIndexByFunctionCallId.clear();
+    for (const [intentIndex, executableToolCallIntent] of this.newExecutableToolCallIntents.entries()) {
+      this.newExecutableToolCallIntentIndexByFunctionCallId.set(
+        executableToolCallIntent.functionCallId,
+        intentIndex,
+      );
+    }
   }
 
   private appendPendingFunctionCallArgumentTextChunk(itemId: string, argumentsTextChunk: string): void {

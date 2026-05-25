@@ -6,7 +6,7 @@ import {
 
 export type AssistantTextMessagePartBuilderState = {
   partId: string;
-  normalizedMarkdownTextChunks: string[];
+  rawMarkdownText: string;
 };
 
 function normalizeAssistantTextDeltaText(assistantTextDeltaText: string): string {
@@ -16,7 +16,7 @@ function normalizeAssistantTextDeltaText(assistantTextDeltaText: string): string
 export function createInitialAssistantTextMessagePartBuilder(partId: string): AssistantTextMessagePartBuilderState {
   return {
     partId,
-    normalizedMarkdownTextChunks: [],
+    rawMarkdownText: "",
   };
 }
 
@@ -29,14 +29,14 @@ export function appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
     return assistantTextMessagePartBuilderState;
   }
 
-  assistantTextMessagePartBuilderState.normalizedMarkdownTextChunks.push(normalizedAssistantTextDeltaText);
+  assistantTextMessagePartBuilderState.rawMarkdownText += normalizedAssistantTextDeltaText;
   return assistantTextMessagePartBuilderState;
 }
 
 export function readAssistantTextMessagePartBuilderRawMarkdownText(
   assistantTextMessagePartBuilderState: AssistantTextMessagePartBuilderState,
 ): string {
-  return assistantTextMessagePartBuilderState.normalizedMarkdownTextChunks.join("");
+  return assistantTextMessagePartBuilderState.rawMarkdownText;
 }
 
 export function buildStreamingAssistantTextConversationMessagePart(

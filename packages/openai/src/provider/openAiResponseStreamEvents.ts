@@ -1,41 +1,15 @@
 import { z } from "zod";
 import { OpenAiUsageSchema } from "./usage.ts";
 
-const ReasoningSummaryPartAddedChunkSchema = z.object({
-  type: z.literal("response.reasoning_summary_part.added"),
-  item_id: z.string(),
-  output_index: z.number().int().nonnegative().optional(),
-  summary_index: z.number().int().nonnegative(),
-});
+type OpenAiStreamChunkObject = {
+  readonly [openAiChunkFieldName: string]: unknown;
+};
 
-const OutputTextDeltaChunkSchema = z.object({
-  type: z.literal("response.output_text.delta"),
-  item_id: z.string(),
-  delta: z.string(),
-}).passthrough();
-
-const ReasoningSummaryTextDeltaChunkSchema = z.object({
-  type: z.literal("response.reasoning_summary_text.delta"),
-  item_id: z.string(),
-  delta: z.string(),
-}).passthrough();
-
-const ReasoningSummaryTextDoneChunkSchema = z.object({
-  type: z.literal("response.reasoning_summary_text.done"),
-  item_id: z.string(),
-}).passthrough();
-
-const FunctionCallArgumentsDeltaChunkSchema = z.object({
-  type: z.literal("response.function_call_arguments.delta"),
-  item_id: z.string(),
-  delta: z.string(),
-});
-
-const FunctionCallArgumentsDoneChunkSchema = z.object({
-  type: z.literal("response.function_call_arguments.done"),
-  item_id: z.string(),
-  arguments: z.string(),
-});
+type OpenAiStringDeltaChunk<EventType extends string> = OpenAiStreamChunkObject & {
+  readonly type: EventType;
+  readonly item_id: string;
+  readonly delta: string;
+};
 
 const OutputItemAddedChunkSchema = z.object({
   type: z.literal("response.output_item.added"),
@@ -80,12 +54,24 @@ const ResponseFailedChunkSchema = z.object({
   }).passthrough(),
 });
 
-export type OpenAiReasoningSummaryPartAddedChunk = z.infer<typeof ReasoningSummaryPartAddedChunkSchema>;
-export type OpenAiOutputTextDeltaChunk = z.infer<typeof OutputTextDeltaChunkSchema>;
-export type OpenAiReasoningSummaryTextDeltaChunk = z.infer<typeof ReasoningSummaryTextDeltaChunkSchema>;
-export type OpenAiReasoningSummaryTextDoneChunk = z.infer<typeof ReasoningSummaryTextDoneChunkSchema>;
-export type OpenAiFunctionCallArgumentsDeltaChunk = z.infer<typeof FunctionCallArgumentsDeltaChunkSchema>;
-export type OpenAiFunctionCallArgumentsDoneChunk = z.infer<typeof FunctionCallArgumentsDoneChunkSchema>;
+export type OpenAiReasoningSummaryPartAddedChunk = OpenAiStreamChunkObject & {
+  readonly type: "response.reasoning_summary_part.added";
+  readonly item_id: string;
+  readonly output_index?: number | undefined;
+  readonly summary_index: number;
+};
+export type OpenAiOutputTextDeltaChunk = OpenAiStringDeltaChunk<"response.output_text.delta">;
+export type OpenAiReasoningSummaryTextDeltaChunk = OpenAiStringDeltaChunk<"response.reasoning_summary_text.delta">;
+export type OpenAiReasoningSummaryTextDoneChunk = OpenAiStreamChunkObject & {
+  readonly type: "response.reasoning_summary_text.done";
+  readonly item_id: string;
+};
+export type OpenAiFunctionCallArgumentsDeltaChunk = OpenAiStringDeltaChunk<"response.function_call_arguments.delta">;
+export type OpenAiFunctionCallArgumentsDoneChunk = OpenAiStreamChunkObject & {
+  readonly type: "response.function_call_arguments.done";
+  readonly item_id: string;
+  readonly arguments: string;
+};
 export type OpenAiOutputItemAddedChunk = z.infer<typeof OutputItemAddedChunkSchema>;
 export type OpenAiOutputItemDoneChunk = z.infer<typeof OutputItemDoneChunkSchema>;
 export type OpenAiErrorChunk = {
@@ -98,27 +84,52 @@ export type OpenAiResponseIncompleteChunk = z.infer<typeof ResponseIncompleteChu
 export type OpenAiResponseFailedChunk = z.infer<typeof ResponseFailedChunkSchema>;
 
 export function readOpenAiReasoningSummaryPartAddedChunk(value: unknown): OpenAiReasoningSummaryPartAddedChunk | undefined {
-  return readSafelyParsedOpenAiChunk(ReasoningSummaryPartAddedChunkSchema, value);
+  if (!isOpenAiChunkObject(value, "response.reasoning_summary_part.added")) {
+    return undefined;
+  }
+
+  const summaryIndex = value["summary_index"];
+  const outputIndex = value["output_index"];
+  if (typeof value["item_id"] !== "string" || !isNonNegativeInteger(summaryIndex)) {
+    return undefined;
+  }
+  if (outputIndex !== undefined && !isNonNegativeInteger(outputIndex)) {
+    return undefined;
+  }
+
+  return value as OpenAiReasoningSummaryPartAddedChunk;
 }
 
 export function readOpenAiOutputTextDeltaChunk(value: unknown): OpenAiOutputTextDeltaChunk | undefined {
-  return readSafelyParsedOpenAiChunk(OutputTextDeltaChunkSchema, value);
+  return readOpenAiStringDeltaChunk(value, "response.output_text.delta");
 }
 
 export function readOpenAiReasoningSummaryTextDeltaChunk(value: unknown): OpenAiReasoningSummaryTextDeltaChunk | undefined {
-  return readSafelyParsedOpenAiChunk(ReasoningSummaryTextDeltaChunkSchema, value);
+  return readOpenAiStringDeltaChunk(value, "response.reasoning_summary_text.delta");
 }
 
 export function readOpenAiReasoningSummaryTextDoneChunk(value: unknown): OpenAiReasoningSummaryTextDoneChunk | undefined {
-  return readSafelyParsedOpenAiChunk(ReasoningSummaryTextDoneChunkSchema, value);
+  if (!isOpenAiChunkObject(value, "response.reasoning_summary_text.done") || typeof value["item_id"] !== "string") {
+    return undefined;
+  }
+
+  return value as OpenAiReasoningSummaryTextDoneChunk;
 }
 
 export function readOpenAiFunctionCallArgumentsDeltaChunk(value: unknown): OpenAiFunctionCallArgumentsDeltaChunk | undefined {
-  return readSafelyParsedOpenAiChunk(FunctionCallArgumentsDeltaChunkSchema, value);
+  return readOpenAiStringDeltaChunk(value, "response.function_call_arguments.delta");
 }
 
 export function readOpenAiFunctionCallArgumentsDoneChunk(value: unknown): OpenAiFunctionCallArgumentsDoneChunk | undefined {
-  return readSafelyParsedOpenAiChunk(FunctionCallArgumentsDoneChunkSchema, value);
+  if (
+    !isOpenAiChunkObject(value, "response.function_call_arguments.done") ||
+    typeof value["item_id"] !== "string" ||
+    typeof value["arguments"] !== "string"
+  ) {
+    return undefined;
+  }
+
+  return value as OpenAiFunctionCallArgumentsDoneChunk;
 }
 
 export function readOpenAiOutputItemAddedChunk(value: unknown): OpenAiOutputItemAddedChunk | undefined {
@@ -174,4 +185,28 @@ export function parseOpenAiResponseIncompleteChunk(value: unknown): OpenAiRespon
 function readSafelyParsedOpenAiChunk<Output>(schema: z.ZodType<Output>, value: unknown): Output | undefined {
   const parsedChunk = schema.safeParse(value);
   return parsedChunk.success ? parsedChunk.data : undefined;
+}
+
+type OpenAiStringDeltaChunkEventType =
+  | "response.output_text.delta"
+  | "response.reasoning_summary_text.delta"
+  | "response.function_call_arguments.delta";
+
+function readOpenAiStringDeltaChunk<EventType extends OpenAiStringDeltaChunkEventType>(
+  value: unknown,
+  eventType: EventType,
+): OpenAiStringDeltaChunk<EventType> | undefined {
+  if (!isOpenAiChunkObject(value, eventType) || typeof value["item_id"] !== "string" || typeof value["delta"] !== "string") {
+    return undefined;
+  }
+
+  return value as OpenAiStringDeltaChunk<EventType>;
+}
+
+function isOpenAiChunkObject(value: unknown, eventType: string): value is OpenAiStreamChunkObject {
+  return typeof value === "object" && value !== null && (value as OpenAiStreamChunkObject)["type"] === eventType;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }

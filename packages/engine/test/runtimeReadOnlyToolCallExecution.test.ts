@@ -14,6 +14,7 @@ import {
 } from "../src/runtimeReadOnlyToolCallExecution.ts";
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "../src/runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
+import { runReadManyToolCall } from "../src/tools/readManyTool.ts";
 
 class RecordingProviderConversationTurn implements ProviderConversationTurn {
   readonly submittedToolResults: ProviderToolResultSubmission[] = [];
@@ -26,6 +27,28 @@ class RecordingProviderConversationTurn implements ProviderConversationTurn {
 
   getProviderTurnReplay(): ProviderTurnReplay | undefined {
     return undefined;
+  }
+}
+
+class BlockingProviderConversationTurn extends RecordingProviderConversationTurn {
+  readonly expectedStartedSubmissionCount: number;
+  readonly expectedStartedSubmissionsReached = new DeferredCompletion();
+  readonly releaseSubmissions = new DeferredCompletion();
+  startedSubmissionCount = 0;
+
+  constructor(input: { expectedStartedSubmissionCount: number }) {
+    super();
+    this.expectedStartedSubmissionCount = input.expectedStartedSubmissionCount;
+  }
+
+  override async submitToolResult(input: ProviderToolResultSubmission): Promise<void> {
+    this.startedSubmissionCount += 1;
+    if (this.startedSubmissionCount === this.expectedStartedSubmissionCount) {
+      this.expectedStartedSubmissionsReached.complete();
+    }
+
+    await this.releaseSubmissions.promise;
+    await super.submitToolResult(input);
   }
 }
 
@@ -672,6 +695,88 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls emits fast c
   ]));
 });
 
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls does not block sibling completions on provider submission", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-provider-submission-"));
+  await writeFile(join(workspaceRootPath, "first.txt"), "first\n", "utf8");
+  await writeFile(join(workspaceRootPath, "second.txt"), "second\n", "utf8");
+  const requestedToolCalls: AutoApprovedReadOnlyRequestedToolCall[] = [
+    {
+      toolCallId: "call_read_first",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "first.txt",
+      },
+    },
+    {
+      toolCallId: "call_read_second",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "second.txt",
+      },
+    },
+  ];
+  const providerConversationTurn = new BlockingProviderConversationTurn({ expectedStartedSubmissionCount: 1 });
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Read both files",
+        modelFacingPromptText: "Read both files",
+      },
+      ...requestedToolCalls.map((requestedToolCall) => ({
+        entryKind: "tool_call" as const,
+        toolCallId: requestedToolCall.toolCallId,
+        toolCallRequest: requestedToolCall.toolCallRequest,
+      })),
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+  const assistantResponseEventIterator = streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
+    assistantResponseMessageId: "assistant-message-1",
+    providerConversationTurn,
+    requestedToolCalls,
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  })[Symbol.asyncIterator]();
+
+  const firstAssistantResponseEvent = await readNextAssistantResponseEvent(assistantResponseEventIterator);
+  const secondAssistantResponseEvent = await readNextAssistantResponseEvent(assistantResponseEventIterator);
+  const firstCompletedAssistantResponseEvent = await readNextAssistantResponseEvent(assistantResponseEventIterator);
+  const secondCompletedAssistantResponseEventPromise = readNextAssistantResponseEvent(assistantResponseEventIterator);
+  await waitForPromiseWithTimeout({
+    promise: providerConversationTurn.expectedStartedSubmissionsReached.promise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("First provider tool-result submission did not start."),
+  });
+  const secondCompletedAssistantResponseEvent = await waitForPromiseWithTimeout({
+    promise: secondCompletedAssistantResponseEventPromise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("Second completion waited for the first provider submission."),
+  });
+
+  expect(listToolCallPartStatuses([
+    firstAssistantResponseEvent,
+    secondAssistantResponseEvent,
+    firstCompletedAssistantResponseEvent,
+    secondCompletedAssistantResponseEvent,
+  ])).toEqual([
+    "call_read_first:running",
+    "call_read_second:running",
+    expect.stringMatching(/^call_read_(first|second):completed$/),
+    expect.stringMatching(/^call_read_(first|second):completed$/),
+  ]);
+  expect(providerConversationTurn.submittedToolResults).toEqual([]);
+
+  providerConversationTurn.releaseSubmissions.complete();
+  expect(await assistantResponseEventIterator.next()).toEqual({ done: true, value: undefined });
+  expect(providerConversationTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).toSorted()).toEqual([
+    "call_read_first",
+    "call_read_second",
+  ]);
+});
+
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concurrent execution and submits every result", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-concurrency-"));
   const requestedToolCalls: AutoApprovedReadOnlyRequestedToolCall[] = Array.from({ length: 5 }, (_, toolCallIndex) => ({
@@ -819,6 +924,51 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall limits read_m
     "call_read_many_1:running",
     "call_read_many_1:completed",
   ]);
+});
+
+test("runReadManyToolCall coalesces identical child read targets and preserves every result index", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-many-tool-duplicate-targets-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
+  const projectInstructionTracker = new BlockingProjectInstructionTracker({
+    workspaceRootPath,
+    expectedActiveDiscoveryCount: 1,
+  });
+  const readManyToolCallOutcomePromise = runReadManyToolCall({
+    readManyToolCallRequest: {
+      toolName: "read_many",
+      readTargets: [
+        { readTargetPath: "notes.txt", offsetLineNumber: 1, maximumLineCount: 1 },
+        { readTargetPath: "notes.txt", offsetLineNumber: 1, maximumLineCount: 1 },
+      ],
+    },
+    workspaceRootPath,
+    projectInstructionTracker,
+    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
+      maximumConcurrentReadOnlyToolCalls: 2,
+    }),
+  });
+
+  await waitForPromiseWithTimeout({
+    promise: projectInstructionTracker.expectedActiveDiscoveriesReached.promise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("Duplicate read_many targets did not start their shared read."),
+  });
+  projectInstructionTracker.releaseDiscoveries.complete();
+  const readManyToolCallOutcome = await readManyToolCallOutcomePromise;
+
+  expect(projectInstructionTracker.startedDiscoveryCount).toBe(1);
+  expect(readManyToolCallOutcome.outcomeKind).toBe("completed");
+  expect(readManyToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "read_many",
+    completedReadCount: 2,
+    failedReadCount: 0,
+    readResults: [
+      { readStatus: "completed", readDetail: { toolName: "read", readFilePath: "notes.txt" } },
+      { readStatus: "completed", readDetail: { toolName: "read", readFilePath: "notes.txt" } },
+    ],
+  });
+  expect(readManyToolCallOutcome.toolResultText).toContain("<index>1</index>");
+  expect(readManyToolCallOutcome.toolResultText).toContain("<index>2</index>");
 });
 
 async function readNextAssistantResponseEvent(

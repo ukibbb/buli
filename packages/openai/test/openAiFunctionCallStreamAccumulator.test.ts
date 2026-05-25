@@ -146,3 +146,33 @@ test("OpenAiFunctionCallStreamAccumulator preserves response output order", () =
     "call_2",
   ]);
 });
+
+test("OpenAiFunctionCallStreamAccumulator drains only newly executable tool calls", () => {
+  const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator();
+
+  functionCallStreamAccumulator.observeFunctionCallOutputItem({
+    functionCallItem: readFunctionCallItem({
+      itemId: "fc_1",
+      toolCallId: "call_1",
+      argumentsText: '{"command":"pwd","description":"Print working directory"}',
+    }),
+    shouldRecordRequestedToolCallIfReady: true,
+  });
+  expect(functionCallStreamAccumulator.drainNewExecutableToolCallIntents().map((toolCallIntent) => toolCallIntent.functionCallId)).toEqual([
+    "call_1",
+  ]);
+  expect(functionCallStreamAccumulator.drainNewExecutableToolCallIntents()).toEqual([]);
+
+  functionCallStreamAccumulator.observeFunctionCallOutputItem({
+    functionCallItem: readFunctionCallItem({
+      itemId: "fc_2",
+      toolCallId: "call_2",
+      argumentsText: '{"command":"ls","description":"List files"}',
+    }),
+    shouldRecordRequestedToolCallIfReady: true,
+  });
+
+  expect(functionCallStreamAccumulator.drainNewExecutableToolCallIntents().map((toolCallIntent) => toolCallIntent.functionCallId)).toEqual([
+    "call_2",
+  ]);
+});

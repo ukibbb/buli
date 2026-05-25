@@ -33,6 +33,7 @@ export type OpenAiReasoningSummaryPart = {
 
 export class OpenAiResponseOutputItemTracker {
   private readonly trackedOutputItemsByIndex = new Map<number, unknown>();
+  private readonly trackedOutputItemIndexByTypeAndItemId = new Map<string, Map<string, number>>();
   private readonly assistantTextChunksByItemIdAndContentIndex = new Map<string, TextChunkBufferByPartIndex>();
   private readonly reasoningSummaryChunksByItemIdAndSummaryIndex = new Map<string, TextChunkBufferByPartIndex>();
   private readonly functionCallArgumentChunksByItemId = new Map<string, string[]>();
@@ -56,7 +57,7 @@ export class OpenAiResponseOutputItemTracker {
 
     const outputIndex = input.outputIndex ?? this.reserveUnindexedTrackedOutputItemIndex();
     const trackedOutputItemAtIndex = this.trackedOutputItemsByIndex.get(outputIndex);
-    this.trackedOutputItemsByIndex.set(
+    this.setTrackedOutputItemAtOutputIndex(
       outputIndex,
       isOpenAiResponseObject(trackedOutputItemAtIndex) && trackedOutputItemAtIndex.type === "message"
         ? { ...trackedOutputItemAtIndex, id: input.itemId, role: "assistant" }
@@ -81,7 +82,7 @@ export class OpenAiResponseOutputItemTracker {
 
     const outputIndex = input.outputIndex ?? this.reserveUnindexedTrackedOutputItemIndex();
     const trackedOutputItemAtIndex = this.trackedOutputItemsByIndex.get(outputIndex);
-    this.trackedOutputItemsByIndex.set(
+    this.setTrackedOutputItemAtOutputIndex(
       outputIndex,
       isOpenAiResponseObject(trackedOutputItemAtIndex) && trackedOutputItemAtIndex.type === "reasoning"
         ? { ...trackedOutputItemAtIndex, id: input.itemId }
@@ -106,33 +107,27 @@ export class OpenAiResponseOutputItemTracker {
   }): void {
     const responseOutputItem = input.responseOutputItem;
     if (!isOpenAiResponseObject(responseOutputItem)) {
-      this.trackedOutputItemsByIndex.set(input.outputIndex, responseOutputItem);
+      this.setTrackedOutputItemAtOutputIndex(input.outputIndex, responseOutputItem);
       return;
     }
 
     const responseOutputItemId = readOpenAiResponseObjectStringField(responseOutputItem, "id");
     if (responseOutputItemId === undefined) {
-      this.trackedOutputItemsByIndex.set(input.outputIndex, responseOutputItem);
+      this.setTrackedOutputItemAtOutputIndex(input.outputIndex, responseOutputItem);
       return;
     }
 
     let nextTrackedOutputItem: unknown = responseOutputItem;
-    for (const [trackedOutputIndex, trackedOutputItem] of this.trackedOutputItemsByIndex.entries()) {
-      if (
-        trackedOutputIndex === input.outputIndex ||
-        !isOpenAiResponseObject(trackedOutputItem) ||
-        trackedOutputItem.type !== responseOutputItem.type ||
-        readOpenAiResponseObjectStringField(trackedOutputItem, "id") !== responseOutputItemId
-      ) {
-        continue;
+    const trackedOutputIndex = this.findTrackedOutputItemIndexByItemId(responseOutputItemId, responseOutputItem.type);
+    if (trackedOutputIndex !== undefined && trackedOutputIndex !== input.outputIndex) {
+      const trackedOutputItem = this.trackedOutputItemsByIndex.get(trackedOutputIndex);
+      if (isOpenAiResponseObject(trackedOutputItem) && trackedOutputItem.type === responseOutputItem.type) {
+        nextTrackedOutputItem = mergeTrackedAndResponseOutputItem({
+          trackedOutputItem,
+          responseOutputItem,
+        });
       }
-
-      nextTrackedOutputItem = mergeTrackedAndResponseOutputItem({
-        trackedOutputItem,
-        responseOutputItem,
-      });
-      this.trackedOutputItemsByIndex.delete(trackedOutputIndex);
-      break;
+      this.deleteTrackedOutputItemAtOutputIndex(trackedOutputIndex);
     }
 
     const currentOutputItemAtIndex = this.trackedOutputItemsByIndex.get(input.outputIndex);
@@ -147,7 +142,7 @@ export class OpenAiResponseOutputItemTracker {
       });
     }
 
-    this.trackedOutputItemsByIndex.set(input.outputIndex, nextTrackedOutputItem);
+    this.setTrackedOutputItemAtOutputIndex(input.outputIndex, nextTrackedOutputItem);
   }
 
   mergeOutputItemDoneWithoutOutputIndex(responseOutputItem: OpenAiResponseObject): void {
@@ -156,14 +151,15 @@ export class OpenAiResponseOutputItemTracker {
       return;
     }
 
-    this.updateTrackedOutputItemByItemId(responseOutputItemId, (trackedOutputItem) =>
-      trackedOutputItem.type === responseOutputItem.type
-        ? mergeTrackedAndResponseOutputItem({
-            trackedOutputItem,
-            responseOutputItem,
-          })
-        : responseOutputItem
-    );
+    this.updateTrackedOutputItemByItemId({
+      itemId: responseOutputItemId,
+      outputItemType: responseOutputItem.type,
+      createUpdatedOutputItem: (trackedOutputItem) =>
+        mergeTrackedAndResponseOutputItem({
+          trackedOutputItem,
+          responseOutputItem,
+        }),
+    });
   }
 
   createTrackedBackedResponseOutputItems(responseOutputItems: readonly unknown[] | undefined): unknown[] {
@@ -240,17 +236,7 @@ export class OpenAiResponseOutputItemTracker {
   }
 
   private hasTrackedOutputItemByItemId(itemId: string, outputItemType: string): boolean {
-    for (const outputItem of this.trackedOutputItemsByIndex.values()) {
-      if (
-        isOpenAiResponseObject(outputItem) &&
-        outputItem.type === outputItemType &&
-        readOpenAiResponseObjectStringField(outputItem, "id") === itemId
-      ) {
-        return true;
-      }
-    }
-
-    return false;
+    return this.findTrackedOutputItemIndexByItemId(itemId, outputItemType) !== undefined;
   }
 
   private listTrackedOutputItems(): unknown[] {
@@ -259,20 +245,97 @@ export class OpenAiResponseOutputItemTracker {
       .map(([, outputItem]) => this.materializeTrackedOutputItem(outputItem));
   }
 
-  private updateTrackedOutputItemByItemId(
-    itemId: string,
-    createUpdatedOutputItem: (outputItem: OpenAiResponseObject) => unknown,
-  ): boolean {
-    for (const [outputIndex, outputItem] of this.trackedOutputItemsByIndex.entries()) {
-      if (!isOpenAiResponseObject(outputItem) || readOpenAiResponseObjectStringField(outputItem, "id") !== itemId) {
-        continue;
-      }
-
-      this.trackedOutputItemsByIndex.set(outputIndex, createUpdatedOutputItem(outputItem));
-      return true;
+  private updateTrackedOutputItemByItemId(input: {
+    itemId: string;
+    outputItemType: string;
+    createUpdatedOutputItem: (outputItem: OpenAiResponseObject) => unknown;
+  }): boolean {
+    const outputIndex = this.findTrackedOutputItemIndexByItemId(input.itemId, input.outputItemType);
+    if (outputIndex === undefined) {
+      return false;
     }
 
-    return false;
+    const outputItem = this.trackedOutputItemsByIndex.get(outputIndex);
+    if (!isOpenAiResponseObject(outputItem) || outputItem.type !== input.outputItemType) {
+      return false;
+    }
+
+    this.setTrackedOutputItemAtOutputIndex(outputIndex, input.createUpdatedOutputItem(outputItem));
+    return true;
+  }
+
+  private findTrackedOutputItemIndexByItemId(itemId: string, outputItemType: string): number | undefined {
+    const outputIndexByItemId = this.trackedOutputItemIndexByTypeAndItemId.get(outputItemType);
+    const outputIndex = outputIndexByItemId?.get(itemId);
+    if (outputIndex === undefined) {
+      return undefined;
+    }
+
+    const outputItem = this.trackedOutputItemsByIndex.get(outputIndex);
+    if (
+      isOpenAiResponseObject(outputItem) &&
+      outputItem.type === outputItemType &&
+      readOpenAiResponseObjectStringField(outputItem, "id") === itemId
+    ) {
+      return outputIndex;
+    }
+
+    outputIndexByItemId?.delete(itemId);
+    if (outputIndexByItemId?.size === 0) {
+      this.trackedOutputItemIndexByTypeAndItemId.delete(outputItemType);
+    }
+    return undefined;
+  }
+
+  private setTrackedOutputItemAtOutputIndex(outputIndex: number, outputItem: unknown): void {
+    this.removeTrackedOutputItemIndexLookup(outputIndex);
+    this.trackedOutputItemsByIndex.set(outputIndex, outputItem);
+    this.recordTrackedOutputItemIndexLookup(outputIndex, outputItem);
+  }
+
+  private deleteTrackedOutputItemAtOutputIndex(outputIndex: number): void {
+    this.removeTrackedOutputItemIndexLookup(outputIndex);
+    this.trackedOutputItemsByIndex.delete(outputIndex);
+  }
+
+  private recordTrackedOutputItemIndexLookup(outputIndex: number, outputItem: unknown): void {
+    if (!isOpenAiResponseObject(outputItem)) {
+      return;
+    }
+
+    const outputItemId = readOpenAiResponseObjectStringField(outputItem, "id");
+    if (outputItemId === undefined) {
+      return;
+    }
+
+    let outputIndexByItemId = this.trackedOutputItemIndexByTypeAndItemId.get(outputItem.type);
+    if (!outputIndexByItemId) {
+      outputIndexByItemId = new Map<string, number>();
+      this.trackedOutputItemIndexByTypeAndItemId.set(outputItem.type, outputIndexByItemId);
+    }
+    outputIndexByItemId.set(outputItemId, outputIndex);
+  }
+
+  private removeTrackedOutputItemIndexLookup(outputIndex: number): void {
+    const outputItem = this.trackedOutputItemsByIndex.get(outputIndex);
+    if (!isOpenAiResponseObject(outputItem)) {
+      return;
+    }
+
+    const outputItemId = readOpenAiResponseObjectStringField(outputItem, "id");
+    if (outputItemId === undefined) {
+      return;
+    }
+
+    const outputIndexByItemId = this.trackedOutputItemIndexByTypeAndItemId.get(outputItem.type);
+    if (outputIndexByItemId?.get(outputItemId) !== outputIndex) {
+      return;
+    }
+
+    outputIndexByItemId.delete(outputItemId);
+    if (outputIndexByItemId.size === 0) {
+      this.trackedOutputItemIndexByTypeAndItemId.delete(outputItem.type);
+    }
   }
 
   private reserveUnindexedTrackedOutputItemIndex(): number {

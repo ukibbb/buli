@@ -204,14 +204,14 @@ export async function runInteractiveChat(input: {
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
     });
     const conversationHistory = new InMemoryConversationHistory({
-      onConversationSessionEntryAppended: (conversationSessionEntry, conversationSessionEntries) => {
+      onConversationSessionEntryAppended: (conversationSessionEntry, appendMetadata) => {
         conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
         logCliDiagnosticEvent(diagnosticLogger, "conversation_session.saved", {
           conversationSessionEntryKind: conversationSessionEntry.entryKind,
           assistantOperatingMode: conversationSessionEntry.entryKind === "user_prompt"
             ? conversationSessionEntry.assistantOperatingMode ?? null
             : null,
-          conversationSessionEntryCount: conversationSessionEntries.length,
+          conversationSessionEntryCount: appendMetadata.conversationSessionEntryCount,
         });
       },
     });

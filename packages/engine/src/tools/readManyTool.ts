@@ -24,6 +24,11 @@ type ReadManyChildToolCallOutcome = {
   readToolCallOutcome: ToolCallOutcome;
 };
 
+type UniqueReadManyChildToolCall = {
+  firstReadTargetIndex: number;
+  readTarget: ReadManyToolCallTarget;
+};
+
 export function createStartedReadManyToolCallDetail(
   readManyToolCallRequest: ReadManyToolCallRequest,
 ): ToolCallReadManyDetail {
@@ -42,13 +47,14 @@ export async function runReadManyToolCall(input: {
   const startedToolCallDetail = createStartedReadManyToolCallDetail(input.readManyToolCallRequest);
 
   try {
-    const childToolCallOutcomes = await Promise.all(
-      input.readManyToolCallRequest.readTargets.map((readTarget, readTargetIndex) =>
+    const uniqueReadManyChildToolCalls = listUniqueReadManyChildToolCalls(input.readManyToolCallRequest.readTargets);
+    const uniqueChildToolCallOutcomes = await Promise.all(
+      uniqueReadManyChildToolCalls.map((uniqueReadManyChildToolCall) =>
         input.readOnlyToolCallConcurrencyLimiter.run(
           () =>
             runReadManyChildToolCall({
-              readTarget,
-              readTargetIndex,
+              readTarget: uniqueReadManyChildToolCall.readTarget,
+              readTargetIndex: uniqueReadManyChildToolCall.firstReadTargetIndex,
               workspaceRootPath: input.workspaceRootPath,
               ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
               ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
@@ -57,11 +63,15 @@ export async function runReadManyToolCall(input: {
             ...(input.parentToolCallId !== undefined ? { parentToolCallId: input.parentToolCallId } : {}),
             parentToolName: "read_many",
             toolName: "read",
-            childIndex: readTargetIndex,
+            childIndex: uniqueReadManyChildToolCall.firstReadTargetIndex,
           },
         )
       ),
     );
+    const childToolCallOutcomes = createReadManyChildOutcomesForRequestedTargets({
+      readTargets: input.readManyToolCallRequest.readTargets,
+      uniqueChildToolCallOutcomes,
+    });
     const readResults = childToolCallOutcomes.map(createReadManyResultFromChildOutcome);
     const completedReadCount = readResults.filter((readResult) => readResult.readStatus === "completed").length;
     const failedReadCount = readResults.length - completedReadCount;
@@ -97,6 +107,60 @@ export async function runReadManyToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+function listUniqueReadManyChildToolCalls(
+  readTargets: readonly ReadManyToolCallTarget[],
+): UniqueReadManyChildToolCall[] {
+  const uniqueReadManyChildToolCallByTargetKey = new Map<string, UniqueReadManyChildToolCall>();
+  for (const [readTargetIndex, readTarget] of readTargets.entries()) {
+    const readTargetKey = createReadManyTargetKey(readTarget);
+    if (uniqueReadManyChildToolCallByTargetKey.has(readTargetKey)) {
+      continue;
+    }
+
+    uniqueReadManyChildToolCallByTargetKey.set(readTargetKey, {
+      firstReadTargetIndex: readTargetIndex,
+      readTarget,
+    });
+  }
+
+  return [...uniqueReadManyChildToolCallByTargetKey.values()];
+}
+
+function createReadManyChildOutcomesForRequestedTargets(input: {
+  readTargets: readonly ReadManyToolCallTarget[];
+  uniqueChildToolCallOutcomes: readonly ReadManyChildToolCallOutcome[];
+}): ReadManyChildToolCallOutcome[] {
+  const uniqueChildToolCallOutcomeByTargetKey = new Map<string, ReadManyChildToolCallOutcome>();
+  for (const uniqueChildToolCallOutcome of input.uniqueChildToolCallOutcomes) {
+    const readTarget = input.readTargets[uniqueChildToolCallOutcome.readTargetIndex];
+    if (!readTarget) {
+      throw new Error(`Read many child returned an out-of-range index: ${uniqueChildToolCallOutcome.readTargetIndex}`);
+    }
+
+    uniqueChildToolCallOutcomeByTargetKey.set(createReadManyTargetKey(readTarget), uniqueChildToolCallOutcome);
+  }
+
+  return input.readTargets.map((readTarget, readTargetIndex) => {
+    const uniqueChildToolCallOutcome = uniqueChildToolCallOutcomeByTargetKey.get(createReadManyTargetKey(readTarget));
+    if (!uniqueChildToolCallOutcome) {
+      throw new Error(`Read many child outcome is missing for target ${readTargetIndex + 1}`);
+    }
+
+    return {
+      readTargetIndex,
+      readToolCallOutcome: uniqueChildToolCallOutcome.readToolCallOutcome,
+    };
+  });
+}
+
+function createReadManyTargetKey(readTarget: ReadManyToolCallTarget): string {
+  return JSON.stringify([
+    readTarget.readTargetPath,
+    readTarget.offsetLineNumber ?? null,
+    readTarget.maximumLineCount ?? null,
+  ]);
 }
 
 async function runReadManyChildToolCall(input: {

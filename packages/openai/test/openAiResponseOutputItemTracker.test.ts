@@ -25,6 +25,77 @@ test("OpenAiResponseOutputItemTracker materializes assistant text deltas once fo
   ]);
 });
 
+test("OpenAiResponseOutputItemTracker merges indexed output items with earlier streamed deltas", () => {
+  const outputItemTracker = new OpenAiResponseOutputItemTracker();
+
+  outputItemTracker.appendAssistantOutputTextDelta({
+    itemId: "msg_1",
+    contentIndex: 0,
+    deltaText: "Hello",
+  });
+  outputItemTracker.setTrackedOutputItemAtIndex({
+    outputIndex: 0,
+    responseOutputItem: {
+      type: "message",
+      id: "msg_1",
+      role: "assistant",
+      content: [],
+    },
+  });
+
+  expect(outputItemTracker.createTrackedBackedResponseOutputItems(undefined)).toEqual([
+    {
+      type: "message",
+      id: "msg_1",
+      role: "assistant",
+      content: [{ type: "output_text", text: "Hello" }],
+    },
+  ]);
+});
+
+test("OpenAiResponseOutputItemTracker clears item indexes when an output index is replaced", () => {
+  const outputItemTracker = new OpenAiResponseOutputItemTracker();
+
+  outputItemTracker.setTrackedOutputItemAtIndex({
+    outputIndex: 0,
+    responseOutputItem: {
+      type: "message",
+      id: "msg_1",
+      role: "assistant",
+      content: [],
+    },
+  });
+  outputItemTracker.setTrackedOutputItemAtIndex({
+    outputIndex: 0,
+    responseOutputItem: {
+      type: "message",
+      id: "msg_2",
+      role: "assistant",
+      content: [],
+    },
+  });
+  outputItemTracker.appendAssistantOutputTextDelta({
+    itemId: "msg_1",
+    contentIndex: 0,
+    deltaText: "Recovered",
+  });
+
+  expect(outputItemTracker.createTrackedBackedResponseOutputItems(undefined)).toEqual([
+    {
+      type: "message",
+      id: "msg_1",
+      role: "assistant",
+      content: [{ type: "output_text", text: "Recovered" }],
+    },
+    {
+      type: "message",
+      id: "msg_2",
+      role: "assistant",
+      content: [],
+    },
+  ]);
+});
+
 test("OpenAiResponseOutputItemTracker preserves streamed reasoning summaries for replay", () => {
   const outputItemTracker = new OpenAiResponseOutputItemTracker();
 

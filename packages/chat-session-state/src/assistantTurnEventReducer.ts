@@ -16,10 +16,75 @@ type ConversationMessagePartsByIdOverlay = {
   changedConversationMessagePartsById: Record<string, ConversationMessagePart>;
 };
 
+type ConversationMessagesByIdOverlay = {
+  baseConversationMessagesById: Record<string, ConversationMessage>;
+  changedConversationMessagesById: Record<string, ConversationMessage>;
+};
+
 const conversationMessagePartsByIdOverlayMetadata = new WeakMap<
   Record<string, ConversationMessagePart>,
   ConversationMessagePartsByIdOverlay
 >();
+const conversationMessagesByIdOverlayMetadata = new WeakMap<
+  Record<string, ConversationMessage>,
+  ConversationMessagesByIdOverlay
+>();
+
+function overlayConversationMessageById(input: {
+  conversationMessagesById: Record<string, ConversationMessage>;
+  conversationMessage: ConversationMessage;
+}): Record<string, ConversationMessage> {
+  const existingOverlay = conversationMessagesByIdOverlayMetadata.get(input.conversationMessagesById);
+  const baseConversationMessagesById = existingOverlay?.baseConversationMessagesById ?? input.conversationMessagesById;
+  const changedConversationMessagesById: Record<string, ConversationMessage> = {
+    ...(existingOverlay?.changedConversationMessagesById ?? {}),
+    [input.conversationMessage.id]: input.conversationMessage,
+  };
+
+  const nextConversationMessagesById = new Proxy(changedConversationMessagesById, {
+    get(target, propertyKey) {
+      if (typeof propertyKey === "string" && Object.prototype.hasOwnProperty.call(target, propertyKey)) {
+        return target[propertyKey];
+      }
+
+      return Reflect.get(baseConversationMessagesById, propertyKey);
+    },
+    has(target, propertyKey) {
+      return Reflect.has(target, propertyKey) || Reflect.has(baseConversationMessagesById, propertyKey);
+    },
+    ownKeys(target) {
+      const conversationMessageIds = new Set<string | symbol>();
+      for (const conversationMessageId of Reflect.ownKeys(baseConversationMessagesById)) {
+        conversationMessageIds.add(conversationMessageId);
+      }
+      for (const conversationMessageId of Reflect.ownKeys(target)) {
+        conversationMessageIds.add(conversationMessageId);
+      }
+      return [...conversationMessageIds];
+    },
+    getOwnPropertyDescriptor(target, propertyKey) {
+      const targetDescriptor = Reflect.getOwnPropertyDescriptor(target, propertyKey);
+      if (targetDescriptor) {
+        return targetDescriptor;
+      }
+
+      const baseDescriptor = Reflect.getOwnPropertyDescriptor(baseConversationMessagesById, propertyKey);
+      if (!baseDescriptor) {
+        return undefined;
+      }
+
+      return {
+        ...baseDescriptor,
+        configurable: true,
+      };
+    },
+  });
+  conversationMessagesByIdOverlayMetadata.set(nextConversationMessagesById, {
+    baseConversationMessagesById,
+    changedConversationMessagesById,
+  });
+  return nextConversationMessagesById;
+}
 
 function overlayConversationMessagePartById(input: {
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
@@ -90,10 +155,10 @@ function appendConversationMessageIfMissing(input: {
 
   return {
     ...input.chatSessionState,
-    conversationMessagesById: {
-      ...input.chatSessionState.conversationMessagesById,
-      [input.conversationMessage.id]: input.conversationMessage,
-    },
+    conversationMessagesById: overlayConversationMessageById({
+      conversationMessagesById: input.chatSessionState.conversationMessagesById,
+      conversationMessage: input.conversationMessage,
+    }),
     orderedConversationMessageIds: [...input.chatSessionState.orderedConversationMessageIds, input.conversationMessage.id],
   };
 }
@@ -128,17 +193,17 @@ function upsertConversationMessagePart(input: {
 
   return {
     ...input.chatSessionState,
-    conversationMessagesById: {
-      ...input.chatSessionState.conversationMessagesById,
-      [input.messageId]: {
+    conversationMessagesById: overlayConversationMessageById({
+      conversationMessagesById: input.chatSessionState.conversationMessagesById,
+      conversationMessage: {
         ...existingConversationMessage,
         partIds: [...existingConversationMessage.partIds, input.conversationMessagePart.id],
       },
-    },
-    conversationMessagePartsById: {
-      ...input.chatSessionState.conversationMessagePartsById,
-      [input.conversationMessagePart.id]: input.conversationMessagePart,
-    },
+    }),
+    conversationMessagePartsById: overlayConversationMessagePartById({
+      conversationMessagePartsById: input.chatSessionState.conversationMessagePartsById,
+      conversationMessagePart: input.conversationMessagePart,
+    }),
     conversationMessagePartCount: hasExistingConversationMessagePart
       ? input.chatSessionState.conversationMessagePartCount
       : input.chatSessionState.conversationMessagePartCount + 1,
@@ -157,10 +222,10 @@ function updateConversationMessage(input: {
 
   return {
     ...input.chatSessionState,
-    conversationMessagesById: {
-      ...input.chatSessionState.conversationMessagesById,
-      [input.messageId]: input.updateConversationMessage(existingConversationMessage),
-    },
+    conversationMessagesById: overlayConversationMessageById({
+      conversationMessagesById: input.chatSessionState.conversationMessagesById,
+      conversationMessage: input.updateConversationMessage(existingConversationMessage),
+    }),
   };
 }
 
@@ -175,7 +240,7 @@ function updateConversationMessageParts(input: {
   }
 
   let hasChangedConversationMessagePart = false;
-  const nextConversationMessagePartsById = { ...input.chatSessionState.conversationMessagePartsById };
+  let nextConversationMessagePartsById = input.chatSessionState.conversationMessagePartsById;
   for (const partId of conversationMessage.partIds) {
     const existingConversationMessagePart = nextConversationMessagePartsById[partId];
     if (!existingConversationMessagePart) {
@@ -184,7 +249,10 @@ function updateConversationMessageParts(input: {
 
     const nextConversationMessagePart = input.updateConversationMessagePart(existingConversationMessagePart);
     if (nextConversationMessagePart !== existingConversationMessagePart) {
-      nextConversationMessagePartsById[partId] = nextConversationMessagePart;
+      nextConversationMessagePartsById = overlayConversationMessagePartById({
+        conversationMessagePartsById: nextConversationMessagePartsById,
+        conversationMessagePart: nextConversationMessagePart,
+      });
       hasChangedConversationMessagePart = true;
     }
   }
@@ -198,7 +266,6 @@ function updateConversationMessageParts(input: {
     conversationMessagePartsById: nextConversationMessagePartsById,
   };
 }
-
 function appendAssistantIncompleteNoticePartIfMissing(chatSessionState: ChatSessionState, messageId: string, incompleteReason: string): ChatSessionState {
   const conversationMessage = chatSessionState.conversationMessagesById[messageId];
   if (!conversationMessage) {
@@ -460,13 +527,13 @@ function backfillAssistantTurnSummaryUsageForMessage(
 
   return {
     ...chatSessionState,
-    conversationMessagePartsById: {
-      ...chatSessionState.conversationMessagePartsById,
-      [assistantTurnSummaryPartId]: {
+    conversationMessagePartsById: overlayConversationMessagePartById({
+      conversationMessagePartsById: chatSessionState.conversationMessagePartsById,
+      conversationMessagePart: {
         ...assistantTurnSummaryPart,
         usage,
       },
-    },
+    }),
   };
 }
 
@@ -490,16 +557,15 @@ function backfillCompletedReasoningPartTokenCountForMessage(
 
   return {
     ...chatSessionState,
-    conversationMessagePartsById: {
-      ...chatSessionState.conversationMessagePartsById,
-      [completedReasoningPart.id]: {
+    conversationMessagePartsById: overlayConversationMessagePartById({
+      conversationMessagePartsById: chatSessionState.conversationMessagePartsById,
+      conversationMessagePart: {
         ...completedReasoningPart,
         reasoningTokenCount,
       },
-    },
+    }),
   };
 }
-
 function listCompletedReasoningPartIdsForMessage(chatSessionState: ChatSessionState, messageId: string): string[] {
   const conversationMessage = chatSessionState.conversationMessagesById[messageId];
   if (!conversationMessage) {

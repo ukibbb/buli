@@ -15,6 +15,8 @@ type OpenAiTextRequest = {
   verbosity: "low";
 };
 
+type OpenAiReasoningEncryptedContentInclusionPolicy = "always" | "never" | "when_input_contains_reasoning";
+
 export type CreateOpenAiResponsesHttpRequestBodyInput = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -23,6 +25,11 @@ export type CreateOpenAiResponsesHttpRequestBodyInput = {
   systemPromptText: string;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 };
+
+export type CreateOpenAiResponsesHttpRequestTemplateInput = Omit<
+  CreateOpenAiResponsesHttpRequestBodyInput,
+  "openAiInputItems"
+>;
 
 export type OpenAiResponsesHttpRequestBody = {
   model: string;
@@ -38,24 +45,55 @@ export type OpenAiResponsesHttpRequestBody = {
   stream: true;
 };
 
+type StableOpenAiResponsesHttpRequestFields = Omit<OpenAiResponsesHttpRequestBody, "input" | "include">;
+
+export type OpenAiResponsesHttpRequestTemplate = Readonly<{
+  stableRequestFields: StableOpenAiResponsesHttpRequestFields;
+  reasoningEncryptedContentInclusionPolicy: OpenAiReasoningEncryptedContentInclusionPolicy;
+}>;
+
 export function createOpenAiResponsesHttpRequestBody(
   input: CreateOpenAiResponsesHttpRequestBodyInput,
 ): OpenAiResponsesHttpRequestBody {
+  return createOpenAiResponsesHttpRequestBodyFromTemplate({
+    requestTemplate: createOpenAiResponsesHttpRequestTemplate(input),
+    openAiInputItems: input.openAiInputItems,
+  });
+}
+
+export function createOpenAiResponsesHttpRequestTemplate(
+  input: CreateOpenAiResponsesHttpRequestTemplateInput,
+): OpenAiResponsesHttpRequestTemplate {
   const reasoningRequest = createReasoningRequest(input);
   const toolDefinitions = createOpenAiToolDefinitions({
     availableToolNames: input.availableToolNames,
   });
   return {
-    model: input.selectedModelId,
-    instructions: input.systemPromptText,
-    store: false,
-    ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
+    stableRequestFields: {
+      model: input.selectedModelId,
+      instructions: input.systemPromptText,
+      store: false,
+      ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
+      ...(toolDefinitions.length > 0 ? { tools: toolDefinitions, parallel_tool_calls: true as const } : {}),
+      ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
+      ...(shouldRequestLowTextVerbosity(input.selectedModelId) ? { text: { verbosity: "low" as const } } : {}),
+      stream: true,
+    },
+    reasoningEncryptedContentInclusionPolicy: createReasoningEncryptedContentInclusionPolicy(input),
+  };
+}
+
+export function createOpenAiResponsesHttpRequestBodyFromTemplate(input: {
+  requestTemplate: OpenAiResponsesHttpRequestTemplate;
+  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
+}): OpenAiResponsesHttpRequestBody {
+  return {
+    ...input.requestTemplate.stableRequestFields,
     input: input.openAiInputItems,
-    ...(toolDefinitions.length > 0 ? { tools: toolDefinitions, parallel_tool_calls: true as const } : {}),
-    ...(shouldIncludeReasoningEncryptedContent(input) ? { include: ["reasoning.encrypted_content"] as const } : {}),
-    ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
-    ...(shouldRequestLowTextVerbosity(input.selectedModelId) ? { text: { verbosity: "low" as const } } : {}),
-    stream: true,
+    ...(shouldIncludeReasoningEncryptedContent({
+      inclusionPolicy: input.requestTemplate.reasoningEncryptedContentInclusionPolicy,
+      openAiInputItems: input.openAiInputItems,
+    }) ? { include: ["reasoning.encrypted_content"] as const } : {}),
   };
 }
 
@@ -80,24 +118,37 @@ export function summarizeOpenAiResponsesRequestForDiagnostics(input: {
   };
 }
 
-function shouldIncludeReasoningEncryptedContent(input: {
+function createReasoningEncryptedContentInclusionPolicy(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
-  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
-}): boolean {
+}): OpenAiReasoningEncryptedContentInclusionPolicy {
   if (input.selectedReasoningEffort === "none") {
-    return false;
+    return "never";
   }
 
   if (input.selectedReasoningEffort) {
+    return "always";
+  }
+
+  return isOpenAiReasoningModel(input.selectedModelId) ? "always" : "when_input_contains_reasoning";
+}
+
+function shouldIncludeReasoningEncryptedContent(input: {
+  inclusionPolicy: OpenAiReasoningEncryptedContentInclusionPolicy;
+  openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
+}): boolean {
+  if (input.inclusionPolicy === "never") {
+    return false;
+  }
+
+  if (input.inclusionPolicy === "always") {
     return true;
   }
 
   if (input.openAiInputItems.some(isOpenAiReasoningInputItem)) {
     return true;
   }
-
-  return isOpenAiReasoningModel(input.selectedModelId);
+  return false;
 }
 
 function createReasoningRequest(input: {

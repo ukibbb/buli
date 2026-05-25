@@ -17,7 +17,7 @@ import {
   createOpenAiResponsesInputItems,
   type OpenAiConversationInputItem,
 } from "./request.ts";
-import { writeOpenAiDebugLog } from "./debugLog.ts";
+import { isOpenAiDebugLoggingEnabled, writeOpenAiDebugLog } from "./debugLog.ts";
 import {
   logOpenAiDiagnosticEvent,
   summarizeOpenAiToolCallRequestForDiagnostics,
@@ -32,7 +32,10 @@ import {
 import { fetchWithTimeout } from "../fetchWithTimeout.ts";
 import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
 import {
-  createOpenAiResponsesHttpRequestBody,
+  createOpenAiResponsesHttpRequestBodyFromTemplate,
+  createOpenAiResponsesHttpRequestTemplate,
+  type OpenAiResponsesHttpRequestBody,
+  type OpenAiResponsesHttpRequestTemplate,
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "./openAiResponsesRequest.ts";
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
@@ -108,6 +111,7 @@ export class OpenAiProviderConversationTurn {
   readonly responseStepFetchTimeoutMilliseconds: number;
   readonly responseStepStreamIdleTimeoutMilliseconds: number;
   readonly rateLimitCoordinator: OpenAiRateLimitCoordinator | undefined;
+  readonly openAiResponsesRequestTemplate: OpenAiResponsesHttpRequestTemplate;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
@@ -170,6 +174,13 @@ export class OpenAiProviderConversationTurn {
       DEFAULT_OPENAI_RESPONSE_STEP_STREAM_IDLE_TIMEOUT_MILLISECONDS,
     );
     this.rateLimitCoordinator = input.rateLimitCoordinator;
+    this.openAiResponsesRequestTemplate = createOpenAiResponsesHttpRequestTemplate({
+      selectedModelId: input.selectedModelId,
+      ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
+      ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),
+      systemPromptText: input.systemPromptText,
+    });
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
@@ -265,20 +276,11 @@ export class OpenAiProviderConversationTurn {
         });
       }
       const responseStepStartedAtMs = Date.now();
-      const requestBody = createOpenAiResponsesHttpRequestBody({
-        selectedModelId: this.selectedModelId,
-        ...(this.selectedReasoningEffort ? { selectedReasoningEffort: this.selectedReasoningEffort } : {}),
-        ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
-        ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
-        systemPromptText: this.systemPromptText,
+      const requestBody = createOpenAiResponsesHttpRequestBodyFromTemplate({
+        requestTemplate: this.openAiResponsesRequestTemplate,
         openAiInputItems: this.openAiConversationInputItems,
       });
-      const requestDebugSummary = summarizeOpenAiResponsesRequestForDiagnostics({
-        requestBody,
-        responseStepIndex,
-      });
-      logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", requestDebugSummary);
-      await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
+      await this.writeRequestPreparedDiagnostics({ requestBody, responseStepIndex });
 
       let terminalState: OpenAiResponseStepTerminalState | undefined;
       let terminalUsageProviderEvent: OpenAiTerminalUsageProviderEvent | undefined;
@@ -337,13 +339,15 @@ export class OpenAiProviderConversationTurn {
 
         const response = responseRetryResult.value.response;
         if (!response.ok) {
-          const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
-          logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
-            responseStepIndex,
-            responseStepRequestAttemptIndex: responseRetryResult.value.requestAttemptIndex,
-            ...failedResponseDebugPayload,
-          });
-          await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
+          if (this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
+            const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
+            logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
+              responseStepIndex,
+              responseStepRequestAttemptIndex: responseRetryResult.value.requestAttemptIndex,
+              ...failedResponseDebugPayload,
+            });
+            await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
+          }
           throw await this.onStepRequestFailed(response);
         }
 
@@ -404,32 +408,34 @@ export class OpenAiProviderConversationTurn {
         const providerFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(providerFunctionCallIntents);
         const requestedToolCalls = providerFunctionCallIntentClassification.requestedToolCalls;
         const invalidFunctionCallIntents = providerFunctionCallIntentClassification.invalidFunctionCallIntents;
-        const onlyRequestedToolCall = requestedToolCalls.length === 1 ? requestedToolCalls[0] : undefined;
         observeRequestedToolCallsForTurnLimitsAndDiagnostics({
           responseStepIndex,
           requestedToolCalls,
         });
         accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, terminalState.usage);
         const responseReplayItems = createOpenAiResponseReplayItems(terminalState.responseOutputItems);
-        const toolCallTerminalDebugSummary = {
-          functionCallCount: providerFunctionCallIntents.length,
-          toolCallCount: requestedToolCalls.length,
-          invalidFunctionCallCount: invalidFunctionCallIntents.length,
-          toolCallIds: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
-          toolNames: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
-          invalidFunctionCallIds: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionCallId),
-          invalidFunctionNames: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionName),
-          responseStepIndex,
-          responseOutputItemCount: terminalState.responseOutputItems.length,
-          continuationInputItemCount: responseReplayItems.continuationInputItems.length,
-          providerTurnReplayInputItemCount: responseReplayItems.providerTurnReplayInputItems.length,
-          ...(onlyRequestedToolCall
-            ? summarizeOpenAiToolCallRequestForDiagnostics(onlyRequestedToolCall.toolCallRequest)
-            : {}),
-          ...summarizeTokenUsageForDiagnostics(terminalState.usage),
-        };
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.tool_call_terminal_observed", toolCallTerminalDebugSummary);
-        await writeOpenAiDebugLog("OpenAI tool-call terminal state", toolCallTerminalDebugSummary);
+        if (this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
+          const onlyRequestedToolCall = requestedToolCalls.length === 1 ? requestedToolCalls[0] : undefined;
+          const toolCallTerminalDebugSummary = {
+            functionCallCount: providerFunctionCallIntents.length,
+            toolCallCount: requestedToolCalls.length,
+            invalidFunctionCallCount: invalidFunctionCallIntents.length,
+            toolCallIds: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
+            toolNames: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
+            invalidFunctionCallIds: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionCallId),
+            invalidFunctionNames: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionName),
+            responseStepIndex,
+            responseOutputItemCount: terminalState.responseOutputItems.length,
+            continuationInputItemCount: responseReplayItems.continuationInputItems.length,
+            providerTurnReplayInputItemCount: responseReplayItems.providerTurnReplayInputItems.length,
+            ...(onlyRequestedToolCall
+              ? summarizeOpenAiToolCallRequestForDiagnostics(onlyRequestedToolCall.toolCallRequest)
+              : {}),
+            ...summarizeTokenUsageForDiagnostics(terminalState.usage),
+          };
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.tool_call_terminal_observed", toolCallTerminalDebugSummary);
+          await writeOpenAiDebugLog("OpenAI tool-call terminal state", toolCallTerminalDebugSummary);
+        }
         for (const providerFunctionCallIntent of providerFunctionCallIntents) {
           if (!responseReplayItems.providerTurnReplayInputItems.some(isMatchingFunctionCallReplayItem(providerFunctionCallIntent.functionCallId))) {
             throw new Error(
@@ -468,17 +474,19 @@ export class OpenAiProviderConversationTurn {
               return assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent);
           }
         });
-        const toolResultDebugSummary = {
-          responseStepIndex,
-          functionCallCount: providerFunctionCallIntents.length,
-          toolCallCount: toolResultSubmissions.length,
-          invalidFunctionCallCount: invalidFunctionCallIntents.length,
-          toolCallIds: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolCallId),
-          invalidFunctionCallIds: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionCallId),
-          toolResultTextLengths: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolResultText.length),
-        };
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.tool_result_recorded_for_continuation", toolResultDebugSummary);
-        await writeOpenAiDebugLog("OpenAI tool result submission", toolResultDebugSummary);
+        if (this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
+          const toolResultDebugSummary = {
+            responseStepIndex,
+            functionCallCount: providerFunctionCallIntents.length,
+            toolCallCount: toolResultSubmissions.length,
+            invalidFunctionCallCount: invalidFunctionCallIntents.length,
+            toolCallIds: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolCallId),
+            invalidFunctionCallIds: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionCallId),
+            toolResultTextLengths: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolResultText.length),
+          };
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.tool_result_recorded_for_continuation", toolResultDebugSummary);
+          await writeOpenAiDebugLog("OpenAI tool result submission", toolResultDebugSummary);
+        }
         this.openAiConversationInputItems.push(...functionCallOutputInputItems);
         this.providerTurnReplayInputItems.push(...functionCallOutputInputItems);
         continue;
@@ -523,6 +531,23 @@ export class OpenAiProviderConversationTurn {
       yield incompleteProviderEvent;
       return;
     }
+  }
+
+  private async writeRequestPreparedDiagnostics(input: {
+    requestBody: OpenAiResponsesHttpRequestBody;
+    responseStepIndex: number;
+  }): Promise<void> {
+    if (!this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
+      return;
+    }
+
+    const requestDebugSummary = summarizeOpenAiResponsesRequestForDiagnostics(input);
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", requestDebugSummary);
+    await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
+  }
+
+  private shouldPrepareOpenAiDiagnosticOrDebugSummary(): boolean {
+    return this.diagnosticLogger !== undefined || isOpenAiDebugLoggingEnabled();
   }
 
   private waitForToolResultSubmission(toolCallId: string): Promise<OpenAiProviderToolResultSubmission> {

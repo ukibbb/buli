@@ -7,7 +7,7 @@ export type ConversationSessionEntriesChangedListener = (
 
 export type ConversationSessionEntryAppendedListener = (
   conversationSessionEntry: ConversationSessionEntry,
-  conversationSessionEntries: readonly ConversationSessionEntry[],
+  appendMetadata: { conversationSessionEntryCount: number },
 ) => void;
 
 export class InMemoryConversationHistory {
@@ -27,9 +27,10 @@ export class InMemoryConversationHistory {
 
   appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void {
     this.conversationSessionEntries.push(conversationSessionEntry);
-    const conversationSessionEntries = this.listConversationSessionEntries();
-    this.onConversationSessionEntryAppended?.(conversationSessionEntry, conversationSessionEntries);
-    this.onConversationSessionEntriesChanged?.(conversationSessionEntries);
+    this.onConversationSessionEntryAppended?.(conversationSessionEntry, {
+      conversationSessionEntryCount: this.conversationSessionEntries.length,
+    });
+    this.onConversationSessionEntriesChanged?.(this.listConversationSessionEntries());
   }
 
   replaceConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void {

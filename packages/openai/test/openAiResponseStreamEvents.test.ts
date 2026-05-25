@@ -44,6 +44,14 @@ test("readOpenAiOutputTextDeltaChunk parses text deltas without rejecting option
   });
 });
 
+test("readOpenAiOutputTextDeltaChunk rejects malformed deltas without throwing", () => {
+  expect(readOpenAiOutputTextDeltaChunk({
+    type: "response.output_text.delta",
+    item_id: "msg_1",
+    delta: 42,
+  })).toBeUndefined();
+});
+
 test("readOpenAiReasoningSummaryTextDeltaChunk parses reasoning deltas", () => {
   expect(readOpenAiReasoningSummaryTextDeltaChunk({
     type: "response.reasoning_summary_text.delta",
@@ -80,6 +88,14 @@ test("readOpenAiFunctionCallArgumentsDeltaChunk parses function-call argument de
     item_id: "fc_1",
     delta: "{\"command\":",
   });
+});
+
+test("readOpenAiFunctionCallArgumentsDeltaChunk rejects malformed argument deltas without throwing", () => {
+  expect(readOpenAiFunctionCallArgumentsDeltaChunk({
+    type: "response.function_call_arguments.delta",
+    item_id: "fc_1",
+    delta: null,
+  })).toBeUndefined();
 });
 
 test("parseOpenAiResponseCompletedChunk throws for malformed terminal chunks", () => {

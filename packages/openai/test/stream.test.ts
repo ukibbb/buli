@@ -110,6 +110,32 @@ test("parseOpenAiStream accepts CRLF-delimited SSE frames", async () => {
   ]);
 });
 
+test("parseOpenAiStream accepts multi-line SSE data frames", async () => {
+  const response = new Response(
+    [
+      'event: response.output_text.delta\n',
+      'data: {"type":"response.output_text.delta",\n',
+      'data: "item_id":"msg_1","delta":"Hello"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}\n\n',
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect(await collectParsedEvents(response)).toEqual([
+    { type: "text_chunk", text: "Hello" },
+    {
+      type: "completed",
+      usage: {
+        total: 15,
+        input: 10,
+        output: 5,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
 test("parseOpenAiStream accepts valid SSE streams with a missing content-type", async () => {
   const response = new Response(
     new Blob([

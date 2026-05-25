@@ -15,6 +15,7 @@ import { searchWorkspaceFilesWithRipgrep } from "./workspaceRipgrepSearch.ts";
 
 const BINARY_SAMPLE_BYTE_COUNT = 4_096;
 const MAX_RETURNED_GREP_MATCH_HITS = 1_000;
+const MAX_CONCURRENT_GREP_CONTEXT_FILE_READS = 8;
 
 export function createStartedGrepToolCallDetail(grepToolCallRequest: GrepToolCallRequest): ToolCallGrepDetail {
   return createStartedToolCallDetailFromRequest(grepToolCallRequest);
@@ -141,35 +142,70 @@ async function attachContextLinesToGrepMatchHits(input: {
   contextLineCount: number;
   abortSignal: AbortSignal | undefined;
 }): Promise<ToolCallGrepMatch[]> {
-  const fileLinesByMatchFilePath = new Map<string, readonly string[] | undefined>();
-  const grepMatchHitsWithContext: ToolCallGrepMatch[] = [];
-  for (const matchHit of input.matchHits) {
-    throwIfGrepToolAborted(input.abortSignal);
-    let fileLines: readonly string[] | undefined;
-    if (fileLinesByMatchFilePath.has(matchHit.matchFilePath)) {
-      fileLines = fileLinesByMatchFilePath.get(matchHit.matchFilePath);
-    } else {
-      fileLines = await readGrepContextFileLines({
-        workspaceRootPath: input.workspaceRootPath,
-        matchFilePath: matchHit.matchFilePath,
-        abortSignal: input.abortSignal,
-      });
-      fileLinesByMatchFilePath.set(matchHit.matchFilePath, fileLines);
-    }
-
+  const fileLinesByMatchFilePath = await readGrepContextFileLinesByMatchFilePath({
+    workspaceRootPath: input.workspaceRootPath,
+    matchFilePaths: listUniqueGrepMatchFilePaths(input.matchHits),
+    abortSignal: input.abortSignal,
+  });
+  return input.matchHits.map((matchHit) => {
+    const fileLines = fileLinesByMatchFilePath.get(matchHit.matchFilePath);
     if (!fileLines) {
-      grepMatchHitsWithContext.push(matchHit);
-      continue;
+      return matchHit;
     }
 
-    grepMatchHitsWithContext.push(addContextLinesToGrepMatchHit({
+    return addContextLinesToGrepMatchHit({
       matchHit,
       fileLines,
       contextLineCount: input.contextLineCount,
-    }));
+    });
+  });
+}
+
+function listUniqueGrepMatchFilePaths(matchHits: readonly ToolCallGrepMatch[]): string[] {
+  const uniqueMatchFilePaths: string[] = [];
+  const observedMatchFilePaths = new Set<string>();
+  for (const matchHit of matchHits) {
+    if (observedMatchFilePaths.has(matchHit.matchFilePath)) {
+      continue;
+    }
+
+    observedMatchFilePaths.add(matchHit.matchFilePath);
+    uniqueMatchFilePaths.push(matchHit.matchFilePath);
   }
 
-  return grepMatchHitsWithContext;
+  return uniqueMatchFilePaths;
+}
+
+async function readGrepContextFileLinesByMatchFilePath(input: {
+  workspaceRootPath: string;
+  matchFilePaths: readonly string[];
+  abortSignal: AbortSignal | undefined;
+}): Promise<Map<string, readonly string[] | undefined>> {
+  const fileLinesByMatchFilePath = new Map<string, readonly string[] | undefined>();
+  let nextMatchFilePathIndex = 0;
+  const readNextMatchFilePath = async (): Promise<void> => {
+    while (true) {
+      throwIfGrepToolAborted(input.abortSignal);
+      const matchFilePath = input.matchFilePaths[nextMatchFilePathIndex];
+      nextMatchFilePathIndex += 1;
+      if (matchFilePath === undefined) {
+        return;
+      }
+
+      fileLinesByMatchFilePath.set(
+        matchFilePath,
+        await readGrepContextFileLines({
+          workspaceRootPath: input.workspaceRootPath,
+          matchFilePath,
+          abortSignal: input.abortSignal,
+        }),
+      );
+    }
+  };
+
+  const contextFileReaderCount = Math.min(MAX_CONCURRENT_GREP_CONTEXT_FILE_READS, input.matchFilePaths.length);
+  await Promise.all(Array.from({ length: contextFileReaderCount }, readNextMatchFilePath));
+  return fileLinesByMatchFilePath;
 }
 
 async function readGrepContextFileLines(input: {

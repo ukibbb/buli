@@ -92,11 +92,11 @@ export class RuntimeProviderStreamEventTranslator {
   private hasEmittedCurrentAssistantTextMessagePart = false;
   private pendingCurrentAssistantTextPartUpdateChunkCount = 0;
   private pendingCurrentAssistantTextPartUpdateCharacterCount = 0;
-  private completedAssistantTextSegmentTexts: string[] = [];
+  private completedAssistantText = "";
   private hasObservedToolCallBoundary = false;
   private hasObservedAssistantSegmentBoundary = false;
   private currentReasoningPartId: string | undefined;
-  private currentReasoningSummaryTextChunks: string[] = [];
+  private currentReasoningSummaryText = "";
   private currentReasoningStartedAtMs: number | undefined;
   private pendingReasoningSummaryUpdateChunkCount = 0;
   private pendingReasoningSummaryUpdateCharacterCount = 0;
@@ -111,12 +111,9 @@ export class RuntimeProviderStreamEventTranslator {
   }
 
   get assistantMessageText(): string {
-    return [
-      ...this.completedAssistantTextSegmentTexts,
-      ...(this.currentAssistantTextMessagePartBuilderState
-        ? [readAssistantTextMessagePartBuilderRawMarkdownText(this.currentAssistantTextMessagePartBuilderState)]
-        : []),
-    ].join("");
+    return this.completedAssistantText + (this.currentAssistantTextMessagePartBuilderState
+      ? readAssistantTextMessagePartBuilderRawMarkdownText(this.currentAssistantTextMessagePartBuilderState)
+      : "");
   }
 
   translateProviderStreamEvent(input: {
@@ -211,7 +208,7 @@ export class RuntimeProviderStreamEventTranslator {
 
   private translateReasoningSummaryStartedProviderStreamEvent(): RuntimeProviderStreamAssistantEventsTranslation {
     this.currentReasoningPartId = this.createConversationMessagePartId();
-    this.currentReasoningSummaryTextChunks = [];
+    this.currentReasoningSummaryText = "";
     this.currentReasoningStartedAtMs = this.readCurrentTimeInMilliseconds();
     this.resetBufferedReasoningSummaryTextUpdate();
 
@@ -240,8 +237,8 @@ export class RuntimeProviderStreamEventTranslator {
       return { translationKind: "assistant_response_events", assistantResponseEvents: [] };
     }
 
-    const isFirstReasoningSummaryTextChunk = this.currentReasoningSummaryTextChunks.length === 0;
-    this.currentReasoningSummaryTextChunks.push(reasoningSummaryTextChunk);
+    const isFirstReasoningSummaryTextChunk = this.currentReasoningSummaryText.length === 0;
+    this.currentReasoningSummaryText += reasoningSummaryTextChunk;
     this.pendingReasoningSummaryUpdateChunkCount += 1;
     this.pendingReasoningSummaryUpdateCharacterCount += reasoningSummaryTextChunk.length;
     if (!isFirstReasoningSummaryTextChunk && !this.shouldEmitBufferedReasoningSummaryTextUpdate()) {
@@ -259,7 +256,7 @@ export class RuntimeProviderStreamEventTranslator {
             id: this.currentReasoningPartId,
             partKind: "assistant_reasoning",
             partStatus: "streaming",
-            reasoningSummaryText: this.currentReasoningSummaryTextChunks.join(""),
+            reasoningSummaryText: this.currentReasoningSummaryText,
             reasoningStartedAtMs: this.currentReasoningStartedAtMs,
           }),
         }),
@@ -282,7 +279,7 @@ export class RuntimeProviderStreamEventTranslator {
           id: this.currentReasoningPartId,
           partKind: "assistant_reasoning",
           partStatus: "completed",
-          reasoningSummaryText: this.currentReasoningSummaryTextChunks.join(""),
+          reasoningSummaryText: this.currentReasoningSummaryText,
           reasoningStartedAtMs: this.currentReasoningStartedAtMs,
           reasoningDurationMs,
         }),
@@ -296,7 +293,7 @@ export class RuntimeProviderStreamEventTranslator {
   private clearCurrentReasoningSummaryState(): void {
     this.currentReasoningPartId = undefined;
     this.currentReasoningStartedAtMs = undefined;
-    this.currentReasoningSummaryTextChunks = [];
+    this.currentReasoningSummaryText = "";
     this.resetBufferedReasoningSummaryTextUpdate();
   }
 
@@ -458,7 +455,7 @@ export class RuntimeProviderStreamEventTranslator {
         } satisfies AssistantSegmentConversationSessionEntry
       : undefined;
 
-    this.completedAssistantTextSegmentTexts.push(assistantTextSegmentText);
+    this.completedAssistantText += assistantTextSegmentText;
     this.clearCurrentAssistantTextPartBuilderState();
 
     return {

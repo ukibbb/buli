@@ -80,7 +80,7 @@ export class TypeScriptAssistantMarkdownRenderSectionBuilder implements Assistan
 const defaultAssistantMarkdownRenderSectionBuilder = new TypeScriptAssistantMarkdownRenderSectionBuilder();
 
 export function createAssistantMarkdownRenderSectionCache(): AssistantMarkdownRenderSectionCache {
-  return { renderSections: [] };
+  return { renderSections: [], preparedMarkdownText: "", renderSectionStartOffsetByKey: new Map<string, number>() };
 }
 
 export function buildStableAssistantMarkdownRenderSections(
@@ -93,7 +93,12 @@ function buildStableAssistantMarkdownRenderSectionsWithTypeScriptBuilder(
   input: AssistantMarkdownRenderSectionBuildRequest,
 ): AssistantMarkdownRenderSectionBuildResult {
   const preparedMarkdownText = prepareAssistantMarkdownTextForRendering(input.markdownText, input.isStreaming);
-  const nextRenderSections = splitAssistantMarkdownTextIntoRenderSections(preparedMarkdownText, input.isStreaming);
+  const appendBuildCandidate = createAppendOnlyAssistantMarkdownRenderSections({
+    preparedMarkdownText,
+    isStreaming: input.isStreaming,
+    previousCache: input.previousCache,
+  });
+  const nextRenderSections = appendBuildCandidate?.renderSections ?? splitAssistantMarkdownTextIntoRenderSections(preparedMarkdownText, input.isStreaming);
   const previousRenderSections = input.previousCache?.renderSections ?? [];
   let previousRenderSectionsByKey: Map<string, AssistantMarkdownRenderSection> | undefined;
   const readPreviousRenderSectionByKey = (sectionKey: string): AssistantMarkdownRenderSection | undefined => {
@@ -118,8 +123,124 @@ function buildStableAssistantMarkdownRenderSectionsWithTypeScriptBuilder(
 
   return {
     renderSections: stableRenderSections,
-    nextCache: { renderSections: stableRenderSections },
+    nextCache: {
+      renderSections: stableRenderSections,
+      preparedMarkdownText,
+      renderSectionStartOffsetByKey: appendBuildCandidate?.renderSectionStartOffsetByKey ?? createRenderSectionStartOffsetByKey({
+        markdownText: preparedMarkdownText,
+        renderSections: stableRenderSections,
+        firstLineIndex: 0,
+        firstLineStartOffset: 0,
+      }),
+    },
   };
+}
+
+function createAppendOnlyAssistantMarkdownRenderSections(input: {
+  preparedMarkdownText: string;
+  isStreaming: boolean;
+  previousCache: AssistantMarkdownRenderSectionCache | undefined;
+}): {
+  renderSections: AssistantMarkdownRenderSection[];
+  renderSectionStartOffsetByKey: ReadonlyMap<string, number>;
+} | undefined {
+  const previousPreparedMarkdownText = input.previousCache?.preparedMarkdownText;
+  const previousRenderSections = input.previousCache?.renderSections ?? [];
+  const previousRenderSectionStartOffsetByKey = input.previousCache?.renderSectionStartOffsetByKey;
+  if (
+    !input.isStreaming ||
+    previousPreparedMarkdownText === undefined ||
+    previousRenderSections.length === 0 ||
+    !input.preparedMarkdownText.startsWith(previousPreparedMarkdownText) ||
+    !previousRenderSectionStartOffsetByKey
+  ) {
+    return undefined;
+  }
+
+  const firstReparsedSectionIndex = previousRenderSections.length - 1;
+  const firstReparsedSection = previousRenderSections[firstReparsedSectionIndex];
+  if (!firstReparsedSection) {
+    return undefined;
+  }
+
+  const firstReparsedLineIndex = readRenderSectionStartLineIndex(firstReparsedSection);
+  const firstReparsedOffset = previousRenderSectionStartOffsetByKey.get(firstReparsedSection.sectionKey);
+  if (firstReparsedLineIndex === undefined || firstReparsedOffset === undefined) {
+    return undefined;
+  }
+
+  const stablePrefixSections = previousRenderSections.slice(0, firstReparsedSectionIndex);
+  const reparsedMarkdownText = input.preparedMarkdownText.slice(firstReparsedOffset);
+  const reparsedRenderSections = splitAssistantMarkdownTextIntoRenderSections(
+    reparsedMarkdownText,
+    input.isStreaming,
+    firstReparsedLineIndex,
+  );
+  const renderSections = [...stablePrefixSections, ...reparsedRenderSections];
+  return {
+    renderSections,
+    renderSectionStartOffsetByKey: createRenderSectionStartOffsetByKey({
+      markdownText: reparsedMarkdownText,
+      renderSections,
+      firstLineIndex: firstReparsedLineIndex,
+      firstLineStartOffset: firstReparsedOffset,
+      previousRenderSectionStartOffsetByKey,
+    }),
+  };
+}
+
+function createRenderSectionStartOffsetByKey(input: {
+  markdownText: string;
+  renderSections: readonly AssistantMarkdownRenderSection[];
+  firstLineIndex: number;
+  firstLineStartOffset: number;
+  previousRenderSectionStartOffsetByKey?: ReadonlyMap<string, number> | undefined;
+}): ReadonlyMap<string, number> {
+  const renderSectionStartOffsetByKey = new Map<string, number>();
+  const lineStartOffsets = listMarkdownLineStartOffsets(input.markdownText);
+  for (const renderSection of input.renderSections) {
+    const sectionStartLineIndex = readRenderSectionStartLineIndex(renderSection);
+    if (sectionStartLineIndex === undefined) {
+      continue;
+    }
+
+    if (sectionStartLineIndex < input.firstLineIndex) {
+      const previousSectionStartOffset = input.previousRenderSectionStartOffsetByKey?.get(renderSection.sectionKey);
+      if (previousSectionStartOffset !== undefined) {
+        renderSectionStartOffsetByKey.set(renderSection.sectionKey, previousSectionStartOffset);
+      }
+      continue;
+    }
+
+    const localSectionStartLineIndex = sectionStartLineIndex - input.firstLineIndex;
+    renderSectionStartOffsetByKey.set(
+      renderSection.sectionKey,
+      input.firstLineStartOffset + (lineStartOffsets[localSectionStartLineIndex] ?? input.markdownText.length),
+    );
+  }
+
+  return renderSectionStartOffsetByKey;
+}
+
+function listMarkdownLineStartOffsets(markdownText: string): number[] {
+  const lineStartOffsets = [0];
+  for (let characterIndex = 0; characterIndex < markdownText.length; characterIndex += 1) {
+    if (markdownText[characterIndex] === "\n") {
+      lineStartOffsets.push(characterIndex + 1);
+    }
+  }
+
+  return lineStartOffsets;
+}
+
+function readRenderSectionStartLineIndex(renderSection: AssistantMarkdownRenderSection): number | undefined {
+  const sectionKeySeparatorIndex = renderSection.sectionKey.lastIndexOf(":");
+  if (sectionKeySeparatorIndex === -1) {
+    return undefined;
+  }
+
+  const sectionStartLineIndex = Number(renderSection.sectionKey.slice(sectionKeySeparatorIndex + 1));
+  return Number.isInteger(sectionStartLineIndex) && sectionStartLineIndex >= 0 ? sectionStartLineIndex : undefined;
 }
 
 function prepareAssistantMarkdownTextForRendering(markdownText: string, isStreaming: boolean): string {
@@ -143,6 +264,7 @@ function prepareAssistantMarkdownTextForRendering(markdownText: string, isStream
 function splitAssistantMarkdownTextIntoRenderSections(
   markdownText: string,
   isStreaming: boolean,
+  startingLineIndex = 0,
 ): AssistantMarkdownRenderSection[] {
   const markdownLines = markdownText.split("\n");
   const renderSections: AssistantMarkdownRenderSection[] = [];
@@ -167,7 +289,7 @@ function splitAssistantMarkdownTextIntoRenderSections(
 
   let lineIndex = 0;
   while (lineIndex < markdownLines.length) {
-    const sectionStartLineIndex = lineIndex;
+    const sectionStartLineIndex = startingLineIndex + lineIndex;
     const fencedCodeBlock = readAssistantMarkdownFencedCodeBlock(markdownLines, lineIndex);
     if (fencedCodeBlock) {
       const fencedUnifiedDiffText = resolveFencedUnifiedDiffText(fencedCodeBlock);
@@ -306,7 +428,7 @@ function splitAssistantMarkdownTextIntoRenderSections(
     }
 
     if (pendingMarkdownStartLineIndex === undefined) {
-      pendingMarkdownStartLineIndex = lineIndex;
+      pendingMarkdownStartLineIndex = startingLineIndex + lineIndex;
     }
     pendingMarkdownLines.push(markdownLines[lineIndex] ?? "");
     lineIndex += 1;

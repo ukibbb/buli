@@ -143,6 +143,7 @@ test("InMemoryConversationHistory notifies listeners with the full session entri
 
 test("InMemoryConversationHistory notifies append listeners and can replace the active entries", () => {
   const appendedConversationSessionEntries: ConversationSessionEntry[] = [];
+  const appendedConversationSessionEntryCounts: number[] = [];
   const observedConversationSessionEntries: ConversationSessionEntry[][] = [];
   const replacementConversationSessionEntries: ConversationSessionEntry[] = [
     {
@@ -152,8 +153,9 @@ test("InMemoryConversationHistory notifies append listeners and can replace the 
     },
   ];
   const conversationHistory = new InMemoryConversationHistory({
-    onConversationSessionEntryAppended: (conversationSessionEntry) => {
+    onConversationSessionEntryAppended: (conversationSessionEntry, appendMetadata) => {
       appendedConversationSessionEntries.push(conversationSessionEntry);
+      appendedConversationSessionEntryCounts.push(appendMetadata.conversationSessionEntryCount);
     },
     onConversationSessionEntriesChanged: (conversationSessionEntries) => {
       observedConversationSessionEntries.push([...conversationSessionEntries]);
@@ -174,6 +176,7 @@ test("InMemoryConversationHistory notifies append listeners and can replace the 
       modelFacingPromptText: "First prompt",
     },
   ]);
+  expect(appendedConversationSessionEntryCounts).toEqual([1]);
   expect(observedConversationSessionEntries).toEqual<ConversationSessionEntry[][]>([
     [
       {

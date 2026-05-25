@@ -58,6 +58,14 @@ export type ChatScreenTranscriptViewModelCache = {
   chatSessionState: ChatScreenTranscriptState;
   requestedVisibleConversationMessageCount: number | undefined;
   transcriptViewModel: ChatScreenTranscriptViewModel;
+  visibleConversationMessageRowCacheByMessageId: ReadonlyMap<string, VisibleConversationMessageRowCache>;
+};
+
+type VisibleConversationMessageRowCache = {
+  conversationMessage: ConversationMessage;
+  conversationMessagePartIds: readonly string[];
+  conversationMessageParts: readonly ConversationMessagePart[];
+  visibleConversationMessageRow: VisibleConversationMessageRow;
 };
 
 type ChatScreenInteractionPromptState = Pick<
@@ -143,30 +151,46 @@ export function buildChatScreenTranscriptViewModel(input: {
   chatSessionState: ChatScreenTranscriptState;
   requestedVisibleConversationMessageCount?: number | undefined;
 }): ChatScreenTranscriptViewModel {
+  return buildChatScreenTranscriptViewModelWithRowCache(input).transcriptViewModel;
+}
+
+function buildChatScreenTranscriptViewModelWithRowCache(input: {
+  chatSessionState: ChatScreenTranscriptState;
+  requestedVisibleConversationMessageCount?: number | undefined;
+  previousVisibleConversationMessageRowCacheByMessageId?: ReadonlyMap<string, VisibleConversationMessageRowCache> | undefined;
+}): {
+  transcriptViewModel: ChatScreenTranscriptViewModel;
+  visibleConversationMessageRowCacheByMessageId: ReadonlyMap<string, VisibleConversationMessageRowCache>;
+} {
   const conversationTranscriptMessageIndexWindow = buildConversationTranscriptMessageIndexWindow({
     totalConversationMessageCount: input.chatSessionState.orderedConversationMessageIds.length,
     requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
   });
-  const visibleConversationMessageRows = listVisibleOrderedConversationMessageRows({
+  const visibleConversationMessageRowBuildResult = listVisibleOrderedConversationMessageRows({
     chatSessionState: input.chatSessionState,
     firstVisibleConversationMessageIndex: conversationTranscriptMessageIndexWindow.firstVisibleConversationMessageIndex,
     visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
+    previousVisibleConversationMessageRowCacheByMessageId: input.previousVisibleConversationMessageRowCacheByMessageId,
   });
+  const visibleConversationMessageRows = visibleConversationMessageRowBuildResult.visibleConversationMessageRows;
   const visibleConversationMessages = visibleConversationMessageRows.map(
     (visibleConversationMessageRow) => visibleConversationMessageRow.conversationMessage,
   );
 
   return {
-    conversationTranscriptWindow: {
-      visibleConversationMessages,
-      totalConversationMessageCount: conversationTranscriptMessageIndexWindow.totalConversationMessageCount,
-      visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
-      hiddenOlderConversationMessageCount: conversationTranscriptMessageIndexWindow.hiddenOlderConversationMessageCount,
-      olderConversationMessageRevealCount: conversationTranscriptMessageIndexWindow.olderConversationMessageRevealCount,
+    transcriptViewModel: {
+      conversationTranscriptWindow: {
+        visibleConversationMessages,
+        totalConversationMessageCount: conversationTranscriptMessageIndexWindow.totalConversationMessageCount,
+        visibleConversationMessageCount: conversationTranscriptMessageIndexWindow.visibleConversationMessageCount,
+        hiddenOlderConversationMessageCount: conversationTranscriptMessageIndexWindow.hiddenOlderConversationMessageCount,
+        olderConversationMessageRevealCount: conversationTranscriptMessageIndexWindow.olderConversationMessageRevealCount,
+      },
+      visibleConversationMessageRows,
+      orderedConversationMessagePartCount: input.chatSessionState.conversationMessagePartCount,
+      visibleConversationMessagePartCount: countVisibleConversationMessageParts(visibleConversationMessageRows),
     },
-    visibleConversationMessageRows,
-    orderedConversationMessagePartCount: input.chatSessionState.conversationMessagePartCount,
-    visibleConversationMessagePartCount: countVisibleConversationMessageParts(visibleConversationMessageRows),
+    visibleConversationMessageRowCacheByMessageId: visibleConversationMessageRowBuildResult.visibleConversationMessageRowCacheByMessageId,
   };
 }
 
@@ -185,11 +209,18 @@ export function buildStableChatScreenTranscriptViewModel(input: {
     };
   }
 
-  const transcriptViewModel = buildChatScreenTranscriptViewModel(input);
+  const transcriptViewModelBuildResult = buildChatScreenTranscriptViewModelWithRowCache({
+    chatSessionState: input.chatSessionState,
+    requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
+    previousVisibleConversationMessageRowCacheByMessageId: input.previousCache?.visibleConversationMessageRowCacheByMessageId,
+  });
   const stableTranscriptViewModel = selectStableChatScreenTranscriptViewModel({
     previousTranscriptViewModel: input.previousCache?.transcriptViewModel,
-    nextTranscriptViewModel: transcriptViewModel,
+    nextTranscriptViewModel: transcriptViewModelBuildResult.transcriptViewModel,
   });
+  const visibleConversationMessageRowCacheByMessageId = stableTranscriptViewModel === input.previousCache?.transcriptViewModel
+    ? input.previousCache.visibleConversationMessageRowCacheByMessageId
+    : transcriptViewModelBuildResult.visibleConversationMessageRowCacheByMessageId;
   return {
     transcriptViewModel: stableTranscriptViewModel,
     nextCache: {
@@ -201,6 +232,7 @@ export function buildStableChatScreenTranscriptViewModel(input: {
       },
       requestedVisibleConversationMessageCount: input.requestedVisibleConversationMessageCount,
       transcriptViewModel: stableTranscriptViewModel,
+      visibleConversationMessageRowCacheByMessageId,
     },
   };
 }
@@ -289,7 +321,11 @@ function listVisibleOrderedConversationMessageRows(input: {
   chatSessionState: ChatScreenTranscriptState;
   firstVisibleConversationMessageIndex: number;
   visibleConversationMessageCount: number;
-}): VisibleConversationMessageRow[] {
+  previousVisibleConversationMessageRowCacheByMessageId?: ReadonlyMap<string, VisibleConversationMessageRowCache> | undefined;
+}): {
+  visibleConversationMessageRows: VisibleConversationMessageRow[];
+  visibleConversationMessageRowCacheByMessageId: ReadonlyMap<string, VisibleConversationMessageRowCache>;
+} {
   const firstHiddenAfterVisibleConversationMessageIndex = input.firstVisibleConversationMessageIndex +
     input.visibleConversationMessageCount;
   const visibleConversationMessageIds = input.chatSessionState.orderedConversationMessageIds.slice(
@@ -298,22 +334,86 @@ function listVisibleOrderedConversationMessageRows(input: {
   );
 
   const visibleConversationMessageRows: VisibleConversationMessageRow[] = [];
+  const visibleConversationMessageRowCacheByMessageId = new Map<string, VisibleConversationMessageRowCache>();
   for (const conversationMessageId of visibleConversationMessageIds) {
     const conversationMessage = input.chatSessionState.conversationMessagesById[conversationMessageId];
     if (!conversationMessage) {
       continue;
     }
 
-    visibleConversationMessageRows.push({
+    const selectedVisibleConversationMessageRow = selectVisibleConversationMessageRow({
       conversationMessage,
-      conversationMessageParts: listConversationMessageParts({
-        conversationMessage,
-        conversationMessagePartsById: input.chatSessionState.conversationMessagePartsById,
-      }),
+      conversationMessagePartsById: input.chatSessionState.conversationMessagePartsById,
+      previousVisibleConversationMessageRowCache: input.previousVisibleConversationMessageRowCacheByMessageId?.get(conversationMessageId),
     });
+    visibleConversationMessageRows.push(selectedVisibleConversationMessageRow.visibleConversationMessageRow);
+    visibleConversationMessageRowCacheByMessageId.set(conversationMessageId, selectedVisibleConversationMessageRow.nextCache);
   }
 
-  return visibleConversationMessageRows;
+  return {
+    visibleConversationMessageRows,
+    visibleConversationMessageRowCacheByMessageId,
+  };
+}
+
+function selectVisibleConversationMessageRow(input: {
+  conversationMessage: ConversationMessage;
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+  previousVisibleConversationMessageRowCache: VisibleConversationMessageRowCache | undefined;
+}): {
+  visibleConversationMessageRow: VisibleConversationMessageRow;
+  nextCache: VisibleConversationMessageRowCache;
+} {
+  if (
+    input.previousVisibleConversationMessageRowCache &&
+    canReuseVisibleConversationMessageRowCache({
+      conversationMessage: input.conversationMessage,
+      conversationMessagePartsById: input.conversationMessagePartsById,
+      previousVisibleConversationMessageRowCache: input.previousVisibleConversationMessageRowCache,
+    })
+  ) {
+    return {
+      visibleConversationMessageRow: input.previousVisibleConversationMessageRowCache.visibleConversationMessageRow,
+      nextCache: input.previousVisibleConversationMessageRowCache,
+    };
+  }
+
+  const conversationMessageParts = listConversationMessageParts({
+    conversationMessage: input.conversationMessage,
+    conversationMessagePartsById: input.conversationMessagePartsById,
+  });
+  const visibleConversationMessageRow = {
+    conversationMessage: input.conversationMessage,
+    conversationMessageParts,
+  };
+  return {
+    visibleConversationMessageRow,
+    nextCache: {
+      conversationMessage: input.conversationMessage,
+      conversationMessagePartIds: input.conversationMessage.partIds,
+      conversationMessageParts,
+      visibleConversationMessageRow,
+    },
+  };
+}
+
+function canReuseVisibleConversationMessageRowCache(input: {
+  conversationMessage: ConversationMessage;
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+  previousVisibleConversationMessageRowCache: VisibleConversationMessageRowCache;
+}): boolean {
+  if (
+    input.previousVisibleConversationMessageRowCache.conversationMessage !== input.conversationMessage ||
+    input.previousVisibleConversationMessageRowCache.conversationMessagePartIds !== input.conversationMessage.partIds ||
+    input.previousVisibleConversationMessageRowCache.conversationMessageParts.length !== input.conversationMessage.partIds.length
+  ) {
+    return false;
+  }
+
+  return input.conversationMessage.partIds.every((conversationMessagePartId, conversationMessagePartIndex) =>
+    input.conversationMessagePartsById[conversationMessagePartId] ===
+      input.previousVisibleConversationMessageRowCache.conversationMessageParts[conversationMessagePartIndex]
+  );
 }
 
 function listConversationMessageParts(input: {

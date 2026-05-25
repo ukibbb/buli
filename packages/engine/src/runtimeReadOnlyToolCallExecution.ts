@@ -130,6 +130,22 @@ type RecordedAutoApprovedReadOnlyToolCallOutcome = {
   };
 };
 
+type PendingProviderToolResultSubmission = {
+  toolCallId: string;
+  submissionOutcome: Promise<ProviderToolResultSubmissionOutcome>;
+};
+
+type ProviderToolResultSubmissionOutcome =
+  | {
+    submissionStatus: "fulfilled";
+    toolCallId: string;
+  }
+  | {
+    submissionStatus: "rejected";
+    toolCallId: string;
+    error: unknown;
+  };
+
 export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall(
   input: StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput,
 ): AsyncGenerator<AssistantResponseEvent> {
@@ -187,37 +203,88 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
       }),
     ]),
   );
+  const pendingProviderToolResultSubmissions: PendingProviderToolResultSubmission[] = [];
 
-  while (activeToolCallExecutionPromisesByPartId.size > 0) {
-    input.throwIfConversationTurnInterrupted();
-    const settledToolCallExecution = await Promise.race(activeToolCallExecutionPromisesByPartId.values());
-    if (!activeToolCallExecutionPromisesByPartId.delete(settledToolCallExecution.pendingToolCallExecution.toolCallPartId)) {
-      throw new Error(
-        `Received a completed read-only tool-call execution for inactive part ${settledToolCallExecution.pendingToolCallExecution.toolCallPartId}.`,
-      );
+  try {
+    while (activeToolCallExecutionPromisesByPartId.size > 0) {
+      input.throwIfConversationTurnInterrupted();
+      const settledToolCallExecution = await Promise.race(activeToolCallExecutionPromisesByPartId.values());
+      if (!activeToolCallExecutionPromisesByPartId.delete(settledToolCallExecution.pendingToolCallExecution.toolCallPartId)) {
+        throw new Error(
+          `Received a completed read-only tool-call execution for inactive part ${settledToolCallExecution.pendingToolCallExecution.toolCallPartId}.`,
+        );
+      }
+      input.throwIfConversationTurnInterrupted();
+
+      if (settledToolCallExecution.executionResultKind === "rejected") {
+        throw settledToolCallExecution.error;
+      }
+
+      const recordedToolCallOutcome = recordAutoApprovedReadOnlyToolCallOutcome({
+        assistantResponseMessageId: input.assistantResponseMessageId,
+        pendingToolCallExecution: settledToolCallExecution.pendingToolCallExecution,
+        toolCallOutcome: settledToolCallExecution.toolCallOutcome,
+        toolResultSessionRecorder: input.toolResultSessionRecorder,
+        diagnosticLogger: input.diagnosticLogger,
+      });
+      yield recordedToolCallOutcome.assistantResponseEvent;
+      pendingProviderToolResultSubmissions.push(startProviderToolResultSubmission({
+        providerConversationTurn: input.providerConversationTurn,
+        providerToolResult: recordedToolCallOutcome.providerToolResult,
+        diagnosticLogger: input.diagnosticLogger,
+      }));
     }
-    input.throwIfConversationTurnInterrupted();
-
-    if (settledToolCallExecution.executionResultKind === "rejected") {
-      throw settledToolCallExecution.error;
-    }
-
-    const recordedToolCallOutcome = recordAutoApprovedReadOnlyToolCallOutcome({
-      assistantResponseMessageId: input.assistantResponseMessageId,
-      pendingToolCallExecution: settledToolCallExecution.pendingToolCallExecution,
-      toolCallOutcome: settledToolCallExecution.toolCallOutcome,
-      toolResultSessionRecorder: input.toolResultSessionRecorder,
-      diagnosticLogger: input.diagnosticLogger,
-    });
-    yield recordedToolCallOutcome.assistantResponseEvent;
-    await submitProviderToolResultWithDiagnostics({
-      providerConversationTurn: input.providerConversationTurn,
-      toolCallId: recordedToolCallOutcome.providerToolResult.toolCallId,
-      toolResultText: recordedToolCallOutcome.providerToolResult.toolResultText,
-      toolResultKind: recordedToolCallOutcome.providerToolResult.toolResultKind,
-      diagnosticLogger: input.diagnosticLogger,
-    });
+  } catch (error) {
+    await waitForPendingProviderToolResultSubmissionsToSettle(pendingProviderToolResultSubmissions);
+    throw error;
   }
+
+  await throwIfAnyProviderToolResultSubmissionFailed(pendingProviderToolResultSubmissions);
+}
+
+function startProviderToolResultSubmission(input: {
+  providerConversationTurn: ProviderConversationTurn;
+  providerToolResult: RecordedAutoApprovedReadOnlyToolCallOutcome["providerToolResult"];
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
+}): PendingProviderToolResultSubmission {
+  const toolCallId = input.providerToolResult.toolCallId;
+  return {
+    toolCallId,
+    submissionOutcome: submitProviderToolResultWithDiagnostics({
+      providerConversationTurn: input.providerConversationTurn,
+      toolCallId,
+      toolResultText: input.providerToolResult.toolResultText,
+      toolResultKind: input.providerToolResult.toolResultKind,
+      diagnosticLogger: input.diagnosticLogger,
+    }).then(
+      (): ProviderToolResultSubmissionOutcome => ({ submissionStatus: "fulfilled", toolCallId }),
+      (error: unknown): ProviderToolResultSubmissionOutcome => ({ submissionStatus: "rejected", toolCallId, error }),
+    ),
+  };
+}
+
+async function throwIfAnyProviderToolResultSubmissionFailed(
+  pendingProviderToolResultSubmissions: readonly PendingProviderToolResultSubmission[],
+): Promise<void> {
+  const providerToolResultSubmissionOutcomes = await waitForPendingProviderToolResultSubmissionsToSettle(
+    pendingProviderToolResultSubmissions,
+  );
+  const rejectedProviderToolResultSubmission = providerToolResultSubmissionOutcomes.find((submissionOutcome) =>
+    submissionOutcome.submissionStatus === "rejected"
+  );
+  if (rejectedProviderToolResultSubmission?.submissionStatus === "rejected") {
+    throw rejectedProviderToolResultSubmission.error;
+  }
+}
+
+function waitForPendingProviderToolResultSubmissionsToSettle(
+  pendingProviderToolResultSubmissions: readonly PendingProviderToolResultSubmission[],
+): Promise<ProviderToolResultSubmissionOutcome[]> {
+  return Promise.all(
+    pendingProviderToolResultSubmissions.map((pendingProviderToolResultSubmission) =>
+      pendingProviderToolResultSubmission.submissionOutcome
+    ),
+  );
 }
 
 async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {

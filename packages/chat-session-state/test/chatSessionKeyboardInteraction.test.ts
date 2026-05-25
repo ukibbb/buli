@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ConversationSessionSummary, PendingToolApprovalRequest } from "@buli/contracts";
-import type { PromptContextCandidate } from "@buli/engine";
+import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import {
   applyChatSessionKeyboardInputToChatSessionState,
   appendPromptImageAttachmentToDraft,

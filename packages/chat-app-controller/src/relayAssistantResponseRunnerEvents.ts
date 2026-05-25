@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AssistantResponseEvent } from "@buli/contracts";
 import type { ActiveConversationTurn, AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
 
-const ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS = 16;
+const STREAMING_ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS = 48;
 
 type TerminalAssistantResponseEvent = Extract<AssistantResponseEvent, {
   type: "assistant_message_completed" | "assistant_message_incomplete" | "assistant_message_failed" | "assistant_message_interrupted";
@@ -18,6 +18,16 @@ function isTerminalAssistantResponseEvent(assistantResponseEvent: AssistantRespo
     assistantResponseEvent.type === "assistant_message_incomplete" ||
     assistantResponseEvent.type === "assistant_message_failed" ||
     assistantResponseEvent.type === "assistant_message_interrupted"
+  );
+}
+
+function isBatchableStreamingAssistantResponseEvent(assistantResponseEvent: AssistantResponseEvent): boolean {
+  return (
+    assistantResponseEvent.type === "assistant_message_part_updated" &&
+    (
+      (assistantResponseEvent.part.partKind === "assistant_text" && assistantResponseEvent.part.partStatus === "streaming") ||
+      (assistantResponseEvent.part.partKind === "assistant_reasoning" && assistantResponseEvent.part.partStatus === "streaming")
+    )
   );
 }
 
@@ -72,9 +82,9 @@ export async function relayAssistantResponseRunnerEvents(input: {
     }
   }
 
-  function scheduleAssistantResponseEventFlush(): void {
+  function scheduleAssistantResponseEventFlush(batchWindowMilliseconds: number): void {
     const elapsedSinceLastFlushAtMs = Date.now() - lastFlushAtMs;
-    if (elapsedSinceLastFlushAtMs >= ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS) {
+    if (elapsedSinceLastFlushAtMs >= batchWindowMilliseconds) {
       flushQueuedAssistantResponseEvents();
       return;
     }
@@ -90,7 +100,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
         recordAssistantResponseEventDeliveryError(error);
         activeConversationTurn?.interrupt();
       }
-    }, ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS);
+    }, batchWindowMilliseconds - elapsedSinceLastFlushAtMs);
   }
 
   function queueAssistantResponseEvent(assistantResponseEvent: AssistantResponseEvent): void {
@@ -106,7 +116,12 @@ export async function relayAssistantResponseRunnerEvents(input: {
     }
 
     queuedAssistantResponseEvents.push(assistantResponseEvent);
-    scheduleAssistantResponseEventFlush();
+    if (!isBatchableStreamingAssistantResponseEvent(assistantResponseEvent)) {
+      flushQueuedAssistantResponseEvents();
+      return;
+    }
+
+    scheduleAssistantResponseEventFlush(STREAMING_ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS);
   }
 
   function queueSyntheticFailedAssistantTurn(errorText: string): void {

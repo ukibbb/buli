@@ -26,26 +26,49 @@ type OpenAiSseChunkReadResult =
   | Readonly<{ done: true; value?: string | undefined }>;
 
 function nextFrameBoundary(buffer: string): { index: number; length: number } | undefined {
-  const boundaries = [
-    { index: buffer.indexOf("\n\n"), length: 2 },
-    { index: buffer.indexOf("\r\n\r\n"), length: 4 },
-  ].filter((boundary) => boundary.index >= 0);
+  const lineFeedBoundaryIndex = buffer.indexOf("\n\n");
+  const carriageReturnLineFeedBoundaryIndex = buffer.indexOf("\r\n\r\n");
 
-  if (boundaries.length === 0) {
+  if (lineFeedBoundaryIndex === -1 && carriageReturnLineFeedBoundaryIndex === -1) {
     return undefined;
   }
 
-  boundaries.sort((left, right) => left.index - right.index);
-  return boundaries[0];
+  if (lineFeedBoundaryIndex === -1) {
+    return { index: carriageReturnLineFeedBoundaryIndex, length: 4 };
+  }
+
+  if (carriageReturnLineFeedBoundaryIndex === -1 || lineFeedBoundaryIndex < carriageReturnLineFeedBoundaryIndex) {
+    return { index: lineFeedBoundaryIndex, length: 2 };
+  }
+
+  return { index: carriageReturnLineFeedBoundaryIndex, length: 4 };
 }
 
 function extractData(frame: string): string {
-  return frame
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice(5).trimStart())
-    .join("\n")
-    .trim();
+  let data = "";
+  let currentLineStartIndex = 0;
+
+  while (currentLineStartIndex <= frame.length) {
+    const nextLineFeedIndex = frame.indexOf("\n", currentLineStartIndex);
+    const currentLineEndIndex = nextLineFeedIndex === -1 ? frame.length : nextLineFeedIndex;
+    const currentLine = frame.slice(
+      currentLineStartIndex,
+      currentLineEndIndex > currentLineStartIndex && frame[currentLineEndIndex - 1] === "\r"
+        ? currentLineEndIndex - 1
+        : currentLineEndIndex,
+    );
+    if (currentLine.startsWith("data:")) {
+      const dataLine = currentLine.slice(5).trimStart();
+      data = data.length === 0 ? dataLine : `${data}\n${dataLine}`;
+    }
+    if (nextLineFeedIndex === -1) {
+      break;
+    }
+
+    currentLineStartIndex = nextLineFeedIndex + 1;
+  }
+
+  return data.trim();
 }
 
 function assertOpenAiSseFrameWithinLimit(frameCharacterCount: number): void {
