@@ -1,5 +1,10 @@
-import type { ConversationSessionEntry, ReasoningEffort, TokenUsage } from "@buli/contracts";
-import { lookupModelContextWindowTokenLimitsForModel } from "../modelContextWindowCapacity.ts";
+import {
+  calculateContextTokensUsedFromTokenUsage,
+  lookupModelContextWindowTokenLimitsForModel,
+  type ConversationSessionEntry,
+  type ReasoningEffort,
+  type TokenUsage,
+} from "@buli/contracts";
 
 export const DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT = 20_000;
 export const DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO = 0.8;
@@ -211,9 +216,7 @@ function calculateUsableInputTriggerTokenCount(input: {
     : Math.max(0, input.inputTokenCapacity - input.reservedTokenCount);
 }
 
-export function calculateContextTokensUsedFromTokenUsage(tokenUsage: TokenUsage): number {
-  return tokenUsage.total ?? tokenUsage.input + tokenUsage.output + tokenUsage.reasoning + tokenUsage.cache.read + tokenUsage.cache.write;
-}
+export { calculateContextTokensUsedFromTokenUsage } from "@buli/contracts";
 
 export function isGpt5ModelIdentifier(modelIdentifier: string): boolean {
   const normalizedModelIdentifier = modelIdentifier.toLowerCase();

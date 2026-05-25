@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
+import { serializeConversationSessionSqliteSchema } from "../src/conversationSession/sqlite/conversationSessionSqliteSchema.ts";
 import { openConversationSessionSqliteDatabase } from "../src/conversationSession/sqlite/sqliteConversationSessionDatabase.ts";
+import { conversationSessionSqliteSchemaArtifactUrl } from "../scripts/writeConversationSessionSqliteSchema.ts";
 
 type ConversationSessionSqliteUserVersionRow = {
   user_version: number;
@@ -32,6 +34,12 @@ test("openConversationSessionSqliteDatabase migrates a new database to the curre
   } finally {
     database.close();
   }
+});
+
+test("committed conversation session SQLite schema artifact matches runtime schema", async () => {
+  const committedSqliteSchemaArtifactText = await readFile(conversationSessionSqliteSchemaArtifactUrl, "utf8");
+
+  expect(committedSqliteSchemaArtifactText).toBe(serializeConversationSessionSqliteSchema());
 });
 
 test("openConversationSessionSqliteDatabase rejects newer schema versions", async () => {

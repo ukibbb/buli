@@ -95,8 +95,6 @@ export function ChatScreen(props: ChatScreenProps) {
       terminalRowCount={rows}
       terminalColumnCount={columns}
       workingDirectoryPath={workingDirectoryPath}
-      totalContextTokensUsed={chatScreenLayoutController.totalContextTokensUsed}
-      contextWindowTokenCapacity={chatScreenLayoutController.contextWindowTokenCapacity}
       mainAreaProps={chatScreenLayoutController.mainAreaProps}
       liveInteractionChromeProps={chatScreenLayoutController.liveInteractionChromeProps}
     />

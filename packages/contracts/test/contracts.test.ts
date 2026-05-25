@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "bun:test";
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
@@ -7,6 +8,7 @@ import {
   AssistantSubagentNameSchema,
   ConversationSessionEntrySchema,
   ConversationSessionSnapshotSchema,
+  ConversationSessionModelSelectionSchema,
   AssistantToolCallConversationMessagePartSchema,
   ConversationMessagePartSchema,
   ConversationMessageSchema,
@@ -29,6 +31,7 @@ import {
   summarizeContextWindowUsageForDiagnostics,
   summarizeTokenUsageForDiagnostics,
   ToolCallRequestSchema,
+  ToolCallDetailSchema,
   type BuliDiagnosticLogEvent,
   WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
   createStartedToolCallDetailFromRequest,
@@ -40,7 +43,43 @@ import {
   isWorkspaceInspectionToolCallRequest,
   listModelVisibleConversationSessionEntries,
   UserPromptImageAttachmentSchema,
+  WorkspacePatchSchema,
 } from "../src/index.ts";
+
+type ContractCompatibilityFixture = {
+  assistantResponseEvents: unknown[];
+  providerStreamEvents: unknown[];
+  conversationSessionEntries: unknown[];
+  modelSelection: unknown;
+  toolCallRequests: unknown[];
+  toolCallDetails: unknown[];
+  workspacePatch: unknown;
+};
+
+async function readContractCompatibilityFixture(): Promise<ContractCompatibilityFixture> {
+  const fixtureText = await readFile(
+    new URL("./fixtures/contract-compatibility-v1.json", import.meta.url),
+    "utf8",
+  );
+
+  return JSON.parse(fixtureText) as ContractCompatibilityFixture;
+}
+
+test("contract compatibility fixture parses with all public interoperability schemas", async () => {
+  const fixture = await readContractCompatibilityFixture();
+
+  expect(AssistantResponseEventSchema.array().parse(fixture.assistantResponseEvents)).toHaveLength(3);
+  expect(ProviderStreamEventSchema.array().parse(fixture.providerStreamEvents)).toHaveLength(3);
+  expect(ConversationSessionEntrySchema.array().parse(fixture.conversationSessionEntries)).toHaveLength(4);
+  expect(ConversationSessionModelSelectionSchema.parse(fixture.modelSelection)).toMatchObject({
+    selectedModelId: "gpt-5.5",
+  });
+  expect(ToolCallRequestSchema.array().parse(fixture.toolCallRequests)).toHaveLength(2);
+  expect(ToolCallDetailSchema.array().parse(fixture.toolCallDetails)).toHaveLength(2);
+  expect(WorkspacePatchSchema.parse(fixture.workspacePatch)).toMatchObject({
+    workspacePatchId: "patch-1",
+  });
+});
 
 test("emitBuliDiagnosticLogEvent forwards diagnostic events", () => {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];

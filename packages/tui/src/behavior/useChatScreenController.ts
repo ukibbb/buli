@@ -36,7 +36,7 @@ export type UseChatScreenControllerInput = {
 
 export type UseChatScreenControllerResult = Pick<
   ChatScreenLayoutProps,
-  "mainAreaProps" | "liveInteractionChromeProps" | "totalContextTokensUsed" | "contextWindowTokenCapacity"
+  "mainAreaProps" | "liveInteractionChromeProps"
 >;
 
 export function useChatScreenController(input: UseChatScreenControllerInput): UseChatScreenControllerResult {
@@ -125,7 +125,12 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const {
     isPromptInputDisabled,
     availableChatSlashCommands,
+    shortModeLabel,
+    nextShortModeLabel,
+    nextModeAccentColor,
     inputPanelAccentColor,
+    promptInputHintOverride,
+    reasoningEffortLabel,
     availableCommandHelpModalRowCount,
     totalContextTokensUsed,
     contextWindowTokenCapacity,
@@ -313,11 +318,19 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     pendingPromptImageAttachments: chatAppController.promptComposerState.pendingPromptImageAttachments,
     pendingPromptTextPastes: chatAppController.promptComposerState.pendingPromptTextPastes,
     selectedPromptContextReferenceTexts: chatAppController.promptComposerState.selectedPromptContextReferenceTexts,
+    selectedModelId: chatAppController.promptComposerState.selectedModelId,
     shouldRenderMinimumHeightPromptStrip,
     isPromptInputDisabled,
     queuedPromptCount: chatAppController.promptComposerState.queuedPromptCount,
     isActiveTurnInterruptConfirmationArmed: chatAppController.promptComposerState.isActiveTurnInterruptConfirmationArmed,
     inputPanelAccentColor,
+    promptInputHintOverride,
+    shortModeLabel,
+    nextShortModeLabel,
+    nextModeAccentColor,
+    reasoningEffortLabel,
+    totalContextTokensUsed,
+    contextWindowTokenCapacity,
     onPromptDraftEdited: applyPromptTextareaEditToChatScreen,
     onPromptSubmitted: submitPromptDraftFromPromptTextarea,
     onNativeClipboardPasteRequested: pasteClipboardImageAttachmentIntoPrompt,
@@ -342,8 +355,6 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   return {
     mainAreaProps,
     liveInteractionChromeProps,
-    totalContextTokensUsed,
-    contextWindowTokenCapacity,
   };
 }
 

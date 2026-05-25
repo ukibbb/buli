@@ -21,6 +21,7 @@ export type InteractiveChatEnvironment = Readonly<{
   BULI_OPENAI_MAX_CONCURRENT_STREAMS?: string | undefined;
   BULI_PROMPT_CONTEXT_ROOT?: string | undefined;
   BULI_PROVIDER_IPC?: string | undefined;
+  BULI_PROVIDER_HOST_COMMAND?: string | undefined;
   BULI_OPENAI_AUTH_FILE?: string | undefined;
 }>;
 

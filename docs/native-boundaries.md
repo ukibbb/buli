@@ -9,6 +9,7 @@ The provider boundary is ready for external implementations.
 - Protocol version: `buli.provider.v1`
 - Schema artifact: `packages/contracts/schemas/provider-protocol-v1.schema.json`
 - Golden frames: `packages/contracts/test/fixtures/provider-protocol-v1-golden-frames.json`
+- Compatibility fixture: `packages/contracts/test/fixtures/contract-compatibility-v1.json`
 - Engine client: `packages/engine/src/providerProtocolClient.ts`
 - OpenAI TypeScript host: `packages/openai/src/provider/providerProtocolHost.ts`
 - CLI subprocess transport: `apps/cli/src/providerProtocol/providerProtocolSubprocessTransport.ts`
@@ -17,6 +18,7 @@ Provider hosts communicate over newline-delimited JSON frames on stdin/stdout. S
 
 Host-to-provider frames:
 
+- `host_list_models`
 - `host_start_turn`
 - `host_submit_tool_result`
 - `host_cancel_turn`
@@ -24,6 +26,7 @@ Host-to-provider frames:
 Provider-to-host frames:
 
 - `provider_request_acknowledged`
+- `provider_available_models`
 - `provider_event`
 - `provider_error`
 - `provider_turn_closed`
@@ -34,13 +37,57 @@ Run the TypeScript OpenAI provider host through the CLI with:
 BULI_PROVIDER_IPC=1 buli
 ```
 
+Run an external provider host with:
+
+```sh
+BULI_PROVIDER_HOST_COMMAND='["/path/to/provider-host"]' buli
+```
+
+`BULI_PROVIDER_HOST_COMMAND` is a JSON array of argv strings. When it is set,
+the CLI uses provider IPC directly and does not require OpenAI auth. The same
+provider host must support `host_list_models`, because model selection is now
+part of the process boundary instead of being hard-wired to OpenAI.
+
 External providers should implement the same JSONL protocol and validate against the schema artifact. They should preserve ordered `sequenceNumber` values per `turnId`, acknowledge every host request, and send structured `provider_error` frames instead of process-level crashes whenever possible.
+
+## Durable Contract Artifacts
+
+Language-neutral JSON Schema artifacts live in `packages/contracts/schemas`:
+
+- `provider-protocol-v1.schema.json`
+- `assistant-response-event-v1.schema.json`
+- `provider-stream-event-v1.schema.json`
+- `conversation-session-entry-v1.schema.json`
+- `conversation-session-model-selection-v1.schema.json`
+- `tool-call-request-v1.schema.json`
+- `tool-call-detail-v1.schema.json`
+- `workspace-patch-v1.schema.json`
+
+Regenerate them with:
+
+```sh
+bun --filter @buli/contracts schema:contracts
+```
+
+Tests assert that committed artifacts match the TypeScript/Zod source schemas.
+
+## Session Persistence Contract
+
+The SQLite session schema is published as:
+
+- `apps/cli/schemas/conversation-session-sqlite-v1.sql`
+
+The runtime migration and schema validation in
+`apps/cli/src/conversationSession/sqlite/sqliteConversationSessionDatabase.ts`
+use the same schema object definitions that generate this artifact. A rewrite
+can therefore reproduce the database layout without reading Bun-specific code.
 
 ## Native Adapter Convention
 
 Use opt-in environment flags for native implementations and keep TypeScript fallback paths enabled by default.
 
 - Provider subprocess: `BULI_PROVIDER_IPC=1`
+- External provider subprocess: `BULI_PROVIDER_HOST_COMMAND='["/path/to/provider-host"]'`
 - Future diff engine: `BULI_NATIVE_DIFF_ENGINE=1`
 - Future workspace scanner: `BULI_NATIVE_WORKSPACE_SCANNER=1`
 - Future export highlighter: `BULI_NATIVE_EXPORT_HIGHLIGHTER=1`

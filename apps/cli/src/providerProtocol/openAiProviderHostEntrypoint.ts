@@ -57,6 +57,9 @@ function createDefaultOpenAiProviderProtocolHostProvider(input: {
   });
 
   return {
+    listAvailableAssistantModels() {
+      return openAiProvider.listAvailableAssistantModels();
+    },
     startConversationTurn(turnRequest) {
       return openAiProvider.startConversationTurn(createOpenAiConversationTurnRequest(turnRequest));
     },

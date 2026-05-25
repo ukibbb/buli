@@ -2,10 +2,12 @@ import {
   PROVIDER_PROTOCOL_VERSION,
   encodeProviderProtocolFrameAsJsonLine,
   streamProviderProtocolHostFramesFromJsonLines,
+  type AvailableAssistantModel,
   type ProviderProtocolClosedReason,
   type ProviderProtocolError,
   type ProviderProtocolHostCancelTurnFrame,
   type ProviderProtocolHostFrame,
+  type ProviderProtocolHostListModelsFrame,
   type ProviderProtocolHostStartTurnFrame,
   type ProviderProtocolHostSubmitToolResultFrame,
   type ProviderProtocolJsonLineChunk,
@@ -32,6 +34,7 @@ export type OpenAiProviderProtocolHostTurnRequest = ProviderProtocolTurnRequest 
 }>;
 
 export type OpenAiProviderProtocolHostConversationTurnProvider = Readonly<{
+  listAvailableAssistantModels?: (() => Promise<readonly AvailableAssistantModel[]> | readonly AvailableAssistantModel[]) | undefined;
   startConversationTurn: (input: OpenAiProviderProtocolHostTurnRequest) => OpenAiProviderProtocolHostConversationTurn;
 }>;
 
@@ -70,6 +73,14 @@ export async function runOpenAiProviderProtocolHost(input: RunOpenAiProviderProt
   try {
     for await (const hostFrame of input.transport.hostFrames) {
       switch (hostFrame.frameKind) {
+        case "host_list_models":
+          await listOpenAiProviderProtocolModels({
+            provider: input.provider,
+            providerName,
+            hostListModelsFrame: hostFrame,
+            sendProviderFrame,
+          });
+          continue;
         case "host_start_turn":
           await startOpenAiProviderProtocolTurn({
             provider: input.provider,
@@ -121,6 +132,40 @@ export async function runOpenAiProviderProtocolJsonLineHost(
       },
     },
   });
+}
+
+async function listOpenAiProviderProtocolModels(input: {
+  provider: OpenAiProviderProtocolHostConversationTurnProvider;
+  providerName: string;
+  hostListModelsFrame: ProviderProtocolHostListModelsFrame;
+  sendProviderFrame: (frame: ProviderProtocolProviderFrame) => Promise<void>;
+}): Promise<void> {
+  if (!input.provider.listAvailableAssistantModels) {
+    await input.sendProviderFrame(createProviderProtocolErrorFrame({
+      requestId: input.hostListModelsFrame.requestId,
+      providerName: input.providerName,
+      errorCode: "provider_model_list_unsupported",
+      error: new Error("Provider protocol host does not support model listing."),
+    }));
+    return;
+  }
+
+  try {
+    await input.sendProviderFrame(createProviderProtocolAcknowledgementFrame(input.hostListModelsFrame));
+    await input.sendProviderFrame({
+      protocol: PROVIDER_PROTOCOL_VERSION,
+      frameKind: "provider_available_models",
+      requestId: input.hostListModelsFrame.requestId,
+      availableModels: [...await input.provider.listAvailableAssistantModels()],
+    });
+  } catch (error) {
+    await input.sendProviderFrame(createProviderProtocolErrorFrame({
+      requestId: input.hostListModelsFrame.requestId,
+      providerName: input.providerName,
+      errorCode: "provider_model_list_failed",
+      error,
+    }));
+  }
 }
 
 async function startOpenAiProviderProtocolTurn(input: {
@@ -318,13 +363,20 @@ class OpenAiProviderProtocolTurnHost implements ActiveOpenAiProviderProtocolTurn
 function createProviderProtocolAcknowledgementFrame(
   hostFrame: ProviderProtocolHostFrame,
 ): ProviderProtocolProviderFrame {
-  return {
+  const acknowledgementFrame: ProviderProtocolProviderFrame = {
     protocol: PROVIDER_PROTOCOL_VERSION,
     frameKind: "provider_request_acknowledged",
     requestId: hostFrame.requestId,
-    turnId: hostFrame.turnId,
     acknowledgedFrameKind: hostFrame.frameKind,
   };
+  if ("turnId" in hostFrame) {
+    return {
+      ...acknowledgementFrame,
+      turnId: hostFrame.turnId,
+    };
+  }
+
+  return acknowledgementFrame;
 }
 
 function createProviderTurnNotFoundErrorFrame(input: {

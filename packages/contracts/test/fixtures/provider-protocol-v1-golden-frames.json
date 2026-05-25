@@ -1,6 +1,30 @@
 [
   {
     "protocol": "buli.provider.v1",
+    "frameKind": "host_list_models",
+    "requestId": "req-models-1"
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "provider_request_acknowledged",
+    "requestId": "req-models-1",
+    "acknowledgedFrameKind": "host_list_models"
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "provider_available_models",
+    "requestId": "req-models-1",
+    "availableModels": [
+      {
+        "id": "gpt-5.5",
+        "displayName": "GPT-5.5",
+        "defaultReasoningEffort": "medium",
+        "supportedReasoningEfforts": ["minimal", "low", "medium", "high"]
+      }
+    ]
+  },
+  {
+    "protocol": "buli.provider.v1",
     "frameKind": "host_start_turn",
     "requestId": "req-start-1",
     "turnId": "turn-1",

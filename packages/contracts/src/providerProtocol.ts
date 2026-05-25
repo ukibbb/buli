@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ASSISTANT_TOOL_REQUEST_NAMES } from "./toolCatalog.ts";
 import { ConversationSessionEntrySchema } from "./conversationSessionEntry.ts";
-import { ProviderStreamEventSchema, ReasoningEffortSchema } from "./provider.ts";
+import { AvailableAssistantModelSchema, ProviderStreamEventSchema, ReasoningEffortSchema } from "./provider.ts";
 import { ProviderTurnReplaySchema } from "./providerTurnReplay.ts";
 
 export const PROVIDER_PROTOCOL_VERSION = "buli.provider.v1";
@@ -29,6 +29,7 @@ export const ProviderProtocolClosedReasonSchema = z.enum([
   "cancelled",
 ]);
 export const ProviderProtocolAcknowledgedFrameKindSchema = z.enum([
+  "host_list_models",
   "host_start_turn",
   "host_submit_tool_result",
   "host_cancel_turn",
@@ -58,6 +59,12 @@ export const ProviderProtocolTurnRequestSchema = z.strictObject({
   selectedReasoningEffort: ReasoningEffortSchema.optional(),
   promptCacheKey: z.string().min(1).optional(),
   availableToolNames: z.array(z.enum(ASSISTANT_TOOL_REQUEST_NAMES)).optional(),
+});
+
+export const ProviderProtocolHostListModelsFrameSchema = z.strictObject({
+  ...ProviderProtocolBaseFields,
+  frameKind: z.literal("host_list_models"),
+  requestId: ProviderProtocolRequestIdSchema,
 });
 
 export const ProviderProtocolHostStartTurnFrameSchema = z.strictObject({
@@ -101,6 +108,13 @@ export const ProviderProtocolProviderEventFrameSchema = z.strictObject({
   providerStreamEvent: ProviderStreamEventSchema,
 });
 
+export const ProviderProtocolProviderAvailableModelsFrameSchema = z.strictObject({
+  ...ProviderProtocolBaseFields,
+  frameKind: z.literal("provider_available_models"),
+  requestId: ProviderProtocolRequestIdSchema,
+  availableModels: z.array(AvailableAssistantModelSchema),
+});
+
 export const ProviderProtocolProviderErrorFrameSchema = z.strictObject({
   ...ProviderProtocolBaseFields,
   frameKind: z.literal("provider_error"),
@@ -119,6 +133,7 @@ export const ProviderProtocolProviderTurnClosedFrameSchema = z.strictObject({
 });
 
 export const ProviderProtocolHostFrameSchema = z.discriminatedUnion("frameKind", [
+  ProviderProtocolHostListModelsFrameSchema,
   ProviderProtocolHostStartTurnFrameSchema,
   ProviderProtocolHostSubmitToolResultFrameSchema,
   ProviderProtocolHostCancelTurnFrameSchema,
@@ -126,16 +141,19 @@ export const ProviderProtocolHostFrameSchema = z.discriminatedUnion("frameKind",
 
 export const ProviderProtocolProviderFrameSchema = z.discriminatedUnion("frameKind", [
   ProviderProtocolProviderRequestAcknowledgedFrameSchema,
+  ProviderProtocolProviderAvailableModelsFrameSchema,
   ProviderProtocolProviderEventFrameSchema,
   ProviderProtocolProviderErrorFrameSchema,
   ProviderProtocolProviderTurnClosedFrameSchema,
 ]);
 
 export const ProviderProtocolFrameSchema = z.discriminatedUnion("frameKind", [
+  ProviderProtocolHostListModelsFrameSchema,
   ProviderProtocolHostStartTurnFrameSchema,
   ProviderProtocolHostSubmitToolResultFrameSchema,
   ProviderProtocolHostCancelTurnFrameSchema,
   ProviderProtocolProviderRequestAcknowledgedFrameSchema,
+  ProviderProtocolProviderAvailableModelsFrameSchema,
   ProviderProtocolProviderEventFrameSchema,
   ProviderProtocolProviderErrorFrameSchema,
   ProviderProtocolProviderTurnClosedFrameSchema,
@@ -151,12 +169,14 @@ export type ProviderProtocolErrorDetailPrimitive = z.infer<typeof ProviderProtoc
 export type ProviderProtocolErrorDetailValue = z.infer<typeof ProviderProtocolErrorDetailValueSchema>;
 export type ProviderProtocolError = z.infer<typeof ProviderProtocolErrorSchema>;
 export type ProviderProtocolTurnRequest = z.infer<typeof ProviderProtocolTurnRequestSchema>;
+export type ProviderProtocolHostListModelsFrame = z.infer<typeof ProviderProtocolHostListModelsFrameSchema>;
 export type ProviderProtocolHostStartTurnFrame = z.infer<typeof ProviderProtocolHostStartTurnFrameSchema>;
 export type ProviderProtocolHostSubmitToolResultFrame = z.infer<typeof ProviderProtocolHostSubmitToolResultFrameSchema>;
 export type ProviderProtocolHostCancelTurnFrame = z.infer<typeof ProviderProtocolHostCancelTurnFrameSchema>;
 export type ProviderProtocolProviderRequestAcknowledgedFrame = z.infer<
   typeof ProviderProtocolProviderRequestAcknowledgedFrameSchema
 >;
+export type ProviderProtocolProviderAvailableModelsFrame = z.infer<typeof ProviderProtocolProviderAvailableModelsFrameSchema>;
 export type ProviderProtocolProviderEventFrame = z.infer<typeof ProviderProtocolProviderEventFrameSchema>;
 export type ProviderProtocolProviderErrorFrame = z.infer<typeof ProviderProtocolProviderErrorFrameSchema>;
 export type ProviderProtocolProviderTurnClosedFrame = z.infer<typeof ProviderProtocolProviderTurnClosedFrameSchema>;

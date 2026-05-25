@@ -12,6 +12,27 @@ async function writeProviderFrame(frame: ProviderProtocolProviderFrame): Promise
   await Bun.write(Bun.stdout, encodeProviderProtocolFrameAsJsonLine(frame));
 }
 
+async function handleListModelsFrame(frame: Extract<ProviderProtocolHostFrame, { frameKind: "host_list_models" }>): Promise<void> {
+  await writeProviderFrame({
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "provider_request_acknowledged",
+    requestId: frame.requestId,
+    acknowledgedFrameKind: "host_list_models",
+  });
+  await writeProviderFrame({
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "provider_available_models",
+    requestId: frame.requestId,
+    availableModels: [
+      {
+        id: "fixture-model",
+        displayName: "Fixture model",
+        supportedReasoningEfforts: ["medium"],
+      },
+    ],
+  });
+}
+
 async function handleStartTurnFrame(frame: Extract<ProviderProtocolHostFrame, { frameKind: "host_start_turn" }>): Promise<void> {
   await writeProviderFrame({
     protocol: PROVIDER_PROTOCOL_VERSION,
@@ -103,6 +124,9 @@ async function handleCancelTurnFrame(frame: Extract<ProviderProtocolHostFrame, {
 
 for await (const hostFrame of streamProviderProtocolHostFramesFromJsonLines(Bun.stdin.stream())) {
   switch (hostFrame.frameKind) {
+    case "host_list_models":
+      await handleListModelsFrame(hostFrame);
+      break;
     case "host_start_turn":
       await handleStartTurnFrame(hostFrame);
       break;

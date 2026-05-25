@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
-import { ContextWindowMeter } from "./ContextWindowMeter.tsx";
 import { glyphs } from "./glyphs.ts";
 
 // Pen frame cbMSE. The design's 1-pixel h1Divider1 (pen tFwmC) below the bar
@@ -14,8 +13,6 @@ export const TOP_BAR_NATURAL_ROW_COUNT = 1;
 export type TopBarProps = {
   workingDirectoryPath: string;
   accentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
-  totalContextTokensUsed: number | undefined;
-  contextWindowTokenCapacity: number | undefined;
 };
 
 export function TopBar(props: TopBarProps): ReactNode {
@@ -31,12 +28,6 @@ export function TopBar(props: TopBarProps): ReactNode {
       <text fg={props.accentColor}>{glyphs.statusDot}</text>
       <box flexShrink={1} minWidth={0} overflow="hidden">
         <text fg={chatScreenTheme.textSecondary} truncate={true} wrapMode="none">{props.workingDirectoryPath}</text>
-      </box>
-      <box flexShrink={0}>
-        <ContextWindowMeter
-          totalTokensUsed={props.totalContextTokensUsed}
-          contextWindowTokenCapacity={props.contextWindowTokenCapacity}
-        />
       </box>
     </box>
   );

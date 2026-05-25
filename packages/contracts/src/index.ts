@@ -256,6 +256,12 @@ export {
   ToolResultModelContextItemSchema,
   UserMessageModelContextItemSchema,
 } from "./modelContextItem.ts";
+export {
+  calculateContextTokensUsedFromTokenUsage,
+  lookupContextWindowTokenCapacityForModel,
+  lookupModelContextWindowTokenLimitsForModel,
+} from "./modelContextWindow.ts";
+export type { ModelContextWindowTokenLimits } from "./modelContextWindow.ts";
 export type {
   AssistantMessageModelContextItem,
   CompactionSummaryModelContextItem,
@@ -314,8 +320,10 @@ export {
   ProviderProtocolFrameSchema,
   ProviderProtocolHostCancelTurnFrameSchema,
   ProviderProtocolHostFrameSchema,
+  ProviderProtocolHostListModelsFrameSchema,
   ProviderProtocolHostStartTurnFrameSchema,
   ProviderProtocolHostSubmitToolResultFrameSchema,
+  ProviderProtocolProviderAvailableModelsFrameSchema,
   ProviderProtocolProviderErrorFrameSchema,
   ProviderProtocolProviderEventFrameSchema,
   ProviderProtocolProviderFrameSchema,
@@ -334,6 +342,13 @@ export {
   streamProviderProtocolHostFramesFromJsonLines,
   streamProviderProtocolProviderFramesFromJsonLines,
 } from "./providerProtocol.ts";
+export {
+  assertProviderProtocolJsonSchemaArtifact,
+  createBuliContractJsonSchemaArtifact,
+  createBuliContractJsonSchemaArtifactByFileName,
+  createBuliContractJsonSchemaArtifacts,
+} from "./jsonSchemaArtifacts.ts";
+export type { BuliContractJsonSchema, BuliContractJsonSchemaArtifact } from "./jsonSchemaArtifacts.ts";
 export type {
   ProviderProtocolAcknowledgedFrameKind,
   ProviderProtocolCancellationReason,
@@ -344,10 +359,12 @@ export type {
   ProviderProtocolFrame,
   ProviderProtocolHostCancelTurnFrame,
   ProviderProtocolHostFrame,
+  ProviderProtocolHostListModelsFrame,
   ProviderProtocolHostStartTurnFrame,
   ProviderProtocolHostSubmitToolResultFrame,
   ProviderProtocolJsonLineChunk,
   ProviderProtocolJsonSchema,
+  ProviderProtocolProviderAvailableModelsFrame,
   ProviderProtocolProviderErrorFrame,
   ProviderProtocolProviderEventFrame,
   ProviderProtocolProviderFrame,

@@ -9,6 +9,27 @@
         },
         "frameKind": {
           "type": "string",
+          "const": "host_list_models"
+        },
+        "requestId": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "protocol",
+        "frameKind",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "frameKind": {
+          "type": "string",
           "const": "host_start_turn"
         },
         "requestId": {
@@ -485,15 +506,7 @@
               "minLength": 1
             },
             "selectedReasoningEffort": {
-              "type": "string",
-              "enum": [
-                "none",
-                "minimal",
-                "low",
-                "medium",
-                "high",
-                "xhigh"
-              ]
+              "$ref": "#/$defs/__schema36"
             },
             "promptCacheKey": {
               "type": "string",
@@ -626,6 +639,7 @@
         "acknowledgedFrameKind": {
           "type": "string",
           "enum": [
+            "host_list_models",
             "host_start_turn",
             "host_submit_tool_result",
             "host_cancel_turn"
@@ -648,13 +662,66 @@
         },
         "frameKind": {
           "type": "string",
+          "const": "provider_available_models"
+        },
+        "requestId": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "availableModels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "displayName": {
+                "type": "string",
+                "minLength": 1
+              },
+              "defaultReasoningEffort": {
+                "$ref": "#/$defs/__schema36"
+              },
+              "supportedReasoningEfforts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/__schema36"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "displayName",
+              "supportedReasoningEfforts"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "protocol",
+        "frameKind",
+        "requestId",
+        "availableModels"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "frameKind": {
+          "type": "string",
           "const": "provider_event"
         },
         "turnId": {
           "$ref": "#/$defs/__schema2"
         },
         "sequenceNumber": {
-          "$ref": "#/$defs/__schema36"
+          "$ref": "#/$defs/__schema37"
         },
         "providerStreamEvent": {
           "oneOf": [
@@ -683,10 +750,10 @@
                   "const": "completed"
                 },
                 "usage": {
-                  "$ref": "#/$defs/__schema37"
+                  "$ref": "#/$defs/__schema38"
                 },
                 "contextWindowUsage": {
-                  "$ref": "#/$defs/__schema37"
+                  "$ref": "#/$defs/__schema38"
                 }
               },
               "required": [
@@ -707,10 +774,10 @@
                   "minLength": 1
                 },
                 "usage": {
-                  "$ref": "#/$defs/__schema37"
+                  "$ref": "#/$defs/__schema38"
                 },
                 "contextWindowUsage": {
-                  "$ref": "#/$defs/__schema37"
+                  "$ref": "#/$defs/__schema38"
                 }
               },
               "required": [
@@ -802,7 +869,7 @@
                   "minItems": 1,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema38"
+                    "$ref": "#/$defs/__schema39"
                   }
                 }
               },
@@ -860,7 +927,7 @@
                   "minItems": 1,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema39"
+                    "$ref": "#/$defs/__schema40"
                   }
                 }
               },
@@ -927,12 +994,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/__schema40"
+                    "$ref": "#/$defs/__schema41"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "$ref": "#/$defs/__schema40"
+                      "$ref": "#/$defs/__schema41"
                     }
                   }
                 ]
@@ -976,7 +1043,7 @@
           ]
         },
         "finalSequenceNumber": {
-          "$ref": "#/$defs/__schema36"
+          "$ref": "#/$defs/__schema37"
         },
         "providerTurnReplay": {
           "$ref": "#/$defs/__schema9"
@@ -2567,11 +2634,22 @@
       "type": "string"
     },
     "__schema36": {
+      "type": "string",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "__schema37": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema37": {
+    "__schema38": {
       "type": "object",
       "properties": {
         "total": {
@@ -2623,7 +2701,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema38": {
+    "__schema39": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -2640,7 +2718,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema39": {
+    "__schema40": {
       "type": "object",
       "properties": {
         "stepIndex": {
@@ -2671,7 +2749,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema40": {
+    "__schema41": {
       "anyOf": [
         {
           "type": "string"

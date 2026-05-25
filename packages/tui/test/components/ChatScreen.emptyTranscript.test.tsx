@@ -82,12 +82,11 @@ test("ChatScreen starts with an empty transcript before any real conversation ex
   });
 
   const frame = await renderedChatScreen.captureFrame();
-  expect(frame).toContain(">");
-  expect(frame).not.toContain("gpt-5.4");
-  expect(frame).not.toContain("Understand");
+  expect(frame).toContain("gpt-5.4");
+  expect(frame).toContain("Understand");
 });
 
-test("ChatScreen keeps selected model reasoning metadata out of the prompt chrome", async () => {
+test("ChatScreen shows the selected model default reasoning effort in the prompt footer", async () => {
   const renderedChatScreen = await renderChatScreen({
     selectedModelId: "gpt-5.5",
     selectedModelDefaultReasoningEffort: "xhigh",
@@ -95,8 +94,8 @@ test("ChatScreen keeps selected model reasoning metadata out of the prompt chrom
   });
 
   const frame = await renderedChatScreen.captureFrame();
-  expect(frame).not.toContain("gpt-5.5");
-  expect(frame).not.toContain("xhigh");
+  expect(frame).toContain("gpt-5.5");
+  expect(frame).toContain("xhigh");
 });
 
 test("ChatScreen shows the submitted prompt after the first message is added", async () => {

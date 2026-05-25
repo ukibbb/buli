@@ -839,7 +839,9 @@ test("ChatScreen hides model reasoning choices after choosing the model default"
 
   const selectedDefaultReasoningFrame = await renderedChatScreen.pressEnter();
   expect(selectedDefaultReasoningFrame).not.toContain("Use model default");
-  expect(selectedDefaultReasoningFrame).not.toContain("medium");
+  expect(selectedDefaultReasoningFrame).not.toContain("low");
+  expect(selectedDefaultReasoningFrame).not.toContain("high");
+  expect(selectedDefaultReasoningFrame).toContain("gpt-5.4 / medium");
 });
 
 test("ChatScreen reports committed model selection changes", async () => {

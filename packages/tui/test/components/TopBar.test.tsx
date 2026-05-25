@@ -10,8 +10,6 @@ describe("TopBar", () => {
       <TopBar
         workingDirectoryPath="/home/user/project"
         accentColor={chatScreenTheme.accentGreen}
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={undefined}
       />,
       { width: 60, height: 3 },
     );
@@ -24,8 +22,6 @@ describe("TopBar", () => {
       <TopBar
         workingDirectoryPath="~/workspace/novibe/apps/api"
         accentColor={chatScreenTheme.accentPink}
-        totalContextTokensUsed={undefined}
-        contextWindowTokenCapacity={1_050_000}
       />,
       { width: 80, height: 2 },
     );
@@ -33,7 +29,6 @@ describe("TopBar", () => {
     const frame = captureCharFrame();
     expect(frame).toContain(glyphs.statusDot);
     expect(frame).toContain("~/workspace/novibe/apps/api");
-    expect(frame).toContain("0 / 1.1m (0%)");
     expect(chatScreenTheme.accentPink).toBe("#EC4899");
     expect(chatScreenTheme.textSecondary).toBe("#94A3B8");
   });

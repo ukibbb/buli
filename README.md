@@ -200,6 +200,7 @@ Configuration environment variables:
 - `BULI_BASH_APPROVAL_MODE`: sets the default bash approval mode to `risk_based` or `trusted`.
 - `BULI_AUTO_COMPACT_THRESHOLD`: enables automatic compaction at a context-usage ratio from `0` through `1`.
 - `BULI_PROMPT_CONTEXT_ROOT`: changes the root used for prompt-context browsing.
+- `BULI_PROVIDER_HOST_COMMAND`: JSON argv array for an external provider protocol host, for example `["/path/to/provider-host"]`.
 - `BULI_CONSOLE_LOG_FILE`: writes console output to a private log file.
 - `BULI_CONSOLE_LOG_RESET`: clears `BULI_CONSOLE_LOG_FILE` before a run when set to `1`, `true`, `yes`, or `on`.
 

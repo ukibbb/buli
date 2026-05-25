@@ -1,0 +1,149 @@
+{
+  "assistantResponseEvents": [
+    {
+      "type": "assistant_turn_started",
+      "messageId": "assistant-message-1",
+      "startedAtMs": 1700000000000
+    },
+    {
+      "type": "assistant_message_part_added",
+      "messageId": "assistant-message-1",
+      "part": {
+        "id": "assistant-text-1",
+        "partKind": "assistant_text",
+        "partStatus": "completed",
+        "rawMarkdownText": "Hello from Buli."
+      }
+    },
+    {
+      "type": "assistant_message_completed",
+      "messageId": "assistant-message-1",
+      "usage": {
+        "input": 10,
+        "output": 4,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  ],
+  "providerStreamEvents": [
+    {
+      "type": "tool_call_requested",
+      "toolCallId": "call-read-1",
+      "toolCallRequest": {
+        "toolName": "read",
+        "readTargetPath": "README.md"
+      }
+    },
+    {
+      "type": "text_chunk",
+      "text": "Hello from Buli."
+    },
+    {
+      "type": "completed",
+      "usage": {
+        "input": 10,
+        "output": 4,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  ],
+  "conversationSessionEntries": [
+    {
+      "entryKind": "user_prompt",
+      "promptText": "Read README.md",
+      "modelFacingPromptText": "Read README.md",
+      "assistantOperatingMode": "understand"
+    },
+    {
+      "entryKind": "tool_call",
+      "toolCallId": "call-read-1",
+      "toolCallRequest": {
+        "toolName": "read",
+        "readTargetPath": "README.md"
+      }
+    },
+    {
+      "entryKind": "completed_tool_result",
+      "toolCallId": "call-read-1",
+      "toolCallDetail": {
+        "toolName": "read",
+        "readFilePath": "README.md",
+        "readLineCount": 2,
+        "returnedLineCount": 2
+      },
+      "toolResultText": "1: # Buli\n2: Local-first terminal assistant."
+    },
+    {
+      "entryKind": "assistant_message",
+      "assistantMessageStatus": "completed",
+      "assistantMessageText": "Hello from Buli.",
+      "providerTurnReplay": {
+        "provider": "openai",
+        "inputItems": []
+      }
+    }
+  ],
+  "modelSelection": {
+    "selectedModelId": "gpt-5.5",
+    "selectedModelDefaultReasoningEffort": "medium",
+    "selectedReasoningEffort": "high"
+  },
+  "toolCallRequests": [
+    {
+      "toolName": "read",
+      "readTargetPath": "README.md"
+    },
+    {
+      "toolName": "bash",
+      "shellCommand": "pwd",
+      "commandDescription": "Print working directory"
+    }
+  ],
+  "toolCallDetails": [
+    {
+      "toolName": "read",
+      "readFilePath": "README.md",
+      "readLineCount": 2,
+      "returnedLineCount": 2
+    },
+    {
+      "toolName": "bash",
+      "commandLine": "pwd",
+      "commandDescription": "Print working directory",
+      "exitCode": 0,
+      "outputLines": [
+        {
+          "lineKind": "stdout",
+          "lineText": "/workspace"
+        }
+      ]
+    }
+  ],
+  "workspacePatch": {
+    "workspacePatchId": "patch-1",
+    "toolCallId": "call-write-1",
+    "capturedAtMs": 1700000001000,
+    "baselineSnapshotHash": "before",
+    "resultingSnapshotHash": "after",
+    "changedFileCount": 1,
+    "addedLineCount": 1,
+    "removedLineCount": 0,
+    "changedFiles": [
+      {
+        "filePath": "notes.md",
+        "changeKind": "added",
+        "addedLineCount": 1,
+        "removedLineCount": 0,
+        "unifiedDiffText": "@@ -0,0 +1 @@\n+# Notes"
+      }
+    ]
+  }
+}

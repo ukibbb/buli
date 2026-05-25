@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { BuliDiagnosticLogger } from "@buli/contracts";
+import type { AvailableAssistantModel, BuliDiagnosticLogger } from "@buli/contracts";
 import {
   ProviderProtocolConversationTurnProvider,
   type ConversationTurnProvider,
@@ -17,7 +17,8 @@ import {
   type ProviderProtocolSubprocessSpawner,
 } from "./providerProtocolSubprocessTransport.ts";
 
-export type InteractiveChatProviderConnectionKind = "direct_openai" | "openai_provider_protocol_ipc";
+export type InteractiveChatProviderConnectionKind = "direct_openai" | "openai_provider_protocol_ipc" | "external_provider_protocol_ipc";
+export type InteractiveChatProviderHostKind = "openai" | "external";
 
 export type DisposableProviderProtocolClientTransport = ProviderProtocolClientTransport & Readonly<{
   dispose?: (() => Promise<void> | void) | undefined;
@@ -26,6 +27,7 @@ export type DisposableProviderProtocolClientTransport = ProviderProtocolClientTr
 export type InteractiveChatConversationTurnProviderResolution = Readonly<{
   conversationTurnProvider: ConversationTurnProvider;
   providerConnectionKind: InteractiveChatProviderConnectionKind;
+  listAvailableAssistantModels: () => Promise<readonly AvailableAssistantModel[]>;
   dispose: () => Promise<void>;
 }>;
 
@@ -36,12 +38,13 @@ export type CreateInteractiveChatProviderProtocolTransportInput = Readonly<{
 }>;
 
 export type ResolveInteractiveChatConversationTurnProviderInput = Readonly<{
-  openAiProvider: OpenAiProvider;
-  store: OpenAiAuthStore;
+  openAiProvider?: OpenAiProvider | undefined;
+  store?: OpenAiAuthStore | undefined;
   environment: InteractiveChatEnvironment;
   workspaceRootPath: string;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
   providerHostCommand?: readonly string[] | undefined;
+  providerHostKind?: InteractiveChatProviderHostKind | undefined;
   createProviderProtocolTransport?: (
     input: CreateInteractiveChatProviderProtocolTransportInput,
   ) => DisposableProviderProtocolClientTransport;
@@ -51,20 +54,29 @@ export type ResolveInteractiveChatConversationTurnProviderInput = Readonly<{
 export function resolveInteractiveChatConversationTurnProvider(
   input: ResolveInteractiveChatConversationTurnProviderInput,
 ): InteractiveChatConversationTurnProviderResolution {
-  if (!resolveInteractiveChatProviderIpcEnabled({ environment: input.environment })) {
+  const providerHostKind = input.providerHostKind ?? "openai";
+  if (providerHostKind !== "external" && !resolveInteractiveChatProviderIpcEnabled({ environment: input.environment })) {
+    const openAiProvider = input.openAiProvider;
+    if (!openAiProvider) {
+      throw new Error("OpenAI provider is required for direct provider mode.");
+    }
+
     return {
-      conversationTurnProvider: input.openAiProvider,
+      conversationTurnProvider: openAiProvider,
       providerConnectionKind: "direct_openai",
+      listAvailableAssistantModels: () => openAiProvider.listAvailableAssistantModels(),
       dispose: async () => {},
     };
   }
 
   const providerProtocolTransport = createInteractiveChatProviderProtocolTransport(input);
+  const providerProtocolConversationTurnProvider = new ProviderProtocolConversationTurnProvider({
+    transport: providerProtocolTransport,
+  });
   return {
-    conversationTurnProvider: new ProviderProtocolConversationTurnProvider({
-      transport: providerProtocolTransport,
-    }),
-    providerConnectionKind: "openai_provider_protocol_ipc",
+    conversationTurnProvider: providerProtocolConversationTurnProvider,
+    providerConnectionKind: providerHostKind === "external" ? "external_provider_protocol_ipc" : "openai_provider_protocol_ipc",
+    listAvailableAssistantModels: () => providerProtocolConversationTurnProvider.listAvailableAssistantModels(),
     dispose: async () => {
       await providerProtocolTransport.dispose?.();
     },
@@ -80,9 +92,9 @@ function createInteractiveChatProviderProtocolTransport(
 ): DisposableProviderProtocolClientTransport {
   const transportInput = {
     command: input.providerHostCommand ?? resolveDefaultOpenAiProviderHostCommand(),
-    environment: createOpenAiProviderHostSubprocessEnvironment({
+    environment: createProviderHostSubprocessEnvironment({
       environment: input.environment,
-      openAiAuthFilePath: input.store.filePath,
+      ...(input.providerHostKind === "external" ? {} : { openAiAuthFilePath: requireOpenAiAuthStore(input).filePath }),
     }),
     workingDirectoryPath: input.workspaceRootPath,
   } satisfies CreateInteractiveChatProviderProtocolTransportInput;
@@ -99,13 +111,21 @@ function createInteractiveChatProviderProtocolTransport(
   });
 }
 
-function createOpenAiProviderHostSubprocessEnvironment(input: {
+function requireOpenAiAuthStore(input: ResolveInteractiveChatConversationTurnProviderInput): OpenAiAuthStore {
+  if (!input.store) {
+    throw new Error("OpenAI auth store is required for OpenAI provider IPC mode.");
+  }
+
+  return input.store;
+}
+
+function createProviderHostSubprocessEnvironment(input: {
   environment: InteractiveChatEnvironment;
-  openAiAuthFilePath: string;
+  openAiAuthFilePath?: string | undefined;
 }): ProviderProtocolSubprocessEnvironment {
   return {
     ...input.environment,
-    BULI_OPENAI_AUTH_FILE: input.openAiAuthFilePath,
+    ...(input.openAiAuthFilePath !== undefined ? { BULI_OPENAI_AUTH_FILE: input.openAiAuthFilePath } : {}),
   };
 }
 

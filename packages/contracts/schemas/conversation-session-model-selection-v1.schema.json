@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "selectedModelId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selectedModelDefaultReasoningEffort": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "selectedReasoningEffort": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "selectedModelId"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    }
+  },
+  "$id": "https://buli.dev/schemas/conversation-session-model-selection/v1.json",
+  "title": "Buli Conversation Session Model Selection v1",
+  "description": "Persisted selected model and reasoning-effort contract."
+}

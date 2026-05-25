@@ -1,20 +1,21 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createProviderProtocolJsonSchema } from "../src/providerProtocol.ts";
+import {
+  contractJsonSchemasDirectoryUrl,
+  serializeBuliContractJsonSchemaArtifactByFileName,
+  writeBuliContractJsonSchemaArtifacts,
+} from "./writeJsonSchemaArtifacts.ts";
 
 export const providerProtocolJsonSchemaArtifactUrl = new URL(
-  "../schemas/provider-protocol-v1.schema.json",
-  import.meta.url,
+  "provider-protocol-v1.schema.json",
+  contractJsonSchemasDirectoryUrl,
 );
 
 export function serializeProviderProtocolJsonSchema(): string {
-  return `${JSON.stringify(createProviderProtocolJsonSchema(), null, 2)}\n`;
+  return serializeBuliContractJsonSchemaArtifactByFileName("provider-protocol-v1.schema.json");
 }
 
 export async function writeProviderProtocolJsonSchemaArtifact(): Promise<void> {
-  await mkdir(dirname(providerProtocolJsonSchemaArtifactUrl.pathname), { recursive: true });
-  await writeFile(providerProtocolJsonSchemaArtifactUrl, serializeProviderProtocolJsonSchema(), "utf8");
+  await writeBuliContractJsonSchemaArtifacts();
 }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);

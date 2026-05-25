@@ -1,0 +1,739 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "text_chunk"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "completed"
+        },
+        "usage": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "contextWindowUsage": {
+          "$ref": "#/$defs/__schema0"
+        }
+      },
+      "required": [
+        "type",
+        "usage"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "incomplete"
+        },
+        "incompleteReason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "usage": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "contextWindowUsage": {
+          "$ref": "#/$defs/__schema0"
+        }
+      },
+      "required": [
+        "type",
+        "incompleteReason",
+        "usage"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "reasoning_summary_started"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "reasoning_summary_text_chunk"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "reasoning_summary_completed"
+        },
+        "reasoningDurationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "type",
+        "reasoningDurationMs"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "tool_call_requested"
+        },
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolCallRequest": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "type",
+        "toolCallId",
+        "toolCallRequest"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "tool_calls_requested"
+        },
+        "requestedToolCalls": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema6"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "requestedToolCalls"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "rate_limit_pending"
+        },
+        "retryAfterSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "retryWaitStartedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limitExplanation": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "retryAfterSeconds",
+        "limitExplanation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "plan_proposed"
+        },
+        "planId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "planTitle": {
+          "type": "string",
+          "minLength": 1
+        },
+        "planSteps": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema7"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "planId",
+        "planTitle",
+        "planSteps"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "__schema0": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "input": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reasoning": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cache": {
+          "type": "object",
+          "properties": {
+            "read": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "write": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "read",
+            "write"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "reasoning",
+        "cache"
+      ],
+      "additionalProperties": false
+    },
+    "__schema1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "bash"
+            },
+            "shellCommand": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000
+            },
+            "commandDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "workingDirectoryPath": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "timeoutMilliseconds": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 300000
+            }
+          },
+          "required": [
+            "toolName",
+            "shellCommand",
+            "commandDescription"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "read"
+            },
+            "readTargetPath": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "offsetLineNumber": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maximumLineCount": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "toolName",
+            "readTargetPath"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "read_many"
+            },
+            "readTargets": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema3"
+              }
+            }
+          },
+          "required": [
+            "toolName",
+            "readTargets"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "search_many"
+            },
+            "searches": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema4"
+              }
+            }
+          },
+          "required": [
+            "toolName",
+            "searches"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "glob"
+            },
+            "globPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "searchDirectoryPath": {
+              "$ref": "#/$defs/__schema2"
+            }
+          },
+          "required": [
+            "toolName",
+            "globPattern"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "grep"
+            },
+            "regexPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "searchPath": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "includeGlobPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "contextLineCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            }
+          },
+          "required": [
+            "toolName",
+            "regexPattern"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "edit"
+            },
+            "editTargetPath": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "oldString": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000
+            },
+            "newString": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "required": [
+            "toolName",
+            "editTargetPath",
+            "oldString",
+            "newString"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "edit_many"
+            },
+            "edits": {
+              "minItems": 1,
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema5"
+              }
+            }
+          },
+          "required": [
+            "toolName",
+            "edits"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "patch"
+            },
+            "patchText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000,
+              "pattern": "^\\s*\\*\\*\\* Begin Patch\\n(?:[ \\t]*\\n)*(?:\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+\\n?)(?:(?!\\n\\*\\*\\* (?:Add File|Update File|Delete File):)[\\s\\S])*\\n\\*\\*\\* End Patch\\s*$"
+            }
+          },
+          "required": [
+            "toolName",
+            "patchText"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "patch_many"
+            },
+            "patchText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000,
+              "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
+            }
+          },
+          "required": [
+            "toolName",
+            "patchText"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "write"
+            },
+            "writeTargetPath": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "fileContent": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "required": [
+            "toolName",
+            "writeTargetPath",
+            "fileContent"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "task"
+            },
+            "subagentName": {
+              "type": "string",
+              "enum": [
+                "explore"
+              ]
+            },
+            "subagentDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "subagentPrompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000
+            }
+          },
+          "required": [
+            "toolName",
+            "subagentName",
+            "subagentDescription",
+            "subagentPrompt"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema2": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "readTargetPath": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "offsetLineNumber": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maximumLineCount": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "readTargetPath"
+      ],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "searchKind": {
+              "type": "string",
+              "const": "glob"
+            },
+            "globPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "searchDirectoryPath": {
+              "$ref": "#/$defs/__schema2"
+            }
+          },
+          "required": [
+            "searchKind",
+            "globPattern"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "searchKind": {
+              "type": "string",
+              "const": "grep"
+            },
+            "regexPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "searchPath": {
+              "$ref": "#/$defs/__schema2"
+            },
+            "includeGlobPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "contextLineCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            }
+          },
+          "required": [
+            "searchKind",
+            "regexPattern"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "editTargetPath": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "oldString": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000000
+        },
+        "newString": {
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "replaceAll": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "editTargetPath",
+        "oldString",
+        "newString"
+      ],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolCallRequest": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "toolCallId",
+        "toolCallRequest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema7": {
+      "type": "object",
+      "properties": {
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stepTitle": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stepDetail": {
+          "type": "string"
+        },
+        "stepStatus": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "in_progress",
+            "completed"
+          ]
+        }
+      },
+      "required": [
+        "stepIndex",
+        "stepTitle",
+        "stepStatus"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$id": "https://buli.dev/schemas/provider-stream-event/v1.json",
+  "title": "Buli Provider Stream Event v1",
+  "description": "Provider-facing stream event contract consumed by the Buli engine."
+}

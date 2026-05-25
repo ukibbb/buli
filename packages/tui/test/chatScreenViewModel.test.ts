@@ -118,7 +118,40 @@ test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at c
   });
 
   expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(false);
-  expect(viewModel.inputRegionRowCount).toBe(8);
+  expect(viewModel.inputRegionRowCount).toBe(10);
+});
+
+test("buildChatScreenViewModel derives footer mode transition labels", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "understand",
+    },
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.shortModeLabel).toBe("Understand");
+  expect(viewModel.nextShortModeLabel).toBe("Plan");
+  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentAmber);
+  expect(viewModel.promptInputHintOverride).toBeUndefined();
+});
+
+test("buildChatScreenViewModel derives footer reasoning effort label", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4", selectedModelDefaultReasoningEffort: "xhigh" }),
+      selectedReasoningEffort: "low",
+    },
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.reasoningEffortLabel).toBe("low");
 });
 
 test("buildChatScreenViewModel hydrates only the requested visible tail for large transcripts", () => {

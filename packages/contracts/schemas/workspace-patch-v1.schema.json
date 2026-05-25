@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "workspacePatchId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "toolCallId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capturedAtMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "baselineSnapshotHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resultingSnapshotHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "changedFileCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "addedLineCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "removedLineCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "changedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "filePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "changeKind": {
+            "type": "string",
+            "enum": [
+              "added",
+              "deleted",
+              "modified"
+            ]
+          },
+          "addedLineCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "removedLineCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unifiedDiffText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filePath",
+          "changeKind",
+          "addedLineCount",
+          "removedLineCount"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workspacePatchId",
+    "toolCallId",
+    "capturedAtMs",
+    "baselineSnapshotHash",
+    "resultingSnapshotHash",
+    "changedFileCount",
+    "addedLineCount",
+    "removedLineCount",
+    "changedFiles"
+  ],
+  "additionalProperties": false,
+  "$id": "https://buli.dev/schemas/workspace-patch/v1.json",
+  "title": "Buli Workspace Patch v1",
+  "description": "Captured workspace patch summary contract."
+}

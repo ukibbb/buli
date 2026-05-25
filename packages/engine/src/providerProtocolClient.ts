@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import {
   PROVIDER_PROTOCOL_VERSION,
+  type AvailableAssistantModel,
   type ProviderProtocolAcknowledgedFrameKind,
   type ProviderProtocolCancellationReason,
   type ProviderProtocolError,
   type ProviderProtocolHostFrame,
+  type ProviderProtocolHostListModelsFrame,
   type ProviderProtocolHostStartTurnFrame,
+  type ProviderProtocolProviderAvailableModelsFrame,
   type ProviderProtocolProviderEventFrame,
   type ProviderProtocolProviderFrame,
   type ProviderProtocolProviderTurnClosedFrame,
@@ -41,6 +44,11 @@ type PendingProviderProtocolRequestAcknowledgement = Readonly<{
   rejectAcknowledgement: (error: Error) => void;
 }>;
 
+type PendingProviderProtocolModelListRequest = Readonly<{
+  resolveAvailableModels: (availableModels: readonly AvailableAssistantModel[]) => void;
+  rejectAvailableModels: (error: Error) => void;
+}>;
+
 type ProviderProtocolClientTurnStreamItem =
   | { itemKind: "provider_event"; providerStreamEvent: ProviderStreamEvent }
   | { itemKind: "provider_error"; error: Error }
@@ -73,6 +81,10 @@ export class ProviderProtocolConversationTurnProvider implements ConversationTur
   private readonly pendingRequestAcknowledgementsById = new Map<
     ProviderProtocolRequestId,
     PendingProviderProtocolRequestAcknowledgement
+  >();
+  private readonly pendingModelListRequestsById = new Map<
+    ProviderProtocolRequestId,
+    PendingProviderProtocolModelListRequest
   >();
   private incomingFramePumpPromise: Promise<void> | undefined;
 
@@ -113,6 +125,24 @@ export class ProviderProtocolConversationTurnProvider implements ConversationTur
     return providerConversationTurn;
   }
 
+  async listAvailableAssistantModels(): Promise<readonly AvailableAssistantModel[]> {
+    this.startIncomingFramePump();
+    const requestId = this.createRequestId();
+    const availableModels = createDeferredPromise<readonly AvailableAssistantModel[]>();
+    this.pendingModelListRequestsById.set(requestId, {
+      resolveAvailableModels: availableModels.resolve,
+      rejectAvailableModels: availableModels.reject,
+    });
+
+    try {
+      await this.sendHostFrameAndWaitForAcknowledgement(createProviderProtocolHostListModelsFrame({ requestId }));
+      return await availableModels.promise;
+    } catch (error) {
+      this.pendingModelListRequestsById.delete(requestId);
+      throw error;
+    }
+  }
+
   private startIncomingFramePump(): void {
     if (this.incomingFramePumpPromise) {
       return;
@@ -144,6 +174,9 @@ export class ProviderProtocolConversationTurnProvider implements ConversationTur
           acknowledgedFrameKind: providerFrame.acknowledgedFrameKind,
         });
         return;
+      case "provider_available_models":
+        this.resolveModelListRequest(providerFrame);
+        return;
       case "provider_event":
         this.activeProviderTurnsById.get(providerFrame.turnId)?.receiveProviderEventFrame(providerFrame);
         return;
@@ -151,6 +184,7 @@ export class ProviderProtocolConversationTurnProvider implements ConversationTur
         const remoteProviderError = new ProviderProtocolRemoteProviderError(providerFrame.error);
         if (providerFrame.requestId) {
           this.rejectRequestAcknowledgement(providerFrame.requestId, remoteProviderError);
+          this.rejectModelListRequest(providerFrame.requestId, remoteProviderError);
         }
         if (providerFrame.turnId) {
           this.activeProviderTurnsById.get(providerFrame.turnId)?.receiveProviderError(remoteProviderError);
@@ -229,10 +263,34 @@ export class ProviderProtocolConversationTurnProvider implements ConversationTur
     pendingAcknowledgement.rejectAcknowledgement(error);
   }
 
+  private resolveModelListRequest(providerFrame: ProviderProtocolProviderAvailableModelsFrame): void {
+    const pendingModelListRequest = this.pendingModelListRequestsById.get(providerFrame.requestId);
+    if (!pendingModelListRequest) {
+      return;
+    }
+
+    this.pendingModelListRequestsById.delete(providerFrame.requestId);
+    pendingModelListRequest.resolveAvailableModels(providerFrame.availableModels);
+  }
+
+  private rejectModelListRequest(requestId: ProviderProtocolRequestId, error: Error): void {
+    const pendingModelListRequest = this.pendingModelListRequestsById.get(requestId);
+    if (!pendingModelListRequest) {
+      return;
+    }
+
+    this.pendingModelListRequestsById.delete(requestId);
+    pendingModelListRequest.rejectAvailableModels(error);
+  }
+
   private failAllPendingProtocolWork(error: Error): void {
     for (const [requestId, pendingAcknowledgement] of this.pendingRequestAcknowledgementsById) {
       this.pendingRequestAcknowledgementsById.delete(requestId);
       pendingAcknowledgement.rejectAcknowledgement(error);
+    }
+    for (const [requestId, pendingModelListRequest] of this.pendingModelListRequestsById) {
+      this.pendingModelListRequestsById.delete(requestId);
+      pendingModelListRequest.rejectAvailableModels(error);
     }
     for (const providerConversationTurn of this.activeProviderTurnsById.values()) {
       providerConversationTurn.receiveProviderError(error);
@@ -508,6 +566,16 @@ function normalizeProviderProtocolTimeoutMilliseconds(requestedTimeoutMillisecon
   }
 
   return Math.max(1, Math.floor(requestedTimeoutMilliseconds));
+}
+
+function createProviderProtocolHostListModelsFrame(input: {
+  requestId: ProviderProtocolRequestId;
+}): ProviderProtocolHostListModelsFrame {
+  return {
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "host_list_models",
+    requestId: input.requestId,
+  };
 }
 
 function createProviderProtocolTurnRequest(input: ProviderConversationTurnRequest): ProviderProtocolTurnRequest {

@@ -183,6 +183,15 @@ test("runInteractiveChat returns a clean message when bash approval environment 
   );
 });
 
+test("runInteractiveChat returns a clean message when provider host command environment is invalid", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-provider-command-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await expect(runInteractiveChat({ store, environment: { BULI_PROVIDER_HOST_COMMAND: "not-json" } })).resolves.toBe(
+    "Invalid BULI_PROVIDER_HOST_COMMAND. Use a JSON string array like [\"/path/to/provider\"].",
+  );
+});
+
 test("runInteractiveChat returns a clean message when auto-compaction threshold environment is invalid", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });

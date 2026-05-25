@@ -7,6 +7,7 @@ import {
   PROVIDER_PROTOCOL_VERSION,
   decodeProviderProtocolProviderFrameFromJsonLine,
   encodeProviderProtocolFrameAsJsonLine,
+  type AvailableAssistantModel,
   type ConversationSessionEntry,
   type ConversationSessionModelSelection,
   type ProviderProtocolHostFrame,
@@ -68,9 +69,18 @@ class EmptyProviderProtocolClientTransport implements DisposableProviderProtocol
 class ScriptedOpenAiProviderProtocolHostProvider implements OpenAiProviderProtocolHostConversationTurnProvider {
   readonly startedTurnRequests: OpenAiProviderProtocolHostTurnRequest[] = [];
   private readonly providerTurn: OpenAiProviderProtocolHostConversationTurn;
+  private readonly availableModels: readonly AvailableAssistantModel[];
 
-  constructor(providerTurn: OpenAiProviderProtocolHostConversationTurn) {
+  constructor(
+    providerTurn: OpenAiProviderProtocolHostConversationTurn,
+    availableModels: readonly AvailableAssistantModel[] = [],
+  ) {
     this.providerTurn = providerTurn;
+    this.availableModels = availableModels;
+  }
+
+  listAvailableAssistantModels(): readonly AvailableAssistantModel[] {
+    return this.availableModels;
   }
 
   startConversationTurn(input: OpenAiProviderProtocolHostTurnRequest): OpenAiProviderProtocolHostConversationTurn {
@@ -111,6 +121,14 @@ function createHostStartTurnFrame(): ProviderProtocolHostFrame {
       conversationSessionEntries: [],
       selectedModelId: "gpt-5.5",
     },
+  };
+}
+
+function createHostListModelsFrame(): ProviderProtocolHostFrame {
+  return {
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "host_list_models",
+    requestId: "req-models-1",
   };
 }
 
@@ -300,6 +318,49 @@ test("runOpenAiProviderHostEntrypoint serves provider protocol frames outside pu
   });
 });
 
+test("runOpenAiProviderHostEntrypoint serves model listing frames", async () => {
+  const provider = new ScriptedOpenAiProviderProtocolHostProvider(new CompletedOpenAiProviderProtocolHostTurn(), [
+    {
+      id: "fixture-model",
+      displayName: "Fixture model",
+      supportedReasoningEfforts: ["medium"],
+    },
+  ]);
+  const writtenProviderJsonLines: string[] = [];
+
+  await runOpenAiProviderHostEntrypoint({
+    provider,
+    hostFrameChunks: streamProviderProtocolTestChunks([encodeProviderProtocolFrameAsJsonLine(createHostListModelsFrame())]),
+    writeProviderFrameJsonLine: async (jsonLine) => {
+      writtenProviderJsonLines.push(jsonLine);
+    },
+  });
+
+  const writtenProviderFrames = writtenProviderJsonLines.map((jsonLine) =>
+    decodeProviderProtocolProviderFrameFromJsonLine(jsonLine)
+  );
+  expect(writtenProviderFrames).toEqual([
+    {
+      protocol: PROVIDER_PROTOCOL_VERSION,
+      frameKind: "provider_request_acknowledged",
+      requestId: "req-models-1",
+      acknowledgedFrameKind: "host_list_models",
+    },
+    {
+      protocol: PROVIDER_PROTOCOL_VERSION,
+      frameKind: "provider_available_models",
+      requestId: "req-models-1",
+      availableModels: [
+        {
+          id: "fixture-model",
+          displayName: "Fixture model",
+          supportedReasoningEfforts: ["medium"],
+        },
+      ],
+    },
+  ]);
+});
+
 test("runInteractiveChat wires the direct provider by default and IPC provider when requested", async () => {
   const directDir = await mkdtemp(join(tmpdir(), "buli-cli-direct-provider-"));
   const directStore = new OpenAiAuthStore({ filePath: join(directDir, "auth.json") });
@@ -347,6 +408,36 @@ test("runInteractiveChat wires the direct provider by default and IPC provider w
   expect(ipcRuntime?.conversationTurnProvider).toBeInstanceOf(ProviderProtocolConversationTurnProvider);
   expect(capturedTransportInput?.environment["BULI_OPENAI_AUTH_FILE"]).toBe(ipcStore.filePath);
   expect(didDisposeTransport).toBe(true);
+});
+
+test("runInteractiveChat can use an external provider host command without OpenAI auth", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-cli-external-provider-"));
+  const store = new OpenAiAuthStore({ filePath: join(directoryPath, "auth.json") });
+  const conversationSessionStore = createConversationSessionStoreStub({ directoryPath });
+  let capturedRuntime: AssistantConversationRuntime | undefined;
+  let capturedTransportInput: CreateInteractiveChatProviderProtocolTransportInput | undefined;
+
+  await expect(runInteractiveChat({
+    store,
+    conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: { BULI_PROVIDER_HOST_COMMAND: "[\"python3\",\"provider.py\"]" },
+    createProviderProtocolTransport: (transportInput) => {
+      capturedTransportInput = transportInput;
+      return new EmptyProviderProtocolClientTransport();
+    },
+    renderChatScreen: async (renderInput) => {
+      capturedRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  })).resolves.toBe("");
+
+  expect(capturedRuntime?.conversationTurnProvider).toBeInstanceOf(ProviderProtocolConversationTurnProvider);
+  expect(capturedTransportInput).toEqual({
+    command: ["python3", "provider.py"],
+    environment: { BULI_PROVIDER_HOST_COMMAND: "[\"python3\",\"provider.py\"]" },
+    workingDirectoryPath: process.cwd(),
+  });
 });
 
 function createValidOpenAiAuth() {

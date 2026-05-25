@@ -31,6 +31,7 @@
   "scripts": {
     "build": "bun build ./src/cli.ts ./src/providerProtocol/openAiProviderHostEntrypoint.ts --target=bun --outdir ./dist --entry-naming [name].js --external @buli/tui",
     "dev": "bun build ./src/cli.ts ./src/providerProtocol/openAiProviderHostEntrypoint.ts --target=bun --outdir ./dist --entry-naming [name].js --watch --external @buli/tui",
+    "schema:conversation-session": "bun scripts/writeConversationSessionSqliteSchema.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "login": "bun src/cli.ts login",

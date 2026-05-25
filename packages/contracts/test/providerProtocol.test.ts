@@ -57,6 +57,9 @@ test("ProviderProtocolFrameSchema parses golden provider protocol frames", async
   const parsedFrames = ProviderProtocolFrameSchema.array().parse(JSON.parse(goldenFramesJson) as unknown);
 
   expect(parsedFrames.map((frame) => frame.frameKind)).toEqual([
+    "host_list_models",
+    "provider_request_acknowledged",
+    "provider_available_models",
     "host_start_turn",
     "provider_request_acknowledged",
     "provider_event",

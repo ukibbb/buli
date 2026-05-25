@@ -185,6 +185,50 @@ test("ProviderProtocolConversationTurnProvider sends start frames and streams or
   expect(providerTurn.getProviderTurnReplay()).toEqual({ provider: "openai", inputItems: [] });
 });
 
+test("ProviderProtocolConversationTurnProvider requests available models over the provider protocol", async () => {
+  const transport = new RecordingProviderProtocolClientTransport();
+  const provider = new ProviderProtocolConversationTurnProvider({
+    transport,
+    createRequestId: createSequentialRequestIdFactory(["req-models-1"]),
+  });
+
+  const availableModelsPromise = provider.listAvailableAssistantModels();
+  await waitForSentHostFrameCount({ transport, expectedFrameCount: 1 });
+
+  expect(transport.sentHostFrames[0]).toEqual({
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "host_list_models",
+    requestId: "req-models-1",
+  });
+
+  transport.sendProviderFrame({
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "provider_request_acknowledged",
+    requestId: "req-models-1",
+    acknowledgedFrameKind: "host_list_models",
+  });
+  transport.sendProviderFrame({
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "provider_available_models",
+    requestId: "req-models-1",
+    availableModels: [
+      {
+        id: "fixture-model",
+        displayName: "Fixture model",
+        supportedReasoningEfforts: ["medium"],
+      },
+    ],
+  });
+
+  expect(await availableModelsPromise).toEqual([
+    {
+      id: "fixture-model",
+      displayName: "Fixture model",
+      supportedReasoningEfforts: ["medium"],
+    },
+  ]);
+});
+
 test("ProviderProtocolConversationTurnProvider submits tool results after provider acknowledgements", async () => {
   const transport = new RecordingProviderProtocolClientTransport();
   const provider = new ProviderProtocolConversationTurnProvider({
