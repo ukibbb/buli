@@ -210,7 +210,7 @@ The login flow creates:
 - a local callback server
 - a PKCE verifier/challenge pair
 - an OAuth state token
-- a callback URL such as `http://127.0.0.1:1455/auth/callback`
+- a callback URL such as `http://localhost:1455/auth/callback`
 
 Then it builds the authorize URL:
 
