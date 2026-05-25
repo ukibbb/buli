@@ -6,6 +6,7 @@ test("OpenAiCallbackServer resolves a valid callback", async () => {
   const { redirectUri } = await server.start();
   const pending = server.waitForCode("expected-state");
 
+  expect(redirectUri).toContain("http://localhost:");
   const response = await fetch(`${redirectUri}?code=auth-code&state=expected-state`);
   const result = await pending;
 

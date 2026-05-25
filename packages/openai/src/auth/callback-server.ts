@@ -146,7 +146,8 @@ export class OpenAiCallbackServer {
   }
 
   private redirectUri(): string {
-    return `http://${this.host}:${this.address().port}${OPENAI_REDIRECT_PATH}`;
+    const redirectHost = this.host === "127.0.0.1" ? "localhost" : this.host;
+    return `http://${redirectHost}:${this.address().port}${OPENAI_REDIRECT_PATH}`;
   }
 
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
