@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { ContextWindowOverflowError } from "@buli/contracts";
 import {
   createOpenAiHttpRequestError,
   extractHumanReadableOpenAiErrorMessage,
@@ -6,8 +7,10 @@ import {
   getOpenAiRequestId,
   isRetryableOpenAiHttpResponseStatus,
   isRetryableOpenAiTransportError,
+  readOpenAiRateLimitHeaders,
   readOpenAiRetryAfterMilliseconds,
   sanitizeOpenAiErrorMessage,
+  summarizeOpenAiRateLimitHeadersForDiagnostics,
   summarizeOpenAiTransportErrorForDiagnostics,
 } from "../src/provider/httpResponseDiagnostics.ts";
 
@@ -34,6 +37,51 @@ test("readOpenAiRetryAfterMilliseconds reads retry headers", () => {
   expect(readOpenAiRetryAfterMilliseconds(new Headers({ "retry-after": "2" }))).toBe(2000);
   expect(readOpenAiRetryAfterMilliseconds(new Headers({ "retry-after-ms": "bad", "retry-after": "1" }))).toBe(1000);
   expect(readOpenAiRetryAfterMilliseconds(new Headers())).toBeUndefined();
+});
+
+test("readOpenAiRateLimitHeaders reads numeric limits and reset durations", () => {
+  const rateLimitHeaders = new Headers({
+    "x-ratelimit-limit-requests": "500",
+    "x-ratelimit-remaining-requests": "0",
+    "x-ratelimit-reset-requests": "1m30s",
+    "x-ratelimit-limit-tokens": "100000",
+    "x-ratelimit-remaining-tokens": "2500",
+    "x-ratelimit-reset-tokens": "250ms",
+  });
+
+  expect(readOpenAiRateLimitHeaders(rateLimitHeaders)).toEqual({
+    requestLimit: 500,
+    requestsRemaining: 0,
+    requestsResetAfterMilliseconds: 90_000,
+    tokenLimit: 100_000,
+    tokensRemaining: 2_500,
+    tokensResetAfterMilliseconds: 250,
+  });
+});
+
+test("readOpenAiRateLimitHeaders ignores malformed rate-limit values", () => {
+  expect(readOpenAiRateLimitHeaders(new Headers({
+    "x-ratelimit-limit-requests": "bad",
+    "x-ratelimit-reset-requests": "next Tuesday",
+  }))).toBeUndefined();
+  expect(readOpenAiRateLimitHeaders(new Headers({ "x-ratelimit-reset-requests": "2" }))).toEqual({
+    requestsResetAfterMilliseconds: 2000,
+  });
+});
+
+test("summarizeOpenAiRateLimitHeadersForDiagnostics avoids raw header values", () => {
+  const diagnostics = summarizeOpenAiRateLimitHeadersForDiagnostics(new Headers({
+    "x-ratelimit-limit-requests": "12",
+    "x-ratelimit-remaining-requests": "3",
+    "x-ratelimit-reset-requests": "2s",
+  }));
+
+  expect(diagnostics).toEqual({
+    rateLimitRequestLimit: 12,
+    rateLimitRequestsRemaining: 3,
+    rateLimitRequestsResetAfterMilliseconds: 2000,
+  });
+  expect(JSON.stringify(diagnostics)).not.toContain("2s");
 });
 
 test("OpenAI transport diagnostics classify retryable errors without raw messages", () => {
@@ -98,4 +146,18 @@ test("createOpenAiHttpRequestError includes status, message, and request id", as
   await expect(createOpenAiHttpRequestError(response, "models")).resolves.toEqual(
     new Error("OpenAI models request failed: 400 | missing client_version | request_id=req_models_123"),
   );
+});
+
+test("createOpenAiHttpRequestError classifies context window overflow", async () => {
+  const response = new Response(
+    JSON.stringify({
+      error: {
+        code: "context_length_exceeded",
+        message: "Your input exceeds the context window of this model.",
+      },
+    }),
+    { status: 400 },
+  );
+
+  await expect(createOpenAiHttpRequestError(response, "stream")).resolves.toBeInstanceOf(ContextWindowOverflowError);
 });

@@ -230,6 +230,15 @@ export class OpenAiResponseOutputItemTracker {
     return mergedOutputItems;
   }
 
+  listUnemittedAssistantOutputTextChunks(responseOutputItems: readonly unknown[]): string[] {
+    return responseOutputItems.flatMap((responseOutputItem) =>
+      listUnemittedAssistantOutputTextChunksFromOutputItem({
+        responseOutputItem,
+        assistantTextChunksByItemIdAndContentIndex: this.assistantTextChunksByItemIdAndContentIndex,
+      })
+    );
+  }
+
   private hasTrackedOutputItemByItemId(itemId: string, outputItemType: string): boolean {
     for (const outputItem of this.trackedOutputItemsByIndex.values()) {
       if (
@@ -327,6 +336,43 @@ function hasConsumedOpenAiResponseOutputItem(
 ): boolean {
   const responseOutputItemId = readOpenAiResponseObjectStringField(responseOutputItem, "id");
   return responseOutputItemId !== undefined && consumedResponseOutputItemIds.has(responseOutputItemId);
+}
+
+function listUnemittedAssistantOutputTextChunksFromOutputItem(input: {
+  responseOutputItem: unknown;
+  assistantTextChunksByItemIdAndContentIndex: ReadonlyMap<string, TextChunkBufferByPartIndex>;
+}): string[] {
+  if (
+    !isOpenAiResponseObject(input.responseOutputItem) ||
+    input.responseOutputItem.type !== "message" ||
+    readOpenAiResponseObjectStringField(input.responseOutputItem, "role") !== "assistant"
+  ) {
+    return [];
+  }
+
+  const responseOutputItemId = readOpenAiResponseObjectStringField(input.responseOutputItem, "id");
+  const emittedTextChunksByContentIndex = responseOutputItemId !== undefined
+    ? input.assistantTextChunksByItemIdAndContentIndex.get(responseOutputItemId)
+    : undefined;
+  return (readOpenAiResponseObjectArrayField(input.responseOutputItem, "content") ?? []).flatMap(
+    (contentPart, contentIndex) => {
+      if (!isOpenAiOutputTextContentPart(contentPart) || contentPart.text.length === 0) {
+        return [];
+      }
+
+      const alreadyEmittedText = emittedTextChunksByContentIndex?.get(contentIndex)?.join("") ?? "";
+      if (alreadyEmittedText.length === 0) {
+        return [contentPart.text];
+      }
+
+      if (!contentPart.text.startsWith(alreadyEmittedText)) {
+        return [];
+      }
+
+      const unemittedText = contentPart.text.slice(alreadyEmittedText.length);
+      return unemittedText.length > 0 ? [unemittedText] : [];
+    },
+  );
 }
 
 function materializeOpenAiAssistantOutputTextChunks(input: {

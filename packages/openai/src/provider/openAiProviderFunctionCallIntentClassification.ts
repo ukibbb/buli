@@ -1,14 +1,14 @@
 import type { ProviderRequestedToolCall } from "@buli/contracts";
 import type {
-  OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
   OpenAiExecutableToolCallIntent,
+  OpenAiInvalidFunctionCallIntent,
   OpenAiProviderFunctionCallIntent,
 } from "./toolDefinitions.ts";
 
 export type OpenAiProviderFunctionCallIntentClassification = {
   readonly executableToolCallIntents: OpenAiExecutableToolCallIntent[];
+  readonly invalidFunctionCallIntents: OpenAiInvalidFunctionCallIntent[];
   readonly requestedToolCalls: ProviderRequestedToolCall[];
-  readonly presentationFunctionCallIntents: OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent[];
   readonly hasOnlyExecutableToolCallIntents: boolean;
 };
 
@@ -16,8 +16,8 @@ export function classifyOpenAiProviderFunctionCallIntents(
   providerFunctionCallIntents: readonly OpenAiProviderFunctionCallIntent[],
 ): OpenAiProviderFunctionCallIntentClassification {
   const executableToolCallIntents: OpenAiExecutableToolCallIntent[] = [];
+  const invalidFunctionCallIntents: OpenAiInvalidFunctionCallIntent[] = [];
   const requestedToolCalls: ProviderRequestedToolCall[] = [];
-  const presentationFunctionCallIntents: OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent[] = [];
 
   for (const providerFunctionCallIntent of providerFunctionCallIntents) {
     switch (providerFunctionCallIntent.intentKind) {
@@ -28,8 +28,8 @@ export function classifyOpenAiProviderFunctionCallIntents(
           toolCallRequest: providerFunctionCallIntent.toolCallRequest,
         });
         break;
-      case "code_execution_walkthrough_presentation":
-        presentationFunctionCallIntents.push(providerFunctionCallIntent);
+      case "invalid_function_call":
+        invalidFunctionCallIntents.push(providerFunctionCallIntent);
         break;
       default:
         assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent);
@@ -38,8 +38,8 @@ export function classifyOpenAiProviderFunctionCallIntents(
 
   return {
     executableToolCallIntents,
+    invalidFunctionCallIntents,
     requestedToolCalls,
-    presentationFunctionCallIntents,
     hasOnlyExecutableToolCallIntents: executableToolCallIntents.length === providerFunctionCallIntents.length,
   };
 }

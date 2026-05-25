@@ -37,13 +37,22 @@ describe("resolveContextMeterUsedTokenColor", () => {
 });
 
 describe("ContextWindowMeter (opentui)", () => {
-  test("renders_fallback_when_no_tokens_used", async () => {
+  test("renders_fallback_when_usage_and_capacity_are_unknown", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={undefined} />,
       { width: 40, height: 3 },
     );
     await renderOnce();
     expect(captureCharFrame()).toContain("--");
+  });
+
+  test("renders_zero_usage_fallback_when_usage_is_unknown_but_capacity_is_known", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={100_000} />,
+      { width: 40, height: 3 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("0 / 100k (0%)");
   });
 
   test("renders_used_token_count_when_no_capacity", async () => {
@@ -55,14 +64,14 @@ describe("ContextWindowMeter (opentui)", () => {
     expect(captureCharFrame()).toContain("500");
   });
 
-  test("renders_used_and_limit_when_capacity_known", async () => {
+  test("renders_used_limit_and_percent_when_capacity_known", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ContextWindowMeter totalTokensUsed={50000} contextWindowTokenCapacity={200000} />,
+      <ContextWindowMeter totalTokensUsed={50_000} contextWindowTokenCapacity={200_000} />,
       { width: 40, height: 3 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("50k / 200k");
+    expect(frame).toContain("50k / 200k (25%)");
     expect(frame).not.toContain("ctx");
   });
 
@@ -73,16 +82,7 @@ describe("ContextWindowMeter (opentui)", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("22.2k / 320k");
+    expect(frame).toContain("22.2k / 320k (7%)");
     expect(frame).not.toContain("ctx");
-  });
-
-  test("falls_back_to_double_dash_without_usage", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={100_000} />,
-      { width: 30, height: 2 },
-    );
-    await renderOnce();
-    expect(captureCharFrame()).toContain("--");
   });
 });

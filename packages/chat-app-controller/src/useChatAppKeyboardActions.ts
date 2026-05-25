@@ -5,6 +5,7 @@ import type {
 import {
   applyChatSessionKeyboardInputToChatSessionState,
   applyChatSlashCommandToChatSessionState,
+  insertSummarizedPastedTextIntoPromptDraft,
   refreshChatSlashCommandSelectionForCurrentState,
   replacePromptDraftFromEditor,
   readConversationSessionModelSelectionFromChatSessionState,
@@ -27,6 +28,12 @@ type MutableValueRef<T> = { current: T };
 export type ChatAppPromptDraftEdit = {
   promptDraft: string;
   promptDraftCursorOffset: number;
+};
+
+export type ChatAppSummarizedPromptTextPaste = {
+  pastedText: string;
+  replacementStartOffset?: number;
+  replacementEndOffset?: number;
 };
 
 export type ChatAppKeyboardInputApplication = {
@@ -62,6 +69,7 @@ export type UseChatAppKeyboardActionsInput = {
 export type UseChatAppKeyboardActionsResult = {
   applyChatAppKeyboardInput: (input: { chatSessionKeyboardInput: ChatSessionKeyboardInput }) => ChatAppKeyboardInputApplication;
   applyPromptDraftEditToChatApp: (promptDraftEdit: ChatAppPromptDraftEdit) => void;
+  insertSummarizedPastedTextIntoChatAppPrompt: (summarizedPromptTextPaste: ChatAppSummarizedPromptTextPaste) => void;
 };
 
 export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput): UseChatAppKeyboardActionsResult {
@@ -136,12 +144,14 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         void input.streamAssistantResponseForSubmittedPrompt({
           submittedPromptText: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText,
           submittedPromptImageAttachments: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments,
+          submittedAssistantOperatingMode: keyboardEffectInput.chatSessionKeyboardEffect.submittedAssistantOperatingMode,
         });
         return;
       case "enqueue_submitted_prompt": {
         input.enqueueQueuedSubmittedPrompt({
           submittedPromptText: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText,
           submittedPromptImageAttachments: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments,
+          submittedAssistantOperatingMode: keyboardEffectInput.chatSessionKeyboardEffect.submittedAssistantOperatingMode,
         });
         return;
       }
@@ -224,9 +234,37 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     input.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
   });
 
+  const insertSummarizedPastedTextIntoChatAppPrompt = useEffectEvent((summarizedPromptTextPaste: ChatAppSummarizedPromptTextPaste) => {
+    if (input.isConversationCompactionInFlightRef.current) {
+      return;
+    }
+
+    const previousChatSessionState = input.latestChatSessionStateRef.current;
+    const editedChatSessionState = insertSummarizedPastedTextIntoPromptDraft({
+      chatSessionState: previousChatSessionState,
+      pastedText: summarizedPromptTextPaste.pastedText,
+      ...(summarizedPromptTextPaste.replacementStartOffset !== undefined
+        ? { replacementStartOffset: summarizedPromptTextPaste.replacementStartOffset }
+        : {}),
+      ...(summarizedPromptTextPaste.replacementEndOffset !== undefined
+        ? { replacementEndOffset: summarizedPromptTextPaste.replacementEndOffset }
+        : {}),
+    });
+    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(editedChatSessionState);
+
+    if (nextChatSessionState === previousChatSessionState) {
+      return;
+    }
+
+    input.latestChatSessionStateRef.current = nextChatSessionState;
+    input.setChatSessionState(nextChatSessionState);
+    input.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
+  });
+
   return {
     applyChatAppKeyboardInput,
     applyPromptDraftEditToChatApp,
+    insertSummarizedPastedTextIntoChatAppPrompt,
   };
 }
 

@@ -27,7 +27,8 @@ export async function runGlobToolCall(input: {
 
   try {
     const requestedSearchDirectoryPath = input.globToolCallRequest.searchDirectoryPath ?? ".";
-    assertSingleWorkspaceSearchPathArgument({
+    await assertSingleWorkspaceSearchPathArgument({
+      workspaceRootPath: input.workspaceRootPath,
       toolName: "Glob",
       pathKind: "directory",
       requestedPath: requestedSearchDirectoryPath,

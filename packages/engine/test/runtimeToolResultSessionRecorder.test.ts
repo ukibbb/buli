@@ -61,7 +61,6 @@ test("RuntimeToolResultSessionRecorder records a completed tool result with diag
         toolCallId: "call_bash_1",
         toolResultTextLength: toolResultText.length,
         conversationSessionEntryCount: 3,
-        modelContextItemCount: 0,
       },
     },
   ]);
@@ -106,7 +105,6 @@ test("RuntimeToolResultSessionRecorder records a failed tool result with diagnos
         toolResultTextLength: toolResultText.length,
         failureExplanation,
         conversationSessionEntryCount: 3,
-        modelContextItemCount: 0,
       },
     },
   ]);
@@ -149,7 +147,6 @@ test("RuntimeToolResultSessionRecorder records a denied tool result with diagnos
         toolCallId: "call_bash_1",
         toolResultTextLength: toolResultText.length,
         conversationSessionEntryCount: 3,
-        modelContextItemCount: 0,
       },
     },
   ]);

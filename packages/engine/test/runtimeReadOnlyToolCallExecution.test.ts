@@ -93,6 +93,14 @@ async function collectReadOnlyToolCallBatchEvents(input: Parameters<
 
 test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", () => {
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "read", readTargetPath: "notes.txt" })).toBe(true);
+  expect(isAutoApprovedReadOnlyToolCallRequest({
+    toolName: "read_many",
+    readTargets: [{ readTargetPath: "notes.txt" }],
+  })).toBe(true);
+  expect(isAutoApprovedReadOnlyToolCallRequest({
+    toolName: "search_many",
+    searches: [{ searchKind: "glob", globPattern: "**/*.ts" }],
+  })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "glob", globPattern: "**/*.ts" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "grep", regexPattern: "TODO" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({
@@ -107,10 +115,249 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
     newString: "new",
   })).toBe(false);
   expect(isAutoApprovedReadOnlyToolCallRequest({
+    toolName: "edit_many",
+    edits: [{ editTargetPath: "notes.txt", oldString: "old", newString: "new" }],
+  })).toBe(false);
+  expect(isAutoApprovedReadOnlyToolCallRequest({
+    toolName: "patch",
+    patchText: "*** Begin Patch\n*** End Patch",
+  })).toBe(false);
+  expect(isAutoApprovedReadOnlyToolCallRequest({
+    toolName: "patch_many",
+    patchText: "*** Begin Patch\n*** End Patch",
+  })).toBe(false);
+  expect(isAutoApprovedReadOnlyToolCallRequest({
     toolName: "write",
     writeTargetPath: "notes.txt",
     fileContent: "new\n",
   })).toBe(false);
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records read_many partial failures as one completed batch", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-read-many-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Read many notes",
+        modelFacingPromptText: "Read many notes",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read_many_1",
+        toolCallRequest: {
+          toolName: "read_many",
+          readTargets: [
+            { readTargetPath: "notes.txt", offsetLineNumber: 2, maximumLineCount: 1 },
+            { readTargetPath: "missing.txt" },
+          ],
+        },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  const assistantResponseEvents = await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    providerConversationTurn,
+    toolCallId: "call_read_many_1",
+    toolCallRequest: {
+      toolName: "read_many",
+      readTargets: [
+        { readTargetPath: "notes.txt", offsetLineNumber: 2, maximumLineCount: 1 },
+        { readTargetPath: "missing.txt" },
+      ],
+    },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
+      maximumConcurrentReadOnlyToolCalls: 2,
+    }),
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_message_part_added",
+    "assistant_message_part_updated",
+  ]);
+  expect(assistantResponseEvents[0]).toMatchObject({
+    type: "assistant_message_part_added",
+    part: {
+      partKind: "assistant_tool_call",
+      toolCallStatus: "running",
+      toolCallDetail: {
+        toolName: "read_many",
+        requestedReadTargetPaths: ["notes.txt", "missing.txt"],
+      },
+    },
+  });
+  expect(assistantResponseEvents[1]).toMatchObject({
+    type: "assistant_message_part_updated",
+    part: {
+      partKind: "assistant_tool_call",
+      toolCallStatus: "completed",
+      toolCallDetail: {
+        toolName: "read_many",
+        completedReadCount: 1,
+        failedReadCount: 1,
+        readResults: [
+          {
+            readStatus: "completed",
+            readDetail: {
+              toolName: "read",
+              readFilePath: "notes.txt",
+              previewLines: [{ lineNumber: 2, lineText: "beta" }],
+            },
+          },
+          {
+            readStatus: "failed",
+            readDetail: {
+              toolName: "read",
+              readFilePath: "missing.txt",
+            },
+            failureExplanation: expect.stringContaining("File not found: missing.txt"),
+          },
+        ],
+      },
+    },
+  });
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_read_many_1",
+      toolResultText: expect.stringContaining("<summary>1 completed, 1 failed</summary>"),
+    },
+  ]);
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("2: beta");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Read failed: File not found: missing.txt");
+  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolCallId: "call_read_many_1",
+    toolCallDetail: {
+      toolName: "read_many",
+      completedReadCount: 1,
+      failedReadCount: 1,
+    },
+    toolResultText: expect.stringContaining("<read_many>"),
+  });
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records search_many partial failures as one completed batch", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-search-many-"));
+  await mkdir(join(workspaceRootPath, "src"), { recursive: true });
+  await writeFile(join(workspaceRootPath, "src", "app.ts"), "export const marker = 'search-many';\n", "utf8");
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Search many files",
+        modelFacingPromptText: "Search many files",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_search_many_1",
+        toolCallRequest: {
+          toolName: "search_many",
+          searches: [
+            { searchKind: "glob", globPattern: "src/**/*.ts" },
+            { searchKind: "grep", regexPattern: "[" },
+          ],
+        },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  const assistantResponseEvents = await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    providerConversationTurn,
+    toolCallId: "call_search_many_1",
+    toolCallRequest: {
+      toolName: "search_many",
+      searches: [
+        { searchKind: "glob", globPattern: "src/**/*.ts" },
+        { searchKind: "grep", regexPattern: "[" },
+      ],
+    },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
+      maximumConcurrentReadOnlyToolCalls: 2,
+    }),
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_message_part_added",
+    "assistant_message_part_updated",
+  ]);
+  expect(assistantResponseEvents[0]).toMatchObject({
+    type: "assistant_message_part_added",
+    part: {
+      partKind: "assistant_tool_call",
+      toolCallStatus: "running",
+      toolCallDetail: {
+        toolName: "search_many",
+        requestedSearches: [
+          { searchKind: "glob", globPattern: "src/**/*.ts" },
+          { searchKind: "grep", regexPattern: "[" },
+        ],
+      },
+    },
+  });
+  expect(assistantResponseEvents[1]).toMatchObject({
+    type: "assistant_message_part_updated",
+    part: {
+      partKind: "assistant_tool_call",
+      toolCallStatus: "completed",
+      toolCallDetail: {
+        toolName: "search_many",
+        completedSearchCount: 1,
+        failedSearchCount: 1,
+        searchResults: [
+          {
+            searchStatus: "completed",
+            searchDetail: {
+              toolName: "glob",
+              globPattern: "src/**/*.ts",
+              matchedPaths: ["src/app.ts"],
+            },
+          },
+          {
+            searchStatus: "failed",
+            searchDetail: {
+              toolName: "grep",
+              searchPattern: "[",
+            },
+            failureExplanation: expect.stringContaining("Invalid regular expression"),
+          },
+        ],
+      },
+    },
+  });
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_search_many_1",
+      toolResultText: expect.stringContaining("<summary>1 completed, 1 failed</summary>"),
+    },
+  ]);
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("src/app.ts");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("----- next search result -----");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Grep failed:");
+  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolCallId: "call_search_many_1",
+    toolCallDetail: {
+      toolName: "search_many",
+      completedSearchCount: 1,
+      failedSearchCount: 1,
+    },
+    toolResultText: expect.stringContaining("<search_many>"),
+  });
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and submits completed read results", async () => {
@@ -496,6 +743,82 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concu
   expect(toolCallPartStatuses.slice(requestedToolCalls.length).toSorted()).toEqual(
     requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:completed`).toSorted(),
   );
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall limits read_many child reads", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-read-many-concurrency-"));
+  const requestedReadTargets = Array.from({ length: 5 }, (_, readTargetIndex) => ({
+    readTargetPath: `notes-${readTargetIndex + 1}.txt`,
+  }));
+  await Promise.all(requestedReadTargets.map((readTarget, readTargetIndex) =>
+    writeFile(join(workspaceRootPath, readTarget.readTargetPath), `note ${readTargetIndex + 1}\n`, "utf8")
+  ));
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const projectInstructionTracker = new BlockingProjectInstructionTracker({
+    workspaceRootPath,
+    expectedActiveDiscoveryCount: 2,
+  });
+  const readOnlyToolCallConcurrencyLimiter = new RuntimeReadOnlyToolCallConcurrencyLimiter({
+    maximumConcurrentReadOnlyToolCalls: 2,
+  });
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Read many notes",
+        modelFacingPromptText: "Read many notes",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read_many_1",
+        toolCallRequest: {
+          toolName: "read_many",
+          readTargets: requestedReadTargets,
+        },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  const assistantResponseEventsPromise = collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    providerConversationTurn,
+    toolCallId: "call_read_many_1",
+    toolCallRequest: {
+      toolName: "read_many",
+      readTargets: requestedReadTargets,
+    },
+    workspaceRootPath,
+    projectInstructionTracker,
+    toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  await waitForPromiseWithTimeout({
+    promise: projectInstructionTracker.expectedActiveDiscoveriesReached.promise,
+    timeoutMilliseconds: 500,
+    createTimeoutError: () => new Error("read_many child reads did not reach the expected active concurrency."),
+  });
+  expect(projectInstructionTracker.startedDiscoveryCount).toBe(2);
+  expect(projectInstructionTracker.activeDiscoveryCount).toBe(2);
+
+  projectInstructionTracker.releaseDiscoveries.complete();
+  const assistantResponseEvents = await assistantResponseEventsPromise;
+
+  expect(projectInstructionTracker.startedDiscoveryCount).toBe(requestedReadTargets.length);
+  expect(projectInstructionTracker.maximumActiveDiscoveryCount).toBe(2);
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_read_many_1",
+      toolResultText: expect.stringContaining("<summary>5 completed, 0 failed</summary>"),
+    },
+  ]);
+  expect(listToolCallPartStatuses(assistantResponseEvents)).toEqual([
+    "call_read_many_1:running",
+    "call_read_many_1:completed",
+  ]);
 });
 
 async function readNextAssistantResponseEvent(

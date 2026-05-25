@@ -33,6 +33,7 @@ export function buildGrepToolResultText(input: {
   matchHits: readonly ToolCallGrepMatch[];
   matchedFileCount: number;
   totalMatchCount: number;
+  contextLineCount?: number | undefined;
 }): string {
   if (input.totalMatchCount === 0) {
     return [
@@ -45,6 +46,9 @@ export function buildGrepToolResultText(input: {
   const outputLines = [
     `Pattern: ${input.regexPattern}`,
     `Path: ${input.searchPath}`,
+    ...(input.contextLineCount !== undefined && input.contextLineCount > 0
+      ? [`Context: ${input.contextLineCount} lines before and after each returned match`]
+      : []),
     `Found ${input.totalMatchCount} matches in ${input.matchedFileCount} files`,
     ...(input.matchHits.length < input.totalMatchCount
       ? [
@@ -59,8 +63,21 @@ export function buildGrepToolResultText(input: {
       outputLines.push("", `${matchHit.matchFilePath}:`);
     }
 
-    outputLines.push(`  Line ${matchHit.matchLineNumber}: ${matchHit.matchSnippet}`);
+    outputLines.push(...formatGrepMatchOutputLines(matchHit));
   }
 
   return outputLines.join("\n");
+}
+
+function formatGrepMatchOutputLines(matchHit: ToolCallGrepMatch): string[] {
+  const hasContextLines = (matchHit.contextBeforeLines?.length ?? 0) > 0 || (matchHit.contextAfterLines?.length ?? 0) > 0;
+  if (!hasContextLines) {
+    return [`  Line ${matchHit.matchLineNumber}: ${matchHit.matchSnippet}`];
+  }
+
+  return [
+    ...(matchHit.contextBeforeLines ?? []).map((contextLine) => `  Line ${contextLine.lineNumber}: ${contextLine.lineText}`),
+    `> Line ${matchHit.matchLineNumber}: ${matchHit.matchSnippet}`,
+    ...(matchHit.contextAfterLines ?? []).map((contextLine) => `  Line ${contextLine.lineNumber}: ${contextLine.lineText}`),
+  ];
 }

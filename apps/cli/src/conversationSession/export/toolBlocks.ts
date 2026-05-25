@@ -81,7 +81,7 @@ function renderPanel(input: {
   return `<div class="panel${modifierClass}">
   <div class="panel-head">
     ${renderToolIcon(input.toolName)}
-    <span class="panel-tool">${escapeHtml(input.toolName)}</span>
+    <span class="panel-tool">${escapeHtml(formatToolDisplayName(input.toolName))}</span>
     ${input.purposeHtml}
     ${input.statusHtml}
   </div>
@@ -96,6 +96,12 @@ function renderToolCallRequestPurpose(toolCallRequest: ToolCallRequest): string 
   if (toolCallRequest.toolName === "read") {
     return `<span class="panel-purpose">${escapeHtml(toolCallRequest.readTargetPath)}</span>`;
   }
+  if (toolCallRequest.toolName === "read_many") {
+    return `<span class="panel-purpose">${formatReadManyPathCount(toolCallRequest.readTargets.length)}</span>`;
+  }
+  if (toolCallRequest.toolName === "search_many") {
+    return `<span class="panel-purpose">${formatSearchManySearchCount(toolCallRequest.searches.length)}</span>`;
+  }
   if (toolCallRequest.toolName === "glob") {
     return toolCallRequest.searchDirectoryPath
       ? `<span class="panel-purpose">${escapeHtml(toolCallRequest.searchDirectoryPath)}</span>`
@@ -109,10 +115,20 @@ function renderToolCallRequestPurpose(toolCallRequest: ToolCallRequest): string 
   if (toolCallRequest.toolName === "edit") {
     return `<span class="panel-purpose">${escapeHtml(toolCallRequest.editTargetPath)}</span>`;
   }
+  if (toolCallRequest.toolName === "edit_many") {
+    return `<span class="panel-purpose">${toolCallRequest.edits.length} edits</span>`;
+  }
+  if (toolCallRequest.toolName === "patch" || toolCallRequest.toolName === "patch_many") {
+    return `<span class="panel-purpose">patch</span>`;
+  }
   if (toolCallRequest.toolName === "write") {
     return `<span class="panel-purpose">${escapeHtml(toolCallRequest.writeTargetPath)}</span>`;
   }
-  return `<span class="panel-purpose">${escapeHtml(`${toolCallRequest.subagentName}: ${toolCallRequest.subagentDescription}`)}</span>`;
+  if (toolCallRequest.toolName === "task") {
+    return `<span class="panel-purpose">${escapeHtml(`${toolCallRequest.subagentName}: ${toolCallRequest.subagentDescription}`)}</span>`;
+  }
+
+  return assertUnhandledToolCallRequest(toolCallRequest);
 }
 
 function renderToolCallRequestBody(toolCallRequest: ToolCallRequest): string {
@@ -121,6 +137,20 @@ function renderToolCallRequestBody(toolCallRequest: ToolCallRequest): string {
   }
   if (toolCallRequest.toolName === "read") {
     return `<div class="arg"><b>path</b> ${escapeHtml(toolCallRequest.readTargetPath)}</div>`;
+  }
+  if (toolCallRequest.toolName === "read_many") {
+    return toolCallRequest.readTargets.map((readTarget, readTargetIndex) => {
+      const offsetHtml = readTarget.offsetLineNumber === undefined
+        ? ""
+        : ` <span class="panel-purpose">offset ${readTarget.offsetLineNumber}</span>`;
+      const limitHtml = readTarget.maximumLineCount === undefined
+        ? ""
+        : ` <span class="panel-purpose">limit ${readTarget.maximumLineCount}</span>`;
+      return `<div class="arg"><b>path ${readTargetIndex + 1}</b> ${escapeHtml(readTarget.readTargetPath)}${offsetHtml}${limitHtml}</div>`;
+    }).join("\n");
+  }
+  if (toolCallRequest.toolName === "search_many") {
+    return toolCallRequest.searches.map(renderSearchManyRequestSearch).join("\n");
   }
   if (toolCallRequest.toolName === "glob") {
     const dirArg = toolCallRequest.searchDirectoryPath
@@ -132,19 +162,35 @@ function renderToolCallRequestBody(toolCallRequest: ToolCallRequest): string {
     const pathArg = toolCallRequest.searchPath
       ? `<div class="arg"><b>path</b> ${escapeHtml(toolCallRequest.searchPath)}</div>`
       : "";
-    return `${pathArg}<div class="arg"><b>pattern</b> ${escapeHtml(toolCallRequest.regexPattern)}</div>`;
+    const includeArg = toolCallRequest.includeGlobPattern
+      ? `<div class="arg"><b>include</b> ${escapeHtml(toolCallRequest.includeGlobPattern)}</div>`
+      : "";
+    const contextArg = toolCallRequest.contextLineCount !== undefined
+      ? `<div class="arg"><b>context</b> ${toolCallRequest.contextLineCount}</div>`
+      : "";
+    return `${pathArg}${includeArg}${contextArg}<div class="arg"><b>pattern</b> ${escapeHtml(toolCallRequest.regexPattern)}</div>`;
   }
   if (toolCallRequest.toolName === "edit") {
     return `<div class="arg"><b>path</b> ${escapeHtml(toolCallRequest.editTargetPath)}</div>
 <div class="panel-section"><div class="panel-section-label">Old</div><pre class="output">${escapeHtml(toolCallRequest.oldString)}</pre></div>
 <div class="panel-section"><div class="panel-section-label">New</div><pre class="output">${escapeHtml(toolCallRequest.newString)}</pre></div>`;
   }
+  if (toolCallRequest.toolName === "edit_many") {
+    return toolCallRequest.edits.map((edit, editIndex) => `<div class="panel-section"><div class="panel-section-label">Edit ${editIndex + 1}: ${escapeHtml(edit.editTargetPath)}</div><pre class="output">${escapeHtml(edit.oldString)}\n---\n${escapeHtml(edit.newString)}</pre></div>`).join("\n");
+  }
+  if (toolCallRequest.toolName === "patch" || toolCallRequest.toolName === "patch_many") {
+    return `<div class="panel-section"><div class="panel-section-label">Patch</div><pre class="output">${escapeHtml(toolCallRequest.patchText)}</pre></div>`;
+  }
   if (toolCallRequest.toolName === "write") {
     return `<div class="arg"><b>path</b> ${escapeHtml(toolCallRequest.writeTargetPath)}</div>
 <div class="panel-section"><div class="panel-section-label">Contents</div><pre class="output">${escapeHtml(toolCallRequest.fileContent)}</pre></div>`;
   }
-  return `<div class="arg"><b>subagent</b> ${escapeHtml(toolCallRequest.subagentName)}</div>
+  if (toolCallRequest.toolName === "task") {
+    return `<div class="arg"><b>subagent</b> ${escapeHtml(toolCallRequest.subagentName)}</div>
 <div class="panel-section"><div class="panel-section-label">Prompt</div><pre class="output">${escapeHtml(toolCallRequest.subagentPrompt)}</pre></div>`;
+  }
+
+  return assertUnhandledToolCallRequest(toolCallRequest);
 }
 
 function renderToolResultPurpose(toolCallDetail: ToolCallDetail): string {
@@ -155,6 +201,28 @@ function renderToolResultPurpose(toolCallDetail: ToolCallDetail): string {
   }
   if (toolCallDetail.toolName === "read") {
     return `<span class="panel-purpose">${escapeHtml(toolCallDetail.readFilePath)}</span>`;
+  }
+  if (toolCallDetail.toolName === "read_many") {
+    const completedReadCount = toolCallDetail.completedReadCount;
+    const failedReadCount = toolCallDetail.failedReadCount ?? 0;
+    const requestedReadTargetCount = toolCallDetail.requestedReadTargetPaths.length;
+    const readManySummary = completedReadCount === undefined
+      ? formatReadManyPathCount(requestedReadTargetCount)
+      : failedReadCount > 0
+        ? `${completedReadCount}/${requestedReadTargetCount} read, ${failedReadCount} failed`
+        : `${completedReadCount} read`;
+    return `<span class="panel-purpose">${escapeHtml(readManySummary)}</span>`;
+  }
+  if (toolCallDetail.toolName === "search_many") {
+    const completedSearchCount = toolCallDetail.completedSearchCount;
+    const failedSearchCount = toolCallDetail.failedSearchCount ?? 0;
+    const requestedSearchCount = toolCallDetail.requestedSearches.length;
+    const searchManySummary = completedSearchCount === undefined
+      ? formatSearchManySearchCount(requestedSearchCount)
+      : failedSearchCount > 0
+        ? `${completedSearchCount}/${requestedSearchCount} searched, ${failedSearchCount} failed`
+        : `${completedSearchCount} searched`;
+    return `<span class="panel-purpose">${escapeHtml(searchManySummary)}</span>`;
   }
   if (toolCallDetail.toolName === "glob") {
     return toolCallDetail.matchedPathCount === undefined
@@ -170,6 +238,14 @@ function renderToolResultPurpose(toolCallDetail: ToolCallDetail): string {
     const lineChange = renderLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
     return `<span class="panel-purpose">${escapeHtml(toolCallDetail.editedFilePath)}${lineChange}</span>`;
   }
+  if (toolCallDetail.toolName === "edit_many") {
+    const lineChange = renderLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
+    return `<span class="panel-purpose">${toolCallDetail.editedFileCount ?? 0} files${lineChange}</span>`;
+  }
+  if (toolCallDetail.toolName === "patch" || toolCallDetail.toolName === "patch_many") {
+    const lineChange = renderLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
+    return `<span class="panel-purpose">${toolCallDetail.changedFileCount ?? 0} files${lineChange}</span>`;
+  }
   if (toolCallDetail.toolName === "write") {
     const lineChange = renderLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
     return `<span class="panel-purpose">${escapeHtml(toolCallDetail.writtenFilePath)}${lineChange}</span>`;
@@ -177,7 +253,61 @@ function renderToolResultPurpose(toolCallDetail: ToolCallDetail): string {
   if (toolCallDetail.toolName === "task") {
     return `<span class="panel-purpose">${escapeHtml(`${toolCallDetail.subagentName}: ${toolCallDetail.subagentDescription}`)}</span>`;
   }
-  return "";
+  if (toolCallDetail.toolName === "todowrite") {
+    return `<span class="panel-purpose">${toolCallDetail.todoItems.length} items</span>`;
+  }
+
+  return assertUnhandledToolCallDetail(toolCallDetail);
+}
+
+function formatReadManyPathCount(readTargetCount: number): string {
+  return `${readTargetCount} ${readTargetCount === 1 ? "path" : "paths"}`;
+}
+
+function formatSearchManySearchCount(searchCount: number): string {
+  return `${searchCount} ${searchCount === 1 ? "search" : "searches"}`;
+}
+
+function formatToolDisplayName(toolName: string): string {
+  if (toolName === "read_many") {
+    return "ReadMany";
+  }
+  if (toolName === "search_many") {
+    return "SearchMany";
+  }
+  if (toolName === "edit_many") {
+    return "EditMany";
+  }
+  if (toolName === "patch") {
+    return "Patch";
+  }
+  if (toolName === "patch_many") {
+    return "PatchMany";
+  }
+  return toolName;
+}
+
+function renderSearchManyRequestSearch(
+  search: Extract<ToolCallRequest, { toolName: "search_many" }>["searches"][number],
+  searchIndex: number,
+): string {
+  if (search.searchKind === "glob") {
+    const pathHtml = search.searchDirectoryPath
+      ? ` <span class="panel-purpose">path ${escapeHtml(search.searchDirectoryPath)}</span>`
+      : "";
+    return `<div class="arg"><b>search ${searchIndex + 1} glob</b> ${escapeHtml(search.globPattern)}${pathHtml}</div>`;
+  }
+
+  const pathHtml = search.searchPath
+    ? ` <span class="panel-purpose">path ${escapeHtml(search.searchPath)}</span>`
+    : "";
+  const includeHtml = search.includeGlobPattern
+    ? ` <span class="panel-purpose">include ${escapeHtml(search.includeGlobPattern)}</span>`
+    : "";
+  const contextHtml = search.contextLineCount !== undefined
+    ? ` <span class="panel-purpose">context ${search.contextLineCount}</span>`
+    : "";
+  return `<div class="arg"><b>search ${searchIndex + 1} grep</b> ${escapeHtml(search.regexPattern)}${pathHtml}${includeHtml}${contextHtml}</div>`;
 }
 
 function renderLineChangeSummary(
@@ -239,13 +369,20 @@ function renderSubagentChildToolCallDetailSummary(subagentChildToolCallDetail: S
   if (subagentChildToolCallDetail.toolName === "read") {
     return `<div class="arg"><b>read</b> ${escapeHtml(subagentChildToolCallDetail.readFilePath)}</div>`;
   }
+  if (subagentChildToolCallDetail.toolName === "read_many") {
+    return `<div class="arg"><b>${formatToolDisplayName(subagentChildToolCallDetail.toolName)}</b> ${escapeHtml(formatReadManyPathCount(subagentChildToolCallDetail.requestedReadTargetPaths.length))}</div>`;
+  }
+  if (subagentChildToolCallDetail.toolName === "search_many") {
+    return `<div class="arg"><b>${formatToolDisplayName(subagentChildToolCallDetail.toolName)}</b> ${escapeHtml(formatSearchManySearchCount(subagentChildToolCallDetail.requestedSearches.length))}</div>`;
+  }
   if (subagentChildToolCallDetail.toolName === "glob") {
     const countHtml = subagentChildToolCallDetail.matchedPathCount === undefined ? "" : ` · ${subagentChildToolCallDetail.matchedPathCount} paths`;
     return `<div class="arg"><b>glob</b> ${escapeHtml(subagentChildToolCallDetail.globPattern)}${escapeHtml(countHtml)}</div>`;
   }
   if (subagentChildToolCallDetail.toolName === "grep") {
     const countHtml = subagentChildToolCallDetail.totalMatchCount === undefined ? "" : ` · ${subagentChildToolCallDetail.totalMatchCount} matches`;
-    return `<div class="arg"><b>grep</b> ${escapeHtml(subagentChildToolCallDetail.searchPattern)}${escapeHtml(countHtml)}</div>`;
+    const contextHtml = subagentChildToolCallDetail.contextLineCount === undefined ? "" : ` · context ${subagentChildToolCallDetail.contextLineCount}`;
+    return `<div class="arg"><b>grep</b> ${escapeHtml(subagentChildToolCallDetail.searchPattern)}${escapeHtml(`${countHtml}${contextHtml}`)}</div>`;
   }
   if (subagentChildToolCallDetail.toolName === "bash") {
     const purposeHtml = subagentChildToolCallDetail.commandDescription
@@ -256,8 +393,30 @@ function renderSubagentChildToolCallDetailSummary(subagentChildToolCallDetail: S
   if (subagentChildToolCallDetail.toolName === "edit") {
     return `<div class="arg"><b>edit</b> ${escapeHtml(subagentChildToolCallDetail.editedFilePath)}</div>`;
   }
+  if (subagentChildToolCallDetail.toolName === "edit_many") {
+    return `<div class="arg"><b>${formatToolDisplayName(subagentChildToolCallDetail.toolName)}</b> ${subagentChildToolCallDetail.editCount} edits</div>`;
+  }
+  if (subagentChildToolCallDetail.toolName === "patch" || subagentChildToolCallDetail.toolName === "patch_many") {
+    return `<div class="arg"><b>${formatToolDisplayName(subagentChildToolCallDetail.toolName)}</b> ${escapeHtml(subagentChildToolCallDetail.patchTargetText)}</div>`;
+  }
   if (subagentChildToolCallDetail.toolName === "write") {
     return `<div class="arg"><b>write</b> ${escapeHtml(subagentChildToolCallDetail.writtenFilePath)}</div>`;
   }
-  return `<div class="arg"><b>task</b> ${escapeHtml(`${subagentChildToolCallDetail.subagentName}: ${subagentChildToolCallDetail.subagentDescription}`)}</div>`;
+  if (subagentChildToolCallDetail.toolName === "task") {
+    return `<div class="arg"><b>task</b> ${escapeHtml(`${subagentChildToolCallDetail.subagentName}: ${subagentChildToolCallDetail.subagentDescription}`)}</div>`;
+  }
+
+  return assertUnhandledSubagentChildToolCallDetail(subagentChildToolCallDetail);
+}
+
+function assertUnhandledToolCallDetail(toolCallDetail: never): never {
+  throw new Error(`Unhandled tool call detail: ${JSON.stringify(toolCallDetail)}`);
+}
+
+function assertUnhandledToolCallRequest(toolCallRequest: never): never {
+  throw new Error(`Unhandled tool call request: ${JSON.stringify(toolCallRequest)}`);
+}
+
+function assertUnhandledSubagentChildToolCallDetail(subagentChildToolCallDetail: never): never {
+  throw new Error(`Unhandled subagent child tool call detail: ${JSON.stringify(subagentChildToolCallDetail)}`);
 }

@@ -9,10 +9,16 @@ import {
   reconcileSelectedPromptContextReferenceTextsWithPromptDraft,
 } from "@buli/prompt-context-core";
 import type { ChatSessionState } from "./chatSessionState.ts";
-import type { PendingPromptImageAttachment } from "./chatSessionState.ts";
+import type { PendingPromptImageAttachment, PendingPromptTextPaste } from "./chatSessionState.ts";
 
 type PromptImageAttachmentPlaceholderRange = {
   pendingPromptImageAttachment: PendingPromptImageAttachment;
+  startOffset: number;
+  endOffset: number;
+};
+
+type PromptTextPastePlaceholderRange = {
+  pendingPromptTextPaste: PendingPromptTextPaste;
   startOffset: number;
   endOffset: number;
 };
@@ -21,6 +27,10 @@ type ReconciledPromptImageAttachments = {
   promptDraft: string;
   promptDraftCursorOffset: number;
   pendingPromptImageAttachments: PendingPromptImageAttachment[];
+};
+
+type ReconciledPromptTextPastes = {
+  pendingPromptTextPastes: PendingPromptTextPaste[];
 };
 
 export type SubmittedUserPrompt = {
@@ -39,17 +49,23 @@ function createPromptDraftEditedState(input: {
   promptDraft: string;
   promptDraftCursorOffset: number;
   pendingPromptImageAttachments?: readonly PendingPromptImageAttachment[];
+  pendingPromptTextPastes?: readonly PendingPromptTextPaste[];
 }): ChatSessionState {
   const reconciledPromptImageAttachments = reconcilePendingPromptImageAttachmentsWithPromptDraft({
     promptDraft: input.promptDraft,
     promptDraftCursorOffset: input.promptDraftCursorOffset,
     pendingPromptImageAttachments: input.pendingPromptImageAttachments ?? input.chatSessionState.pendingPromptImageAttachments,
   });
+  const reconciledPromptTextPastes = reconcilePendingPromptTextPastesWithPromptDraft({
+    promptDraft: reconciledPromptImageAttachments.promptDraft,
+    pendingPromptTextPastes: input.pendingPromptTextPastes ?? input.chatSessionState.pendingPromptTextPastes,
+  });
   return {
     ...input.chatSessionState,
     promptDraft: reconciledPromptImageAttachments.promptDraft,
     promptDraftCursorOffset: reconciledPromptImageAttachments.promptDraftCursorOffset,
     pendingPromptImageAttachments: reconciledPromptImageAttachments.pendingPromptImageAttachments,
+    pendingPromptTextPastes: reconciledPromptTextPastes.pendingPromptTextPastes,
     selectedPromptContextReferenceTexts: reconcileSelectedPromptContextReferenceTextsWithPromptDraft({
       promptDraft: reconciledPromptImageAttachments.promptDraft,
       selectedPromptContextReferenceTexts: input.chatSessionState.selectedPromptContextReferenceTexts,
@@ -173,6 +189,40 @@ export function insertTextIntoPromptDraftAtCursor(chatSessionState: ChatSessionS
   });
 }
 
+export function insertSummarizedPastedTextIntoPromptDraft(input: {
+  chatSessionState: ChatSessionState;
+  pastedText: string;
+  replacementStartOffset?: number;
+  replacementEndOffset?: number;
+}): ChatSessionState {
+  const promptDraftReplacementRange = clampPromptDraftReplacementRange({
+    promptDraft: input.chatSessionState.promptDraft,
+    replacementStartOffset: input.replacementStartOffset ?? input.chatSessionState.promptDraftCursorOffset,
+    replacementEndOffset: input.replacementEndOffset ?? input.replacementStartOffset ?? input.chatSessionState.promptDraftCursorOffset,
+  });
+  const promptDraftPrefix = input.chatSessionState.promptDraft.slice(0, promptDraftReplacementRange.startOffset);
+  const promptDraftSuffix = input.chatSessionState.promptDraft.slice(promptDraftReplacementRange.endOffset);
+  const promptDraftWithoutReplacement = `${promptDraftPrefix}${promptDraftSuffix}`;
+  const promptDraftPlaceholderText = createAvailablePromptTextPastePlaceholder({
+    pastedText: input.pastedText,
+    promptDraft: promptDraftWithoutReplacement,
+  });
+  const promptDraftInsertedText = `${promptDraftPlaceholderText} `;
+
+  return createPromptDraftEditedState({
+    chatSessionState: input.chatSessionState,
+    promptDraft: `${promptDraftPrefix}${promptDraftInsertedText}${promptDraftSuffix}`,
+    promptDraftCursorOffset: promptDraftReplacementRange.startOffset + promptDraftInsertedText.length,
+    pendingPromptTextPastes: [
+      ...input.chatSessionState.pendingPromptTextPastes,
+      {
+        pastedText: input.pastedText,
+        promptDraftPlaceholderText,
+      },
+    ],
+  });
+}
+
 export function replacePromptDraftFromEditor(input: {
   chatSessionState: ChatSessionState;
   promptDraft: string;
@@ -191,6 +241,88 @@ export function replacePromptDraftFromEditor(input: {
     promptDraft: input.promptDraft,
     promptDraftCursorOffset,
   });
+}
+
+function reconcilePendingPromptTextPastesWithPromptDraft(input: {
+  promptDraft: string;
+  pendingPromptTextPastes: readonly PendingPromptTextPaste[];
+}): ReconciledPromptTextPastes {
+  return {
+    pendingPromptTextPastes: listPendingPromptTextPastePlaceholderRanges(input).map(
+      (placeholderRange) => placeholderRange.pendingPromptTextPaste,
+    ),
+  };
+}
+
+function listPendingPromptTextPastePlaceholderRanges(input: {
+  promptDraft: string;
+  pendingPromptTextPastes: readonly PendingPromptTextPaste[];
+}): PromptTextPastePlaceholderRange[] {
+  return input.pendingPromptTextPastes
+    .flatMap((pendingPromptTextPaste): PromptTextPastePlaceholderRange[] => {
+      const startOffset = input.promptDraft.indexOf(pendingPromptTextPaste.promptDraftPlaceholderText);
+      if (startOffset === -1) {
+        return [];
+      }
+
+      return [{
+        pendingPromptTextPaste,
+        startOffset,
+        endOffset: startOffset + pendingPromptTextPaste.promptDraftPlaceholderText.length,
+      }];
+    })
+    .sort((left, right) => left.startOffset - right.startOffset);
+}
+
+function expandPendingPromptTextPastes(chatSessionState: ChatSessionState): string {
+  return listPendingPromptTextPastePlaceholderRanges({
+    promptDraft: chatSessionState.promptDraft,
+    pendingPromptTextPastes: chatSessionState.pendingPromptTextPastes,
+  })
+    .sort((left, right) => right.startOffset - left.startOffset)
+    .reduce(
+      (expandedPromptDraft, placeholderRange) =>
+        expandedPromptDraft.slice(0, placeholderRange.startOffset) +
+        placeholderRange.pendingPromptTextPaste.pastedText +
+        expandedPromptDraft.slice(placeholderRange.endOffset),
+      chatSessionState.promptDraft,
+    );
+}
+
+function createAvailablePromptTextPastePlaceholder(input: { pastedText: string; promptDraft: string }): string {
+  const pastedTextLineCount = countPromptTextPasteLines(input.pastedText);
+  const promptTextPastePlaceholderBase = `[Pasted ~${pastedTextLineCount} lines]`;
+  if (!input.promptDraft.includes(promptTextPastePlaceholderBase)) {
+    return promptTextPastePlaceholderBase;
+  }
+
+  let duplicatePromptTextPastePlaceholderIndex = 2;
+  while (true) {
+    const promptTextPastePlaceholderCandidate = `[Pasted ~${pastedTextLineCount} lines #${duplicatePromptTextPastePlaceholderIndex}]`;
+    if (!input.promptDraft.includes(promptTextPastePlaceholderCandidate)) {
+      return promptTextPastePlaceholderCandidate;
+    }
+
+    duplicatePromptTextPastePlaceholderIndex += 1;
+  }
+}
+
+function countPromptTextPasteLines(pastedText: string): number {
+  return (pastedText.match(/\n/g)?.length ?? 0) + 1;
+}
+
+function clampPromptDraftReplacementRange(input: {
+  promptDraft: string;
+  replacementStartOffset: number;
+  replacementEndOffset: number;
+}): { startOffset: number; endOffset: number } {
+  const promptDraftLength = input.promptDraft.length;
+  const lowerReplacementOffset = Math.min(input.replacementStartOffset, input.replacementEndOffset);
+  const upperReplacementOffset = Math.max(input.replacementStartOffset, input.replacementEndOffset);
+  return {
+    startOffset: Math.max(0, Math.min(lowerReplacementOffset, promptDraftLength)),
+    endOffset: Math.max(0, Math.min(upperReplacementOffset, promptDraftLength)),
+  };
 }
 
 function reconcilePendingPromptImageAttachmentsWithPromptDraft(input: {
@@ -431,7 +563,7 @@ export function queuePromptDraftForLaterSubmission(chatSessionState: ChatSession
 }
 
 function readSubmittablePromptDraft(chatSessionState: ChatSessionState): SubmittedUserPrompt | undefined {
-  const submittedPromptText = chatSessionState.promptDraft.trim();
+  const submittedPromptText = expandPendingPromptTextPastes(chatSessionState).trim();
   const submittedPromptImageAttachments = chatSessionState.pendingPromptImageAttachments.map(
     (pendingPromptImageAttachment) => pendingPromptImageAttachment.attachment,
   );
@@ -452,6 +584,7 @@ function clearSubmittedPromptDraft(chatSessionState: ChatSessionState): ChatSess
     promptDraft: "",
     promptDraftCursorOffset: 0,
     pendingPromptImageAttachments: [],
+    pendingPromptTextPastes: [],
     promptContextSelectionState: { step: "hidden" },
     selectedPromptContextReferenceTexts: [],
   };

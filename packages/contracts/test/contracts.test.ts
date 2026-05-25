@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
-  ASSISTANT_PRESENTATION_FUNCTION_NAMES,
   AssistantOperatingModeSchema,
   AssistantPrimaryAgentNameSchema,
   AssistantResponseEventSchema,
@@ -13,12 +12,12 @@ import {
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
   FILE_MUTATION_TOOL_REQUEST_NAMES,
-  CodeExecutionWalkthroughSchema,
-  formatCodeExecutionWalkthroughAsMarkdownText,
   MAX_BASH_TOOL_COMMAND_LENGTH,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH,
   MAX_GREP_TOOL_PATTERN_LENGTH,
+  MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
   MAX_TASK_TOOL_PROMPT_LENGTH,
   MAX_TOOL_CALL_PATH_LENGTH,
   MAX_WRITE_TOOL_FILE_CONTENT_LENGTH,
@@ -35,7 +34,6 @@ import {
   createStartedToolCallDetailFromRequest,
   emitBuliDiagnosticLogEvent,
   isAssistantToolRequestName,
-  isAssistantPresentationFunctionName,
   isAssistantSubagentName,
   isFileMutationToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
@@ -150,211 +148,33 @@ test("ConversationMessagePartSchema parses an assistant text part with an open s
   });
 });
 
-test("ConversationMessagePartSchema parses an assistant code execution walkthrough part", () => {
+test("ConversationMessagePartSchema parses a compaction separator part", () => {
   expect(
     ConversationMessagePartSchema.parse({
-      id: "assistant-code-execution-walkthrough-1",
-      partKind: "assistant_code_execution_walkthrough",
-      titleText: "Request flow",
-      summaryText: "How a turn moves through the runtime.",
-      walkthroughKind: "source_walkthrough",
-      steps: [
-        {
-          stepTitle: "Provider event arrives",
-          whatHappensText: "The engine branches on the provider event type.",
-          codeExamples: [
-            {
-              sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
-              sourceSymbolName: "translateProviderStreamEvent",
-              startLineNumber: 145,
-              endLineNumber: 147,
-              languageLabel: "ts",
-              codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
-              explanationText: "This branch chooses the walkthrough translation path.",
-              lineExplanations: [
-                {
-                  lineNumber: 145,
-                  explanationText: "This checks whether the provider sent a walkthrough presentation event.",
-                  projectModelText: "Walkthroughs are modeled as assistant message parts, not executable tool calls.",
-                  plainPseudocodeText: "If the event is a walkthrough, take the walkthrough path.",
-                },
-              ],
-            },
-          ],
-        },
-      ],
+      id: "compaction-separator-1",
+      partKind: "assistant_compaction_separator",
+      source: "auto",
     }),
   ).toEqual({
-    id: "assistant-code-execution-walkthrough-1",
-    partKind: "assistant_code_execution_walkthrough",
-    titleText: "Request flow",
-    summaryText: "How a turn moves through the runtime.",
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Provider event arrives",
-        whatHappensText: "The engine branches on the provider event type.",
-        codeExamples: [
-          {
-            sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
-            sourceSymbolName: "translateProviderStreamEvent",
-            startLineNumber: 145,
-            endLineNumber: 147,
-            languageLabel: "ts",
-            codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
-            explanationText: "This branch chooses the walkthrough translation path.",
-            lineExplanations: [
-              {
-                lineNumber: 145,
-                explanationText: "This checks whether the provider sent a walkthrough presentation event.",
-                projectModelText: "Walkthroughs are modeled as assistant message parts, not executable tool calls.",
-                plainPseudocodeText: "If the event is a walkthrough, take the walkthrough path.",
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    id: "compaction-separator-1",
+    partKind: "assistant_compaction_separator",
+    source: "auto",
   });
 });
 
-test("CodeExecutionWalkthroughSchema formats model-readable fallback text", () => {
-  const codeExecutionWalkthrough = CodeExecutionWalkthroughSchema.parse({
-    titleText: "Runtime flow",
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Translate event",
-        whatHappensText: "The stream event becomes a message part.",
-        dataStateText: "providerStreamEvent carries the walkthrough payload.",
-        codeExamples: [
-          {
-            sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
-            startLineNumber: 145,
-            endLineNumber: 147,
-            languageLabel: "ts",
-            codeText: "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {\n  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);\n}",
-            lineExplanations: [
-              {
-                lineNumber: 145,
-                explanationText: "This line chooses the walkthrough translation branch when the provider event has the walkthrough type.",
-                languageMechanicsText: "The strict equality check narrows the discriminated union before the translator reads the walkthrough payload.",
-                uncertaintyText: "No runtime values were observed; this is a source-level explanation.",
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  });
-
-  expect(formatCodeExecutionWalkthroughAsMarkdownText(codeExecutionWalkthrough)).toBe([
-    "**Runtime flow**",
-    "Walkthrough kind: source evidence",
-    "",
-    "1. Translate event",
-    "What happens: The stream event becomes a message part.",
-    "Data/state: providerStreamEvent carries the walkthrough payload.",
-    "",
-    "Source: packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147",
-    "Line-by-line explanation:",
-    "- Line 145: This line chooses the walkthrough translation branch when the provider event has the walkthrough type.",
-    "  Language mechanics: The strict equality check narrows the discriminated union before the translator reads the walkthrough payload.",
-    "  Not verified: No runtime values were observed; this is a source-level explanation.",
-    "```ts path=\"packages/engine/src/runtimeProviderStreamEventTranslator.ts:145-147\"",
-    "if (input.providerStreamEvent.type === \"code_execution_walkthrough_presented\") {",
-    "  return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);",
-    "}",
-    "```",
-    "",
-  ].join("\n"));
-});
-
-test("CodeExecutionWalkthroughSchema rejects whitespace-only text fields and invalid line ranges", () => {
-  expect(() =>
-    CodeExecutionWalkthroughSchema.parse({
-      titleText: "   ",
-      walkthroughKind: "source_walkthrough",
-      steps: [{ stepTitle: "Valid stage", whatHappensText: "Valid text", codeExamples: [{ sourceFilePath: "src/a.ts", startLineNumber: 1, endLineNumber: 1, codeText: "const a = 1;" }] }],
-    })
-  ).toThrow();
-  expect(() =>
-    CodeExecutionWalkthroughSchema.parse({
-      titleText: "Runtime flow",
-      walkthroughKind: "source_walkthrough",
-      steps: [{ stepTitle: "\t", whatHappensText: "Valid text", codeExamples: [{ sourceFilePath: "src/a.ts", startLineNumber: 1, endLineNumber: 1, codeText: "const a = 1;" }] }],
-    })
-  ).toThrow();
-  expect(() =>
-    CodeExecutionWalkthroughSchema.parse({
-      titleText: "Runtime flow",
-      walkthroughKind: "source_walkthrough",
-      steps: [{ stepTitle: "Valid stage", whatHappensText: "Valid text", codeExamples: [{ sourceFilePath: "src/a.ts", startLineNumber: 3, endLineNumber: 2, codeText: "const a = 1;" }] }],
-    })
-  ).toThrow();
-});
-
-test("CodeExecutionWalkthroughSchema rejects line explanations outside the source range", () => {
-  expect(() =>
-    CodeExecutionWalkthroughSchema.parse({
-      titleText: "Runtime flow",
-      walkthroughKind: "source_walkthrough",
-      steps: [
-        {
-          stepTitle: "Valid stage",
-          whatHappensText: "Valid text",
-          codeExamples: [{
-            sourceFilePath: "src/a.ts",
-            startLineNumber: 1,
-            endLineNumber: 1,
-            codeText: "const a = 1;",
-            lineExplanations: [{ lineNumber: 2, explanationText: "This line is outside the copied snippet." }],
-          }],
-        },
-      ],
-    })
-  ).toThrow();
-});
-
-test("CodeExecutionWalkthroughSchema trims prose fields while preserving code text", () => {
+test("ProviderStreamEventSchema parses rate-limit retry wait timing", () => {
   expect(
-    CodeExecutionWalkthroughSchema.parse({
-      titleText: " Runtime flow ",
-      summaryText: " Summary ",
-      walkthroughKind: "source_walkthrough",
-      steps: [
-        {
-          stepTitle: " Prompt accepted ",
-          whatHappensText: " Recorded ",
-          codeExamples: [
-            {
-              sourceFilePath: " src/a.ts ",
-              startLineNumber: 1,
-              endLineNumber: 1,
-              codeText: "  const a = 1;  ",
-            },
-          ],
-        },
-      ],
+    ProviderStreamEventSchema.parse({
+      type: "rate_limit_pending",
+      retryAfterSeconds: 3,
+      retryWaitStartedAtMs: 1_250,
+      limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
     }),
   ).toEqual({
-    titleText: "Runtime flow",
-    summaryText: "Summary",
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Prompt accepted",
-        whatHappensText: "Recorded",
-        codeExamples: [
-          {
-            sourceFilePath: "src/a.ts",
-            startLineNumber: 1,
-            endLineNumber: 1,
-            codeText: "  const a = 1;  ",
-          },
-        ],
-      },
-    ],
+    type: "rate_limit_pending",
+    retryAfterSeconds: 3,
+    retryWaitStartedAtMs: 1_250,
+    limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
   });
 });
 
@@ -394,6 +214,18 @@ test("ToolCallRequestSchema rejects oversized tool request payloads", () => {
   ).toThrow();
   expect(() =>
     ToolCallRequestSchema.parse({
+      toolName: "read_many",
+      readTargets: [{ readTargetPath: "a".repeat(MAX_TOOL_CALL_PATH_LENGTH + 1) }],
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "search_many",
+      searches: [{ searchKind: "glob", globPattern: "**/*.ts", searchDirectoryPath: "a".repeat(MAX_TOOL_CALL_PATH_LENGTH + 1) }],
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
       toolName: "bash",
       shellCommand: "x".repeat(MAX_BASH_TOOL_COMMAND_LENGTH + 1),
       commandDescription: "Run oversized command",
@@ -411,6 +243,28 @@ test("ToolCallRequestSchema rejects oversized tool request payloads", () => {
       editTargetPath: "src/file.ts",
       oldString: "x".repeat(MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH + 1),
       newString: "replacement",
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "edit_many",
+      edits: Array.from({ length: MAX_EDIT_MANY_TOOL_EDIT_COUNT + 1 }, () => ({
+        editTargetPath: "src/file.ts",
+        oldString: "old",
+        newString: "new",
+      })),
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "patch",
+      patchText: "x".repeat(MAX_PATCH_TOOL_PATCH_TEXT_LENGTH + 1),
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "patch_many",
+      patchText: "x".repeat(MAX_PATCH_TOOL_PATCH_TEXT_LENGTH + 1),
     })
   ).toThrow();
   expect(() =>
@@ -731,6 +585,40 @@ test("AssistantToolCallConversationMessagePartSchema parses denied subagent chil
   });
 });
 
+test("AssistantToolCallConversationMessagePartSchema parses subagent research checkpoints", () => {
+  const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
+    id: "tool-part-task-checkpoint",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-task-checkpoint",
+    toolCallStatus: "completed",
+    toolCallStartedAtMs: 1,
+    durationMs: 25,
+    toolCallDetail: {
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map large runtime",
+      subagentPrompt: "Map runtime files and return a checkpoint if research is bounded.",
+      subagentResearchCheckpoint: {
+        checkpointReason: "child_tool_result_text_length",
+        childToolCallCount: 39,
+        childToolResultTextLength: 314_820,
+        skippedChildToolCallCount: 1,
+      },
+      subagentResultSummary: "Partial runtime map returned after checkpoint.",
+    },
+  });
+
+  expect(parsedMessagePart.toolCallDetail).toMatchObject({
+    toolName: "task",
+    subagentResearchCheckpoint: {
+      checkpointReason: "child_tool_result_text_length",
+      childToolCallCount: 39,
+      childToolResultTextLength: 314_820,
+      skippedChildToolCallCount: 1,
+    },
+  });
+});
+
 test("AssistantToolCallConversationMessagePartSchema enforces status-specific terminal fields", () => {
   const toolCallPartBase = {
     id: "tool-part-status-rules",
@@ -833,6 +721,80 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
   });
   expect(
     ToolCallRequestSchema.parse({
+      toolName: "read_many",
+      readTargets: [
+        {
+          readTargetPath: "packages/contracts/src/index.ts",
+          offsetLineNumber: 3,
+          maximumLineCount: 20,
+        },
+        {
+          readTargetPath: "packages/contracts/src/toolCallRequest.ts",
+        },
+      ],
+    }),
+  ).toEqual({
+    toolName: "read_many",
+    readTargets: [
+      {
+        readTargetPath: "packages/contracts/src/index.ts",
+        offsetLineNumber: 3,
+        maximumLineCount: 20,
+      },
+      {
+        readTargetPath: "packages/contracts/src/toolCallRequest.ts",
+      },
+    ],
+  });
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "read_many",
+      readTargets: [],
+    })
+  ).toThrow();
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "search_many",
+      searches: [
+        {
+          searchKind: "glob",
+          globPattern: "**/*.ts",
+          searchDirectoryPath: "packages/contracts",
+        },
+        {
+          searchKind: "grep",
+          regexPattern: "ToolCallRequestSchema",
+          searchPath: "packages/contracts",
+          includeGlobPattern: "*.ts",
+          contextLineCount: 2,
+        },
+      ],
+    }),
+  ).toEqual({
+    toolName: "search_many",
+    searches: [
+      {
+        searchKind: "glob",
+        globPattern: "**/*.ts",
+        searchDirectoryPath: "packages/contracts",
+      },
+        {
+          searchKind: "grep",
+          regexPattern: "ToolCallRequestSchema",
+          searchPath: "packages/contracts",
+          includeGlobPattern: "*.ts",
+          contextLineCount: 2,
+        },
+    ],
+  });
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "search_many",
+      searches: [],
+    })
+  ).toThrow();
+  expect(
+    ToolCallRequestSchema.parse({
       toolName: "glob",
       globPattern: "**/*.ts",
       searchDirectoryPath: "packages/contracts",
@@ -848,12 +810,14 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
       regexPattern: "ToolCallRequestSchema",
       searchPath: "packages/contracts",
       includeGlobPattern: "*.ts",
+      contextLineCount: 2,
     }),
   ).toEqual({
     toolName: "grep",
     regexPattern: "ToolCallRequestSchema",
     searchPath: "packages/contracts",
     includeGlobPattern: "*.ts",
+    contextLineCount: 2,
   });
   expect(
     ToolCallRequestSchema.parse({
@@ -868,6 +832,65 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
     oldString: "old",
     newString: "",
   });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "edit_many",
+      edits: [
+        {
+          editTargetPath: "packages/contracts/src/index.ts",
+          oldString: "old",
+          newString: "new",
+          replaceAll: true,
+        },
+      ],
+    }),
+  ).toEqual({
+    toolName: "edit_many",
+    edits: [
+      {
+        editTargetPath: "packages/contracts/src/index.ts",
+        oldString: "old",
+        newString: "new",
+        replaceAll: true,
+      },
+    ],
+  });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch",
+    }),
+  ).toEqual({
+    toolName: "patch",
+    patchText: "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch",
+  });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "patch_many",
+      patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch",
+    }),
+  ).toEqual({
+    toolName: "patch_many",
+    patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch",
+  });
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Update File: one.txt\n@@\n-old\n+new\n*** Update File: two.txt\n@@\n-old\n+new\n*** End Patch",
+    })
+  ).toThrow("exactly one file section");
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "patch_many",
+      patchText: "*** Begin Patch\n*** End Patch",
+    })
+  ).toThrow("at least one file section");
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "patch_many",
+      patchText: "not a patch",
+    })
+  ).toThrow("Begin Patch");
   expect(
     ToolCallRequestSchema.parse({
       toolName: "write",
@@ -895,27 +918,46 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
 });
 
 test("tool catalog lists assistant request tools by execution boundary", () => {
-  expect(ASSISTANT_TOOL_REQUEST_NAMES).toEqual(["bash", "read", "glob", "grep", "edit", "write", "task"]);
-  expect(ASSISTANT_PRESENTATION_FUNCTION_NAMES).toEqual(["present_code_execution_walkthrough"]);
-  expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep"]);
-  expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "write"]);
-  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "task"]);
+  expect(ASSISTANT_TOOL_REQUEST_NAMES).toEqual([
+    "bash",
+    "read",
+    "read_many",
+    "search_many",
+    "glob",
+    "grep",
+    "edit",
+    "edit_many",
+    "patch",
+    "patch_many",
+    "write",
+    "task",
+  ]);
+  expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
+  expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "edit_many", "patch", "patch_many", "write"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep", "task"]);
   expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite"]);
 });
 
 test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("bash")).toBe(true);
+  expect(isAssistantToolRequestName("read_many")).toBe(true);
+  expect(isAssistantToolRequestName("search_many")).toBe(true);
   expect(isAssistantToolRequestName("task")).toBe(true);
   expect(isAssistantToolRequestName("explore")).toBe(false);
   expect(isAssistantToolRequestName("general")).toBe(false);
-  expect(isAssistantPresentationFunctionName("present_code_execution_walkthrough")).toBe(true);
-  expect(isAssistantPresentationFunctionName("bash")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
+  expect(isWorkspaceInspectionToolCallRequest({ toolName: "read_many", readTargets: [{ readTargetPath: "README.md" }] })).toBe(true);
+  expect(isWorkspaceInspectionToolCallRequest({ toolName: "search_many", searches: [{ searchKind: "glob", globPattern: "**/*.ts" }] })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toBe(false);
   expect(isFileMutationToolCallRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toBe(true);
+  expect(isFileMutationToolCallRequest({ toolName: "edit_many", edits: [{ editTargetPath: "README.md", oldString: "old", newString: "new" }] })).toBe(true);
+  expect(isFileMutationToolCallRequest({ toolName: "patch", patchText: "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch" })).toBe(true);
+  expect(isFileMutationToolCallRequest({ toolName: "patch_many", patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch" })).toBe(true);
   expect(isFileMutationToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
   expect(isReadOnlyAssistantModeToolRequestName("read")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("read_many")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("search_many")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("task")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
 });
@@ -938,18 +980,54 @@ test("createStartedToolCallDetailFromRequest maps requests to render details", (
     toolName: "read",
     readFilePath: "README.md",
   });
+  expect(createStartedToolCallDetailFromRequest({
+    toolName: "read_many",
+    readTargets: [
+      { readTargetPath: "README.md" },
+      { readTargetPath: "packages/contracts/src/index.ts", offsetLineNumber: 3, maximumLineCount: 20 },
+    ],
+  })).toEqual({
+    toolName: "read_many",
+    requestedReadTargetPaths: ["README.md", "packages/contracts/src/index.ts"],
+  });
+  expect(createStartedToolCallDetailFromRequest({
+    toolName: "search_many",
+    searches: [
+      { searchKind: "glob", globPattern: "**/*.ts", searchDirectoryPath: "packages" },
+      { searchKind: "grep", regexPattern: "ToolCallRequest", includeGlobPattern: "*.ts", contextLineCount: 2 },
+    ],
+  })).toEqual({
+    toolName: "search_many",
+    requestedSearches: [
+      { searchKind: "glob", globPattern: "**/*.ts", searchDirectoryPath: "packages" },
+      { searchKind: "grep", regexPattern: "ToolCallRequest", includeGlobPattern: "*.ts", contextLineCount: 2 },
+    ],
+  });
   expect(createStartedToolCallDetailFromRequest({ toolName: "glob", globPattern: "**/*.ts", searchDirectoryPath: "packages" })).toEqual({
     toolName: "glob",
     globPattern: "**/*.ts",
     searchDirectoryPath: "packages",
   });
-  expect(createStartedToolCallDetailFromRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toEqual({
+  expect(createStartedToolCallDetailFromRequest({ toolName: "grep", regexPattern: "ToolCallRequest", contextLineCount: 2 })).toEqual({
     toolName: "grep",
     searchPattern: "ToolCallRequest",
+    contextLineCount: 2,
   });
   expect(createStartedToolCallDetailFromRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toEqual({
     toolName: "edit",
     editedFilePath: "README.md",
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "edit_many", edits: [{ editTargetPath: "README.md", oldString: "old", newString: "new" }] })).toEqual({
+    toolName: "edit_many",
+    editCount: 1,
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "patch", patchText: "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch" })).toEqual({
+    toolName: "patch",
+    patchTargetText: "patch",
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "patch_many", patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch" })).toEqual({
+    toolName: "patch_many",
+    patchTargetText: "patch",
   });
   expect(createStartedToolCallDetailFromRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toEqual({
     toolName: "write",
@@ -1004,8 +1082,12 @@ test("AssistantResponseEventSchema parses assistant_message_failed", () => {
       type: "assistant_message_failed",
       messageId: "assistant-1",
       errorText: "Provider stream ended before completion",
-    }).type,
-  ).toBe("assistant_message_failed");
+      failureKind: "context_window_overflow",
+    }),
+  ).toMatchObject({
+    type: "assistant_message_failed",
+    failureKind: "context_window_overflow",
+  });
 });
 
 test("ProviderStreamEventSchema parses ordered batched tool-call requests", () => {
@@ -1030,26 +1112,6 @@ test("ProviderStreamEventSchema parses ordered batched tool-call requests", () =
       ],
     }).type,
   ).toBe("tool_calls_requested");
-});
-
-test("ProviderStreamEventSchema parses code execution walkthrough presentation events", () => {
-  expect(
-    ProviderStreamEventSchema.parse({
-      type: "code_execution_walkthrough_presented",
-      presentationCallId: "call-code-walkthrough-1",
-      codeExecutionWalkthrough: {
-        titleText: "Request flow",
-        walkthroughKind: "source_walkthrough",
-        steps: [
-          {
-            stepTitle: "Prompt accepted",
-            whatHappensText: "The accepted prompt is recorded.",
-            codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }],
-          },
-        ],
-      },
-    }).type,
-  ).toBe("code_execution_walkthrough_presented");
 });
 
 test("AssistantResponseEventSchema parses assistant_message_interrupted", () => {
@@ -1089,34 +1151,6 @@ test("ConversationSessionEntrySchema parses assistant text segment history entri
   ).toEqual({
     entryKind: "assistant_text_segment",
     assistantTextSegmentText: "I will inspect the file first.",
-  });
-});
-
-test("ConversationSessionEntrySchema parses assistant code execution walkthrough segment history entries", () => {
-  expect(
-    ConversationSessionEntrySchema.parse({
-      entryKind: "assistant_code_execution_walkthrough_segment",
-      titleText: "Request flow",
-      walkthroughKind: "source_walkthrough",
-      steps: [
-        {
-          stepTitle: "Prompt accepted",
-          whatHappensText: "The accepted prompt is recorded.",
-          codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }],
-        },
-      ],
-    }),
-  ).toEqual({
-    entryKind: "assistant_code_execution_walkthrough_segment",
-    titleText: "Request flow",
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Prompt accepted",
-        whatHappensText: "The accepted prompt is recorded.",
-        codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }],
-      },
-    ],
   });
 });
 
@@ -1273,12 +1307,14 @@ test("ConversationSessionEntrySchema parses failed assistant history entries", (
       entryKind: "assistant_message",
       assistantMessageStatus: "failed",
       assistantMessageText: "Partial unsafe answer",
+      failureKind: "context_window_overflow",
       failureExplanation: "Provider failed mid-turn",
     }),
   ).toEqual({
     entryKind: "assistant_message",
     assistantMessageStatus: "failed",
     assistantMessageText: "Partial unsafe answer",
+    failureKind: "context_window_overflow",
     failureExplanation: "Provider failed mid-turn",
   });
 });

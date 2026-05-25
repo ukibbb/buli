@@ -29,8 +29,8 @@
     "open": "^10.2.0"
   },
   "scripts": {
-    "build": "bun build ./src/cli.ts --target=bun --outdir ./dist --entry-naming cli.js --external @buli/tui",
-    "dev": "bun build ./src/cli.ts --target=bun --outdir ./dist --entry-naming cli.js --watch --external @buli/tui",
+    "build": "bun build ./src/cli.ts ./src/providerProtocol/openAiProviderHostEntrypoint.ts --target=bun --outdir ./dist --entry-naming [name].js --external @buli/tui",
+    "dev": "bun build ./src/cli.ts ./src/providerProtocol/openAiProviderHostEntrypoint.ts --target=bun --outdir ./dist --entry-naming [name].js --watch --external @buli/tui",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "login": "bun src/cli.ts login",

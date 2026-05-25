@@ -97,6 +97,7 @@ export type ChatSessionState = {
   promptDraft: string;
   promptDraftCursorOffset: number;
   pendingPromptImageAttachments: PendingPromptImageAttachment[];
+  pendingPromptTextPastes: PendingPromptTextPaste[];
   latestTokenUsage: TokenUsage | undefined;
   latestContextWindowUsage: TokenUsage | undefined;
   conversationMessagesById: Record<string, ConversationMessage>;
@@ -118,6 +119,11 @@ export type PendingPromptImageAttachment = {
   promptDraftPlaceholderText: string;
 };
 
+export type PendingPromptTextPaste = {
+  pastedText: string;
+  promptDraftPlaceholderText: string;
+};
+
 export function createInitialChatSessionState(input: {
   selectedAssistantOperatingMode?: AssistantOperatingMode;
   selectedModelId: string;
@@ -133,6 +139,7 @@ export function createInitialChatSessionState(input: {
     promptDraft: "",
     promptDraftCursorOffset: 0,
     pendingPromptImageAttachments: [],
+    pendingPromptTextPastes: [],
     latestTokenUsage: undefined,
     latestContextWindowUsage: undefined,
     conversationMessagesById: {},

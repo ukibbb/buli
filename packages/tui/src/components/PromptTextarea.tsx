@@ -9,7 +9,7 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { parsePromptContextReferencesFromPromptText } from "@buli/prompt-context-core";
 import { normalizeOpenTuiPasteEventText } from "../behavior/normalizeOpenTuiPasteEventText.ts";
 
-export const PROMPT_TEXTAREA_MIN_ROW_COUNT = 2;
+export const PROMPT_TEXTAREA_MIN_ROW_COUNT = 3;
 export const PROMPT_TEXTAREA_MAX_ROW_COUNT = 6;
 
 export type PromptTextareaEdit = {
@@ -17,10 +17,17 @@ export type PromptTextareaEdit = {
   promptDraftCursorOffset: number;
 };
 
+export type PromptTextareaSummarizedPaste = {
+  pastedText: string;
+  replacementStartOffset?: number;
+  replacementEndOffset?: number;
+};
+
 export type PromptTextareaProps = {
   promptDraft: string;
   promptDraftCursorOffset: number;
   promptImageAttachmentPlaceholderTexts?: readonly string[] | undefined;
+  promptTextPastePlaceholderTexts?: readonly string[] | undefined;
   selectedPromptContextReferenceTexts?: readonly string[] | undefined;
   promptContextReferenceTextColor?: string | undefined;
   isFocused: boolean;
@@ -28,6 +35,7 @@ export type PromptTextareaProps = {
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
   onNativeClipboardPasteRequested?: (() => void | Promise<void>) | undefined;
+  onSummarizedPromptTextPasted?: ((summarizedPromptTextPaste: PromptTextareaSummarizedPaste) => void) | undefined;
 };
 
 type PromptContextReferenceRange = {
@@ -37,6 +45,7 @@ type PromptContextReferenceRange = {
 
 type PromptTextareaDecorativeExtmarkTypeIds = {
   promptImageAttachmentPlaceholderExtmarkTypeId: number | undefined;
+  promptTextPastePlaceholderExtmarkTypeId: number | undefined;
   promptContextReferenceExtmarkTypeId: number | undefined;
 };
 
@@ -47,15 +56,21 @@ const promptTextareaKeyBindings: KeyBinding[] = [
 ];
 
 const promptImageAttachmentPlaceholderStyleScope = "prompt.image_attachment_placeholder";
+const promptTextPastePlaceholderExtmarkTypeName = "prompt-text-paste-placeholder";
+const promptTextPastePlaceholderStyleScope = "prompt.text_paste_placeholder";
 const promptContextReferenceExtmarkTypeName = "prompt-context-reference";
 const promptContextReferenceStyleScopePrefix = "prompt.context_reference.";
 const promptContextReferenceStyleIdsByTextColor = new Map<string, number>();
 const promptTextareaSyntaxStyle = SyntaxStyle.fromStyles({
   default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
   [promptImageAttachmentPlaceholderStyleScope]: { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true },
+  [promptTextPastePlaceholderStyleScope]: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true },
 });
 const promptImageAttachmentPlaceholderStyleId = promptTextareaSyntaxStyle.getStyleId(
   promptImageAttachmentPlaceholderStyleScope,
+)!;
+const promptTextPastePlaceholderStyleId = promptTextareaSyntaxStyle.getStyleId(
+  promptTextPastePlaceholderStyleScope,
 )!;
 
 function resolvePromptContextReferenceStyleId(promptContextReferenceTextColor: string): number {
@@ -82,9 +97,18 @@ function arePromptTextareaEditsEqual(left: PromptTextareaEdit, right: PromptText
   return left.promptDraft === right.promptDraft && left.promptDraftCursorOffset === right.promptDraftCursorOffset;
 }
 
+function shouldSummarizePromptTextareaPastedText(pastedText: string): boolean {
+  return countPromptTextareaPastedTextLines(pastedText) >= 3 || pastedText.length > 150;
+}
+
+function countPromptTextareaPastedTextLines(pastedText: string): number {
+  return (pastedText.match(/\n/g)?.length ?? 0) + 1;
+}
+
 export function PromptTextarea(props: PromptTextareaProps): ReactNode {
   const promptTextareaRef = useRef<TextareaRenderable | null>(null);
   const promptImageAttachmentPlaceholderExtmarkTypeIdRef = useRef<number | undefined>(undefined);
+  const promptTextPastePlaceholderExtmarkTypeIdRef = useRef<number | undefined>(undefined);
   const promptContextReferenceExtmarkTypeIdRef = useRef<number | undefined>(undefined);
   const promptTextareaDecorativeExtmarkOwnerRef = useRef<TextareaRenderable | null>(null);
   const isSynchronizingTextareaFromPromptStateRef = useRef(false);
@@ -149,6 +173,7 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
     if (promptTextareaDecorativeExtmarkOwnerRef.current !== promptTextarea) {
       promptTextareaDecorativeExtmarkOwnerRef.current = promptTextarea;
       promptImageAttachmentPlaceholderExtmarkTypeIdRef.current = undefined;
+      promptTextPastePlaceholderExtmarkTypeIdRef.current = undefined;
       promptContextReferenceExtmarkTypeIdRef.current = undefined;
     }
 
@@ -156,19 +181,24 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       promptTextarea,
       promptDraft: props.promptDraft,
       promptImageAttachmentPlaceholderTexts: props.promptImageAttachmentPlaceholderTexts ?? [],
+      promptTextPastePlaceholderTexts: props.promptTextPastePlaceholderTexts ?? [],
       selectedPromptContextReferenceTexts: props.selectedPromptContextReferenceTexts ?? [],
       promptContextReferenceTextColor: props.promptContextReferenceTextColor ?? chatScreenTheme.promptContextReferenceText,
       promptImageAttachmentPlaceholderExtmarkTypeId: promptImageAttachmentPlaceholderExtmarkTypeIdRef.current,
+      promptTextPastePlaceholderExtmarkTypeId: promptTextPastePlaceholderExtmarkTypeIdRef.current,
       promptContextReferenceExtmarkTypeId: promptContextReferenceExtmarkTypeIdRef.current,
     });
     promptImageAttachmentPlaceholderExtmarkTypeIdRef.current =
       promptTextareaDecorativeExtmarkTypeIds.promptImageAttachmentPlaceholderExtmarkTypeId;
+    promptTextPastePlaceholderExtmarkTypeIdRef.current =
+      promptTextareaDecorativeExtmarkTypeIds.promptTextPastePlaceholderExtmarkTypeId;
     promptContextReferenceExtmarkTypeIdRef.current =
       promptTextareaDecorativeExtmarkTypeIds.promptContextReferenceExtmarkTypeId;
   }, [
     props.promptContextReferenceTextColor,
     props.promptDraft,
     props.promptImageAttachmentPlaceholderTexts,
+    props.promptTextPastePlaceholderTexts,
     props.selectedPromptContextReferenceTexts,
   ]);
 
@@ -213,7 +243,19 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
         const pastedText = normalizeOpenTuiPasteEventText(pasteEvent);
         pasteEvent.preventDefault();
         if (pastedText.length > 0) {
-          promptTextareaRef.current?.insertText(pastedText);
+          const promptTextarea = promptTextareaRef.current;
+          if (props.onSummarizedPromptTextPasted && shouldSummarizePromptTextareaPastedText(pastedText)) {
+            const promptTextareaSelection = promptTextarea?.getSelection();
+            const promptTextareaCursorOffset = promptTextarea?.cursorOffset ?? props.promptDraftCursorOffset;
+            props.onSummarizedPromptTextPasted({
+              pastedText,
+              replacementStartOffset: promptTextareaSelection?.start ?? promptTextareaCursorOffset,
+              replacementEndOffset: promptTextareaSelection?.end ?? promptTextareaCursorOffset,
+            });
+            return;
+          }
+
+          promptTextarea?.insertText(pastedText);
           return;
         }
         if (pasteEvent.bytes.length === 0) {
@@ -239,9 +281,11 @@ function syncPromptTextareaDecorativeExtmarks(input: {
   promptTextarea: TextareaRenderable;
   promptDraft: string;
   promptImageAttachmentPlaceholderTexts: readonly string[];
+  promptTextPastePlaceholderTexts: readonly string[];
   selectedPromptContextReferenceTexts: readonly string[];
   promptContextReferenceTextColor: string;
   promptImageAttachmentPlaceholderExtmarkTypeId: number | undefined;
+  promptTextPastePlaceholderExtmarkTypeId: number | undefined;
   promptContextReferenceExtmarkTypeId: number | undefined;
 }): PromptTextareaDecorativeExtmarkTypeIds {
   input.promptTextarea.extmarks.clear();
@@ -269,6 +313,29 @@ function syncPromptTextareaDecorativeExtmarks(input: {
     }
   }
 
+  let promptTextPastePlaceholderExtmarkTypeId = input.promptTextPastePlaceholderExtmarkTypeId;
+  if (input.promptTextPastePlaceholderTexts.length > 0) {
+    promptTextPastePlaceholderExtmarkTypeId = promptTextPastePlaceholderExtmarkTypeId ??
+      input.promptTextarea.extmarks.registerType(promptTextPastePlaceholderExtmarkTypeName);
+    let searchStartOffset = 0;
+    for (const promptTextPastePlaceholderText of input.promptTextPastePlaceholderTexts) {
+      const startOffset = input.promptDraft.indexOf(promptTextPastePlaceholderText, searchStartOffset);
+      if (startOffset === -1) {
+        continue;
+      }
+
+      const endOffset = startOffset + promptTextPastePlaceholderText.length;
+      input.promptTextarea.extmarks.create({
+        start: startOffset,
+        end: endOffset,
+        virtual: true,
+        styleId: promptTextPastePlaceholderStyleId,
+        typeId: promptTextPastePlaceholderExtmarkTypeId,
+      });
+      searchStartOffset = endOffset;
+    }
+  }
+
   let promptContextReferenceExtmarkTypeId = input.promptContextReferenceExtmarkTypeId;
   const selectedPromptContextReferenceRanges = listSelectedPromptContextReferenceRanges({
     promptDraft: input.promptDraft,
@@ -291,6 +358,7 @@ function syncPromptTextareaDecorativeExtmarks(input: {
 
   return {
     promptImageAttachmentPlaceholderExtmarkTypeId,
+    promptTextPastePlaceholderExtmarkTypeId,
     promptContextReferenceExtmarkTypeId,
   };
 }

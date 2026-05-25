@@ -50,6 +50,10 @@ export class InMemoryConversationHistory {
     return [...this.conversationSessionEntries];
   }
 
+  countConversationSessionEntries(): number {
+    return this.conversationSessionEntries.length;
+  }
+
   listModelContextItems(): readonly ModelContextItem[] {
     return projectConversationSessionEntriesToModelContextItems(this.conversationSessionEntries);
   }

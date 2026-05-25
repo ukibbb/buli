@@ -58,6 +58,48 @@ export function formatAssistantMarkdownInlineTextForStyledText(inlineMarkdownTex
     .replace(/!?\[([^\]\n]+)\]\([^\n)]+\)/g, "$1");
 }
 
+export function formatStreamingAssistantMarkdownInlineTextForStyledText(inlineMarkdownText: string): string {
+  return formatAssistantMarkdownInlineTextForStyledText(
+    removeIncompleteStreamingInlineMarkdownSyntax(inlineMarkdownText),
+  );
+}
+
+function removeIncompleteStreamingInlineMarkdownSyntax(inlineMarkdownText: string): string {
+  const inlineTextWithoutIncompleteLinks = inlineMarkdownText
+    .replace(/!?\[([^\]\n]*)\]\([^\n)]*$/g, "$1")
+    .replace(/!?\[([^\]\n]*)$/g, "$1");
+  return removeUnmatchedTrailingInlineDelimiter(
+    removeUnmatchedTrailingInlineDelimiter(
+      removeUnmatchedTrailingInlineDelimiter(inlineTextWithoutIncompleteLinks, "`"),
+      "**",
+    ),
+    "__",
+  );
+}
+
+function removeUnmatchedTrailingInlineDelimiter(inlineMarkdownText: string, inlineDelimiter: string): string {
+  let delimiterCount = 0;
+  let searchStartIndex = 0;
+  while (searchStartIndex < inlineMarkdownText.length) {
+    const delimiterIndex = inlineMarkdownText.indexOf(inlineDelimiter, searchStartIndex);
+    if (delimiterIndex === -1) {
+      break;
+    }
+
+    delimiterCount += 1;
+    searchStartIndex = delimiterIndex + inlineDelimiter.length;
+  }
+
+  if (delimiterCount % 2 === 0) {
+    return inlineMarkdownText;
+  }
+
+  const unmatchedDelimiterIndex = inlineMarkdownText.lastIndexOf(inlineDelimiter);
+  return unmatchedDelimiterIndex === -1
+    ? inlineMarkdownText
+    : `${inlineMarkdownText.slice(0, unmatchedDelimiterIndex)}${inlineMarkdownText.slice(unmatchedDelimiterIndex + inlineDelimiter.length)}`;
+}
+
 export function formatAssistantMarkdownHeadingText(headingText: string, depth: number): string {
   const visibleHeadingText = formatAssistantMarkdownInlineTextForStyledText(headingText);
   if (depth === 1) {

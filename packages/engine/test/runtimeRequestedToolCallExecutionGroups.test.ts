@@ -12,6 +12,28 @@ const grepRequestedToolCall = {
   toolCallRequest: { toolName: "grep", regexPattern: "ToolCallRequest" },
 } as const satisfies ProviderRequestedToolCall;
 
+const readManyRequestedToolCall = {
+  toolCallId: "call_read_many_1",
+  toolCallRequest: {
+    toolName: "read_many",
+    readTargets: [
+      { readTargetPath: "README.md" },
+      { readTargetPath: "package.json" },
+    ],
+  },
+} as const satisfies ProviderRequestedToolCall;
+
+const searchManyRequestedToolCall = {
+  toolCallId: "call_search_many_1",
+  toolCallRequest: {
+    toolName: "search_many",
+    searches: [
+      { searchKind: "glob", globPattern: "**/*.ts" },
+      { searchKind: "grep", regexPattern: "ToolCallRequest" },
+    ],
+  },
+} as const satisfies ProviderRequestedToolCall;
+
 const bashRequestedToolCall = {
   toolCallId: "call_bash_1",
   toolCallRequest: {
@@ -52,10 +74,10 @@ const secondTaskRequestedToolCall = {
 } as const satisfies ProviderRequestedToolCall;
 
 test("groupRequestedToolCallsForExecution groups adjacent read-only calls", () => {
-  expect(groupRequestedToolCallsForExecution([readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall])).toEqual([
+  expect(groupRequestedToolCallsForExecution([readRequestedToolCall, readManyRequestedToolCall, searchManyRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall])).toEqual([
     {
       groupKind: "auto_concurrent",
-      requestedToolCalls: [readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall],
+      requestedToolCalls: [readRequestedToolCall, readManyRequestedToolCall, searchManyRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall],
     },
   ]);
 });

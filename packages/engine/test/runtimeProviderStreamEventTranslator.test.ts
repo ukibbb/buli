@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { formatCodeExecutionWalkthroughAsMarkdownText, type CodeExecutionWalkthrough, type TokenUsage } from "@buli/contracts";
+import type { TokenUsage } from "@buli/contracts";
 import { RuntimeProviderStreamEventTranslator } from "../src/runtimeProviderStreamEventTranslator.ts";
 
 const completedTokenUsage: TokenUsage = {
@@ -378,6 +378,59 @@ test("RuntimeProviderStreamEventTranslator passes tool call requests through to 
   });
 });
 
+test("RuntimeProviderStreamEventTranslator anchors rate-limit notices to provider retry wait start time", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 5_000 });
+  const rateLimitTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: {
+      type: "rate_limit_pending",
+      retryAfterSeconds: 3,
+      retryWaitStartedAtMs: 4_250,
+      limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
+    },
+  });
+
+  if (rateLimitTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+
+  expect(rateLimitTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_added",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-1",
+        partKind: "assistant_rate_limit_notice",
+        retryAfterSeconds: 3,
+        limitExplanation: "OpenAI request was rate limited. Retrying after 3 seconds.",
+        noticeStartedAtMs: 4_250,
+      },
+    },
+  ]);
+});
+
+test("RuntimeProviderStreamEventTranslator falls back to local time for legacy rate-limit events", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 5_000 });
+  const rateLimitTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: {
+      type: "rate_limit_pending",
+      retryAfterSeconds: 3,
+      limitExplanation: "Retry later.",
+    },
+  });
+
+  if (rateLimitTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+
+  expect(rateLimitTranslation.assistantResponseEvents[0]).toMatchObject({
+    type: "assistant_message_part_added",
+    part: {
+      partKind: "assistant_rate_limit_notice",
+      noticeStartedAtMs: 5_000,
+    },
+  });
+});
+
 test("RuntimeProviderStreamEventTranslator segments assistant text around tool calls", () => {
   const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 2_000 });
 
@@ -452,177 +505,4 @@ test("RuntimeProviderStreamEventTranslator segments assistant text around tool c
     assistantMessageStatus: "completed",
     assistantMessageText: "Before tool. After tool.",
   });
-});
-
-test("RuntimeProviderStreamEventTranslator emits typed code execution walkthrough parts", () => {
-  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 2_500 });
-  const codeExecutionWalkthrough: CodeExecutionWalkthrough = {
-    titleText: "Request flow",
-    summaryText: "How the request moves through the runtime.",
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Prompt accepted",
-        whatHappensText: "The user prompt is recorded.",
-        nextStepText: "Provider streams next.",
-        codeExamples: [
-          {
-            sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
-            sourceSymbolName: "startAcceptedRuntimeConversationTurn",
-            startLineNumber: 64,
-            endLineNumber: 67,
-            languageLabel: "ts",
-            codeText: "recordPrompt();",
-            explanationText: "This records the prompt before streaming starts.",
-          },
-        ],
-      },
-      {
-        stepTitle: "Provider streams",
-        whatHappensText: "Text chunks become assistant events.",
-        codeExamples: [
-          {
-            sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
-            startLineNumber: 145,
-            endLineNumber: 147,
-            languageLabel: "ts",
-            codeText: "translateChunk();",
-          },
-        ],
-      },
-    ],
-  };
-
-  const introTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
-    providerStreamEvent: { type: "text_chunk", text: "Intro.\n" },
-  });
-  const codeExecutionWalkthroughTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
-    providerStreamEvent: {
-      type: "code_execution_walkthrough_presented",
-      presentationCallId: "call_code_walkthrough_1",
-      codeExecutionWalkthrough,
-    },
-  });
-  const outroTextTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
-    providerStreamEvent: { type: "text_chunk", text: "Outro." },
-  });
-  const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
-    providerStreamEvent: { type: "completed", usage: completedTokenUsage },
-  });
-
-  if (introTextTranslation.translationKind !== "assistant_response_events") {
-    throw new Error("expected assistant response events");
-  }
-  if (codeExecutionWalkthroughTranslation.translationKind !== "assistant_response_events") {
-    throw new Error("expected assistant response events");
-  }
-  if (outroTextTranslation.translationKind !== "assistant_response_events") {
-    throw new Error("expected assistant response events");
-  }
-  if (terminalTranslation.translationKind !== "terminal_assistant_response") {
-    throw new Error("expected terminal assistant response");
-  }
-
-  expect([
-    ...introTextTranslation.assistantResponseEvents,
-    ...codeExecutionWalkthroughTranslation.assistantResponseEvents,
-    ...outroTextTranslation.assistantResponseEvents,
-  ]).toEqual([
-    {
-      type: "assistant_message_part_added",
-      messageId: "assistant-message-1",
-      part: {
-        id: "assistant-text-1",
-        partKind: "assistant_text",
-        partStatus: "streaming",
-        rawMarkdownText: "Intro.\n",
-      },
-    },
-    {
-      type: "assistant_message_part_updated",
-      messageId: "assistant-message-1",
-      part: {
-        id: "assistant-text-1",
-        partKind: "assistant_text",
-        partStatus: "completed",
-        rawMarkdownText: "Intro.\n",
-      },
-    },
-    {
-      type: "assistant_message_part_added",
-      messageId: "assistant-message-1",
-      part: {
-        id: "generated-part-1",
-        partKind: "assistant_code_execution_walkthrough",
-        titleText: "Request flow",
-        summaryText: "How the request moves through the runtime.",
-        walkthroughKind: "source_walkthrough",
-        steps: [
-          {
-            stepTitle: "Prompt accepted",
-            whatHappensText: "The user prompt is recorded.",
-            nextStepText: "Provider streams next.",
-            codeExamples: [
-              {
-                sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
-                sourceSymbolName: "startAcceptedRuntimeConversationTurn",
-                startLineNumber: 64,
-                endLineNumber: 67,
-                languageLabel: "ts",
-                codeText: "recordPrompt();",
-                explanationText: "This records the prompt before streaming starts.",
-              },
-            ],
-          },
-          {
-            stepTitle: "Provider streams",
-            whatHappensText: "Text chunks become assistant events.",
-            codeExamples: [
-              {
-                sourceFilePath: "packages/engine/src/runtimeProviderStreamEventTranslator.ts",
-                startLineNumber: 145,
-                endLineNumber: 147,
-                languageLabel: "ts",
-                codeText: "translateChunk();",
-              },
-            ],
-          },
-        ],
-      },
-    },
-    {
-      type: "assistant_message_part_added",
-      messageId: "assistant-message-1",
-      part: {
-        id: "generated-part-2",
-        partKind: "assistant_text",
-        partStatus: "streaming",
-        rawMarkdownText: "Outro.",
-      },
-    },
-  ]);
-  expect(codeExecutionWalkthroughTranslation.assistantSegmentSessionEntries).toEqual([
-    {
-      entryKind: "assistant_text_segment",
-      assistantTextSegmentText: "Intro.\n",
-    },
-    {
-      entryKind: "assistant_code_execution_walkthrough_segment",
-      titleText: "Request flow",
-      summaryText: "How the request moves through the runtime.",
-      walkthroughKind: "source_walkthrough",
-      steps: codeExecutionWalkthrough.steps,
-    },
-  ]);
-  expect(terminalTranslation.assistantSegmentSessionEntriesBeforeTerminalSessionEntry).toEqual([
-    {
-      entryKind: "assistant_text_segment",
-      assistantTextSegmentText: "Outro.",
-    },
-  ]);
-  expect(terminalTranslation.terminalAssistantMessageSessionEntry.assistantMessageText).toBe([
-    "Intro.\n",
-    formatCodeExecutionWalkthroughAsMarkdownText(codeExecutionWalkthrough),
-    "Outro.",
-  ].join(""));
 });

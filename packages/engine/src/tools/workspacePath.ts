@@ -79,12 +79,13 @@ export function isPathInsideWorkspace(workspaceRootPath: string, candidatePath: 
   return resolvedCandidatePath.startsWith(rootPrefix);
 }
 
-export function assertSingleWorkspaceSearchPathArgument(input: {
+export async function assertSingleWorkspaceSearchPathArgument(input: {
+  workspaceRootPath: string;
   toolName: "Glob" | "Grep";
   pathKind: "directory" | "file or directory";
   requestedPath: string;
   guidance: string;
-}): void {
+}): Promise<void> {
   const pathArgumentSegments = input.requestedPath
     .trim()
     .split(/\s+/)
@@ -95,12 +96,66 @@ export function assertSingleWorkspaceSearchPathArgument(input: {
 
   const pathLikeSegmentCount = pathArgumentSegments.filter(isShellStylePathArgumentSegment).length;
   if (pathLikeSegmentCount < 2 && !pathArgumentSegments.some(hasShellGlobMetacharacter)) {
-    return;
+    const requestedPathExists = await doesWorkspacePathExist({
+      workspaceRootPath: input.workspaceRootPath,
+      requestedPath: input.requestedPath,
+    });
+    if (requestedPathExists) {
+      return;
+    }
+
+    const allSegmentsAreExistingWorkspaceEntries = await doAllWorkspacePathSegmentsExist({
+      workspaceRootPath: input.workspaceRootPath,
+      pathArgumentSegments,
+    });
+    if (!allSegmentsAreExistingWorkspaceEntries) {
+      return;
+    }
   }
 
   throw new Error(
     `${input.toolName} path must be a single ${input.pathKind}, not multiple shell arguments: ${input.requestedPath}. ${input.guidance}`,
   );
+}
+
+async function doAllWorkspacePathSegmentsExist(input: {
+  workspaceRootPath: string;
+  pathArgumentSegments: readonly string[];
+}): Promise<boolean> {
+  for (const pathArgumentSegment of input.pathArgumentSegments) {
+    const pathSegmentExists = await doesWorkspacePathExist({
+      workspaceRootPath: input.workspaceRootPath,
+      requestedPath: pathArgumentSegment,
+    });
+    if (!pathSegmentExists) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function doesWorkspacePathExist(input: {
+  workspaceRootPath: string;
+  requestedPath: string;
+}): Promise<boolean> {
+  const workspaceRootPath = await realpath(input.workspaceRootPath);
+  const candidateAbsolutePath = isAbsolute(input.requestedPath)
+    ? resolve(input.requestedPath)
+    : resolve(workspaceRootPath, input.requestedPath);
+  if (!isPathInsideWorkspace(workspaceRootPath, candidateAbsolutePath)) {
+    return false;
+  }
+
+  return lstat(candidateAbsolutePath)
+    .then(() => true)
+    .catch((error: unknown) => {
+      if (isMissingPathError(error)) {
+        return false;
+      }
+
+      throw error;
+    });
 }
 
 async function buildMissingWorkspacePathError(input: {

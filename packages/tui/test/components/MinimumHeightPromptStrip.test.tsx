@@ -16,6 +16,7 @@ describe("MinimumHeightPromptStrip", () => {
         queuedPromptCount={0}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
+        isConversationCompactionRunning={false}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -36,6 +37,7 @@ describe("MinimumHeightPromptStrip", () => {
         queuedPromptCount={0}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="streaming_assistant_response"
+        isConversationCompactionRunning={false}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -49,6 +51,27 @@ describe("MinimumHeightPromptStrip", () => {
     expect(frame).not.toContain("anything");
   });
 
+  test("renders_only_the_snake_when_compaction_is_running", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <MinimumHeightPromptStrip
+        promptDraft="anything"
+        promptDraftCursorOffset={8}
+        isPromptInputDisabled={true}
+        queuedPromptCount={0}
+        accentColor={chatScreenTheme.accentGreen}
+        assistantResponseStatus="waiting_for_user_input"
+        isConversationCompactionRunning={true}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
+      />,
+      { width: 40, height: 6 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("▰");
+    expect(frame).not.toContain("anything");
+  });
+
   test("does_not_render_context_meter_or_help_shortcuts_footer", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <MinimumHeightPromptStrip
@@ -58,6 +81,7 @@ describe("MinimumHeightPromptStrip", () => {
         queuedPromptCount={0}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
+        isConversationCompactionRunning={false}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,

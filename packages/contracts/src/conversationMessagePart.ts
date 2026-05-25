@@ -3,7 +3,6 @@ import { PlanStepSchema } from "./planProposal.ts";
 import { TokenUsageSchema } from "./provider.ts";
 import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
-import { CodeExecutionWalkthroughSchema } from "./codeExecutionWalkthrough.ts";
 import { WorkspacePatchSchema } from "./workspacePatch.ts";
 
 export const AssistantTextPartStatusSchema = z.enum(["streaming", "completed", "incomplete", "failed", "interrupted"]);
@@ -131,11 +130,6 @@ export const AssistantPlanProposalConversationMessagePartSchema = z
   })
   .strict();
 
-export const AssistantCodeExecutionWalkthroughConversationMessagePartSchema = CodeExecutionWalkthroughSchema.extend({
-  id: z.string().min(1),
-  partKind: z.literal("assistant_code_execution_walkthrough"),
-}).strict();
-
 export const AssistantRateLimitNoticeConversationMessagePartSchema = z
   .object({
     id: z.string().min(1),
@@ -180,6 +174,14 @@ export const AssistantTurnSummaryConversationMessagePartSchema = z
   })
   .strict();
 
+export const AssistantCompactionSeparatorConversationMessagePartSchema = z
+  .object({
+    id: z.string().min(1),
+    partKind: z.literal("assistant_compaction_separator"),
+    source: z.enum(["manual", "auto"]),
+  })
+  .strict();
+
 export const ConversationMessagePartSchema = z.union([
   UserTextConversationMessagePartSchema,
   UserImageAttachmentConversationMessagePartSchema,
@@ -188,12 +190,12 @@ export const ConversationMessagePartSchema = z.union([
   AssistantToolCallConversationMessagePartSchema,
   AssistantWorkspacePatchConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
-  AssistantCodeExecutionWalkthroughConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantErrorNoticeConversationMessagePartSchema,
   AssistantInterruptedNoticeConversationMessagePartSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
+  AssistantCompactionSeparatorConversationMessagePartSchema,
 ]);
 
 export const AssistantConversationMessagePartSchema = z.union([
@@ -202,12 +204,12 @@ export const AssistantConversationMessagePartSchema = z.union([
   AssistantToolCallConversationMessagePartSchema,
   AssistantWorkspacePatchConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
-  AssistantCodeExecutionWalkthroughConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantErrorNoticeConversationMessagePartSchema,
   AssistantInterruptedNoticeConversationMessagePartSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
+  AssistantCompactionSeparatorConversationMessagePartSchema,
 ]);
 
 export type AssistantTextPartStatus = z.infer<typeof AssistantTextPartStatusSchema>;
@@ -222,13 +224,13 @@ export type AssistantWorkspacePatchConversationMessagePart = z.infer<
 >;
 export type AssistantConversationMessagePart = z.infer<typeof AssistantConversationMessagePartSchema>;
 export type AssistantPlanProposalConversationMessagePart = z.infer<typeof AssistantPlanProposalConversationMessagePartSchema>;
-export type AssistantCodeExecutionWalkthroughConversationMessagePart = z.infer<
-  typeof AssistantCodeExecutionWalkthroughConversationMessagePartSchema
->;
 export type AssistantRateLimitNoticeConversationMessagePart = z.infer<typeof AssistantRateLimitNoticeConversationMessagePartSchema>;
 export type AssistantIncompleteNoticeConversationMessagePart = z.infer<typeof AssistantIncompleteNoticeConversationMessagePartSchema>;
 export type AssistantErrorNoticeConversationMessagePart = z.infer<typeof AssistantErrorNoticeConversationMessagePartSchema>;
 export type AssistantInterruptedNoticeConversationMessagePart = z.infer<typeof AssistantInterruptedNoticeConversationMessagePartSchema>;
 export type AssistantTurnSummaryConversationMessagePart = z.infer<typeof AssistantTurnSummaryConversationMessagePartSchema>;
+export type AssistantCompactionSeparatorConversationMessagePart = z.infer<
+  typeof AssistantCompactionSeparatorConversationMessagePartSchema
+>;
 export type ConversationMessagePart = z.infer<typeof ConversationMessagePartSchema>;
 export type UserImageAttachmentConversationMessagePart = z.infer<typeof UserImageAttachmentConversationMessagePartSchema>;

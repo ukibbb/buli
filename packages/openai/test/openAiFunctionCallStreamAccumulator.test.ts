@@ -97,6 +97,30 @@ test("OpenAiFunctionCallStreamAccumulator emits each requested tool call once", 
   expect(functionCallStreamAccumulator.listPendingRequestedToolCalls()).toHaveLength(1);
 });
 
+test("OpenAiFunctionCallStreamAccumulator records malformed tool calls as invalid intents", () => {
+  const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator();
+
+  functionCallStreamAccumulator.observeFunctionCallOutputItem({
+    functionCallItem: readFunctionCallItem({
+      itemId: "fc_1",
+      toolCallId: "call_1",
+      functionName: "read",
+      argumentsText: "{not-json",
+    }),
+    shouldRecordRequestedToolCallIfReady: true,
+  });
+
+  expect(functionCallStreamAccumulator.listPendingRequestedToolCalls()).toEqual([]);
+  expect(functionCallStreamAccumulator.listPendingProviderFunctionCallIntents()).toEqual([
+    {
+      intentKind: "invalid_function_call",
+      functionCallId: "call_1",
+      functionName: "read",
+      invalidCallExplanation: expect.stringContaining("OpenAI function call for read has malformed JSON arguments"),
+    },
+  ]);
+});
+
 test("OpenAiFunctionCallStreamAccumulator preserves response output order", () => {
   const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator();
 
@@ -120,72 +144,5 @@ test("OpenAiFunctionCallStreamAccumulator preserves response output order", () =
   expect(functionCallStreamAccumulator.listPendingRequestedToolCalls().map((requestedToolCall) => requestedToolCall.toolCallId)).toEqual([
     "call_1",
     "call_2",
-  ]);
-});
-
-test("OpenAiFunctionCallStreamAccumulator records presentation calls separately from tool calls", () => {
-  const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator();
-
-  functionCallStreamAccumulator.observeFunctionCallOutputItem({
-    functionCallItem: readFunctionCallItem({
-      itemId: "fc_1",
-      toolCallId: "call_present_1",
-      functionName: "present_code_execution_walkthrough",
-      argumentsText: JSON.stringify({
-        titleText: "Request flow",
-        summaryText: null,
-        walkthroughKind: "source_walkthrough",
-        steps: [
-          {
-            stepTitle: "Prompt accepted",
-            whenText: null,
-            whatHappensText: "The accepted prompt is recorded.",
-            dataStateText: null,
-            decisionText: null,
-            stateChangeText: null,
-            nextStepText: null,
-            codeExamples: [
-              {
-                sourceFilePath: "packages/engine/src/runtime.ts",
-                sourceSymbolName: null,
-                startLineNumber: 1,
-                endLineNumber: 1,
-                languageLabel: "ts",
-                codeText: "start();",
-                explanationText: null,
-              },
-            ],
-          },
-        ],
-      }),
-    }),
-    shouldRecordRequestedToolCallIfReady: true,
-  });
-
-  expect(functionCallStreamAccumulator.listPendingRequestedToolCalls()).toEqual([]);
-  expect(functionCallStreamAccumulator.listPendingProviderFunctionCallIntents()).toEqual([
-    {
-      intentKind: "code_execution_walkthrough_presentation",
-      functionCallId: "call_present_1",
-      codeExecutionWalkthrough: {
-        titleText: "Request flow",
-        walkthroughKind: "source_walkthrough",
-        steps: [
-          {
-            stepTitle: "Prompt accepted",
-            whatHappensText: "The accepted prompt is recorded.",
-            codeExamples: [
-              {
-                sourceFilePath: "packages/engine/src/runtime.ts",
-                startLineNumber: 1,
-                endLineNumber: 1,
-                languageLabel: "ts",
-                codeText: "start();",
-              },
-            ],
-          },
-        ],
-      },
-    },
   ]);
 });

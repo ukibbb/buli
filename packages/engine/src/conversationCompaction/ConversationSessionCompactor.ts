@@ -23,6 +23,7 @@ import {
   DEFAULT_RETAINED_RECENT_CONVERSATION_TURN_COUNT,
   selectConversationEntriesForCompaction,
 } from "./selectConversationEntriesForCompaction.ts";
+import { prepareConversationEntriesForCompactionRequest } from "./prepareConversationEntriesForCompactionRequest.ts";
 
 export class ConversationSessionCompactor {
   readonly conversationTurnProvider: ConversationTurnProvider;
@@ -81,6 +82,9 @@ export class ConversationSessionCompactor {
       conversationSessionEntries: conversationSessionEntriesBeforeCompaction,
       retainedRecentConversationTurnCount: this.retainedRecentConversationTurnCount,
     });
+    const compactionRequestProjection = prepareConversationEntriesForCompactionRequest({
+      conversationSessionEntries: selectedConversationEntriesForCompaction.compactionSourceConversationSessionEntries,
+    });
     this.isCompactingConversationSession = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.started", {
       selectedModelId: input.selectedModelId,
@@ -90,27 +94,33 @@ export class ConversationSessionCompactor {
         selectedConversationEntriesForCompaction.compactionSourceConversationSessionEntries.length,
       retainedRecentConversationSessionEntryCount:
         selectedConversationEntriesForCompaction.retainedRecentConversationSessionEntryCount,
+      compactionRequestOriginalCharacterCount: compactionRequestProjection.originalCharacterCount,
+      compactionRequestProjectedCharacterCount: compactionRequestProjection.projectedCharacterCount,
+      strippedImageAttachmentCount: compactionRequestProjection.strippedImageAttachmentCount,
+      truncatedToolResultCount: compactionRequestProjection.truncatedToolResultCount,
+      removedProviderTurnReplayCount: compactionRequestProjection.removedProviderTurnReplayCount,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });
+    input.onCompactionSummaryTextUpdated?.("");
 
     try {
       const compactionPromptEntry = createConversationCompactionPromptSessionEntry();
       const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
         systemPromptText: buildConversationCompactionSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
         conversationSessionEntries: [
-          ...selectedConversationEntriesForCompaction.compactionSourceConversationSessionEntries,
+          ...compactionRequestProjection.conversationSessionEntries,
           compactionPromptEntry,
         ],
         selectedModelId: input.selectedModelId,
         ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
         availableToolNames: [],
-        availablePresentationFunctionNames: [],
         ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       });
       const summaryText = await collectConversationCompactionSummaryText({
         providerConversationTurn,
         diagnosticLogger: this.diagnosticLogger,
+        ...(input.onCompactionSummaryTextUpdated ? { onCompactionSummaryTextUpdated: input.onCompactionSummaryTextUpdated } : {}),
       });
       const compactionResult: ConversationCompactionResult = {
         summaryText,
@@ -122,6 +132,7 @@ export class ConversationSessionCompactor {
         compactedEntryCount: compactionResult.compactedEntryCount,
         retainedRecentConversationSessionEntryCount:
           selectedConversationEntriesForCompaction.retainedRecentConversationSessionEntryCount,
+        compactionSource: input.compactionSource ?? "manual",
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.completed", {
         compactedEntryCount: compactionResult.compactedEntryCount,
@@ -174,7 +185,11 @@ export class ConversationSessionCompactor {
 
     await this.compactCurrentConversationSession({
       selectedModelId: input.selectedModelId,
+      compactionSource: "auto",
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      ...(input.onCompactionSummaryTextUpdated
+        ? { onCompactionSummaryTextUpdated: input.onCompactionSummaryTextUpdated }
+        : {}),
     });
     const conversationSessionEntries = this.conversationHistory.listConversationSessionEntries();
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.auto_completed", {

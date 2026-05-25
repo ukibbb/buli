@@ -7,6 +7,7 @@ import {
   type BuliDiagnosticLogger,
   type ProviderAvailableToolName,
   type ProjectInstructionSnapshot,
+  isContextWindowOverflowError,
   redactSensitiveText,
 } from "@buli/contracts";
 import { ConversationSessionCompactor } from "./conversationCompaction/ConversationSessionCompactor.ts";
@@ -70,6 +71,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly canSpawnSubagent: boolean;
+  readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
@@ -88,6 +90,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     canSpawnSubagent?: boolean;
+    maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
     projectInstructionTracker?: ProjectInstructionTracker;
     autoCompactionThresholdRatio?: number | undefined;
@@ -107,6 +110,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
     this.canSpawnSubagent = input.canSpawnSubagent ?? true;
+    this.maximumConcurrentReadOnlyToolCalls = input.maximumConcurrentReadOnlyToolCalls;
     this.maximumConcurrentSubagentConversations = input.maximumConcurrentSubagentConversations;
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
@@ -172,6 +176,9 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       promptCacheKey: this.promptCacheKey,
       availableToolNames: this.availableToolNames,
       canSpawnSubagent: this.canSpawnSubagent,
+      ...(this.maximumConcurrentReadOnlyToolCalls !== undefined
+        ? { maximumConcurrentReadOnlyToolCalls: this.maximumConcurrentReadOnlyToolCalls }
+        : {}),
       ...(this.maximumConcurrentSubagentConversations !== undefined
         ? { maximumConcurrentSubagentConversations: this.maximumConcurrentSubagentConversations }
         : {}),
@@ -226,6 +233,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
   readonly canSpawnSubagent: boolean;
+  readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly onConversationTurnFinished: () => void;
@@ -249,6 +257,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     promptCacheKey?: string | undefined;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
     canSpawnSubagent: boolean;
+    maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
     projectInstructionTracker: ProjectInstructionTracker;
     onConversationTurnFinished: () => void;
@@ -267,14 +276,21 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
     this.canSpawnSubagent = input.canSpawnSubagent;
+    this.maximumConcurrentReadOnlyToolCalls = input.maximumConcurrentReadOnlyToolCalls;
     this.maximumConcurrentSubagentConversations = input.maximumConcurrentSubagentConversations;
     this.projectInstructionTracker = input.projectInstructionTracker;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
     this.pendingToolApprovalController = new RuntimePendingToolApprovalController({
       diagnosticLogger: this.diagnosticLogger,
     });
-    this.readOnlyToolCallConcurrencyLimiter = new RuntimeReadOnlyToolCallConcurrencyLimiter();
+    this.readOnlyToolCallConcurrencyLimiter = new RuntimeReadOnlyToolCallConcurrencyLimiter({
+      diagnosticLogger: this.diagnosticLogger,
+      ...(this.maximumConcurrentReadOnlyToolCalls !== undefined
+        ? { maximumConcurrentReadOnlyToolCalls: this.maximumConcurrentReadOnlyToolCalls }
+        : {}),
+    });
     this.subagentConversationConcurrencyLimiter = new RuntimeSubagentConversationConcurrencyLimiter({
+      diagnosticLogger: this.diagnosticLogger,
       ...(this.maximumConcurrentSubagentConversations !== undefined
         ? { maximumConcurrentSubagentConversations: this.maximumConcurrentSubagentConversations }
         : {}),
@@ -419,9 +435,11 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       const failureExplanation = sanitizeRuntimeFailureExplanation(
         rawErrorText.length > 0 ? rawErrorText : "Unknown conversation turn failure",
       );
+      const failureKind = isContextWindowOverflowError(error) ? "context_window_overflow" : undefined;
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.failed", {
         failureExplanationLength: failureExplanation.length,
         rawErrorTextLength: rawErrorText.length,
+        failureKind: failureKind ?? null,
       });
       for (const assistantResponseEvent of finalizeFailedConversationTurn({
         assistantResponseMessageId,
@@ -433,6 +451,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           projectInstructionSnapshotsForAcceptedTurn,
         },
         failureExplanation,
+        ...(failureKind ? { failureKind } : {}),
       })) {
         yield logAssistantResponseEventEmitted(assistantResponseEvent);
       }
@@ -459,6 +478,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
         : {}),
       assistantOperatingMode: this.assistantOperatingMode,
+      ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
       bashToolApprovalMode: this.bashToolApprovalMode,
       workspaceRootPath: this.workspaceRootPath,
       workspaceSnapshotStore: this.workspaceSnapshotStore,

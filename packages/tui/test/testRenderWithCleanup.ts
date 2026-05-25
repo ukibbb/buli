@@ -1,6 +1,7 @@
 import { createTestRenderer, type TestRendererOptions } from "@opentui/core/testing";
 import { createRoot } from "@opentui/react";
 import { act, type ReactNode } from "react";
+import "./testLifecycle.ts";
 import {
   registerOpenTuiTestCleanupCallbackForLifecycle,
   unregisterOpenTuiTestCleanupCallbackFromLifecycle,

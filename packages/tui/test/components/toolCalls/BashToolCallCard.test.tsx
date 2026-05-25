@@ -5,7 +5,7 @@ import { BashToolCallCard } from "../../../src/components/toolCalls/BashToolCall
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("BashToolCallCard (opentui)", () => {
-  test("streaming uses amber accent and renders [command] with only the snake status", async () => {
+  test("streaming uses amber accent and renders command with pending status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
         toolCallDetail={{ toolName: "bash", commandLine: "bun test" }}
@@ -19,7 +19,7 @@ describe("BashToolCallCard (opentui)", () => {
     expect(frame).toContain("Bash");
     expect(frame).toContain("[bun test]");
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("running");
+    expect(frame).toContain("running");
     expect(chatScreenTheme.accentAmber).toBe("#F59E0B");
   });
 

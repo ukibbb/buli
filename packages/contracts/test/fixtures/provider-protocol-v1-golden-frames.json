@@ -1,0 +1,119 @@
+[
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "host_start_turn",
+    "requestId": "req-start-1",
+    "turnId": "turn-1",
+    "turnRequest": {
+      "systemPromptText": "You are Buli.",
+      "conversationSessionEntries": [
+        {
+          "entryKind": "user_prompt",
+          "promptText": "Read README.md",
+          "modelFacingPromptText": "Read README.md",
+          "assistantOperatingMode": "understand"
+        }
+      ],
+      "selectedModelId": "gpt-5.5",
+      "selectedReasoningEffort": "medium",
+      "promptCacheKey": "workspace-cache-key",
+      "availableToolNames": ["read", "glob", "grep"]
+    }
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "provider_request_acknowledged",
+    "requestId": "req-start-1",
+    "turnId": "turn-1",
+    "acknowledgedFrameKind": "host_start_turn"
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "provider_event",
+    "turnId": "turn-1",
+    "sequenceNumber": 1,
+    "providerStreamEvent": {
+      "type": "tool_call_requested",
+      "toolCallId": "call-read-1",
+      "toolCallRequest": {
+        "toolName": "read",
+        "readTargetPath": "README.md"
+      }
+    }
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "host_submit_tool_result",
+    "requestId": "req-tool-result-1",
+    "turnId": "turn-1",
+    "toolCallId": "call-read-1",
+    "toolResultText": "<path>README.md</path>\n1: # Buli"
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "provider_event",
+    "turnId": "turn-1",
+    "sequenceNumber": 2,
+    "providerStreamEvent": {
+      "type": "completed",
+      "usage": {
+        "input": 10,
+        "output": 4,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "provider_turn_closed",
+    "turnId": "turn-1",
+    "closedReason": "completed",
+    "finalSequenceNumber": 2,
+    "providerTurnReplay": {
+      "provider": "openai",
+      "inputItems": [
+        {
+          "type": "function_call",
+          "id": "fc-read-1",
+          "call_id": "call-read-1",
+          "name": "read",
+          "arguments": "{\"filePath\":\"README.md\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call-read-1",
+          "output": "<path>README.md</path>\n1: # Buli"
+        }
+      ]
+    }
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "host_cancel_turn",
+    "requestId": "req-cancel-1",
+    "turnId": "turn-2",
+    "cancellationReason": "user_interrupted"
+  },
+  {
+    "protocol": "buli.provider.v1",
+    "frameKind": "provider_error",
+    "requestId": "req-start-2",
+    "turnId": "turn-2",
+    "error": {
+      "errorCode": "provider_stream_failed",
+      "errorMessage": "OpenAI stream failed",
+      "isRetryable": true,
+      "providerName": "openai",
+      "details": {
+        "status": 503,
+        "requestId": "req-openai-1",
+        "retryAfterSeconds": 2,
+        "upstreamReasons": ["temporarily_unavailable", "retryable"]
+      }
+    }
+  }
+]

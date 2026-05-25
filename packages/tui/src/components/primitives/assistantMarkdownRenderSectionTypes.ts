@@ -26,10 +26,16 @@ export type AssistantMarkdownCallout = {
   bodyText: string;
 };
 
+export type AssistantMarkdownSourceLineRange = {
+  sourceStartLineNumber: number;
+  sourceEndLineNumber: number;
+};
+
 export type AssistantMarkdownCodeFenceInfo = {
   codeLanguageLabel: string;
   codeFenceDisplayLabel?: string | undefined;
   codeFenceFilePath?: string | undefined;
+  sourceLineRange?: AssistantMarkdownSourceLineRange | undefined;
 };
 
 type AssistantMarkdownRenderSectionBase = {

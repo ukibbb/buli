@@ -122,6 +122,20 @@ export type HighlightedCode = {
   innerHtml: string;
 };
 
+export type HighlightedCodeBlock = HighlightedCode;
+
+export interface CodeBlockHighlighter {
+  highlightCodeBlock(input: HighlightCodeBlockInput): HighlightedCodeBlock;
+}
+
+export class ShikiCodeBlockHighlighter implements CodeBlockHighlighter {
+  highlightCodeBlock(input: HighlightCodeBlockInput): HighlightedCodeBlock {
+    return highlightCodeBlockWithShiki(input);
+  }
+}
+
+const defaultCodeBlockHighlighter = new ShikiCodeBlockHighlighter();
+
 export function resolveLanguageId(input: {
   languageLabel?: string | undefined;
   sourceFilePath?: string | undefined;
@@ -147,6 +161,10 @@ export function resolveLanguageId(input: {
 }
 
 export function highlightCodeBlock(input: HighlightCodeBlockInput): HighlightedCode {
+  return defaultCodeBlockHighlighter.highlightCodeBlock(input);
+}
+
+function highlightCodeBlockWithShiki(input: HighlightCodeBlockInput): HighlightedCodeBlock {
   const resolvedLanguageId = resolveLanguageId(input);
   if (resolvedLanguageId === undefined) {
     return {
@@ -172,11 +190,12 @@ export function highlightCodeBlock(input: HighlightCodeBlockInput): HighlightedC
 
 export type RenderCodeWrapInput = HighlightCodeBlockInput & {
   filePathLabel?: string | undefined;
+  codeBlockHighlighter?: CodeBlockHighlighter | undefined;
 };
 
 export function renderCodeWrap(input: RenderCodeWrapInput): string {
-  const highlighted = highlightCodeBlock(input);
-  const tabLabel = input.filePathLabel ?? highlighted.resolvedLanguageId ?? input.languageLabel ?? "code";
+  const highlighted = (input.codeBlockHighlighter ?? defaultCodeBlockHighlighter).highlightCodeBlock(input);
+  const tabLabel = resolveCodeTabLabel(input, highlighted);
   const dataLangAttribute = highlighted.resolvedLanguageId
     ? ` data-lang="${escapeHtmlAttribute(highlighted.resolvedLanguageId)}"`
     : input.languageLabel
@@ -190,4 +209,17 @@ export function renderCodeWrap(input: RenderCodeWrapInput): string {
     ${highlighted.innerHtml}
   </div>
 </div>`;
+}
+
+function resolveCodeTabLabel(input: RenderCodeWrapInput, highlighted: HighlightedCodeBlock): string {
+  if (input.filePathLabel && input.filePathLabel.length > 0) {
+    return input.filePathLabel;
+  }
+  if (highlighted.resolvedLanguageId.length > 0) {
+    return highlighted.resolvedLanguageId;
+  }
+  if (input.languageLabel && input.languageLabel.length > 0) {
+    return input.languageLabel;
+  }
+  return "code";
 }

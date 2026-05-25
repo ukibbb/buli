@@ -196,6 +196,7 @@ export function selectHighlightedConversationSession(chatSessionState: ChatSessi
       conversationSessionSelectionState: { step: "hidden" },
       promptDraft: "",
       promptDraftCursorOffset: 0,
+      pendingPromptTextPastes: [],
     },
   };
 }

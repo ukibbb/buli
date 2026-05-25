@@ -23,7 +23,7 @@ test("relayAssistantResponseRunnerEvents forwards streamed assistant events in o
   };
   const emittedEventBatches: AssistantResponseEvent[][] = [];
 
-  await relayAssistantResponseRunnerEvents({
+  const relayResult = await relayAssistantResponseRunnerEvents({
     assistantConversationRunner,
     conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
     onConversationTurnStarted: () => {},
@@ -37,6 +37,10 @@ test("relayAssistantResponseRunnerEvents forwards streamed assistant events in o
     "assistant_turn_started",
     "assistant_message_completed",
   ]);
+  expect(relayResult.terminalAssistantResponseEvent).toMatchObject({
+    type: "assistant_message_completed",
+    messageId: "assistant-1",
+  });
 });
 
 test("relayAssistantResponseRunnerEvents converts a thrown runner error into a synthetic failed assistant turn", async () => {
@@ -54,7 +58,7 @@ test("relayAssistantResponseRunnerEvents converts a thrown runner error into a s
   };
   const emittedEventBatches: AssistantResponseEvent[][] = [];
 
-  await relayAssistantResponseRunnerEvents({
+  const relayResult = await relayAssistantResponseRunnerEvents({
     assistantConversationRunner,
     conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
     onConversationTurnStarted: () => {},
@@ -68,4 +72,8 @@ test("relayAssistantResponseRunnerEvents converts a thrown runner error into a s
     "assistant_turn_started",
     "assistant_message_failed",
   ]);
+  expect(relayResult.terminalAssistantResponseEvent).toMatchObject({
+    type: "assistant_message_failed",
+    errorText: "runner exploded",
+  });
 });

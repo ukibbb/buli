@@ -5,10 +5,7 @@ import type {
   ToolCallRequest,
 } from "@buli/contracts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
-import type {
-  OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
-  OpenAiProviderFunctionCallIntent,
-} from "./toolDefinitions.ts";
+import type { OpenAiProviderFunctionCallIntent } from "./toolDefinitions.ts";
 
 export function createProviderTextChunkEvent(text: string): ProviderStreamEvent {
   return { type: "text_chunk", text };
@@ -36,26 +33,12 @@ export function createProviderToolCallsRequestedEvent(
   };
 }
 
-function createProviderCodeExecutionWalkthroughPresentedEvent(
-  providerFunctionCallIntent: OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
-): ProviderStreamEvent {
-  return {
-    type: "code_execution_walkthrough_presented",
-    presentationCallId: providerFunctionCallIntent.functionCallId,
-    codeExecutionWalkthrough: providerFunctionCallIntent.codeExecutionWalkthrough,
-  };
-}
-
 export function createProviderFunctionCallIntentEvents(
   providerFunctionCallIntents: readonly OpenAiProviderFunctionCallIntent[],
 ): ProviderStreamEvent[] {
   const providerFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(providerFunctionCallIntents);
-  const codeExecutionWalkthroughPresentedEvents = providerFunctionCallIntentClassification.presentationFunctionCallIntents.map(
-    createProviderCodeExecutionWalkthroughPresentedEvent,
-  );
 
   return [
-    ...codeExecutionWalkthroughPresentedEvents,
     ...(providerFunctionCallIntentClassification.requestedToolCalls.length > 0
       ? [createProviderToolCallsRequestedEvent(providerFunctionCallIntentClassification.requestedToolCalls)]
       : []),

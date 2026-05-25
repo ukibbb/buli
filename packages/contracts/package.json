@@ -9,9 +9,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "zod": "^3.24.2"
+    "zod": "^4.4.3"
   },
   "scripts": {
+    "schema:provider-protocol": "bun scripts/writeProviderProtocolJsonSchema.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   }

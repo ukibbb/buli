@@ -10,7 +10,7 @@ async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Prom
 }
 
 describe("TaskToolCallCard (opentui)", () => {
-  test("streaming renders Explore Agent label, bracketed description, and only the snake status", async () => {
+  test("streaming renders Explore Agent label, bracketed description, and starting status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TaskToolCallCard
         toolCallDetail={{
@@ -28,11 +28,12 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(frame).toContain("Explore Agent");
     expect(frame).toContain("[explore: fetch release notes]");
     expect(frame).toContain("◆");
+    expect(frame).toContain("starting subagent");
     expect(frame).not.toContain("starting explore agent");
     expect(frame).not.toContain("running");
   });
 
-  test("streaming starts collapsed when subagent child activity exists", async () => {
+  test("streaming starts expanded when subagent child activity exists", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TaskToolCallCard
         toolCallDetail={{
@@ -52,21 +53,23 @@ describe("TaskToolCallCard (opentui)", () => {
           ],
         }}
         renderState="streaming"
+        toolCallStartedAtMs={Date.now() - 12_400}
       />,
       { width: 120, height: 16 },
     );
     await renderSettledMarkdownFrame(renderOnce);
     const frame = captureCharFrame();
-    expect(frame).toContain("[+]");
-    expect(frame).not.toContain("Task details: activity");
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("1 tool call / 12.4s · 1 active");
+    expect(frame).toContain("activity");
     expect(frame).not.toContain("click to show content");
-    expect(frame).not.toContain("Read");
+    expect(frame).toContain("Read");
+    expect(frame).toContain("README.md");
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("reading README.md");
-    expect(frame).not.toContain("running");
+    expect(frame).toContain("reading");
   });
 
-  test("streaming Explore Agent status hides child activity text", async () => {
+  test("streaming Explore Agent status exposes child activity text", async () => {
     const globStageRender = await testRender(
       <TaskToolCallCard
         toolCallDetail={{
@@ -91,7 +94,10 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderSettledMarkdownFrame(globStageRender.renderOnce);
     expect(globStageRender.captureCharFrame()).toContain("◆");
-    expect(globStageRender.captureCharFrame()).not.toContain("finding packages/**/*.ts");
+    expect(globStageRender.captureCharFrame()).toContain("1 tool call · 1 active");
+    expect(globStageRender.captureCharFrame()).toContain("Glob");
+    expect(globStageRender.captureCharFrame()).toContain("packages/**/*.ts");
+    expect(globStageRender.captureCharFrame()).toContain("searching");
 
     const grepStageRender = await testRender(
       <TaskToolCallCard
@@ -126,7 +132,41 @@ describe("TaskToolCallCard (opentui)", () => {
     );
     await renderSettledMarkdownFrame(grepStageRender.renderOnce);
     expect(grepStageRender.captureCharFrame()).toContain("◆");
-    expect(grepStageRender.captureCharFrame()).not.toContain("searching TaskToolCallCard");
+    expect(grepStageRender.captureCharFrame()).toContain("2 tool calls · 1 active");
+    expect(grepStageRender.captureCharFrame()).toContain("Grep");
+    expect(grepStageRender.captureCharFrame()).toContain("TaskToolCallCard");
+    expect(grepStageRender.captureCharFrame()).toContain("searching");
+  });
+
+  test("streaming Explore Agent status shows tool count and elapsed time while summary is pending", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map files",
+          subagentChildToolCalls: [
+            {
+              subagentChildToolCallId: "call-glob-1",
+              subagentChildToolCallStatus: "completed",
+              subagentChildToolCallStartedAtMs: 1,
+              subagentChildToolCallDetail: {
+                toolName: "glob",
+                globPattern: "packages/**/*.ts",
+              },
+            },
+          ],
+        }}
+        renderState="streaming"
+        toolCallStartedAtMs={Date.now() - 12_400}
+      />,
+      { width: 140, height: 16 },
+    );
+    await renderSettledMarkdownFrame(renderOnce);
+    const frame = captureCharFrame();
+    expect(frame).toContain("1 tool call / 12.4s");
+    expect(frame).not.toContain("waiting for summary");
+    expect(frame).not.toContain("child call");
   });
 
   test("completed renders Task label, bracketed description, prompt, result, and duration", async () => {
@@ -357,6 +397,68 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(expandedFrame).toContain("README.md explains");
   });
 
+  test("completed with research checkpoint renders one checkpoint section and real child failures", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map runtime",
+          subagentResearchCheckpoint: {
+            checkpointReason: "child_tool_result_text_length",
+            childToolCallCount: 39,
+            childToolResultTextLength: 314_820,
+            skippedChildToolCallCount: 1,
+          },
+          subagentChildToolCalls: [
+            {
+              subagentChildToolCallId: "call-read-1",
+              subagentChildToolCallStatus: "completed",
+              subagentChildToolCallStartedAtMs: 1,
+              subagentChildToolCallDetail: {
+                toolName: "read",
+                readFilePath: "runtime.ts",
+              },
+            },
+            {
+              subagentChildToolCallId: "call-task-1",
+              subagentChildToolCallStatus: "denied",
+              subagentChildToolCallStartedAtMs: 2,
+              subagentChildToolCallDenialText: "Subagents cannot spawn another subagent.",
+              subagentChildToolCallDetail: {
+                toolName: "task",
+                subagentName: "explore",
+                subagentDescription: "nested",
+              },
+            },
+          ],
+          subagentResultSummary: "Checkpoint summary returned.",
+        }}
+        renderState="completed"
+        durationMs={1234}
+      />,
+      { width: 150, height: 44 },
+    );
+    await renderOnce();
+    const collapsedFrame = captureCharFrame();
+    expect(collapsedFrame).toContain("checkpoint returned");
+    expect(collapsedFrame).not.toContain("Explorer research checkpoint");
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("checkpoint");
+    expect(expandedFrame).toContain("tool output limit reached");
+    expect(expandedFrame).toContain("Completed tool calls: 39");
+    expect(expandedFrame).toContain("Skipped requested tool calls: 1");
+    expect(expandedFrame).toContain("activity");
+    expect(expandedFrame).toContain("Subagents cannot spawn");
+    expect(expandedFrame).not.toContain("Explorer research budget reached");
+  });
+
   test("failed renders Task label, bracketed description, and error text", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TaskToolCallCard
@@ -372,5 +474,51 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(frame).toContain("Task");
     expect(frame).toContain("[explore: run migration]");
     expect(frame).toContain("crashed");
+  });
+
+  test("failed with child activity can expand failure evidence", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs",
+          subagentResearchCheckpoint: {
+            checkpointReason: "child_tool_call_count",
+            childToolCallCount: 192,
+            childToolResultTextLength: 42_000,
+            skippedChildToolCallCount: 1,
+          },
+          subagentChildToolCalls: [
+            {
+              subagentChildToolCallId: "call-read-1",
+              subagentChildToolCallStatus: "completed",
+              subagentChildToolCallStartedAtMs: 1,
+              subagentChildToolCallDetail: {
+                toolName: "read",
+                readFilePath: "README.md",
+              },
+            },
+          ],
+          subagentResultSummary: "Partial findings before failure.",
+        }}
+        renderState="failed"
+        errorText="Explorer continued requesting tools after checkpoint"
+      />,
+      { width: 150, height: 34 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).not.toContain("Partial findings");
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("Explorer continued requesting");
+    expect(expandedFrame).toContain("checkpoint");
+    expect(expandedFrame).toContain("README.md");
+    expect(expandedFrame).toContain("Partial findings");
   });
 });

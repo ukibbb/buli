@@ -14,6 +14,7 @@ export type ToolCallRenderStatePresentation = {
 export type ExpandableToolCallCardProps = {
   accentColor: string;
   approvalDecisionControl?: ReactNode;
+  defaultIsContentExpanded?: boolean;
   hasExpandableContent: boolean;
   pendingSnakeVariant?: "sixCell" | "eatingApple";
   renderExpandedContent: () => ReactNode;
@@ -24,7 +25,8 @@ export type ExpandableToolCallCardProps = {
 };
 
 export function ExpandableToolCallCard(props: ExpandableToolCallCardProps): ReactNode {
-  const [isToolCallContentExpanded, setIsToolCallContentExpanded] = useState(false);
+  const [manualContentExpansionState, setManualContentExpansionState] = useState<boolean | undefined>(undefined);
+  const isToolCallContentExpanded = manualContentExpansionState ?? props.defaultIsContentExpanded ?? false;
 
   return (
     <SurfaceCard
@@ -41,7 +43,10 @@ export function ExpandableToolCallCard(props: ExpandableToolCallCardProps): Reac
                 isContentExpandable: true,
                 isContentExpanded: isToolCallContentExpanded,
                 onContentExpansionToggle: () => {
-                  setIsToolCallContentExpanded((currentToolCallContentExpanded) => !currentToolCallContentExpanded);
+                  setManualContentExpansionState((currentManualContentExpansionState) => {
+                    const currentContentExpansionState = currentManualContentExpansionState ?? props.defaultIsContentExpanded ?? false;
+                    return !currentContentExpansionState;
+                  });
                 },
               }
             : { isContentExpandable: false }}

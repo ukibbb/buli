@@ -36,7 +36,7 @@ export type UseChatScreenControllerInput = {
 
 export type UseChatScreenControllerResult = Pick<
   ChatScreenLayoutProps,
-  "mainAreaProps" | "liveInteractionChromeProps"
+  "mainAreaProps" | "liveInteractionChromeProps" | "totalContextTokensUsed" | "contextWindowTokenCapacity"
 >;
 
 export function useChatScreenController(input: UseChatScreenControllerInput): UseChatScreenControllerResult {
@@ -125,12 +125,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const {
     isPromptInputDisabled,
     availableChatSlashCommands,
-    shortModeLabel,
-    nextShortModeLabel,
-    nextModeAccentColor,
     inputPanelAccentColor,
-    promptInputHintOverride,
-    reasoningEffortLabel,
     availableCommandHelpModalRowCount,
     totalContextTokensUsed,
     contextWindowTokenCapacity,
@@ -312,26 +307,21 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   });
   const currentPromptComposerProps: PromptComposerChromeProps = {
     conversationTurnStatus: chatAppController.promptComposerState.conversationTurnStatus,
+    isConversationCompactionRunning: chatAppController.interactionStatusState.conversationSessionCompactionStatus.step === "compacting",
     promptDraft: chatAppController.promptComposerState.promptDraft,
     promptDraftCursorOffset: chatAppController.promptComposerState.promptDraftCursorOffset,
     pendingPromptImageAttachments: chatAppController.promptComposerState.pendingPromptImageAttachments,
+    pendingPromptTextPastes: chatAppController.promptComposerState.pendingPromptTextPastes,
     selectedPromptContextReferenceTexts: chatAppController.promptComposerState.selectedPromptContextReferenceTexts,
-    selectedModelId: chatAppController.promptComposerState.selectedModelId,
     shouldRenderMinimumHeightPromptStrip,
     isPromptInputDisabled,
     queuedPromptCount: chatAppController.promptComposerState.queuedPromptCount,
     isActiveTurnInterruptConfirmationArmed: chatAppController.promptComposerState.isActiveTurnInterruptConfirmationArmed,
     inputPanelAccentColor,
-    promptInputHintOverride,
-    shortModeLabel,
-    nextShortModeLabel,
-    nextModeAccentColor,
-    reasoningEffortLabel,
-    totalContextTokensUsed,
-    contextWindowTokenCapacity,
     onPromptDraftEdited: applyPromptTextareaEditToChatScreen,
     onPromptSubmitted: submitPromptDraftFromPromptTextarea,
     onNativeClipboardPasteRequested: pasteClipboardImageAttachmentIntoPrompt,
+    onSummarizedPromptTextPasted: chatAppController.insertSummarizedPastedTextIntoChatAppPrompt,
   };
   const promptComposerProps = selectShallowStableObject({
     previousValue: stablePromptComposerPropsRef.current,
@@ -352,6 +342,8 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   return {
     mainAreaProps,
     liveInteractionChromeProps,
+    totalContextTokensUsed,
+    contextWindowTokenCapacity,
   };
 }
 

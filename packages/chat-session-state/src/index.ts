@@ -1,6 +1,7 @@
 export {
   type ChatSessionState,
   type PendingPromptImageAttachment,
+  type PendingPromptTextPaste,
   type ModelAndReasoningSelectionState,
   type ConversationSessionSelectionState,
   type PromptContextSelectionState,
@@ -60,6 +61,7 @@ export {
 export {
   getActivePromptContextQueryText,
   appendPromptImageAttachmentToDraft,
+  insertSummarizedPastedTextIntoPromptDraft,
   insertTextIntoPromptDraftAtCursor,
   movePromptDraftCursorLeft,
   movePromptDraftCursorRight,
@@ -115,4 +117,7 @@ export { toggleReasoningSummaryVisibility } from "./reasoningSummaryVisibilityRe
 export {
   clearConversationTranscript,
   hydrateConversationTranscriptFromSessionEntries,
+  removeConversationCompactionProgressFromTranscript,
+  upsertConversationCompactionProgressInTranscript,
+  type ConversationCompactionProgressSource,
 } from "./conversationTranscriptReducer.ts";

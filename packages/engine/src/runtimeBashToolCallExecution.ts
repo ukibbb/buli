@@ -52,15 +52,9 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   const startedToolCallDetail = createStartedBashToolCallDetail(input.bashToolCallRequest);
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
-  const readOnlyModeBashToolDecision = isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)
-    ? classifyBashToolApprovalRequirement(input.bashToolCallRequest, "risk_based")
-    : undefined;
 
-  if (readOnlyModeBashToolDecision?.approvalPolicy === "requires_user_approval") {
-    const denialText = [
-      `${formatAssistantOperatingModeName(input.assistantOperatingMode)} is read-only, so this bash command was not executed.`,
-      readOnlyModeBashToolDecision.riskExplanation,
-    ].join(" ");
+  if (isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)) {
+    const denialText = `${formatAssistantOperatingModeName(input.assistantOperatingMode)} is read-only, so this bash command was not executed.`;
     input.toolResultSessionRecorder.appendDeniedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: startedToolCallDetail,
@@ -70,8 +64,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.read_only_mode_blocked", {
       toolCallId: input.toolCallId,
       assistantOperatingMode: input.assistantOperatingMode,
-      matchedRiskKind: readOnlyModeBashToolDecision.matchedRiskKind,
-      riskExplanationLength: readOnlyModeBashToolDecision.riskExplanation.length,
+      toolName: input.bashToolCallRequest.toolName,
     });
     yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartAddedEventSchema.parse({
       type: "assistant_message_part_added",

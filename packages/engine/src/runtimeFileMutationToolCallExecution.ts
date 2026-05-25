@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   AssistantMessagePartAddedEventSchema,
   AssistantMessagePartUpdatedEventSchema,
-  AssistantPendingToolApprovalClearedEventSchema,
-  AssistantPendingToolApprovalRequestedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
   isFileMutationToolCallRequest as isContractFileMutationToolCallRequest,
@@ -17,17 +15,29 @@ import {
 import type { ProviderConversationTurn } from "./provider.ts";
 import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
-import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import {
   beginRuntimeWorkspacePatchCapture,
   recordWorkspacePatchAndCreateAssistantEvent,
 } from "./runtimeWorkspacePatchCapture.ts";
 import {
+  prepareEditManyToolCall,
+  runPreparedEditManyToolCall,
+  type PreparedEditManyToolCall,
+} from "./tools/editManyTool.ts";
+import {
   prepareEditToolCall,
   runPreparedEditToolCall,
   type PreparedEditToolCall,
 } from "./tools/editTool.ts";
+import {
+  preparePatchManyToolCall,
+  preparePatchToolCall,
+  runPreparedPatchManyToolCall,
+  runPreparedPatchToolCall,
+  type PreparedPatchManyToolCall,
+  type PreparedPatchToolCall,
+} from "./tools/patchTool.ts";
 import type { FailedToolCallOutcome, ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 import {
   prepareWriteToolCall,
@@ -40,6 +50,9 @@ export type FileMutationToolCallRequest = ContractFileMutationToolCallRequest;
 
 type PreparedFileMutationToolCall =
   | { toolName: "edit"; preparedEditToolCall: PreparedEditToolCall }
+  | { toolName: "edit_many"; preparedEditManyToolCall: PreparedEditManyToolCall }
+  | { toolName: "patch"; preparedPatchToolCall: PreparedPatchToolCall }
+  | { toolName: "patch_many"; preparedPatchManyToolCall: PreparedPatchManyToolCall }
   | { toolName: "write"; preparedWriteToolCall: PreparedWriteToolCall };
 
 export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
@@ -52,7 +65,6 @@ export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
-  createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
@@ -137,73 +149,6 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
   const preparedToolCallDetail = getPreparedFileMutationToolCallDetail(preparedFileMutationToolCall);
   yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartAddedEventSchema.parse({
     type: "assistant_message_part_added",
-    messageId: input.assistantResponseMessageId,
-    part: AssistantToolCallConversationMessagePartSchema.parse({
-      id: toolCallPartId,
-      partKind: "assistant_tool_call",
-      toolCallId: input.toolCallId,
-      toolCallStatus: "pending_approval",
-      toolCallStartedAtMs,
-      toolCallDetail: preparedToolCallDetail,
-    }),
-  }));
-
-  const { approvalId, approvalDecisionPromise } = input.createPendingToolApproval({
-    toolCallId: input.toolCallId,
-    toolCallRequest: input.fileMutationToolCallRequest,
-  });
-  yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantPendingToolApprovalRequestedEventSchema.parse({
-    type: "assistant_pending_tool_approval_requested",
-    approvalRequest: {
-      approvalId,
-      pendingToolCallId: input.toolCallId,
-      pendingToolCallDetail: preparedToolCallDetail,
-      riskExplanation: buildFileMutationRiskExplanation(preparedToolCallDetail),
-    },
-  }));
-  const approvalDecision = await approvalDecisionPromise;
-  yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantPendingToolApprovalClearedEventSchema.parse({
-    type: "assistant_pending_tool_approval_cleared",
-    approvalId,
-  }));
-
-  if (approvalDecision === "interrupted") {
-    input.throwIfConversationTurnInterrupted();
-  }
-
-  if (approvalDecision === "denied") {
-    const denialText = `The user denied this ${input.fileMutationToolCallRequest.toolName} tool call, so it was not applied.`;
-    input.toolResultSessionRecorder.appendDeniedToolResultSessionEntry({
-      toolCallId: input.toolCallId,
-      toolCallDetail: preparedToolCallDetail,
-      toolResultText: denialText,
-      denialExplanation: denialText,
-    });
-    yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
-      type: "assistant_message_part_updated",
-      messageId: input.assistantResponseMessageId,
-      part: AssistantToolCallConversationMessagePartSchema.parse({
-        id: toolCallPartId,
-        partKind: "assistant_tool_call",
-        toolCallId: input.toolCallId,
-        toolCallStatus: "denied",
-        toolCallStartedAtMs,
-        toolCallDetail: preparedToolCallDetail,
-        denialText,
-      }),
-    }));
-    await submitProviderToolResultWithDiagnostics({
-      providerConversationTurn: input.providerConversationTurn,
-      toolCallId: input.toolCallId,
-      toolResultText: denialText,
-      toolResultKind: "denied",
-      diagnosticLogger: input.diagnosticLogger,
-    });
-    return;
-  }
-
-  yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
-    type: "assistant_message_part_updated",
     messageId: input.assistantResponseMessageId,
     part: AssistantToolCallConversationMessagePartSchema.parse({
       id: toolCallPartId,
@@ -328,6 +273,45 @@ async function prepareFileMutationToolCall(input: {
     return { toolName: "edit", preparedEditToolCall: editPreparationOutcome.preparedEditToolCall };
   }
 
+  if (input.fileMutationToolCallRequest.toolName === "edit_many") {
+    const editManyPreparationOutcome = await prepareEditManyToolCall({
+      editManyToolCallRequest: input.fileMutationToolCallRequest,
+      workspaceRootPath: input.workspaceRootPath,
+      abortSignal: input.abortSignal,
+    });
+    if (isFailedToolCallOutcome(editManyPreparationOutcome)) {
+      return editManyPreparationOutcome;
+    }
+
+    return { toolName: "edit_many", preparedEditManyToolCall: editManyPreparationOutcome.preparedEditManyToolCall };
+  }
+
+  if (input.fileMutationToolCallRequest.toolName === "patch") {
+    const patchPreparationOutcome = await preparePatchToolCall({
+      patchToolCallRequest: input.fileMutationToolCallRequest,
+      workspaceRootPath: input.workspaceRootPath,
+      abortSignal: input.abortSignal,
+    });
+    if (isFailedToolCallOutcome(patchPreparationOutcome)) {
+      return patchPreparationOutcome;
+    }
+
+    return { toolName: "patch", preparedPatchToolCall: patchPreparationOutcome.preparedPatchToolCall };
+  }
+
+  if (input.fileMutationToolCallRequest.toolName === "patch_many") {
+    const patchManyPreparationOutcome = await preparePatchManyToolCall({
+      patchManyToolCallRequest: input.fileMutationToolCallRequest,
+      workspaceRootPath: input.workspaceRootPath,
+      abortSignal: input.abortSignal,
+    });
+    if (isFailedToolCallOutcome(patchManyPreparationOutcome)) {
+      return patchManyPreparationOutcome;
+    }
+
+    return { toolName: "patch_many", preparedPatchManyToolCall: patchManyPreparationOutcome.preparedPatchManyToolCall };
+  }
+
   if (input.fileMutationToolCallRequest.toolName === "write") {
     const writePreparationOutcome = await prepareWriteToolCall({
       writeToolCallRequest: input.fileMutationToolCallRequest,
@@ -348,6 +332,15 @@ function getPreparedFileMutationToolCallDetail(preparedFileMutationToolCall: Pre
   if (preparedFileMutationToolCall.toolName === "edit") {
     return preparedFileMutationToolCall.preparedEditToolCall.toolCallDetail;
   }
+  if (preparedFileMutationToolCall.toolName === "edit_many") {
+    return preparedFileMutationToolCall.preparedEditManyToolCall.toolCallDetail;
+  }
+  if (preparedFileMutationToolCall.toolName === "patch") {
+    return preparedFileMutationToolCall.preparedPatchToolCall.toolCallDetail;
+  }
+  if (preparedFileMutationToolCall.toolName === "patch_many") {
+    return preparedFileMutationToolCall.preparedPatchManyToolCall.toolCallDetail;
+  }
   if (preparedFileMutationToolCall.toolName === "write") {
     return preparedFileMutationToolCall.preparedWriteToolCall.toolCallDetail;
   }
@@ -363,6 +356,27 @@ function runPreparedFileMutationToolCall(input: {
   if (input.preparedFileMutationToolCall.toolName === "edit") {
     return runPreparedEditToolCall({
       preparedEditToolCall: input.preparedFileMutationToolCall.preparedEditToolCall,
+      abortSignal: input.abortSignal,
+    });
+  }
+
+  if (input.preparedFileMutationToolCall.toolName === "edit_many") {
+    return runPreparedEditManyToolCall({
+      preparedEditManyToolCall: input.preparedFileMutationToolCall.preparedEditManyToolCall,
+      abortSignal: input.abortSignal,
+    });
+  }
+
+  if (input.preparedFileMutationToolCall.toolName === "patch") {
+    return runPreparedPatchToolCall({
+      preparedPatchToolCall: input.preparedFileMutationToolCall.preparedPatchToolCall,
+      abortSignal: input.abortSignal,
+    });
+  }
+
+  if (input.preparedFileMutationToolCall.toolName === "patch_many") {
+    return runPreparedPatchManyToolCall({
+      preparedPatchManyToolCall: input.preparedFileMutationToolCall.preparedPatchManyToolCall,
       abortSignal: input.abortSignal,
     });
   }
@@ -384,17 +398,6 @@ function assertUnhandledFileMutationToolCallRequest(fileMutationToolCallRequest:
 
 function assertUnhandledPreparedFileMutationToolCall(preparedFileMutationToolCall: never): never {
   throw new Error(`Unhandled prepared file mutation tool call: ${JSON.stringify(preparedFileMutationToolCall)}`);
-}
-
-function buildFileMutationRiskExplanation(toolCallDetail: ToolCallDetail): string {
-  if (toolCallDetail.toolName === "edit") {
-    return `This edit will modify ${toolCallDetail.editedFilePath}. Review the diff before approving.`;
-  }
-  if (toolCallDetail.toolName === "write") {
-    return `This write will create or overwrite ${toolCallDetail.writtenFilePath}. Review the diff before approving.`;
-  }
-
-  return "This tool call changes files. Review the diff before approving.";
 }
 
 function isFailedToolCallOutcome(value: unknown): value is FailedToolCallOutcome {

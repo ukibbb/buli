@@ -19,27 +19,30 @@ import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnosti
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { runGlobToolCall } from "./tools/globTool.ts";
 import { runGrepToolCall } from "./tools/grepTool.ts";
+import { runReadManyToolCall } from "./tools/readManyTool.ts";
 import { runReadToolCall } from "./tools/readTool.ts";
+import { runSearchManyToolCall } from "./tools/searchManyTool.ts";
 import type { ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 
 export type AutoApprovedReadOnlyToolCallRequest = WorkspaceInspectionToolCallRequest;
 
 type AutoApprovedReadOnlyToolName = WorkspaceInspectionToolRequestName;
-type AutoApprovedReadOnlyToolCallRequestByName<ToolName extends AutoApprovedReadOnlyToolName> = ToolCallRequestByName<ToolName>;
+type SingleReadOnlyToolName = Exclude<AutoApprovedReadOnlyToolName, "read_many" | "search_many">;
+type SingleReadOnlyToolCallRequestByName<ToolName extends SingleReadOnlyToolName> = ToolCallRequestByName<ToolName>;
 
-type AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName extends AutoApprovedReadOnlyToolName> = {
-  toolCallRequest: AutoApprovedReadOnlyToolCallRequestByName<ToolName>;
+type SingleReadOnlyToolCallExecutorRunInput<ToolName extends SingleReadOnlyToolName> = {
+  toolCallRequest: SingleReadOnlyToolCallRequestByName<ToolName>;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
 };
 
-type AutoApprovedReadOnlyToolCallExecutor<ToolName extends AutoApprovedReadOnlyToolName> = {
-  runToolCall(input: AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName>): Promise<ToolCallOutcome>;
+type SingleReadOnlyToolCallExecutor<ToolName extends SingleReadOnlyToolName> = {
+  runToolCall(input: SingleReadOnlyToolCallExecutorRunInput<ToolName>): Promise<ToolCallOutcome>;
 };
 
-const autoApprovedReadOnlyToolCallExecutorByName: {
-  readonly [ToolName in AutoApprovedReadOnlyToolName]: AutoApprovedReadOnlyToolCallExecutor<ToolName>;
+const singleReadOnlyToolCallExecutorByName: {
+  readonly [ToolName in SingleReadOnlyToolName]: SingleReadOnlyToolCallExecutor<ToolName>;
 } = {
   read: {
     runToolCall: (input) =>
@@ -145,7 +148,9 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
     throw new Error("Cannot execute an empty read-only tool-call batch.");
   }
 
-  const readOnlyToolCallConcurrencyLimiter = input.readOnlyToolCallConcurrencyLimiter ?? new RuntimeReadOnlyToolCallConcurrencyLimiter();
+  const readOnlyToolCallConcurrencyLimiter = input.readOnlyToolCallConcurrencyLimiter ?? new RuntimeReadOnlyToolCallConcurrencyLimiter({
+    diagnosticLogger: input.diagnosticLogger,
+  });
 
   const pendingToolCallExecutions = input.requestedToolCalls.map((requestedToolCall): PendingAutoApprovedReadOnlyToolCallExecution => ({
     ...requestedToolCall,
@@ -226,14 +231,14 @@ async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
     return {
       executionResultKind: "fulfilled",
       pendingToolCallExecution: input.pendingToolCallExecution,
-      toolCallOutcome: await input.readOnlyToolCallConcurrencyLimiter.run(() =>
-        runAutoApprovedReadOnlyToolCall({
-          toolCallRequest: input.pendingToolCallExecution.toolCallRequest,
-          workspaceRootPath: input.workspaceRootPath,
-          ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
-          abortSignal: input.abortSignal,
-        })
-      ),
+      toolCallOutcome: await runAutoApprovedReadOnlyToolCall({
+        toolCallRequest: input.pendingToolCallExecution.toolCallRequest,
+        toolCallId: input.pendingToolCallExecution.toolCallId,
+        readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+        workspaceRootPath: input.workspaceRootPath,
+        ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
+        abortSignal: input.abortSignal,
+      }),
     };
   } catch (error) {
     return {
@@ -316,30 +321,71 @@ export function isAutoApprovedReadOnlyToolCallRequest(
 
 function runAutoApprovedReadOnlyToolCall(input: {
   toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
+  toolCallId: string;
+  readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
 }): Promise<ToolCallOutcome> {
-  if (input.toolCallRequest.toolName === "read") {
-    return autoApprovedReadOnlyToolCallExecutorByName.read.runToolCall({
-      ...input,
-      toolCallRequest: input.toolCallRequest,
-    });
-  }
-  if (input.toolCallRequest.toolName === "glob") {
-    return autoApprovedReadOnlyToolCallExecutorByName.glob.runToolCall({
-      ...input,
-      toolCallRequest: input.toolCallRequest,
-    });
-  }
-  if (input.toolCallRequest.toolName === "grep") {
-    return autoApprovedReadOnlyToolCallExecutorByName.grep.runToolCall({
-      ...input,
-      toolCallRequest: input.toolCallRequest,
+  if (input.toolCallRequest.toolName === "read_many") {
+    return runReadManyToolCall({
+      readManyToolCallRequest: input.toolCallRequest,
+      parentToolCallId: input.toolCallId,
+      workspaceRootPath: input.workspaceRootPath,
+      readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+      ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
+      abortSignal: input.abortSignal,
     });
   }
 
+  if (input.toolCallRequest.toolName === "search_many") {
+    return runSearchManyToolCall({
+      searchManyToolCallRequest: input.toolCallRequest,
+      parentToolCallId: input.toolCallId,
+      workspaceRootPath: input.workspaceRootPath,
+      readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+      abortSignal: input.abortSignal,
+    });
+  }
+
+  if (input.toolCallRequest.toolName === "read") {
+    return runSingleAutoApprovedReadOnlyToolCall(input, "read", singleReadOnlyToolCallExecutorByName.read, input.toolCallRequest);
+  }
+  if (input.toolCallRequest.toolName === "glob") {
+    return runSingleAutoApprovedReadOnlyToolCall(input, "glob", singleReadOnlyToolCallExecutorByName.glob, input.toolCallRequest);
+  }
+  if (input.toolCallRequest.toolName === "grep") {
+    return runSingleAutoApprovedReadOnlyToolCall(input, "grep", singleReadOnlyToolCallExecutorByName.grep, input.toolCallRequest);
+  }
+
   return assertUnhandledReadOnlyToolCallRequest(input.toolCallRequest);
+}
+
+function runSingleAutoApprovedReadOnlyToolCall<ToolName extends SingleReadOnlyToolName>(
+  input: {
+    toolCallId: string;
+    readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+    workspaceRootPath: string;
+    projectInstructionTracker?: ProjectInstructionTracker;
+    abortSignal: AbortSignal;
+  },
+  toolName: ToolName,
+  toolCallExecutor: SingleReadOnlyToolCallExecutor<ToolName>,
+  toolCallRequest: ToolCallRequestByName<ToolName>,
+): Promise<ToolCallOutcome> {
+  return input.readOnlyToolCallConcurrencyLimiter.run(
+    () =>
+      toolCallExecutor.runToolCall({
+        toolCallRequest,
+        workspaceRootPath: input.workspaceRootPath,
+        ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
+        abortSignal: input.abortSignal,
+      }),
+    {
+      toolCallId: input.toolCallId,
+      toolName,
+    },
+  );
 }
 
 function assertUnhandledReadOnlyToolCallRequest(toolCallRequest: never): never {

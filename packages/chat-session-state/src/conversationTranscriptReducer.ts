@@ -28,7 +28,12 @@ type HydratedToolResultPartBase = {
   toolCallDetail: ToolCallDetail;
 };
 
+export type ConversationCompactionProgressSource = "manual" | "auto";
+
 const INTERRUPTED_TOOL_CALL_ERROR_TEXT = "Tool call was interrupted before a result was recorded.";
+const ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID = "active-conversation-compaction";
+const ACTIVE_CONVERSATION_COMPACTION_SEPARATOR_PART_ID = "active-conversation-compaction-separator";
+const ACTIVE_CONVERSATION_COMPACTION_SUMMARY_PART_ID = "active-conversation-compaction-summary";
 
 export function clearConversationTranscript(chatSessionState: ChatSessionState): ChatSessionState {
   return {
@@ -37,6 +42,7 @@ export function clearConversationTranscript(chatSessionState: ChatSessionState):
     promptDraft: "",
     promptDraftCursorOffset: 0,
     pendingPromptImageAttachments: [],
+    pendingPromptTextPastes: [],
     latestTokenUsage: undefined,
     latestContextWindowUsage: undefined,
     conversationMessagesById: {},
@@ -65,6 +71,132 @@ export function hydrateConversationTranscriptFromSessionEntries(
     orderedConversationMessageIds: hydratedConversationTranscript.orderedConversationMessageIds,
     conversationMessagePartCount: hydratedConversationTranscript.conversationMessagePartCount,
   };
+}
+
+export function upsertConversationCompactionProgressInTranscript(input: {
+  chatSessionState: ChatSessionState;
+  source: ConversationCompactionProgressSource;
+  summaryText: string;
+  compactionStartedAtMs?: number | undefined;
+}): ChatSessionState {
+  const existingCompactionMessage = input.chatSessionState.conversationMessagesById[ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID];
+  const nextCompactionMessage: ConversationMessage = {
+    id: ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID,
+    role: "assistant",
+    messageStatus: "streaming",
+    createdAtMs: existingCompactionMessage?.createdAtMs ?? input.compactionStartedAtMs ?? Date.now(),
+    partIds: [ACTIVE_CONVERSATION_COMPACTION_SEPARATOR_PART_ID, ACTIVE_CONVERSATION_COMPACTION_SUMMARY_PART_ID],
+  };
+  const nextSeparatorPart = createCompactionSeparatorPart({
+    id: ACTIVE_CONVERSATION_COMPACTION_SEPARATOR_PART_ID,
+    source: input.source,
+  });
+  const nextSummaryTextPart = createCompactionSummaryTextPart({
+    id: ACTIVE_CONVERSATION_COMPACTION_SUMMARY_PART_ID,
+    partStatus: "streaming",
+    summaryText: input.summaryText,
+  });
+  const existingSeparatorPart = input.chatSessionState.conversationMessagePartsById[
+    ACTIVE_CONVERSATION_COMPACTION_SEPARATOR_PART_ID
+  ];
+  const existingSummaryTextPart = input.chatSessionState.conversationMessagePartsById[
+    ACTIVE_CONVERSATION_COMPACTION_SUMMARY_PART_ID
+  ];
+  if (
+    existingCompactionMessage?.messageStatus === nextCompactionMessage.messageStatus &&
+    existingSeparatorPart?.partKind === "assistant_compaction_separator" &&
+    existingSeparatorPart.source === input.source &&
+    existingSummaryTextPart?.partKind === "assistant_text" &&
+    existingSummaryTextPart.partStatus === "streaming" &&
+    existingSummaryTextPart.rawMarkdownText === input.summaryText
+  ) {
+    return input.chatSessionState;
+  }
+
+  const conversationMessagePartsById = {
+    ...input.chatSessionState.conversationMessagePartsById,
+    [ACTIVE_CONVERSATION_COMPACTION_SEPARATOR_PART_ID]: nextSeparatorPart,
+    [ACTIVE_CONVERSATION_COMPACTION_SUMMARY_PART_ID]: nextSummaryTextPart,
+  };
+  return {
+    ...input.chatSessionState,
+    conversationMessagesById: {
+      ...input.chatSessionState.conversationMessagesById,
+      [ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID]: nextCompactionMessage,
+    },
+    orderedConversationMessageIds: existingCompactionMessage
+      ? input.chatSessionState.orderedConversationMessageIds
+      : [...input.chatSessionState.orderedConversationMessageIds, ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID],
+    conversationMessagePartsById,
+    conversationMessagePartCount: Object.keys(conversationMessagePartsById).length,
+  };
+}
+
+export function removeConversationCompactionProgressFromTranscript(chatSessionState: ChatSessionState): ChatSessionState {
+  const activeCompactionMessage = chatSessionState.conversationMessagesById[ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID];
+  if (!activeCompactionMessage) {
+    return chatSessionState;
+  }
+
+  const removedPartIds = new Set(activeCompactionMessage.partIds);
+  const conversationMessagesById = omitRecordKey(
+    chatSessionState.conversationMessagesById,
+    ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID,
+  );
+  const conversationMessagePartsById = omitRecordKeys(chatSessionState.conversationMessagePartsById, removedPartIds);
+  return {
+    ...chatSessionState,
+    conversationMessagesById,
+    orderedConversationMessageIds: chatSessionState.orderedConversationMessageIds.filter(
+      (conversationMessageId) => conversationMessageId !== ACTIVE_CONVERSATION_COMPACTION_MESSAGE_ID,
+    ),
+    conversationMessagePartsById,
+    conversationMessagePartCount: Object.keys(conversationMessagePartsById).length,
+  };
+}
+
+function createCompactionSeparatorPart(input: {
+  id: string;
+  source: ConversationCompactionProgressSource;
+}): ConversationMessagePart {
+  return {
+    id: input.id,
+    partKind: "assistant_compaction_separator",
+    source: input.source,
+  };
+}
+
+function createCompactionSummaryTextPart(input: {
+  id: string;
+  partStatus: AssistantTextPartStatus;
+  summaryText: string;
+}): ConversationMessagePart {
+  return {
+    id: input.id,
+    partKind: "assistant_text",
+    partStatus: input.partStatus,
+    rawMarkdownText: input.summaryText,
+  };
+}
+
+function omitRecordKey<T>(record: Record<string, T>, omittedKey: string): Record<string, T> {
+  const nextRecord: Record<string, T> = {};
+  for (const [recordKey, recordValue] of Object.entries(record)) {
+    if (recordKey !== omittedKey) {
+      nextRecord[recordKey] = recordValue;
+    }
+  }
+  return nextRecord;
+}
+
+function omitRecordKeys<T>(record: Record<string, T>, omittedKeys: ReadonlySet<string>): Record<string, T> {
+  const nextRecord: Record<string, T> = {};
+  for (const [recordKey, recordValue] of Object.entries(record)) {
+    if (!omittedKeys.has(recordKey)) {
+      nextRecord[recordKey] = recordValue;
+    }
+  }
+  return nextRecord;
 }
 
 function buildHydratedConversationTranscript(
@@ -117,8 +249,7 @@ function buildHydratedConversationTranscript(
 
     return conversationMessage.partIds.some((partId) => {
       const conversationMessagePart = conversationMessagePartsById[partId];
-      return conversationMessagePart?.partKind === "assistant_text" ||
-        conversationMessagePart?.partKind === "assistant_code_execution_walkthrough";
+      return conversationMessagePart?.partKind === "assistant_text";
     });
   };
   const ensureAssistantConversationMessage = (entryIndex: number): string => {
@@ -201,7 +332,10 @@ function buildHydratedConversationTranscript(
       markDanglingHydratedToolCallsAsInterrupted(entryIndex);
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
-      if (conversationSessionEntry.promptSource === "auto_compaction_continue") {
+      if (
+        conversationSessionEntry.promptSource === "auto_compaction_continue" ||
+        conversationSessionEntry.promptSource === "auto_compaction_retry"
+      ) {
         return;
       }
 
@@ -241,13 +375,17 @@ function buildHydratedConversationTranscript(
         role: "assistant",
         messageStatus: "completed",
         createdAtMs: entryIndex,
-        partIds: [],
+          partIds: [],
       });
+      appendConversationMessagePart(compactionMessageId, createCompactionSeparatorPart({
+        id: `persisted-entry-${entryIndex}-compaction-separator`,
+        source: conversationSessionEntry.compactionSource ?? "manual",
+      }));
       appendConversationMessagePart(compactionMessageId, {
         id: `persisted-entry-${entryIndex}-compaction-summary`,
         partKind: "assistant_text",
         partStatus: "completed",
-        rawMarkdownText: [`**Context compacted**`, "", conversationSessionEntry.summaryText].join("\n"),
+        rawMarkdownText: conversationSessionEntry.summaryText,
       });
       return;
     }
@@ -259,37 +397,6 @@ function buildHydratedConversationTranscript(
         partKind: "assistant_text",
         partStatus: "completed",
         rawMarkdownText: conversationSessionEntry.assistantTextSegmentText,
-      });
-      return;
-    }
-
-    if (conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment") {
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
-      appendConversationMessagePart(assistantMessageId, {
-        id: `persisted-entry-${entryIndex}-assistant-code-execution-walkthrough`,
-        partKind: "assistant_code_execution_walkthrough",
-        titleText: conversationSessionEntry.titleText,
-        ...(conversationSessionEntry.summaryText !== undefined ? { summaryText: conversationSessionEntry.summaryText } : {}),
-        walkthroughKind: conversationSessionEntry.walkthroughKind,
-        steps: conversationSessionEntry.steps.map((walkthroughStep) => ({
-          stepTitle: walkthroughStep.stepTitle,
-          ...(walkthroughStep.whenText !== undefined ? { whenText: walkthroughStep.whenText } : {}),
-          whatHappensText: walkthroughStep.whatHappensText,
-          ...(walkthroughStep.dataStateText !== undefined ? { dataStateText: walkthroughStep.dataStateText } : {}),
-          ...(walkthroughStep.decisionText !== undefined ? { decisionText: walkthroughStep.decisionText } : {}),
-          ...(walkthroughStep.stateChangeText !== undefined ? { stateChangeText: walkthroughStep.stateChangeText } : {}),
-          ...(walkthroughStep.nextStepText !== undefined ? { nextStepText: walkthroughStep.nextStepText } : {}),
-          codeExamples: walkthroughStep.codeExamples.map((codeExample) => ({
-            sourceFilePath: codeExample.sourceFilePath,
-            ...(codeExample.sourceSymbolName !== undefined ? { sourceSymbolName: codeExample.sourceSymbolName } : {}),
-            startLineNumber: codeExample.startLineNumber,
-            endLineNumber: codeExample.endLineNumber,
-            ...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {}),
-            codeText: codeExample.codeText,
-            ...(codeExample.explanationText !== undefined ? { explanationText: codeExample.explanationText } : {}),
-            ...(codeExample.lineExplanations !== undefined ? { lineExplanations: codeExample.lineExplanations } : {}),
-          })),
-        })),
       });
       return;
     }

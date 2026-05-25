@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { resolveAvailableToolNamesForAssistantOperatingMode } from "../src/assistantOperatingModePolicy.ts";
+import {
+  resolveAssistantOperatingModeToolAccess,
+  resolveAvailableToolNamesForAssistantOperatingMode,
+} from "../src/assistantOperatingModePolicy.ts";
 
 test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools by default in understand mode", () => {
   expect(
@@ -7,16 +10,16 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "glob", "grep", "task"] });
+  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
   expect(
     resolveAvailableToolNamesForAssistantOperatingMode({
       assistantOperatingMode: "plan",
-      requestedAvailableToolNames: ["bash", "read", "write", "grep", "task"],
+      requestedAvailableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "task"],
     }),
-  ).toEqual({ availableToolNames: ["read", "grep", "task"] });
+  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "grep", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode preserves requested tools in implementation mode", () => {
@@ -34,5 +37,48 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation 
       assistantOperatingMode: "implementation",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["bash", "read", "glob", "grep", "edit", "write", "task"] });
+  ).toEqual({
+    availableToolNames: [
+      "bash",
+      "read",
+      "read_many",
+      "search_many",
+      "glob",
+      "grep",
+      "edit",
+      "edit_many",
+      "patch",
+      "patch_many",
+      "write",
+      "task",
+    ],
+  });
+});
+
+test("resolveAssistantOperatingModeToolAccess denies bash in plan mode", () => {
+  expect(
+    resolveAssistantOperatingModeToolAccess({
+      assistantOperatingMode: "plan",
+      requestedAvailableToolNames: undefined,
+      requestedToolName: "bash",
+    }),
+  ).toEqual({
+    accessKind: "denied",
+    effectiveAvailableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task"],
+    denialText: "Plan Agent is read-only, so this bash command was not executed.",
+  });
+});
+
+test("resolveAssistantOperatingModeToolAccess enforces explicit implementation tool overrides", () => {
+  expect(
+    resolveAssistantOperatingModeToolAccess({
+      assistantOperatingMode: "implementation",
+      requestedAvailableToolNames: ["read"],
+      requestedToolName: "write",
+    }),
+  ).toEqual({
+    accessKind: "denied",
+    effectiveAvailableToolNames: ["read"],
+    denialText: "Implementation Agent cannot use write in this turn. Available tools: read.",
+  });
 });

@@ -374,7 +374,7 @@ test("ChatScreen compacts the current session through slash command", async () =
   const compactedFrame = await renderedChatScreen.waitForAssistantEvents();
 
   expect(compactCount).toBe(1);
-  expect(compactedFrame).toContain("Context compacted");
+  expect(compactedFrame).toContain("Compaction");
   expect(compactedFrame).toContain("continue the manual compaction implementation");
 });
 
@@ -509,6 +509,7 @@ test("ChatScreen auto-compacts and continues after a terminal assistant turn", a
             summaryText: "Goal: continue after automatic compaction.",
             compactedEntryCount: 2,
             retainedRecentConversationSessionEntryCount: 0,
+            compactionSource: "auto",
           },
         ],
       };
@@ -520,7 +521,10 @@ test("ChatScreen auto-compacts and continues after a terminal assistant turn", a
   await renderedChatScreen.waitForAssistantEvents();
   const compactedFrame = await renderedChatScreen.waitForAssistantEvents();
 
-  expect(autoCompactionRequests).toEqual<ConversationAutoCompactionRequest[]>([
+  expect(autoCompactionRequests.map((autoCompactionRequest) => ({
+    selectedModelId: autoCompactionRequest.selectedModelId,
+    latestContextWindowUsage: autoCompactionRequest.latestContextWindowUsage,
+  }))).toEqual([
     {
       selectedModelId: "gpt-5.4",
       latestContextWindowUsage: terminalContextWindowUsage,
@@ -530,6 +534,9 @@ test("ChatScreen auto-compacts and continues after a terminal assistant turn", a
       latestContextWindowUsage: continuedUsage,
     },
   ]);
+  expect(autoCompactionRequests.every((autoCompactionRequest) =>
+    typeof autoCompactionRequest.onCompactionSummaryTextUpdated === "function"
+  )).toBe(true);
   expect(conversationTurnRequests.map((conversationTurnRequest) => ({
     userPromptText: conversationTurnRequest.userPromptText,
     promptSource: conversationTurnRequest.promptSource,
@@ -543,7 +550,7 @@ test("ChatScreen auto-compacts and continues after a terminal assistant turn", a
       promptSource: "auto_compaction_continue",
     },
   ]);
-  expect(compactedFrame).toContain("Context compacted");
+  expect(compactedFrame).toContain("Auto Compaction");
   expect(compactedFrame).toContain("continue after automatic compaction");
   expect(compactedFrame).toContain("Continued after compaction.");
   expect(compactedFrame).not.toContain("Continue if you have next steps, or stop and ask for clarification");
@@ -812,7 +819,7 @@ test("ChatScreen opens model picker through slash command instead of ctrl-l", as
   expect(modelFrame).toContain("GPT 5.4");
 });
 
-test("ChatScreen shows the model default reasoning label after choosing the model default", async () => {
+test("ChatScreen hides model reasoning choices after choosing the model default", async () => {
   const renderedChatScreen = await renderChatScreen({
     loadAvailableAssistantModels: async () => [
       {
@@ -831,8 +838,8 @@ test("ChatScreen shows the model default reasoning label after choosing the mode
   expect(reasoningChoicesFrame).toContain("Use model default (medium)");
 
   const selectedDefaultReasoningFrame = await renderedChatScreen.pressEnter();
-  expect(selectedDefaultReasoningFrame).toContain("gpt-5.4");
-  expect(selectedDefaultReasoningFrame).toContain("medium");
+  expect(selectedDefaultReasoningFrame).not.toContain("Use model default");
+  expect(selectedDefaultReasoningFrame).not.toContain("medium");
 });
 
 test("ChatScreen reports committed model selection changes", async () => {

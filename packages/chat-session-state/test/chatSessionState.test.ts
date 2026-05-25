@@ -20,11 +20,13 @@ import {
   replacePromptDraftFromEditor,
   removePromptImageAttachmentPlaceholderAtCursor,
   removePromptImageAttachmentPlaceholderBeforeCursor,
+  removeConversationCompactionProgressFromTranscript,
   selectAssistantOperatingMode,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingState,
   submitPromptDraft,
   toggleReasoningSummaryVisibility,
+  upsertConversationCompactionProgressInTranscript,
 } from "../src/index.ts";
 
 test("createInitialChatSessionState starts in understand mode", () => {
@@ -540,7 +542,7 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
 });
 
-test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compaction continuation prompts", () => {
+test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compaction prompts", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     [
@@ -549,12 +551,19 @@ test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compa
         summaryText: "Goal: continue after compaction.",
         compactedEntryCount: 2,
         retainedRecentConversationSessionEntryCount: 0,
+        compactionSource: "auto",
       },
       {
         entryKind: "user_prompt",
         promptText: "Continue if you have next steps.",
         modelFacingPromptText: "Continue if you have next steps.",
         promptSource: "auto_compaction_continue",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Original prompt retried after overflow.",
+        modelFacingPromptText: "Original prompt retried after overflow.",
+        promptSource: "auto_compaction_retry",
       },
       {
         entryKind: "assistant_message",
@@ -568,6 +577,55 @@ test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compa
     "assistant",
     "assistant",
   ]);
+  const compactionMessage = listOrderedConversationMessages(chatSessionState)[0];
+  expect(compactionMessage).toBeDefined();
+  expect(listOrderedConversationMessageParts(chatSessionState, compactionMessage!.id)).toEqual([
+    {
+      id: "persisted-entry-0-compaction-separator",
+      partKind: "assistant_compaction_separator",
+      source: "auto",
+    },
+    {
+      id: "persisted-entry-0-compaction-summary",
+      partKind: "assistant_text",
+      partStatus: "completed",
+      rawMarkdownText: "Goal: continue after compaction.",
+    },
+  ]);
+});
+
+test("upsertConversationCompactionProgressInTranscript streams a transient compaction message", () => {
+  const initialChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  const streamingCompactionState = upsertConversationCompactionProgressInTranscript({
+    chatSessionState: initialChatSessionState,
+    source: "auto",
+    summaryText: "Goal\n- Continue after compaction.",
+    compactionStartedAtMs: 42,
+  });
+
+  const [compactionMessage] = listOrderedConversationMessages(streamingCompactionState);
+  expect(compactionMessage).toMatchObject({
+    role: "assistant",
+    messageStatus: "streaming",
+    createdAtMs: 42,
+  });
+  expect(listOrderedConversationMessageParts(streamingCompactionState, compactionMessage!.id)).toEqual([
+    {
+      id: "active-conversation-compaction-separator",
+      partKind: "assistant_compaction_separator",
+      source: "auto",
+    },
+    {
+      id: "active-conversation-compaction-summary",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Goal\n- Continue after compaction.",
+    },
+  ]);
+
+  const clearedCompactionState = removeConversationCompactionProgressFromTranscript(streamingCompactionState);
+  expect(listOrderedConversationMessages(clearedCompactionState)).toEqual([]);
+  expect(clearedCompactionState.conversationMessagePartCount).toBe(0);
 });
 
 test("hydrateConversationTranscriptFromSessionEntries restores assistant text segments around tools", () => {
@@ -630,83 +688,6 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant text se
     { partKind: "assistant_text", rawMarkdownText: "I will read the README first.\n\n" },
     { partKind: "assistant_tool_call", toolCallDetail: { toolName: "read", readFilePath: "README.md" } },
     { partKind: "assistant_text", rawMarkdownText: "The README contains a Demo heading." },
-  ]);
-});
-
-test("hydrateConversationTranscriptFromSessionEntries restores assistant code execution walkthrough segments", () => {
-  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
-    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-    [
-      {
-        entryKind: "user_prompt",
-        promptText: "Explain the runtime flow",
-        modelFacingPromptText: "Explain the runtime flow",
-      },
-      {
-        entryKind: "assistant_code_execution_walkthrough_segment",
-        titleText: "Runtime flow",
-        summaryText: "The main stages in one turn.",
-        walkthroughKind: "source_walkthrough",
-        steps: [
-          {
-            stepTitle: "Prompt accepted",
-            whatHappensText: "The user prompt is recorded.",
-            codeExamples: [{
-              sourceFilePath: "packages/engine/src/runtime.ts",
-              startLineNumber: 1,
-              endLineNumber: 1,
-              codeText: "recordPrompt();",
-              lineExplanations: [{ lineNumber: 1, explanationText: "This stores the accepted prompt." }],
-            }],
-          },
-          {
-            stepTitle: "Provider streams",
-            whatHappensText: "Chunks become assistant events.",
-            codeExamples: [{ sourceFilePath: "packages/engine/src/stream.ts", startLineNumber: 2, endLineNumber: 3, codeText: "translateChunk();" }],
-          },
-        ],
-      },
-      {
-        entryKind: "assistant_message",
-        assistantMessageStatus: "completed",
-        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.",
-      },
-    ],
-  );
-
-  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState).find(
-    (conversationMessage) => conversationMessage.role === "assistant",
-  );
-  if (!assistantConversationMessage) {
-    throw new Error("expected assistant message");
-  }
-
-  expect(listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id)).toEqual([
-    {
-      id: "persisted-entry-1-assistant-code-execution-walkthrough",
-      partKind: "assistant_code_execution_walkthrough",
-      titleText: "Runtime flow",
-      summaryText: "The main stages in one turn.",
-      walkthroughKind: "source_walkthrough",
-      steps: [
-        {
-          stepTitle: "Prompt accepted",
-          whatHappensText: "The user prompt is recorded.",
-          codeExamples: [{
-            sourceFilePath: "packages/engine/src/runtime.ts",
-            startLineNumber: 1,
-            endLineNumber: 1,
-            codeText: "recordPrompt();",
-            lineExplanations: [{ lineNumber: 1, explanationText: "This stores the accepted prompt." }],
-          }],
-        },
-        {
-          stepTitle: "Provider streams",
-          whatHappensText: "Chunks become assistant events.",
-          codeExamples: [{ sourceFilePath: "packages/engine/src/stream.ts", startLineNumber: 2, endLineNumber: 3, codeText: "translateChunk();" }],
-        },
-      ],
-    },
   ]);
 });
 
@@ -995,6 +976,30 @@ test("assistant_message_completed backfills turn summary usage and reasoning tok
       },
     },
   ]);
+});
+
+test("assistant_turn_started preserves latest context-window usage for the prompt meter", () => {
+  let chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-1",
+    startedAtMs: 1,
+  });
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_message_completed",
+    messageId: "assistant-1",
+    usage: { total: 12, input: 5, output: 5, reasoning: 2, cache: { read: 0, write: 0 } },
+    contextWindowUsage: { total: 8, input: 5, output: 1, reasoning: 2, cache: { read: 0, write: 0 } },
+  });
+
+  chatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, {
+    type: "assistant_turn_started",
+    messageId: "assistant-2",
+    startedAtMs: 2,
+  });
+
+  expect(chatSessionState.latestTokenUsage).toBeUndefined();
+  expect(chatSessionState.latestContextWindowUsage?.total).toBe(8);
 });
 
 test("assistant_message_part_updated keeps the cached conversation part count stable", () => {

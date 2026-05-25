@@ -237,7 +237,52 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Thinking");
   });
 
-  test("renders user, reasoning, assistant text, tool call, and turn summary parts", async () => {
+  test("renders auto compaction separator before streamed summary text", async () => {
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "compaction-1",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: 1,
+        partIds: ["compaction-separator-1", "compaction-summary-1"],
+      },
+    ];
+    const conversationMessagePartsById: Record<string, ConversationMessagePart> = {
+      "compaction-separator-1": {
+        id: "compaction-separator-1",
+        partKind: "assistant_compaction_separator",
+        source: "auto",
+      },
+      "compaction-summary-1": {
+        id: "compaction-summary-1",
+        partKind: "assistant_text",
+        partStatus: "streaming",
+        rawMarkdownText: "## Goal\n- Continue after auto compaction.",
+      },
+    };
+
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
+        isReasoningSummaryVisible={true}
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
+        userMessageBorderColor="#10B981"
+      />,
+      { width: 90, height: 10 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Auto Compaction");
+    expect(frame).toContain("Continue after auto compaction");
+  });
+
+  test("renders user, reasoning, assistant text, and tool call parts while hiding turn summary metadata", async () => {
     const conversationMessages: ConversationMessage[] = [
       {
         id: "user-1",
@@ -315,9 +360,9 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Done");
     expect(frame).toContain("Read");
     expect(frame).toContain("src/index.ts");
-    expect(frame).toContain("100 tokens");
-    expect(frame).toContain("10 reasoning");
-    expect(frame).toContain("5 cached");
+    expect(frame).not.toContain("100 tokens");
+    expect(frame).not.toContain("10 reasoning");
+    expect(frame).not.toContain("5 cached");
     expect(frame).not.toContain("gpt-5.4");
   });
 

@@ -1,6 +1,7 @@
 import {
   AssistantMessageFailedEventSchema,
   AssistantMessageInterruptedEventSchema,
+  type AssistantMessageFailureKind,
   type AssistantResponseEvent,
   type ProjectInstructionSnapshot,
 } from "@buli/contracts";
@@ -97,6 +98,7 @@ export function finalizeInterruptedConversationTurn(input: RuntimeConversationTu
 export function finalizeFailedConversationTurn(input: RuntimeConversationTurnTerminalFinalizerInput & {
   acceptedPromptFallback: RuntimeConversationTurnAcceptedPromptFallback;
   failureExplanation: string;
+  failureKind?: AssistantMessageFailureKind | undefined;
 }): AssistantResponseEvent[] {
   appendAcceptedUserPromptIfMissing({
     conversationTurnSessionRecorder: input.conversationTurnSessionRecorder,
@@ -111,6 +113,7 @@ export function finalizeFailedConversationTurn(input: RuntimeConversationTurnTer
       entryKind: "assistant_message",
       assistantMessageStatus: "failed",
       assistantMessageText: input.providerStreamEventTranslator.assistantMessageText,
+      ...(input.failureKind ? { failureKind: input.failureKind } : {}),
       failureExplanation: input.failureExplanation,
     });
     return [
@@ -119,6 +122,7 @@ export function finalizeFailedConversationTurn(input: RuntimeConversationTurnTer
         type: "assistant_message_failed",
         messageId: input.assistantResponseMessageId,
         errorText: input.failureExplanation,
+        ...(input.failureKind ? { failureKind: input.failureKind } : {}),
       }),
     ];
   }
@@ -128,6 +132,7 @@ export function finalizeFailedConversationTurn(input: RuntimeConversationTurnTer
       type: "assistant_message_failed",
       messageId: input.assistantResponseMessageId,
       errorText: input.failureExplanation,
+      ...(input.failureKind ? { failureKind: input.failureKind } : {}),
     }),
   ];
 }

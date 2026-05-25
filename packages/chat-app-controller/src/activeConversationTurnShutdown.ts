@@ -2,7 +2,7 @@ import type { ActiveConversationTurn } from "@buli/engine";
 
 export class ActiveConversationTurnShutdownCoordinator {
   private activeConversationTurn: ActiveConversationTurn | undefined;
-  private activeConversationTurnSettlementPromise: Promise<void> | undefined;
+  private activeConversationTurnSettlementPromise: Promise<unknown> | undefined;
   private hasActiveConversationTurnInterruptBeenRequested = false;
 
   registerActiveConversationTurn(activeConversationTurn: ActiveConversationTurn): void {
@@ -10,7 +10,7 @@ export class ActiveConversationTurnShutdownCoordinator {
     this.hasActiveConversationTurnInterruptBeenRequested = false;
   }
 
-  registerActiveConversationTurnSettlement(activeConversationTurnSettlementPromise: Promise<void>): void {
+  registerActiveConversationTurnSettlement(activeConversationTurnSettlementPromise: Promise<unknown>): void {
     const trackedActiveConversationTurnSettlementPromise = activeConversationTurnSettlementPromise.finally(() => {
       if (this.activeConversationTurnSettlementPromise === trackedActiveConversationTurnSettlementPromise) {
         this.activeConversationTurnSettlementPromise = undefined;

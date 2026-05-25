@@ -1,5 +1,5 @@
 import { extractActivePromptContextQueryFromPromptDraft } from "@buli/prompt-context-core";
-import type { UserPromptImageAttachment } from "@buli/contracts";
+import type { AssistantOperatingMode, UserPromptImageAttachment } from "@buli/contracts";
 import type { ChatSessionState, SlashCommand } from "./chatSessionState.ts";
 import { cycleAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 import { hideCommandHelpModal } from "./commandHelpModalReducer.ts";
@@ -96,11 +96,13 @@ export type ChatSessionKeyboardEffect =
       effectType: "stream_assistant_response_for_submitted_prompt";
       submittedPromptText: string;
       submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+      submittedAssistantOperatingMode: AssistantOperatingMode;
     }
   | {
       effectType: "enqueue_submitted_prompt";
       submittedPromptText: string;
       submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
+      submittedAssistantOperatingMode: AssistantOperatingMode;
     }
   | {
       effectType: "submit_pending_tool_approval_decision";
@@ -183,23 +185,20 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
     });
   }
 
+  if (shouldCycleAssistantOperatingMode({
+    chatSessionState: input.chatSessionState,
+    chatSessionKeyboardInput: input.chatSessionKeyboardInput,
+    interactionScope,
+  })) {
+    return createChatSessionKeyboardInteraction({
+      nextChatSessionState: cycleAssistantOperatingMode(input.chatSessionState),
+      shouldConsumeKeyboardInput: true,
+    });
+  }
+
   if (shouldIgnorePromptDraftEditingDuringToolApproval(input.chatSessionState, interactionScope)) {
     return createChatSessionKeyboardInteraction({
       nextChatSessionState: input.chatSessionState,
-      shouldConsumeKeyboardInput: true,
-    });
-  }
-
-  if (shouldConsumeModeCycleDuringActiveConversationTurn(input.chatSessionState, input.chatSessionKeyboardInput, interactionScope)) {
-    return createChatSessionKeyboardInteraction({
-      nextChatSessionState: input.chatSessionState,
-      shouldConsumeKeyboardInput: true,
-    });
-  }
-
-  if (interactionScope === "prompt_draft_editing" && shouldCycleAssistantOperatingMode(input)) {
-    return createChatSessionKeyboardInteraction({
-      nextChatSessionState: cycleAssistantOperatingMode(input.chatSessionState),
       shouldConsumeKeyboardInput: true,
     });
   }
@@ -245,18 +244,6 @@ function shouldIgnorePromptDraftEditingDuringToolApproval(
 ): boolean {
   return interactionScope === "prompt_draft_editing" &&
     chatSessionState.conversationTurnStatus === "waiting_for_tool_approval";
-}
-
-function shouldConsumeModeCycleDuringActiveConversationTurn(
-  chatSessionState: ChatSessionState,
-  chatSessionKeyboardInput: ChatSessionKeyboardInput,
-  interactionScope: ChatSessionInteractionScope,
-): boolean {
-  return interactionScope === "prompt_draft_editing" &&
-    chatSessionState.conversationTurnStatus === "streaming_assistant_response" &&
-    chatSessionKeyboardInput.keyName === "tab" &&
-    !chatSessionKeyboardInput.isCtrlPressed &&
-    !chatSessionKeyboardInput.isMetaPressed;
 }
 
 function shouldRequestActiveConversationTurnInterrupt(
@@ -578,6 +565,7 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
           effectType: "enqueue_submitted_prompt",
           submittedPromptText: queuedPromptDraftSubmission.submittedPromptText,
           submittedPromptImageAttachments: queuedPromptDraftSubmission.submittedPromptImageAttachments,
+          submittedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
         },
       });
     }
@@ -606,6 +594,7 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
         effectType: "stream_assistant_response_for_submitted_prompt",
         submittedPromptText: promptDraftSubmission.submittedPromptText,
         submittedPromptImageAttachments: promptDraftSubmission.submittedPromptImageAttachments,
+        submittedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
       },
     });
   }
@@ -710,8 +699,12 @@ function applyKeyboardInputToPromptDraftEditingKeys(
 function shouldCycleAssistantOperatingMode(input: {
   chatSessionState: ChatSessionState;
   chatSessionKeyboardInput: ChatSessionKeyboardInput;
+  interactionScope: ChatSessionInteractionScope;
 }): boolean {
-  return input.chatSessionState.conversationTurnStatus === "waiting_for_user_input" &&
+  return (input.interactionScope === "prompt_draft_editing" || input.interactionScope === "tool_approval") &&
+    (input.chatSessionState.conversationTurnStatus === "waiting_for_user_input" ||
+      input.chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
+      input.chatSessionState.conversationTurnStatus === "waiting_for_tool_approval") &&
     input.chatSessionKeyboardInput.keyName === "tab" &&
     !input.chatSessionKeyboardInput.isCtrlPressed &&
     !input.chatSessionKeyboardInput.isMetaPressed;

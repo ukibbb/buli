@@ -4,7 +4,7 @@ import { ToolCallDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
-import { CodeExecutionWalkthroughSchema } from "./codeExecutionWalkthrough.ts";
+import { ContextWindowOverflowFailureKindSchema } from "./contextWindowOverflow.ts";
 import { WorkspacePatchSchema } from "./workspacePatch.ts";
 
 export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
@@ -23,7 +23,7 @@ export const UserPromptConversationSessionEntrySchema = z
     entryKind: z.literal("user_prompt"),
     promptText: z.string(),
     modelFacingPromptText: z.string(),
-    promptSource: z.enum(["auto_compaction_continue"]).optional(),
+    promptSource: z.enum(["auto_compaction_continue", "auto_compaction_retry"]).optional(),
     assistantOperatingMode: AssistantOperatingModeSchema.optional(),
     imageAttachments: z.array(UserPromptImageAttachmentSchema).optional(),
     projectInstructionSnapshots: z.array(ProjectInstructionSnapshotSchema).optional(),
@@ -56,6 +56,7 @@ export const IncompleteAssistantMessageConversationSessionEntrySchema = Assistan
 
 export const FailedAssistantMessageConversationSessionEntrySchema = AssistantMessageConversationSessionEntryBaseSchema.extend({
   assistantMessageStatus: z.literal("failed"),
+  failureKind: ContextWindowOverflowFailureKindSchema.optional(),
   failureExplanation: z.string().min(1),
 });
 
@@ -78,10 +79,6 @@ export const AssistantTextSegmentConversationSessionEntrySchema = z
   })
   .strict();
 
-export const AssistantCodeExecutionWalkthroughSegmentConversationSessionEntrySchema = CodeExecutionWalkthroughSchema.extend({
-  entryKind: z.literal("assistant_code_execution_walkthrough_segment"),
-}).strict();
-
 export const ToolCallConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("tool_call"),
@@ -96,6 +93,7 @@ export const ConversationCompactionSummaryConversationSessionEntrySchema = z
     summaryText: z.string().min(1),
     compactedEntryCount: z.number().int().nonnegative(),
     retainedRecentConversationSessionEntryCount: z.number().int().nonnegative().default(0),
+    compactionSource: z.enum(["manual", "auto"]).optional(),
   })
   .strict();
 
@@ -131,7 +129,6 @@ export const WorkspacePatchConversationSessionEntrySchema = z
 export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
   AssistantTextSegmentConversationSessionEntrySchema,
-  AssistantCodeExecutionWalkthroughSegmentConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
   ConversationCompactionSummaryConversationSessionEntrySchema,
@@ -165,12 +162,7 @@ export type InterruptedAssistantMessageConversationSessionEntry = z.infer<
 >;
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
 export type AssistantTextSegmentConversationSessionEntry = z.infer<typeof AssistantTextSegmentConversationSessionEntrySchema>;
-export type AssistantCodeExecutionWalkthroughSegmentConversationSessionEntry = z.infer<
-  typeof AssistantCodeExecutionWalkthroughSegmentConversationSessionEntrySchema
->;
-export type AssistantSegmentConversationSessionEntry =
-  | AssistantTextSegmentConversationSessionEntry
-  | AssistantCodeExecutionWalkthroughSegmentConversationSessionEntry;
+export type AssistantSegmentConversationSessionEntry = AssistantTextSegmentConversationSessionEntry;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;
 export type ConversationCompactionSummaryConversationSessionEntry = z.infer<
   typeof ConversationCompactionSummaryConversationSessionEntrySchema

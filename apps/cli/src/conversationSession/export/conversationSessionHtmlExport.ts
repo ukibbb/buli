@@ -4,11 +4,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   AssistantOperatingMode,
-  CodeExecutionCodeExample,
-  CodeExecutionWalkthrough,
   ConversationSessionEntry,
 } from "@buli/contracts";
 import { marked, Renderer, type Tokens } from "marked";
+import { parseConversationExportCodeFenceInfo } from "./codeFenceInfo.ts";
 import { escapeHtml, escapeHtmlAttribute } from "./htmlEscaping.ts";
 import { renderConversationSessionExportStyles } from "./styles.ts";
 import {
@@ -44,9 +43,14 @@ class SafeAssistantMarkdownHtmlRenderer extends Renderer {
   }
 
   override code({ text, lang }: Tokens.Code): string {
-    // Spread lang only when defined so exactOptionalPropertyTypes is satisfied — the renderer
-    // signature uses an optional property, not an explicit-undefined property.
-    return renderCodeWrap({ codeText: text, ...(lang !== undefined ? { languageLabel: lang } : {}) });
+    const codeFenceInfo = parseConversationExportCodeFenceInfo(lang);
+    const hasExplicitLanguageLabel = lang !== undefined && lang.trim().length > 0;
+    return renderCodeWrap({
+      codeText: text,
+      ...(hasExplicitLanguageLabel ? { languageLabel: codeFenceInfo.codeLanguageLabel } : {}),
+      ...(codeFenceInfo.codeFenceFilePath !== undefined ? { sourceFilePath: codeFenceInfo.codeFenceFilePath } : {}),
+      ...(codeFenceInfo.codeFenceDisplayLabel !== undefined ? { filePathLabel: codeFenceInfo.codeFenceDisplayLabel } : {}),
+    });
   }
 
   override link({ href, title, tokens }: Tokens.Link): string {
@@ -283,10 +287,7 @@ function writeConversationSessionTranscriptEntries(input: {
     if (conversationSessionEntry.entryKind === "user_prompt" || conversationSessionEntry.entryKind === "conversation_compaction_summary") {
       hasRenderedAssistantSegmentInCurrentTurn = false;
       nextRenderedEntry = renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex);
-    } else if (
-      conversationSessionEntry.entryKind === "assistant_text_segment" ||
-      conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment"
-    ) {
+    } else if (conversationSessionEntry.entryKind === "assistant_text_segment") {
       hasRenderedAssistantSegmentInCurrentTurn = true;
       nextRenderedEntry = renderConversationSessionTranscriptEntry(conversationSessionEntry, entryIndex);
     } else if (conversationSessionEntry.entryKind === "assistant_message") {
@@ -336,17 +337,6 @@ function renderConversationSessionTranscriptEntry(
       roleLabel: "Assistant",
       bodyHtml: `<div class="prose">${renderAssistantMarkdownText(conversationSessionEntry.assistantTextSegmentText)}</div>`,
       traceLabel: "Assistant note",
-    });
-  }
-
-  if (conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment") {
-    return buildRenderedEntry({
-      entryAnchorId,
-      indexNumberLabel,
-      roleKind: "assistant",
-      roleLabel: "Assistant",
-      bodyHtml: renderCodeExecutionWalkthroughBlock(conversationSessionEntry),
-      traceLabel: `Walkthrough: ${conversationSessionEntry.titleText}`,
     });
   }
 
@@ -552,84 +542,6 @@ function renderConversationCompactionSummaryBlock(
     description: `Context compacted from ${conversationSessionEntry.compactedEntryCount} entries.`,
   })}
 ${summaryHtml}`;
-}
-
-function renderCodeExecutionWalkthroughBlock(codeExecutionWalkthrough: CodeExecutionWalkthrough): string {
-  const introHtml = `<div class="panel">
-  <div class="panel-head">
-    <span class="panel-tool">source evidence</span>
-    <span class="panel-purpose">${escapeHtml(codeExecutionWalkthrough.titleText)}</span>
-  </div>
-  <div class="panel-body">
-    <p class="panel-notice">${escapeHtml(formatCodeExecutionWalkthroughKindDisplayName(codeExecutionWalkthrough.walkthroughKind))}</p>
-    ${codeExecutionWalkthrough.summaryText === undefined ? "" : `<p>${escapeHtml(codeExecutionWalkthrough.summaryText)}</p>`}
-  </div>
-</div>`;
-  const walkthroughStepsHtml = codeExecutionWalkthrough.steps.map((walkthroughStep) => {
-    const whenHtml = walkthroughStep.whenText === undefined
-      ? ""
-      : `<p><b>when:</b> ${escapeHtml(walkthroughStep.whenText)}</p>`;
-    const dataStateHtml = walkthroughStep.dataStateText === undefined
-      ? ""
-      : `<p><b>data/state:</b> ${escapeHtml(walkthroughStep.dataStateText)}</p>`;
-    const decisionHtml = walkthroughStep.decisionText === undefined
-      ? ""
-      : `<p><b>decision:</b> ${escapeHtml(walkthroughStep.decisionText)}</p>`;
-    const stateChangeHtml = walkthroughStep.stateChangeText === undefined
-      ? ""
-      : `<p><b>state change:</b> ${escapeHtml(walkthroughStep.stateChangeText)}</p>`;
-    const nextStepHtml = walkthroughStep.nextStepText === undefined
-      ? ""
-      : `<p><b>next:</b> ${escapeHtml(walkthroughStep.nextStepText)}</p>`;
-    const codeExamplesHtml = walkthroughStep.codeExamples.map(renderCodeExecutionCodeExampleBlock).join("\n");
-    return `<li>
-  <p><strong>${escapeHtml(walkthroughStep.stepTitle)}</strong></p>
-  ${whenHtml}
-  <p>${escapeHtml(walkthroughStep.whatHappensText)}</p>
-  ${dataStateHtml}
-  ${decisionHtml}
-  ${stateChangeHtml}
-  ${nextStepHtml}
-  ${codeExamplesHtml}
-</li>`;
-  }).join("\n");
-
-  return `${introHtml}
-<div class="prose"><ol>${walkthroughStepsHtml}</ol></div>`;
-}
-
-function renderCodeExecutionCodeExampleBlock(codeExample: CodeExecutionCodeExample): string {
-  const sourceSymbolHtml = codeExample.sourceSymbolName === undefined ? "" : ` &middot; ${escapeHtml(codeExample.sourceSymbolName)}`;
-  const explanationHtml = codeExample.explanationText === undefined ? "" : `<p class="panel-notice">${escapeHtml(codeExample.explanationText)}</p>`;
-  const sourceLabel = `${formatCodeExampleSourceRange(codeExample)}${codeExample.sourceSymbolName === undefined ? "" : ` ${codeExample.sourceSymbolName}`}`;
-  // Spread the optional languageLabel only when defined to keep exactOptionalPropertyTypes happy.
-  const codeWrapHtml = renderCodeWrap({
-    codeText: codeExample.codeText,
-    ...(codeExample.languageLabel !== undefined ? { languageLabel: codeExample.languageLabel } : {}),
-    sourceFilePath: codeExample.sourceFilePath,
-    filePathLabel: sourceLabel,
-  });
-  return `<div class="panel">
-  <div class="panel-head">
-    <span class="panel-tool">source</span>
-    <span class="panel-purpose">${escapeHtml(formatCodeExampleSourceRange(codeExample))}${sourceSymbolHtml}</span>
-  </div>
-  <div class="panel-body">
-    ${explanationHtml}
-    ${codeWrapHtml}
-  </div>
-</div>`;
-}
-
-function formatCodeExecutionWalkthroughKindDisplayName(walkthroughKind: CodeExecutionWalkthrough["walkthroughKind"]): string {
-  return walkthroughKind === "observed_runtime_trace" ? "observed runtime trace" : "source evidence";
-}
-
-function formatCodeExampleSourceRange(codeExample: CodeExecutionCodeExample): string {
-  const lineRange = codeExample.startLineNumber === codeExample.endLineNumber
-    ? `${codeExample.startLineNumber}`
-    : `${codeExample.startLineNumber}-${codeExample.endLineNumber}`;
-  return `${codeExample.sourceFilePath}:${lineRange}`;
 }
 
 function renderWorkspacePatchBlock(

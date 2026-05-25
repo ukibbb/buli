@@ -11,6 +11,7 @@ import {
 export async function collectConversationCompactionSummaryText(input: {
   providerConversationTurn: ProviderConversationTurn;
   diagnosticLogger: BuliDiagnosticLogger | undefined;
+  onCompactionSummaryTextUpdated?: ((summaryText: string) => void) | undefined;
 }): Promise<string> {
   let summaryText = "";
 
@@ -22,6 +23,7 @@ export async function collectConversationCompactionSummaryText(input: {
 
     if (providerStreamEvent.type === "text_chunk") {
       summaryText += providerStreamEvent.text;
+      input.onCompactionSummaryTextUpdated?.(summaryText);
       continue;
     }
 

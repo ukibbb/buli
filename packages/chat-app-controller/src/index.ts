@@ -47,6 +47,7 @@ export {
   useChatAppKeyboardActions,
   type ChatAppKeyboardInputApplication,
   type ChatAppPromptDraftEdit,
+  type ChatAppSummarizedPromptTextPaste,
   type UseChatAppKeyboardActionsInput,
   type UseChatAppKeyboardActionsResult,
 } from "./useChatAppKeyboardActions.ts";

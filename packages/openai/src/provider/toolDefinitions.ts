@@ -1,19 +1,14 @@
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
-  CodeExecutionWalkthroughKindSchema,
-  CodeExecutionWalkthroughSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  MAX_EDIT_MANY_TOOL_EDIT_COUNT,
+  MAX_GREP_CONTEXT_LINE_COUNT,
+  MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
   ToolCallRequestSchema,
-  isAssistantPresentationFunctionName,
   isAssistantSubagentName,
   isAssistantToolRequestName,
   type AssistantSubagentName,
-  type AssistantPresentationFunctionName,
   type AssistantToolRequestName,
-  type CodeExecutionLineExplanation,
-  type CodeExecutionWalkthrough,
-  type CodeExecutionWalkthroughKind,
-  type ProviderAvailablePresentationFunctionName,
   type ProviderAvailableToolName,
   type ToolCallRequest,
   type ToolCallRequestByName,
@@ -22,13 +17,15 @@ import type { ZodIssue } from "zod";
 
 type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boolean" | "null";
 
-type OpenAiProviderFunctionName = AssistantToolRequestName | AssistantPresentationFunctionName;
+type OpenAiProviderFunctionName = AssistantToolRequestName;
 
 type OpenAiToolParameterProperty = {
   readonly type: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
   readonly description: string;
   readonly minimum?: number;
   readonly maximum?: number;
+  readonly maxItems?: number;
+  readonly maxLength?: number;
   readonly minItems?: number;
   readonly enum?: readonly string[];
   readonly items?: OpenAiToolParameterProperty;
@@ -62,15 +59,16 @@ export type OpenAiExecutableToolCallIntent = {
   readonly toolCallRequest: ToolCallRequest;
 };
 
-export type OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent = {
-  readonly intentKind: "code_execution_walkthrough_presentation";
+export type OpenAiInvalidFunctionCallIntent = {
+  readonly intentKind: "invalid_function_call";
   readonly functionCallId: string;
-  readonly codeExecutionWalkthrough: CodeExecutionWalkthrough;
+  readonly functionName: string;
+  readonly invalidCallExplanation: string;
 };
 
 export type OpenAiProviderFunctionCallIntent =
   | OpenAiExecutableToolCallIntent
-  | OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent;
+  | OpenAiInvalidFunctionCallIntent;
 
 type OpenAiToolAdapter<ToolName extends AssistantToolRequestName> = {
   readonly toolName: ToolName;
@@ -116,7 +114,7 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
   return {
     type: "function",
     name: "read",
-    description: "Read a file or directory inside the current workspace. Use this instead of bash for paths already known from the user, glob, grep, or a previous directory read. Do not guess paths from imports, symbols, filenames, or extensions; discover uncertain paths with glob or grep first. For files, lines are returned with 1-indexed line numbers. If output is truncated and the missing lines may affect the answer, continue with offset before concluding.",
+    description: "Read a file or directory inside the current workspace. Use this only for exact paths already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Do not read paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. For files, lines are returned with 1-indexed line numbers. Do not guess offsets; if output is truncated and the missing lines may affect the answer, continue only from line counts returned by previous reads.",
     parameters: {
       type: "object",
       properties: {
@@ -136,6 +134,101 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
         },
       },
       required: ["filePath", "offset", "limit"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+export function createReadManyToolDefinition(): OpenAiToolDefinition<"read_many"> {
+  return {
+    type: "function",
+    name: "read_many",
+    description: "Read multiple files or directories inside the current workspace in one batched call. Use this when several exact paths are already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Prefer one larger independent read_many batch over many small sequential read calls because batch children run concurrently. Do not include paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. Each target uses the same offset and limit semantics as read.",
+    parameters: {
+      type: "object",
+      properties: {
+        targets: {
+          type: "array",
+          minItems: 1,
+          description: "Files or directories to read. Use only exact evidenced paths.",
+          items: {
+            type: "object",
+            description: "One file or directory read target.",
+            properties: {
+              filePath: {
+                type: "string",
+                description: "Path to the file or directory to read. Relative paths are resolved from the workspace root.",
+              },
+              offset: {
+                type: ["integer", "null"],
+                minimum: 1,
+                description: "1-indexed first line to return for this target, or null to start at line 1.",
+              },
+              limit: {
+                type: ["integer", "null"],
+                minimum: 1,
+                description: "Maximum number of lines or directory entries to return for this target, or null for the default limit.",
+              },
+            },
+            required: ["filePath", "offset", "limit"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["targets"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+export function createSearchManyToolDefinition(): OpenAiToolDefinition<"search_many"> {
+  return {
+    type: "function",
+    name: "search_many",
+    description: "Run multiple independent glob and grep searches inside the current workspace in one batched call. Use this first for broad file discovery or text-search mapping when the searches do not depend on each other. Prefer one larger independent search_many batch over many small sequential glob/grep calls because batch children run concurrently. For grep searches, set contextLineCount to a small number only when the surrounding lines are likely needed. Use read_many after search_many when several exact paths from the search results need inspection.",
+    parameters: {
+      type: "object",
+      properties: {
+        searches: {
+          type: "array",
+          minItems: 1,
+          description: "Independent searches to run. Put unrelated glob and grep mapping searches in the same call instead of separate function calls.",
+          items: {
+            type: "object",
+            description: "One glob or grep search.",
+            properties: {
+              searchKind: {
+                type: "string",
+                enum: ["glob", "grep"],
+                description: "Search type: glob finds file paths by filename pattern; grep searches file contents by regular expression.",
+              },
+              pattern: {
+                type: "string",
+                description: "Glob pattern for glob searches, or JavaScript regular expression pattern for grep searches.",
+              },
+              path: {
+                type: ["string", "null"],
+                description: "Single directory for glob, single file or directory for grep, or null to search from the workspace root. Do not pass multiple paths.",
+              },
+              include: {
+                type: ["string", "null"],
+                description: "Optional grep include glob, such as *.ts or **/*.{ts,tsx}; use null for glob searches.",
+              },
+              contextLineCount: {
+                type: ["integer", "null"],
+                minimum: 0,
+                maximum: MAX_GREP_CONTEXT_LINE_COUNT,
+                description: `For grep searches, number of context lines before and after each returned match, 0-${MAX_GREP_CONTEXT_LINE_COUNT}; use null for glob searches or broad mapping.`,
+              },
+            },
+            required: ["searchKind", "pattern", "path", "include", "contextLineCount"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["searches"],
       additionalProperties: false,
     },
     strict: true,
@@ -170,7 +263,7 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
   return {
     type: "function",
     name: "grep",
-    description: "Search text inside files in the current workspace using a JavaScript regular expression. Use this instead of bash for text search. The path argument is one file or directory only; do not pass multiple paths, shell globs, or a trailing * there.",
+    description: "Search text inside files in the current workspace using a JavaScript regular expression. Use this instead of bash for text search. The path argument is one file or directory only; do not pass multiple paths, shell globs, or a trailing * there. Set contextLineCount to a small number only when surrounding lines are likely needed; use null or 0 for broad discovery.",
     parameters: {
       type: "object",
       properties: {
@@ -186,8 +279,14 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
           type: ["string", "null"],
           description: 'Optional file glob to include, such as "*.ts" or "**/*.{ts,tsx}"; null searches all text files.',
         },
+        contextLineCount: {
+          type: ["integer", "null"],
+          minimum: 0,
+          maximum: MAX_GREP_CONTEXT_LINE_COUNT,
+          description: `Number of context lines before and after each returned match, 0-${MAX_GREP_CONTEXT_LINE_COUNT}; use null or 0 for broad discovery.`,
+        },
       },
-      required: ["pattern", "path", "include"],
+      required: ["pattern", "path", "include", "contextLineCount"],
       additionalProperties: false,
     },
     strict: true,
@@ -222,6 +321,94 @@ export function createEditToolDefinition(): OpenAiToolDefinition<"edit"> {
   };
 }
 
+export function createEditManyToolDefinition(): OpenAiToolDefinition<"edit_many"> {
+  return {
+    type: "function",
+    name: "edit_many",
+    description: "Apply multiple exact text replacements across one or more existing workspace files in one approval. Prefer this over several edit calls when changing multiple places, especially multiple places in the same file. Use patch or patch_many instead when a structured multi-line hunk is clearer than exact oldString replacements.",
+    parameters: {
+      type: "object",
+      properties: {
+        edits: {
+          type: "array",
+          minItems: 1,
+          maxItems: MAX_EDIT_MANY_TOOL_EDIT_COUNT,
+          description: "Ordered exact replacements to apply. Later edits see earlier edits in the same file.",
+          items: {
+            type: "object",
+            description: "One exact text replacement.",
+            properties: {
+              filePath: {
+                type: "string",
+                description: "Path to the existing file to edit. Relative paths are resolved from the workspace root.",
+              },
+              oldString: {
+                type: "string",
+                description: "Exact text to replace. It must appear exactly once unless replaceAll is true.",
+              },
+              newString: {
+                type: "string",
+                description: "Replacement text. Use an empty string only when intentionally deleting oldString.",
+              },
+              replaceAll: {
+                type: ["boolean", "null"],
+                description: "True to replace every occurrence of oldString in that file; null or false requires exactly one match.",
+              },
+            },
+            required: ["filePath", "oldString", "newString", "replaceAll"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["edits"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+export function createPatchToolDefinition(): OpenAiToolDefinition<"patch"> {
+  return {
+    type: "function",
+    name: "patch",
+    description: `Apply exactly one file section as a structured patch to the workspace in one approval. Use this for a single-file add/update/delete/move when a hunk is clearer than exact oldString replacement. Use patch_many for coordinated multi-file or multi-section changes. Patch syntax:\n*** Begin Patch\n*** Update File: src/app.ts\n@@\n-old\n+new\n*** End Patch`,
+    parameters: {
+      type: "object",
+      properties: {
+        patchText: {
+          type: "string",
+          maxLength: MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
+          description: "Full patch text. Must contain exactly one file section inside *** Begin Patch / *** End Patch.",
+        },
+      },
+      required: ["patchText"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+export function createPatchManyToolDefinition(): OpenAiToolDefinition<"patch_many"> {
+  return {
+    type: "function",
+    name: "patch_many",
+    description: `Apply a structured patch with one or more file sections in one approval. Prefer this for multi-file changes, multiple hunks in one file, or coordinated add/update/delete operations. Patch syntax:\n*** Begin Patch\n*** Add File: src/new.ts\n+export const value = true;\n*** Update File: src/app.ts\n@@\n-old\n+new\n*** Delete File: src/obsolete.ts\n*** End Patch`,
+    parameters: {
+      type: "object",
+      properties: {
+        patchText: {
+          type: "string",
+          maxLength: MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
+          description: "Full patch text with one or more file sections inside *** Begin Patch / *** End Patch.",
+        },
+      },
+      required: ["patchText"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
 export function createWriteToolDefinition(): OpenAiToolDefinition<"write"> {
   return {
     type: "function",
@@ -250,7 +437,7 @@ export function createTaskToolDefinition(): OpenAiToolDefinition<"task"> {
   return {
     type: "function",
     name: "task",
-    description: "Launch a built-in Buli subagent and return its concise result. Use this for broad, independent codebase investigation that benefits from a separate read-only agent. Currently available subagent: explore.",
+    description: "Launch a built-in Buli subagent and return its concise result. Use this for broad, independent codebase investigation that benefits from a separate read-only agent. When research naturally separates into independent areas, request multiple task calls in the same response instead of one oversized generic prompt. Give each task a focused scope, exact known paths or patterns, the question to answer, and the expected concise report shape. Currently available subagent: explore.",
     parameters: {
       type: "object",
       properties: {
@@ -274,186 +461,6 @@ export function createTaskToolDefinition(): OpenAiToolDefinition<"task"> {
   };
 }
 
-export function createPresentCodeExecutionWalkthroughToolDefinition(): OpenAiToolDefinition<"present_code_execution_walkthrough"> {
-  return {
-    type: "function",
-    name: "present_code_execution_walkthrough",
-    description: "Render structured source evidence in the Buli UI. This legacy presentation function is only available when explicitly enabled. Every code example must be copied from inspected source and include exact file path, line range, and code text.",
-    parameters: {
-      type: "object",
-      properties: {
-        titleText: {
-          type: "string",
-          description: "Short title for the source evidence.",
-        },
-        summaryText: {
-          type: ["string", "null"],
-          description: "Optional one-sentence context, or null when no summary is needed.",
-        },
-        walkthroughKind: {
-          type: "string",
-          enum: [...CodeExecutionWalkthroughKindSchema.options],
-          description: "Use source_walkthrough when explaining inspected code statically; use observed_runtime_trace only when actual runtime values were observed from execution, tests, logs, or debugger output.",
-        },
-        steps: {
-          type: "array",
-          minItems: 1,
-          description: "Ordered moments in time, as if stepping through the code during debugging. Include as many steps as needed for a clear, non-redundant explanation.",
-          items: {
-            type: "object",
-            description: "One moment in the code walkthrough.",
-            properties: {
-              stepTitle: {
-                type: "string",
-                description: "Short title for this moment.",
-              },
-              whenText: {
-                type: ["string", "null"],
-                description: "Optional timing/trigger context for this moment, or null when no extra timing context is needed.",
-              },
-              whatHappensText: {
-                type: "string",
-                description: "Plain explanation of what the code does at this moment.",
-              },
-              dataStateText: {
-                type: ["string", "null"],
-                description: "Optional description of the relevant data/state that exists now, or null when not useful.",
-              },
-              decisionText: {
-                type: ["string", "null"],
-                description: "Optional branch/condition/decision that controls the next path, or null when this step has no important branch.",
-              },
-              stateChangeText: {
-                type: ["string", "null"],
-                description: "Optional state mutation/result caused by this step, or null when no state changes.",
-              },
-              nextStepText: {
-                type: ["string", "null"],
-                description: "Optional explanation of where execution/data goes next, or null when not needed.",
-              },
-              codeExamples: {
-                type: "array",
-                minItems: 1,
-                description: "Exact source snippets that prove this step. Each snippet must come from an inspected file and should include line-by-line explanations when the snippet is important to understand.",
-                items: {
-                  type: "object",
-                  description: "One exact source snippet for this walkthrough step.",
-                  properties: {
-                    sourceFilePath: {
-                      type: "string",
-                      description: "Workspace-relative source file path for this snippet.",
-                    },
-                    sourceSymbolName: {
-                      type: ["string", "null"],
-                      description: "Optional function, class, method, or component name containing the snippet, or null when not useful.",
-                    },
-                    startLineNumber: {
-                      type: "integer",
-                      minimum: 1,
-                      description: "1-indexed first source line included in codeText.",
-                    },
-                    endLineNumber: {
-                      type: "integer",
-                      minimum: 1,
-                      description: "1-indexed final source line included in codeText.",
-                    },
-                    languageLabel: {
-                      type: ["string", "null"],
-                      description: "Optional language label such as ts, tsx, js, py, or null when unknown.",
-                    },
-                    codeText: {
-                      type: "string",
-                      description: "Exact code copied from the inspected source lines. Preserve indentation.",
-                    },
-                    explanationText: {
-                      type: ["string", "null"],
-                      description: "Optional short explanation of why this snippet matters for the current step, or null when the step text already explains it.",
-                    },
-                    lineExplanations: {
-                      type: ["array", "null"],
-                      description: "Optional line-by-line teaching notes for important source lines. Use simple explanations. Include project model, framework lifecycle, language mechanics, pseudocode, or uncertainty only when that layer helps.",
-                      items: {
-                        type: "object",
-                        description: "Explanation for one source line in codeText.",
-                        properties: {
-                          lineNumber: {
-                            type: "integer",
-                            minimum: 1,
-                            description: "1-indexed source line number being explained. Must be inside the snippet line range.",
-                          },
-                          explanationText: {
-                            type: "string",
-                            description: "Detailed but simple explanation of what this exact line does.",
-                          },
-                          projectModelText: {
-                            type: ["string", "null"],
-                            description: "Optional explanation of how this line models the application/project/business problem, or null when not relevant.",
-                          },
-                          frameworkLifecycleText: {
-                            type: ["string", "null"],
-                            description: "Optional explanation of the framework, library, package, or tool lifecycle involved, or null when not relevant or not verified.",
-                          },
-                          languageMechanicsText: {
-                            type: ["string", "null"],
-                            description: "Optional explanation of language mechanics such as generators, async iteration, types, or control flow, or null when not relevant or not verified.",
-                          },
-                          plainPseudocodeText: {
-                            type: ["string", "null"],
-                            description: "Optional tired-person pseudocode explanation for this line, or null when the explanationText already covers it.",
-                          },
-                          uncertaintyText: {
-                            type: ["string", "null"],
-                            description: "Optional explicit uncertainty. Use this when library/framework/language internals are not verified instead of pretending to know.",
-                          },
-                        },
-                        required: [
-                          "lineNumber",
-                          "explanationText",
-                          "projectModelText",
-                          "frameworkLifecycleText",
-                          "languageMechanicsText",
-                          "plainPseudocodeText",
-                          "uncertaintyText",
-                        ],
-                        additionalProperties: false,
-                      },
-                    },
-                  },
-                  required: [
-                    "sourceFilePath",
-                    "sourceSymbolName",
-                    "startLineNumber",
-                    "endLineNumber",
-                    "languageLabel",
-                    "codeText",
-                    "explanationText",
-                    "lineExplanations",
-                  ],
-                  additionalProperties: false,
-                },
-              },
-            },
-            required: [
-              "stepTitle",
-              "whenText",
-              "whatHappensText",
-              "dataStateText",
-              "decisionText",
-              "stateChangeText",
-              "nextStepText",
-              "codeExamples",
-            ],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["titleText", "summaryText", "walkthroughKind", "steps"],
-      additionalProperties: false,
-    },
-    strict: true,
-  };
-}
-
 const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]: OpenAiToolAdapter<ToolName> } = {
   bash: {
     toolName: "bash",
@@ -464,6 +471,16 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     toolName: "read",
     definition: createReadToolDefinition(),
     parseToolCallRequest: parseReadOpenAiToolCallRequest,
+  },
+  read_many: {
+    toolName: "read_many",
+    definition: createReadManyToolDefinition(),
+    parseToolCallRequest: parseReadManyOpenAiToolCallRequest,
+  },
+  search_many: {
+    toolName: "search_many",
+    definition: createSearchManyToolDefinition(),
+    parseToolCallRequest: parseSearchManyOpenAiToolCallRequest,
   },
   glob: {
     toolName: "glob",
@@ -480,6 +497,21 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     definition: createEditToolDefinition(),
     parseToolCallRequest: parseEditOpenAiToolCallRequest,
   },
+  edit_many: {
+    toolName: "edit_many",
+    definition: createEditManyToolDefinition(),
+    parseToolCallRequest: parseEditManyOpenAiToolCallRequest,
+  },
+  patch: {
+    toolName: "patch",
+    definition: createPatchToolDefinition(),
+    parseToolCallRequest: parsePatchOpenAiToolCallRequest,
+  },
+  patch_many: {
+    toolName: "patch_many",
+    definition: createPatchManyToolDefinition(),
+    parseToolCallRequest: parsePatchManyOpenAiToolCallRequest,
+  },
   write: {
     toolName: "write",
     definition: createWriteToolDefinition(),
@@ -492,33 +524,36 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
   },
 };
 
-const openAiPresentationFunctionDefinitionByName: {
-  readonly [FunctionName in AssistantPresentationFunctionName]: OpenAiToolDefinition<FunctionName>;
-} = {
-  present_code_execution_walkthrough: createPresentCodeExecutionWalkthroughToolDefinition(),
-};
-
 export function createOpenAiToolDefinitions(input: {
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
-  availablePresentationFunctionNames?: readonly ProviderAvailablePresentationFunctionName[] | undefined;
 } = {}): OpenAiToolDefinition[] {
   const availableToolNameSet = input.availableToolNames
     ? new Set<ProviderAvailableToolName>(input.availableToolNames)
     : undefined;
-  const requestedPresentationFunctionNames = input.availablePresentationFunctionNames
-    ? Array.from(new Set<ProviderAvailablePresentationFunctionName>(input.availablePresentationFunctionNames))
-    : [];
 
-  const executableToolDefinitions = ASSISTANT_TOOL_REQUEST_NAMES
+  return ASSISTANT_TOOL_REQUEST_NAMES
     .filter((toolName) => !availableToolNameSet || availableToolNameSet.has(toolName))
     .map((toolName) => openAiToolAdapterByName[toolName].definition);
-  const presentationFunctionDefinitions = requestedPresentationFunctionNames
-    .map((functionName) => openAiPresentationFunctionDefinitionByName[functionName]);
-
-  return [...executableToolDefinitions, ...presentationFunctionDefinitions];
 }
 
 export function createOpenAiProviderFunctionCallIntent(input: {
+  functionCallId: string;
+  functionName: string;
+  argumentsText: string;
+}): OpenAiProviderFunctionCallIntent {
+  try {
+    return createValidOpenAiProviderFunctionCallIntent(input);
+  } catch (error) {
+    return {
+      intentKind: "invalid_function_call",
+      functionCallId: input.functionCallId,
+      functionName: input.functionName,
+      invalidCallExplanation: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function createValidOpenAiProviderFunctionCallIntent(input: {
   functionCallId: string;
   functionName: string;
   argumentsText: string;
@@ -536,14 +571,6 @@ export function createOpenAiProviderFunctionCallIntent(input: {
         toolCallRequest: openAiToolAdapterByName[input.functionName].parseToolCallRequest(parsedArguments),
       }),
     };
-  }
-
-  if (isAssistantPresentationFunctionName(input.functionName)) {
-    return parseOpenAiPresentationFunctionCallIntent({
-      functionCallId: input.functionCallId,
-      functionName: input.functionName,
-      parsedArguments,
-    });
   }
 
   throw new Error(`Unsupported function requested by OpenAI: ${input.functionName}`);
@@ -580,97 +607,6 @@ function parseOpenAiToolCallRequestContract(input: {
   throw new Error(`OpenAI function call for ${input.toolName} violates Buli tool contract: ${contractViolationText}`);
 }
 
-function parseOpenAiPresentationFunctionCallIntent(input: {
-  functionCallId: string;
-  functionName: AssistantPresentationFunctionName;
-  parsedArguments: JsonObjectRecord;
-}): OpenAiProviderFunctionCallIntent {
-  if (input.functionName === "present_code_execution_walkthrough") {
-    return {
-      intentKind: "code_execution_walkthrough_presentation",
-      functionCallId: input.functionCallId,
-      codeExecutionWalkthrough: parseCodeExecutionWalkthroughPresentationFunctionArguments(input.parsedArguments),
-    };
-  }
-
-  return assertUnhandledPresentationFunctionName(input.functionName);
-}
-
-function parseCodeExecutionWalkthroughPresentationFunctionArguments(parsedArguments: JsonObjectRecord): CodeExecutionWalkthrough {
-  const functionName = "present_code_execution_walkthrough";
-  const summaryText = readOptionalStringToolArgument(parsedArguments, "summaryText", functionName);
-  const codeExecutionWalkthroughCandidate = {
-    titleText: readRequiredStringToolArgument(parsedArguments, "titleText", functionName),
-    ...(summaryText !== undefined ? { summaryText } : {}),
-    walkthroughKind: readRequiredCodeExecutionWalkthroughKindArgument(parsedArguments, "walkthroughKind", functionName),
-    steps: readRequiredObjectArrayFunctionArgument(parsedArguments, "steps", functionName).map((stepArguments) => {
-      const whenText = readOptionalStringToolArgument(stepArguments, "whenText", functionName);
-      const dataStateText = readOptionalStringToolArgument(stepArguments, "dataStateText", functionName);
-      const decisionText = readOptionalStringToolArgument(stepArguments, "decisionText", functionName);
-      const stateChangeText = readOptionalStringToolArgument(stepArguments, "stateChangeText", functionName);
-      const nextStepText = readOptionalStringToolArgument(stepArguments, "nextStepText", functionName);
-      return {
-        stepTitle: readRequiredStringToolArgument(stepArguments, "stepTitle", functionName),
-        ...(whenText !== undefined ? { whenText } : {}),
-        whatHappensText: readRequiredStringToolArgument(stepArguments, "whatHappensText", functionName),
-        ...(dataStateText !== undefined ? { dataStateText } : {}),
-        ...(decisionText !== undefined ? { decisionText } : {}),
-        ...(stateChangeText !== undefined ? { stateChangeText } : {}),
-        ...(nextStepText !== undefined ? { nextStepText } : {}),
-        codeExamples: readRequiredObjectArrayFunctionArgument(stepArguments, "codeExamples", functionName).map((codeExampleArguments) => {
-          const sourceSymbolName = readOptionalStringToolArgument(codeExampleArguments, "sourceSymbolName", functionName);
-          const languageLabel = readOptionalStringToolArgument(codeExampleArguments, "languageLabel", functionName);
-          const explanationText = readOptionalStringToolArgument(codeExampleArguments, "explanationText", functionName);
-          const lineExplanations = readOptionalObjectArrayFunctionArgument(codeExampleArguments, "lineExplanations", functionName)
-            ?.map((lineExplanationArguments) => parseCodeExecutionLineExplanationArguments(lineExplanationArguments, functionName));
-          return {
-            sourceFilePath: readRequiredStringToolArgument(codeExampleArguments, "sourceFilePath", functionName),
-            ...(sourceSymbolName !== undefined ? { sourceSymbolName } : {}),
-            startLineNumber: readRequiredPositiveIntegerToolArgument(codeExampleArguments, "startLineNumber", functionName),
-            endLineNumber: readRequiredPositiveIntegerToolArgument(codeExampleArguments, "endLineNumber", functionName),
-            ...(languageLabel !== undefined ? { languageLabel } : {}),
-            codeText: readRequiredStringToolArgument(codeExampleArguments, "codeText", functionName),
-            ...(explanationText !== undefined ? { explanationText } : {}),
-            ...(lineExplanations !== undefined ? { lineExplanations } : {}),
-          };
-        }),
-      };
-    }),
-  };
-  const parsedCodeExecutionWalkthrough = CodeExecutionWalkthroughSchema.safeParse(codeExecutionWalkthroughCandidate);
-  if (parsedCodeExecutionWalkthrough.success) {
-    return parsedCodeExecutionWalkthrough.data;
-  }
-
-  const contractViolationText = parsedCodeExecutionWalkthrough.error.issues.map(formatToolCallContractViolation).join("; ");
-  throw new Error(`OpenAI function call for present_code_execution_walkthrough violates Buli code execution walkthrough contract: ${contractViolationText}`);
-}
-
-function parseCodeExecutionLineExplanationArguments(
-  lineExplanationArguments: JsonObjectRecord,
-  functionName: string,
-): CodeExecutionLineExplanation {
-  const projectModelText = readOptionalStringToolArgument(lineExplanationArguments, "projectModelText", functionName);
-  const frameworkLifecycleText = readOptionalStringToolArgument(lineExplanationArguments, "frameworkLifecycleText", functionName);
-  const languageMechanicsText = readOptionalStringToolArgument(lineExplanationArguments, "languageMechanicsText", functionName);
-  const plainPseudocodeText = readOptionalStringToolArgument(lineExplanationArguments, "plainPseudocodeText", functionName);
-  const uncertaintyText = readOptionalStringToolArgument(lineExplanationArguments, "uncertaintyText", functionName);
-
-  return {
-    lineNumber: readRequiredPositiveIntegerToolArgument(lineExplanationArguments, "lineNumber", functionName),
-    explanationText: readRequiredStringToolArgument(lineExplanationArguments, "explanationText", functionName),
-    ...(projectModelText !== undefined ? { projectModelText } : {}),
-    ...(frameworkLifecycleText !== undefined ? { frameworkLifecycleText } : {}),
-    ...(languageMechanicsText !== undefined ? { languageMechanicsText } : {}),
-    ...(plainPseudocodeText !== undefined ? { plainPseudocodeText } : {}),
-    ...(uncertaintyText !== undefined ? { uncertaintyText } : {}),
-  };
-}
-
-function assertUnhandledPresentationFunctionName(functionName: never): never {
-  throw new Error(`Unhandled presentation function: ${functionName}`);
-}
-
 function formatToolCallContractViolation(issue: ZodIssue): string {
   const fieldPath = issue.path.length > 0 ? issue.path.join(".") : "request";
   return `${fieldPath}: ${issue.message}`;
@@ -699,6 +635,67 @@ function parseReadOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
   };
 }
 
+function parseReadManyOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"read_many"> {
+  const readTargetArguments = readRequiredObjectArrayToolArgument(parsedArguments, "targets", "read_many");
+  return {
+    toolName: "read_many",
+    readTargets: readTargetArguments.map((targetArguments) => {
+      const offsetLineNumber = readOptionalPositiveIntegerToolArgument(targetArguments, "offset", "read_many");
+      const maximumLineCount = readOptionalPositiveIntegerToolArgument(targetArguments, "limit", "read_many");
+      return {
+        readTargetPath: readRequiredStringToolArgument(targetArguments, "filePath", "read_many"),
+        ...(offsetLineNumber !== undefined ? { offsetLineNumber } : {}),
+        ...(maximumLineCount !== undefined ? { maximumLineCount } : {}),
+      };
+    }),
+  };
+}
+
+function parseSearchManyOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"search_many"> {
+  const searchArguments = readRequiredObjectArrayToolArgument(parsedArguments, "searches", "search_many");
+  return {
+    toolName: "search_many",
+    searches: searchArguments.map(parseSearchManySearchOpenAiToolCallRequest),
+  };
+}
+
+function parseSearchManySearchOpenAiToolCallRequest(
+  searchArguments: JsonObjectRecord,
+): ToolCallRequestByName<"search_many">["searches"][number] {
+  const searchKind = readRequiredStringToolArgument(searchArguments, "searchKind", "search_many");
+  const pattern = readRequiredStringToolArgument(searchArguments, "pattern", "search_many");
+  const searchPath = readOptionalStringToolArgument(searchArguments, "path", "search_many");
+  const includeGlobPattern = readOptionalStringToolArgument(searchArguments, "include", "search_many");
+  const contextLineCount = readOptionalNonNegativeIntegerToolArgument(searchArguments, "contextLineCount", "search_many");
+
+  if (searchKind === "glob") {
+    if (includeGlobPattern !== undefined) {
+      throw new Error("OpenAI function call for search_many has invalid glob search include argument: include must be null");
+    }
+    if (contextLineCount !== undefined) {
+      throw new Error("OpenAI function call for search_many has invalid glob search contextLineCount argument: contextLineCount must be null");
+    }
+
+    return {
+      searchKind: "glob",
+      globPattern: pattern,
+      ...(searchPath !== undefined ? { searchDirectoryPath: searchPath } : {}),
+    };
+  }
+
+  if (searchKind === "grep") {
+    return {
+      searchKind: "grep",
+      regexPattern: pattern,
+      ...(searchPath !== undefined ? { searchPath } : {}),
+      ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
+      ...(contextLineCount !== undefined ? { contextLineCount } : {}),
+    };
+  }
+
+  throw new Error(`OpenAI function call for search_many has unsupported searchKind: ${searchKind}`);
+}
+
 function parseGlobOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"glob"> {
   const searchDirectoryPath = readOptionalStringToolArgument(parsedArguments, "path", "glob");
   return {
@@ -711,11 +708,13 @@ function parseGlobOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
 function parseGrepOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"grep"> {
   const searchPath = readOptionalStringToolArgument(parsedArguments, "path", "grep");
   const includeGlobPattern = readOptionalStringToolArgument(parsedArguments, "include", "grep");
+  const contextLineCount = readOptionalNonNegativeIntegerToolArgument(parsedArguments, "contextLineCount", "grep");
   return {
     toolName: "grep",
     regexPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "grep"),
     ...(searchPath !== undefined ? { searchPath } : {}),
     ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
+    ...(contextLineCount !== undefined ? { contextLineCount } : {}),
   };
 }
 
@@ -725,6 +724,36 @@ function parseEditOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
     editTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "edit"),
     oldString: readRequiredStringToolArgument(parsedArguments, "oldString", "edit"),
     newString: readRequiredTextToolArgument(parsedArguments, "newString", "edit"),
+  };
+}
+
+function parseEditManyOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"edit_many"> {
+  const editArguments = readRequiredObjectArrayToolArgument(parsedArguments, "edits", "edit_many");
+  return {
+    toolName: "edit_many",
+    edits: editArguments.map((editArgument) => {
+      const replaceAll = readOptionalBooleanToolArgument(editArgument, "replaceAll", "edit_many");
+      return {
+        editTargetPath: readRequiredStringToolArgument(editArgument, "filePath", "edit_many"),
+        oldString: readRequiredStringToolArgument(editArgument, "oldString", "edit_many"),
+        newString: readRequiredTextToolArgument(editArgument, "newString", "edit_many"),
+        ...(replaceAll !== undefined ? { replaceAll } : {}),
+      };
+    }),
+  };
+}
+
+function parsePatchOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"patch"> {
+  return {
+    toolName: "patch",
+    patchText: readRequiredStringToolArgument(parsedArguments, "patchText", "patch"),
+  };
+}
+
+function parsePatchManyOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"patch_many"> {
+  return {
+    toolName: "patch_many",
+    patchText: readRequiredStringToolArgument(parsedArguments, "patchText", "patch_many"),
   };
 }
 
@@ -760,47 +789,6 @@ function parseOpenAiFunctionArguments(input: { functionName: string; argumentsTe
   return parsedArguments as JsonObjectRecord;
 }
 
-function readRequiredObjectArrayFunctionArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  functionName: string,
-): JsonObjectRecord[] {
-  const argumentValue = parsedArguments[argumentName];
-  if (!Array.isArray(argumentValue)) {
-    throw new Error(`OpenAI function call for ${functionName} is missing required object array argument: ${argumentName}`);
-  }
-
-  return argumentValue.map((arrayItem, arrayItemIndex) => {
-    if (typeof arrayItem !== "object" || arrayItem === null || Array.isArray(arrayItem)) {
-      throw new Error(`OpenAI function call for ${functionName} has invalid object at ${argumentName}[${arrayItemIndex}]`);
-    }
-
-    return arrayItem as JsonObjectRecord;
-  });
-}
-
-function readOptionalObjectArrayFunctionArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  functionName: string,
-): JsonObjectRecord[] | undefined {
-  const argumentValue = parsedArguments[argumentName];
-  if (argumentValue === undefined || argumentValue === null) {
-    return undefined;
-  }
-  if (!Array.isArray(argumentValue)) {
-    throw new Error(`OpenAI function call for ${functionName} has invalid object array argument: ${argumentName}`);
-  }
-
-  return argumentValue.map((arrayItem, arrayItemIndex) => {
-    if (typeof arrayItem !== "object" || arrayItem === null || Array.isArray(arrayItem)) {
-      throw new Error(`OpenAI function call for ${functionName} has invalid object at ${argumentName}[${arrayItemIndex}]`);
-    }
-
-    return arrayItem as JsonObjectRecord;
-  });
-}
-
 function readRequiredStringToolArgument(
   parsedArguments: JsonObjectRecord,
   argumentName: string,
@@ -825,19 +813,6 @@ function readRequiredAssistantSubagentNameToolArgument(
   }
 
   throw new Error(`OpenAI function call for ${toolName} has unsupported subagent argument: ${argumentName}`);
-}
-
-function readRequiredCodeExecutionWalkthroughKindArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  functionName: string,
-): CodeExecutionWalkthroughKind {
-  const argumentValue = readRequiredStringToolArgument(parsedArguments, argumentName, functionName);
-  if (CodeExecutionWalkthroughKindSchema.options.includes(argumentValue as CodeExecutionWalkthroughKind)) {
-    return argumentValue as CodeExecutionWalkthroughKind;
-  }
-
-  throw new Error(`OpenAI function call for ${functionName} has unsupported walkthrough kind argument: ${argumentName}`);
 }
 
 function readRequiredTextToolArgument(
@@ -869,17 +844,41 @@ function readOptionalStringToolArgument(
   throw new Error(`OpenAI function call for ${toolName} has invalid string argument: ${argumentName}`);
 }
 
-function readRequiredPositiveIntegerToolArgument(
+function readOptionalBooleanToolArgument(
   parsedArguments: JsonObjectRecord,
   argumentName: string,
   toolName: string,
-): number {
+): boolean | undefined {
   const argumentValue = parsedArguments[argumentName];
-  if (typeof argumentValue === "number" && Number.isInteger(argumentValue) && argumentValue > 0) {
+  if (argumentValue === undefined || argumentValue === null) {
+    return undefined;
+  }
+  if (typeof argumentValue === "boolean") {
     return argumentValue;
   }
 
-  throw new Error(`OpenAI function call for ${toolName} is missing required positive integer argument: ${argumentName}`);
+  throw new Error(`OpenAI function call for ${toolName} has invalid boolean argument: ${argumentName}`);
+}
+
+function readRequiredObjectArrayToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): readonly JsonObjectRecord[] {
+  const argumentValue = parsedArguments[argumentName];
+  if (!Array.isArray(argumentValue)) {
+    throw new Error(`OpenAI function call for ${toolName} is missing required object array argument: ${argumentName}`);
+  }
+
+  return argumentValue.map((arrayItemValue, arrayItemIndex) => {
+    if (typeof arrayItemValue === "object" && arrayItemValue !== null && !Array.isArray(arrayItemValue)) {
+      return arrayItemValue as JsonObjectRecord;
+    }
+
+    throw new Error(
+      `OpenAI function call for ${toolName} has invalid object array item: ${argumentName}[${arrayItemIndex}]`,
+    );
+  });
 }
 
 function readOptionalPositiveIntegerToolArgument(
@@ -896,4 +895,20 @@ function readOptionalPositiveIntegerToolArgument(
   }
 
   throw new Error(`OpenAI function call for ${toolName} has invalid positive integer argument: ${argumentName}`);
+}
+
+function readOptionalNonNegativeIntegerToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): number | undefined {
+  const argumentValue = parsedArguments[argumentName];
+  if (argumentValue === undefined || argumentValue === null) {
+    return undefined;
+  }
+  if (typeof argumentValue === "number" && Number.isInteger(argumentValue) && argumentValue >= 0) {
+    return argumentValue;
+  }
+
+  throw new Error(`OpenAI function call for ${toolName} has invalid non-negative integer argument: ${argumentName}`);
 }

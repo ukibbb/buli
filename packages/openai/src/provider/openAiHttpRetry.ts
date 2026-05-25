@@ -10,6 +10,8 @@ import {
   isRetryableOpenAiHttpResponseStatus,
   isRetryableOpenAiTransportError,
   readOpenAiRetryAfterMilliseconds,
+  type OpenAiHttpResponseHeaders,
+  summarizeOpenAiRateLimitHeadersForDiagnostics,
   summarizeOpenAiTransportErrorForDiagnostics,
 } from "./httpResponseDiagnostics.ts";
 
@@ -19,6 +21,14 @@ const DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS = 500;
 export type OpenAiHttpRetryResult = Readonly<{
   response: Response;
   requestAttemptIndex: number;
+}>;
+
+export type OpenAiHttpResponseHeaderObservation = Readonly<{
+  headers: OpenAiHttpResponseHeaders;
+  status: number;
+  wasSuccessfulHttpResponse: boolean;
+  requestAttemptIndex: number;
+  retryAfterMilliseconds?: number | undefined;
 }>;
 
 export type OpenAiHttpRetryInput = Readonly<{
@@ -32,6 +42,7 @@ export type OpenAiHttpRetryInput = Readonly<{
   abortSignal?: AbortSignal | undefined;
   operationStartedAtMs?: number | undefined;
   shouldYieldRetryPendingEvents?: boolean | undefined;
+  onResponseHeadersReceived?: ((responseHeaderObservation: OpenAiHttpResponseHeaderObservation) => void) | undefined;
 }>;
 
 export async function* requestOpenAiHttpResponseWithRetries(
@@ -70,11 +81,13 @@ export async function* requestOpenAiHttpResponseWithRetries(
 
       transportRetryAttemptCount += 1;
       const retryDelayMilliseconds = DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS;
+      const retryWaitStartedAtMs = Date.now();
       const retryScheduledDiagnosticFields = {
         ...input.diagnosticFields,
         ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
         ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input),
         retryDelayMilliseconds,
+        retryWaitStartedAtMs,
         remainingRetryCount: DEFAULT_OPENAI_HTTP_RETRY_COUNT - requestAttemptIndex,
         ...transportErrorDiagnosticFields,
       };
@@ -83,18 +96,24 @@ export async function* requestOpenAiHttpResponseWithRetries(
         `${input.diagnosticEventPrefix}.transport_retry_scheduled`,
         retryScheduledDiagnosticFields,
       );
-      await writeOpenAiDebugLog(`${input.debugLogTitlePrefix} transport retry scheduled`, retryScheduledDiagnosticFields);
-      const retryPendingEvent = createOpenAiTransportRetryPendingEvent({ retryDelayMilliseconds });
-      if (input.shouldYieldRetryPendingEvents) {
-        yield retryPendingEvent;
-      }
-      await waitForOpenAiHttpRetryDelay({
+      const retryDelayPromise = waitForOpenAiHttpRetryDelay({
         retryDelayMilliseconds,
         abortSignal: input.abortSignal,
       });
+      keepRetryDelayRejectionHandledWhileYielding(retryDelayPromise);
+      await writeOpenAiDebugLog(`${input.debugLogTitlePrefix} transport retry scheduled`, retryScheduledDiagnosticFields);
+      const retryPendingEvent = createOpenAiTransportRetryPendingEvent({
+        retryDelayMilliseconds,
+        retryWaitStartedAtMs,
+      });
+      if (input.shouldYieldRetryPendingEvents) {
+        yield retryPendingEvent;
+      }
+      await retryDelayPromise;
       continue;
     }
 
+    const retryAfterMilliseconds = readOpenAiRetryAfterMilliseconds(currentResponse.headers);
     logOpenAiDiagnosticEvent(input.diagnosticLogger, `${input.diagnosticEventPrefix}.response_received`, {
       ...input.diagnosticFields,
       ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
@@ -102,6 +121,15 @@ export async function* requestOpenAiHttpResponseWithRetries(
       requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
       contentType: currentResponse.headers.get("content-type") ?? null,
       durationMs: Date.now() - requestAttemptStartedAtMs,
+      ...(retryAfterMilliseconds !== undefined ? { retryAfterMilliseconds } : {}),
+      ...summarizeOpenAiRateLimitHeadersForDiagnostics(currentResponse.headers),
+    });
+    input.onResponseHeadersReceived?.({
+      headers: currentResponse.headers,
+      status: currentResponse.status,
+      wasSuccessfulHttpResponse: currentResponse.ok,
+      requestAttemptIndex,
+      retryAfterMilliseconds,
     });
 
     if (currentResponse.ok) {
@@ -113,6 +141,7 @@ export async function* requestOpenAiHttpResponseWithRetries(
           status: currentResponse.status,
           requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
           durationMs: Date.now() - operationStartedAtMs,
+          ...summarizeOpenAiRateLimitHeadersForDiagnostics(currentResponse.headers),
         });
       }
       if (requestAttemptIndex > 1) {
@@ -123,6 +152,7 @@ export async function* requestOpenAiHttpResponseWithRetries(
           status: currentResponse.status,
           requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
           durationMs: Date.now() - operationStartedAtMs,
+          ...summarizeOpenAiRateLimitHeadersForDiagnostics(currentResponse.headers),
         });
       }
 
@@ -139,14 +169,15 @@ export async function* requestOpenAiHttpResponseWithRetries(
           ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input),
           status: currentResponse.status,
           requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
+          ...summarizeOpenAiRateLimitHeadersForDiagnostics(currentResponse.headers),
         });
       }
 
       return { response: currentResponse, requestAttemptIndex };
     }
 
-    const retryDelayMilliseconds =
-      readOpenAiRetryAfterMilliseconds(currentResponse.headers) ?? DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS;
+    const retryDelayMilliseconds = retryAfterMilliseconds ?? DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS;
+    const retryWaitStartedAtMs = Date.now();
     const retryScheduledDiagnosticFields = {
       ...input.diagnosticFields,
       ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
@@ -154,23 +185,33 @@ export async function* requestOpenAiHttpResponseWithRetries(
       status: currentResponse.status,
       requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
       retryDelayMilliseconds,
+      retryWaitStartedAtMs,
       remainingRetryCount: DEFAULT_OPENAI_HTTP_RETRY_COUNT - requestAttemptIndex,
+      ...summarizeOpenAiRateLimitHeadersForDiagnostics(currentResponse.headers),
     };
     logOpenAiDiagnosticEvent(input.diagnosticLogger, `${input.diagnosticEventPrefix}.retry_scheduled`, retryScheduledDiagnosticFields);
+    const retryDelayPromise = waitForOpenAiHttpRetryDelay({
+      retryDelayMilliseconds,
+      abortSignal: input.abortSignal,
+    });
+    keepRetryDelayRejectionHandledWhileYielding(retryDelayPromise);
     await writeOpenAiDebugLog(`${input.debugLogTitlePrefix} retry scheduled`, retryScheduledDiagnosticFields);
     const retryPendingEvent = createOpenAiHttpRetryPendingEvent({
       status: currentResponse.status,
       retryDelayMilliseconds,
+      retryWaitStartedAtMs,
     });
     await cancelRetryableOpenAiHttpResponseBody(currentResponse);
     if (input.shouldYieldRetryPendingEvents) {
       yield retryPendingEvent;
     }
-    await waitForOpenAiHttpRetryDelay({
-      retryDelayMilliseconds,
-      abortSignal: input.abortSignal,
-    });
+    await retryDelayPromise;
   }
+}
+
+function keepRetryDelayRejectionHandledWhileYielding(retryDelayPromise: Promise<void>): void {
+  // Async generators pause at yield. Keep abort rejections handled until the generator resumes and awaits the same promise.
+  void retryDelayPromise.catch(() => {});
 }
 
 async function cancelRetryableOpenAiHttpResponseBody(response: Response): Promise<void> {
@@ -201,12 +242,14 @@ function createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(
 function createOpenAiHttpRetryPendingEvent(input: {
   status: number;
   retryDelayMilliseconds: number;
+  retryWaitStartedAtMs: number;
 }): ProviderRateLimitPendingEvent {
   const retryAfterSeconds = convertRetryDelayMillisecondsToProviderRetryAfterSeconds(input.retryDelayMilliseconds);
   const retryAfterDescription = `${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
   return {
     type: "rate_limit_pending",
     retryAfterSeconds,
+    retryWaitStartedAtMs: input.retryWaitStartedAtMs,
     limitExplanation: input.status === 429
       ? `OpenAI request was rate limited. Retrying after ${retryAfterDescription}.`
       : `OpenAI request failed with transient HTTP ${input.status}. Retrying after ${retryAfterDescription}.`,
@@ -215,12 +258,14 @@ function createOpenAiHttpRetryPendingEvent(input: {
 
 function createOpenAiTransportRetryPendingEvent(input: {
   retryDelayMilliseconds: number;
+  retryWaitStartedAtMs: number;
 }): ProviderRateLimitPendingEvent {
   const retryAfterSeconds = convertRetryDelayMillisecondsToProviderRetryAfterSeconds(input.retryDelayMilliseconds);
   const retryAfterDescription = `${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
   return {
     type: "rate_limit_pending",
     retryAfterSeconds,
+    retryWaitStartedAtMs: input.retryWaitStartedAtMs,
     limitExplanation: `OpenAI request failed before receiving a response. Retrying after ${retryAfterDescription}.`,
   };
 }

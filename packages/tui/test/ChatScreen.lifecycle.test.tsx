@@ -429,8 +429,7 @@ test("ChatScreen keeps prompt controls available after a failed assistant stream
   const failedFrame = await renderedChatScreen.waitForFrame(25);
   expect(failedFrame).toContain("runner exploded");
 
-  const planModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(planModeFrame).toContain("Plan");
+  await renderedChatScreen.pressKey("TAB");
 
   const slashCommandFrame = await renderedChatScreen.typeText("/");
   expect(slashCommandFrame).not.toContain("Commands");
@@ -456,8 +455,7 @@ test("ChatScreen cycles to plan mode with Tab and submits that mode", async () =
     assistantConversationRunner: recordingRunner.assistantConversationRunner,
   });
 
-  const planModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(planModeFrame).toContain("Plan");
+  await renderedChatScreen.pressKey("TAB");
 
   await renderedChatScreen.typeText("stay read only");
   await renderedChatScreen.pressEnter();
@@ -466,19 +464,36 @@ test("ChatScreen cycles to plan mode with Tab and submits that mode", async () =
   expect(recordingRunner.listStartedTurnRequests()[0]?.assistantOperatingMode).toBe("plan");
 });
 
-test("ChatScreen cycles from plan to implementation and then understand with Tab", async () => {
+test("ChatScreen cycles from plan to implementation with Tab and submits that mode", async () => {
+  const recordingRunner = createRecordingEmptyStreamAssistantConversationRunner();
   const renderedChatScreen = await renderChatScreen({
-    assistantConversationRunner: createEmptyStreamAssistantConversationRunner(),
+    assistantConversationRunner: recordingRunner.assistantConversationRunner,
   });
 
-  const planModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(planModeFrame).toContain("Plan");
+  await renderedChatScreen.pressKey("TAB");
+  await renderedChatScreen.pressKey("TAB");
+  await renderedChatScreen.typeText("apply it");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.waitForFrame(25);
 
-  const implementationModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(implementationModeFrame).toContain("Implementation");
+  expect(recordingRunner.listStartedTurnRequests()[0]?.assistantOperatingMode).toBe("implementation");
+});
 
-  const understandModeFrame = await renderedChatScreen.pressKey("TAB");
-  expect(understandModeFrame).toContain("Understand");
+test("ChatScreen cycles mode with Tab while assistant response is streaming", async () => {
+  const streamingRunner = createManuallyReleasedInterruptibleAssistantConversationRunner();
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: streamingRunner.assistantConversationRunner,
+  });
+
+  await renderedChatScreen.typeText("start streaming");
+  await renderedChatScreen.pressEnter();
+  const streamingFrame = await renderedChatScreen.waitForFrame(25);
+  expect(streamingFrame).toContain("Partial answer");
+
+  await renderedChatScreen.pressKey("TAB");
+
+  streamingRunner.releaseInterruptedTurn();
+  await renderedChatScreen.waitForFrame(25);
 });
 
 test("ChatScreen approves a pending tool call with the y keyboard shortcut", async () => {
@@ -561,7 +576,7 @@ test("ChatScreen requires double Escape to interrupt a running assistant turn", 
   await renderedChatScreen.pressKey("ESCAPE");
   const armedFrame = await renderedChatScreen.waitForFrame(40);
   expect(interruptibleRunner.getInterruptCount()).toBe(0);
-  expect(armedFrame).toContain("▰");
+  expect(armedFrame).toContain("Partial answer");
   expect(armedFrame).not.toContain("esc again to stop");
 
   await renderedChatScreen.pressKey("ESCAPE");

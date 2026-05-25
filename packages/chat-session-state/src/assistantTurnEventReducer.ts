@@ -533,13 +533,12 @@ export function applyAssistantResponseEventToChatSessionState(
 ): ChatSessionState {
   if (assistantResponseEvent.type === "assistant_turn_started") {
     return appendConversationMessageIfMissing({
-      chatSessionState: {
-        ...chatSessionState,
-        conversationTurnStatus: "streaming_assistant_response",
-        latestTokenUsage: undefined,
-        latestContextWindowUsage: undefined,
-        pendingToolApprovalRequest: undefined,
-      },
+        chatSessionState: {
+          ...chatSessionState,
+          conversationTurnStatus: "streaming_assistant_response",
+          latestTokenUsage: undefined,
+          pendingToolApprovalRequest: undefined,
+        },
       conversationMessage: {
         id: assistantResponseEvent.messageId,
         role: "assistant",

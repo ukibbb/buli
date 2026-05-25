@@ -1,14 +1,18 @@
 import type { ConversationSessionEntry, ReasoningEffort, TokenUsage } from "@buli/contracts";
-import { lookupContextWindowTokenCapacityForModel } from "../modelContextWindowCapacity.ts";
+import { lookupModelContextWindowTokenLimitsForModel } from "../modelContextWindowCapacity.ts";
 
 export const DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT = 20_000;
-export const DEFAULT_UNKNOWN_GPT_5_CONTEXT_WINDOW_TOKEN_CAPACITY = 256_000;
+export const DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO = 0.8;
 export const DEFAULT_MINIMUM_SESSION_ENTRY_COUNT_AFTER_LATEST_COMPACTION_SUMMARY = 2;
+
+export type ConversationAutoCompactionRequestTriggerKind = "context_usage" | "context_window_overflow";
 
 export type ConversationAutoCompactionRequest = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
-  latestContextWindowUsage: TokenUsage;
+  latestContextWindowUsage?: TokenUsage | undefined;
+  requestTriggerKind?: ConversationAutoCompactionRequestTriggerKind | undefined;
+  onCompactionSummaryTextUpdated?: (summaryText: string) => void;
 };
 
 export type ConversationAutoCompactionPolicyInput = ConversationAutoCompactionRequest & {
@@ -22,6 +26,7 @@ export type ConversationAutoCompactionDecisionReason =
   | "auto_compaction_disabled"
   | "context_usage_below_reserved_token_limit"
   | "context_usage_below_threshold"
+  | "context_window_overflow"
   | "context_usage_reserved_token_limit_reached"
   | "context_usage_threshold_reached"
   | "latest_entry_is_compaction_summary"
@@ -29,7 +34,7 @@ export type ConversationAutoCompactionDecisionReason =
   | "not_enough_entries_after_latest_compaction_summary"
   | "unknown_context_window";
 
-export type ConversationAutoCompactionTriggerKind = "reserved_token_count" | "threshold_ratio";
+export type ConversationAutoCompactionTriggerKind = "reserved_token_count" | "threshold_ratio" | "context_window_overflow";
 
 export type ConversationAutoCompactionDecision = {
   shouldCompact: boolean;
@@ -59,13 +64,16 @@ export type ConversationAutoCompactionResult =
 export function decideConversationAutoCompaction(
   input: ConversationAutoCompactionPolicyInput,
 ): ConversationAutoCompactionDecision {
-  const contextTokensUsed = calculateContextTokensUsedFromTokenUsage(input.latestContextWindowUsage);
+  const contextTokensUsed = input.latestContextWindowUsage
+    ? calculateContextTokensUsedFromTokenUsage(input.latestContextWindowUsage)
+    : 0;
   const latestCompactionSummaryEntryIndex = findLatestCompactionSummaryEntryIndex(input.conversationSessionEntries);
   const sessionEntryCountAfterLatestCompactionSummary = countSessionEntriesAfterLatestCompactionSummary({
     conversationSessionEntries: input.conversationSessionEntries,
     latestCompactionSummaryEntryIndex,
   });
-  const contextWindowTokenCapacity = resolveAutoCompactionContextWindowTokenCapacity(input.selectedModelId);
+  const modelContextWindowTokenLimits = lookupModelContextWindowTokenLimitsForModel(input.selectedModelId);
+  const contextWindowTokenCapacity = modelContextWindowTokenLimits?.contextWindowTokenCapacity;
   const contextUsageRatio = contextWindowTokenCapacity === undefined ? undefined : contextTokensUsed / contextWindowTokenCapacity;
   const baseDecision = {
     selectedModelId: input.selectedModelId,
@@ -78,14 +86,6 @@ export function decideConversationAutoCompaction(
     triggerKind: undefined,
     sessionEntryCountAfterLatestCompactionSummary,
   } satisfies Omit<ConversationAutoCompactionDecision, "reason" | "shouldCompact">;
-
-  if (!isGpt5ModelIdentifier(input.selectedModelId)) {
-    return {
-      ...baseDecision,
-      shouldCompact: false,
-      reason: "model_not_eligible_for_auto_compaction",
-    };
-  }
 
   if (input.thresholdRatio !== undefined && (input.thresholdRatio <= 0 || input.thresholdRatio >= 1)) {
     return {
@@ -114,6 +114,16 @@ export function decideConversationAutoCompaction(
     };
   }
 
+  if (input.requestTriggerKind === "context_window_overflow") {
+    return {
+      ...baseDecision,
+      shouldCompact: true,
+      reason: "context_window_overflow",
+      triggerKind: "context_window_overflow",
+      thresholdRatio: input.thresholdRatio ?? DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO,
+    };
+  }
+
   if (contextWindowTokenCapacity === undefined) {
     return {
       ...baseDecision,
@@ -122,31 +132,83 @@ export function decideConversationAutoCompaction(
     };
   }
 
-  if (input.thresholdRatio !== undefined) {
-    const thresholdTriggerTokenCount = Math.floor(contextWindowTokenCapacity * input.thresholdRatio);
+  if (input.reservedTokenCount !== undefined) {
+    const reservedTokenTriggerTokenCount = calculateReservedTokenTriggerTokenCount({
+      contextWindowTokenCapacity,
+      inputTokenCapacity: modelContextWindowTokenLimits?.inputTokenCapacity,
+      reservedTokenCount: input.reservedTokenCount,
+    });
     return {
       ...baseDecision,
-      contextCompactionTriggerTokenCount: thresholdTriggerTokenCount,
-      triggerKind: "threshold_ratio",
-      shouldCompact: contextTokensUsed >= thresholdTriggerTokenCount,
-      reason: contextTokensUsed >= thresholdTriggerTokenCount
-        ? "context_usage_threshold_reached"
-        : "context_usage_below_threshold",
+      contextCompactionTriggerTokenCount: reservedTokenTriggerTokenCount,
+      reservedTokenCount: input.reservedTokenCount,
+      triggerKind: "reserved_token_count",
+      shouldCompact: contextTokensUsed >= reservedTokenTriggerTokenCount,
+      reason: contextTokensUsed >= reservedTokenTriggerTokenCount
+        ? "context_usage_reserved_token_limit_reached"
+        : "context_usage_below_reserved_token_limit",
     };
   }
 
-  const reservedTokenCount = input.reservedTokenCount ?? DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT;
-  const reservedTokenTriggerTokenCount = Math.max(0, contextWindowTokenCapacity - reservedTokenCount);
+  const thresholdRatio = input.thresholdRatio ?? DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO;
+  const thresholdTriggerTokenCount = calculateThresholdTokenTriggerTokenCount({
+    contextWindowTokenCapacity,
+    inputTokenCapacity: modelContextWindowTokenLimits?.inputTokenCapacity,
+    thresholdRatio,
+    reservedTokenCount: DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT,
+  });
   return {
     ...baseDecision,
-    contextCompactionTriggerTokenCount: reservedTokenTriggerTokenCount,
-    reservedTokenCount,
-    triggerKind: "reserved_token_count",
-    shouldCompact: contextTokensUsed >= reservedTokenTriggerTokenCount,
-    reason: contextTokensUsed >= reservedTokenTriggerTokenCount
-      ? "context_usage_reserved_token_limit_reached"
-      : "context_usage_below_reserved_token_limit",
+    contextCompactionTriggerTokenCount: thresholdTriggerTokenCount,
+    thresholdRatio,
+    triggerKind: "threshold_ratio",
+    shouldCompact: contextTokensUsed >= thresholdTriggerTokenCount,
+    reason: contextTokensUsed >= thresholdTriggerTokenCount
+      ? "context_usage_threshold_reached"
+      : "context_usage_below_threshold",
   };
+}
+
+function calculateThresholdTokenTriggerTokenCount(input: {
+  contextWindowTokenCapacity: number;
+  inputTokenCapacity?: number | undefined;
+  thresholdRatio: number;
+  reservedTokenCount: number;
+}): number {
+  const rawContextThresholdTokenCount = Math.floor(input.contextWindowTokenCapacity * input.thresholdRatio);
+  const usableInputTriggerTokenCount = calculateUsableInputTriggerTokenCount({
+    inputTokenCapacity: input.inputTokenCapacity,
+    reservedTokenCount: input.reservedTokenCount,
+  });
+
+  return usableInputTriggerTokenCount === undefined
+    ? rawContextThresholdTokenCount
+    : Math.min(rawContextThresholdTokenCount, usableInputTriggerTokenCount);
+}
+
+function calculateReservedTokenTriggerTokenCount(input: {
+  contextWindowTokenCapacity: number;
+  inputTokenCapacity?: number | undefined;
+  reservedTokenCount: number;
+}): number {
+  const rawContextTriggerTokenCount = Math.max(0, input.contextWindowTokenCapacity - input.reservedTokenCount);
+  const usableInputTriggerTokenCount = calculateUsableInputTriggerTokenCount({
+    inputTokenCapacity: input.inputTokenCapacity,
+    reservedTokenCount: input.reservedTokenCount,
+  });
+
+  return usableInputTriggerTokenCount === undefined
+    ? rawContextTriggerTokenCount
+    : Math.min(rawContextTriggerTokenCount, usableInputTriggerTokenCount);
+}
+
+function calculateUsableInputTriggerTokenCount(input: {
+  inputTokenCapacity?: number | undefined;
+  reservedTokenCount: number;
+}): number | undefined {
+  return input.inputTokenCapacity === undefined
+    ? undefined
+    : Math.max(0, input.inputTokenCapacity - input.reservedTokenCount);
 }
 
 export function calculateContextTokensUsedFromTokenUsage(tokenUsage: TokenUsage): number {
@@ -158,14 +220,6 @@ export function isGpt5ModelIdentifier(modelIdentifier: string): boolean {
   return normalizedModelIdentifier === "gpt-5" ||
     normalizedModelIdentifier.startsWith("gpt-5.") ||
     normalizedModelIdentifier.startsWith("gpt-5-");
-}
-
-function resolveAutoCompactionContextWindowTokenCapacity(modelIdentifier: string): number | undefined {
-  if (!isGpt5ModelIdentifier(modelIdentifier)) {
-    return lookupContextWindowTokenCapacityForModel(modelIdentifier);
-  }
-
-  return lookupContextWindowTokenCapacityForModel(modelIdentifier) ?? DEFAULT_UNKNOWN_GPT_5_CONTEXT_WINDOW_TOKEN_CAPACITY;
 }
 
 function findLatestCompactionSummaryEntryIndex(

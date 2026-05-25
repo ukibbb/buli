@@ -24,15 +24,34 @@ const DEFAULT_READ_LIMIT = 2_000;
 const MAX_READ_FILE_BYTE_COUNT = 1_000_000;
 const BINARY_SAMPLE_BYTE_COUNT = 4_096;
 
-type ReadVisibleLine = {
+export type ReadVisibleLine = {
   lineText: string;
 };
 
-type LargeTextFileLineWindow = {
+export type WorkspaceTextFileLineWindow = {
   visibleFileLines: ReadVisibleLine[];
   totalLineCount?: number;
   wasLineCountTruncated: boolean;
 };
+
+export type WorkspaceTextFileLineWindowRequest = {
+  absoluteFilePath: string;
+  offsetLineNumber: number;
+  maximumLineCount: number;
+  abortSignal?: AbortSignal | undefined;
+};
+
+export interface WorkspaceTextFileLineWindowReader {
+  readWorkspaceTextFileLineWindow(input: WorkspaceTextFileLineWindowRequest): Promise<WorkspaceTextFileLineWindow>;
+}
+
+export class TypeScriptWorkspaceTextFileLineWindowReader implements WorkspaceTextFileLineWindowReader {
+  readWorkspaceTextFileLineWindow(input: WorkspaceTextFileLineWindowRequest): Promise<WorkspaceTextFileLineWindow> {
+    return readLargeTextFileLineWindowWithTypeScriptBackend(input);
+  }
+}
+
+const defaultWorkspaceTextFileLineWindowReader = new TypeScriptWorkspaceTextFileLineWindowReader();
 
 export function createStartedReadToolCallDetail(readToolCallRequest: ReadToolCallRequest): ToolCallReadDetail {
   return createStartedToolCallDetailFromRequest(readToolCallRequest);
@@ -131,7 +150,7 @@ export async function runReadToolCall(input: {
         );
       }
 
-      const largeTextFileLineWindow = await readLargeTextFileLineWindow({
+      const largeTextFileLineWindow = await defaultWorkspaceTextFileLineWindowReader.readWorkspaceTextFileLineWindow({
         absoluteFilePath: resolvedReadPath.absolutePath,
         offsetLineNumber,
         maximumLineCount,
@@ -288,12 +307,9 @@ async function readFileSampleBytes(input: {
   }
 }
 
-async function readLargeTextFileLineWindow(input: {
-  absoluteFilePath: string;
-  offsetLineNumber: number;
-  maximumLineCount: number;
-  abortSignal: AbortSignal | undefined;
-}): Promise<LargeTextFileLineWindow> {
+async function readLargeTextFileLineWindowWithTypeScriptBackend(
+  input: WorkspaceTextFileLineWindowRequest,
+): Promise<WorkspaceTextFileLineWindow> {
   const visibleFileLines: ReadVisibleLine[] = [];
   const lastRequestedLineNumber = input.offsetLineNumber + input.maximumLineCount - 1;
   let completedLineCount = 0;

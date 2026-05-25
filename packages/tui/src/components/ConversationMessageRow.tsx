@@ -12,11 +12,10 @@ import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoti
 import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
 import { RateLimitNoticeBlock } from "./behavior/RateLimitNoticeBlock.tsx";
 import { ThinkingStatusLine } from "./ThinkingStatusLine.tsx";
-import { TurnFooter } from "./TurnFooter.tsx";
 import { UserImageAttachmentBlock } from "./UserImageAttachmentBlock.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
-import { AssistantCodeExecutionWalkthroughPartView } from "./messageParts/AssistantCodeExecutionWalkthroughPartView.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
+import { CompactionSeparatorPartView } from "./messageParts/CompactionSeparatorPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
 import { WorkspacePatchPartView } from "./messageParts/WorkspacePatchPartView.tsx";
@@ -52,6 +51,14 @@ function ConversationMessagePartView(props: {
       />
     );
   }
+  if (conversationMessagePart.partKind === "assistant_compaction_separator") {
+    return (
+      <CompactionSeparatorPartView
+        assistantCompactionSeparatorConversationMessagePart={conversationMessagePart}
+        accentColor={props.horizontalRuleColor}
+      />
+    );
+  }
   if (conversationMessagePart.partKind === "assistant_reasoning") {
     return (
       <ReasoningPartView
@@ -81,9 +88,6 @@ function ConversationMessagePartView(props: {
   if (conversationMessagePart.partKind === "assistant_plan_proposal") {
     return <PlanProposalBlock planTitle={conversationMessagePart.planTitle} planSteps={conversationMessagePart.planSteps} />;
   }
-  if (conversationMessagePart.partKind === "assistant_code_execution_walkthrough") {
-    return <AssistantCodeExecutionWalkthroughPartView assistantCodeExecutionWalkthroughConversationMessagePart={conversationMessagePart} />;
-  }
   if (conversationMessagePart.partKind === "assistant_rate_limit_notice") {
     return (
       <RateLimitNoticeBlock
@@ -102,13 +106,7 @@ function ConversationMessagePartView(props: {
   if (conversationMessagePart.partKind === "assistant_interrupted_notice") {
     return <ErrorBannerBlock titleText="Interrupted" errorText={conversationMessagePart.interruptionReason} />;
   }
-  return (
-    <TurnFooter
-      modelDisplayName={conversationMessagePart.modelDisplayName}
-      turnDurationMs={conversationMessagePart.turnDurationMs}
-      usage={conversationMessagePart.usage}
-    />
-  );
+  return null;
 }
 
 export type ConversationMessageRowProps = {
@@ -162,6 +160,10 @@ function shouldRenderConversationMessagePart(input: {
 
   if (input.conversationMessagePart.partKind === "assistant_reasoning") {
     return input.isReasoningSummaryVisible && hasVisibleReasoningSummaryText(input.conversationMessagePart.reasoningSummaryText);
+  }
+
+  if (input.conversationMessagePart.partKind === "assistant_turn_summary") {
+    return false;
   }
 
   return true;
@@ -229,6 +231,9 @@ function canToolCallRenderMergedWorkspacePatch(
   conversationMessagePart: AssistantToolCallConversationMessagePart,
 ): boolean {
   return conversationMessagePart.toolCallDetail.toolName === "edit" ||
+    conversationMessagePart.toolCallDetail.toolName === "edit_many" ||
+    conversationMessagePart.toolCallDetail.toolName === "patch" ||
+    conversationMessagePart.toolCallDetail.toolName === "patch_many" ||
     conversationMessagePart.toolCallDetail.toolName === "write" ||
     conversationMessagePart.toolCallDetail.toolName === "bash";
 }

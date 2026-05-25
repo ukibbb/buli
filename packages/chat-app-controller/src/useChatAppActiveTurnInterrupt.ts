@@ -13,7 +13,7 @@ export type UseChatAppActiveTurnInterruptResult = {
   getActiveConversationTurn: () => ActiveConversationTurn | undefined;
   registerActiveConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
   registerActiveConversationTurnFinished: () => void;
-  registerActiveConversationTurnSettlement: (activeConversationTurnSettlementPromise: Promise<void>) => void;
+  registerActiveConversationTurnSettlement: (activeConversationTurnSettlementPromise: Promise<unknown>) => void;
   requestActiveConversationTurnInterrupt: () => void;
 };
 
@@ -71,7 +71,7 @@ export function useChatAppActiveTurnInterrupt(
   });
 
   const registerActiveConversationTurnSettlement = useEffectEvent((
-    activeConversationTurnSettlementPromise: Promise<void>,
+    activeConversationTurnSettlementPromise: Promise<unknown>,
   ): void => {
     input.activeConversationTurnShutdownCoordinator?.registerActiveConversationTurnSettlement(
       activeConversationTurnSettlementPromise,

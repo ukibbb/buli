@@ -1,11 +1,39 @@
 import { expect, test } from "bun:test";
 import type { BuliDiagnosticLogEvent, ProviderStreamEvent } from "@buli/contracts";
+import { OpenAiRateLimitCoordinator } from "../src/provider/openAiRateLimitCoordinator.ts";
 import { OpenAiProviderConversationTurn } from "../src/provider/turnSession.ts";
 
-function createOpenAiStepResponse(eventFrames: readonly string[]): Response {
+function createOpenAiStepResponse(eventFrames: readonly string[], headers?: Record<string, string>): Response {
   return new Response(eventFrames.join(""), {
-    headers: { "Content-Type": "text/event-stream" },
+    headers: { "Content-Type": "text/event-stream", ...(headers ?? {}) },
   });
+}
+
+function createControlledOpenAiStepResponse(): {
+  response: Response;
+  enqueueSseFrame: (payload: unknown) => void;
+  close: () => void;
+} {
+  const textEncoder = new TextEncoder();
+  let responseStreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        responseStreamController = controller;
+      },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  return {
+    response,
+    enqueueSseFrame(payload: unknown): void {
+      responseStreamController?.enqueue(textEncoder.encode(createOpenAiSseFrame(payload)));
+    },
+    close(): void {
+      responseStreamController?.close();
+    },
+  };
 }
 
 function createOpenAiErrorResponse(input: {
@@ -130,6 +158,22 @@ async function collectProviderEvents(providerTurn: OpenAiProviderConversationTur
   return providerEvents;
 }
 
+async function waitForProviderIteratorResult<IteratorValue>(
+  iteratorResult: Promise<IteratorResult<IteratorValue>>,
+  timeoutMilliseconds: number,
+): Promise<IteratorResult<IteratorValue>> {
+  const timeoutResult = Symbol("timeout");
+  const settledResult = await Promise.race([
+    iteratorResult,
+    new Promise<typeof timeoutResult>((resolve) => setTimeout(() => resolve(timeoutResult), timeoutMilliseconds)),
+  ]);
+  if (settledResult === timeoutResult) {
+    throw new Error(`Provider iterator did not yield within ${timeoutMilliseconds}ms`);
+  }
+
+  return settledResult;
+}
+
 function createSignalRecordingFetchImpl(input: {
   response: Response;
   receivedAbortSignals: Array<AbortSignal | null | undefined>;
@@ -145,6 +189,37 @@ function createSignalRecordingFetchImpl(input: {
   );
 
   return fetchImpl;
+}
+
+function createAbortablePendingFetchImpl(input: {
+  receivedAbortSignals: AbortSignal[];
+  requestBodies: string[];
+}): typeof fetch {
+  const fetchImpl: typeof fetch = Object.assign(
+    async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      input.requestBodies.push(String(init?.body ?? ""));
+      if (!init?.signal) {
+        throw new Error("OpenAI response-step fetch did not receive an abort signal.");
+      }
+
+      input.receivedAbortSignals.push(init.signal);
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => {
+          const abortReason = readAbortSignalReason(init.signal);
+          reject(abortReason instanceof Error ? abortReason : new Error("request aborted"));
+        }, { once: true });
+      });
+    },
+    {
+      preconnect: fetch.preconnect.bind(fetch),
+    },
+  );
+
+  return fetchImpl;
+}
+
+function readAbortSignalReason(abortSignal: AbortSignal | null | undefined): unknown {
+  return abortSignal ? (abortSignal as { readonly reason?: unknown }).reason : undefined;
 }
 
 test("OpenAiProviderConversationTurn captures replay items for a completed tool turn", async () => {
@@ -186,10 +261,12 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
   expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
     "reasoning_summary_started",
     "reasoning_summary_completed",
+    "text_chunk",
     "tool_call_requested",
     "text_chunk",
     "completed",
   ]);
+  expect(emittedEvents[2]).toEqual({ type: "text_chunk", text: "I will run pwd." });
   expect(providerTurn.getProviderTurnReplay()).toEqual({
     provider: "openai",
     inputItems: [
@@ -325,44 +402,17 @@ test("OpenAiProviderConversationTurn captures replay items for a completed typed
   });
 });
 
-test("OpenAiProviderConversationTurn auto-continues after a code execution walkthrough presentation call", async () => {
+test("OpenAiProviderConversationTurn yields executable tool calls before terminal response completion", async () => {
   const requestBodies: string[] = [];
-  const codeExecutionWalkthroughArgumentsText = JSON.stringify({
-    titleText: "Request flow",
-    summaryText: "How the request moves through Buli.",
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Prompt accepted",
-        whenText: null,
-        whatHappensText: "The user prompt is recorded.",
-        dataStateText: "The request carries the accepted prompt text.",
-        decisionText: null,
-        stateChangeText: null,
-        nextStepText: "Provider turn starts next.",
-        codeExamples: [
-          {
-            sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
-            sourceSymbolName: "startAcceptedRuntimeConversationTurn",
-            startLineNumber: 64,
-            endLineNumber: 67,
-            languageLabel: "ts",
-            codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
-            explanationText: null,
-          },
-        ],
-      },
-    ],
-  });
+  const controlledToolStep = createControlledOpenAiStepResponse();
   const queuedResponses = [
+    controlledToolStep.response,
     createOpenAiStepResponse([
-      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_present_1","name":"present_code_execution_walkthrough","arguments":""}}\n\n',
-      `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":${JSON.stringify(codeExecutionWalkthroughArgumentsText)}}\n\n`,
-      `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_present_1","name":"present_code_execution_walkthrough","arguments":${JSON.stringify(codeExecutionWalkthroughArgumentsText)}}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
-    ]),
-    createOpenAiStepResponse([
-      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
-      'data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}\n\n',
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 20, output_tokens: 4, total_tokens: 24 } },
+      }),
     ]),
   ];
   const providerTurn = new OpenAiProviderConversationTurn({
@@ -371,75 +421,115 @@ test("OpenAiProviderConversationTurn auto-continues after a code execution walkt
     loadRequestHeaders: async () => new Headers(),
     selectedModelId: "gpt-5.4",
     systemPromptText: "You are buli.",
-    conversationSessionEntries: createConversationSessionEntries("Explain request flow"),
+    conversationSessionEntries: createConversationSessionEntries("Read README"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+  const providerEventIterator = providerTurn.streamProviderEvents()[Symbol.asyncIterator]();
+  const firstProviderEvent = providerEventIterator.next();
+
+  controlledToolStep.enqueueSseFrame({
+    type: "response.output_item.added",
+    output_index: 0,
+    item: { type: "function_call", id: "fc_1", call_id: "call_read_1", name: "read", arguments: "" },
+  });
+  controlledToolStep.enqueueSseFrame({
+    type: "response.function_call_arguments.done",
+    item_id: "fc_1",
+    arguments: '{"filePath":"README.md"}',
+  });
+
+  await expect(waitForProviderIteratorResult(firstProviderEvent, 100)).resolves.toEqual({
+    done: false,
+    value: {
+      type: "tool_call_requested",
+      toolCallId: "call_read_1",
+      toolCallRequest: { toolName: "read", readTargetPath: "README.md" },
+    },
+  });
+
+  await providerTurn.submitToolResult({
+    toolCallId: "call_read_1",
+    toolResultText: "<path>README.md</path>\n1: # buli",
+  });
+  controlledToolStep.enqueueSseFrame({
+    type: "response.completed",
+    response: {
+      output: [
+        {
+          id: "fc_1",
+          type: "function_call",
+          call_id: "call_read_1",
+          name: "read",
+          arguments: '{"filePath":"README.md"}',
+        },
+      ],
+      usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+    },
+  });
+  controlledToolStep.close();
+
+  await expect(providerEventIterator.next()).resolves.toEqual({ done: false, value: { type: "text_chunk", text: "Done" } });
+  await expect(providerEventIterator.next()).resolves.toMatchObject({ done: false, value: { type: "completed" } });
+  await expect(providerEventIterator.next()).resolves.toEqual({ done: true, value: undefined });
+});
+
+test("OpenAiProviderConversationTurn auto-continues after an invalid function call", async () => {
+  const requestBodies: string[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_read_1","name":"read","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{not-json"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_read_1","name":"read","arguments":"{not-json"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ]),
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Retried with a valid call next."}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":6,"total_tokens":26}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read README"),
     onStepRequestFailed: async () => new Error("unexpected request failure"),
   });
 
   const emittedEvents = await collectProviderEvents(providerTurn);
 
-  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
-    "code_execution_walkthrough_presented",
-    "text_chunk",
-    "completed",
-  ]);
-  expect(emittedEvents[0]).toEqual({
-    type: "code_execution_walkthrough_presented",
-    presentationCallId: "call_present_1",
-    codeExecutionWalkthrough: {
-      titleText: "Request flow",
-      summaryText: "How the request moves through Buli.",
-      walkthroughKind: "source_walkthrough",
-      steps: [
-        {
-          stepTitle: "Prompt accepted",
-          whatHappensText: "The user prompt is recorded.",
-          dataStateText: "The request carries the accepted prompt text.",
-          nextStepText: "Provider turn starts next.",
-          codeExamples: [
-            {
-              sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
-              sourceSymbolName: "startAcceptedRuntimeConversationTurn",
-              startLineNumber: 64,
-              endLineNumber: 67,
-              languageLabel: "ts",
-              codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
-            },
-          ],
-        },
-      ],
-    },
-  });
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual(["text_chunk", "completed"]);
   expect(providerTurn.getProviderTurnReplay()).toEqual({
     provider: "openai",
     inputItems: [
       {
         type: "function_call",
         id: "fc_1",
-        call_id: "call_present_1",
-        name: "present_code_execution_walkthrough",
-        arguments: codeExecutionWalkthroughArgumentsText,
+        call_id: "call_read_1",
+        name: "read",
+        arguments: "{not-json",
       },
       {
         type: "function_call_output",
-        call_id: "call_present_1",
-        output: "Rendered code execution walkthrough: Request flow",
+        call_id: "call_read_1",
+        output: expect.stringContaining("Invalid function call: read"),
       },
     ],
   });
   expect(JSON.parse(requestBodies[1] ?? "{}")).toMatchObject({
     input: [
-      { role: "user", content: "Explain request flow" },
+      { role: "user", content: "Read README" },
       {
         id: "fc_1",
         type: "function_call",
-        call_id: "call_present_1",
-        name: "present_code_execution_walkthrough",
-        arguments: codeExecutionWalkthroughArgumentsText,
+        call_id: "call_read_1",
+        name: "read",
+        arguments: "{not-json",
       },
       {
         type: "function_call_output",
-        call_id: "call_present_1",
-        output: "Rendered code execution walkthrough: Request flow",
+        call_id: "call_read_1",
+        output: expect.stringContaining("OpenAI function call for read has malformed JSON arguments"),
       },
     ],
   });
@@ -473,6 +563,14 @@ test("OpenAiProviderConversationTurn continues with ordered outputs for a batche
   const emittedEvents: ProviderStreamEvent[] = [];
   for await (const emittedEvent of providerTurn.streamProviderEvents()) {
     emittedEvents.push(emittedEvent);
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: emittedEvent.toolCallId === "call_read_1"
+          ? "<path>README.md</path>\n1: # buli"
+          : "packages/contracts/src/toolCallRequest.ts:64: ToolCallRequestSchema",
+      });
+    }
     if (emittedEvent.type === "tool_calls_requested") {
       await providerTurn.submitToolResult({
         toolCallId: "call_grep_1",
@@ -486,7 +584,8 @@ test("OpenAiProviderConversationTurn continues with ordered outputs for a batche
   }
 
   expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
-    "tool_calls_requested",
+    "tool_call_requested",
+    "tool_call_requested",
     "text_chunk",
     "completed",
   ]);
@@ -738,10 +837,10 @@ test("OpenAiProviderConversationTurn honors a configured per-turn tool-call limi
     }
   })()).rejects.toThrow("OpenAI tool-call limit exceeded: requested 2 tool calls (max 1)");
 
-  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([]);
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual(["tool_call_requested"]);
 });
 
-test("OpenAiProviderConversationTurn passes the abort signal to response fetch", async () => {
+test("OpenAiProviderConversationTurn passes an abortable signal to response fetch", async () => {
   const abortController = new AbortController();
   const receivedAbortSignals: Array<AbortSignal | null | undefined> = [];
   const providerTurn = new OpenAiProviderConversationTurn({
@@ -765,7 +864,33 @@ test("OpenAiProviderConversationTurn passes the abort signal to response fetch",
     // Consume the stream so the request is issued.
   }
 
-  expect(receivedAbortSignals).toEqual([abortController.signal]);
+  expect(receivedAbortSignals).toHaveLength(1);
+  expect(receivedAbortSignals[0]).toBeInstanceOf(AbortSignal);
+  expect(receivedAbortSignals[0]?.aborted).toBe(false);
+});
+
+test("OpenAiProviderConversationTurn times out stalled response-step fetches", async () => {
+  const requestBodies: string[] = [];
+  const receivedAbortSignals: AbortSignal[] = [];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createAbortablePendingFetchImpl({
+      receivedAbortSignals,
+      requestBodies,
+    }),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after a stalled request"),
+    responseStepFetchTimeoutMilliseconds: 1,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("OpenAI response-step request timed out");
+
+  expect(requestBodies).toHaveLength(3);
+  expect(receivedAbortSignals).toHaveLength(3);
+  expect(receivedAbortSignals.every((receivedAbortSignal) => receivedAbortSignal.aborted)).toBe(true);
 });
 
 test("OpenAiProviderConversationTurn retries transient response-step failures", async () => {
@@ -826,6 +951,73 @@ test("OpenAiProviderConversationTurn retries transient response-step failures", 
       retryAttemptCount: 2,
       status: 200,
     });
+});
+
+test("OpenAiProviderConversationTurn reports intermediate retry headers to the rate-limit coordinator", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const diagnosticLogger = (diagnosticEvent: BuliDiagnosticLogEvent): void => {
+    diagnosticEvents.push(diagnosticEvent);
+  };
+  const rateLimitCoordinator = new OpenAiRateLimitCoordinator({
+    maximumConcurrentResponseStepStreams: 4,
+    diagnosticLogger,
+  });
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl([
+      createOpenAiErrorResponse({
+        status: 429,
+        message: "slow down",
+        headers: {
+          "retry-after-ms": "0",
+          "x-ratelimit-remaining-requests": "0",
+          "x-ratelimit-reset-requests": "0ms",
+        },
+      }),
+      createOpenAiStepResponse([
+        createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done after retry" }),
+        createOpenAiSseFrame({
+          type: "response.completed",
+          response: { usage: { input_tokens: 10, output_tokens: 4, total_tokens: 14 } },
+        }),
+      ], { "x-ratelimit-remaining-requests": "8" }),
+    ], requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Answer after a coordinated retry"),
+    rateLimitCoordinator,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger,
+  });
+
+  const emittedEvents = await collectProviderEvents(providerTurn);
+
+  expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "rate_limit_pending",
+    "text_chunk",
+    "completed",
+  ]);
+  expect(requestBodies).toHaveLength(2);
+  expect(diagnosticEvents).toContainEqual(expect.objectContaining({
+    subsystem: "openai",
+    eventName: "rate_limit_coordinator.adaptive_stream_limit_reduced",
+    fields: expect.objectContaining({
+      previousConcurrentResponseStepStreamLimit: 4,
+      currentConcurrentResponseStepStreamLimit: 2,
+      rateLimitRequestsRemaining: 0,
+    }),
+  }));
+  expect(diagnosticEvents).toContainEqual(expect.objectContaining({
+    subsystem: "openai",
+    eventName: "rate_limit_coordinator.adaptive_stream_limit_increased",
+    fields: expect.objectContaining({
+      previousConcurrentResponseStepStreamLimit: 2,
+      currentConcurrentResponseStepStreamLimit: 3,
+      rateLimitRequestsRemaining: 8,
+    }),
+  }));
 });
 
 test("OpenAiProviderConversationTurn fails after exhausting transient response-step retries", async () => {
@@ -1041,15 +1233,10 @@ test("OpenAiProviderConversationTurn does not retry non-transport response-step 
 
 test("OpenAiProviderConversationTurn stops waiting for a tool result when aborted", async () => {
   const abortController = new AbortController();
+  const controlledToolStep = createControlledOpenAiStepResponse();
   const providerTurn = new OpenAiProviderConversationTurn({
     endpoint: "https://example.test/v1/responses",
-    fetchImpl: createFetchImpl([
-      createOpenAiStepResponse([
-        'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
-        'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
-        'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
-      ]),
-    ], []),
+    fetchImpl: createFetchImpl([controlledToolStep.response], []),
     loadRequestHeaders: async () => new Headers(),
     selectedModelId: "gpt-5.4",
     systemPromptText: "You are buli.",
@@ -1058,14 +1245,45 @@ test("OpenAiProviderConversationTurn stops waiting for a tool result when aborte
     onStepRequestFailed: async () => new Error("unexpected request failure"),
   });
   const providerEventIterator = providerTurn.streamProviderEvents()[Symbol.asyncIterator]();
+  const requestedToolCallResult = providerEventIterator.next();
 
-  await expect(providerEventIterator.next()).resolves.toMatchObject({
+  controlledToolStep.enqueueSseFrame({
+    type: "response.output_item.added",
+    output_index: 0,
+    item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: "" },
+  });
+  controlledToolStep.enqueueSseFrame({
+    type: "response.function_call_arguments.done",
+    item_id: "fc_1",
+    arguments: '{"command":"pwd","description":"Print working directory"}',
+  });
+
+  await expect(requestedToolCallResult).resolves.toMatchObject({
     done: false,
     value: { type: "tool_call_requested", toolCallId: "call_1" },
   });
+  controlledToolStep.enqueueSseFrame({
+    type: "response.completed",
+    response: {
+      output: [
+        {
+          id: "fc_1",
+          type: "function_call",
+          call_id: "call_1",
+          name: "bash",
+          arguments: '{"command":"pwd","description":"Print working directory"}',
+        },
+      ],
+      usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+    },
+  });
+  controlledToolStep.close();
+  const waitingForToolResult = providerEventIterator.next();
+
+  await expect(waitForProviderIteratorResult(waitingForToolResult, 100)).rejects.toThrow("Provider iterator did not yield");
   abortController.abort();
 
-  await expect(providerEventIterator.next()).rejects.toThrow("interrupted while waiting for tool result");
+  await expect(waitingForToolResult).rejects.toThrow("interrupted while waiting for tool result");
 });
 
 test("OpenAiProviderConversationTurn restricts tool definitions when availableToolNames is provided", async () => {
@@ -1084,7 +1302,6 @@ test("OpenAiProviderConversationTurn restricts tool definitions when availableTo
     systemPromptText: "You are Buli Explorer.",
     conversationSessionEntries: createConversationSessionEntries("Explore runtime"),
     availableToolNames: ["read", "glob", "grep"],
-    availablePresentationFunctionNames: [],
     onStepRequestFailed: async () => new Error("unexpected request failure"),
   });
 
@@ -1222,10 +1439,12 @@ test("OpenAiProviderConversationTurn replays streamed function_call items when t
   }
 
   expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
+    "text_chunk",
     "tool_call_requested",
     "text_chunk",
     "completed",
   ]);
+  expect(emittedEvents[0]).toEqual({ type: "text_chunk", text: "I will run pwd." });
   expect(providerTurn.getProviderTurnReplay()).toEqual({
     provider: "openai",
     inputItems: [

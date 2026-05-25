@@ -22,6 +22,14 @@ export { parsePromptContextReferencesFromPromptText } from "./prompt-context/par
 export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./prompt-context/reconcileSelectedPromptContextReferenceTextsWithPromptDraft.ts";
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
+export {
+  ProviderProtocolConversationTurnProvider,
+  ProviderProtocolRemoteProviderError,
+} from "./providerProtocolClient.ts";
+export type {
+  ProviderProtocolClientTransport,
+  ProviderProtocolConversationTurnProviderInput,
+} from "./providerProtocolClient.ts";
 export { resolveBuiltInPrimaryAssistantAgent, resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 export type { BuiltInPrimaryAssistantAgent, BuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 export {
@@ -35,7 +43,7 @@ export {
 } from "./workspaceSnapshot/workspacePatchSummary.ts";
 export {
   DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT,
-  DEFAULT_UNKNOWN_GPT_5_CONTEXT_WINDOW_TOKEN_CAPACITY,
+  DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO,
   DEFAULT_MINIMUM_SESSION_ENTRY_COUNT_AFTER_LATEST_COMPACTION_SUMMARY,
   calculateContextTokensUsedFromTokenUsage,
   decideConversationAutoCompaction,
@@ -46,7 +54,15 @@ export {
   DEFAULT_RETAINED_RECENT_CONVERSATION_TURN_COUNT,
   selectConversationEntriesForCompaction,
 } from "./conversationCompaction/selectConversationEntriesForCompaction.ts";
-export { lookupContextWindowTokenCapacityForModel } from "./modelContextWindowCapacity.ts";
+export {
+  DEFAULT_COMPACTION_TOOL_RESULT_TEXT_MAXIMUM_CHARACTER_COUNT,
+  prepareConversationEntriesForCompactionRequest,
+} from "./conversationCompaction/prepareConversationEntriesForCompactionRequest.ts";
+export {
+  lookupContextWindowTokenCapacityForModel,
+  lookupModelContextWindowTokenLimitsForModel,
+} from "./modelContextWindowCapacity.ts";
+export type { ModelContextWindowTokenLimits } from "./modelContextWindowCapacity.ts";
 export {
   buildProjectInstructionPromptBlock,
   buildProjectInstructionUpdateText,
@@ -58,15 +74,45 @@ export {
 export { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "./systemPrompt.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
 export { createStartedEditToolCallDetail, prepareEditToolCall, runPreparedEditToolCall } from "./tools/editTool.ts";
+export { createStartedEditManyToolCallDetail, prepareEditManyToolCall, runPreparedEditManyToolCall } from "./tools/editManyTool.ts";
+export {
+  createStartedPatchManyToolCallDetail,
+  createStartedPatchToolCallDetail,
+  preparePatchManyToolCall,
+  preparePatchToolCall,
+  runPreparedPatchManyToolCall,
+  runPreparedPatchToolCall,
+} from "./tools/patchTool.ts";
+export {
+  createUnifiedFileDiff,
+  TypeScriptFileMutationDiffEngine,
+} from "./tools/fileMutationDiff.ts";
+export type {
+  FileMutationDiffEngine,
+  FileMutationDiffRequest,
+  FileMutationDiffResult,
+  UnifiedFileDiff,
+} from "./tools/fileMutationDiff.ts";
 export { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
 export { createStartedGrepToolCallDetail, runGrepToolCall } from "./tools/grepTool.ts";
-export { createStartedReadToolCallDetail, runReadToolCall } from "./tools/readTool.ts";
+export {
+  createStartedReadToolCallDetail,
+  runReadToolCall,
+  TypeScriptWorkspaceTextFileLineWindowReader,
+} from "./tools/readTool.ts";
+export { createStartedReadManyToolCallDetail, runReadManyToolCall } from "./tools/readManyTool.ts";
+export { createStartedSearchManyToolCallDetail, runSearchManyToolCall } from "./tools/searchManyTool.ts";
 export { createStartedWriteToolCallDetail, prepareWriteToolCall, runPreparedWriteToolCall } from "./tools/writeTool.ts";
 export {
   BASH_TOOL_APPROVAL_MODES,
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
   parseBashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
+export {
+  listWorkspaceFiles,
+  matchesWorkspaceGlobPattern,
+  TypeScriptWorkspaceFileSearchBackend,
+} from "./tools/workspaceFileSearch.ts";
 export { WorkspaceShellCommandExecutor, createScrubbedShellCommandEnvironment } from "./tools/workspaceShellCommandExecutor.ts";
 export type {
   ParsedPromptContextReference,
@@ -79,6 +125,20 @@ export type {
 export type { PromptContextQueryLoadStrategy } from "./prompt-context/listPromptContextCandidates.ts";
 export type { ProjectInstructionFile } from "./projectInstructions.ts";
 export type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
+export type {
+  WorkspaceFileSearchBackend,
+  WorkspaceFileSearchRequest,
+  WorkspaceFileSearchResult,
+  WorkspaceSearchFile,
+} from "./tools/workspaceFileSearch.ts";
+export type {
+  ReadVisibleLine,
+  WorkspaceTextFileLineWindow,
+  WorkspaceTextFileLineWindowReader,
+  WorkspaceTextFileLineWindowRequest,
+} from "./tools/readTool.ts";
+export type { ReadManyToolCallConcurrencyLimiter } from "./tools/readManyTool.ts";
+export type { SearchManyToolCallConcurrencyLimiter } from "./tools/searchManyTool.ts";
 export type { CaptureWorkspacePatchInput, WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 export type {
   ActiveConversationTurn,
@@ -96,6 +156,7 @@ export type {
 export type {
   ConversationAutoCompactionDecision,
   ConversationAutoCompactionDecisionReason,
+  ConversationAutoCompactionRequestTriggerKind,
   ConversationAutoCompactionTriggerKind,
   ConversationAutoCompactionPolicyInput,
   ConversationAutoCompactionRequest,

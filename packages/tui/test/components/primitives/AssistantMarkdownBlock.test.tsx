@@ -162,6 +162,29 @@ describe("AssistantMarkdownBlock", () => {
     expect(captureCharFrame()).toContain("Still");
   });
 
+  test("hides_incomplete_streaming_inline_markdown_delimiters", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={true}
+        markdownText="Still **typing with `code and [docs](https://example.com"
+      />,
+      { width: 80, height: 8 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Still");
+    expect(frame).toContain("typing");
+    expect(frame).toContain("code");
+    expect(frame).toContain("docs");
+    expect(frame).not.toContain("**");
+    expect(frame).not.toContain("`code");
+    expect(frame).not.toContain("[docs](");
+    expect(frame).not.toContain("https://example.com");
+  });
+
   test("conceals_inline_code_and_bold_inside_list_items", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
@@ -213,6 +236,23 @@ describe("AssistantMarkdownBlock", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("Ready");
     expect(frame).not.toContain("```ts");
+  });
+
+  test("hides_incomplete_streaming_tilde_fence_start", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={true}
+        markdownText={["Ready", "", "~~~ts"].join("\n")}
+      />,
+      { width: 60, height: 8 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Ready");
+    expect(frame).not.toContain("~~~ts");
   });
 
   test("renders_horizontal_rules_as_terminal_dividers", async () => {
@@ -297,6 +337,24 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("[ ]");
   });
 
+  test("hides_incomplete_streaming_task_list_marker", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={true}
+        markdownText={["Ready", "", "- [ ]"].join("\n")}
+      />,
+      { width: 72, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Ready");
+    expect(frame).not.toContain("☐");
+    expect(frame).not.toContain("[ ]");
+  });
+
   test("renders_markdown_tables_as_compact_visible_grids", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
@@ -330,6 +388,45 @@ describe("AssistantMarkdownBlock", () => {
     expect(headerRowIndex).toBeGreaterThanOrEqual(0);
     expect(firstDataRowIndex).toBeGreaterThanOrEqual(0);
     expect(firstDataRowIndex - headerRowIndex).toBeLessThanOrEqual(2);
+  });
+
+  test("does_not_absorb_following_prose_into_table_without_blank_line", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["| Key | Value |", "| --- | --- |", "| A | B |", "Next paragraph."].join("\n")}
+      />,
+      { width: 80, height: 16 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Key");
+    expect(frame).toContain("Value");
+    expect(frame).toContain("A");
+    expect(frame).toContain("B");
+    expect(frame).toContain("Next paragraph.");
+  });
+
+  test("renders_single_column_markdown_tables_as_grids", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["| Key |", "| --- |", "| Enter |"].join("\n")}
+      />,
+      { width: 72, height: 12 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Key");
+    expect(frame).toContain("Enter");
+    expect(frame).toContain("│");
+    expect(frame).toContain("─");
   });
 
   test("renders_nested_lists_with_depth_markers_and_indentation", async () => {
@@ -565,6 +662,25 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("// ts");
   });
 
+  test("renders_path_only_code_fence_info_as_file_label_without_duplicate_language", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["```src/app.ts", "const app = true;", "```"].join("\n")}
+      />,
+      { width: 96, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("src/app.ts");
+    expect(frame).toContain("const app = true;");
+    expect(frame).not.toContain("src/app.ts · src/app.ts");
+    expect(frame).not.toContain("// src/app.ts");
+  });
+
   test("renders_source_labeled_code_fences_with_inline_explanation_comments", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
@@ -573,9 +689,11 @@ describe("AssistantMarkdownBlock", () => {
         markdownText={[
           "```ts path=\"src/runtime.ts:10-12\"",
           "// explain: The guard decides whether this branch should run.",
+          "// plain pseudocode: If the runtime is ready, start it.",
           "if (isReady) {",
           "  startRuntime();",
           "}",
+          "afterRange();",
           "```",
         ].join("\n")}
       />,
@@ -587,6 +705,17 @@ describe("AssistantMarkdownBlock", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("ts · src/runtime.ts:10-12");
     expect(frame).toContain("// explain: The guard decides whether this branch should run.");
+    expect(frame).toContain("// plain pseudocode: If the runtime is ready, start it.");
+    expect(frame).toContain("if (isReady) {");
+    expect(frame).toContain("  startRuntime();");
+    expect(frame).toContain("}");
+    expect(frame).toContain("afterRange();");
+    expect(frame).not.toContain("10 if (isReady) {");
+    expect(frame).not.toContain("11   startRuntime();");
+    expect(frame).not.toContain("12 }");
+    expect(frame).not.toContain("13 afterRange();");
+    expect(frame).not.toContain("│");
+    expect(frame).not.toContain("┃");
     expect(frame).toContain("startRuntime");
   });
 

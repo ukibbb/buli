@@ -191,6 +191,7 @@ export function selectHighlightedSlashCommand(chatSessionState: ChatSessionState
       ...chatSessionState,
       promptDraft: "",
       promptDraftCursorOffset: 0,
+      pendingPromptTextPastes: [],
       slashCommandSelectionState: { step: "hidden" },
     },
   };

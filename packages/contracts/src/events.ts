@@ -5,8 +5,11 @@
 // than rebuilding transcript-entry-shaped UI objects.
 import { z } from "zod";
 import { AssistantConversationMessagePartSchema } from "./conversationMessagePart.ts";
+import { ContextWindowOverflowFailureKindSchema } from "./contextWindowOverflow.ts";
 import { PendingToolApprovalRequestSchema } from "./pendingToolApprovalRequest.ts";
 import { TokenUsageSchema } from "./provider.ts";
+
+export const AssistantMessageFailureKindSchema = ContextWindowOverflowFailureKindSchema;
 
 export const AssistantTurnStartedEventSchema = z
   .object({
@@ -70,6 +73,7 @@ export const AssistantMessageFailedEventSchema = z
     type: z.literal("assistant_message_failed"),
     messageId: z.string().min(1),
     errorText: z.string().min(1),
+    failureKind: AssistantMessageFailureKindSchema.optional(),
   })
   .strict();
 
@@ -101,5 +105,6 @@ export type AssistantPendingToolApprovalClearedEvent = z.infer<typeof AssistantP
 export type AssistantMessageCompletedEvent = z.infer<typeof AssistantMessageCompletedEventSchema>;
 export type AssistantMessageIncompleteEvent = z.infer<typeof AssistantMessageIncompleteEventSchema>;
 export type AssistantMessageFailedEvent = z.infer<typeof AssistantMessageFailedEventSchema>;
+export type AssistantMessageFailureKind = z.infer<typeof AssistantMessageFailureKindSchema>;
 export type AssistantMessageInterruptedEvent = z.infer<typeof AssistantMessageInterruptedEventSchema>;
 export type AssistantResponseEvent = z.infer<typeof AssistantResponseEventSchema>;

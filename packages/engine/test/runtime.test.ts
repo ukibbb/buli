@@ -10,6 +10,7 @@ import type {
   ProviderStreamEvent,
   ProviderTurnReplay,
 } from "@buli/contracts";
+import { ContextWindowOverflowError } from "@buli/contracts";
 import type {
   ConversationTurnProvider,
   ProviderConversationTurn,
@@ -660,8 +661,13 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
     "delegate read-only exploration agents to construct a well-formed plan",
   );
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "task"]);
-  expect(provider.startedTurnRequests[0]?.availablePresentationFunctionNames).toEqual([]);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "compare viable approaches before choosing the plan",
+  );
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "The output should be clean enough that Implementation mode can execute it without re-planning.",
+  );
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task"]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
     entryKind: "user_prompt",
     assistantOperatingMode: "plan",
@@ -691,8 +697,7 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "task"]);
-  expect(provider.startedTurnRequests[0]?.availablePresentationFunctionNames).toEqual([]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task"]);
 });
 
 test("AssistantConversationRuntime filters explicit tool overrides in read-only modes", async () => {
@@ -707,7 +712,7 @@ test("AssistantConversationRuntime filters explicit tool overrides in read-only 
     conversationTurnProvider: provider,
     workspaceRootPath: process.cwd(),
     promptContextBrowseRootPath: process.cwd(),
-    availableToolNames: ["bash", "read", "write", "grep", "task"],
+    availableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "task"],
   });
 
   await collectAssistantEvents(
@@ -717,7 +722,61 @@ test("AssistantConversationRuntime filters explicit tool overrides in read-only 
     }),
   );
 
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "grep", "task"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "grep", "task"]);
+});
+
+test("AssistantConversationRuntime denies tool calls excluded by explicit implementation tool overrides", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-implementation-tool-override-"));
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_write_1",
+        toolCallRequest: {
+          toolName: "write",
+          writeTargetPath: "generated.txt",
+          fileContent: "generated\n",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Write override denied." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    availableToolNames: ["read"],
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Try write with read-only tool override",
+      assistantOperatingMode: "implementation",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read"]);
+  expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({
+    type: "assistant_message_part_added",
+    part: expect.objectContaining({
+      partKind: "assistant_tool_call",
+      toolCallId: "call_write_1",
+      toolCallStatus: "denied",
+      denialText: "Implementation Agent cannot use write in this turn. Available tools: read.",
+    }),
+  }));
+  expect(providerTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_write_1",
+      toolResultText: "Implementation Agent cannot use write in this turn. Available tools: read.",
+    },
+  ]);
+  await expect(readFile(join(workspaceRootPath, "generated.txt"), "utf8")).rejects.toThrow();
 });
 
 test("AssistantConversationRuntime denies file mutation tool calls in understand mode", async () => {
@@ -804,7 +863,7 @@ test("AssistantConversationRuntime injects project instructions into prompt and 
   });
 });
 
-test("AssistantConversationRuntime blocks mutating bash tool calls in plan mode", async () => {
+test("AssistantConversationRuntime blocks bash tool calls in plan mode", async () => {
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
       {
@@ -812,8 +871,8 @@ test("AssistantConversationRuntime blocks mutating bash tool calls in plan mode"
         toolCallId: "call_bash_1",
         toolCallRequest: {
           toolName: "bash",
-          shellCommand: "mkdir blocked-test",
-          commandDescription: "Try to mutate files",
+          shellCommand: "pwd",
+          commandDescription: "Inspect the working directory",
         },
       },
     ],
@@ -970,6 +1029,46 @@ test("AssistantConversationRuntime redacts provider failure text before persisti
   const diagnosticJson = JSON.stringify(diagnosticEvents);
   expect(diagnosticJson).not.toContain("secret-token");
   expect(diagnosticJson).not.toContain("abc123");
+});
+
+test("AssistantConversationRuntime marks context-window overflow failures", async () => {
+  const provider: ConversationTurnProvider = {
+    startConversationTurn() {
+      return {
+        async *streamProviderEvents() {
+          throw new ContextWindowOverflowError("Your input exceeds the context window of this model. | code=context_length_exceeded");
+        },
+        async submitToolResult() {},
+        getProviderTurnReplay() {
+          return undefined;
+        },
+      };
+    },
+  };
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Prompt with too much prior context",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.at(-1)).toMatchObject({
+    type: "assistant_message_failed",
+    failureKind: "context_window_overflow",
+  });
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toContainEqual({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "failed",
+    assistantMessageText: "",
+    failureKind: "context_window_overflow",
+    failureExplanation: "Your input exceeds the context window of this model. | code=context_length_exceeded",
+  });
 });
 
 test("AssistantConversationRuntime emits failure when the provider stream ends without completion", async () => {
@@ -1688,6 +1787,160 @@ test("AssistantConversationRuntime runs batched read-only tool calls and records
   ]);
 });
 
+test("AssistantConversationRuntime batches adjacent early read-only tool calls and records every result", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-adjacent-early-read-tools-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nAdjacent early ToolCallRequest appears here.\n", "utf8");
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_1",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_grep_1",
+        toolCallRequest: {
+          toolName: "grep",
+          regexPattern: "ToolCallRequest",
+          searchPath: "README.md",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Adjacent early batch acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect README with adjacent early calls",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const toolCallPartStatuses = emittedAssistantEvents.flatMap((assistantResponseEvent) =>
+    (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call"
+      ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
+      : []
+  );
+
+  expect(toolCallPartStatuses).toHaveLength(4);
+  expect(toolCallPartStatuses.slice(0, 2)).toEqual([
+    "call_read_1:running",
+    "call_grep_1:running",
+  ]);
+  expect(toolCallPartStatuses.slice(2).toSorted()).toEqual([
+    "call_read_1:completed",
+    "call_grep_1:completed",
+  ].toSorted());
+  expect(providerTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).toSorted()).toEqual([
+    "call_read_1",
+    "call_grep_1",
+  ].toSorted());
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_read_1")?.toolResultText)
+    .toContain("1: # Demo");
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_grep_1")?.toolResultText)
+    .toContain("Adjacent early ToolCallRequest appears here");
+  const conversationSessionEntries = runtime.conversationHistory.listConversationSessionEntries();
+  expect(conversationSessionEntries.slice(0, 3)).toMatchObject([
+    { entryKind: "user_prompt" },
+    { entryKind: "tool_call", toolCallId: "call_read_1" },
+    { entryKind: "tool_call", toolCallId: "call_grep_1" },
+  ]);
+  expect(conversationSessionEntries.slice(3, 5)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_read_1" }),
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_grep_1" }),
+  ]));
+  expect(conversationSessionEntries.slice(5)).toMatchObject([
+    { entryKind: "assistant_text_segment", assistantTextSegmentText: "Adjacent early batch acknowledged." },
+    { entryKind: "assistant_message", assistantMessageStatus: "completed" },
+  ]);
+});
+
+test("AssistantConversationRuntime denies disallowed tools inside batched read-only tool calls", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-batched-tool-policy-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nTool policy target\n", "utf8");
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_read_1",
+            toolCallRequest: {
+              toolName: "read",
+              readTargetPath: "README.md",
+            },
+          },
+          {
+            toolCallId: "call_grep_1",
+            toolCallRequest: {
+              toolName: "grep",
+              regexPattern: "Tool policy",
+              searchPath: "README.md",
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Batch policy acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    availableToolNames: ["read"],
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect README with limited tools",
+      assistantOperatingMode: "implementation",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const deniedToolCallEvent = emittedAssistantEvents.find(
+    (assistantResponseEvent) =>
+      assistantResponseEvent.type === "assistant_message_part_added" &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call" &&
+      assistantResponseEvent.part.toolCallId === "call_grep_1" &&
+      assistantResponseEvent.part.toolCallStatus === "denied",
+  );
+
+  expect(deniedToolCallEvent).toMatchObject({
+    part: {
+      denialText: "Implementation Agent cannot use grep in this turn. Available tools: read.",
+    },
+  });
+  expect(providerTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).toSorted()).toEqual([
+    "call_read_1",
+    "call_grep_1",
+  ].toSorted());
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_read_1")?.toolResultText)
+    .toContain("1: # Demo");
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_grep_1")?.toolResultText)
+    .toBe("Implementation Agent cannot use grep in this turn. Available tools: read.");
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_read_1" }),
+    expect.objectContaining({ entryKind: "denied_tool_result", toolCallId: "call_grep_1" }),
+  ]));
+});
+
 test("AssistantConversationRuntime starts mixed read-only and task tool calls concurrently", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-mixed-concurrent-tools-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nMixed concurrent target\n", "utf8");
@@ -2169,6 +2422,29 @@ test("AssistantConversationRuntime logs concurrent tool-call group diagnostics",
       }),
     }),
   );
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "read_only_tool_call_limiter.slot_acquired",
+      fields: expect.objectContaining({
+        toolCallId: "call_read_1",
+        toolName: "read",
+        waitDurationMs: 0,
+      }),
+    }),
+  );
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "subagent_conversation_limiter.slot_acquired",
+      fields: expect.objectContaining({
+        toolCallId: "call_explore_1",
+        toolName: "task",
+        subagentName: "explore",
+        waitDurationMs: 0,
+      }),
+    }),
+  );
 });
 
 test("AssistantConversationRuntime records assistant text segments in tool-call order", async () => {
@@ -2473,11 +2749,18 @@ test("AssistantConversationRuntime compacts the current session into an append-o
     promptContextBrowseRootPath: process.cwd(),
     conversationHistory,
   });
+  const compactionSummaryProgressTexts: string[] = [];
 
-  await expect(runtime.compactConversationSession({ selectedModelId: "gpt-5.4" })).resolves.toEqual({
+  await expect(runtime.compactConversationSession({
+    selectedModelId: "gpt-5.4",
+    onCompactionSummaryTextUpdated: (summaryText) => {
+      compactionSummaryProgressTexts.push(summaryText);
+    },
+  })).resolves.toEqual({
     summaryText: "Goal: continue the runtime compaction implementation.",
     compactedEntryCount: 2,
   });
+  expect(compactionSummaryProgressTexts).toEqual(["", "Goal: continue the runtime compaction implementation."]);
 
   expect(provider.startedTurnRequests).toHaveLength(1);
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual([]);
@@ -2496,6 +2779,7 @@ test("AssistantConversationRuntime compacts the current session into an append-o
       summaryText: "Goal: continue the runtime compaction implementation.",
       compactedEntryCount: 2,
       retainedRecentConversationSessionEntryCount: 0,
+      compactionSource: "manual",
     },
   ]);
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
@@ -2504,6 +2788,110 @@ test("AssistantConversationRuntime compacts the current session into an append-o
       summaryText: "Goal: continue the runtime compaction implementation.",
     },
   ]);
+});
+
+test("AssistantConversationRuntime sends compaction-safe entries during automatic overflow compaction without mutating history", async () => {
+  const longToolResultText = "x".repeat(2_100);
+  const initialConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Inspect image",
+      modelFacingPromptText: "Inspect image",
+      imageAttachments: [
+        {
+          attachmentId: "image-1",
+          mimeType: "image/png",
+          fileName: "cat.png",
+          dataUrl: `data:image/png;base64,${"a".repeat(1_000)}`,
+        },
+      ],
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_read",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "large.log",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_read",
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: "large.log",
+      },
+      toolResultText: longToolResultText,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "I read the large log.",
+      providerTurnReplay: {
+        provider: "openai",
+        inputItems: [
+          {
+            type: "function_call_output",
+            call_id: "call_read",
+            output: "raw replay output".repeat(1_000),
+          },
+        ],
+      },
+    },
+  ];
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Goal: continue after sanitized compaction." },
+      { type: "completed", usage: { total: 10, input: 8, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({ initialConversationSessionEntries });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory,
+  });
+
+  await expect(
+    runtime.autoCompactConversationSession({
+      selectedModelId: "gpt-5.4",
+      requestTriggerKind: "context_window_overflow",
+    }),
+  ).resolves.toMatchObject({
+    didCompact: true,
+    decision: { reason: "context_window_overflow" },
+  });
+
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toEqual({
+    entryKind: "user_prompt",
+    promptText: "Inspect image",
+    modelFacingPromptText: "Inspect image\n\n[Attached image/png: cat.png]",
+  });
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries[2]).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolResultText: expect.stringContaining("[Tool result truncated for compaction: omitted 100 chars]"),
+  });
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries[3]).toEqual({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "I read the large log.",
+  });
+
+  const conversationSessionEntriesAfterCompaction = conversationHistory.listConversationSessionEntries();
+  expect(conversationSessionEntriesAfterCompaction[0]).toMatchObject({
+    entryKind: "user_prompt",
+    imageAttachments: [expect.objectContaining({ dataUrl: expect.stringContaining("data:image/png;base64,") })],
+  });
+  expect(conversationSessionEntriesAfterCompaction[2]).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolResultText: longToolResultText,
+  });
+  expect(conversationSessionEntriesAfterCompaction[3]).toMatchObject({
+    entryKind: "assistant_message",
+    providerTurnReplay: expect.objectContaining({ provider: "openai" }),
+  });
 });
 
 test("AssistantConversationRuntime compacts old context while retaining recent turns", async () => {
@@ -2577,6 +2965,7 @@ test("AssistantConversationRuntime compacts old context while retaining recent t
       summaryText: "Goal: continue after retaining recent turns.",
       compactedEntryCount: 2,
       retainedRecentConversationSessionEntryCount: 4,
+      compactionSource: "manual",
     },
   ]);
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
@@ -2591,7 +2980,7 @@ test("AssistantConversationRuntime compacts old context while retaining recent t
   ]);
 });
 
-test("AssistantConversationRuntime auto-compacts gpt-5 sessions at the reserved-token limit", async () => {
+test("AssistantConversationRuntime auto-compacts known OpenAI sessions at the default threshold", async () => {
   const initialConversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
@@ -2622,13 +3011,13 @@ test("AssistantConversationRuntime auto-compacts gpt-5 sessions at the reserved-
   await expect(
     runtime.autoCompactConversationSession({
       selectedModelId: "gpt-5.5",
-      latestContextWindowUsage: { total: 380_000, input: 380_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      latestContextWindowUsage: { total: 320_000, input: 320_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     }),
   ).resolves.toMatchObject({
     didCompact: true,
     decision: {
-      reason: "context_usage_reserved_token_limit_reached",
-      contextCompactionTriggerTokenCount: 380_000,
+      reason: "context_usage_threshold_reached",
+      contextCompactionTriggerTokenCount: 252_000,
     },
   });
 
@@ -2638,6 +3027,7 @@ test("AssistantConversationRuntime auto-compacts gpt-5 sessions at the reserved-
     summaryText: "Goal: continue after auto compaction.",
     compactedEntryCount: 2,
     retainedRecentConversationSessionEntryCount: 0,
+    compactionSource: "auto",
   });
 });
 
@@ -2740,7 +3130,7 @@ test("AssistantConversationRuntime runs task as an isolated read-only child turn
   );
 
   expect(provider.startedTurnRequests).toHaveLength(2);
-  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "glob", "grep"]);
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer target");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain(
@@ -2876,7 +3266,7 @@ test("AssistantConversationRuntime runs task as a built-in Explorer subagent", a
   );
 
   expect(provider.startedTurnRequests).toHaveLength(2);
-  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "glob", "grep"]);
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(taskSubagentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Task target");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<task_result>");
@@ -3011,6 +3401,369 @@ test("AssistantConversationRuntime shows batched task subagent read-only tool ca
     { entryKind: "assistant_text_segment", assistantTextSegmentText: "Explorer batch acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
   ]);
+});
+
+test("AssistantConversationRuntime preserves child tool evidence when a task subagent fails before summary", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-partial-failure-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nPartial failure target\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs",
+          subagentPrompt: "Read README.md, then report what it contains.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Explorer failure acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_1",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const submittedTaskToolResultText = parentProviderTurn.submittedToolResults[0]?.toolResultText ?? "";
+
+  expect(submittedTaskToolResultText).toContain("Subagent provider stream ended before completion.");
+  expect(submittedTaskToolResultText).toContain("<child_tool_calls>");
+  expect(submittedTaskToolResultText).toContain("call_read_1");
+  expect(submittedTaskToolResultText).toContain("read README.md");
+  expect(submittedTaskToolResultText).toContain("<partial_child_tool_results>");
+  expect(submittedTaskToolResultText).toContain("Partial failure target");
+  expect(emittedAssistantEvents).toContainEqual(
+    expect.objectContaining({
+      type: "assistant_message_part_updated",
+      part: expect.objectContaining({
+        toolCallStatus: "failed",
+        toolCallDetail: expect.objectContaining({
+          toolName: "task",
+          subagentChildToolCalls: [
+            expect.objectContaining({
+              subagentChildToolCallId: "call_read_1",
+              subagentChildToolCallStatus: "completed",
+            }),
+          ],
+        }),
+      }),
+    }),
+  );
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toContainEqual(
+    expect.objectContaining({
+      entryKind: "failed_tool_result",
+      toolCallId: "call_explore_1",
+      failureExplanation: "Subagent provider stream ended before completion.",
+    }),
+  );
+});
+
+test("AssistantConversationRuntime asks task subagents for a checkpoint after the child tool budget", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-budget-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nBudget target\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs repeatedly",
+          subagentPrompt: "Keep reading until you can summarize docs.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Explorer budget acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: Array.from({ length: 193 }, (_value, index): ProviderStreamEvent => ({
+      type: "tool_call_requested",
+      toolCallId: `call_read_${index + 1}`,
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    })),
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Budget checkpoint returned." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs with a budget",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(explorerProviderTurn.submittedToolResults).toHaveLength(193);
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolCallId).toBe("call_read_193");
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain("Explorer research budget reached");
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain("192 child tool calls");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Budget checkpoint returned");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<research_checkpoint>");
+  const completedTaskToolResult = runtime.conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
+      conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
+  );
+  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+    throw new Error("Expected completed Explorer task tool result");
+  }
+  expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toEqual({
+    checkpointReason: "child_tool_call_count",
+    childToolCallCount: 192,
+    childToolResultTextLength: expect.any(Number),
+    skippedChildToolCallCount: 1,
+  });
+  expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
+  expect(
+    completedTaskToolResult.toolCallDetail.subagentChildToolCalls?.some(
+      (subagentChildToolCall) => subagentChildToolCall.subagentChildToolCallStatus === "denied",
+    ),
+  ).toBe(false);
+});
+
+test("AssistantConversationRuntime lets Explorer exceed the old child output budget", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-expanded-budget-"));
+  await writeFile(join(workspaceRootPath, "large.txt"), `${"x".repeat(320_000)}\n`, "utf8");
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nStill reachable\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "read large context",
+          subagentPrompt: "Read a large file, then continue to README.md.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Expanded budget acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_large",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "large.txt",
+        },
+      },
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_readme",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "README.md",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Large file and README.md were both inspected." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore large files",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(explorerProviderTurn.submittedToolResults).toHaveLength(2);
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText.length).toBeGreaterThan(300_000);
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolCallId).toBe("call_read_readme");
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("Still reachable");
+  expect(explorerProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolResultText).join("\n"))
+    .not.toContain("Explorer research budget reached");
+});
+
+test("AssistantConversationRuntime bounds default Explorer reads", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-default-read-window-"));
+  await writeFile(
+    join(workspaceRootPath, "long.txt"),
+    Array.from({ length: 650 }, (_value, index) => `line ${index + 1}`).join("\n"),
+    "utf8",
+  );
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "read long file",
+          subagentPrompt: "Read long.txt with the default read behavior.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Default read window acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_long",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "long.txt",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "long.txt first window inspected." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore long file",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Showing lines 1-600 of 650");
+  const completedTaskToolResult = runtime.conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
+      conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
+  );
+  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+    throw new Error("Expected completed Explorer task tool result");
+  }
+  expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls?.[0]?.subagentChildToolCallDetail).toMatchObject({
+    toolName: "read",
+    readFilePath: "long.txt",
+    readLineCount: 650,
+    returnedLineCount: 600,
+  });
+});
+
+test("AssistantConversationRuntime fails Explorer clearly when it keeps requesting tools after checkpoint", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-post-checkpoint-loop-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nLoop target\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "loop past checkpoint",
+          subagentPrompt: "Keep reading even after checkpoint.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Explorer failure acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: Array.from({ length: 194 }, (_value, index): ProviderStreamEvent => ({
+      type: "tool_call_requested",
+      toolCallId: `call_read_${index + 1}`,
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    })),
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs with a loop",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain(
+    "Explorer continued requesting tools after the research checkpoint",
+  );
+  const failedTaskToolResult = runtime.conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "failed_tool_result" }> =>
+      conversationSessionEntry.entryKind === "failed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
+  );
+  if (!failedTaskToolResult || failedTaskToolResult.toolCallDetail.toolName !== "task") {
+    throw new Error("Expected failed Explorer task tool result");
+  }
+  expect(failedTaskToolResult.failureExplanation).toContain("Explorer continued requesting tools after the research checkpoint");
+  expect(failedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toEqual({
+    checkpointReason: "child_tool_call_count",
+    childToolCallCount: 192,
+    childToolResultTextLength: expect.any(Number),
+    skippedChildToolCallCount: 1,
+  });
+  expect(failedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
+  expect(explorerProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).not.toContain(
+    "call_read_194",
+  );
 });
 
 test("AssistantConversationRuntime runs sibling task tool calls concurrently", async () => {
@@ -3333,7 +4086,7 @@ test("AssistantConversationRuntime denies nested task calls inside subagent turn
   );
 });
 
-test("AssistantConversationRuntime requests approval before applying an edit tool call", async () => {
+test("AssistantConversationRuntime auto-applies edit tool calls in implementation mode", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-edit-tool-"));
   const notesPath = join(workspaceRootPath, "notes.txt");
   await writeFile(notesPath, "alpha\nbeta\n", "utf8");
@@ -3361,39 +4114,30 @@ test("AssistantConversationRuntime requests approval before applying an edit too
     workspaceRootPath,
     promptContextBrowseRootPath: workspaceRootPath,
   });
-  const activeConversationTurn = runtime.startConversationTurn({
-    userPromptText: "Edit notes",
-    assistantOperatingMode: "implementation",
-    selectedModelId: "gpt-5.4",
-  });
-  const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
-  const emittedAssistantEvents = [];
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Edit notes",
+      assistantOperatingMode: "implementation",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
 
-  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
-  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
-  const approvalEventResult = await assistantEventIterator.next();
-  emittedAssistantEvents.push(approvalEventResult.value);
-  if (approvalEventResult.value?.type !== "assistant_pending_tool_approval_requested") {
-    throw new Error("expected assistant_pending_tool_approval_requested");
-  }
-
-  expect(approvalEventResult.value.approvalRequest.pendingToolCallDetail).toMatchObject({
-    toolName: "edit",
-    editedFilePath: "notes.txt",
-    unifiedDiffText: expect.stringContaining("+delta"),
-  });
-  await activeConversationTurn.approvePendingToolCall(approvalEventResult.value.approvalRequest.approvalId);
-
-  while (true) {
-    const nextAssistantEvent = await assistantEventIterator.next();
-    if (nextAssistantEvent.done) {
-      break;
-    }
-
-    emittedAssistantEvents.push(nextAssistantEvent.value);
-  }
-
-  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toContain("assistant_pending_tool_approval_requested");
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).not.toContain(
+    "assistant_pending_tool_approval_requested",
+  );
+  expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({
+    type: "assistant_message_part_added",
+    part: expect.objectContaining({
+      partKind: "assistant_tool_call",
+      toolCallId: "call_edit_1",
+      toolCallStatus: "running",
+      toolCallDetail: expect.objectContaining({
+        toolName: "edit",
+        editedFilePath: "notes.txt",
+        unifiedDiffText: expect.stringContaining("+delta"),
+      }),
+    }),
+  }));
   expect(await readFile(notesPath, "utf8")).toBe("alpha\ndelta\n");
   expect(providerTurn.submittedToolResults).toEqual([
     {

@@ -6,6 +6,7 @@ import {
 } from "./assistantMarkdownRenderSectionTypes.ts";
 import {
   formatAssistantMarkdownInlineTextForStyledText,
+  formatStreamingAssistantMarkdownInlineTextForStyledText,
   isAssistantMarkdownListToken,
   isAssistantMarkdownParagraphToken,
 } from "./assistantMarkdownTextFormatting.ts";
@@ -55,6 +56,7 @@ export function formatAssistantMarkdownListText(listToken: AssistantMarkdownList
 export function readAssistantMarkdownListBlock(
   markdownLines: readonly string[],
   startLineIndex: number,
+  isStreaming = false,
 ): AssistantMarkdownListBlock | undefined {
   if (!assistantMarkdownListLinePattern.test(markdownLines[startLineIndex] ?? "")) {
     return undefined;
@@ -68,7 +70,7 @@ export function readAssistantMarkdownListBlock(
   }
 
   return {
-    listLines: formatAssistantMarkdownVisibleListLines(listMarkdownLines),
+    listLines: formatAssistantMarkdownVisibleListLines(listMarkdownLines, isStreaming),
     nextLineIndex: lineIndex,
   };
 }
@@ -113,7 +115,10 @@ function resolveAssistantMarkdownChildListTokens(listItem: AssistantMarkdownList
   return (listItem.tokens ?? []).filter(isAssistantMarkdownListToken);
 }
 
-function parseAssistantMarkdownListLine(markdownListLine: string): ParsedAssistantMarkdownListLine | undefined {
+function parseAssistantMarkdownListLine(
+  markdownListLine: string,
+  isStreaming: boolean,
+): ParsedAssistantMarkdownListLine | undefined {
   const listLineMatch = assistantMarkdownListLinePattern.exec(markdownListLine);
   if (!listLineMatch) {
     return undefined;
@@ -129,13 +134,16 @@ function parseAssistantMarkdownListLine(markdownListLine: string): ParsedAssista
   return {
     listItemDepth,
     listItemMarkerText,
-    listItemText: formatAssistantMarkdownInlineTextForStyledText((listLineMatch[5] ?? "").trim()),
+    listItemText: formatAssistantMarkdownListItemText((listLineMatch[5] ?? "").trim(), isStreaming),
   };
 }
 
-function formatAssistantMarkdownVisibleListLines(markdownListLines: readonly string[]): AssistantMarkdownVisibleListLine[] {
+function formatAssistantMarkdownVisibleListLines(
+  markdownListLines: readonly string[],
+  isStreaming: boolean,
+): AssistantMarkdownVisibleListLine[] {
   const parsedListLines = markdownListLines
-    .map(parseAssistantMarkdownListLine)
+    .map((markdownListLine) => parseAssistantMarkdownListLine(markdownListLine, isStreaming))
     .filter((listLine): listLine is ParsedAssistantMarkdownListLine => listLine !== undefined);
   const markerWidthByDepth = new Map<number, number>();
   for (const parsedListLine of parsedListLines) {
@@ -150,4 +158,10 @@ function formatAssistantMarkdownVisibleListLines(markdownListLines: readonly str
     listItemMarkerText: parsedListLine.listItemMarkerText.padStart(markerWidthByDepth.get(parsedListLine.listItemDepth) ?? 1, " "),
     listItemText: parsedListLine.listItemText,
   }));
+}
+
+function formatAssistantMarkdownListItemText(listItemText: string, isStreaming: boolean): string {
+  return isStreaming
+    ? formatStreamingAssistantMarkdownInlineTextForStyledText(listItemText)
+    : formatAssistantMarkdownInlineTextForStyledText(listItemText);
 }

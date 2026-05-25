@@ -11,6 +11,7 @@ docs/*
 !docs/current-chat-session-architecture.md
 !docs/chat-session-rewrite-walkthrough.md
 !docs/openai-conversation-logic.md
+!docs/native-boundaries.md
 examples/
 skills/
 tui-examples/

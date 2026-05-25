@@ -22,30 +22,53 @@ export type WorkspaceSearchFile = {
   stats: Stats;
 };
 
-export function matchesWorkspaceGlobPattern(input: {
-  globPattern: string;
-  portableRelativePath: string;
-}): boolean {
-  const glob = new Bun.Glob(input.globPattern);
-  if (input.globPattern.includes("/")) {
-    return glob.match(input.portableRelativePath);
-  }
-
-  return glob.match(basename(input.portableRelativePath));
-}
-
-export async function listWorkspaceFiles(input: {
+export type WorkspaceFileSearchRequest = {
   workspaceRootPath: string;
   searchRootPath: string;
   maximumFileCount?: number;
   includeGlobPattern?: string;
   abortSignal?: AbortSignal;
-}): Promise<{ files: WorkspaceSearchFile[]; wasTruncated: boolean }> {
+};
+
+export type WorkspaceFileSearchResult = {
+  files: WorkspaceSearchFile[];
+  wasTruncated: boolean;
+};
+
+export interface WorkspaceFileSearchBackend {
+  listWorkspaceFiles(input: WorkspaceFileSearchRequest): Promise<WorkspaceFileSearchResult>;
+}
+
+type WorkspaceGlobPatternMatcher = (portableRelativePath: string) => boolean;
+
+export class TypeScriptWorkspaceFileSearchBackend implements WorkspaceFileSearchBackend {
+  async listWorkspaceFiles(input: WorkspaceFileSearchRequest): Promise<WorkspaceFileSearchResult> {
+    return listWorkspaceFilesWithTypeScriptBackend(input);
+  }
+}
+
+const defaultWorkspaceFileSearchBackend = new TypeScriptWorkspaceFileSearchBackend();
+
+export function matchesWorkspaceGlobPattern(input: {
+  globPattern: string;
+  portableRelativePath: string;
+}): boolean {
+  return createWorkspaceGlobPatternMatcher(input.globPattern)(input.portableRelativePath);
+}
+
+export async function listWorkspaceFiles(input: WorkspaceFileSearchRequest): Promise<WorkspaceFileSearchResult> {
+  return defaultWorkspaceFileSearchBackend.listWorkspaceFiles(input);
+}
+
+async function listWorkspaceFilesWithTypeScriptBackend(input: WorkspaceFileSearchRequest): Promise<WorkspaceFileSearchResult> {
   const workspaceRootPath = await realpath(input.workspaceRootPath);
   const searchRootPath = await realpath(input.searchRootPath);
   const maximumFileCount = input.maximumFileCount ?? Number.POSITIVE_INFINITY;
   const files: WorkspaceSearchFile[] = [];
   let wasTruncated = false;
+  const includeGlobPatternMatcher = input.includeGlobPattern
+    ? createWorkspaceGlobPatternMatcher(input.includeGlobPattern)
+    : undefined;
 
   async function visitDirectory(directoryPath: string): Promise<void> {
     throwIfWorkspaceSearchAborted(input.abortSignal);
@@ -85,10 +108,7 @@ export async function listWorkspaceFiles(input: {
       }
 
       const portableRelativePath = relative(searchRootPath, absolutePath).split(sep).join("/");
-      if (
-        input.includeGlobPattern &&
-        !matchesWorkspaceGlobPattern({ globPattern: input.includeGlobPattern, portableRelativePath })
-      ) {
+      if (includeGlobPatternMatcher && !includeGlobPatternMatcher(portableRelativePath)) {
         continue;
       }
 
@@ -102,6 +122,15 @@ export async function listWorkspaceFiles(input: {
 
   await visitDirectory(searchRootPath);
   return { files, wasTruncated };
+}
+
+function createWorkspaceGlobPatternMatcher(globPattern: string): WorkspaceGlobPatternMatcher {
+  const glob = new Bun.Glob(globPattern);
+  if (globPattern.includes("/")) {
+    return (portableRelativePath) => glob.match(portableRelativePath);
+  }
+
+  return (portableRelativePath) => glob.match(basename(portableRelativePath));
 }
 
 function throwIfWorkspaceSearchAborted(abortSignal: AbortSignal | undefined): void {

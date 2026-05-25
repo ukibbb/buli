@@ -500,17 +500,23 @@ function AssistantCodeFenceBlock(props: {
 }): ReactNode {
   const codeFenceLines = props.codeFenceText.split("\n");
   const visibleCodeFenceLines = codeFenceLines.length === 1 && codeFenceLines[0] === "" ? [] : codeFenceLines;
+  const codeBlockLines = visibleCodeFenceLines.map((lineText) => ({ lineText }));
   return (
-    <AssistantSnippetFrame headerText={props.codeFenceInfo.codeFenceDisplayLabel}>
+    <box flexDirection="column" marginBottom={1} width="100%">
+      {props.codeFenceInfo.codeFenceDisplayLabel ? (
+        <box width="100%">
+          <text fg={chatScreenTheme.textDim}>{props.codeFenceInfo.codeFenceDisplayLabel}</text>
+        </box>
+      ) : null}
       <FencedCodeBlock
         variant="embedded"
-        codeLines={visibleCodeFenceLines.map((lineText) => ({ lineText }))}
+        codeLines={codeBlockLines}
         {...(props.codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: props.codeFenceInfo.codeFenceFilePath } : {})}
         languageLabel={props.codeFenceInfo.codeLanguageLabel}
         showLabel={false}
         wrapMode="none"
       />
-    </AssistantSnippetFrame>
+    </box>
   );
 }
 

@@ -2,10 +2,14 @@ import type { ReactNode } from "react";
 import type { ToolCallDetail, WorkspacePatch } from "@buli/contracts";
 import { ApprovalDecisionControl } from "../primitives/ApprovalDecisionControl.tsx";
 import { BashToolCallCard } from "./BashToolCallCard.tsx";
+import { EditManyToolCallCard } from "./EditManyToolCallCard.tsx";
 import { EditToolCallCard } from "./EditToolCallCard.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
 import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
+import { PatchToolCallCard } from "./PatchToolCallCard.tsx";
+import { ReadManyToolCallCard } from "./ReadManyToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
+import { SearchManyToolCallCard } from "./SearchManyToolCallCard.tsx";
 import { TaskToolCallCard } from "./TaskToolCallCard.tsx";
 import { TodoWriteToolCallCard } from "./TodoWriteToolCallCard.tsx";
 import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
@@ -19,6 +23,7 @@ export type ToolCallEntryViewProps = {
   renderState: "streaming" | "completed" | "failed";
   pendingToolCallApprovalDecisionActions?: PendingToolCallApprovalDecisionActions;
   durationMs?: number;
+  toolCallStartedAtMs?: number;
   errorText?: string;
   workspacePatch?: WorkspacePatch;
 };
@@ -39,6 +44,28 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   if (toolCallDetail.toolName === "read") {
     return (
       <ReadToolCallCard
+        renderState={props.renderState}
+        toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
+        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
+        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
+      />
+    );
+  }
+  if (toolCallDetail.toolName === "read_many") {
+    return (
+      <ReadManyToolCallCard
+        renderState={props.renderState}
+        toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
+        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
+        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
+      />
+    );
+  }
+  if (toolCallDetail.toolName === "search_many") {
+    return (
+      <SearchManyToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
         {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
@@ -72,6 +99,30 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   if (toolCallDetail.toolName === "edit") {
     return (
       <EditToolCallCard
+        renderState={props.renderState}
+        toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
+        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
+        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
+        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
+      />
+    );
+  }
+  if (toolCallDetail.toolName === "edit_many") {
+    return (
+      <EditManyToolCallCard
+        renderState={props.renderState}
+        toolCallDetail={toolCallDetail}
+        {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
+        {...(props.workspacePatch !== undefined ? { workspacePatch: props.workspacePatch } : {})}
+        {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
+        {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
+      />
+    );
+  }
+  if (toolCallDetail.toolName === "patch" || toolCallDetail.toolName === "patch_many") {
+    return (
+      <PatchToolCallCard
         renderState={props.renderState}
         toolCallDetail={toolCallDetail}
         {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
@@ -123,6 +174,7 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
       toolCallDetail={toolCallDetail}
       {...(approvalDecisionControl !== undefined ? { approvalDecisionControl } : {})}
       {...(props.durationMs !== undefined ? { durationMs: props.durationMs } : {})}
+      {...(props.toolCallStartedAtMs !== undefined ? { toolCallStartedAtMs: props.toolCallStartedAtMs } : {})}
       {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
     />
   );

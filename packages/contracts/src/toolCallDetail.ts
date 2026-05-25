@@ -5,6 +5,7 @@
 // rendering affordances the design depends on.
 import { z } from "zod";
 import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
+import { WorkspacePatchFileDiffSchema } from "./workspacePatch.ts";
 
 export const SyntaxHighlightSpanStyleSchema = z.enum([
   "keyword",
@@ -37,6 +38,14 @@ export const ToolCallReadPreviewLineSchema = z
   .strict();
 export type ToolCallReadPreviewLine = z.infer<typeof ToolCallReadPreviewLineSchema>;
 
+export const ToolCallGrepContextLineSchema = z
+  .object({
+    lineNumber: z.number().int().positive(),
+    lineText: z.string(),
+  })
+  .strict();
+export type ToolCallGrepContextLine = z.infer<typeof ToolCallGrepContextLineSchema>;
+
 export const ToolCallReadDetailSchema = z
   .object({
     toolName: z.literal("read"),
@@ -50,11 +59,41 @@ export const ToolCallReadDetailSchema = z
   .strict();
 export type ToolCallReadDetail = z.infer<typeof ToolCallReadDetailSchema>;
 
+export const ToolCallReadManyResultSchema = z.discriminatedUnion("readStatus", [
+  z
+    .object({
+      readStatus: z.literal("completed"),
+      readDetail: ToolCallReadDetailSchema,
+    })
+    .strict(),
+  z
+    .object({
+      readStatus: z.literal("failed"),
+      readDetail: ToolCallReadDetailSchema,
+      failureExplanation: z.string().min(1),
+    })
+    .strict(),
+]);
+export type ToolCallReadManyResult = z.infer<typeof ToolCallReadManyResultSchema>;
+
+export const ToolCallReadManyDetailSchema = z
+  .object({
+    toolName: z.literal("read_many"),
+    requestedReadTargetPaths: z.array(z.string().min(1)).min(1),
+    completedReadCount: z.number().int().nonnegative().optional(),
+    failedReadCount: z.number().int().nonnegative().optional(),
+    readResults: z.array(ToolCallReadManyResultSchema).optional(),
+  })
+  .strict();
+export type ToolCallReadManyDetail = z.infer<typeof ToolCallReadManyDetailSchema>;
+
 export const ToolCallGrepMatchSchema = z
   .object({
     matchFilePath: z.string().min(1),
     matchLineNumber: z.number().int().positive(),
     matchSnippet: z.string(),
+    contextBeforeLines: z.array(ToolCallGrepContextLineSchema).optional(),
+    contextAfterLines: z.array(ToolCallGrepContextLineSchema).optional(),
   })
   .strict();
 export type ToolCallGrepMatch = z.infer<typeof ToolCallGrepMatchSchema>;
@@ -66,6 +105,7 @@ export const ToolCallGrepDetailSchema = z
     matchedFileCount: z.number().int().nonnegative().optional(),
     totalMatchCount: z.number().int().nonnegative().optional(),
     returnedMatchHitCount: z.number().int().nonnegative().optional(),
+    contextLineCount: z.number().int().nonnegative().optional(),
     matchHits: z.array(ToolCallGrepMatchSchema).optional(),
   })
   .strict();
@@ -83,6 +123,54 @@ export const ToolCallGlobDetailSchema = z
   .strict();
 export type ToolCallGlobDetail = z.infer<typeof ToolCallGlobDetailSchema>;
 
+export const ToolCallSearchManyRequestedSearchSchema = z.discriminatedUnion("searchKind", [
+  z
+    .object({
+      searchKind: z.literal("glob"),
+      globPattern: z.string().min(1),
+      searchDirectoryPath: z.string().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      searchKind: z.literal("grep"),
+      regexPattern: z.string().min(1),
+      searchPath: z.string().min(1).optional(),
+      includeGlobPattern: z.string().min(1).optional(),
+      contextLineCount: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
+]);
+export type ToolCallSearchManyRequestedSearch = z.infer<typeof ToolCallSearchManyRequestedSearchSchema>;
+
+export const ToolCallSearchManyResultSchema = z.discriminatedUnion("searchStatus", [
+  z
+    .object({
+      searchStatus: z.literal("completed"),
+      searchDetail: z.discriminatedUnion("toolName", [ToolCallGlobDetailSchema, ToolCallGrepDetailSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      searchStatus: z.literal("failed"),
+      searchDetail: z.discriminatedUnion("toolName", [ToolCallGlobDetailSchema, ToolCallGrepDetailSchema]),
+      failureExplanation: z.string().min(1),
+    })
+    .strict(),
+]);
+export type ToolCallSearchManyResult = z.infer<typeof ToolCallSearchManyResultSchema>;
+
+export const ToolCallSearchManyDetailSchema = z
+  .object({
+    toolName: z.literal("search_many"),
+    requestedSearches: z.array(ToolCallSearchManyRequestedSearchSchema).min(1),
+    completedSearchCount: z.number().int().nonnegative().optional(),
+    failedSearchCount: z.number().int().nonnegative().optional(),
+    searchResults: z.array(ToolCallSearchManyResultSchema).optional(),
+  })
+  .strict();
+export type ToolCallSearchManyDetail = z.infer<typeof ToolCallSearchManyDetailSchema>;
+
 export const UnifiedDiffTextSchema = z.string().min(1);
 export type UnifiedDiffText = z.infer<typeof UnifiedDiffTextSchema>;
 
@@ -96,6 +184,42 @@ export const ToolCallEditDetailSchema = z
   })
   .strict();
 export type ToolCallEditDetail = z.infer<typeof ToolCallEditDetailSchema>;
+
+export const ToolCallEditManyDetailSchema = z
+  .object({
+    toolName: z.literal("edit_many"),
+    editCount: z.number().int().positive(),
+    editedFileCount: z.number().int().nonnegative().optional(),
+    addedLineCount: z.number().int().nonnegative().optional(),
+    removedLineCount: z.number().int().nonnegative().optional(),
+    changedFiles: z.array(WorkspacePatchFileDiffSchema).optional(),
+  })
+  .strict();
+export type ToolCallEditManyDetail = z.infer<typeof ToolCallEditManyDetailSchema>;
+
+export const ToolCallPatchDetailSchema = z
+  .object({
+    toolName: z.literal("patch"),
+    patchTargetText: z.string().min(1),
+    changedFileCount: z.number().int().nonnegative().optional(),
+    addedLineCount: z.number().int().nonnegative().optional(),
+    removedLineCount: z.number().int().nonnegative().optional(),
+    changedFiles: z.array(WorkspacePatchFileDiffSchema).optional(),
+  })
+  .strict();
+export type ToolCallPatchDetail = z.infer<typeof ToolCallPatchDetailSchema>;
+
+export const ToolCallPatchManyDetailSchema = z
+  .object({
+    toolName: z.literal("patch_many"),
+    patchTargetText: z.string().min(1),
+    changedFileCount: z.number().int().nonnegative().optional(),
+    addedLineCount: z.number().int().nonnegative().optional(),
+    removedLineCount: z.number().int().nonnegative().optional(),
+    changedFiles: z.array(WorkspacePatchFileDiffSchema).optional(),
+  })
+  .strict();
+export type ToolCallPatchManyDetail = z.infer<typeof ToolCallPatchManyDetailSchema>;
 
 export const ToolCallWriteDetailSchema = z
   .object({
@@ -166,10 +290,15 @@ export type SubagentChildToolCallStatus = z.infer<typeof SubagentChildToolCallSt
 
 export const SubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
+  ToolCallReadManyDetailSchema,
+  ToolCallSearchManyDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallEditDetailSchema,
+  ToolCallEditManyDetailSchema,
+  ToolCallPatchDetailSchema,
+  ToolCallPatchManyDetailSchema,
   ToolCallWriteDetailSchema,
   SubagentChildTaskToolCallDetailSchema,
 ]);
@@ -188,6 +317,19 @@ export const SubagentChildToolCallSchema = z
   .strict();
 export type SubagentChildToolCall = z.infer<typeof SubagentChildToolCallSchema>;
 
+export const SubagentResearchCheckpointReasonSchema = z.enum(["child_tool_call_count", "child_tool_result_text_length"]);
+export type SubagentResearchCheckpointReason = z.infer<typeof SubagentResearchCheckpointReasonSchema>;
+
+export const SubagentResearchCheckpointSchema = z
+  .object({
+    checkpointReason: SubagentResearchCheckpointReasonSchema,
+    childToolCallCount: z.number().int().nonnegative(),
+    childToolResultTextLength: z.number().int().nonnegative(),
+    skippedChildToolCallCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SubagentResearchCheckpoint = z.infer<typeof SubagentResearchCheckpointSchema>;
+
 export const ToolCallTaskDetailSchema = z
   .object({
     toolName: z.literal("task"),
@@ -195,6 +337,7 @@ export const ToolCallTaskDetailSchema = z
     subagentDescription: z.string().min(1),
     subagentPrompt: z.string().optional(),
     subagentChildToolCalls: z.array(SubagentChildToolCallSchema).optional(),
+    subagentResearchCheckpoint: SubagentResearchCheckpointSchema.optional(),
     subagentResultSummary: z.string().optional(),
   })
   .strict();
@@ -202,9 +345,14 @@ export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 
 export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
+  ToolCallReadManyDetailSchema,
+  ToolCallSearchManyDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallEditDetailSchema,
+  ToolCallEditManyDetailSchema,
+  ToolCallPatchDetailSchema,
+  ToolCallPatchManyDetailSchema,
   ToolCallWriteDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallTodoWriteDetailSchema,

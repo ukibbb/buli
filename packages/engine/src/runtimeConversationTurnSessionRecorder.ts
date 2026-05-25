@@ -66,8 +66,7 @@ export class RuntimeConversationTurnSessionRecorder {
     this.hasRecordedAcceptedUserPromptSessionEntry = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
       entryKind: "user_prompt",
-      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 
@@ -85,8 +84,7 @@ export class RuntimeConversationTurnSessionRecorder {
       assistantMessageStatus: assistantMessageConversationSessionEntry.assistantMessageStatus,
       assistantMessageTextLength: assistantMessageConversationSessionEntry.assistantMessageText.length,
       providerTurnReplayInputItemCount: assistantMessageConversationSessionEntry.providerTurnReplay?.inputItems.length ?? 0,
-      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 
@@ -95,25 +93,10 @@ export class RuntimeConversationTurnSessionRecorder {
   ): void {
     this.conversationHistory.appendConversationSessionEntry(assistantSegmentConversationSessionEntry);
 
-    if (assistantSegmentConversationSessionEntry.entryKind === "assistant_text_segment") {
-      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
-        entryKind: "assistant_text_segment",
-        assistantTextSegmentTextLength: assistantSegmentConversationSessionEntry.assistantTextSegmentText.length,
-        conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-        modelContextItemCount: this.conversationHistory.listModelContextItems().length,
-      });
-      return;
-    }
-
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
-      entryKind: "assistant_code_execution_walkthrough_segment",
-      codeExecutionWalkthroughStepCount: assistantSegmentConversationSessionEntry.steps.length,
-      codeExecutionWalkthroughCodeExampleCount: assistantSegmentConversationSessionEntry.steps.reduce(
-        (codeExampleCount, walkthroughStep) => codeExampleCount + walkthroughStep.codeExamples.length,
-        0,
-      ),
-      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentTextLength: assistantSegmentConversationSessionEntry.assistantTextSegmentText.length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 }

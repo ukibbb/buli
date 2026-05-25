@@ -40,10 +40,6 @@ export function projectConversationSessionEntryToModelContextItems(
     ];
   }
 
-  if (conversationSessionEntry.entryKind === "assistant_code_execution_walkthrough_segment") {
-    return [];
-  }
-
   if (conversationSessionEntry.entryKind === "conversation_compaction_summary") {
     return [
       {

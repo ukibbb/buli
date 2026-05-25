@@ -79,21 +79,12 @@ export function summarizeProviderStreamEventForDiagnostics(
     };
   }
 
-  if (providerStreamEvent.type === "code_execution_walkthrough_presented") {
-    return {
-      presentationCallId: providerStreamEvent.presentationCallId,
-      codeExecutionWalkthroughTitleLength: providerStreamEvent.codeExecutionWalkthrough.titleText.length,
-      codeExecutionWalkthroughStepCount: providerStreamEvent.codeExecutionWalkthrough.steps.length,
-      codeExecutionWalkthroughCodeExampleCount: providerStreamEvent.codeExecutionWalkthrough.steps.reduce(
-        (codeExampleCount, walkthroughStep) => codeExampleCount + walkthroughStep.codeExamples.length,
-        0,
-      ),
-    };
-  }
-
   if (providerStreamEvent.type === "rate_limit_pending") {
     return {
       retryAfterSeconds: providerStreamEvent.retryAfterSeconds,
+      ...(providerStreamEvent.retryWaitStartedAtMs !== undefined
+        ? { retryWaitStartedAtMs: providerStreamEvent.retryWaitStartedAtMs }
+        : {}),
       limitExplanationLength: providerStreamEvent.limitExplanation.length,
     };
   }
@@ -197,5 +188,6 @@ export function summarizeAssistantResponseEventForDiagnostics(
   return {
     messageId: assistantResponseEvent.messageId,
     errorTextLength: assistantResponseEvent.errorText.length,
+    failureKind: assistantResponseEvent.failureKind ?? null,
   };
 }

@@ -401,6 +401,26 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
+  if (conversationSessionEntry.toolCallRequest.toolName === "read_many") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: read_many",
+      `Target count: ${conversationSessionEntry.toolCallRequest.readTargets.length}`,
+      ...conversationSessionEntry.toolCallRequest.readTargets.map((readTarget, readTargetIndex) =>
+        `Target ${readTargetIndex + 1}: ${readTarget.readTargetPath}`
+      ),
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "search_many") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: search_many",
+      `Search count: ${conversationSessionEntry.toolCallRequest.searches.length}`,
+      ...conversationSessionEntry.toolCallRequest.searches.map((search, searchIndex) => formatSearchManyLegacyTranscriptLine(search, searchIndex)),
+    ].join("\n");
+  }
+
   if (conversationSessionEntry.toolCallRequest.toolName === "glob") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
@@ -436,6 +456,33 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
+  if (conversationSessionEntry.toolCallRequest.toolName === "edit_many") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: edit_many",
+      `Edit count: ${conversationSessionEntry.toolCallRequest.edits.length}`,
+      ...conversationSessionEntry.toolCallRequest.edits.map((edit, editIndex) =>
+        `Edit ${editIndex + 1}: ${edit.editTargetPath} old=${edit.oldString.length} new=${edit.newString.length}`
+      ),
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "patch") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: patch",
+      `Patch length: ${conversationSessionEntry.toolCallRequest.patchText.length}`,
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "patch_many") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: patch_many",
+      `Patch length: ${conversationSessionEntry.toolCallRequest.patchText.length}`,
+    ].join("\n");
+  }
+
   if (conversationSessionEntry.toolCallRequest.toolName === "write") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
@@ -456,6 +503,26 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
   }
 
   return assertUnhandledToolCallRequest(conversationSessionEntry.toolCallRequest);
+}
+
+function formatSearchManyLegacyTranscriptLine(
+  search: Extract<ToolCallConversationSessionEntry["toolCallRequest"], { toolName: "search_many" }>["searches"][number],
+  searchIndex: number,
+): string {
+  if (search.searchKind === "glob") {
+    return [
+      `Search ${searchIndex + 1}: glob`,
+      `Pattern: ${search.globPattern}`,
+      ...(search.searchDirectoryPath !== undefined ? [`Directory: ${search.searchDirectoryPath}`] : []),
+    ].join(" | ");
+  }
+
+  return [
+    `Search ${searchIndex + 1}: grep`,
+    `Pattern: ${search.regexPattern}`,
+    ...(search.searchPath !== undefined ? [`Path: ${search.searchPath}`] : []),
+    ...(search.includeGlobPattern !== undefined ? [`Include: ${search.includeGlobPattern}`] : []),
+  ].join(" | ");
 }
 
 function assertUnhandledToolCallRequest(toolCallRequest: never): never {

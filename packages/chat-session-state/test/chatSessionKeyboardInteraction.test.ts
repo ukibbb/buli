@@ -102,6 +102,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_submit_effect_for_
     effectType: "stream_assistant_response_for_submitted_prompt",
     submittedPromptText: "Tell me what changed",
     submittedPromptImageAttachments: [],
+    submittedAssistantOperatingMode: "understand",
   });
 });
 
@@ -376,11 +377,33 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_enqueue_effect_whi
     effectType: "enqueue_submitted_prompt",
     submittedPromptText: "Run this next [Image 1]",
     submittedPromptImageAttachments: [promptImageAttachment],
+    submittedAssistantOperatingMode: "understand",
   });
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });
 
-test("applyChatSessionKeyboardInputToChatSessionState_does_not_cycle_mode_while_streaming", () => {
+test("applyChatSessionKeyboardInputToChatSessionState_captures_selected_mode_for_queued_prompt", () => {
+  const chatSessionState: ChatSessionState = {
+    ...insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "Plan this next"),
+    conversationTurnStatus: "streaming_assistant_response",
+    selectedAssistantOperatingMode: "plan",
+  };
+
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: enterKeyboardInput,
+    isPromptSubmissionInFlight: true,
+  });
+
+  expect(interaction.chatSessionKeyboardEffect).toEqual({
+    effectType: "enqueue_submitted_prompt",
+    submittedPromptText: "Plan this next",
+    submittedPromptImageAttachments: [],
+    submittedAssistantOperatingMode: "plan",
+  });
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating_mode_while_streaming", () => {
   const chatSessionState: ChatSessionState = {
     ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     conversationTurnStatus: "streaming_assistant_response",
@@ -397,7 +420,35 @@ test("applyChatSessionKeyboardInputToChatSessionState_does_not_cycle_mode_while_
     isPromptSubmissionInFlight: false,
   });
 
-  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("understand");
+  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
+  expect(interaction.shouldConsumeKeyboardInput).toBe(true);
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating_mode_during_tool_approval", () => {
+  const chatSessionState: ChatSessionState = {
+    ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    conversationTurnStatus: "waiting_for_tool_approval",
+    pendingToolApprovalRequest: {
+      approvalId: "approval-1",
+      pendingToolCallId: "call-1",
+      pendingToolCallDetail: { toolName: "bash", commandLine: "pwd" },
+      riskExplanation: "Prints the working directory.",
+    },
+  };
+
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: {
+      keyName: "tab",
+      textInput: undefined,
+      isCtrlPressed: false,
+      isMetaPressed: false,
+    },
+    isPromptSubmissionInFlight: false,
+  });
+
+  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("plan");
   expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });

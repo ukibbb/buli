@@ -21,6 +21,48 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("1-10:10");
   });
 
+  test("dispatches_read_many", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "read_many",
+          requestedReadTargetPaths: ["README.md", "package.json"],
+          completedReadCount: 2,
+          failedReadCount: 0,
+        }}
+      />,
+      { width: 80, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("2 paths");
+    expect(frame).toContain("2 read");
+  });
+
+  test("dispatches_search_many", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "search_many",
+          requestedSearches: [
+            { searchKind: "glob", globPattern: "**/*.ts" },
+            { searchKind: "grep", regexPattern: "ToolCallRequest" },
+          ],
+          completedSearchCount: 2,
+          failedSearchCount: 0,
+        }}
+      />,
+      { width: 80, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("SearchMany");
+    expect(frame).toContain("2 searches");
+    expect(frame).toContain("2 searched");
+  });
+
   test("dispatches_grep", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView
@@ -75,6 +117,46 @@ describe("ToolCallEntryView", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("/src/config.ts");
     expect(frame).toContain("+2");
+  });
+
+  test("dispatches_edit_many", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "edit_many",
+          editCount: 2,
+          editedFileCount: 1,
+          addedLineCount: 2,
+          removedLineCount: 2,
+        }}
+      />,
+      { width: 80, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("2 edits");
+    expect(frame).toContain("+2");
+  });
+
+  test("dispatches_patch", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "patch",
+          patchTargetText: "src/config.ts",
+          changedFileCount: 1,
+          addedLineCount: 1,
+          removedLineCount: 1,
+        }}
+      />,
+      { width: 80, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("src/config.ts");
+    expect(frame).toContain("+1");
   });
 
   test("dispatches_write", async () => {

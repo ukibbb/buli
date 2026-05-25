@@ -39,7 +39,6 @@ test("RuntimeConversationTurnSessionRecorder records an accepted user prompt onc
       fields: {
         entryKind: "user_prompt",
         conversationSessionEntryCount: 1,
-        modelContextItemCount: 1,
       },
     },
   ]);
@@ -105,7 +104,6 @@ test("RuntimeConversationTurnSessionRecorder records a terminal assistant messag
         assistantMessageTextLength: 17,
         providerTurnReplayInputItemCount: 1,
         conversationSessionEntryCount: 1,
-        modelContextItemCount: 0,
       },
     },
   ]);

@@ -28,18 +28,6 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       assistantTextSegmentText: "Stored ",
     },
     {
-      entryKind: "assistant_code_execution_walkthrough_segment",
-      titleText: "Stored context flow",
-      walkthroughKind: "source_walkthrough",
-      steps: [
-        {
-          stepTitle: "Read context",
-          whatHappensText: "The context is read before the answer.",
-          codeExamples: [{ sourceFilePath: "packages/engine/src/conversationHistoryProjection.ts", startLineNumber: 1, endLineNumber: 1, codeText: "project();" }],
-        },
-      ],
-    },
-    {
       entryKind: "assistant_message",
       assistantMessageStatus: "incomplete",
       assistantMessageText: "Partial answer",

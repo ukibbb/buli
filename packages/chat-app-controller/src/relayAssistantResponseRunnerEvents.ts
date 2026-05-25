@@ -4,6 +4,14 @@ import type { ActiveConversationTurn, AssistantConversationRunner, ConversationT
 
 const ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS = 16;
 
+type TerminalAssistantResponseEvent = Extract<AssistantResponseEvent, {
+  type: "assistant_message_completed" | "assistant_message_incomplete" | "assistant_message_failed" | "assistant_message_interrupted";
+}>;
+
+export type AssistantResponseRelayResult = {
+  terminalAssistantResponseEvent: TerminalAssistantResponseEvent | undefined;
+};
+
 function isTerminalAssistantResponseEvent(assistantResponseEvent: AssistantResponseEvent): boolean {
   return (
     assistantResponseEvent.type === "assistant_message_completed" ||
@@ -31,12 +39,13 @@ export async function relayAssistantResponseRunnerEvents(input: {
   onConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
   onConversationTurnFinished: () => void;
   onAssistantResponseEvents: (assistantResponseEvents: readonly AssistantResponseEvent[]) => void;
-}): Promise<void> {
+}): Promise<AssistantResponseRelayResult> {
   let queuedAssistantResponseEvents: AssistantResponseEvent[] = [];
   let scheduledFlushTimeout: ReturnType<typeof setTimeout> | undefined;
   let lastFlushAtMs = 0;
   let currentAssistantResponseMessageId: string | undefined;
   let hasSeenTerminalAssistantResponseEvent = false;
+  let terminalAssistantResponseEvent: TerminalAssistantResponseEvent | undefined;
   let activeConversationTurn: ActiveConversationTurn | undefined;
   let assistantResponseEventDeliveryError: unknown;
 
@@ -93,6 +102,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
     }
     if (isTerminalAssistantResponseEvent(assistantResponseEvent)) {
       hasSeenTerminalAssistantResponseEvent = true;
+      terminalAssistantResponseEvent = assistantResponseEvent as TerminalAssistantResponseEvent;
     }
 
     queuedAssistantResponseEvents.push(assistantResponseEvent);
@@ -132,7 +142,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
     }
   } catch (error) {
     if (assistantResponseEventDeliveryError !== undefined) {
-      return;
+      throw assistantResponseEventDeliveryError;
     }
     const errorText = error instanceof Error ? error.message : String(error);
     queueSyntheticFailedAssistantTurn(errorText);
@@ -158,4 +168,6 @@ export async function relayAssistantResponseRunnerEvents(input: {
       throw assistantResponseEventDeliveryError;
     }
   }
+
+  return { terminalAssistantResponseEvent };
 }

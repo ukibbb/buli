@@ -5,7 +5,7 @@ import { TodoWriteToolCallCard } from "../../../src/components/toolCalls/TodoWri
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 
 describe("TodoWriteToolCallCard (opentui)", () => {
-  test("streaming: renders TodoWrite label, bracketed item count, and only the snake status", async () => {
+  test("streaming: renders TodoWrite label, bracketed item count, and pending status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TodoWriteToolCallCard
         toolCallDetail={{
@@ -25,7 +25,7 @@ describe("TodoWriteToolCallCard (opentui)", () => {
     expect(frame).toContain("TodoWrite");
     expect(frame).toMatch(/\[\d+ items/);
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("updating");
+    expect(frame).toContain("updating");
     expect(frame).not.toContain("draft palette");
   });
 

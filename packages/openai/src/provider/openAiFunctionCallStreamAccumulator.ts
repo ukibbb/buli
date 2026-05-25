@@ -13,6 +13,7 @@ import {
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import {
   createOpenAiProviderFunctionCallIntent,
+  type OpenAiExecutableToolCallIntent,
   type OpenAiProviderFunctionCallIntent,
 } from "./toolDefinitions.ts";
 
@@ -27,6 +28,8 @@ type PendingFunctionCallState = {
 export class OpenAiFunctionCallStreamAccumulator {
   private readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   private readonly pendingProviderFunctionCallIntents: OpenAiProviderFunctionCallIntent[] = [];
+  private readonly pendingProviderFunctionCallIntentIndexByFunctionCallId = new Map<string, number>();
+  private readonly emittedExecutableToolCallIntentByFunctionCallId = new Map<string, OpenAiExecutableToolCallIntent>();
   private readonly pendingFunctionCallStateByItemId = new Map<string, PendingFunctionCallState>();
   private readonly pendingFunctionCallArgumentChunksByItemId = new Map<string, string[]>();
   private readonly completedPendingFunctionCallArgumentsTextByItemId = new Map<string, string>();
@@ -62,29 +65,31 @@ export class OpenAiFunctionCallStreamAccumulator {
     functionCallItem: OpenAiFunctionCallOutputItem;
     shouldRecordRequestedToolCallIfReady: boolean;
   }): void {
+    const functionCallArgumentsText = input.functionCallItem.argumentsText;
+    const hasFunctionCallArgumentsText = functionCallArgumentsText !== undefined && functionCallArgumentsText.length > 0;
     const bufferedArgumentsText = this.readBufferedPendingFunctionCallArgumentsText(input.functionCallItem.itemId);
     const pendingFunctionCallState = this.pendingFunctionCallStateByItemId.get(input.functionCallItem.itemId) ?? {
       functionCallId: input.functionCallItem.functionCallId,
       functionName: input.functionCallItem.functionName,
       argumentTextChunks: [],
-      ...(input.functionCallItem.argumentsText && input.functionCallItem.argumentsText.length > 0
-        ? { completedArgumentsText: input.functionCallItem.argumentsText }
+      ...(hasFunctionCallArgumentsText
+        ? { completedArgumentsText: functionCallArgumentsText }
         : bufferedArgumentsText !== undefined
           ? { completedArgumentsText: bufferedArgumentsText }
           : {}),
       hasRecordedFunctionCallIntent: false,
     };
 
-    if (input.functionCallItem.argumentsText && input.functionCallItem.argumentsText.length > 0) {
-      pendingFunctionCallState.completedArgumentsText = input.functionCallItem.argumentsText;
+    if (hasFunctionCallArgumentsText) {
+      pendingFunctionCallState.completedArgumentsText = functionCallArgumentsText;
       pendingFunctionCallState.argumentTextChunks = [];
-    } else if (readPendingFunctionCallArgumentsText(pendingFunctionCallState).length === 0 && bufferedArgumentsText) {
+    } else if (!hasPendingFunctionCallArgumentsText(pendingFunctionCallState) && bufferedArgumentsText) {
       pendingFunctionCallState.completedArgumentsText = bufferedArgumentsText;
       pendingFunctionCallState.argumentTextChunks = [];
     }
 
     this.pendingFunctionCallStateByItemId.set(input.functionCallItem.itemId, pendingFunctionCallState);
-    if (readPendingFunctionCallArgumentsText(pendingFunctionCallState).length > 0) {
+    if (hasPendingFunctionCallArgumentsText(pendingFunctionCallState)) {
       this.pendingFunctionCallArgumentChunksByItemId.delete(input.functionCallItem.itemId);
       this.completedPendingFunctionCallArgumentsTextByItemId.delete(input.functionCallItem.itemId);
     }
@@ -117,6 +122,26 @@ export class OpenAiFunctionCallStreamAccumulator {
     return [...this.pendingProviderFunctionCallIntents];
   }
 
+  drainNewExecutableToolCallIntents(): OpenAiExecutableToolCallIntent[] {
+    const newExecutableToolCallIntents: OpenAiExecutableToolCallIntent[] = [];
+    for (const providerFunctionCallIntent of this.pendingProviderFunctionCallIntents) {
+      if (providerFunctionCallIntent.intentKind !== "executable_tool") {
+        continue;
+      }
+      if (this.emittedExecutableToolCallIntentByFunctionCallId.has(providerFunctionCallIntent.functionCallId)) {
+        continue;
+      }
+
+      this.emittedExecutableToolCallIntentByFunctionCallId.set(
+        providerFunctionCallIntent.functionCallId,
+        providerFunctionCallIntent,
+      );
+      newExecutableToolCallIntents.push(providerFunctionCallIntent);
+    }
+
+    return newExecutableToolCallIntents;
+  }
+
   private recordProviderFunctionCallIntent(input: {
     itemId?: string;
     functionCallId: string;
@@ -128,14 +153,17 @@ export class OpenAiFunctionCallStreamAccumulator {
       functionName: input.functionName,
       argumentsText: input.argumentsText,
     });
-    const existingProviderFunctionCallIndex = this.pendingProviderFunctionCallIntents.findIndex(
-      (pendingProviderFunctionCallIntent) => pendingProviderFunctionCallIntent.functionCallId === input.functionCallId,
-    );
-    if (existingProviderFunctionCallIndex >= 0) {
+    const existingProviderFunctionCallIndex = this.pendingProviderFunctionCallIntentIndexByFunctionCallId.get(input.functionCallId);
+    if (existingProviderFunctionCallIndex !== undefined) {
+      this.assertRecordedFunctionCallStillMatchesEmittedToolCall(providerFunctionCallIntent);
       this.pendingProviderFunctionCallIntents[existingProviderFunctionCallIndex] = providerFunctionCallIntent;
       return;
     }
 
+    this.pendingProviderFunctionCallIntentIndexByFunctionCallId.set(
+      input.functionCallId,
+      this.pendingProviderFunctionCallIntents.length,
+    );
     this.pendingProviderFunctionCallIntents.push(providerFunctionCallIntent);
     if (input.itemId) {
       const pendingFunctionCallState = this.pendingFunctionCallStateByItemId.get(input.itemId);
@@ -144,18 +172,19 @@ export class OpenAiFunctionCallStreamAccumulator {
       }
     }
     switch (providerFunctionCallIntent.intentKind) {
-      case "code_execution_walkthrough_presentation":
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.presentation_function_call_ready", {
-          presentationCallId: input.functionCallId,
-          functionArgumentsLength: input.argumentsText.length,
-          presentationFunctionName: input.functionName,
-        });
-        return;
       case "executable_tool":
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.tool_call_ready", {
           toolCallId: input.functionCallId,
           functionArgumentsLength: input.argumentsText.length,
           ...summarizeOpenAiToolCallRequestForDiagnostics(providerFunctionCallIntent.toolCallRequest),
+        });
+        return;
+      case "invalid_function_call":
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.invalid_function_call_ready", {
+          toolCallId: input.functionCallId,
+          functionName: providerFunctionCallIntent.functionName,
+          functionArgumentsLength: input.argumentsText.length,
+          invalidCallExplanationLength: providerFunctionCallIntent.invalidCallExplanation.length,
         });
         return;
       default:
@@ -185,9 +214,13 @@ export class OpenAiFunctionCallStreamAccumulator {
   }
 
   private appendPendingFunctionCallArgumentTextChunk(itemId: string, argumentsTextChunk: string): void {
-    const argumentTextChunks = this.pendingFunctionCallArgumentChunksByItemId.get(itemId) ?? [];
-    argumentTextChunks.push(argumentsTextChunk);
-    this.pendingFunctionCallArgumentChunksByItemId.set(itemId, argumentTextChunks);
+    const argumentTextChunks = this.pendingFunctionCallArgumentChunksByItemId.get(itemId);
+    if (argumentTextChunks) {
+      argumentTextChunks.push(argumentsTextChunk);
+      return;
+    }
+
+    this.pendingFunctionCallArgumentChunksByItemId.set(itemId, [argumentsTextChunk]);
   }
 
   private readBufferedPendingFunctionCallArgumentsText(itemId: string): string | undefined {
@@ -199,10 +232,35 @@ export class OpenAiFunctionCallStreamAccumulator {
     const argumentTextChunks = this.pendingFunctionCallArgumentChunksByItemId.get(itemId);
     return argumentTextChunks && argumentTextChunks.length > 0 ? argumentTextChunks.join("") : undefined;
   }
+
+  private assertRecordedFunctionCallStillMatchesEmittedToolCall(providerFunctionCallIntent: OpenAiProviderFunctionCallIntent): void {
+    const emittedExecutableToolCallIntent = this.emittedExecutableToolCallIntentByFunctionCallId.get(
+      providerFunctionCallIntent.functionCallId,
+    );
+    if (!emittedExecutableToolCallIntent) {
+      return;
+    }
+    if (
+      providerFunctionCallIntent.intentKind === "executable_tool" &&
+      JSON.stringify(providerFunctionCallIntent.toolCallRequest) === JSON.stringify(emittedExecutableToolCallIntent.toolCallRequest)
+    ) {
+      return;
+    }
+
+    throw new Error(`OpenAI response changed function call ${providerFunctionCallIntent.functionCallId} after it was emitted.`);
+  }
 }
 
 function readPendingFunctionCallArgumentsText(pendingFunctionCallState: PendingFunctionCallState): string {
   return pendingFunctionCallState.completedArgumentsText ?? pendingFunctionCallState.argumentTextChunks.join("");
+}
+
+function hasPendingFunctionCallArgumentsText(pendingFunctionCallState: PendingFunctionCallState): boolean {
+  if (pendingFunctionCallState.completedArgumentsText !== undefined) {
+    return pendingFunctionCallState.completedArgumentsText.length > 0;
+  }
+
+  return pendingFunctionCallState.argumentTextChunks.some((argumentTextChunk) => argumentTextChunk.length > 0);
 }
 
 function assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent: never): never {

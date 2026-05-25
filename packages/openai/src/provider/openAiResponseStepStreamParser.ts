@@ -1,21 +1,19 @@
-import type {
-  BuliDiagnosticLogger,
-  ProviderStreamEvent,
-  TokenUsage,
-} from "@buli/contracts";
+import { ContextWindowOverflowError, type BuliDiagnosticLogger, type ProviderStreamEvent, type TokenUsage } from "@buli/contracts";
 import {
   logOpenAiDiagnosticEvent,
   summarizeTokenUsageForDiagnostics,
 } from "./diagnostics.ts";
 import {
+  isOpenAiOutputTextContentPart,
   isOpenAiResponseObject,
   readOpenAiFunctionCallOutputItem,
+  readOpenAiResponseObjectArrayField,
   readOpenAiResponseObjectStringField,
 } from "./openAiResponseObjects.ts";
 import { OpenAiResponseOutputItemTracker } from "./openAiResponseOutputItemTracker.ts";
 import { OpenAiFunctionCallStreamAccumulator } from "./openAiFunctionCallStreamAccumulator.ts";
 import { OpenAiReasoningSummaryStreamProjector } from "./openAiReasoningSummaryStreamProjector.ts";
-import { sanitizeOpenAiErrorMessage } from "./httpResponseDiagnostics.ts";
+import { isOpenAiContextWindowOverflowFailure, sanitizeOpenAiErrorMessage } from "./httpResponseDiagnostics.ts";
 import { normalizeOpenAiUsage } from "./usage.ts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import {
@@ -48,6 +46,8 @@ export type { OpenAiResponseStepTerminalState } from "./openAiResponseStepTermin
 
 export type OpenAiStreamParserOptions = {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  abortSignal?: AbortSignal | undefined;
+  idleTimeoutMilliseconds?: number | undefined;
 };
 
 // Reasoning summary timing is captured provider-side because the provider is
@@ -138,10 +138,9 @@ export class OpenAiResponseStepStreamParser {
           textDeltaEventCount: this.textDeltaEventCount,
           textDeltaCharacterCount: this.textDeltaCharacterCount,
         });
-        return [
-          ...this.createPendingReasoningCompletedEvents(),
-          createProviderTextChunkEvent(outputTextDelta.delta),
-        ];
+        const providerStreamEvents = this.createPendingReasoningCompletedEvents();
+        providerStreamEvents.push(createProviderTextChunkEvent(outputTextDelta.delta));
+        return providerStreamEvents;
       }
 
       case "response.reasoning_summary_text.delta": {
@@ -255,7 +254,11 @@ export class OpenAiResponseStepStreamParser {
         });
         const providerEvents = isOpenAiReasoningOutputItem(outputItemAdded.item)
           ? this.reasoningSummaryStreamProjector.beginReasoningSummary()
-          : [];
+          : this.createPendingReasoningCompletedEvents();
+        providerEvents.push(...this.createCompletedAssistantMessageOutputItemTextEvents({
+          outputIndex: outputItemAdded.output_index,
+          outputItem: outputItemAdded.item,
+        }));
         const functionCallItem = readOpenAiFunctionCallOutputItem(outputItemAdded.item);
         if (functionCallItem) {
           if (functionCallItem.argumentsText && functionCallItem.argumentsText.length > 0) {
@@ -286,7 +289,7 @@ export class OpenAiResponseStepStreamParser {
           itemId: functionCallArgumentsDone.item_id,
           argumentsText: functionCallArgumentsDone.arguments,
         });
-        return [];
+        return this.createNewExecutableToolCallEvents();
       }
 
       case "response.output_item.done": {
@@ -310,6 +313,7 @@ export class OpenAiResponseStepStreamParser {
           this.outputItemTracker.mergeOutputItemDoneWithoutOutputIndex(outputItemDone.item);
         }
         const functionCallItem = readOpenAiFunctionCallOutputItem(outputItemDone.item);
+        const providerEvents: ProviderStreamEvent[] = [];
         if (functionCallItem) {
           if (functionCallItem.argumentsText && functionCallItem.argumentsText.length > 0) {
             this.outputItemTracker.setFunctionCallArgumentsTextByItemId(functionCallItem.itemId, functionCallItem.argumentsText);
@@ -318,11 +322,12 @@ export class OpenAiResponseStepStreamParser {
             functionCallItem,
             shouldRecordRequestedToolCallIfReady: true,
           });
+          providerEvents.push(...this.createNewExecutableToolCallEvents());
         }
         if (isOpenAiReasoningOutputItem(outputItemDone.item)) {
-          return this.createPendingReasoningCompletedEvents();
+          providerEvents.push(...this.createPendingReasoningCompletedEvents());
         }
-        return [];
+        return providerEvents;
       }
 
       case "response.completed": {
@@ -352,12 +357,21 @@ export class OpenAiResponseStepStreamParser {
 
         const errorMessage = sanitizeOpenAiErrorMessage(failedResponse.response.error?.message ?? "unknown error");
         const errorCode = failedResponse.response.error?.code;
-        throw new Error(`OpenAI response failed: ${errorMessage}${errorCode ? ` | code=${errorCode}` : ""}`);
+        const failureMessage = `OpenAI response failed: ${errorMessage}${errorCode ? ` | code=${errorCode}` : ""}`;
+        if (isOpenAiContextWindowOverflowFailure({ errorCode, errorMessage })) {
+          throw new ContextWindowOverflowError(failureMessage);
+        }
+        throw new Error(failureMessage);
       }
 
       case "error": {
         const error = parseOpenAiErrorChunk(value);
-        throw new Error(sanitizeOpenAiErrorMessage(error.message));
+        const errorMessage = sanitizeOpenAiErrorMessage(error.message);
+        const failureMessage = `${errorMessage}${error.code ? ` | code=${error.code}` : ""}`;
+        if (isOpenAiContextWindowOverflowFailure({ errorCode: error.code, errorMessage })) {
+          throw new ContextWindowOverflowError(failureMessage);
+        }
+        throw new Error(failureMessage);
       }
 
       default: {
@@ -417,6 +431,7 @@ export class OpenAiResponseStepStreamParser {
     const responseOutputItems = this.outputItemTracker.createTrackedBackedResponseOutputItems(
       input.responseOutputItemsFromTerminalEvent,
     );
+    const terminalAssistantTextChunks = this.outputItemTracker.listUnemittedAssistantOutputTextChunks(responseOutputItems);
     this.functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
     const pendingProviderFunctionCallIntents = this.functionCallStreamAccumulator.listPendingProviderFunctionCallIntents();
     const pendingProviderFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(
@@ -425,19 +440,31 @@ export class OpenAiResponseStepStreamParser {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_observed", {
       terminalKind: chooseOpenAiResponseStepTerminalKind({
         requestedToolCallCount: pendingProviderFunctionCallIntentClassification.requestedToolCalls.length,
-        presentationFunctionCallCount: pendingProviderFunctionCallIntentClassification.presentationFunctionCallIntents.length,
+        invalidFunctionCallCount: pendingProviderFunctionCallIntentClassification.invalidFunctionCallIntents.length,
         fallbackTerminalKind: input.fallbackTerminalKind,
       }),
       ...(input.incompleteReason !== undefined ? { incompleteReason: input.incompleteReason } : {}),
       ...summarizeTokenUsageForDiagnostics(input.terminalResponseUsage),
     });
+    if (terminalAssistantTextChunks.length > 0) {
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_assistant_text_recovered", {
+        textChunkCount: terminalAssistantTextChunks.length,
+        textCharacterCount: terminalAssistantTextChunks.reduce(
+          (textCharacterCount, terminalAssistantTextChunk) => textCharacterCount + terminalAssistantTextChunk.length,
+          0,
+        ),
+      });
+      providerEvents.push(...terminalAssistantTextChunks.map(createProviderTextChunkEvent));
+    }
     if (pendingProviderFunctionCallIntents.length > 0) {
       this.terminalState = createOpenAiResponseStepProviderFunctionCallTerminalState({
         providerFunctionCallIntents: pendingProviderFunctionCallIntents,
         responseOutputItems,
         usage: input.terminalResponseUsage,
       });
-      providerEvents.push(...createProviderFunctionCallIntentEvents(pendingProviderFunctionCallIntents));
+      providerEvents.push(...createProviderFunctionCallIntentEvents(
+        this.functionCallStreamAccumulator.drainNewExecutableToolCallIntents(),
+      ));
       return providerEvents;
     }
 
@@ -452,6 +479,50 @@ export class OpenAiResponseStepStreamParser {
       incompleteReason: input.incompleteReason ?? "unknown",
       usage: input.terminalResponseUsage,
     }));
+    return providerEvents;
+  }
+
+  private createNewExecutableToolCallEvents(): ProviderStreamEvent[] {
+    return [
+      ...this.createPendingReasoningCompletedEvents(),
+      ...createProviderFunctionCallIntentEvents(this.functionCallStreamAccumulator.drainNewExecutableToolCallIntents()),
+    ];
+  }
+
+  private createCompletedAssistantMessageOutputItemTextEvents(input: {
+    outputIndex: number;
+    outputItem: unknown;
+  }): ProviderStreamEvent[] {
+    if (
+      !isOpenAiResponseObject(input.outputItem) ||
+      input.outputItem.type !== "message" ||
+      readOpenAiResponseObjectStringField(input.outputItem, "role") !== "assistant" ||
+      readOpenAiResponseObjectStringField(input.outputItem, "status") !== "completed"
+    ) {
+      return [];
+    }
+
+    const itemId = readOpenAiResponseObjectStringField(input.outputItem, "id");
+    if (itemId === undefined) {
+      return [];
+    }
+
+    const providerEvents: ProviderStreamEvent[] = [];
+    const contentParts = readOpenAiResponseObjectArrayField(input.outputItem, "content") ?? [];
+    for (const [contentIndex, contentPart] of contentParts.entries()) {
+      if (!isOpenAiOutputTextContentPart(contentPart) || contentPart.text.length === 0) {
+        continue;
+      }
+
+      this.outputItemTracker.appendAssistantOutputTextDelta({
+        itemId,
+        outputIndex: input.outputIndex,
+        contentIndex,
+        deltaText: contentPart.text,
+      });
+      providerEvents.push(createProviderTextChunkEvent(contentPart.text));
+    }
+
     return providerEvents;
   }
 }

@@ -65,7 +65,7 @@ describe("InputPanel", () => {
     expect(frame).not.toContain("transcript");
   });
 
-  test("reserves_a_second_prompt_row_for_single_line_drafts", async () => {
+  test("reserves_two_following_prompt_rows_for_single_line_drafts", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <InputPanel
         promptDraft="hello"
@@ -80,13 +80,13 @@ describe("InputPanel", () => {
 
     await renderOnce();
 
-    // Single-line draft must occupy at least two rows inside the frame so the
+    // Single-line draft must occupy at least three rows inside the frame so the
     // textarea body never collapses to a single visible line.
     const renderedRows = splitRenderedViewportRows(captureCharFrame());
     const promptRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("> hello"));
     const closingBorderRowIndex = renderedRows.findIndex((renderedRow) => renderedRow.includes("╰"));
     expect(promptRowIndex).toBeGreaterThanOrEqual(0);
-    expect(closingBorderRowIndex - promptRowIndex).toBeGreaterThanOrEqual(2);
+    expect(closingBorderRowIndex - promptRowIndex).toBeGreaterThanOrEqual(3);
   });
 
   test("renders_no_left_footer_hint_when_given_an_empty_override", async () => {

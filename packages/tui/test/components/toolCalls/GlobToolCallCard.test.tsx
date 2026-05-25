@@ -20,7 +20,7 @@ describe("GlobToolCallCard", () => {
     expect(frame).toContain("[+]");
     expect(frame).toContain("[**/*.ts]");
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("searching");
+    expect(frame).toContain("searching");
   });
 
   test("completed_starts_collapsed_with_match_summary", async () => {

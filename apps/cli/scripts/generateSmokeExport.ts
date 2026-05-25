@@ -144,38 +144,21 @@ const smokeConversationSessionEntries: ConversationSessionEntry[] = [
     },
   },
   {
-    entryKind: "assistant_code_execution_walkthrough_segment",
-    titleText: "Port override flow",
-    summaryText: "How the new port value flows through the CLI bootstrap.",
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Read configuration",
-        whatHappensText: "The CLI reads the port from cli.ts at startup.",
-        codeExamples: [
-          {
-            sourceFilePath: "apps/cli/src/cli.ts",
-            startLineNumber: 12,
-            endLineNumber: 14,
-            languageLabel: "typescript",
-            codeText: "const port = 4000;\nconst server = createServer({ port });\nserver.listen();",
-          },
-        ],
-      },
-      {
-        stepTitle: "Bind socket",
-        whatHappensText: "The server binds to the configured port.",
-        codeExamples: [
-          {
-            sourceFilePath: "apps/cli/src/cli.ts",
-            startLineNumber: 16,
-            endLineNumber: 16,
-            languageLabel: "typescript",
-            codeText: "server.listen();",
-          },
-        ],
-      },
-    ],
+    entryKind: "assistant_text_segment",
+    assistantTextSegmentText: [
+      "**Port override flow**",
+      "",
+      "How the new port value flows through the CLI bootstrap.",
+      "",
+      '```typescript path="apps/cli/src/cli.ts:12-14"',
+      "// explain: The CLI reads the port during startup.",
+      "const port = 4000;",
+      "// explain: The server is created with that configured port.",
+      "const server = createServer({ port });",
+      "// explain: The server starts listening after configuration is applied.",
+      "server.listen();",
+      "```",
+    ].join("\n"),
   },
   {
     entryKind: "conversation_compaction_summary",
@@ -196,7 +179,7 @@ const smokeConversationSessionEntries: ConversationSessionEntry[] = [
       "- tool call + completed result",
       "- failed and denied tool results",
       "- workspace patch",
-      "- code execution walkthrough",
+      "- source-explained Markdown",
       "- compaction summary",
       "",
       "```ts",

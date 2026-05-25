@@ -88,7 +88,6 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       assistantOperatingMode: input.assistantOperatingMode,
       requestedAvailableToolNames: input.availableToolNames,
     }),
-    availablePresentationFunctionNames: [],
     abortSignal: input.abortSignal,
   });
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.started", {

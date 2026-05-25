@@ -82,7 +82,7 @@ describe("ChatScreen responsive layout", () => {
     expect(frame).not.toContain("help · shortcuts");
   });
 
-  test("renders_full_input_panel_with_context_meter_at_comfortable_tier", async () => {
+  test("renders_full_input_panel_without_status_strip_at_comfortable_tier", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ChatScreen
         selectedModelId="gpt-5.4"
@@ -94,9 +94,10 @@ describe("ChatScreen responsive layout", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("--");
+    expect(frame).toContain("╭");
+    expect(frame).toContain("0 / 1.1m (0%)");
     expect(frame).not.toContain("ctx");
-    expect(frame).toContain("Understand");
+    expect(frame).not.toContain("Understand");
   });
 
   test("left_aligns_full_input_panel_and_lets_it_span_the_wide_viewport", async () => {
@@ -111,10 +112,10 @@ describe("ChatScreen responsive layout", () => {
     );
     await renderOnce();
     const renderedRows = splitRenderedViewportRows(captureCharFrame());
-    const inputHeaderRow = findRenderedRowContaining(renderedRows.join("\n"), "Understand");
+    const inputFrameRow = findRenderedRowContaining(renderedRows.join("\n"), "╭");
     const bottomInputRegionRow = findLastNonBlankRenderedRow(renderedRows);
 
-    expectRenderedRowToSpanViewportWithTextMargin(inputHeaderRow);
+    expectRenderedRowToSpanViewportWithTextMargin(inputFrameRow);
     expectRenderedRowToSpanViewportWithTextMargin(bottomInputRegionRow);
   });
 

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { MAX_BASH_TOOL_TIMEOUT_MILLISECONDS } from "@buli/contracts";
+import { ASSISTANT_TOOL_REQUEST_NAMES, ContextWindowOverflowError, MAX_BASH_TOOL_TIMEOUT_MILLISECONDS, type ToolCallRequest } from "@buli/contracts";
 import { OpenAiAuthStore } from "../src/auth/store.ts";
 import { OpenAiProvider } from "../src/provider/client.ts";
 import { parseOpenAiStream } from "../src/provider/stream.ts";
@@ -35,9 +35,9 @@ function createConversationTurnRequest(input: { messageText: string }) {
   };
 }
 
-async function collectParsedEvents(response: Response) {
+async function collectParsedEvents(response: Response, options?: Parameters<typeof parseOpenAiStream>[1]) {
   const parsedEvents = [];
-  for await (const parsedEvent of parseOpenAiStream(response)) {
+  for await (const parsedEvent of parseOpenAiStream(response, options)) {
     parsedEvents.push(parsedEvent);
   }
   return parsedEvents;
@@ -213,6 +213,26 @@ test("parseOpenAiStream fails with stream context when an SSE frame is malformed
   const response = new Response("data: {not-json}\n\n", { headers: { "Content-Type": "text/event-stream" } });
 
   await expect(collectParsedEvents(response)).rejects.toThrow("OpenAI stream returned malformed SSE JSON at frame 1");
+});
+
+test("parseOpenAiStream fails when the SSE stream stalls past the idle timeout", async () => {
+  const textEncoder = new TextEncoder();
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(textEncoder.encode(createSseDataFrame({
+          type: "response.output_text.delta",
+          item_id: "msg_1",
+          delta: "Partial",
+        })));
+      },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response, { idleTimeoutMilliseconds: 1 })).rejects.toThrow(
+    "OpenAI stream stalled for 1ms without receiving data",
+  );
 });
 
 test("parseOpenAiStream rejects an oversized delimited SSE frame", async () => {
@@ -545,24 +565,21 @@ test("parseOpenAiStream emits an ordered batch for same-step function calls", as
 
   expect(parsedEvents).toEqual([
     {
-      type: "tool_calls_requested",
-      requestedToolCalls: [
-        {
-          toolCallId: "call_read_1",
-          toolCallRequest: {
-            toolName: "read",
-            readTargetPath: "README.md",
-          },
-        },
-        {
-          toolCallId: "call_grep_1",
-          toolCallRequest: {
-            toolName: "grep",
-            regexPattern: "ToolCallRequest",
-            searchPath: "packages",
-          },
-        },
-      ],
+      type: "tool_call_requested",
+      toolCallId: "call_read_1",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    },
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_grep_1",
+      toolCallRequest: {
+        toolName: "grep",
+        regexPattern: "ToolCallRequest",
+        searchPath: "packages",
+      },
     },
   ]);
   expect(terminalState).toMatchObject({
@@ -606,7 +623,11 @@ test("parseOpenAiStream accepts nullable bash function arguments", async () => {
 });
 
 test("parseOpenAiStream parses typed coding tool calls", async () => {
-  const toolCallCases = [
+  const toolCallCases: Array<{
+    toolName: ToolCallRequest["toolName"];
+    argumentsText: string;
+    expectedToolCallRequest: ToolCallRequest;
+  }> = [
     {
       toolName: "read",
       argumentsText: '{"filePath":"README.md","offset":2,"limit":5}',
@@ -615,6 +636,44 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
         readTargetPath: "README.md",
         offsetLineNumber: 2,
         maximumLineCount: 5,
+      },
+    },
+    {
+      toolName: "read_many",
+      argumentsText: '{"targets":[{"filePath":"README.md","offset":2,"limit":5},{"filePath":"packages/openai/src/provider/toolDefinitions.ts","offset":null,"limit":null}]}',
+      expectedToolCallRequest: {
+        toolName: "read_many",
+        readTargets: [
+          {
+            readTargetPath: "README.md",
+            offsetLineNumber: 2,
+            maximumLineCount: 5,
+          },
+          {
+            readTargetPath: "packages/openai/src/provider/toolDefinitions.ts",
+          },
+        ],
+      },
+    },
+    {
+      toolName: "search_many",
+      argumentsText: '{"searches":[{"searchKind":"glob","pattern":"**/*.ts","path":"packages","include":null,"contextLineCount":null},{"searchKind":"grep","pattern":"ToolCallRequest","path":"packages","include":"*.ts","contextLineCount":2}]}',
+      expectedToolCallRequest: {
+        toolName: "search_many",
+        searches: [
+          {
+            searchKind: "glob",
+            globPattern: "**/*.ts",
+            searchDirectoryPath: "packages",
+          },
+          {
+            searchKind: "grep",
+            regexPattern: "ToolCallRequest",
+            searchPath: "packages",
+            includeGlobPattern: "*.ts",
+            contextLineCount: 2,
+          },
+        ],
       },
     },
     {
@@ -628,12 +687,13 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
     },
     {
       toolName: "grep",
-      argumentsText: '{"pattern":"ToolCallRequest","path":"packages","include":"*.ts"}',
+      argumentsText: '{"pattern":"ToolCallRequest","path":"packages","include":"*.ts","contextLineCount":2}',
       expectedToolCallRequest: {
         toolName: "grep",
         regexPattern: "ToolCallRequest",
         searchPath: "packages",
         includeGlobPattern: "*.ts",
+        contextLineCount: 2,
       },
     },
     {
@@ -644,6 +704,37 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
         editTargetPath: "src/app.ts",
         oldString: "old",
         newString: "",
+      },
+    },
+    {
+      toolName: "edit_many",
+      argumentsText: '{"edits":[{"filePath":"src/app.ts","oldString":"old","newString":"new","replaceAll":true}]}',
+      expectedToolCallRequest: {
+        toolName: "edit_many",
+        edits: [
+          {
+            editTargetPath: "src/app.ts",
+            oldString: "old",
+            newString: "new",
+            replaceAll: true,
+          },
+        ],
+      },
+    },
+    {
+      toolName: "patch",
+      argumentsText: JSON.stringify({ patchText: "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch" }),
+      expectedToolCallRequest: {
+        toolName: "patch",
+        patchText: "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch",
+      },
+    },
+    {
+      toolName: "patch_many",
+      argumentsText: JSON.stringify({ patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch" }),
+      expectedToolCallRequest: {
+        toolName: "patch_many",
+        patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch",
       },
     },
     {
@@ -665,15 +756,15 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
         subagentPrompt: "Inspect engine runtime flow.",
       },
     },
-  ] as const;
+  ];
 
   for (const toolCallCase of toolCallCases) {
-    const escapedArgumentsText = toolCallCase.argumentsText.replaceAll('"', '\\"');
+    const eventArgumentsText = JSON.stringify(toolCallCase.argumentsText);
     const response = new Response(
       [
         `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"${toolCallCase.toolName}","arguments":""}}\n\n`,
-        `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"${escapedArgumentsText}"}\n\n`,
-        `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"${toolCallCase.toolName}","arguments":"${escapedArgumentsText}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
+        `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":${eventArgumentsText}}\n\n`,
+        `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"${toolCallCase.toolName}","arguments":${eventArgumentsText}}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
       ].join(""),
       { headers: { "Content-Type": "text/event-stream" } },
     );
@@ -688,148 +779,29 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
   }
 });
 
-test("parseOpenAiStream emits code execution walkthrough presentation events without tool-call events", async () => {
-  const codeExecutionWalkthroughArgumentsText = JSON.stringify({
-    titleText: "Request flow",
-    summaryText: null,
-    walkthroughKind: "source_walkthrough",
-    steps: [
-      {
-        stepTitle: "Prompt accepted",
-        whenText: null,
-        whatHappensText: "The accepted prompt is recorded.",
-        dataStateText: null,
-        decisionText: null,
-        stateChangeText: null,
-        nextStepText: "Provider streams next.",
-        codeExamples: [
-          {
-            sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
-            sourceSymbolName: "startAcceptedRuntimeConversationTurn",
-            startLineNumber: 64,
-            endLineNumber: 67,
-            languageLabel: "ts",
-            codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
-            explanationText: null,
-            lineExplanations: [
-              {
-                lineNumber: 64,
-                explanationText: "This records the accepted user prompt before the provider turn starts.",
-                projectModelText: "The conversation history keeps the prompt as a session entry.",
-                frameworkLifecycleText: null,
-                languageMechanicsText: null,
-                plainPseudocodeText: "Save this accepted prompt into history.",
-                uncertaintyText: null,
-              },
-            ],
-          },
-        ],
-      },
-    ],
+test("parseOpenAiStream reports patch requests with invalid section counts", async () => {
+  const invalidPatchArgumentsText = JSON.stringify({
+    patchText: "*** Begin Patch\n*** Update File: one.txt\n@@\n-old\n+new\n*** Update File: two.txt\n@@\n-old\n+new\n*** End Patch",
   });
   const response = new Response(
     [
-      createSseDataFrame({
-        type: "response.output_item.added",
-        output_index: 0,
-        item: { type: "function_call", id: "fc_1", call_id: "call_present_1", name: "present_code_execution_walkthrough", arguments: "" },
-      }),
-      createSseDataFrame({
-        type: "response.function_call_arguments.done",
-        item_id: "fc_1",
-        arguments: codeExecutionWalkthroughArgumentsText,
-      }),
-      createSseDataFrame({
-        type: "response.completed",
-        response: {
-          output: [
-            {
-              id: "fc_1",
-              type: "function_call",
-              call_id: "call_present_1",
-              name: "present_code_execution_walkthrough",
-              arguments: codeExecutionWalkthroughArgumentsText,
-            },
-          ],
-          usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
-        },
-      }),
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"patch","arguments":""}}\n\n',
+      `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":${JSON.stringify(invalidPatchArgumentsText)}}\n\n`,
+      `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"patch","arguments":${JSON.stringify(invalidPatchArgumentsText)}}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
     ].join(""),
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
 
-  expect(parsedEvents).toEqual([
-      {
-        type: "code_execution_walkthrough_presented",
-        presentationCallId: "call_present_1",
-        codeExecutionWalkthrough: {
-          titleText: "Request flow",
-          walkthroughKind: "source_walkthrough",
-          steps: [
-            {
-              stepTitle: "Prompt accepted",
-              whatHappensText: "The accepted prompt is recorded.",
-              nextStepText: "Provider streams next.",
-              codeExamples: [
-                {
-                  sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
-                  sourceSymbolName: "startAcceptedRuntimeConversationTurn",
-                  startLineNumber: 64,
-                  endLineNumber: 67,
-                  languageLabel: "ts",
-                  codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
-                  lineExplanations: [
-                    {
-                      lineNumber: 64,
-                      explanationText: "This records the accepted user prompt before the provider turn starts.",
-                      projectModelText: "The conversation history keeps the prompt as a session entry.",
-                      plainPseudocodeText: "Save this accepted prompt into history.",
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
-  ]);
   expect(terminalState).toMatchObject({
     terminalKind: "provider_function_calls_requested",
     providerFunctionCallIntents: [
       {
-        intentKind: "code_execution_walkthrough_presentation",
-        functionCallId: "call_present_1",
-        codeExecutionWalkthrough: {
-          titleText: "Request flow",
-          walkthroughKind: "source_walkthrough",
-          steps: [
-            {
-              stepTitle: "Prompt accepted",
-              whatHappensText: "The accepted prompt is recorded.",
-              nextStepText: "Provider streams next.",
-              codeExamples: [
-                {
-                  sourceFilePath: "packages/engine/src/runtimeConversationTurnStart.ts",
-                  sourceSymbolName: "startAcceptedRuntimeConversationTurn",
-                  startLineNumber: 64,
-                  endLineNumber: 67,
-                  languageLabel: "ts",
-                  codeText: "input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(\n  modelFacingPromptTextForAcceptedTurn,\n  projectInstructionSnapshotsForAcceptedTurn,\n);",
-                  lineExplanations: [
-                    {
-                      lineNumber: 64,
-                      explanationText: "This records the accepted user prompt before the provider turn starts.",
-                      projectModelText: "The conversation history keeps the prompt as a session entry.",
-                      plainPseudocodeText: "Save this accepted prompt into history.",
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
+        intentKind: "invalid_function_call",
+        functionCallId: "call_1",
+        functionName: "patch",
+        invalidCallExplanation: expect.stringContaining("exactly one file section"),
       },
     ],
   });
@@ -839,29 +811,52 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const openAiToolDefinitions = createOpenAiToolDefinitions();
   const bashToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "bash");
   const readToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "read");
+  const readManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "read_many");
+  const searchManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "search_many");
   const globToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "glob");
   const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
+  const editManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit_many");
+  const patchToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "patch");
+  const patchManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "patch_many");
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
   const taskToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "task");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
-  expect(readToolDefinition?.description).toContain("Use this instead of bash for paths already known");
-  expect(readToolDefinition?.description).toContain("Do not guess paths from imports, symbols, filenames, or extensions");
-  expect(readToolDefinition?.description).toContain("discover uncertain paths with glob or grep first");
-  expect(readToolDefinition?.description).toContain("continue with offset before concluding");
+  expect(readToolDefinition?.description).toContain("Use this only for exact paths already evidenced");
+  expect(readToolDefinition?.description).toContain("Do not read paths inferred from imports, symbols, filenames, likely extensions, or project conventions");
+  expect(readToolDefinition?.description).toContain("discover uncertain paths with search_many, glob, or grep first");
+  expect(readToolDefinition?.description).toContain("Do not guess offsets");
+  expect(readToolDefinition?.description).toContain("continue only from line counts returned by previous reads");
+  expect(readManyToolDefinition?.description).toContain("Read multiple files or directories");
+  expect(readManyToolDefinition?.description).toContain("several exact paths are already evidenced");
+  expect(readManyToolDefinition?.description).toContain("one larger independent read_many batch");
+  expect(readManyToolDefinition?.parameters.properties["targets"]?.minItems).toBe(1);
+  expect(searchManyToolDefinition?.description).toContain("Run multiple independent glob and grep searches");
+  expect(searchManyToolDefinition?.description).toContain("contextLineCount");
+  expect(searchManyToolDefinition?.description).toContain("one larger independent search_many batch");
+  expect(searchManyToolDefinition?.parameters.properties["searches"]?.minItems).toBe(1);
   expect(globToolDefinition?.description).toContain("Use this instead of bash for file discovery");
   expect(globToolDefinition?.parameters.properties["path"]?.description).toContain("Single directory");
   expect(globToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
   expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
+  expect(grepToolDefinition?.description).toContain("contextLineCount");
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Single file or directory");
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
+  expect(grepToolDefinition?.parameters.properties["contextLineCount"]?.maximum).toBe(5);
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
+  expect(editManyToolDefinition?.description).toContain("Prefer this over several edit calls");
+  expect(editManyToolDefinition?.parameters.properties["edits"]?.minItems).toBe(1);
+  expect(patchToolDefinition?.description).toContain("exactly one file section");
+  expect(patchManyToolDefinition?.description).toContain("multi-file changes");
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
   const openAiToolDefinitionNames: string[] = openAiToolDefinitions.map((toolDefinition) => toolDefinition.name);
   expect(openAiToolDefinitionNames).not.toContain("explore");
-  expect(openAiToolDefinitionNames).not.toContain("present_code_execution_walkthrough");
   expect(taskToolDefinition?.description).toContain("Launch a built-in Buli subagent");
+  expect(taskToolDefinition?.description).toContain("request multiple task calls in the same response");
+  expect(taskToolDefinition?.description).toContain("instead of one oversized generic prompt");
+  expect(taskToolDefinition?.description).toContain("focused scope, exact known paths or patterns");
+  expect(taskToolDefinition?.description).toContain("expected concise report shape");
   expect(taskToolDefinition?.description).toContain("Currently available subagent: explore");
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
@@ -869,7 +864,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(readToolDefinition?.parameters.properties["limit"]?.minimum).toBe(1);
 });
 
-test("parseOpenAiStream rejects typed tool calls that violate shared contracts", async () => {
+test("parseOpenAiStream reports typed tool calls that violate shared contracts as invalid function calls", async () => {
   const response = new Response(
     [
       'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
@@ -879,30 +874,32 @@ test("parseOpenAiStream rejects typed tool calls that violate shared contracts",
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  await expect(collectParsedEvents(response)).rejects.toThrow(
-    "OpenAI function call for bash violates Buli tool contract: timeoutMilliseconds",
-  );
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toMatchObject({
+    terminalKind: "provider_function_calls_requested",
+    providerFunctionCallIntents: [
+      {
+        intentKind: "invalid_function_call",
+        functionCallId: "call_1",
+        functionName: "bash",
+        invalidCallExplanation: expect.stringContaining(
+          "OpenAI function call for bash violates Buli tool contract: timeoutMilliseconds",
+        ),
+      },
+    ],
+  });
 });
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
   const explorerToolDefinitions = createOpenAiToolDefinitions({
-    availableToolNames: ["read", "glob", "grep"],
-    availablePresentationFunctionNames: [],
+    availableToolNames: ["read", "read_many", "search_many", "glob", "grep"],
   });
 
-  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep"]);
+  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
 });
 
-test("createOpenAiToolDefinitions includes presentation functions only when explicitly requested", () => {
-  const toolDefinitions = createOpenAiToolDefinitions({
-    availableToolNames: [],
-    availablePresentationFunctionNames: ["present_code_execution_walkthrough"],
-  });
-
-  expect(toolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["present_code_execution_walkthrough"]);
-});
-
-test("parseOpenAiStream rejects malformed typed tool JSON arguments clearly", async () => {
+test("parseOpenAiStream reports malformed typed tool JSON arguments as invalid function calls", async () => {
   const response = new Response(
     [
       'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":""}}\n\n',
@@ -912,10 +909,23 @@ test("parseOpenAiStream rejects malformed typed tool JSON arguments clearly", as
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  await expect(collectParsedEvents(response)).rejects.toThrow("OpenAI function call for read has malformed JSON arguments");
+  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(parsedEvents).toEqual([]);
+  expect(terminalState).toMatchObject({
+    terminalKind: "provider_function_calls_requested",
+    providerFunctionCallIntents: [
+      {
+        intentKind: "invalid_function_call",
+        functionCallId: "call_1",
+        functionName: "read",
+        invalidCallExplanation: expect.stringContaining("OpenAI function call for read has malformed JSON arguments"),
+      },
+    ],
+  });
 });
 
-test("parseOpenAiStream rejects malformed typed tool argument fields clearly", async () => {
+test("parseOpenAiStream reports malformed typed tool argument fields as invalid function calls", async () => {
   const response = new Response(
     [
       'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":""}}\n\n',
@@ -925,12 +935,22 @@ test("parseOpenAiStream rejects malformed typed tool argument fields clearly", a
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  await expect(collectParsedEvents(response)).rejects.toThrow(
-    "OpenAI function call for read has invalid positive integer argument: offset",
-  );
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toMatchObject({
+    terminalKind: "provider_function_calls_requested",
+    providerFunctionCallIntents: [
+      {
+        intentKind: "invalid_function_call",
+        functionCallId: "call_1",
+        functionName: "read",
+        invalidCallExplanation: "OpenAI function call for read has invalid positive integer argument: offset",
+      },
+    ],
+  });
 });
 
-test("parseOpenAiStream rejects unsupported tool names clearly", async () => {
+test("parseOpenAiStream reports unsupported tool names as invalid function calls", async () => {
   const response = new Response(
     [
       'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"explore","arguments":""}}\n\n',
@@ -940,7 +960,19 @@ test("parseOpenAiStream rejects unsupported tool names clearly", async () => {
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  await expect(collectParsedEvents(response)).rejects.toThrow("Unsupported function requested by OpenAI: explore");
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toMatchObject({
+    terminalKind: "provider_function_calls_requested",
+    providerFunctionCallIntents: [
+      {
+        intentKind: "invalid_function_call",
+        functionCallId: "call_1",
+        functionName: "explore",
+        invalidCallExplanation: "Unsupported function requested by OpenAI: explore",
+      },
+    ],
+  });
 });
 
 test("parseOpenAiStream repairs tool-turn output when response.completed omits the function_call item", async () => {
@@ -957,6 +989,10 @@ test("parseOpenAiStream repairs tool-turn output when response.completed omits t
   const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
 
   expect(parsedEvents).toEqual([
+    {
+      type: "text_chunk",
+      text: "I will inspect the docs first.",
+    },
     {
       type: "tool_call_requested",
       toolCallId: "call_1",
@@ -1242,6 +1278,23 @@ test("parseOpenAiStream rejects response.failed with the OpenAI failure message"
   );
 });
 
+test("parseOpenAiStream classifies response.failed context window overflow", async () => {
+  const response = new Response(
+    createSseDataFrame({
+      type: "response.failed",
+      response: {
+        error: {
+          code: "context_length_exceeded",
+          message: "Your input exceeds the context window of this model.",
+        },
+      },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow(ContextWindowOverflowError);
+});
+
 test("parseOpenAiStream redacts and caps response.failed messages", async () => {
   const response = new Response(
     createSseDataFrame({
@@ -1292,6 +1345,18 @@ test("parseOpenAiStream redacts generic error events", async () => {
   const errorMessage = thrownError instanceof Error ? thrownError.message : String(thrownError);
   expect(errorMessage).toBe("proxy echoed refresh_token=[REDACTED]");
   expect(errorMessage).not.toContain("refresh123");
+});
+
+test("parseOpenAiStream tolerates generic error events without a top-level message", async () => {
+  const response = new Response(
+    createSseDataFrame({
+      type: "error",
+      error: { code: "server_error", message: "nested stream failure" },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  await expect(collectParsedEvents(response)).rejects.toThrow("nested stream failure | code=server_error");
 });
 
 test("parseOpenAiStream preserves streamed function_call argument deltas when terminal output omits the function_call", async () => {
@@ -1455,7 +1520,7 @@ test("parseOpenAiStream preserves function_call arguments.done received before o
   });
 });
 
-test("parseOpenAiStream prefers complete terminal function_call arguments over stale tracked arguments", async () => {
+test("parseOpenAiStream rejects terminal function_call arguments that change after early tool emission", async () => {
   const response = new Response(
     [
       'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
@@ -1465,31 +1530,9 @@ test("parseOpenAiStream prefers complete terminal function_call arguments over s
     { headers: { "Content-Type": "text/event-stream" } },
   );
 
-  const { parsedEvents, terminalState } = await collectParsedEventsAndTerminalState(response);
-
-  expect(parsedEvents).toEqual([
-    {
-      type: "tool_call_requested",
-      toolCallId: "call_1",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print working directory",
-      },
-    },
-  ]);
-  expect(terminalState).toMatchObject({
-    terminalKind: "tool_call_requested",
-    responseOutputItems: [
-      {
-        id: "fc_1",
-        type: "function_call",
-        call_id: "call_1",
-        name: "bash",
-        arguments: '{"command":"pwd","description":"Print working directory"}',
-      },
-    ],
-  });
+  await expect(collectParsedEventsAndTerminalState(response)).rejects.toThrow(
+    "OpenAI response changed function call call_1 after it was emitted.",
+  );
 });
 
 test("parseOpenAiStream repairs tracked function_call items from output_item.done without output_index", async () => {
@@ -1628,15 +1671,7 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       reasoning: { summary: "auto" },
       stream: true,
     });
-    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual([
-      "bash",
-      "read",
-      "glob",
-      "grep",
-      "edit",
-      "write",
-      "task",
-    ]);
+    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual([...ASSISTANT_TOOL_REQUEST_NAMES]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },
       {
@@ -1811,10 +1846,12 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
     expect(emittedEvents.map((emittedEvent) => emittedEvent.type)).toEqual([
       "reasoning_summary_started",
       "reasoning_summary_completed",
+      "text_chunk",
       "tool_call_requested",
       "text_chunk",
       "completed",
     ]);
+    expect(emittedEvents[2]).toEqual({ type: "text_chunk", text: "Running pwd first." });
     expect(JSON.parse(requests[1] ?? "{}")).toMatchObject({
       input: [
         {

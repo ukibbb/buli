@@ -101,10 +101,10 @@ export function createOpenAiResponseStepProviderFunctionCallTerminalState(input:
 
 export function chooseOpenAiResponseStepTerminalKind(input: {
   requestedToolCallCount: number;
-  presentationFunctionCallCount?: number | undefined;
+  invalidFunctionCallCount?: number | undefined;
   fallbackTerminalKind: "completed" | "incomplete";
 }): OpenAiResponseStepTerminalKind {
-  if ((input.presentationFunctionCallCount ?? 0) > 0) {
+  if ((input.invalidFunctionCallCount ?? 0) > 0) {
     return "provider_function_calls_requested";
   }
 

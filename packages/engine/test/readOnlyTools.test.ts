@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ProjectInstructionTracker, runGlobToolCall, runGrepToolCall, runReadToolCall } from "../src/index.ts";
+import { ProjectInstructionTracker, runGlobToolCall, runGrepToolCall, runReadToolCall, runSearchManyToolCall } from "../src/index.ts";
 
 async function writeFakeRipgrepExecutable(workspaceRootPath: string, scriptBody: string): Promise<string> {
   const fakeRipgrepPath = join(workspaceRootPath, "fake-rg");
@@ -329,6 +329,43 @@ test("runGlobToolCall rejects shell-style multi-path search directory", async ()
   expect(globToolCallOutcome.toolResultText).toContain("not multiple shell arguments");
 });
 
+test("runGlobToolCall rejects whitespace-separated existing search directories", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-existing-multi-path-"));
+  await mkdir(join(workspaceRootPath, "apps"));
+  await mkdir(join(workspaceRootPath, "packages"));
+
+  const globToolCallOutcome = await runGlobToolCall({
+    workspaceRootPath,
+    globToolCallRequest: {
+      toolName: "glob",
+      globPattern: "**/*.ts",
+      searchDirectoryPath: "apps packages",
+    },
+  });
+
+  expect(globToolCallOutcome.outcomeKind).toBe("failed");
+  expect(globToolCallOutcome.toolResultText).toContain("Glob path must be a single directory");
+  expect(globToolCallOutcome.toolResultText).toContain("not multiple shell arguments");
+});
+
+test("runGlobToolCall accepts a single search directory with spaces", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-spaced-path-"));
+  await mkdir(join(workspaceRootPath, "app code"));
+  await writeFile(join(workspaceRootPath, "app code", "main.ts"), "export const answer = 42;\n", "utf8");
+
+  const globToolCallOutcome = await runGlobToolCall({
+    workspaceRootPath,
+    globToolCallRequest: {
+      toolName: "glob",
+      globPattern: "**/*.ts",
+      searchDirectoryPath: "app code",
+    },
+  });
+
+  expect(globToolCallOutcome.outcomeKind).toBe("completed");
+  expect(globToolCallOutcome.toolResultText).toContain("app code/main.ts");
+});
+
 test("runGlobToolCall prefers ripgrep file discovery when available", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-glob-tool-rg-"));
   await writeFile(join(workspaceRootPath, "from-rg.ts"), "export const fromRipgrep = true;\n", "utf8");
@@ -504,6 +541,93 @@ test("runGrepToolCall searches text files with include glob", async () => {
   expect(grepToolCallOutcome.toolResultText).toContain("Line 1: const answer = 42;");
 });
 
+test("runGrepToolCall returns requested context lines around matches", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-context-"));
+  await writeFile(
+    join(workspaceRootPath, "notes.txt"),
+    ["before", "const answer = 42;", "after", "tail"].join("\n"),
+    "utf8",
+  );
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    ripgrepExecutablePath: join(workspaceRootPath, "missing-rg"),
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "answer",
+      contextLineCount: 1,
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "grep",
+    contextLineCount: 1,
+    matchHits: [
+      {
+        matchFilePath: "notes.txt",
+        matchLineNumber: 2,
+        matchSnippet: "const answer = 42;",
+        contextBeforeLines: [{ lineNumber: 1, lineText: "before" }],
+        contextAfterLines: [{ lineNumber: 3, lineText: "after" }],
+      },
+    ],
+  });
+  expect(grepToolCallOutcome.toolResultText).toContain("Context: 1 lines before and after each returned match");
+  expect(grepToolCallOutcome.toolResultText).toContain("Line 1: before");
+  expect(grepToolCallOutcome.toolResultText).toContain("> Line 2: const answer = 42;");
+  expect(grepToolCallOutcome.toolResultText).toContain("Line 3: after");
+  expect(grepToolCallOutcome.toolResultText).not.toContain("Line 4: tail");
+});
+
+test("runSearchManyToolCall returns requested grep context lines", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-search-many-tool-context-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), ["before", "needle", "after"].join("\n"), "utf8");
+
+  const searchManyToolCallOutcome = await runSearchManyToolCall({
+    workspaceRootPath,
+    readOnlyToolCallConcurrencyLimiter: {
+      run: async <SearchManyChildResult,>(operation: () => Promise<SearchManyChildResult>): Promise<SearchManyChildResult> =>
+        operation(),
+    },
+    searchManyToolCallRequest: {
+      toolName: "search_many",
+      searches: [
+        {
+          searchKind: "grep",
+          regexPattern: "needle",
+          contextLineCount: 1,
+        },
+      ],
+    },
+  });
+
+  expect(searchManyToolCallOutcome.outcomeKind).toBe("completed");
+  expect(searchManyToolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "search_many",
+    requestedSearches: [{ searchKind: "grep", regexPattern: "needle", contextLineCount: 1 }],
+    searchResults: [
+      {
+        searchStatus: "completed",
+        searchDetail: {
+          toolName: "grep",
+          contextLineCount: 1,
+          matchHits: [
+            {
+              matchFilePath: "notes.txt",
+              matchLineNumber: 2,
+              contextBeforeLines: [{ lineNumber: 1, lineText: "before" }],
+              contextAfterLines: [{ lineNumber: 3, lineText: "after" }],
+            },
+          ],
+        },
+      },
+    ],
+  });
+  expect(searchManyToolCallOutcome.toolResultText).toContain("<contextLineCount>1</contextLineCount>");
+  expect(searchManyToolCallOutcome.toolResultText).toContain("> Line 2: needle");
+});
+
 test("runGrepToolCall rejects shell-style multi-path search path", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-multi-path-"));
   await mkdir(join(workspaceRootPath, "src"));
@@ -521,6 +645,43 @@ test("runGrepToolCall rejects shell-style multi-path search path", async () => {
   expect(grepToolCallOutcome.outcomeKind).toBe("failed");
   expect(grepToolCallOutcome.toolResultText).toContain("Grep path must be a single file or directory");
   expect(grepToolCallOutcome.toolResultText).toContain("not multiple shell arguments");
+});
+
+test("runGrepToolCall rejects whitespace-separated existing search paths", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-existing-multi-path-"));
+  await mkdir(join(workspaceRootPath, "apps"));
+  await mkdir(join(workspaceRootPath, "packages"));
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "answer",
+      searchPath: "apps packages",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("failed");
+  expect(grepToolCallOutcome.toolResultText).toContain("Grep path must be a single file or directory");
+  expect(grepToolCallOutcome.toolResultText).toContain("not multiple shell arguments");
+});
+
+test("runGrepToolCall accepts a single search path with spaces", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-grep-tool-spaced-path-"));
+  await mkdir(join(workspaceRootPath, "app code"));
+  await writeFile(join(workspaceRootPath, "app code", "main.ts"), "export const answer = 42;\n", "utf8");
+
+  const grepToolCallOutcome = await runGrepToolCall({
+    workspaceRootPath,
+    grepToolCallRequest: {
+      toolName: "grep",
+      regexPattern: "answer",
+      searchPath: "app code",
+    },
+  });
+
+  expect(grepToolCallOutcome.outcomeKind).toBe("completed");
+  expect(grepToolCallOutcome.toolResultText).toContain("app code/main.ts");
 });
 
 test("runGrepToolCall prefers ripgrep JSON search when available", async () => {

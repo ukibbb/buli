@@ -103,6 +103,7 @@ export type UseChatAppControllerResult = {
   isActiveTurnInterruptConfirmationArmed: boolean;
   applyChatAppKeyboardInput: UseChatAppKeyboardActionsResult["applyChatAppKeyboardInput"];
   applyPromptDraftEditToChatApp: UseChatAppKeyboardActionsResult["applyPromptDraftEditToChatApp"];
+  insertSummarizedPastedTextIntoChatAppPrompt: UseChatAppKeyboardActionsResult["insertSummarizedPastedTextIntoChatAppPrompt"];
   removePromptImageAttachmentPlaceholderBeforeCursorFromChatApp:
     UseChatAppPromptImageAttachmentActionsResult["removePromptImageAttachmentPlaceholderBeforeCursorFromChatApp"];
   removePromptImageAttachmentPlaceholderAtCursorFromChatApp:
@@ -132,6 +133,7 @@ export type ChatAppPromptComposerState = Pick<
   | "promptDraft"
   | "promptDraftCursorOffset"
   | "pendingPromptImageAttachments"
+  | "pendingPromptTextPastes"
   | "selectedPromptContextReferenceTexts"
   | "selectedAssistantOperatingMode"
   | "selectedModelId"
@@ -397,6 +399,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   const {
     applyChatAppKeyboardInput,
     applyPromptDraftEditToChatApp,
+    insertSummarizedPastedTextIntoChatAppPrompt,
   } = useChatAppKeyboardActions({
     chatSessionState,
     loadAvailableAssistantModels: input.loadAvailableAssistantModels,
@@ -485,6 +488,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     isActiveTurnInterruptConfirmationArmed,
     applyChatAppKeyboardInput,
     applyPromptDraftEditToChatApp,
+    insertSummarizedPastedTextIntoChatAppPrompt,
     removePromptImageAttachmentPlaceholderBeforeCursorFromChatApp,
     removePromptImageAttachmentPlaceholderAtCursorFromChatApp,
     pasteClipboardImageAttachmentIntoChatAppPrompt,
@@ -519,6 +523,7 @@ function buildChatAppPromptComposerState(input: {
     promptDraft: input.chatSessionState.promptDraft,
     promptDraftCursorOffset: input.chatSessionState.promptDraftCursorOffset,
     pendingPromptImageAttachments: input.chatSessionState.pendingPromptImageAttachments,
+    pendingPromptTextPastes: input.chatSessionState.pendingPromptTextPastes,
     selectedPromptContextReferenceTexts: input.chatSessionState.selectedPromptContextReferenceTexts,
     selectedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
     selectedModelId: input.chatSessionState.selectedModelId,
@@ -594,6 +599,7 @@ function selectStableChatAppPromptComposerState(input: {
     input.previousState.promptDraft === input.nextState.promptDraft &&
     input.previousState.promptDraftCursorOffset === input.nextState.promptDraftCursorOffset &&
     input.previousState.pendingPromptImageAttachments === input.nextState.pendingPromptImageAttachments &&
+    input.previousState.pendingPromptTextPastes === input.nextState.pendingPromptTextPastes &&
     input.previousState.selectedPromptContextReferenceTexts === input.nextState.selectedPromptContextReferenceTexts &&
     input.previousState.selectedAssistantOperatingMode === input.nextState.selectedAssistantOperatingMode &&
     input.previousState.selectedModelId === input.nextState.selectedModelId &&

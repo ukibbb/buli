@@ -8,11 +8,13 @@ import {
   clearConversationTranscript,
   applyConversationSessionModelSelectionToChatSessionState,
   hydrateConversationTranscriptFromSessionEntries,
+  removeConversationCompactionProgressFromTranscript,
   requestConversationSessionDeletionConfirmation,
   showAvailableConversationSessionsForSelection,
   showConversationSessionSelectionLoadingError,
   showConversationSessionSelectionLoadingState,
   type ChatSessionState,
+  upsertConversationCompactionProgressInTranscript,
 } from "@buli/chat-session-state";
 import { startTransition, useEffectEvent, useRef, type Dispatch, type SetStateAction } from "react";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./conversationSessionStatus.ts";
@@ -40,6 +42,10 @@ export type ConversationSessionExportResult = {
 
 export type ConversationSessionCompactionResult = {
   conversationSessionEntries: readonly ConversationSessionEntry[];
+};
+
+export type AutoCompactionAfterAssistantTurnRequest = {
+  requestTriggerKind?: ConversationAutoCompactionRequest["requestTriggerKind"] | undefined;
 };
 
 type ConversationSessionHydrationInput = {
@@ -80,7 +86,9 @@ export type UseChatAppConversationSessionActionsResult = {
   requestConversationSessionDeletion: (conversationSessionId: string) => Promise<void>;
   exportCurrentConversationSession: () => Promise<void>;
   compactCurrentConversationSession: () => Promise<void>;
-  autoCompactCurrentConversationSessionAfterAssistantTurn: () => Promise<ConversationAutoCompactionResult | undefined>;
+  autoCompactCurrentConversationSessionAfterAssistantTurn: (
+    input?: AutoCompactionAfterAssistantTurnRequest,
+  ) => Promise<ConversationAutoCompactionResult | undefined>;
   clearCurrentConversationSession: () => void;
 };
 
@@ -113,6 +121,29 @@ export function useChatAppConversationSessionActions(
       hydrateConversationSessionIntoChatApp({ conversationSessionEntries });
     },
   );
+  const upsertConversationCompactionProgressIntoChatApp = useEffectEvent((inputProgress: {
+    source: "manual" | "auto";
+    summaryText: string;
+    compactionStartedAtMs: number;
+  }): void => {
+    const nextChatSessionState = upsertConversationCompactionProgressInTranscript({
+      chatSessionState: input.latestChatSessionStateRef.current,
+      source: inputProgress.source,
+      summaryText: inputProgress.summaryText,
+      compactionStartedAtMs: inputProgress.compactionStartedAtMs,
+    });
+    input.latestChatSessionStateRef.current = nextChatSessionState;
+    startTransition(() => {
+      input.setChatSessionState(nextChatSessionState);
+    });
+  });
+  const removeConversationCompactionProgressFromChatApp = useEffectEvent((): void => {
+    const nextChatSessionState = removeConversationCompactionProgressFromTranscript(input.latestChatSessionStateRef.current);
+    input.latestChatSessionStateRef.current = nextChatSessionState;
+    startTransition(() => {
+      input.setChatSessionState(nextChatSessionState);
+    });
+  });
 
   const loadConversationSessionsForSelection = useEffectEvent(async (): Promise<void> => {
     if (!input.loadConversationSessions) {
@@ -299,6 +330,7 @@ export function useChatAppConversationSessionActions(
     input.isConversationCompactionInFlightRef.current = true;
     const wasPromptSubmissionInFlight = input.isPromptSubmissionInFlightRef.current;
     input.isPromptSubmissionInFlightRef.current = true;
+    const compactionStartedAtMs = Date.now();
     input.setConversationSessionCompactionStatus({ step: "compacting", source: "manual" });
     try {
       const compactedConversationSession = await input.compactCurrentConversationSession({
@@ -306,6 +338,16 @@ export function useChatAppConversationSessionActions(
         ...(input.latestChatSessionStateRef.current.selectedReasoningEffort
           ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }
           : {}),
+        onCompactionSummaryTextUpdated: (summaryText) => {
+          if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+            return;
+          }
+          upsertConversationCompactionProgressIntoChatApp({
+            source: "manual",
+            summaryText,
+            compactionStartedAtMs,
+          });
+        },
       });
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
         return;
@@ -316,6 +358,7 @@ export function useChatAppConversationSessionActions(
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
         return;
       }
+      removeConversationCompactionProgressFromChatApp();
       input.setConversationSessionCompactionStatus({
         step: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -326,19 +369,26 @@ export function useChatAppConversationSessionActions(
     }
   });
 
-  const autoCompactCurrentConversationSessionAfterAssistantTurn = useEffectEvent(async (): Promise<ConversationAutoCompactionResult | undefined> => {
+  const autoCompactCurrentConversationSessionAfterAssistantTurn = useEffectEvent(async (
+    autoCompactionAfterAssistantTurnRequest: AutoCompactionAfterAssistantTurnRequest = {},
+  ): Promise<ConversationAutoCompactionResult | undefined> => {
     if (!input.autoCompactCurrentConversationSession) {
       return undefined;
     }
 
     const latestContextWindowUsage = input.latestChatSessionStateRef.current.latestContextWindowUsage;
-    if (!latestContextWindowUsage || input.isConversationCompactionInFlightRef.current) {
+    const requestTriggerKind = autoCompactionAfterAssistantTurnRequest.requestTriggerKind ?? "context_usage";
+    if (
+      input.isConversationCompactionInFlightRef.current ||
+      (requestTriggerKind !== "context_window_overflow" && !latestContextWindowUsage)
+    ) {
       return undefined;
     }
 
     const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
     latestConversationSessionMutationRequestSequenceRef.current = requestSequence;
     input.isConversationCompactionInFlightRef.current = true;
+    const compactionStartedAtMs = Date.now();
     input.setConversationSessionCompactionStatus({ step: "compacting", source: "auto" });
     try {
       const autoCompactionRequest: ConversationAutoCompactionRequest = {
@@ -346,7 +396,20 @@ export function useChatAppConversationSessionActions(
         ...(input.latestChatSessionStateRef.current.selectedReasoningEffort
           ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }
           : {}),
-        latestContextWindowUsage,
+        ...(latestContextWindowUsage ? { latestContextWindowUsage } : {}),
+        ...(autoCompactionAfterAssistantTurnRequest.requestTriggerKind !== undefined
+          ? { requestTriggerKind: autoCompactionAfterAssistantTurnRequest.requestTriggerKind }
+          : {}),
+        onCompactionSummaryTextUpdated: (summaryText) => {
+          if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
+            return;
+          }
+          upsertConversationCompactionProgressIntoChatApp({
+            source: "auto",
+            summaryText,
+            compactionStartedAtMs,
+          });
+        },
       };
       const autoCompactionResult = await input.autoCompactCurrentConversationSession(autoCompactionRequest);
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
@@ -354,6 +417,8 @@ export function useChatAppConversationSessionActions(
       }
       if (autoCompactionResult.didCompact) {
         hydrateConversationSessionEntriesIntoChatApp(autoCompactionResult.conversationSessionEntries);
+      } else {
+        removeConversationCompactionProgressFromChatApp();
       }
       input.setConversationSessionCompactionStatus({ step: "idle" });
       return autoCompactionResult;
@@ -361,6 +426,7 @@ export function useChatAppConversationSessionActions(
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
         return undefined;
       }
+      removeConversationCompactionProgressFromChatApp();
       input.setConversationSessionCompactionStatus({
         step: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),

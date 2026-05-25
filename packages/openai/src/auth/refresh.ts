@@ -127,7 +127,7 @@ export async function refreshStoredAuth(input: {
 
   const now = input.now ?? Date.now();
   while (auth) {
-    if (isStoredAuthFreshEnough(auth, now)) {
+    if (isOpenAiAuthFreshEnough(auth, now)) {
       return auth;
     }
 
@@ -162,7 +162,7 @@ export async function refreshStoredAuth(input: {
   return undefined;
 }
 
-function isStoredAuthFreshEnough(auth: OpenAiAuthInfo, now: number): boolean {
+export function isOpenAiAuthFreshEnough(auth: OpenAiAuthInfo, now: number = Date.now()): boolean {
   return auth.expiresAt - now > AUTH_REFRESH_EXPIRY_SKEW_MS;
 }
 

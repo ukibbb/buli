@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  parseOpenAiErrorChunk,
   parseOpenAiResponseCompletedChunk,
   readOpenAiFunctionCallArgumentsDeltaChunk,
   readOpenAiOutputTextDeltaChunk,
@@ -97,5 +98,24 @@ test("readOpenAiResponseFailedChunk parses failed chunks safely", () => {
   })).toEqual({
     type: "response.failed",
     response: { error: { code: "server_error", message: "failed" } },
+  });
+});
+
+test("parseOpenAiErrorChunk normalizes nested error messages", () => {
+  expect(parseOpenAiErrorChunk({
+    type: "error",
+    error: { code: "server_error", message: "nested failure" },
+  })).toEqual({
+    type: "error",
+    message: "nested failure",
+    code: "server_error",
+  });
+});
+
+test("parseOpenAiErrorChunk falls back when an error event has no message", () => {
+  expect(parseOpenAiErrorChunk({ type: "error", error: { code: "server_error" } })).toEqual({
+    type: "error",
+    message: "OpenAI stream returned an error event without a message",
+    code: "server_error",
   });
 });

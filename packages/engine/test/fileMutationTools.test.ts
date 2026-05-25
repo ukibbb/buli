@@ -1,11 +1,17 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  prepareEditManyToolCall,
   prepareEditToolCall,
+  preparePatchManyToolCall,
+  preparePatchToolCall,
   prepareWriteToolCall,
+  runPreparedEditManyToolCall,
   runPreparedEditToolCall,
+  runPreparedPatchManyToolCall,
+  runPreparedPatchToolCall,
   runPreparedWriteToolCall,
 } from "../src/index.ts";
 
@@ -82,6 +88,242 @@ test("prepareEditToolCall rejects empty exact replacement text", async () => {
     outcomeKind: "failed",
     failureExplanation: "Edit target text must not be empty",
   });
+});
+
+test("prepareEditManyToolCall previews and applies multiple edits to the same file", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-edit-many-tool-"));
+  const notesPath = join(workspaceRootPath, "notes.txt");
+  await writeFile(notesPath, "alpha\nbeta\ngamma\n", "utf8");
+
+  const editManyPreparationOutcome = await prepareEditManyToolCall({
+    workspaceRootPath,
+    editManyToolCallRequest: {
+      toolName: "edit_many",
+      edits: [
+        { editTargetPath: "notes.txt", oldString: "beta", newString: "delta" },
+        { editTargetPath: "notes.txt", oldString: "gamma", newString: "omega" },
+      ],
+    },
+  });
+
+  if (!("preparationKind" in editManyPreparationOutcome) || editManyPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared edit_many");
+  }
+
+  expect(editManyPreparationOutcome.preparedEditManyToolCall.toolCallDetail).toMatchObject({
+    toolName: "edit_many",
+    editCount: 2,
+    editedFileCount: 1,
+    addedLineCount: 2,
+    removedLineCount: 2,
+  });
+
+  const editManyToolCallOutcome = await runPreparedEditManyToolCall({
+    preparedEditManyToolCall: editManyPreparationOutcome.preparedEditManyToolCall,
+  });
+
+  expect(editManyToolCallOutcome.outcomeKind).toBe("completed");
+  expect(await readFile(notesPath, "utf8")).toBe("alpha\ndelta\nomega\n");
+});
+
+test("prepareEditManyToolCall rejects empty exact replacement text", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-edit-many-tool-empty-old-string-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
+
+  const editManyPreparationOutcome = await prepareEditManyToolCall({
+    workspaceRootPath,
+    editManyToolCallRequest: {
+      toolName: "edit_many",
+      edits: [
+        { editTargetPath: "notes.txt", oldString: "", newString: "delta" },
+      ],
+    },
+  });
+
+  expect(editManyPreparationOutcome).toMatchObject({
+    outcomeKind: "failed",
+    failureExplanation: "Edit target text must not be empty",
+  });
+});
+
+test("preparePatchToolCall applies multiple hunks in one file", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-"));
+  const notesPath = join(workspaceRootPath, "notes.txt");
+  await writeFile(notesPath, "line1\nline2\nline3\nline4\n", "utf8");
+
+  const patchPreparationOutcome = await preparePatchToolCall({
+    workspaceRootPath,
+    patchToolCallRequest: {
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Update File: notes.txt\n@@\n-line2\n+changed2\n@@\n-line4\n+changed4\n*** End Patch",
+    },
+  });
+
+  if (!("preparationKind" in patchPreparationOutcome) || patchPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared patch");
+  }
+
+  expect(patchPreparationOutcome.preparedPatchToolCall.toolCallDetail).toMatchObject({
+    toolName: "patch",
+    patchTargetText: "notes.txt",
+    changedFileCount: 1,
+  });
+
+  const patchToolCallOutcome = await runPreparedPatchToolCall({
+    preparedPatchToolCall: patchPreparationOutcome.preparedPatchToolCall,
+  });
+
+  expect(patchToolCallOutcome.outcomeKind).toBe("completed");
+  expect(await readFile(notesPath, "utf8")).toBe("line1\nchanged2\nline3\nchanged4\n");
+});
+
+test("preparePatchToolCall rejects multiple file sections", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-multiple-"));
+  await writeFile(join(workspaceRootPath, "one.txt"), "old\n", "utf8");
+  await writeFile(join(workspaceRootPath, "two.txt"), "old\n", "utf8");
+
+  const patchPreparationOutcome = await preparePatchToolCall({
+    workspaceRootPath,
+    patchToolCallRequest: {
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Update File: one.txt\n@@\n-old\n+new\n*** Update File: two.txt\n@@\n-old\n+new\n*** End Patch",
+    },
+  });
+
+  expect(patchPreparationOutcome).toMatchObject({
+    outcomeKind: "failed",
+    failureExplanation: expect.stringContaining("exactly one file section"),
+  });
+});
+
+test("preparePatchToolCall rejects add-file sections for existing files", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-add-existing-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "existing\n", "utf8");
+
+  const patchPreparationOutcome = await preparePatchToolCall({
+    workspaceRootPath,
+    patchToolCallRequest: {
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Add File: notes.txt\n+replacement\n*** End Patch",
+    },
+  });
+
+  expect(patchPreparationOutcome).toMatchObject({
+    outcomeKind: "failed",
+    failureExplanation: expect.stringContaining("Cannot add existing file: notes.txt"),
+  });
+});
+
+test("preparePatchToolCall rejects moves over existing files", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-move-existing-"));
+  await writeFile(join(workspaceRootPath, "source.txt"), "source\n", "utf8");
+  await writeFile(join(workspaceRootPath, "target.txt"), "target\n", "utf8");
+
+  const patchPreparationOutcome = await preparePatchToolCall({
+    workspaceRootPath,
+    patchToolCallRequest: {
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Update File: source.txt\n*** Move to: target.txt\n*** End Patch",
+    },
+  });
+
+  expect(patchPreparationOutcome).toMatchObject({
+    outcomeKind: "failed",
+    failureExplanation: expect.stringContaining("Cannot move patch target over existing file: target.txt"),
+  });
+});
+
+test("preparePatchManyToolCall applies add update and delete in one approval", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-many-tool-"));
+  const modifyPath = join(workspaceRootPath, "modify.txt");
+  const deletePath = join(workspaceRootPath, "delete.txt");
+  await writeFile(modifyPath, "line1\nline2\n", "utf8");
+  await writeFile(deletePath, "obsolete\n", "utf8");
+
+  const patchManyPreparationOutcome = await preparePatchManyToolCall({
+    workspaceRootPath,
+    patchManyToolCallRequest: {
+      toolName: "patch_many",
+      patchText: "*** Begin Patch\n*** Add File: nested/new.txt\n+created\n*** Update File: modify.txt\n@@\n-line2\n+changed\n*** Delete File: delete.txt\n*** End Patch",
+    },
+  });
+
+  if (!("preparationKind" in patchManyPreparationOutcome) || patchManyPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared patch_many");
+  }
+
+  expect(patchManyPreparationOutcome.preparedPatchManyToolCall.toolCallDetail).toMatchObject({
+    toolName: "patch_many",
+    changedFileCount: 3,
+  });
+
+  const patchManyToolCallOutcome = await runPreparedPatchManyToolCall({
+    preparedPatchManyToolCall: patchManyPreparationOutcome.preparedPatchManyToolCall,
+  });
+
+  expect(patchManyToolCallOutcome.outcomeKind).toBe("completed");
+  expect(await readFile(join(workspaceRootPath, "nested", "new.txt"), "utf8")).toBe("created\n");
+  expect(await readFile(modifyPath, "utf8")).toBe("line1\nchanged\n");
+  await expect(readFile(deletePath, "utf8")).rejects.toThrow();
+});
+
+test("runPreparedPatchToolCall rejects stale files after approval preview", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-stale-"));
+  const notesPath = join(workspaceRootPath, "notes.txt");
+  await writeFile(notesPath, "old\n", "utf8");
+  const patchPreparationOutcome = await preparePatchToolCall({
+    workspaceRootPath,
+    patchToolCallRequest: {
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Update File: notes.txt\n@@\n-old\n+new\n*** End Patch",
+    },
+  });
+
+  if (!("preparationKind" in patchPreparationOutcome) || patchPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared patch");
+  }
+
+  await writeFile(notesPath, "changed\n", "utf8");
+  const patchToolCallOutcome = await runPreparedPatchToolCall({
+    preparedPatchToolCall: patchPreparationOutcome.preparedPatchToolCall,
+  });
+
+  expect(patchToolCallOutcome).toMatchObject({
+    outcomeKind: "failed",
+    failureExplanation: expect.stringContaining("File changed after patch approval preview"),
+  });
+  expect(await readFile(notesPath, "utf8")).toBe("changed\n");
+});
+
+test("runPreparedPatchToolCall rejects symlink parents swapped after approval preview", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-symlink-parent-"));
+  const outsideRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-outside-"));
+  const nestedDirectoryPath = join(workspaceRootPath, "nested");
+  await mkdir(nestedDirectoryPath, { recursive: true });
+
+  const patchPreparationOutcome = await preparePatchToolCall({
+    workspaceRootPath,
+    patchToolCallRequest: {
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** Add File: nested/new.txt\n+created\n*** End Patch",
+    },
+  });
+
+  if (!("preparationKind" in patchPreparationOutcome) || patchPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared patch");
+  }
+
+  await rm(nestedDirectoryPath, { recursive: true, force: true });
+  await symlink(outsideRootPath, nestedDirectoryPath, "dir");
+  const patchToolCallOutcome = await runPreparedPatchToolCall({
+    preparedPatchToolCall: patchPreparationOutcome.preparedPatchToolCall,
+  });
+
+  expect(patchToolCallOutcome).toMatchObject({
+    outcomeKind: "failed",
+    failureExplanation: expect.stringContaining("symbolic-link ancestor"),
+  });
+  await expect(readFile(join(outsideRootPath, "new.txt"), "utf8")).rejects.toThrow();
 });
 
 test("runPreparedEditToolCall rejects stale files after the approval preview", async () => {

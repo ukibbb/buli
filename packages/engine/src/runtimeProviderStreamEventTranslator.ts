@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   AssistantMessageCompletedEventSchema,
   AssistantMessageIncompleteEventSchema,
-  AssistantCodeExecutionWalkthroughConversationMessagePartSchema,
   AssistantMessagePartAddedEventSchema,
   AssistantMessagePartUpdatedEventSchema,
   AssistantPlanProposalConversationMessagePartSchema,
@@ -13,14 +12,12 @@ import {
   type AssistantSegmentConversationSessionEntry,
   type AssistantMessageConversationSessionEntry,
   type AssistantResponseEvent,
-  type CodeExecutionWalkthrough,
   type ProviderPlanProposedEvent,
   type ProviderStreamEvent,
   type ProviderToolCallRequestedEvent,
   type ProviderToolCallsRequestedEvent,
   type ProviderTurnReplay,
   type TokenUsage,
-  formatCodeExecutionWalkthroughAsMarkdownText,
 } from "@buli/contracts";
 import {
   appendAssistantTextDeltaToAssistantTextMessagePartBuilder,
@@ -142,10 +139,6 @@ export class RuntimeProviderStreamEventTranslator {
       return this.translateTextChunkProviderStreamEvent(input.providerStreamEvent.text);
     }
 
-    if (input.providerStreamEvent.type === "code_execution_walkthrough_presented") {
-      return this.translateCodeExecutionWalkthroughPresentedProviderStreamEvent(input.providerStreamEvent.codeExecutionWalkthrough);
-    }
-
     if (input.providerStreamEvent.type === "tool_call_requested") {
       this.hasObservedToolCallBoundary = true;
       const assistantSegmentFlush = this.flushCurrentAssistantTextSegmentForBoundary({
@@ -187,6 +180,7 @@ export class RuntimeProviderStreamEventTranslator {
     if (input.providerStreamEvent.type === "rate_limit_pending") {
       return this.translateRateLimitPendingProviderStreamEvent({
         retryAfterSeconds: input.providerStreamEvent.retryAfterSeconds,
+        retryWaitStartedAtMs: input.providerStreamEvent.retryWaitStartedAtMs,
         limitExplanation: input.providerStreamEvent.limitExplanation,
       });
     }
@@ -320,42 +314,6 @@ export class RuntimeProviderStreamEventTranslator {
     return {
       translationKind: "assistant_response_events",
       assistantResponseEvents: this.appendPlainTextToCurrentAssistantTextPart(assistantTextDelta),
-    };
-  }
-
-  private translateCodeExecutionWalkthroughPresentedProviderStreamEvent(
-    codeExecutionWalkthrough: CodeExecutionWalkthrough,
-  ): RuntimeProviderStreamAssistantEventsTranslation {
-    const assistantTextSegmentFlush = this.flushCurrentAssistantTextSegment({
-      partStatus: "completed",
-      shouldEmitPartUpdatedEvent: true,
-      shouldRecordSessionEntry: true,
-    });
-    const assistantCodeExecutionWalkthroughPart = AssistantCodeExecutionWalkthroughConversationMessagePartSchema.parse({
-      id: this.createConversationMessagePartId(),
-      partKind: "assistant_code_execution_walkthrough",
-      ...codeExecutionWalkthrough,
-    });
-    const assistantResponseEvents = [
-      ...(assistantTextSegmentFlush?.assistantResponseEvents ?? []),
-      AssistantMessagePartAddedEventSchema.parse({
-        type: "assistant_message_part_added",
-        messageId: this.assistantResponseMessageId,
-        part: assistantCodeExecutionWalkthroughPart,
-      }),
-    ];
-    const assistantSegmentSessionEntries = [
-      ...(assistantTextSegmentFlush?.assistantSegmentSessionEntries ?? []),
-      createAssistantCodeExecutionWalkthroughSegmentSessionEntry(codeExecutionWalkthrough),
-    ];
-
-    this.completedAssistantTextSegmentTexts.push(formatCodeExecutionWalkthroughAsMarkdownText(codeExecutionWalkthrough));
-    this.hasObservedAssistantSegmentBoundary = true;
-
-    return {
-      translationKind: "assistant_response_events",
-      assistantResponseEvents,
-      assistantSegmentSessionEntries,
     };
   }
 
@@ -511,6 +469,7 @@ export class RuntimeProviderStreamEventTranslator {
 
   private translateRateLimitPendingProviderStreamEvent(input: {
     retryAfterSeconds: number;
+    retryWaitStartedAtMs: number | undefined;
     limitExplanation: string;
   }): RuntimeProviderStreamAssistantEventsTranslation {
     return {
@@ -524,7 +483,7 @@ export class RuntimeProviderStreamEventTranslator {
             partKind: "assistant_rate_limit_notice",
             retryAfterSeconds: input.retryAfterSeconds,
             limitExplanation: input.limitExplanation,
-            noticeStartedAtMs: this.readCurrentTimeInMilliseconds(),
+            noticeStartedAtMs: input.retryWaitStartedAtMs ?? this.readCurrentTimeInMilliseconds(),
           }),
         }),
       ],
@@ -640,13 +599,4 @@ export class RuntimeProviderStreamEventTranslator {
       }),
     });
   }
-}
-
-function createAssistantCodeExecutionWalkthroughSegmentSessionEntry(
-  codeExecutionWalkthrough: CodeExecutionWalkthrough,
-): AssistantSegmentConversationSessionEntry {
-  return {
-    entryKind: "assistant_code_execution_walkthrough_segment",
-    ...codeExecutionWalkthrough,
-  };
 }

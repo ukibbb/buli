@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import {
   createStartedToolCallDetailFromRequest,
   type GrepToolCallRequest,
+  type ToolCallGrepContextLine,
   type ToolCallGrepDetail,
   type ToolCallGrepMatch,
 } from "@buli/contracts";
@@ -32,7 +33,8 @@ export async function runGrepToolCall(input: {
 
   try {
     const requestedSearchPath = input.grepToolCallRequest.searchPath ?? ".";
-    assertSingleWorkspaceSearchPathArgument({
+    await assertSingleWorkspaceSearchPathArgument({
+      workspaceRootPath: input.workspaceRootPath,
       toolName: "Grep",
       pathKind: "file or directory",
       requestedPath: requestedSearchPath,
@@ -83,7 +85,15 @@ export async function runGrepToolCall(input: {
           searchRegex: new RegExp(input.grepToolCallRequest.regexPattern),
           abortSignal: input.abortSignal,
         });
-    const matchHits = grepSearchResult.matchHits;
+    const contextLineCount = input.grepToolCallRequest.contextLineCount;
+    const matchHits = contextLineCount !== undefined && contextLineCount > 0
+      ? await attachContextLinesToGrepMatchHits({
+          workspaceRootPath: input.workspaceRootPath,
+          matchHits: grepSearchResult.matchHits,
+          contextLineCount,
+          abortSignal: input.abortSignal,
+        })
+      : grepSearchResult.matchHits;
     const totalMatchCount = grepSearchResult.totalMatchCount;
 
     const toolCallDetail: ToolCallGrepDetail = {
@@ -92,6 +102,7 @@ export async function runGrepToolCall(input: {
       matchedFileCount: grepSearchResult.matchedFileCount,
       totalMatchCount,
       returnedMatchHitCount: matchHits.length,
+      ...(contextLineCount !== undefined ? { contextLineCount } : {}),
       matchHits,
     };
 
@@ -104,6 +115,7 @@ export async function runGrepToolCall(input: {
         matchHits,
         matchedFileCount: grepSearchResult.matchedFileCount,
         totalMatchCount,
+        ...(contextLineCount !== undefined ? { contextLineCount } : {}),
       }),
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
@@ -121,6 +133,112 @@ export async function runGrepToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+async function attachContextLinesToGrepMatchHits(input: {
+  workspaceRootPath: string;
+  matchHits: readonly ToolCallGrepMatch[];
+  contextLineCount: number;
+  abortSignal: AbortSignal | undefined;
+}): Promise<ToolCallGrepMatch[]> {
+  const fileLinesByMatchFilePath = new Map<string, readonly string[] | undefined>();
+  const grepMatchHitsWithContext: ToolCallGrepMatch[] = [];
+  for (const matchHit of input.matchHits) {
+    throwIfGrepToolAborted(input.abortSignal);
+    let fileLines: readonly string[] | undefined;
+    if (fileLinesByMatchFilePath.has(matchHit.matchFilePath)) {
+      fileLines = fileLinesByMatchFilePath.get(matchHit.matchFilePath);
+    } else {
+      fileLines = await readGrepContextFileLines({
+        workspaceRootPath: input.workspaceRootPath,
+        matchFilePath: matchHit.matchFilePath,
+        abortSignal: input.abortSignal,
+      });
+      fileLinesByMatchFilePath.set(matchHit.matchFilePath, fileLines);
+    }
+
+    if (!fileLines) {
+      grepMatchHitsWithContext.push(matchHit);
+      continue;
+    }
+
+    grepMatchHitsWithContext.push(addContextLinesToGrepMatchHit({
+      matchHit,
+      fileLines,
+      contextLineCount: input.contextLineCount,
+    }));
+  }
+
+  return grepMatchHitsWithContext;
+}
+
+async function readGrepContextFileLines(input: {
+  workspaceRootPath: string;
+  matchFilePath: string;
+  abortSignal: AbortSignal | undefined;
+}): Promise<readonly string[] | undefined> {
+  try {
+    const resolvedMatchFilePath = await resolveExistingWorkspacePath({
+      workspaceRootPath: input.workspaceRootPath,
+      requestedPath: input.matchFilePath,
+    });
+    if (!resolvedMatchFilePath.stats.isFile()) {
+      return undefined;
+    }
+
+    throwIfGrepToolAborted(input.abortSignal);
+    const fileBytes = await readFile(resolvedMatchFilePath.absolutePath);
+    return splitWorkspaceTextFileIntoLines(fileBytes.toString("utf8"));
+  } catch (error) {
+    if (input.abortSignal?.aborted) {
+      throw error;
+    }
+
+    return undefined;
+  }
+}
+
+function addContextLinesToGrepMatchHit(input: {
+  matchHit: ToolCallGrepMatch;
+  fileLines: readonly string[];
+  contextLineCount: number;
+}): ToolCallGrepMatch {
+  const matchLineIndex = input.matchHit.matchLineNumber - 1;
+  if (matchLineIndex < 0 || matchLineIndex >= input.fileLines.length) {
+    return input.matchHit;
+  }
+
+  const contextBeforeLines = buildGrepContextLines({
+    fileLines: input.fileLines,
+    startLineIndex: Math.max(0, matchLineIndex - input.contextLineCount),
+    endLineIndexExclusive: matchLineIndex,
+  });
+  const contextAfterLines = buildGrepContextLines({
+    fileLines: input.fileLines,
+    startLineIndex: matchLineIndex + 1,
+    endLineIndexExclusive: Math.min(input.fileLines.length, matchLineIndex + input.contextLineCount + 1),
+  });
+
+  return {
+    ...input.matchHit,
+    ...(contextBeforeLines.length > 0 ? { contextBeforeLines } : {}),
+    ...(contextAfterLines.length > 0 ? { contextAfterLines } : {}),
+  };
+}
+
+function buildGrepContextLines(input: {
+  fileLines: readonly string[];
+  startLineIndex: number;
+  endLineIndexExclusive: number;
+}): ToolCallGrepContextLine[] {
+  const contextLines: ToolCallGrepContextLine[] = [];
+  for (let lineIndex = input.startLineIndex; lineIndex < input.endLineIndexExclusive; lineIndex += 1) {
+    contextLines.push({
+      lineNumber: lineIndex + 1,
+      lineText: input.fileLines[lineIndex] ?? "",
+    });
+  }
+  return contextLines;
 }
 
 function hasPotentiallyCatastrophicJavaScriptRegexPattern(regexPattern: string): boolean {

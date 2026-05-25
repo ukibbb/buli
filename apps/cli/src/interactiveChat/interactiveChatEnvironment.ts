@@ -7,16 +7,29 @@ import {
 
 export const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 export const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
+export const INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE = "Invalid BULI_READ_ONLY_TOOL_CONCURRENCY. Use a positive integer.";
+export const INVALID_SUBAGENT_CONCURRENCY_MESSAGE = "Invalid BULI_SUBAGENT_CONCURRENCY. Use a positive integer.";
+export const INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE = "Invalid BULI_OPENAI_MAX_CONCURRENT_STREAMS. Use a positive integer.";
+export const OPENAI_PROVIDER_PROTOCOL_IPC_ENVIRONMENT_VALUE = "1";
 
 export type InteractiveChatEnvironment = Readonly<{
   [environmentVariableName: string]: string | undefined;
   BULI_BASH_APPROVAL_MODE?: string | undefined;
   BULI_AUTO_COMPACT_THRESHOLD?: string | undefined;
+  BULI_READ_ONLY_TOOL_CONCURRENCY?: string | undefined;
+  BULI_SUBAGENT_CONCURRENCY?: string | undefined;
+  BULI_OPENAI_MAX_CONCURRENT_STREAMS?: string | undefined;
   BULI_PROMPT_CONTEXT_ROOT?: string | undefined;
+  BULI_PROVIDER_IPC?: string | undefined;
+  BULI_OPENAI_AUTH_FILE?: string | undefined;
 }>;
 
 export type AutoCompactionThresholdResolution =
   | { status: "resolved"; thresholdRatio?: number }
+  | { status: "invalid" };
+
+export type PositiveIntegerEnvironmentResolution =
+  | { status: "resolved"; value?: number }
   | { status: "invalid" };
 
 export type PromptContextScopeResolution = {
@@ -56,6 +69,30 @@ export function resolveConversationAutoCompactionThresholdRatio(input: {
   return { status: "resolved", thresholdRatio };
 }
 
+export function resolveInteractiveChatReadOnlyToolConcurrency(input: {
+  environment: InteractiveChatEnvironment;
+}): PositiveIntegerEnvironmentResolution {
+  return resolvePositiveIntegerEnvironmentValue(input.environment.BULI_READ_ONLY_TOOL_CONCURRENCY);
+}
+
+export function resolveInteractiveChatSubagentConcurrency(input: {
+  environment: InteractiveChatEnvironment;
+}): PositiveIntegerEnvironmentResolution {
+  return resolvePositiveIntegerEnvironmentValue(input.environment.BULI_SUBAGENT_CONCURRENCY);
+}
+
+export function resolveInteractiveChatOpenAiMaxConcurrentStreams(input: {
+  environment: InteractiveChatEnvironment;
+}): PositiveIntegerEnvironmentResolution {
+  return resolvePositiveIntegerEnvironmentValue(input.environment.BULI_OPENAI_MAX_CONCURRENT_STREAMS);
+}
+
+export function resolveInteractiveChatProviderIpcEnabled(input: {
+  environment: InteractiveChatEnvironment;
+}): boolean {
+  return input.environment.BULI_PROVIDER_IPC?.trim() === OPENAI_PROVIDER_PROTOCOL_IPC_ENVIRONMENT_VALUE;
+}
+
 export function resolveInteractiveChatPromptContextScope(input: {
   workspaceRootPath: string;
   environment: InteractiveChatEnvironment;
@@ -88,4 +125,20 @@ function resolvePromptContextStartingDirectoryPath(input: {
   }
 
   return browseRootPath;
+}
+
+function resolvePositiveIntegerEnvironmentValue(
+  requestedEnvironmentValue: string | undefined,
+): PositiveIntegerEnvironmentResolution {
+  const environmentValue = requestedEnvironmentValue?.trim();
+  if (!environmentValue) {
+    return { status: "resolved" };
+  }
+
+  const numericEnvironmentValue = Number(environmentValue);
+  if (!Number.isInteger(numericEnvironmentValue) || numericEnvironmentValue < 1) {
+    return { status: "invalid" };
+  }
+
+  return { status: "resolved", value: numericEnvironmentValue };
 }

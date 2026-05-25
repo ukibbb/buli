@@ -8,6 +8,8 @@ export type ChatScreenLayoutProps = {
   terminalRowCount: number;
   terminalColumnCount: number;
   workingDirectoryPath: string;
+  totalContextTokensUsed: number | undefined;
+  contextWindowTokenCapacity: number | undefined;
   mainAreaProps: ChatScreenMainAreaProps;
   liveInteractionChromeProps: LiveInteractionChromeProps;
 };
@@ -18,6 +20,8 @@ export function ChatScreenLayout(props: ChatScreenLayoutProps): ReactNode {
       <TopBar
         workingDirectoryPath={props.workingDirectoryPath}
         accentColor={props.liveInteractionChromeProps.promptComposerProps.inputPanelAccentColor}
+        totalContextTokensUsed={props.totalContextTokensUsed}
+        contextWindowTokenCapacity={props.contextWindowTokenCapacity}
       />
       {/* Keep one breathing row between transcript output and the prompt frame so
           live tool-call cards do not visually merge with the input. */}

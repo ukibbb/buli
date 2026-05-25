@@ -17,17 +17,18 @@ import type {
 import {
   assistantMarkdownDashOnlyParagraphPattern,
   formatAssistantMarkdownInlineTextForStyledText,
+  formatStreamingAssistantMarkdownInlineTextForStyledText,
 } from "./assistantMarkdownTextFormatting.ts";
 
 const codeFenceDiffLanguagePattern = /^(?:diff|patch)$/i;
 const codeFenceShellLanguagePattern = /^(?:bash|sh|shell|zsh)$/i;
 const fencedCodeBlockStartPattern = /^( {0,3})(`{3,}|~{3,})(.*)$/;
-const incompleteStreamingFencePattern = /^\s*```[^`]*$/;
-const incompleteStreamingListMarkerPattern = /^\s*(?:[-*+]\s*|\d+\.\s*)$/;
+const incompleteStreamingFencePattern = /^\s*(?:`{3,}[^`]*|~{3,}[^~]*)$/;
+const incompleteStreamingListMarkerPattern = /^\s*(?:[-*+]\s*(?:\[[ xX]?\]?)?|\d+\.)\s*$/;
 const incompleteStreamingHeadingPattern = /^\s*#{1,6}\s*$/;
 const markdownHeadingLinePattern = /^(#{1,6})\s+(.+)$/;
 const markdownBlockquoteLinePattern = /^\s*>\s?(.*)$/;
-const markdownTableSeparatorLinePattern = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/;
+const markdownTableSeparatorLinePattern = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 
 type AssistantMarkdownFencedCodeBlock = {
   fenceInfoString: string;
@@ -51,25 +52,65 @@ type AssistantMarkdownTableBlock = {
   nextLineIndex: number;
 };
 
+export type AssistantMarkdownRenderSectionBuildRequest = {
+  markdownText: string;
+  isStreaming: boolean;
+  previousCache: AssistantMarkdownRenderSectionCache | undefined;
+};
+
+export type AssistantMarkdownRenderSectionBuildResult = {
+  renderSections: readonly AssistantMarkdownRenderSection[];
+  nextCache: AssistantMarkdownRenderSectionCache;
+};
+
+export interface AssistantMarkdownRenderSectionBuilder {
+  buildStableAssistantMarkdownRenderSections(
+    input: AssistantMarkdownRenderSectionBuildRequest,
+  ): AssistantMarkdownRenderSectionBuildResult;
+}
+
+export class TypeScriptAssistantMarkdownRenderSectionBuilder implements AssistantMarkdownRenderSectionBuilder {
+  buildStableAssistantMarkdownRenderSections(
+    input: AssistantMarkdownRenderSectionBuildRequest,
+  ): AssistantMarkdownRenderSectionBuildResult {
+    return buildStableAssistantMarkdownRenderSectionsWithTypeScriptBuilder(input);
+  }
+}
+
+const defaultAssistantMarkdownRenderSectionBuilder = new TypeScriptAssistantMarkdownRenderSectionBuilder();
+
 export function createAssistantMarkdownRenderSectionCache(): AssistantMarkdownRenderSectionCache {
   return { renderSections: [] };
 }
 
-export function buildStableAssistantMarkdownRenderSections(input: {
-  markdownText: string;
-  isStreaming: boolean;
-  previousCache: AssistantMarkdownRenderSectionCache | undefined;
-}): {
-  renderSections: readonly AssistantMarkdownRenderSection[];
-  nextCache: AssistantMarkdownRenderSectionCache;
-} {
+export function buildStableAssistantMarkdownRenderSections(
+  input: AssistantMarkdownRenderSectionBuildRequest,
+): AssistantMarkdownRenderSectionBuildResult {
+  return defaultAssistantMarkdownRenderSectionBuilder.buildStableAssistantMarkdownRenderSections(input);
+}
+
+function buildStableAssistantMarkdownRenderSectionsWithTypeScriptBuilder(
+  input: AssistantMarkdownRenderSectionBuildRequest,
+): AssistantMarkdownRenderSectionBuildResult {
   const preparedMarkdownText = prepareAssistantMarkdownTextForRendering(input.markdownText, input.isStreaming);
-  const nextRenderSections = splitAssistantMarkdownTextIntoRenderSections(preparedMarkdownText);
-  const previousRenderSectionsByKey = new Map(
-    (input.previousCache?.renderSections ?? []).map((renderSection) => [renderSection.sectionKey, renderSection]),
-  );
-  const stableRenderSections = nextRenderSections.map((nextRenderSection) => {
-    const previousRenderSection = previousRenderSectionsByKey.get(nextRenderSection.sectionKey);
+  const nextRenderSections = splitAssistantMarkdownTextIntoRenderSections(preparedMarkdownText, input.isStreaming);
+  const previousRenderSections = input.previousCache?.renderSections ?? [];
+  let previousRenderSectionsByKey: Map<string, AssistantMarkdownRenderSection> | undefined;
+  const readPreviousRenderSectionByKey = (sectionKey: string): AssistantMarkdownRenderSection | undefined => {
+    if (previousRenderSections.length === 0) {
+      return undefined;
+    }
+
+    previousRenderSectionsByKey ??= new Map(
+      previousRenderSections.map((renderSection) => [renderSection.sectionKey, renderSection]),
+    );
+    return previousRenderSectionsByKey.get(sectionKey);
+  };
+  const stableRenderSections = nextRenderSections.map((nextRenderSection, sectionIndex) => {
+    const previousRenderSectionAtIndex = previousRenderSections[sectionIndex];
+    const previousRenderSection = previousRenderSectionAtIndex?.sectionKey === nextRenderSection.sectionKey
+      ? previousRenderSectionAtIndex
+      : readPreviousRenderSectionByKey(nextRenderSection.sectionKey);
     return previousRenderSection && areAssistantMarkdownRenderSectionsEqual(previousRenderSection, nextRenderSection)
       ? previousRenderSection
       : nextRenderSection;
@@ -86,20 +127,23 @@ function prepareAssistantMarkdownTextForRendering(markdownText: string, isStream
     return markdownText;
   }
 
-  const markdownLines = markdownText.split("\n");
-  const lastMarkdownLine = markdownLines.at(-1) ?? "";
+  const lastLineBreakIndex = markdownText.lastIndexOf("\n");
+  const lastMarkdownLine = markdownText.slice(lastLineBreakIndex + 1);
   if (
     incompleteStreamingFencePattern.test(lastMarkdownLine) ||
     incompleteStreamingListMarkerPattern.test(lastMarkdownLine) ||
     incompleteStreamingHeadingPattern.test(lastMarkdownLine)
   ) {
-    return markdownLines.slice(0, -1).join("\n").trimEnd();
+    return lastLineBreakIndex >= 0 ? markdownText.slice(0, lastLineBreakIndex).trimEnd() : "";
   }
 
   return markdownText;
 }
 
-function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): AssistantMarkdownRenderSection[] {
+function splitAssistantMarkdownTextIntoRenderSections(
+  markdownText: string,
+  isStreaming: boolean,
+): AssistantMarkdownRenderSection[] {
   const markdownLines = markdownText.split("\n");
   const renderSections: AssistantMarkdownRenderSection[] = [];
   let pendingMarkdownLines: string[] = [];
@@ -194,7 +238,7 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
         sectionKind: "heading",
         sectionKey: `heading:${sectionStartLineIndex}`,
         headingDepth: headingLineMatch[1]?.length ?? 1,
-        headingText: formatAssistantMarkdownInlineTextForStyledText(headingLineMatch[2] ?? ""),
+        headingText: formatAssistantMarkdownInlineTextForRender(headingLineMatch[2] ?? "", isStreaming),
       });
       lineIndex += 1;
       continue;
@@ -222,7 +266,7 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
       continue;
     }
 
-    const listBlock = readAssistantMarkdownListBlock(markdownLines, lineIndex);
+    const listBlock = readAssistantMarkdownListBlock(markdownLines, lineIndex, isStreaming);
     if (listBlock) {
       const hasLeadingBlankLine = pendingMarkdownLines.some((markdownLine) => markdownLine.trim().length > 0) &&
         pendingMarkdownLines.at(-1)?.trim().length === 0;
@@ -237,7 +281,7 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
       continue;
     }
 
-    const blockquoteBlock = readAssistantMarkdownBlockquoteBlock(markdownLines, lineIndex);
+    const blockquoteBlock = readAssistantMarkdownBlockquoteBlock(markdownLines, lineIndex, isStreaming);
     if (blockquoteBlock) {
       flushPendingMarkdownLines();
       renderSections.push({
@@ -249,7 +293,7 @@ function splitAssistantMarkdownTextIntoRenderSections(markdownText: string): Ass
       continue;
     }
 
-    const paragraphBlock = readAssistantMarkdownParagraphBlock(markdownLines, lineIndex);
+    const paragraphBlock = readAssistantMarkdownParagraphBlock(markdownLines, lineIndex, isStreaming);
     if (paragraphBlock) {
       flushPendingMarkdownLines();
       renderSections.push({
@@ -351,6 +395,12 @@ function trimAssistantMarkdownSectionBoundaryBlankLines(markdownLines: readonly 
   return markdownLines.slice(firstNonBlankLineIndex, lastNonBlankLineExclusiveIndex);
 }
 
+function formatAssistantMarkdownInlineTextForRender(inlineMarkdownText: string, isStreaming: boolean): string {
+  return isStreaming
+    ? formatStreamingAssistantMarkdownInlineTextForStyledText(inlineMarkdownText)
+    : formatAssistantMarkdownInlineTextForStyledText(inlineMarkdownText);
+}
+
 function readAssistantMarkdownFencedCodeBlock(
   markdownLines: readonly string[],
   startLineIndex: number,
@@ -406,6 +456,7 @@ function resolveFencedUnifiedDiffText(fencedCodeBlock: AssistantMarkdownFencedCo
 function readAssistantMarkdownBlockquoteBlock(
   markdownLines: readonly string[],
   startLineIndex: number,
+  isStreaming: boolean,
 ): AssistantMarkdownBlockquoteBlock | undefined {
   if (!markdownBlockquoteLinePattern.test(markdownLines[startLineIndex] ?? "")) {
     return undefined;
@@ -418,7 +469,7 @@ function readAssistantMarkdownBlockquoteBlock(
     if (!blockquoteLineMatch) {
       break;
     }
-    quoteLines.push(blockquoteLineMatch[1] ?? "");
+    quoteLines.push(formatAssistantMarkdownInlineTextForRender(blockquoteLineMatch[1] ?? "", isStreaming));
     lineIndex += 1;
   }
 
@@ -441,7 +492,7 @@ function readAssistantMarkdownTableBlock(
 
   const tableLines: string[] = [];
   let lineIndex = startLineIndex;
-  while (lineIndex < markdownLines.length && (markdownLines[lineIndex] ?? "").trim().length > 0) {
+  while (lineIndex < markdownLines.length && isAssistantMarkdownTableRowLine(markdownLines[lineIndex] ?? "")) {
     tableLines.push(markdownLines[lineIndex] ?? "");
     lineIndex += 1;
   }
@@ -450,6 +501,10 @@ function readAssistantMarkdownTableBlock(
     tableMarkdownText: tableLines.join("\n"),
     nextLineIndex: lineIndex,
   };
+}
+
+function isAssistantMarkdownTableRowLine(markdownLine: string): boolean {
+  return markdownLine.trim().length > 0 && markdownLine.includes("|");
 }
 
 function isAssistantMarkdownCustomBlockStart(markdownLines: readonly string[], lineIndex: number): boolean {
@@ -468,6 +523,7 @@ function isAssistantMarkdownCustomBlockStart(markdownLines: readonly string[], l
 function readAssistantMarkdownParagraphBlock(
   markdownLines: readonly string[],
   startLineIndex: number,
+  isStreaming: boolean,
 ): AssistantMarkdownParagraphBlock | undefined {
   const firstParagraphLine = markdownLines[startLineIndex] ?? "";
   if (firstParagraphLine.trim().length === 0 || isAssistantMarkdownCustomBlockStart(markdownLines, startLineIndex)) {
@@ -486,7 +542,7 @@ function readAssistantMarkdownParagraphBlock(
   }
 
   return {
-    paragraphText: formatAssistantMarkdownInlineTextForStyledText(paragraphLines.join(" ").trim()),
+    paragraphText: formatAssistantMarkdownInlineTextForRender(paragraphLines.join(" ").trim(), isStreaming),
     nextLineIndex: lineIndex,
   };
 }

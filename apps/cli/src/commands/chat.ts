@@ -22,12 +22,24 @@ import { logCliDiagnosticEvent } from "../diagnostics/cliDiagnosticLog.ts";
 import {
   INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE,
   INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE,
+  INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE,
+  INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE,
+  INVALID_SUBAGENT_CONCURRENCY_MESSAGE,
   type InteractiveChatEnvironment,
   resolveConversationAutoCompactionThresholdRatio,
   resolveInteractiveChatBashToolApprovalMode,
+  resolveInteractiveChatOpenAiMaxConcurrentStreams,
   resolveInteractiveChatPromptContextScope,
+  resolveInteractiveChatReadOnlyToolConcurrency,
+  resolveInteractiveChatSubagentConcurrency,
 } from "../interactiveChat/interactiveChatEnvironment.ts";
 import { resolveInitialConversationSessionModelSelection } from "../interactiveChat/interactiveChatModelSelection.ts";
+import {
+  resolveInteractiveChatConversationTurnProvider,
+  type CreateInteractiveChatProviderProtocolTransportInput,
+  type DisposableProviderProtocolClientTransport,
+  type InteractiveChatConversationTurnProviderResolution,
+} from "../providerProtocol/resolveInteractiveChatConversationTurnProvider.ts";
 
 type InteractiveChatRenderer = (input: RenderChatScreenInTerminalInput) => Promise<TuiChatScreenInstance>;
 
@@ -48,6 +60,10 @@ export async function runInteractiveChat(input: {
   renderChatScreen?: InteractiveChatRenderer;
   stdin?: Pick<NodeJS.ReadStream, "isTTY">;
   environment?: InteractiveChatEnvironment;
+  providerHostCommand?: readonly string[];
+  createProviderProtocolTransport?: (
+    input: CreateInteractiveChatProviderProtocolTransportInput,
+  ) => DisposableProviderProtocolClientTransport;
 } = {}): Promise<string> {
   const startupStartedAtMs = Date.now();
   const environment = input.environment ?? process.env;
@@ -63,6 +79,21 @@ export async function runInteractiveChat(input: {
     return INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE;
   }
   const autoCompactionThresholdRatio = autoCompactionThresholdResolution.thresholdRatio;
+  const readOnlyToolConcurrencyResolution = resolveInteractiveChatReadOnlyToolConcurrency({ environment });
+  if (readOnlyToolConcurrencyResolution.status === "invalid") {
+    return INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE;
+  }
+  const maximumConcurrentReadOnlyToolCalls = readOnlyToolConcurrencyResolution.value;
+  const subagentConcurrencyResolution = resolveInteractiveChatSubagentConcurrency({ environment });
+  if (subagentConcurrencyResolution.status === "invalid") {
+    return INVALID_SUBAGENT_CONCURRENCY_MESSAGE;
+  }
+  const maximumConcurrentSubagentConversations = subagentConcurrencyResolution.value;
+  const openAiMaxConcurrentStreamsResolution = resolveInteractiveChatOpenAiMaxConcurrentStreams({ environment });
+  if (openAiMaxConcurrentStreamsResolution.status === "invalid") {
+    return INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE;
+  }
+  const maximumConcurrentResponseStepStreams = openAiMaxConcurrentStreamsResolution.value;
 
   const store = input.store ?? new OpenAiAuthStore();
   const authLoadStartedAtMs = Date.now();
@@ -88,6 +119,7 @@ export async function runInteractiveChat(input: {
     ? createDiagnosticFileLogger({ logFilePath: consoleFileLoggerInstallation.logFilePath })
     : undefined;
   let defaultConversationSessionStore: SqliteConversationSessionStore | undefined;
+  let conversationTurnProviderResolution: InteractiveChatConversationTurnProviderResolution | undefined;
   try {
     logInteractiveChatStartupTiming(diagnosticLogger, {
       phase: "auth",
@@ -137,6 +169,9 @@ export async function runInteractiveChat(input: {
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
       logFilePath: consoleFileLoggerInstallation.logFilePath ?? null,
+      maximumConcurrentReadOnlyToolCalls: maximumConcurrentReadOnlyToolCalls ?? null,
+      maximumConcurrentSubagentConversations: maximumConcurrentSubagentConversations ?? null,
+      maximumConcurrentResponseStepStreams: maximumConcurrentResponseStepStreams ?? null,
       startupElapsedMs: Date.now() - startupStartedAtMs,
     });
     logCliDiagnosticEvent(diagnosticLogger, "conversation_session.loaded", {
@@ -145,7 +180,24 @@ export async function runInteractiveChat(input: {
       conversationSessionEntryCount: activeConversationSessionMetadata.conversationSessionEntryCount,
     });
 
-    const provider = new OpenAiProvider({ store, diagnosticLogger });
+    const provider = new OpenAiProvider({
+      store,
+      ...(maximumConcurrentResponseStepStreams !== undefined ? { maximumConcurrentResponseStepStreams } : {}),
+      diagnosticLogger,
+    });
+    conversationTurnProviderResolution = resolveInteractiveChatConversationTurnProvider({
+      openAiProvider: provider,
+      store,
+      environment,
+      workspaceRootPath,
+      ...(input.providerHostCommand !== undefined ? { providerHostCommand: input.providerHostCommand } : {}),
+      ...(input.createProviderProtocolTransport !== undefined
+        ? { createProviderProtocolTransport: input.createProviderProtocolTransport }
+        : {}),
+    });
+    logCliDiagnosticEvent(diagnosticLogger, "interactive_chat.provider_resolved", {
+      providerConnectionKind: conversationTurnProviderResolution.providerConnectionKind,
+    });
     const workspaceSnapshotStore = new PrivateGitWorkspaceSnapshotStore({ workspaceRootPath });
     const promptContextCandidateCatalog = new PromptContextCandidateCatalog({
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
@@ -186,7 +238,7 @@ export async function runInteractiveChat(input: {
       };
     };
     const assistantConversationRunner = new AssistantConversationRuntime({
-      conversationTurnProvider: provider,
+      conversationTurnProvider: conversationTurnProviderResolution.conversationTurnProvider,
       workspaceRootPath,
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
@@ -196,6 +248,8 @@ export async function runInteractiveChat(input: {
       ...(conversationSessionStore.promptCacheKey ? { promptCacheKey: conversationSessionStore.promptCacheKey } : {}),
       diagnosticLogger,
       ...(autoCompactionThresholdRatio !== undefined ? { autoCompactionThresholdRatio } : {}),
+      ...(maximumConcurrentReadOnlyToolCalls !== undefined ? { maximumConcurrentReadOnlyToolCalls } : {}),
+      ...(maximumConcurrentSubagentConversations !== undefined ? { maximumConcurrentSubagentConversations } : {}),
     });
     const conversationSessionBindings = createInteractiveChatConversationSessionBindings({
       conversationSessionStore,
@@ -255,6 +309,7 @@ export async function runInteractiveChat(input: {
     });
     return "";
   } finally {
+    await conversationTurnProviderResolution?.dispose();
     consoleFileLoggerInstallation.restore();
     defaultConversationSessionStore?.close();
   }

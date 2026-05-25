@@ -43,8 +43,7 @@ export class RuntimeToolResultSessionRecorder {
       entryKind: "completed_tool_result",
       toolCallId: input.toolCallId,
       toolResultTextLength: input.toolResultText.length,
-      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 
@@ -61,8 +60,7 @@ export class RuntimeToolResultSessionRecorder {
       toolCallId: input.toolCallId,
       toolResultTextLength: input.toolResultText.length,
       failureExplanation: input.failureExplanation,
-      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 
@@ -78,8 +76,7 @@ export class RuntimeToolResultSessionRecorder {
       entryKind: "denied_tool_result",
       toolCallId: input.toolCallId,
       toolResultTextLength: input.toolResultText.length,
-      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 
@@ -93,8 +90,7 @@ export class RuntimeToolResultSessionRecorder {
       toolCallId: input.workspacePatch.toolCallId,
       workspacePatchId: input.workspacePatch.workspacePatchId,
       changedFileCount: input.workspacePatch.changedFileCount,
-      conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
-      modelContextItemCount: this.conversationHistory.listModelContextItems().length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 }

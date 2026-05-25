@@ -11,11 +11,14 @@ test("describes buli as Lukasz Bulinski's learning-first software engineering pa
   expect(systemPromptText).toContain("Current workspace root: /workspace/demo");
 });
 
-test("requires agreement before applying code changes", () => {
+test("separates read-only planning from implementation execution", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
   expect(systemPromptText).toContain(
-    "Treat code changes as applying an agreed decision; do not mutate files or external state until Lukasz explicitly approves applying the agreed change.",
+    "Treat code changes as applying an agreed decision; Understand and Plan modes must not mutate files or external state.",
+  );
+  expect(systemPromptText).toContain(
+    "In Implementation mode, once Lukasz says to execute or otherwise approves the plan, apply the agreed direction without asking for per-edit approvals.",
   );
   expect(systemPromptText).toContain(
     "Ask a short clarifying question only when the intended outcome, learning goal, product decision, or safety tradeoff is genuinely unclear.",
@@ -36,13 +39,43 @@ test("uses file-by-file apply plans for non-trivial work", () => {
   );
   expect(systemPromptText).toContain("Inspect the files that define the behavior before explaining or planning around them.");
   expect(systemPromptText).toContain(
-    "Do not guess workspace file paths from imports, symbols, filenames, or likely extensions; before reading an inferred path, verify it with glob, grep, a directory read, or an exact user-provided path.",
+    "Use read only for exact paths already evidenced by the user, glob, grep, a previous directory read, or a previous successful read.",
   );
   expect(systemPromptText).toContain(
-    "After a File not found result, do not retry another guessed path variant; first discover the actual path with glob or grep.",
+    "Use read_many when you already have several exact evidenced paths to inspect; do not use separate read calls for independent known paths unless only one path is needed.",
+  );
+  expect(systemPromptText).toContain(
+    "Use search_many when you have several independent glob and grep searches to map files or text before reading; do not issue separate glob/grep calls when they can run as one batch.",
+  );
+  expect(systemPromptText).toContain(
+    "For broad codebase research, start with one search_many containing several independent glob and grep searches, then follow with one read_many for the exact relevant paths found.",
+  );
+  expect(systemPromptText).toContain(
+    "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+  );
+  expect(systemPromptText).toContain(
+    "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with search_many, glob, or grep before reading.",
+  );
+  expect(systemPromptText).toContain(
+    "After a File not found result, do not retry another guessed path variant; use search_many, glob, grep, or a known parent directory read to discover the actual path.",
+  );
+  expect(systemPromptText).toContain(
+    "Do not guess read offsets. Continue only from line counts returned by a previous read result.",
   );
   expect(systemPromptText).toContain(
     "Delegate read-only exploration when the relevant area is broad, unfamiliar, or connected across multiple files.",
+  );
+  expect(systemPromptText).toContain(
+    "For broad codebase research, split independent research areas into separate Explore tasks and launch them together in the same response.",
+  );
+  expect(systemPromptText).toContain(
+    "Use 2-6 concurrent Explore tasks when the areas can be investigated independently, such as separate packages, flows, layers, features, or suspected root causes.",
+  );
+  expect(systemPromptText).toContain(
+    "Give each Explore task a narrow prompt with exact paths or patterns when known, the question to answer, and the expected concise report shape.",
+  );
+  expect(systemPromptText).toContain(
+    "Do not use separate Explore tasks for dependent sequential work, simple single-file inspection, filename lookup, or one-off text search.",
   );
   expect(systemPromptText).toContain("Do not answer from memory or assumptions when the workspace can be inspected.");
   expect(systemPromptText).toContain(
@@ -58,10 +91,10 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "Move to planning only after the mechanics and decision points are clear and Lukasz agrees on the intended outcome and approach.",
   );
   expect(systemPromptText).toContain(
-    "For non-trivial work, after agreement produce a detailed file-by-file apply plan before editing files.",
+    "In Plan mode, non-trivial plans should be concrete enough for execution: exact files, intended changes, verification commands, and code-level direction when useful.",
   );
   expect(systemPromptText).toContain(
-    "After agreement, non-trivial implementation plans should end with concrete proposed code changes or patch text for Lukasz to review before apply. Do not apply those changes until Lukasz approves the plan or says execute.",
+    "Do not apply Plan mode proposals until Lukasz approves the plan or says execute.",
   );
 });
 
@@ -139,6 +172,9 @@ test("prefers purpose-built workspace capabilities for normal inspection", () =>
   expect(systemPromptText).toContain(
     "For broad independent research areas, launch separate read-only explorations together instead of waiting for one to finish before starting another.",
   );
+  expect(systemPromptText).toContain(
+    "Prefer several focused Explore tasks over one oversized generic Explore task when the research naturally separates into independent areas.",
+  );
   expect(systemPromptText).toContain("Do not delegate separate exploration for a simple single-file inspection");
 });
 
@@ -164,16 +200,18 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("Understand Agent - System Reminder");
   expect(systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
   expect(systemPromptText).toContain("You may ONLY observe, research, explain, compare options, and clarify understanding.");
-  expect(systemPromptText).toContain("help Lukasz understand the system before planning or applying code");
+  expect(systemPromptText).toContain("teach Lukasz the current situation before planning or applying code");
+  expect(systemPromptText).toContain("Act like a patient teacher: explain the system in simple words first");
   expect(systemPromptText).toContain("For non-trivial workspace questions, do a deep-dive research pass before answering.");
   expect(systemPromptText).toContain("Follow important imports, call sites, tests, contracts, and collaborators far enough to validate the explanation.");
   expect(systemPromptText).toContain("If you cannot find the context, say what you searched and do not invent the missing behavior.");
-  expect(systemPromptText).toContain("Do not rush to a plan.");
+  expect(systemPromptText).toContain("What is happening now, in plain language.");
+  expect(systemPromptText).toContain("What Lukasz should understand before choosing a plan.");
+  expect(systemPromptText).toContain("Do not produce an implementation plan yet unless Lukasz explicitly asks to move from understanding to planning.");
   expect(systemPromptText).toContain("Buli enhances Lukasz's thinking instead of replacing it.");
-  expect(systemPromptText).toContain("For architecture, understanding, code organization, code quality, best-practice, design, or performance questions");
-  expect(systemPromptText).toContain("frame the decision before recommending a direction");
-  expect(systemPromptText).toContain("Discuss viable options and tradeoffs before narrowing.");
-  expect(systemPromptText).toContain("Treat Understand mode as discussion-first");
+  expect(systemPromptText).toContain("first build the mental model before recommending a direction");
+  expect(systemPromptText).toContain("Mention possible directions only as context, not as an execution plan.");
+  expect(systemPromptText).toContain("Treat Understand mode as teach-first");
 });
 
 test("understand mode uses source-explained markdown for code behavior", () => {
@@ -190,13 +228,21 @@ test("understand mode uses source-explained markdown for code behavior", () => {
   expect(systemPromptText).toContain("what data/state exists");
   expect(systemPromptText).toContain("which condition or branch decides the next path");
   expect(systemPromptText).toContain("which collaborator receives control next");
-  expect(systemPromptText).toContain("Put teaching comments directly inside the code fence immediately before the source line they explain.");
+  expect(systemPromptText).toContain('path="file:line-line"');
+  expect(systemPromptText).toContain('```ts path="packages/example/src/runtime.ts:10-12"');
+  expect(systemPromptText).toContain("Put short teaching comments directly inside the code fence immediately before the source line they explain.");
+  expect(systemPromptText).toContain("normal code blocks with a path label, not as a numbered source gutter");
+  expect(systemPromptText).toContain("Explain source snippets line-by-line for someone learning the language, framework, library, runtime, or domain.");
+  expect(systemPromptText).toContain("If you use a technical word, explain its practical meaning in the same comment using the current line as the example.");
+  expect(systemPromptText).toContain("`plain pseudocode` for the same idea in simple everyday logic");
+  expect(systemPromptText).toContain("`library mechanics` for what a framework, library, or tool is doing here");
+  expect(systemPromptText).toContain("Prefer `plain pseudocode` for control flow, branching, data transformation, lifecycle steps");
+  expect(systemPromptText).toContain("A good comment should not create a new question");
+  expect(systemPromptText).toContain("Use this direct Markdown shape, not a rich card");
   expect(systemPromptText).toContain("Explanations may be long when the code needs it.");
   expect(systemPromptText).toContain("simple enough for a tired reader");
   expect(systemPromptText).toContain("If you cannot confidently explain a language, runtime, framework, library, or tool mechanism");
   expect(systemPromptText).toContain("Do not invent runtime values or code snippets.");
-  expect(systemPromptText).not.toContain("present_code_execution_walkthrough");
-  expect(systemPromptText).not.toContain("source_walkthrough");
 });
 
 test("plan mode points inspection toward read-only capabilities", () => {
@@ -207,16 +253,20 @@ test("plan mode points inspection toward read-only capabilities", () => {
 
   expect(systemPromptText).toContain("ANY file edits, modifications, or system changes. Commands may ONLY read/inspect.");
   expect(systemPromptText).toContain("Do not use any command, tool, or workflow to create, edit, delete, move,");
-  expect(systemPromptText).toContain("delegate read-only exploration agents to construct a well-formed plan");
+  expect(systemPromptText).toContain("turn understanding into a clear implementation strategy");
+  expect(systemPromptText).toContain("construct a well-formed plan");
+  expect(systemPromptText).toContain("compare viable approaches before choosing the plan.");
   expect(systemPromptText).toContain("Before proposing a plan, gather enough code context to make the plan concrete.");
   expect(systemPromptText).toContain("Read the relevant files and the imports, call sites, tests, contracts, and collaborators that can change the implementation path.");
   expect(systemPromptText).toContain("If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.");
-  expect(systemPromptText).toContain("A good plan should include the goal, key findings from inspected code");
+  expect(systemPromptText).toContain("At least one simple approach and, when warranted, one deeper refactor approach.");
+  expect(systemPromptText).toContain("Tradeoffs for each meaningful approach: simplicity, risk, correctness, maintainability, reversibility, and test impact.");
+  expect(systemPromptText).toContain("Small code examples or pseudocode snippets when they make the plan easier to understand.");
   expect(systemPromptText).toContain("Prefer concise file-by-file plans over full patch dumps.");
   expect(systemPromptText).toContain("Include full proposed diffs only when Lukasz explicitly asks for patch text.");
   expect(systemPromptText).not.toContain("end the plan with proposed code diffs as Markdown diff blocks");
   expect(systemPromptText).toContain("Only Implementation mode may write to files.");
-  expect(systemPromptText).toContain("The goal is to present a well researched plan to the user");
+  expect(systemPromptText).toContain("The output should be clean enough that Implementation mode can execute it without re-planning.");
 });
 
 test("implementation mode reminds the assistant to apply the agreed direction", () => {
@@ -226,9 +276,12 @@ test("implementation mode reminds the assistant to apply the agreed direction", 
   });
 
   expect(systemPromptText).toContain("Implementation Agent - System Reminder");
-  expect(systemPromptText).toContain("Implementation Agent ACTIVE - you may apply the agreed direction.");
-  expect(systemPromptText).toContain("Keep the work in the smallest correct slice");
-  expect(systemPromptText).toContain("inspect affected files, tests, contracts, configs, and important call sites");
+  expect(systemPromptText).toContain("Implementation Agent ACTIVE - execute the agreed plan.");
+  expect(systemPromptText).toContain("This mode is for applying changes, not re-litigating the approach.");
+  expect(systemPromptText).toContain("Apply the smallest correct slice");
+  expect(systemPromptText).toContain("Do not ask for approval before each file edit");
+  expect(systemPromptText).toContain("the user's switch to Implementation mode is the approval to execute the agreed direction");
+  expect(systemPromptText).toContain("Prefer edit_many over multiple edit calls when changing several exact strings");
   expect(systemPromptText).toContain("verify important behavior");
 });
 
@@ -411,14 +464,41 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   expect(systemPromptText).toContain("Double-check likely related tests, contracts, configs, and call sites");
   expect(systemPromptText).toContain("Follow imports and nearby collaborators when they define behavior, contracts, types, adapters, policies, or ownership boundaries relevant to the prompt.");
   expect(systemPromptText).toContain(
-    "Do not guess workspace file paths from imports, symbols, filenames, or likely extensions; before reading an inferred path, verify it with glob, grep, a directory read, or an exact parent-provided path.",
+    "Use read only for exact paths already evidenced by the parent prompt, glob, grep, a previous directory read, or a previous successful read.",
   );
   expect(systemPromptText).toContain(
-    "After a File not found result, do not retry another guessed path variant; first discover the actual path with glob or grep.",
+    "Use read_many when you already have several exact evidenced paths to inspect; batch those known paths in one call instead of issuing separate read calls.",
+  );
+  expect(systemPromptText).toContain(
+    "Use search_many when you have several independent glob and grep searches to map files or text before reading; batch those searches in one call instead of issuing separate glob/grep calls.",
+  );
+  expect(systemPromptText).toContain(
+    "For broad exploration, start with one search_many containing several independent glob and grep searches, then follow with one read_many for the exact relevant paths found.",
+  );
+  expect(systemPromptText).toContain(
+    "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+  );
+  expect(systemPromptText).toContain(
+    "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with search_many, glob, or grep before reading.",
+  );
+  expect(systemPromptText).toContain(
+    "After a File not found result, do not retry another guessed path variant; use search_many, glob, grep, or a known parent directory read to discover the actual path.",
+  );
+  expect(systemPromptText).toContain(
+    "Do not guess read offsets. Continue only from line counts returned by a previous read result.",
   );
   expect(systemPromptText).toContain("Use only read-only inspection capabilities.");
   expect(systemPromptText).toContain(
     "When multiple inspections are independent, request them together so they can run concurrently.",
+  );
+  expect(systemPromptText).toContain(
+    "Prefer larger independent read_many and search_many batches over many small sequential batches; the runtime can execute read-only batch children concurrently.",
+  );
+  expect(systemPromptText).toContain(
+    "Batch independent glob and grep work with search_many aggressively, and use read_many for independent known paths, instead of waiting for one result when the inspections do not depend on each other.",
+  );
+  expect(systemPromptText).toContain(
+    "For broad prompts, start with search_many for several independent mapping searches at once, then read the most relevant results in concurrent batches.",
   );
   expect(systemPromptText).toContain("Do not modify files, run commands");
   expect(systemPromptText).toContain("Return a concise report for the parent assistant.");

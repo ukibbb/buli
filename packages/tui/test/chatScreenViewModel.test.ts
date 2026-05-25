@@ -26,7 +26,6 @@ test("buildChatScreenViewModel keeps prompt input enabled while a turn is stream
   });
 
   expect(viewModel.isPromptInputDisabled).toBe(false);
-  expect(viewModel.promptInputHintOverride).toBeUndefined();
 });
 
 test("buildChatScreenViewModel disables prompt input while waiting for tool approval", () => {
@@ -61,7 +60,6 @@ test("buildChatScreenViewModel disables prompt input while conversation compacti
   });
 
   expect(viewModel.isPromptInputDisabled).toBe(true);
-  expect(viewModel.promptInputHintOverride).toBeUndefined();
 });
 
 test("buildChatScreenViewModel derives plan-mode input copy", () => {
@@ -76,9 +74,7 @@ test("buildChatScreenViewModel derives plan-mode input copy", () => {
     terminalSizeTierForChatScreen: "comfortable",
   });
 
-  expect(viewModel.modeLabel).toBe("Plan Agent");
   expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentAmber);
-  expect(viewModel.promptInputHintOverride).toBeUndefined();
 });
 
 test("buildChatScreenViewModel derives understand-mode pink input copy", () => {
@@ -90,9 +86,7 @@ test("buildChatScreenViewModel derives understand-mode pink input copy", () => {
     terminalSizeTierForChatScreen: "comfortable",
   });
 
-  expect(viewModel.modeLabel).toBe("Understand Agent");
   expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentPink);
-  expect(viewModel.promptInputHintOverride).toBeUndefined();
 });
 
 test("buildChatScreenViewModel derives context usage and minimum input branch", () => {
@@ -124,7 +118,7 @@ test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at c
   });
 
   expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(false);
-  expect(viewModel.inputRegionRowCount).toBe(10);
+  expect(viewModel.inputRegionRowCount).toBe(8);
 });
 
 test("buildChatScreenViewModel hydrates only the requested visible tail for large transcripts", () => {
@@ -245,57 +239,6 @@ test("buildStableChatScreenTranscriptViewModel reuses transcript output when onl
   });
 
   expect(secondTranscriptSelection.transcriptViewModel).toBe(firstTranscriptSelection.transcriptViewModel);
-});
-
-test("buildChatScreenViewModel derives the short mode label and the destination mode in Understand", () => {
-  const viewModel = buildChatScreenViewModel({
-    chatSessionState: {
-      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "understand",
-    },
-    conversationSessionCompactionStatus: { step: "idle" },
-    terminalRowCount: 32,
-    terminalColumnCount: 120,
-    terminalSizeTierForChatScreen: "comfortable",
-  });
-
-  expect(viewModel.shortModeLabel).toBe("Understand");
-  expect(viewModel.nextShortModeLabel).toBe("Plan");
-  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentAmber);
-});
-
-test("buildChatScreenViewModel derives the short mode label and the destination mode in Plan", () => {
-  const viewModel = buildChatScreenViewModel({
-    chatSessionState: {
-      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "plan",
-    },
-    conversationSessionCompactionStatus: { step: "idle" },
-    terminalRowCount: 32,
-    terminalColumnCount: 120,
-    terminalSizeTierForChatScreen: "comfortable",
-  });
-
-  expect(viewModel.shortModeLabel).toBe("Plan");
-  expect(viewModel.nextShortModeLabel).toBe("Implementation");
-  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentGreen);
-});
-
-test("buildChatScreenViewModel derives the short mode label and the destination mode in Implementation", () => {
-  const viewModel = buildChatScreenViewModel({
-    chatSessionState: {
-      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "implementation",
-    },
-    conversationSessionCompactionStatus: { step: "idle" },
-    terminalRowCount: 32,
-    terminalColumnCount: 120,
-    terminalSizeTierForChatScreen: "comfortable",
-  });
-
-  expect(viewModel.shortModeLabel).toBe("Implementation");
-  expect(viewModel.nextShortModeLabel).toBe("Understand");
-  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentPink);
 });
 
 function createChatSessionStateWithTranscript(input: {

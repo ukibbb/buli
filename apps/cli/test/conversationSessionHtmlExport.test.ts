@@ -85,6 +85,53 @@ const conversationSessionEntries = [
   },
   {
     entryKind: "tool_call",
+    toolCallId: "call-read-many",
+    toolCallRequest: {
+      toolName: "read_many",
+      readTargets: [
+        { readTargetPath: "README.md", offsetLineNumber: 1, maximumLineCount: 2 },
+        { readTargetPath: "missing.txt" },
+      ],
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-read-many",
+    toolCallDetail: {
+      toolName: "read_many",
+      requestedReadTargetPaths: ["README.md", "missing.txt"],
+      completedReadCount: 1,
+      failedReadCount: 1,
+    },
+    toolResultText: "<summary>1 completed, 1 failed</summary>",
+  },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-search-many",
+    toolCallRequest: {
+      toolName: "search_many",
+      searches: [
+        { searchKind: "glob", globPattern: "src/**/*.ts" },
+        { searchKind: "grep", regexPattern: "ToolCallRequest", searchPath: "packages", includeGlobPattern: "*.ts", contextLineCount: 2 },
+      ],
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-search-many",
+    toolCallDetail: {
+      toolName: "search_many",
+      requestedSearches: [
+        { searchKind: "glob", globPattern: "src/**/*.ts" },
+        { searchKind: "grep", regexPattern: "ToolCallRequest", searchPath: "packages", includeGlobPattern: "*.ts", contextLineCount: 2 },
+      ],
+      completedSearchCount: 2,
+      failedSearchCount: 0,
+    },
+    toolResultText: "<summary>2 completed, 0 failed</summary>",
+  },
+  {
+    entryKind: "tool_call",
     toolCallId: "call-3",
     toolCallRequest: {
       toolName: "edit",
@@ -103,6 +150,25 @@ const conversationSessionEntries = [
       removedLineCount: 1,
     },
     toolResultText: "Edited file: src/app.ts",
+  },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-edit-many",
+    toolCallRequest: {
+      toolName: "edit_many",
+      edits: [
+        { editTargetPath: "src/app.ts", oldString: "old", newString: "new" },
+        { editTargetPath: "src/app.ts", oldString: "unused", newString: "used" },
+      ],
+    },
+  },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-patch-many",
+    toolCallRequest: {
+      toolName: "patch_many",
+      patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** Update File: src/app.ts\n@@\n-old\n+new\n*** End Patch",
+    },
   },
   {
     entryKind: "tool_call",
@@ -182,6 +248,26 @@ const conversationSessionEntries = [
             readFilePath: "packages/engine/src/runtime.ts",
           },
         },
+        {
+          subagentChildToolCallId: "call-child-edit-many-1",
+          subagentChildToolCallStatus: "completed",
+          subagentChildToolCallStartedAtMs: 2,
+          subagentChildToolCallDurationMs: 7,
+          subagentChildToolCallDetail: {
+            toolName: "edit_many",
+            editCount: 2,
+          },
+        },
+        {
+          subagentChildToolCallId: "call-child-patch-many-1",
+          subagentChildToolCallStatus: "completed",
+          subagentChildToolCallStartedAtMs: 3,
+          subagentChildToolCallDurationMs: 9,
+          subagentChildToolCallDetail: {
+            toolName: "patch_many",
+            patchTargetText: "2 files",
+          },
+        },
       ],
       subagentResultSummary: "Runtime dispatches tool calls.",
     },
@@ -231,8 +317,18 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("Tool call");
   expect(html).toContain("pwd");
   expect(html).toContain("README.md");
+  expect(html).toContain("2 paths");
+  expect(html).toContain("missing.txt");
+  expect(html).toContain("1/2 read, 1 failed");
+  expect(html).toContain("SearchMany");
+  expect(html).toContain("2 searches");
+  expect(html).toContain("2 searched");
+  expect(html).toContain("ToolCallRequest");
+  expect(html).toContain("context 2");
   expect(html).toContain("src/app.ts");
   expect(html).toContain("const title = &quot;old&quot;;");
+  expect(html).toContain("EditMany");
+  expect(html).toContain("PatchMany");
   expect(html).toContain("notes/new-file.txt");
   expect(html).toContain("hello from write");
   expect(html).toContain("Workspace patch");
@@ -243,6 +339,8 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("Subagent: explore");
   expect(html).toContain("Subagent activity");
   expect(html).toContain("packages/engine/src/runtime.ts");
+  expect(html).toContain("<b>EditMany</b> 2 edits");
+  expect(html).toContain("<b>PatchMany</b> 2 files");
   expect(html).toContain("Runtime dispatches tool calls.");
   expect(html).toContain("explore: map contracts");
   expect(html).toContain("Inspect contract files.");
@@ -296,6 +394,126 @@ test("renderConversationSessionHtmlDocument renders image-only user prompts with
 
   expect(html).toContain('src="data:image/jpeg;base64,aW1hZ2U="');
   expect(html).not.toContain("No prompt text was recorded.");
+});
+
+test("renderConversationSessionHtmlDocument parses code fence title labels like the TUI", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: ["```ts title=src/app.ts", "const value = true;", "```"].join("\n"),
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-code-title",
+  });
+
+  expect(html).toContain("ts · src/app.ts");
+  expect(html).toContain('data-lang="typescript"');
+  expect(html).not.toContain("ts title=src/app.ts");
+});
+
+test("renderConversationSessionHtmlDocument parses quoted code fence path labels with source ranges", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: ['```ts path="src/runtime.ts:10-12"', "startRuntime();", "```"].join("\n"),
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-code-path",
+  });
+
+  expect(html).toContain("ts · src/runtime.ts:10-12");
+  expect(html).toContain('data-lang="typescript"');
+  expect(html).not.toContain('path=&quot;src/runtime.ts:10-12&quot;');
+});
+
+test("renderConversationSessionHtmlDocument renders unknown code fence labels safely", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: ["```mermaid", "<script>alert('x')</script>", "```"].join("\n"),
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-unknown-code",
+  });
+
+  expect(html).toContain("mermaid");
+  expect(html).toContain("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
+  expect(html).not.toContain("<script>alert('x')</script>");
+});
+
+test("renderConversationSessionHtmlDocument renders no-language code fences with code label", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: ["```", "plain text", "```"].join("\n"),
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-no-lang-code",
+  });
+
+  expect(html).toContain('<div class="code-tab">code</div>');
+});
+
+test("renderConversationSessionHtmlDocument renders markdown images as safe text links only", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "![diagram](https://example.com/diagram.png) ![bad](javascript:alert('x'))",
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-markdown-image",
+  });
+
+  expect(html).toContain("image: diagram");
+  expect(html).toContain('<a href="https://example.com/diagram.png">image: diagram</a>');
+  expect(html).toContain("image: bad");
+  expect(html).not.toContain("<img");
+  expect(html).not.toContain("javascript:alert");
+});
+
+test("renderConversationSessionHtmlDocument blocks unsafe markdown href variants", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: [
+          "[protocol relative](//example.com)",
+          "[spaced js](java script:alert(1))",
+          "[mailto](mailto:test@example.com)",
+        ].join(" "),
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-link-safety",
+  });
+
+  expect(html).toContain("protocol relative");
+  expect(html).toContain("spaced js");
+  expect(html).not.toContain('href="//example.com"');
+  expect(html).not.toContain("javascript:");
+  expect(html).toContain('href="mailto:test@example.com"');
 });
 
 test("renderConversationSessionHtmlDocument omits invalid image data URLs", () => {
@@ -371,98 +589,6 @@ test("renderConversationSessionHtmlDocument renders assistant text segments with
   expect(html.match(/Before tool\./g)).toHaveLength(1);
   expect(html.match(/After tool\./g)).toHaveLength(1);
   expect(html).not.toContain("No assistant text was recorded.");
-});
-
-test("renderConversationSessionHtmlDocument renders assistant code execution walkthrough segments without duplicating fallback text", () => {
-  const html = renderConversationSessionHtmlDocument({
-    conversationSessionEntries: [
-      {
-        entryKind: "user_prompt",
-        promptText: "Explain runtime flow",
-        modelFacingPromptText: "Explain runtime flow",
-      },
-      {
-        entryKind: "assistant_code_execution_walkthrough_segment",
-        titleText: "Runtime flow",
-        summaryText: "The main stages in one turn.",
-        walkthroughKind: "source_walkthrough",
-        steps: [
-          {
-            stepTitle: "Prompt accepted",
-            whatHappensText: "The prompt is recorded.",
-            codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "recordPrompt();" }],
-          },
-          {
-            stepTitle: "Provider streams",
-            whatHappensText: "Chunks become assistant events.",
-            codeExamples: [{ sourceFilePath: "src/stream.ts", startLineNumber: 2, endLineNumber: 3, codeText: "translateChunk();" }],
-          },
-        ],
-      },
-      {
-        entryKind: "assistant_message",
-        assistantMessageStatus: "completed",
-        assistantMessageText: "**Runtime flow**\nThe main stages in one turn.",
-      },
-    ],
-    exportedAtMs: 1700000000000,
-    workspaceRootPath: "/tmp/project",
-    conversationSessionId: "session-code-execution-walkthrough",
-  });
-
-  expect(html).toContain("source evidence");
-  expect(html.match(/<span class="panel-purpose">Runtime flow<\/span>/g)).toHaveLength(1);
-  expect(html.match(/Prompt accepted/g)).toHaveLength(1);
-  expect(html).not.toContain("**Runtime flow**");
-});
-
-test("renderConversationSessionHtmlDocument escapes assistant code execution walkthrough text", () => {
-  const html = renderConversationSessionHtmlDocument({
-    conversationSessionEntries: [
-      {
-        entryKind: "user_prompt",
-        promptText: "Explain safely",
-        modelFacingPromptText: "Explain safely",
-      },
-      {
-        entryKind: "assistant_code_execution_walkthrough_segment",
-        titleText: '<script>alert("title")</script>',
-        summaryText: '<img src=x onerror="alert(1)">',
-        walkthroughKind: "source_walkthrough",
-        steps: [
-          {
-            stepTitle: 'javascript:alert("label")',
-            whatHappensText: '<a href="javascript:alert(1)">bad</a>',
-            codeExamples: [
-              {
-                sourceFilePath: "src/example.ts",
-                startLineNumber: 1,
-                endLineNumber: 1,
-                codeText: '<script>alert("code")</script>',
-              },
-            ],
-          },
-        ],
-      },
-      {
-        entryKind: "assistant_message",
-        assistantMessageStatus: "completed",
-        assistantMessageText: "fallback",
-      },
-    ],
-    exportedAtMs: 1700000000000,
-    workspaceRootPath: "/tmp/project",
-    conversationSessionId: "session-code-execution-walkthrough-escaping",
-  });
-
-  expect(html).toContain("&lt;script&gt;alert(&quot;title&quot;)&lt;/script&gt;");
-  expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
-  expect(html).toContain("&lt;a href=&quot;javascript:alert(1)&quot;&gt;bad&lt;/a&gt;");
-  expect(html).toContain("&lt;script&gt;alert(&quot;code&quot;)&lt;/script&gt;");
-  expect(html).not.toContain('<script>alert("title")</script>');
-  expect(html).not.toContain('<img src=x onerror="alert(1)">');
-  expect(html).not.toContain('<a href="javascript:alert(1)">bad</a>');
-  expect(html).not.toContain('<script>alert("code")</script>');
 });
 
 test("renderConversationSessionHtmlDocument omits mode labels for legacy user prompts", () => {

@@ -4,7 +4,6 @@ import type {
   ConversationSessionEntry,
   OpenAiProviderTurnReplay,
   OpenAiProviderTurnReplayInputItem,
-  ProviderAvailablePresentationFunctionName,
   ProviderAvailableToolName,
   ProviderRequestedToolCall,
   ProviderStreamEvent,
@@ -30,6 +29,7 @@ import {
   sanitizeOpenAiErrorMessage,
   type OpenAiHttpErrorResponse,
 } from "./httpResponseDiagnostics.ts";
+import { fetchWithTimeout } from "../fetchWithTimeout.ts";
 import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
 import {
   createOpenAiResponsesHttpRequestBody,
@@ -37,8 +37,9 @@ import {
 } from "./openAiResponsesRequest.ts";
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
+import type { OpenAiRateLimitCoordinator } from "./openAiRateLimitCoordinator.ts";
 import {
-  type OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
+  type OpenAiInvalidFunctionCallIntent,
   type OpenAiProviderFunctionCallIntent,
 } from "./toolDefinitions.ts";
 
@@ -62,6 +63,9 @@ type OpenAiResponseStepToolCallTerminalState = Extract<
 const DEFAULT_RESPONSE_STEP_DIAGNOSTIC_WARNING_THRESHOLD = 32;
 const DEFAULT_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 128;
 const DEFAULT_REPEATED_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 3;
+const DEFAULT_OPENAI_RESPONSE_STEP_FETCH_TIMEOUT_MILLISECONDS = 60_000;
+const DEFAULT_OPENAI_RESPONSE_STEP_STREAM_IDLE_TIMEOUT_MILLISECONDS = 300_000;
+const OPENAI_RESPONSE_STEP_FETCH_TIMEOUT_MESSAGE = "OpenAI response-step request timed out";
 
 function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenUsage: TokenUsage): TokenUsage {
   if (!accumulatedTokenUsage) {
@@ -92,7 +96,6 @@ export class OpenAiProviderConversationTurn {
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
-  readonly availablePresentationFunctionNames: readonly ProviderAvailablePresentationFunctionName[] | undefined;
   readonly abortSignal: AbortSignal | undefined;
   readonly systemPromptText: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
@@ -102,6 +105,9 @@ export class OpenAiProviderConversationTurn {
   readonly responseStepDiagnosticWarningThreshold: number;
   readonly toolCallDiagnosticWarningThreshold: number;
   readonly repeatedToolCallDiagnosticWarningThreshold: number;
+  readonly responseStepFetchTimeoutMilliseconds: number;
+  readonly responseStepStreamIdleTimeoutMilliseconds: number;
+  readonly rateLimitCoordinator: OpenAiRateLimitCoordinator | undefined;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
@@ -116,7 +122,6 @@ export class OpenAiProviderConversationTurn {
     selectedReasoningEffort?: ReasoningEffort;
     promptCacheKey?: string;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
-    availablePresentationFunctionNames?: readonly ProviderAvailablePresentationFunctionName[] | undefined;
     abortSignal?: AbortSignal;
     systemPromptText: string;
     conversationSessionEntries: readonly ConversationSessionEntry[];
@@ -126,6 +131,9 @@ export class OpenAiProviderConversationTurn {
     responseStepDiagnosticWarningThreshold?: number;
     toolCallDiagnosticWarningThreshold?: number;
     repeatedToolCallDiagnosticWarningThreshold?: number;
+    responseStepFetchTimeoutMilliseconds?: number;
+    responseStepStreamIdleTimeoutMilliseconds?: number;
+    rateLimitCoordinator?: OpenAiRateLimitCoordinator | undefined;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.endpoint = input.endpoint;
@@ -135,7 +143,6 @@ export class OpenAiProviderConversationTurn {
     this.selectedReasoningEffort = input.selectedReasoningEffort;
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
-    this.availablePresentationFunctionNames = input.availablePresentationFunctionNames;
     this.abortSignal = input.abortSignal;
     this.systemPromptText = input.systemPromptText;
     this.diagnosticLogger = input.diagnosticLogger;
@@ -154,6 +161,15 @@ export class OpenAiProviderConversationTurn {
       input.repeatedToolCallDiagnosticWarningThreshold,
       DEFAULT_REPEATED_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD,
     );
+    this.responseStepFetchTimeoutMilliseconds = normalizePositiveIntegerThreshold(
+      input.responseStepFetchTimeoutMilliseconds,
+      DEFAULT_OPENAI_RESPONSE_STEP_FETCH_TIMEOUT_MILLISECONDS,
+    );
+    this.responseStepStreamIdleTimeoutMilliseconds = normalizePositiveIntegerThreshold(
+      input.responseStepStreamIdleTimeoutMilliseconds,
+      DEFAULT_OPENAI_RESPONSE_STEP_STREAM_IDLE_TIMEOUT_MILLISECONDS,
+    );
+    this.rateLimitCoordinator = input.rateLimitCoordinator;
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
@@ -199,8 +215,42 @@ export class OpenAiProviderConversationTurn {
     let accumulatedOpenAiTurnUsage: TokenUsage | undefined;
     let responseStepIndex = 0;
     let requestedToolCallCount = 0;
+    const observedRequestedToolCallIds = new Set<string>();
     const toolCallPatternObservationCountByFingerprint = new Map<string, number>();
     const turnStartedAtMs = Date.now();
+
+    const observeRequestedToolCallsForTurnLimitsAndDiagnostics = (input: {
+      responseStepIndex: number;
+      requestedToolCalls: readonly ProviderRequestedToolCall[];
+    }): void => {
+      const newlyObservedRequestedToolCalls = input.requestedToolCalls.filter((requestedToolCall) =>
+        !observedRequestedToolCallIds.has(requestedToolCall.toolCallId)
+      );
+      if (newlyObservedRequestedToolCalls.length === 0) {
+        return;
+      }
+
+      const previousRequestedToolCallCount = requestedToolCallCount;
+      const nextRequestedToolCallCount = requestedToolCallCount + newlyObservedRequestedToolCalls.length;
+      if (this.maxToolCallsPerTurn !== undefined && nextRequestedToolCallCount > this.maxToolCallsPerTurn) {
+        throw new Error(
+          `OpenAI tool-call limit exceeded: requested ${nextRequestedToolCallCount} tool calls (max ${this.maxToolCallsPerTurn}).`,
+        );
+      }
+
+      requestedToolCallCount = nextRequestedToolCallCount;
+      for (const requestedToolCall of newlyObservedRequestedToolCalls) {
+        observedRequestedToolCallIds.add(requestedToolCall.toolCallId);
+      }
+      this.logProviderTurnSoftDiagnosticWarnings({
+        responseStepIndex: input.responseStepIndex,
+        requestedToolCallCount,
+        previousRequestedToolCallCount,
+        currentResponseStepToolCallCount: newlyObservedRequestedToolCalls.length,
+        requestedToolCalls: newlyObservedRequestedToolCalls,
+        toolCallPatternObservationCountByFingerprint,
+      });
+    };
 
     while (true) {
       responseStepIndex += 1;
@@ -220,9 +270,6 @@ export class OpenAiProviderConversationTurn {
         ...(this.selectedReasoningEffort ? { selectedReasoningEffort: this.selectedReasoningEffort } : {}),
         ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
         ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
-        ...(this.availablePresentationFunctionNames
-          ? { availablePresentationFunctionNames: this.availablePresentationFunctionNames }
-          : {}),
         systemPromptText: this.systemPromptText,
         openAiInputItems: this.openAiConversationInputItems,
       });
@@ -233,89 +280,119 @@ export class OpenAiProviderConversationTurn {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", requestDebugSummary);
       await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
 
-      const responseRetryIterator = requestOpenAiHttpResponseWithRetries({
-        fetchResponse: async () => this.fetchImpl(this.endpoint, {
-          method: "POST",
-          headers: await this.loadRequestHeaders(),
-          body: JSON.stringify(requestBody),
-          ...(this.abortSignal ? { signal: this.abortSignal } : {}),
-        }),
-        diagnosticLogger: this.diagnosticLogger,
-        diagnosticEventPrefix: "response_step",
-        diagnosticFields: { responseStepIndex },
-        requestAttemptDiagnosticFieldName: "responseStepRequestAttemptIndex",
-        maximumRetryCountDiagnosticFieldName: "maxResponseStepHttpRetryCount",
-        debugLogTitlePrefix: "OpenAI response-step",
-        abortSignal: this.abortSignal,
-        operationStartedAtMs: responseStepStartedAtMs,
-        shouldYieldRetryPendingEvents: true,
-      })[Symbol.asyncIterator]();
-      let responseRetryResult: Awaited<ReturnType<typeof responseRetryIterator.next>> | undefined;
-      while (true) {
-        responseRetryResult = await responseRetryIterator.next();
-        if (responseRetryResult.done) {
-          break;
-        }
-
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
-          responseStepIndex,
-          eventType: responseRetryResult.value.type,
-          ...summarizeProviderStreamEventForDiagnostics(responseRetryResult.value),
-        });
-        yield responseRetryResult.value;
-      }
-
-      if (!responseRetryResult?.done) {
-        throw new Error("OpenAI response-step retry loop ended without a response");
-      }
-
-      const response = responseRetryResult.value.response;
-      if (!response.ok) {
-        const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
-          responseStepIndex,
-          responseStepRequestAttemptIndex: responseRetryResult.value.requestAttemptIndex,
-          ...failedResponseDebugPayload,
-        });
-        await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
-        throw await this.onStepRequestFailed(response);
-      }
-
-      const openAiStepEventIterator = parseOpenAiStream(response, {
-        diagnosticLogger: this.diagnosticLogger,
-      })[Symbol.asyncIterator]();
       let terminalState: OpenAiResponseStepTerminalState | undefined;
       let terminalUsageProviderEvent: OpenAiTerminalUsageProviderEvent | undefined;
-      const pendingExecutableToolCallProviderEvents: ProviderStreamEvent[] = [];
-      while (true) {
-        const nextStepItem = await openAiStepEventIterator.next();
-        if (nextStepItem.done) {
-          terminalState = nextStepItem.value;
-          break;
+      const responseStepStreamSlot = await this.rateLimitCoordinator?.acquireResponseStepStreamSlot({
+        abortSignal: this.abortSignal,
+      });
+      try {
+        const responseRetryIterator = requestOpenAiHttpResponseWithRetries({
+          fetchResponse: async () => fetchWithTimeout({
+            resource: this.endpoint,
+            fetchImpl: this.fetchImpl,
+            abortSignal: this.abortSignal,
+            timeoutMilliseconds: this.responseStepFetchTimeoutMilliseconds,
+            timeoutErrorMessage: OPENAI_RESPONSE_STEP_FETCH_TIMEOUT_MESSAGE,
+            requestInit: {
+              method: "POST",
+              headers: await this.loadRequestHeaders(),
+              body: JSON.stringify(requestBody),
+            },
+          }),
+          diagnosticLogger: this.diagnosticLogger,
+          diagnosticEventPrefix: "response_step",
+          diagnosticFields: { responseStepIndex },
+          requestAttemptDiagnosticFieldName: "responseStepRequestAttemptIndex",
+          maximumRetryCountDiagnosticFieldName: "maxResponseStepHttpRetryCount",
+          debugLogTitlePrefix: "OpenAI response-step",
+          abortSignal: this.abortSignal,
+          operationStartedAtMs: responseStepStartedAtMs,
+          shouldYieldRetryPendingEvents: true,
+          onResponseHeadersReceived: (responseHeaderObservation) => {
+            this.rateLimitCoordinator?.observeResponseHeaders(responseHeaderObservation.headers, {
+              status: responseHeaderObservation.status,
+              wasSuccessfulHttpResponse: responseHeaderObservation.wasSuccessfulHttpResponse,
+              retryAfterMilliseconds: responseHeaderObservation.retryAfterMilliseconds,
+            });
+          },
+        })[Symbol.asyncIterator]();
+        let responseRetryResult: Awaited<ReturnType<typeof responseRetryIterator.next>> | undefined;
+        while (true) {
+          responseRetryResult = await responseRetryIterator.next();
+          if (responseRetryResult.done) {
+            break;
+          }
+
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+            responseStepIndex,
+            eventType: responseRetryResult.value.type,
+            ...summarizeProviderStreamEventForDiagnostics(responseRetryResult.value),
+          });
+          yield responseRetryResult.value;
         }
 
-        if (nextStepItem.value.type === "completed" || nextStepItem.value.type === "incomplete") {
-          logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.terminal_usage_received", {
+        if (!responseRetryResult?.done) {
+          throw new Error("OpenAI response-step retry loop ended without a response");
+        }
+
+        const response = responseRetryResult.value.response;
+        if (!response.ok) {
+          const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
+            responseStepIndex,
+            responseStepRequestAttemptIndex: responseRetryResult.value.requestAttemptIndex,
+            ...failedResponseDebugPayload,
+          });
+          await writeOpenAiDebugLog("OpenAI responses request failed", failedResponseDebugPayload);
+          throw await this.onStepRequestFailed(response);
+        }
+
+        const openAiStepEventIterator = parseOpenAiStream(response, {
+          diagnosticLogger: this.diagnosticLogger,
+          abortSignal: this.abortSignal,
+          idleTimeoutMilliseconds: this.responseStepStreamIdleTimeoutMilliseconds,
+        })[Symbol.asyncIterator]();
+        while (true) {
+          const nextStepItem = await openAiStepEventIterator.next();
+          if (nextStepItem.done) {
+            terminalState = nextStepItem.value;
+            break;
+          }
+
+          if (nextStepItem.value.type === "completed" || nextStepItem.value.type === "incomplete") {
+            logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.terminal_usage_received", {
+              responseStepIndex,
+              eventType: nextStepItem.value.type,
+              ...summarizeTokenUsageForDiagnostics(nextStepItem.value.usage),
+            });
+            terminalUsageProviderEvent = nextStepItem.value;
+            accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, nextStepItem.value.usage);
+            continue;
+          }
+
+          if (nextStepItem.value.type === "tool_call_requested" || nextStepItem.value.type === "tool_calls_requested") {
+            observeRequestedToolCallsForTurnLimitsAndDiagnostics({
+              responseStepIndex,
+              requestedToolCalls: listRequestedToolCallsFromProviderEvent(nextStepItem.value),
+            });
+            logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+              responseStepIndex,
+              eventType: nextStepItem.value.type,
+              ...summarizeProviderStreamEventForDiagnostics(nextStepItem.value),
+            });
+            yield nextStepItem.value;
+            continue;
+          }
+
+          logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
             responseStepIndex,
             eventType: nextStepItem.value.type,
-            ...summarizeTokenUsageForDiagnostics(nextStepItem.value.usage),
+            ...summarizeProviderStreamEventForDiagnostics(nextStepItem.value),
           });
-          terminalUsageProviderEvent = nextStepItem.value;
-          accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, nextStepItem.value.usage);
-          continue;
+          yield nextStepItem.value;
         }
-
-        if (nextStepItem.value.type === "tool_call_requested" || nextStepItem.value.type === "tool_calls_requested") {
-          pendingExecutableToolCallProviderEvents.push(nextStepItem.value);
-          continue;
-        }
-
-        logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
-          responseStepIndex,
-          eventType: nextStepItem.value.type,
-          ...summarizeProviderStreamEventForDiagnostics(nextStepItem.value),
-        });
-        yield nextStepItem.value;
+      } finally {
+        responseStepStreamSlot?.release();
       }
 
       if (!terminalState) {
@@ -326,32 +403,22 @@ export class OpenAiProviderConversationTurn {
         const providerFunctionCallIntents = listProviderFunctionCallIntentsFromTerminalState(terminalState);
         const providerFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(providerFunctionCallIntents);
         const requestedToolCalls = providerFunctionCallIntentClassification.requestedToolCalls;
-        const presentationFunctionCallIntents = providerFunctionCallIntentClassification.presentationFunctionCallIntents;
+        const invalidFunctionCallIntents = providerFunctionCallIntentClassification.invalidFunctionCallIntents;
         const onlyRequestedToolCall = requestedToolCalls.length === 1 ? requestedToolCalls[0] : undefined;
-        const previousRequestedToolCallCount = requestedToolCallCount;
-        requestedToolCallCount += requestedToolCalls.length;
-        this.logProviderTurnSoftDiagnosticWarnings({
+        observeRequestedToolCallsForTurnLimitsAndDiagnostics({
           responseStepIndex,
-          requestedToolCallCount,
-          previousRequestedToolCallCount,
-          currentResponseStepToolCallCount: requestedToolCalls.length,
           requestedToolCalls,
-          toolCallPatternObservationCountByFingerprint,
         });
-        if (this.maxToolCallsPerTurn !== undefined && requestedToolCallCount > this.maxToolCallsPerTurn) {
-          throw new Error(
-            `OpenAI tool-call limit exceeded: requested ${requestedToolCallCount} tool calls (max ${this.maxToolCallsPerTurn}).`,
-          );
-        }
         accumulatedOpenAiTurnUsage = addTokenUsage(accumulatedOpenAiTurnUsage, terminalState.usage);
         const responseReplayItems = createOpenAiResponseReplayItems(terminalState.responseOutputItems);
         const toolCallTerminalDebugSummary = {
           functionCallCount: providerFunctionCallIntents.length,
           toolCallCount: requestedToolCalls.length,
-          presentationFunctionCallCount: presentationFunctionCallIntents.length,
+          invalidFunctionCallCount: invalidFunctionCallIntents.length,
           toolCallIds: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
           toolNames: requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
-          presentationCallIds: presentationFunctionCallIntents.map((presentationFunctionCallIntent) => presentationFunctionCallIntent.functionCallId),
+          invalidFunctionCallIds: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionCallId),
+          invalidFunctionNames: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionName),
           responseStepIndex,
           responseOutputItemCount: terminalState.responseOutputItems.length,
           continuationInputItemCount: responseReplayItems.continuationInputItems.length,
@@ -371,15 +438,6 @@ export class OpenAiProviderConversationTurn {
           }
         }
 
-        for (const pendingExecutableToolCallProviderEvent of pendingExecutableToolCallProviderEvents) {
-          logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
-            responseStepIndex,
-            eventType: pendingExecutableToolCallProviderEvent.type,
-            ...summarizeProviderStreamEventForDiagnostics(pendingExecutableToolCallProviderEvent),
-          });
-          yield pendingExecutableToolCallProviderEvent;
-        }
-
         this.openAiConversationInputItems.push(...responseReplayItems.continuationInputItems);
         this.providerTurnReplayInputItems.push(...responseReplayItems.providerTurnReplayInputItems);
         const toolResultSubmissions = requestedToolCalls.length > 0
@@ -390,10 +448,10 @@ export class OpenAiProviderConversationTurn {
         );
         const functionCallOutputInputItems = providerFunctionCallIntents.map((providerFunctionCallIntent) => {
           switch (providerFunctionCallIntent.intentKind) {
-            case "code_execution_walkthrough_presentation":
+            case "invalid_function_call":
               return createFunctionCallOutputInputItem(
                 providerFunctionCallIntent.functionCallId,
-                createCodeExecutionWalkthroughPresentationFunctionOutputText(providerFunctionCallIntent),
+                createInvalidFunctionCallOutputText(providerFunctionCallIntent),
               );
             case "executable_tool": {
               const toolResultSubmission = toolResultSubmissionByToolCallId.get(providerFunctionCallIntent.functionCallId);
@@ -414,9 +472,9 @@ export class OpenAiProviderConversationTurn {
           responseStepIndex,
           functionCallCount: providerFunctionCallIntents.length,
           toolCallCount: toolResultSubmissions.length,
-          presentationFunctionCallCount: presentationFunctionCallIntents.length,
+          invalidFunctionCallCount: invalidFunctionCallIntents.length,
           toolCallIds: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolCallId),
-          presentationCallIds: presentationFunctionCallIntents.map((presentationFunctionCallIntent) => presentationFunctionCallIntent.functionCallId),
+          invalidFunctionCallIds: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionCallId),
           toolResultTextLengths: toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolResultText.length),
         };
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.tool_result_recorded_for_continuation", toolResultDebugSummary);
@@ -591,6 +649,26 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
         hasOffsetLineNumber: toolCallRequest.offsetLineNumber !== undefined,
         hasMaximumLineCount: toolCallRequest.maximumLineCount !== undefined,
       };
+    case "read_many":
+      return {
+        toolName: toolCallRequest.toolName,
+        readTargetCount: toolCallRequest.readTargets.length,
+        readTargetPathLength: toolCallRequest.readTargets.reduce(
+          (totalPathLength, readTarget) => totalPathLength + readTarget.readTargetPath.length,
+          0,
+        ),
+        readTargetWithOffsetCount: toolCallRequest.readTargets.filter((readTarget) => readTarget.offsetLineNumber !== undefined).length,
+        readTargetWithMaximumLineCountCount: toolCallRequest.readTargets.filter((readTarget) =>
+          readTarget.maximumLineCount !== undefined
+        ).length,
+      };
+    case "search_many":
+      return {
+        toolName: toolCallRequest.toolName,
+        searchCount: toolCallRequest.searches.length,
+        globSearchCount: toolCallRequest.searches.filter((search) => search.searchKind === "glob").length,
+        grepSearchCount: toolCallRequest.searches.filter((search) => search.searchKind === "grep").length,
+      };
     case "glob":
       return {
         toolName: toolCallRequest.toolName,
@@ -610,6 +688,18 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
         editTargetPathLength: toolCallRequest.editTargetPath.length,
         oldStringLength: toolCallRequest.oldString.length,
         newStringLength: toolCallRequest.newString.length,
+      };
+    case "edit_many":
+      return {
+        toolName: toolCallRequest.toolName,
+        editCount: toolCallRequest.edits.length,
+        editTargetPathLengths: toolCallRequest.edits.map((edit) => edit.editTargetPath.length),
+      };
+    case "patch":
+    case "patch_many":
+      return {
+        toolName: toolCallRequest.toolName,
+        patchTextLength: toolCallRequest.patchText.length,
       };
     case "write":
       return {
@@ -674,6 +764,19 @@ function listRequestedToolCallsFromTerminalState(
   }];
 }
 
+function listRequestedToolCallsFromProviderEvent(
+  providerStreamEvent: Extract<ProviderStreamEvent, { type: "tool_call_requested" | "tool_calls_requested" }>,
+): ProviderRequestedToolCall[] {
+  if (providerStreamEvent.type === "tool_calls_requested") {
+    return [...providerStreamEvent.requestedToolCalls];
+  }
+
+  return [{
+    toolCallId: providerStreamEvent.toolCallId,
+    toolCallRequest: providerStreamEvent.toolCallRequest,
+  }];
+}
+
 function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: ProviderStreamEvent): BuliDiagnosticLogFields {
   if (providerStreamEvent.type === "reasoning_summary_started") {
     return {};
@@ -712,21 +815,12 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
     };
   }
 
-  if (providerStreamEvent.type === "code_execution_walkthrough_presented") {
-    return {
-      presentationCallId: providerStreamEvent.presentationCallId,
-      codeExecutionWalkthroughTitleLength: providerStreamEvent.codeExecutionWalkthrough.titleText.length,
-      codeExecutionWalkthroughStepCount: providerStreamEvent.codeExecutionWalkthrough.steps.length,
-      codeExecutionWalkthroughCodeExampleCount: providerStreamEvent.codeExecutionWalkthrough.steps.reduce(
-        (codeExampleCount, walkthroughStep) => codeExampleCount + walkthroughStep.codeExamples.length,
-        0,
-      ),
-    };
-  }
-
   if (providerStreamEvent.type === "rate_limit_pending") {
     return {
       retryAfterSeconds: providerStreamEvent.retryAfterSeconds,
+      ...(providerStreamEvent.retryWaitStartedAtMs !== undefined
+        ? { retryWaitStartedAtMs: providerStreamEvent.retryWaitStartedAtMs }
+        : {}),
       limitExplanationLength: providerStreamEvent.limitExplanation.length,
     };
   }
@@ -749,10 +843,12 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
   return summarizeTokenUsageForDiagnostics(providerStreamEvent.usage);
 }
 
-function createCodeExecutionWalkthroughPresentationFunctionOutputText(
-  presentationFunctionCallIntent: OpenAiCodeExecutionWalkthroughPresentationFunctionCallIntent,
-): string {
-  return `Rendered code execution walkthrough: ${presentationFunctionCallIntent.codeExecutionWalkthrough.titleText}`;
+function createInvalidFunctionCallOutputText(invalidFunctionCallIntent: OpenAiInvalidFunctionCallIntent): string {
+  return [
+    `Invalid function call: ${invalidFunctionCallIntent.functionName}`,
+    `Reason: ${invalidFunctionCallIntent.invalidCallExplanation}`,
+    "The function call was not executed. Retry with valid JSON arguments that satisfy the expected schema.",
+  ].join("\n");
 }
 
 function assertUnhandledOpenAiProviderFunctionCallIntent(providerFunctionCallIntent: never): never {

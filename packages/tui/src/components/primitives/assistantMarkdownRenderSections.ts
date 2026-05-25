@@ -14,6 +14,12 @@ export {
 export {
   buildStableAssistantMarkdownRenderSections,
   createAssistantMarkdownRenderSectionCache,
+  TypeScriptAssistantMarkdownRenderSectionBuilder,
+} from "./assistantMarkdownRenderSectionBuilder.ts";
+export type {
+  AssistantMarkdownRenderSectionBuilder,
+  AssistantMarkdownRenderSectionBuildRequest,
+  AssistantMarkdownRenderSectionBuildResult,
 } from "./assistantMarkdownRenderSectionBuilder.ts";
 export {
   assistantMarkdownUnorderedListMarkers,

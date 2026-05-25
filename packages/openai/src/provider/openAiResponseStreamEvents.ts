@@ -51,8 +51,7 @@ const OutputItemDoneChunkSchema = z.object({
 
 const ErrorChunkSchema = z.object({
   type: z.literal("error"),
-  message: z.string(),
-});
+}).passthrough();
 
 const ResponseCompletedChunkSchema = z.object({
   type: z.literal("response.completed"),
@@ -89,7 +88,11 @@ export type OpenAiFunctionCallArgumentsDeltaChunk = z.infer<typeof FunctionCallA
 export type OpenAiFunctionCallArgumentsDoneChunk = z.infer<typeof FunctionCallArgumentsDoneChunkSchema>;
 export type OpenAiOutputItemAddedChunk = z.infer<typeof OutputItemAddedChunkSchema>;
 export type OpenAiOutputItemDoneChunk = z.infer<typeof OutputItemDoneChunkSchema>;
-export type OpenAiErrorChunk = z.infer<typeof ErrorChunkSchema>;
+export type OpenAiErrorChunk = {
+  readonly type: "error";
+  readonly message: string;
+  readonly code?: string | undefined;
+};
 export type OpenAiResponseCompletedChunk = z.infer<typeof ResponseCompletedChunkSchema>;
 export type OpenAiResponseIncompleteChunk = z.infer<typeof ResponseIncompleteChunkSchema>;
 export type OpenAiResponseFailedChunk = z.infer<typeof ResponseFailedChunkSchema>;
@@ -131,7 +134,33 @@ export function readOpenAiResponseFailedChunk(value: unknown): OpenAiResponseFai
 }
 
 export function parseOpenAiErrorChunk(value: unknown): OpenAiErrorChunk {
-  return ErrorChunkSchema.parse(value);
+  const parsedErrorChunk = ErrorChunkSchema.parse(value);
+  const nestedError = readUnknownField(parsedErrorChunk, "error");
+  const message = readStringField(parsedErrorChunk, "message") ?? readStringField(nestedError, "message") ??
+    "OpenAI stream returned an error event without a message";
+  const code = readStringField(parsedErrorChunk, "code") ?? readStringField(nestedError, "code");
+  return {
+    type: "error",
+    message,
+    ...(code !== undefined ? { code } : {}),
+  };
+}
+
+function readUnknownField(value: unknown, fieldName: string): unknown {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+
+  return (value as Record<string, unknown>)[fieldName];
+}
+
+function readStringField(value: unknown, fieldName: string): string | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+
+  const fieldValue = (value as Record<string, unknown>)[fieldName];
+  return typeof fieldValue === "string" ? fieldValue : undefined;
 }
 
 export function parseOpenAiResponseCompletedChunk(value: unknown): OpenAiResponseCompletedChunk {

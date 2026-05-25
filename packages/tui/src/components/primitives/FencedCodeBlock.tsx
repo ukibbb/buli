@@ -53,7 +53,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
           }
         : {})}
       flexDirection="column"
-      paddingX={1}
+      paddingX={isStandalone ? 1 : 0}
       paddingY={0}
       width="100%"
     >

@@ -402,7 +402,10 @@ test("useChatAppController exposes compaction status while compacting from keybo
         modelFacingPromptText: "Before compaction",
       },
     ],
-    compactCurrentConversationSession: async () => compactionPromise,
+    compactCurrentConversationSession: async (compactionRequest) => {
+      compactionRequest.onCompactionSummaryTextUpdated?.("Goal: streaming compaction summary.");
+      return compactionPromise;
+    },
   });
 
   await renderedHook.typeText("/compact");
@@ -411,6 +414,28 @@ test("useChatAppController exposes compaction status while compacting from keybo
   expect(renderedHook.readCurrentController().conversationSessionCompactionStatus).toEqual({
     step: "compacting",
     source: "manual",
+  });
+  const streamingCompactionMessageId = renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds.at(-1);
+  expect(streamingCompactionMessageId).toBe("active-conversation-compaction");
+  expect(
+    streamingCompactionMessageId
+      ? renderedHook.readCurrentController().chatSessionState.conversationMessagePartsById[
+          "active-conversation-compaction-separator"
+        ]
+      : undefined,
+  ).toEqual({
+    id: "active-conversation-compaction-separator",
+    partKind: "assistant_compaction_separator",
+    source: "manual",
+  });
+  expect(
+    renderedHook.readCurrentController().chatSessionState.conversationMessagePartsById[
+      "active-conversation-compaction-summary"
+    ],
+  ).toMatchObject({
+    partKind: "assistant_text",
+    partStatus: "streaming",
+    rawMarkdownText: "Goal: streaming compaction summary.",
   });
 
   await act(async () => {

@@ -14,7 +14,7 @@ import {
   type ConversationAutoCompactionResult,
   type ConversationCompactionRequest,
 } from "@buli/engine";
-import { OpenAiAuthStore } from "@buli/openai";
+import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
 import { runLogin } from "../src/commands/login.ts";
@@ -190,6 +190,61 @@ test("runInteractiveChat returns a clean message when auto-compaction threshold 
   await expect(runInteractiveChat({ store, environment: { BULI_AUTO_COMPACT_THRESHOLD: "wrong" } })).resolves.toBe(
     "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.",
   );
+});
+
+test("runInteractiveChat returns clean messages for invalid concurrency environment", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await expect(runInteractiveChat({ store, environment: { BULI_READ_ONLY_TOOL_CONCURRENCY: "0" } })).resolves.toBe(
+    "Invalid BULI_READ_ONLY_TOOL_CONCURRENCY. Use a positive integer.",
+  );
+  await expect(runInteractiveChat({ store, environment: { BULI_SUBAGENT_CONCURRENCY: "1.5" } })).resolves.toBe(
+    "Invalid BULI_SUBAGENT_CONCURRENCY. Use a positive integer.",
+  );
+  await expect(runInteractiveChat({ store, environment: { BULI_OPENAI_MAX_CONCURRENT_STREAMS: "wrong" } })).resolves.toBe(
+    "Invalid BULI_OPENAI_MAX_CONCURRENT_STREAMS. Use a positive integer.",
+  );
+});
+
+test("runInteractiveChat applies concurrency environment overrides", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-concurrency-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
+  let capturedConversationRuntime: AssistantConversationRuntime | undefined;
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {
+      BULI_READ_ONLY_TOOL_CONCURRENCY: "11",
+      BULI_SUBAGENT_CONCURRENCY: "5",
+      BULI_OPENAI_MAX_CONCURRENT_STREAMS: "7",
+    },
+    renderChatScreen: async (renderInput) => {
+      capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(capturedConversationRuntime?.maximumConcurrentReadOnlyToolCalls).toBe(11);
+  expect(capturedConversationRuntime?.maximumConcurrentSubagentConversations).toBe(5);
+  const conversationTurnProvider = capturedConversationRuntime?.conversationTurnProvider;
+  if (!(conversationTurnProvider instanceof OpenAiProvider)) {
+    throw new Error("expected direct OpenAI provider");
+  }
+  expect(conversationTurnProvider.rateLimitCoordinator.maximumConcurrentResponseStepStreams).toBe(7);
 });
 
 test("runInteractiveChat uses the prompt-context root environment override", async () => {
@@ -749,7 +804,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     didCompact: false,
     decision: {
       shouldCompact: false,
-      reason: "context_usage_below_reserved_token_limit",
+      reason: "context_usage_below_threshold",
     },
   });
 
@@ -770,15 +825,15 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       didCompact: true,
       decision: {
         shouldCompact: true,
-        reason: "context_usage_reserved_token_limit_reached",
+        reason: "context_usage_threshold_reached",
         selectedModelId: "gpt-5.5",
         contextTokensUsed: 390_000,
         contextUsageRatio: 390_000 / 400_000,
         contextWindowTokenCapacity: 400_000,
-        contextCompactionTriggerTokenCount: 380_000,
-        reservedTokenCount: 20_000,
-        thresholdRatio: undefined,
-        triggerKind: "reserved_token_count",
+        contextCompactionTriggerTokenCount: 320_000,
+        reservedTokenCount: undefined,
+        thresholdRatio: 0.8,
+        triggerKind: "threshold_ratio",
         sessionEntryCountAfterLatestCompactionSummary: 3,
       },
       conversationSessionEntries,
@@ -794,7 +849,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
     throw new Error("expected auto-compaction to run");
   }
 
-  expect(completedAutoCompactionResult.decision.reason).toBe("context_usage_reserved_token_limit_reached");
+  expect(completedAutoCompactionResult.decision.reason).toBe("context_usage_threshold_reached");
   expect(completedAutoCompactionResult.conversationSessionEntries).toContainEqual({
     entryKind: "conversation_compaction_summary",
     summaryText: "Goal: continue after automatic compaction.",

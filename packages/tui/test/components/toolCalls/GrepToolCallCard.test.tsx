@@ -20,7 +20,7 @@ describe("GrepToolCallCard", () => {
     expect(frame).toContain("[+]");
     expect(frame).toContain("[useEffect]");
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("searching");
+    expect(frame).toContain("searching");
   });
 
   test("completed_starts_collapsed_with_match_summary", async () => {
@@ -37,6 +37,8 @@ describe("GrepToolCallCard", () => {
               matchFilePath: "/src/App.tsx",
               matchLineNumber: 10,
               matchSnippet: "const [state, setState] = useState(null);",
+              contextBeforeLines: [{ lineNumber: 9, lineText: "function App() {" }],
+              contextAfterLines: [{ lineNumber: 11, lineText: "  return null;" }],
             },
           ],
         }}
@@ -67,6 +69,8 @@ describe("GrepToolCallCard", () => {
               matchFilePath: "/src/App.tsx",
               matchLineNumber: 10,
               matchSnippet: "const [state, setState] = useState(null);",
+              contextBeforeLines: [{ lineNumber: 9, lineText: "function App() {" }],
+              contextAfterLines: [{ lineNumber: 11, lineText: "  return null;" }],
             },
             {
               matchFilePath: "/src/App.tsx",
@@ -92,7 +96,9 @@ describe("GrepToolCallCard", () => {
     expect(frame.split("/src/App.tsx").length - 1).toBe(1);
     expect(frame).not.toContain("/src/App.tsx:10");
     expect(frame).not.toContain("/src/App.tsx:12");
+    expect(frame).toContain("function App()");
     expect(frame).toContain("useState(null)");
+    expect(frame).toContain("return null");
     expect(frame).toContain("useState(false)");
   });
 

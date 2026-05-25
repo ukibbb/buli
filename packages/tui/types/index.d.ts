@@ -88,7 +88,7 @@ export type TuiChatScreenInstance = {
 
 export declare class ActiveConversationTurnShutdownCoordinator {
   registerActiveConversationTurn(activeConversationTurn: ActiveConversationTurn): void;
-  registerActiveConversationTurnSettlement(activeConversationTurnSettlementPromise: Promise<void>): void;
+  registerActiveConversationTurnSettlement(activeConversationTurnSettlementPromise: Promise<unknown>): void;
   clearActiveConversationTurn(activeConversationTurn: ActiveConversationTurn): void;
   interruptActiveConversationTurn(): boolean;
   interruptActiveConversationTurnAndWaitForSettlement(): Promise<void>;

@@ -142,7 +142,7 @@ describe("EditToolCallCard", () => {
     expect(frame).toContain("Edit");
     expect(frame).toContain("[/src/foo.ts]");
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("editing");
+    expect(frame).toContain("editing");
   });
 
   test("pending_approval_shows_decision_buttons_on_the_edit_header_row", async () => {

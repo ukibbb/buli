@@ -129,15 +129,29 @@ function createFailingWorkspaceShellCommandExecutor(): WorkspaceShellCommandExec
   } satisfies WorkspaceShellCommandExecutor;
 }
 
-test("streamAssistantResponseEventsForBashToolCall blocks mutating bash commands in plan mode", async () => {
+test("streamAssistantResponseEventsForBashToolCall blocks all bash commands in plan mode", async () => {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const executedShellCommands: string[] = [];
   const { assistantResponseEvents, providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
-    shellCommand: "mkdir blocked-test",
+    shellCommand: "pwd",
     assistantOperatingMode: "plan",
     bashToolApprovalMode: "trusted",
+    workspaceShellCommandExecutor: {
+      workspaceRootPath: process.cwd(),
+      shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+      async runShellCommand(input) {
+        executedShellCommands.push(input.shellCommand);
+        return {
+          exitCode: 0,
+          stdoutText: "should not run\n",
+          stderrText: "",
+        };
+      },
+    },
     diagnosticEvents,
   });
 
+  expect(executedShellCommands).toEqual([]);
   expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
     "assistant_message_part_added",
   ]);

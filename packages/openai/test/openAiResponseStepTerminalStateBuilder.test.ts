@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   chooseOpenAiResponseStepTerminalKind,
-  createOpenAiResponseStepProviderFunctionCallTerminalState,
   createOpenAiResponseStepToolCallTerminalState,
 } from "../src/provider/openAiResponseStepTerminalStateBuilder.ts";
 
@@ -58,40 +57,7 @@ test("chooseOpenAiResponseStepTerminalKind gives tool-call terminals priority", 
   expect(chooseOpenAiResponseStepTerminalKind({ requestedToolCallCount: 2, fallbackTerminalKind: "incomplete" })).toBe("tool_calls_requested");
   expect(chooseOpenAiResponseStepTerminalKind({
     requestedToolCallCount: 0,
-    presentationFunctionCallCount: 1,
+    invalidFunctionCallCount: 1,
     fallbackTerminalKind: "completed",
   })).toBe("provider_function_calls_requested");
-});
-
-test("createOpenAiResponseStepProviderFunctionCallTerminalState keeps presentation calls out of tool terminals", () => {
-  expect(createOpenAiResponseStepProviderFunctionCallTerminalState({
-    providerFunctionCallIntents: [
-      {
-        intentKind: "code_execution_walkthrough_presentation",
-        functionCallId: "call_present_1",
-        codeExecutionWalkthrough: {
-          titleText: "Request flow",
-          walkthroughKind: "source_walkthrough",
-          steps: [{ stepTitle: "Prompt accepted", whatHappensText: "The accepted prompt is recorded.", codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }] }],
-        },
-      },
-    ],
-    responseOutputItems: [{ type: "function_call", id: "fc_1" }],
-    usage: tokenUsage,
-  })).toEqual({
-    terminalKind: "provider_function_calls_requested",
-    providerFunctionCallIntents: [
-      {
-        intentKind: "code_execution_walkthrough_presentation",
-        functionCallId: "call_present_1",
-        codeExecutionWalkthrough: {
-          titleText: "Request flow",
-          walkthroughKind: "source_walkthrough",
-          steps: [{ stepTitle: "Prompt accepted", whatHappensText: "The accepted prompt is recorded.", codeExamples: [{ sourceFilePath: "src/runtime.ts", startLineNumber: 1, endLineNumber: 1, codeText: "start();" }] }],
-        },
-      },
-    ],
-    responseOutputItems: [{ type: "function_call", id: "fc_1" }],
-    usage: tokenUsage,
-  });
 });

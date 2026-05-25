@@ -2,7 +2,6 @@ import type { AssistantOperatingMode, ConversationMessage, ConversationMessagePa
 import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import {
   buildChatSlashCommands,
-  resolveNextAssistantOperatingMode,
   type ChatSessionState,
   type ChatSlashCommand,
 } from "@buli/chat-session-state";
@@ -14,7 +13,6 @@ import {
   type TerminalSizeTierForChatScreen,
 } from "@buli/assistant-design-tokens";
 import { INPUT_PANEL_MAX_ROW_COUNT } from "../components/InputPanel.tsx";
-import { INPUT_STATUS_STRIP_ROW_COUNT } from "../components/InputStatusStrip.tsx";
 import { MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT } from "../components/MinimumHeightPromptStrip.tsx";
 import { TOP_BAR_NATURAL_ROW_COUNT } from "../components/TopBar.tsx";
 import {
@@ -29,13 +27,7 @@ const CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_HIDDEN = buildChatSlashCommands
 export type ChatScreenInteractionViewModel = {
   isPromptInputDisabled: boolean;
   availableChatSlashCommands: readonly ChatSlashCommand[];
-  modeLabel: string;
-  shortModeLabel: string;
-  nextShortModeLabel: string;
-  nextModeAccentColor: ChatScreenViewModel["inputPanelAccentColor"];
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
-  promptInputHintOverride: string | undefined;
-  reasoningEffortLabel: string;
   inputRegionRowCount: number;
   availableCommandHelpModalRowCount: number;
   totalContextTokensUsed: number | undefined;
@@ -73,8 +65,6 @@ type ChatScreenInteractionPromptState = Pick<
   | "conversationTurnStatus"
   | "selectedAssistantOperatingMode"
   | "selectedModelId"
-  | "selectedModelDefaultReasoningEffort"
-  | "selectedReasoningEffort"
   | "latestContextWindowUsage"
 > & {
   isInitialConversationSessionHydrationPending?: boolean | undefined;
@@ -129,28 +119,15 @@ export function buildChatScreenInteractionViewModel(input: {
   const inputRegionRowCount =
     input.terminalSizeTierForChatScreen === minimumTerminalSizeTier
       ? MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT
-      : INPUT_PANEL_MAX_ROW_COUNT + INPUT_STATUS_STRIP_ROW_COUNT;
+      : INPUT_PANEL_MAX_ROW_COUNT;
   const totalContextTokensUsed = input.promptState.latestContextWindowUsage
     ? calculateContextTokensUsedFromTokenUsage(input.promptState.latestContextWindowUsage)
     : undefined;
 
-  const nextAssistantOperatingMode = resolveNextAssistantOperatingMode(input.promptState.selectedAssistantOperatingMode);
-
   return {
     isPromptInputDisabled,
     availableChatSlashCommands: listStableChatSlashCommands(input.isReasoningSummaryVisible),
-    modeLabel: formatAssistantOperatingModeLabel(input.promptState.selectedAssistantOperatingMode),
-    shortModeLabel: formatAssistantOperatingModeShortLabel(input.promptState.selectedAssistantOperatingMode),
-    nextShortModeLabel: formatAssistantOperatingModeShortLabel(nextAssistantOperatingMode),
-    nextModeAccentColor: resolveAssistantOperatingModeAccentColor(nextAssistantOperatingMode),
     inputPanelAccentColor: resolveAssistantOperatingModeAccentColor(input.promptState.selectedAssistantOperatingMode),
-    // Mode hint text was needed when the input frame had no visible mode chips.
-    // InputStatusStrip now surfaces the active mode + destination + tab keycap
-    // directly, so the legacy hint would be redundant. Leave the prop as a
-    // future escape hatch for transient prompts (e.g., interrupt confirmation).
-    promptInputHintOverride: undefined,
-    reasoningEffortLabel:
-      input.promptState.selectedReasoningEffort ?? input.promptState.selectedModelDefaultReasoningEffort ?? "default",
     inputRegionRowCount,
     availableCommandHelpModalRowCount: Math.max(
       0,
@@ -362,22 +339,6 @@ function countVisibleConversationMessageParts(
       visibleConversationMessagePartCount + visibleConversationMessageRow.conversationMessageParts.length,
     0,
   );
-}
-
-function formatAssistantOperatingModeLabel(assistantOperatingMode: AssistantOperatingMode): string {
-  return assistantOperatingMode === "understand"
-    ? "Understand Agent"
-    : assistantOperatingMode === "plan"
-    ? "Plan Agent"
-    : "Implementation Agent";
-}
-
-function formatAssistantOperatingModeShortLabel(assistantOperatingMode: AssistantOperatingMode): string {
-  return assistantOperatingMode === "understand"
-    ? "Understand"
-    : assistantOperatingMode === "plan"
-    ? "Plan"
-    : "Implementation";
 }
 
 function resolveAssistantOperatingModeAccentColor(

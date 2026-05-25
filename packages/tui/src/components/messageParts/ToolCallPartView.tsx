@@ -33,6 +33,7 @@ export function ToolCallPartView(props: {
       {...(props.assistantToolCallConversationMessagePart.durationMs !== undefined
         ? { durationMs: props.assistantToolCallConversationMessagePart.durationMs }
         : {})}
+      toolCallStartedAtMs={props.assistantToolCallConversationMessagePart.toolCallStartedAtMs}
       {...(props.assistantToolCallConversationMessagePart.toolCallStatus === "failed" &&
       props.assistantToolCallConversationMessagePart.errorText
         ? { errorText: props.assistantToolCallConversationMessagePart.errorText }

@@ -121,7 +121,7 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     expect(captureCharFrame()).toContain("[-]");
   });
 
-  test("ToolCallCompactHeader renders pending apple snake before disclosure marker", async () => {
+  test("ToolCallCompactHeader renders pending apple snake before disclosure marker and status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallCompactHeader
         accentColor={chatScreenTheme.accentAmber}
@@ -138,7 +138,7 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("◆");
     expect(frame.indexOf("◆")).toBeLessThan(frame.indexOf("[+]"));
-    expect(frame).not.toContain("running");
+    expect(frame).toContain("running");
   });
 
   test("ToolCallCompactHeader renders approval buttons on the pending header row", async () => {

@@ -46,7 +46,6 @@ test("createOpenAiResponsesHttpRequestBody disables encrypted reasoning include 
     selectedReasoningEffort: "none",
     promptCacheKey: "buli:test-session",
     availableToolNames: ["read", "glob", "grep"],
-    availablePresentationFunctionNames: [],
     systemPromptText: "You are Buli Explorer.",
     openAiInputItems: [{ role: "user", content: "Explore runtime" }],
   });
@@ -61,7 +60,6 @@ test("createOpenAiResponsesHttpRequestBody omits tool fields when no tools are a
   const requestBody = createOpenAiResponsesHttpRequestBody({
     selectedModelId: "gpt-5.4",
     availableToolNames: [],
-    availablePresentationFunctionNames: [],
     systemPromptText: "You are buli.",
     openAiInputItems: [{ role: "user", content: "Summarize only" }],
   });

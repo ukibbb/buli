@@ -62,12 +62,6 @@ function renderConversationSessionCompactionStatusPane(
     <box paddingX={2} marginBottom={1}>
       <ErrorBannerBlock titleText="Could not compact session" errorText={conversationSessionCompactionStatus.errorMessage} />
     </box>
-  ) : conversationSessionCompactionStatus.step === "compacting" ? (
-    <box paddingX={2} marginBottom={1}>
-      <text fg={chatScreenTheme.textMuted}>
-        {conversationSessionCompactionStatus.source === "auto" ? "Auto-compacting context..." : "Compacting session..."}
-      </text>
-    </box>
   ) : null;
 }
 

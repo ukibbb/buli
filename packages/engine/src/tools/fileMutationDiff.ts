@@ -1,9 +1,21 @@
-export type UnifiedFileDiff = {
+export type FileMutationDiffRequest = {
+  displayPath: string;
+  beforeText: string | undefined;
+  afterText: string;
+};
+
+export type FileMutationDiffResult = {
   unifiedDiffText: string;
   addedLineCount: number;
   removedLineCount: number;
   hasChanges: boolean;
 };
+
+export type UnifiedFileDiff = FileMutationDiffResult;
+
+export interface FileMutationDiffEngine {
+  createFileMutationDiff(input: FileMutationDiffRequest): FileMutationDiffResult;
+}
 
 type LineDiffOperation =
   | { operationKind: "equal"; lineText: string }
@@ -12,11 +24,19 @@ type LineDiffOperation =
 
 const MAX_EXACT_LINE_DIFF_CELL_COUNT = 250_000;
 
-export function createUnifiedFileDiff(input: {
-  displayPath: string;
-  beforeText: string | undefined;
-  afterText: string;
-}): UnifiedFileDiff {
+export class TypeScriptFileMutationDiffEngine implements FileMutationDiffEngine {
+  createFileMutationDiff(input: FileMutationDiffRequest): FileMutationDiffResult {
+    return createUnifiedFileDiffWithTypeScriptEngine(input);
+  }
+}
+
+const defaultFileMutationDiffEngine = new TypeScriptFileMutationDiffEngine();
+
+export function createUnifiedFileDiff(input: FileMutationDiffRequest): UnifiedFileDiff {
+  return defaultFileMutationDiffEngine.createFileMutationDiff(input);
+}
+
+function createUnifiedFileDiffWithTypeScriptEngine(input: FileMutationDiffRequest): FileMutationDiffResult {
   const beforeLines = input.beforeText === undefined ? [] : splitTextIntoDiffLines(input.beforeText);
   const afterLines = splitTextIntoDiffLines(input.afterText);
   const lineDiffOperations = buildLineDiffOperations(beforeLines, afterLines);

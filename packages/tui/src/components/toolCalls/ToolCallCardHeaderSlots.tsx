@@ -85,7 +85,7 @@ function ToolCallCompactStatus(props: {
   statusLabel: string | undefined;
 }): ReactNode {
   if (props.statusKind === "pending") {
-    return null;
+    return props.statusLabel ? <span fg={props.statusColor}>{` ${props.statusLabel}`}</span> : null;
   }
 
   const statusGlyph = props.statusKind === "success" ? glyphs.checkMark : glyphs.close;

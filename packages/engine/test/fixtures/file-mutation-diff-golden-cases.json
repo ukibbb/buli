@@ -1,0 +1,30 @@
+[
+  {
+    "caseName": "modifies one line",
+    "request": {
+      "displayPath": "notes.txt",
+      "beforeText": "alpha\nbeta\ngamma\n",
+      "afterText": "alpha\ndelta\ngamma\n"
+    },
+    "expectedResult": {
+      "unifiedDiffText": "diff --git a/notes.txt b/notes.txt\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1,3 +1,3 @@\n alpha\n+delta\n-beta\n gamma\n",
+      "addedLineCount": 1,
+      "removedLineCount": 1,
+      "hasChanges": true
+    }
+  },
+  {
+    "caseName": "creates a new file",
+    "request": {
+      "displayPath": "src/generated.ts",
+      "beforeText": null,
+      "afterText": "export const generated = true;\n"
+    },
+    "expectedResult": {
+      "unifiedDiffText": "diff --git a/src/generated.ts b/src/generated.ts\n--- /dev/null\n+++ b/src/generated.ts\n@@ -0,0 +1 @@\n+export const generated = true;\n",
+      "addedLineCount": 1,
+      "removedLineCount": 0,
+      "hasChanges": true
+    }
+  }
+]

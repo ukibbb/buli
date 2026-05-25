@@ -115,21 +115,34 @@ function groupGrepMatchesByFile(matchHits: readonly ToolCallGrepMatch[]): GrepMa
       if (existingGrepMatchFileSection === undefined) {
         continue;
       }
-      existingGrepMatchFileSection.matchLines.push({
-        lineNumber: matchHit.matchLineNumber,
-        lineText: matchHit.matchSnippet,
-      });
+      appendGrepMatchLines(existingGrepMatchFileSection, matchHit);
       continue;
     }
 
-    sectionIndexByMatchFilePath.set(matchHit.matchFilePath, grepMatchFileSections.length);
-    grepMatchFileSections.push({
+    const grepMatchFileSection: GrepMatchFileSection = {
       matchFilePath: matchHit.matchFilePath,
-      matchLines: [{ lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet }],
-    });
+      matchLines: [],
+    };
+    appendGrepMatchLines(grepMatchFileSection, matchHit);
+    sectionIndexByMatchFilePath.set(matchHit.matchFilePath, grepMatchFileSections.length);
+    grepMatchFileSections.push(grepMatchFileSection);
   }
 
   return grepMatchFileSections;
+}
+
+function appendGrepMatchLines(grepMatchFileSection: GrepMatchFileSection, matchHit: ToolCallGrepMatch): void {
+  for (const matchLine of [
+    ...(matchHit.contextBeforeLines ?? []),
+    { lineNumber: matchHit.matchLineNumber, lineText: matchHit.matchSnippet },
+    ...(matchHit.contextAfterLines ?? []),
+  ]) {
+    if (grepMatchFileSection.matchLines.some((existingLine) => existingLine.lineNumber === matchLine.lineNumber)) {
+      continue;
+    }
+
+    grepMatchFileSection.matchLines.push(matchLine);
+  }
 }
 
 function GrepMatchFileHeading(props: { matchFilePath: string }): ReactNode {

@@ -187,7 +187,7 @@ describe("ReadToolCallCard", () => {
     expect(frame).not.toContain("truncated");
   });
 
-  test("streaming_renders_bracketed_path_and_only_the_snake_status", async () => {
+  test("streaming_renders_bracketed_path_and_pending_status", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ReadToolCallCard
         renderState="streaming"
@@ -203,7 +203,7 @@ describe("ReadToolCallCard", () => {
     expect(frame).toContain("[+]");
     expect(frame).toContain("[packages/tui/src/App.tsx]");
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("reading");
+    expect(frame).toContain("reading");
   });
 
   test("streaming_wraps_long_path_when_the_terminal_is_narrow", async () => {
@@ -223,7 +223,7 @@ describe("ReadToolCallCard", () => {
     expect(frame.split("\n").filter((line) => line.trim().length > 0).length).toBeGreaterThan(1);
     expect(frame).not.toContain("...");
     expect(frame).toContain("◆");
-    expect(frame).not.toContain("reading");
+    expect(frame).toContain("reading");
   });
 
   test("failed_shows_error_state", async () => {
