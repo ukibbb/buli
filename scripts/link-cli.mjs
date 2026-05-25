@@ -7,18 +7,54 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..");
 const cliRunnerPath = resolve(repoRoot, "buli-test.sh");
 
+function resolveBunInstallBinFromEnvironment(environment) {
+  const bunInstallPath = environment.BUN_INSTALL;
+
+  return bunInstallPath ? resolve(bunInstallPath, "bin") : undefined;
+}
+
+function resolveBunExecutableBin(input) {
+  const defaultBunExecutablePath = process.versions.bun ? process.execPath : undefined;
+  const bunExecutablePath = Object.hasOwn(input, "bunExecutablePath")
+    ? input.bunExecutablePath
+    : defaultBunExecutablePath;
+
+  return bunExecutablePath ? dirname(resolve(bunExecutablePath)) : undefined;
+}
+
+function resolveDefaultBunInstallBinFromHome(environment) {
+  return environment.HOME ? resolve(environment.HOME, ".bun", "bin") : undefined;
+}
+
 export function getBunGlobalBin(input = {}) {
   const spawnSyncImpl = input.spawnSync ?? spawnSync;
+  const environment = input.environment ?? process.env;
   const result = spawnSyncImpl("bun", ["pm", "bin", "-g"], {
     cwd: repoRoot,
     encoding: "utf8",
   });
 
-  if (result.status !== 0) {
-    throw new Error(result.stderr.trim() || "failed to resolve Bun global bin directory");
+  const bunPmGlobalBin = result.stdout?.trim();
+  if (result.status === 0 && bunPmGlobalBin) {
+    return bunPmGlobalBin;
   }
 
-  return result.stdout.trim();
+  const bunInstallBin = resolveBunInstallBinFromEnvironment(environment);
+  if (bunInstallBin) {
+    return bunInstallBin;
+  }
+
+  const bunExecutableBin = resolveBunExecutableBin(input);
+  if (bunExecutableBin) {
+    return bunExecutableBin;
+  }
+
+  const defaultBunInstallBin = resolveDefaultBunInstallBinFromHome(environment);
+  if (defaultBunInstallBin) {
+    return defaultBunInstallBin;
+  }
+
+  throw new Error(result.stderr?.trim() || result.error?.message || "failed to resolve Bun global bin directory");
 }
 
 export async function replaceOwnedBuliSymlink(input) {
@@ -50,7 +86,11 @@ export async function replaceOwnedBuliSymlink(input) {
 }
 
 export async function linkBuliCli(input = {}) {
-  const bunGlobalBin = input.bunGlobalBin ?? getBunGlobalBin({ spawnSync: input.spawnSync });
+  const bunGlobalBin = input.bunGlobalBin ?? getBunGlobalBin({
+    bunExecutablePath: input.bunExecutablePath,
+    environment: input.environment,
+    spawnSync: input.spawnSync,
+  });
   const linkPath = resolve(bunGlobalBin, "buli");
   const sourceRunnerPath = resolve(input.cliRunnerPath ?? cliRunnerPath);
 

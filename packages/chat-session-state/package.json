@@ -13,7 +13,8 @@
     "@buli/prompt-context-core": "workspace:*"
   },
   "devDependencies": {
-    "@buli/chat-session-fixtures": "workspace:*"
+    "@buli/chat-session-fixtures": "workspace:*",
+    "@buli/engine": "workspace:*"
   },
   "scripts": {
     "test": "bun test",

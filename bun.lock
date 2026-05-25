@@ -57,6 +57,7 @@
       },
       "devDependencies": {
         "@buli/chat-session-fixtures": "workspace:*",
+        "@buli/engine": "workspace:*",
       },
     },
     "packages/contracts": {
