@@ -81,6 +81,14 @@
         "zod": "^4.4.3",
       },
     },
+    "packages/performance": {
+      "name": "@buli/performance",
+      "dependencies": {
+        "@buli/chat-session-state": "workspace:*",
+        "@buli/contracts": "workspace:*",
+        "@buli/engine": "workspace:*",
+      },
+    },
     "packages/prompt-context-core": {
       "name": "@buli/prompt-context-core",
     },
@@ -121,6 +129,8 @@
     "@buli/engine": ["@buli/engine@workspace:packages/engine"],
 
     "@buli/openai": ["@buli/openai@workspace:packages/openai"],
+
+    "@buli/performance": ["@buli/performance@workspace:packages/performance"],
 
     "@buli/prompt-context-core": ["@buli/prompt-context-core@workspace:packages/prompt-context-core"],
 

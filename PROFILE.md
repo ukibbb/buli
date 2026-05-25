@@ -1,5 +1,7 @@
 # Buli Profiling Plan
 
+See `PROFILING.md` for the current command-oriented profiling workflow and deterministic rewrite benchmark setup. This file keeps the broader investigation plan and profiling checklist.
+
 ## Goal
 
 Build an evidence-based answer to one question:

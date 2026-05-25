@@ -283,7 +283,7 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Continue after auto compaction");
   });
 
-  test("renders user, reasoning, assistant text, tool call, and turn summary parts", async () => {
+  test("renders user, reasoning, assistant text, and tool call parts without turn summaries", async () => {
     const conversationMessages: ConversationMessage[] = [
       {
         id: "user-1",
@@ -362,12 +362,12 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Done");
     expect(frame).toContain("Read");
     expect(frame).toContain("src/index.ts");
-    expect(frame).toContain("gpt-5.4");
-    expect(frame).toContain("implementation");
-    expect(frame).toContain("1.5s");
-    expect(frame).toContain("100 tokens");
-    expect(frame).toContain("10 reasoning");
-    expect(frame).toContain("5 cached");
+    expect(frame).not.toContain("gpt-5.4");
+    expect(frame).not.toContain("implementation");
+    expect(frame).not.toContain("1.5s");
+    expect(frame).not.toContain("100 tokens");
+    expect(frame).not.toContain("10 reasoning");
+    expect(frame).not.toContain("5 cached");
   });
 
   test("merges_matching_workspace_patch_into_edit_tool_call_card", async () => {

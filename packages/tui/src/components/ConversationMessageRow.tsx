@@ -259,7 +259,7 @@ function shouldRenderConversationMessagePart(input: {
   }
 
   if (input.conversationMessagePart.partKind === "assistant_turn_summary") {
-    return true;
+    return false;
   }
 
   return true;

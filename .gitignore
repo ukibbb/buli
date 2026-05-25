@@ -5,6 +5,9 @@ dist/
 *.tsbuildinfo
 .env
 buli-console.log
+profile-runs/
+*.cpuprofile
+*.heapsnapshot
 
 docs/*
 !docs/

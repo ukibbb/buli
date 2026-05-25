@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { ToolCallReadManyDetail, ToolCallReadManyResult, ToolCallReadPreviewLine } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import { FencedCodeBlock } from "../primitives/FencedCodeBlock.tsx";
+import { ReadFilePreviewBlock } from "../primitives/ReadFilePreviewBlock.tsx";
 import { SourceLocationLabel, type SourceLineRange } from "../primitives/SourceLocationLabel.tsx";
 import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
@@ -106,18 +106,14 @@ function ReadManyResultBody(props: { readResult: ToolCallReadManyResult }): Reac
         filePath={readDetail.readFilePath}
         sourceLineRange={resolveReadPreviewSourceLineRange(readDetail.previewLines)}
       />
-      <FencedCodeBlock
-        variant="embedded"
-        filePath={readDetail.readFilePath}
-        showLineNumbers={false}
-        wrapMode="char"
-        codeLines={readDetail.previewLines.map((previewLine) => ({
-          lineNumber: previewLine.lineNumber,
-          lineText: previewLine.lineText,
-          ...(previewLine.syntaxHighlightSpans
-            ? { syntaxHighlightSpans: previewLine.syntaxHighlightSpans }
-            : {}),
-        }))}
+      <ReadFilePreviewBlock
+        previewLines={readDetail.previewLines}
+        readFilePath={readDetail.readFilePath}
+        {...(readDetail.readLineCount !== undefined ? { readLineCount: readDetail.readLineCount } : {})}
+        {...(readDetail.returnedLineCount !== undefined ? { returnedLineCount: readDetail.returnedLineCount } : {})}
+        {...(readDetail.wasLineCountTruncated !== undefined
+          ? { wasLineCountTruncated: readDetail.wasLineCountTruncated }
+          : {})}
       />
     </box>
   );

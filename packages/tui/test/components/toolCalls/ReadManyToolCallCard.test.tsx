@@ -3,6 +3,12 @@ import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { ReadManyToolCallCard } from "../../../src/components/toolCalls/ReadManyToolCallCard.tsx";
 
+async function renderSettledMarkdownFrame(renderOnce: () => Promise<void>): Promise<void> {
+  await renderOnce();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await renderOnce();
+}
+
 describe("ReadManyToolCallCard", () => {
   test("completed_starts_collapsed_with_batch_summary", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
@@ -81,12 +87,13 @@ describe("ReadManyToolCallCard", () => {
     await act(async () => {
       await mockMouse.click(3, 0);
     });
-    await renderOnce();
+    await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
     expect(frame).toContain("[-]");
     expect(frame).toContain("README.md:1");
-    expect(frame).toContain("# Project");
+    expect(frame).toContain("▌ Project");
+    expect(frame).not.toContain("# Project");
     expect(frame).toContain("missing.txt");
     expect(frame).toContain("File not found: missing.txt");
     expect(frame).not.toContain("1. README.md - completed");

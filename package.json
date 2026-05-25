@@ -17,6 +17,8 @@
     "dev:cli": "bun --filter @buli/cli dev",
     "link:cli": "bun scripts/link-cli.mjs",
     "login": "bun --filter @buli/cli login",
+    "profile": "bun --filter @buli/performance profile",
+    "profile:compare": "bun --filter @buli/performance compare",
     "start:cli": "bun --filter @buli/cli start"
   },
   "devDependencies": {
