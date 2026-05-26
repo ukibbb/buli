@@ -11,6 +11,7 @@ import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 
 export class RuntimeConversationTurnSessionRecorder {
+  readonly conversationTurnId: string | undefined;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly userPromptText: string;
   readonly assistantOperatingMode: AssistantOperatingMode;
@@ -21,6 +22,7 @@ export class RuntimeConversationTurnSessionRecorder {
   private hasRecordedTerminalAssistantMessageSessionEntry = false;
 
   constructor(input: {
+    conversationTurnId?: string | undefined;
     conversationHistory: InMemoryConversationHistory;
     userPromptText: string;
     assistantOperatingMode: AssistantOperatingMode;
@@ -28,6 +30,7 @@ export class RuntimeConversationTurnSessionRecorder {
     userPromptImageAttachments?: readonly UserPromptImageAttachment[];
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
+    this.conversationTurnId = input.conversationTurnId;
     this.conversationHistory = input.conversationHistory;
     this.userPromptText = input.userPromptText;
     this.assistantOperatingMode = input.assistantOperatingMode;
@@ -65,6 +68,7 @@ export class RuntimeConversationTurnSessionRecorder {
     });
     this.hasRecordedAcceptedUserPromptSessionEntry = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "user_prompt",
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
@@ -80,6 +84,7 @@ export class RuntimeConversationTurnSessionRecorder {
     this.conversationHistory.appendConversationSessionEntry(assistantMessageConversationSessionEntry);
     this.hasRecordedTerminalAssistantMessageSessionEntry = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "assistant_message",
       assistantMessageStatus: assistantMessageConversationSessionEntry.assistantMessageStatus,
       assistantMessageTextLength: assistantMessageConversationSessionEntry.assistantMessageText.length,
@@ -94,6 +99,7 @@ export class RuntimeConversationTurnSessionRecorder {
     this.conversationHistory.appendConversationSessionEntry(assistantSegmentConversationSessionEntry);
 
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "assistant_text_segment",
       assistantTextSegmentTextLength: assistantSegmentConversationSessionEntry.assistantTextSegmentText.length,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),

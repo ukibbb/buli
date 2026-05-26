@@ -18,6 +18,7 @@ import { deriveOpenAiModelListEndpoint, parseAvailableAssistantModelsFromOpenAiR
 import { OpenAiProviderConversationTurn } from "./turnSession.ts";
 
 export type OpenAiConversationTurnRequest = {
+  conversationTurnId?: string;
   systemPromptText: string;
   conversationSessionEntries: readonly ConversationSessionEntry[];
   selectedModelId: string;
@@ -150,6 +151,7 @@ export class OpenAiProvider {
 
   startConversationTurn(input: OpenAiConversationTurnRequest): OpenAiProviderConversationTurn {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.created", {
+      conversationTurnId: input.conversationTurnId ?? null,
       selectedModelId: input.selectedModelId,
       selectedReasoningEffort: input.selectedReasoningEffort ?? null,
       conversationSessionEntryCount: input.conversationSessionEntries.length,
@@ -178,6 +180,7 @@ export class OpenAiProvider {
         return headers;
       },
       selectedModelId: input.selectedModelId,
+      ...(input.conversationTurnId ? { conversationTurnId: input.conversationTurnId } : {}),
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
       ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),

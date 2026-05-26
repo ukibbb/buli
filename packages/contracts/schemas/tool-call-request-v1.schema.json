@@ -300,6 +300,26 @@
         "subagentPrompt"
       ],
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "const": "skill"
+        },
+        "skillName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        }
+      },
+      "required": [
+        "toolName",
+        "skillName"
+      ],
+      "additionalProperties": false
     }
   ],
   "$defs": {

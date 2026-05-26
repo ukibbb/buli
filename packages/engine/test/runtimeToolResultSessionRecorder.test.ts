@@ -32,6 +32,7 @@ test("RuntimeToolResultSessionRecorder records a completed tool result with diag
     initialConversationSessionEntries: acceptedToolCallConversationSessionEntries,
   });
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
+    conversationTurnId: "conversation-turn-1",
     conversationHistory,
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
@@ -57,8 +58,10 @@ test("RuntimeToolResultSessionRecorder records a completed tool result with diag
       subsystem: "engine",
       eventName: "conversation_history.entry_appended",
       fields: {
+        conversationTurnId: "conversation-turn-1",
         entryKind: "completed_tool_result",
         toolCallId: "call_bash_1",
+        toolName: "bash",
         toolResultTextLength: toolResultText.length,
         conversationSessionEntryCount: 3,
       },
@@ -72,6 +75,7 @@ test("RuntimeToolResultSessionRecorder records a failed tool result with diagnos
     initialConversationSessionEntries: acceptedToolCallConversationSessionEntries,
   });
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
+    conversationTurnId: "conversation-turn-1",
     conversationHistory,
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
@@ -100,8 +104,10 @@ test("RuntimeToolResultSessionRecorder records a failed tool result with diagnos
       subsystem: "engine",
       eventName: "conversation_history.entry_appended",
       fields: {
+        conversationTurnId: "conversation-turn-1",
         entryKind: "failed_tool_result",
         toolCallId: "call_bash_1",
+        toolName: "bash",
         toolResultTextLength: toolResultText.length,
         failureExplanation,
         conversationSessionEntryCount: 3,
@@ -116,6 +122,7 @@ test("RuntimeToolResultSessionRecorder records a denied tool result with diagnos
     initialConversationSessionEntries: acceptedToolCallConversationSessionEntries,
   });
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
+    conversationTurnId: "conversation-turn-1",
     conversationHistory,
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
@@ -143,8 +150,10 @@ test("RuntimeToolResultSessionRecorder records a denied tool result with diagnos
       subsystem: "engine",
       eventName: "conversation_history.entry_appended",
       fields: {
+        conversationTurnId: "conversation-turn-1",
         entryKind: "denied_tool_result",
         toolCallId: "call_bash_1",
+        toolName: "bash",
         toolResultTextLength: toolResultText.length,
         conversationSessionEntryCount: 3,
       },

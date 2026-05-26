@@ -21,6 +21,9 @@ export type ProfileDiagnosticEvent = Readonly<{
 export type ProfileProcessSampleEvent = Readonly<{
   type: "process_sample";
   atMs: number;
+  activeConversationTurnId?: string | null | undefined;
+  activeConversationTurnCount?: number | undefined;
+  sampleDurationMs?: number | undefined;
   rssBytes: number;
   heapTotalBytes: number;
   heapUsedBytes: number;
@@ -28,13 +31,33 @@ export type ProfileProcessSampleEvent = Readonly<{
   arrayBuffersBytes: number;
   cpuUserMicros: number;
   cpuSystemMicros: number;
+  cpuUserDeltaMicros?: number | undefined;
+  cpuSystemDeltaMicros?: number | undefined;
   eventLoopUtilization: number;
   eventLoopDelayMeanMs: number;
   eventLoopDelayMaxMs: number;
   eventLoopDelayP95Ms: number;
 }>;
 
-export type BuliProfileJsonlEvent = ProfileLifecycleEvent | ProfileDiagnosticEvent | ProfileProcessSampleEvent;
+export type ProfileLoggerSummaryEvent = Readonly<{
+  type: "profile_logger_summary";
+  atMs: number;
+  profileFilePath: string;
+  sampleIntervalMs: number;
+  recordedEventCount: number;
+  writtenEventCount: number;
+  failedWriteEventCount: number;
+  flushCount: number;
+  failedFlushCount: number;
+  bytesWritten: number;
+  bufferedEventCount: number;
+  maxBufferedEventCount: number;
+  totalFlushDurationMs: number;
+  maxFlushDurationMs: number;
+  hasActiveFlush: boolean;
+}>;
+
+export type BuliProfileJsonlEvent = ProfileLifecycleEvent | ProfileDiagnosticEvent | ProfileProcessSampleEvent | ProfileLoggerSummaryEvent;
 
 export async function readBuliProfileJsonl(profileJsonlFilePath: string): Promise<readonly BuliProfileJsonlEvent[]> {
   return parseBuliProfileJsonl(await readFile(profileJsonlFilePath, "utf8"));
@@ -82,6 +105,20 @@ function isBuliProfileJsonlEvent(value: unknown): value is BuliProfileJsonlEvent
         "eventLoopDelayMaxMs",
         "eventLoopDelayP95Ms",
       ].every((fieldName) => typeof value[fieldName] === "number");
+    case "profile_logger_summary":
+      return typeof value["profileFilePath"] === "string" &&
+        typeof value["sampleIntervalMs"] === "number" &&
+        typeof value["recordedEventCount"] === "number" &&
+        typeof value["writtenEventCount"] === "number" &&
+        typeof value["failedWriteEventCount"] === "number" &&
+        typeof value["flushCount"] === "number" &&
+        typeof value["failedFlushCount"] === "number" &&
+        typeof value["bytesWritten"] === "number" &&
+        typeof value["bufferedEventCount"] === "number" &&
+        typeof value["maxBufferedEventCount"] === "number" &&
+        typeof value["totalFlushDurationMs"] === "number" &&
+        typeof value["maxFlushDurationMs"] === "number" &&
+        typeof value["hasActiveFlush"] === "boolean";
     default:
       return false;
   }

@@ -72,3 +72,24 @@ test("applyChatSlashCommandToChatSessionState returns external effects for sessi
     applyChatSlashCommandToChatSessionState(initialChatSessionState, "export-session").chatSlashCommandApplicationEffect,
   ).toEqual({ effectType: "export_current_conversation_session" } satisfies ChatSlashCommandApplicationEffect);
 });
+
+test("applyChatSlashCommandToChatSessionState submits selected skills as visible slash prompts", () => {
+  const application = applyChatSlashCommandToChatSessionState(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "skill:code-review",
+  );
+  const userMessage = Object.values(application.nextChatSessionState.conversationMessagesById).find((conversationMessage) =>
+    conversationMessage.role === "user"
+  );
+  const userTextPart = userMessage
+    ? application.nextChatSessionState.conversationMessagePartsById[userMessage.partIds[0] ?? ""]
+    : undefined;
+
+  expect(application.nextChatSessionState.conversationTurnStatus).toBe("streaming_assistant_response");
+  expect(userTextPart).toMatchObject({ partKind: "user_text", text: "/code-review" });
+  expect(application.chatSlashCommandApplicationEffect).toEqual({
+    effectType: "stream_assistant_response_for_selected_skill",
+    skillName: "code-review",
+    submittedPromptText: "/code-review",
+  } satisfies ChatSlashCommandApplicationEffect);
+});

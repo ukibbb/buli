@@ -5,9 +5,11 @@ import {
   applyChatSessionKeyboardInputToChatSessionState,
   appendPromptImageAttachmentToDraft,
   buildChatSlashCommands,
+  canChatSessionShowSlashCommandSelectionForPromptDraft,
   createInitialChatSessionState,
   insertTextIntoPromptDraftAtCursor,
   refreshSlashCommandSelectionForPromptDraft,
+  resolveChatSessionInteractionScope,
   showAvailableConversationSessionsForSelection,
   showPromptContextCandidatesForSelection,
   type ChatSessionState,
@@ -50,6 +52,18 @@ function createTextKeyboardInput(textInput: string): ChatSessionKeyboardInput {
     isMetaPressed: false,
   };
 }
+
+test("resolveChatSessionInteractionScope gives command help priority over other selection state", () => {
+  const chatSessionState = {
+    ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    isCommandHelpModalVisible: true,
+    modelAndReasoningSelectionState: { step: "loading_available_models" as const },
+    conversationSessionSelectionState: { step: "loading_conversation_sessions" as const },
+  };
+
+  expect(resolveChatSessionInteractionScope(chatSessionState)).toBe("command_help_modal");
+  expect(canChatSessionShowSlashCommandSelectionForPromptDraft(chatSessionState)).toBe(false);
+});
 
 test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating_mode_with_tab", () => {
   const interaction = applyChatSessionKeyboardInputToChatSessionState({
@@ -377,6 +391,30 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_enqueue_effect_whi
     effectType: "enqueue_submitted_prompt",
     submittedPromptText: "Run this next [Image 1]",
     submittedPromptImageAttachments: [promptImageAttachment],
+    submittedAssistantOperatingMode: "understand",
+  });
+  expect(interaction.shouldConsumeKeyboardInput).toBe(true);
+});
+
+test("applyChatSessionKeyboardInputToChatSessionState_returns_enqueue_effect_while_waiting_when_queueing_is_requested", () => {
+  const chatSessionState = insertTextIntoPromptDraftAtCursor(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "Run this after compaction",
+  );
+
+  const interaction = applyChatSessionKeyboardInputToChatSessionState({
+    chatSessionState,
+    chatSessionKeyboardInput: enterKeyboardInput,
+    isPromptSubmissionInFlight: true,
+    shouldQueueSubmittedPrompt: true,
+  });
+
+  expect(interaction.nextChatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
+  expect(interaction.nextChatSessionState.promptDraft).toBe("");
+  expect(interaction.chatSessionKeyboardEffect).toEqual({
+    effectType: "enqueue_submitted_prompt",
+    submittedPromptText: "Run this after compaction",
+    submittedPromptImageAttachments: [],
     submittedAssistantOperatingMode: "understand",
   });
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);

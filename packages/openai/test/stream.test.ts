@@ -782,6 +782,14 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
         subagentPrompt: "Inspect engine runtime flow.",
       },
     },
+    {
+      toolName: "skill",
+      argumentsText: '{"skillName":"code-review"}',
+      expectedToolCallRequest: {
+        toolName: "skill",
+        skillName: "code-review",
+      },
+    },
   ];
 
   for (const toolCallCase of toolCallCases) {
@@ -847,6 +855,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const patchManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "patch_many");
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
   const taskToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "task");
+  const skillToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "skill");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Use this only for exact paths already evidenced");
@@ -884,6 +893,8 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(taskToolDefinition?.description).toContain("focused scope, exact known paths or patterns");
   expect(taskToolDefinition?.description).toContain("expected concise report shape");
   expect(taskToolDefinition?.description).toContain("Currently available subagent: explore");
+  expect(skillToolDefinition?.description).toContain("lazy-load the full markdown instructions");
+  expect(skillToolDefinition?.parameters.properties["skillName"]?.pattern).toBe("^[a-z0-9]+(?:-[a-z0-9]+)*$");
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
   expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);

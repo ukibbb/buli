@@ -12,6 +12,7 @@ test("RuntimeConversationTurnSessionRecorder records an accepted user prompt onc
   };
   const conversationHistory = new InMemoryConversationHistory();
   const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
+    conversationTurnId: "conversation-turn-1",
     conversationHistory,
     userPromptText: "Use @notes.txt in the answer",
     assistantOperatingMode: "understand",
@@ -37,6 +38,7 @@ test("RuntimeConversationTurnSessionRecorder records an accepted user prompt onc
       subsystem: "engine",
       eventName: "conversation_history.entry_appended",
       fields: {
+        conversationTurnId: "conversation-turn-1",
         entryKind: "user_prompt",
         conversationSessionEntryCount: 1,
       },
@@ -48,6 +50,7 @@ test("RuntimeConversationTurnSessionRecorder records a terminal assistant messag
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const conversationHistory = new InMemoryConversationHistory();
   const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
+    conversationTurnId: "conversation-turn-1",
     conversationHistory,
     userPromptText: "Summarize the change",
     assistantOperatingMode: "understand",
@@ -99,6 +102,7 @@ test("RuntimeConversationTurnSessionRecorder records a terminal assistant messag
       subsystem: "engine",
       eventName: "conversation_history.entry_appended",
       fields: {
+        conversationTurnId: "conversation-turn-1",
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
         assistantMessageTextLength: 17,

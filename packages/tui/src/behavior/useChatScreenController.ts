@@ -61,6 +61,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     selectedModelId: chatScreenProps.selectedModelId,
     selectedModelDefaultReasoningEffort: chatScreenProps.selectedModelDefaultReasoningEffort,
     selectedReasoningEffort: chatScreenProps.selectedReasoningEffort,
+    availableSkills: chatScreenProps.availableSkills,
     initialConversationSessionId: chatScreenProps.initialConversationSessionId,
     initialConversationSessionEntries: chatScreenProps.initialConversationSessionEntries,
     loadInitialConversationSessionEntries: chatScreenProps.loadInitialConversationSessionEntries,
@@ -112,7 +113,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   } = useChatScreenKeyboardInputActions({
     readClipboardImageAttachment: chatScreenProps.readClipboardImageAttachment,
     readLatestChatSessionState: chatAppController.readLatestChatSessionState,
-    readIsConversationCompactionInFlight: chatAppController.readIsConversationCompactionInFlight,
+    readConversationSessionCompactionStatus: chatAppController.readConversationSessionCompactionStatus,
     applyChatAppKeyboardInput: chatAppController.applyChatAppKeyboardInput,
     applyPromptDraftEditToChatApp: chatAppController.applyPromptDraftEditToChatApp,
     removePromptImageAttachmentPlaceholderBeforeCursorFromChatApp:
@@ -142,6 +143,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     selectionState: chatAppController.selectionState,
     conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
     reasoningSummaryDisplayMode: chatAppController.transcriptState.reasoningSummaryDisplayMode,
+    availableSkills: chatScreenProps.availableSkills,
     terminalRowCount,
     terminalColumnCount,
     terminalSizeTierForChatScreen,
@@ -287,6 +289,10 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     olderConversationMessageRevealCount: conversationTranscriptWindow.olderConversationMessageRevealCount,
     ...(pendingToolApprovalDecision !== undefined ? { pendingToolApprovalDecision } : {}),
     conversationMessageScrollBoxRef,
+    conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
+    queuedPromptCount: chatAppController.promptComposerState.queuedPromptCount,
+    totalContextTokensUsed,
+    contextWindowTokenCapacity,
     onRevealOlderConversationMessages: revealOlderConversationMessages,
     onCommandHelpCloseRequested: chatAppController.hideCommandHelpModalInChatApp,
   };
@@ -321,7 +327,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   });
   const currentPromptComposerProps: PromptComposerChromeProps = {
     conversationTurnStatus: chatAppController.promptComposerState.conversationTurnStatus,
-    isConversationCompactionRunning: chatAppController.interactionStatusState.conversationSessionCompactionStatus.step === "compacting",
+    conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
     promptDraft: chatAppController.promptComposerState.promptDraft,
     promptDraftCursorOffset: chatAppController.promptComposerState.promptDraftCursorOffset,
     pendingPromptImageAttachments: chatAppController.promptComposerState.pendingPromptImageAttachments,

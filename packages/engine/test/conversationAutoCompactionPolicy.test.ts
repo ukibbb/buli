@@ -63,7 +63,7 @@ describe("decideConversationAutoCompaction", () => {
     });
   });
 
-  test("uses usable input capacity with reserved headroom for GPT 5.5-style split limits", () => {
+  test("uses Buli's GPT 5.5 performance budget with reserved headroom", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5.5",
@@ -74,15 +74,15 @@ describe("decideConversationAutoCompaction", () => {
       shouldCompact: true,
       reason: "context_usage_threshold_reached",
       contextTokensUsed: 252_000,
-      contextWindowTokenCapacity: 400_000,
-      contextUsageRatio: 0.63,
+      contextWindowTokenCapacity: 1_050_000,
+      contextUsageRatio: 0.24,
       contextCompactionTriggerTokenCount: 252_000,
       thresholdRatio: 0.8,
       triggerKind: "threshold_ratio",
     });
   });
 
-  test("skips GPT 5.5 compaction below usable input capacity with reserved headroom", () => {
+  test("skips GPT 5.5 compaction below the performance budget with reserved headroom", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,
       selectedModelId: "gpt-5.5",
@@ -108,8 +108,8 @@ describe("decideConversationAutoCompaction", () => {
       shouldCompact: true,
       reason: "context_usage_threshold_reached",
       contextTokensUsed: 300_000,
-      contextWindowTokenCapacity: 400_000,
-      contextUsageRatio: 0.75,
+      contextWindowTokenCapacity: 1_050_000,
+      contextUsageRatio: 300_000 / 1_050_000,
       contextCompactionTriggerTokenCount: 252_000,
       thresholdRatio: 0.75,
       triggerKind: "threshold_ratio",

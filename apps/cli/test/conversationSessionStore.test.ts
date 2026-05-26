@@ -3,7 +3,12 @@ import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import type { ConversationSessionEntry, ConversationSessionModelSelection, ModelContextItem } from "@buli/contracts";
+import type {
+  BuliDiagnosticLogEvent,
+  ConversationSessionEntry,
+  ConversationSessionModelSelection,
+  ModelContextItem,
+} from "@buli/contracts";
 import { InMemoryConversationHistory } from "@buli/engine";
 import { summarizeConversationSessionTitle } from "../src/conversationSession/conversationSessionTitle.ts";
 import { SqliteConversationSessionStore } from "../src/conversationSession/index.ts";
@@ -63,6 +68,42 @@ test("SqliteConversationSessionStore saves and loads conversation session entrie
         conversationSessionEntryCount: 2,
       },
     ]);
+  } finally {
+    conversationSessionStore.close();
+  }
+});
+
+test("SqliteConversationSessionStore records SQLite operation summaries", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-diagnostics-"));
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const conversationSessionStore = new SqliteConversationSessionStore({
+    databasePath: join(directoryPath, "session-store.sqlite"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createQueuedNumberFactory([1000, 1001]),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  try {
+    conversationSessionStore.appendConversationSessionEntry({
+      entryKind: "user_prompt",
+      promptText: "Measure storage",
+      modelFacingPromptText: "Measure storage",
+    });
+
+    expect(diagnosticEvents).toContainEqual(expect.objectContaining({
+      subsystem: "cli",
+      eventName: "conversation_session_storage.operation_summary",
+      fields: expect.objectContaining({
+        operationName: "append_entry",
+        transactionKind: "write",
+        usesImmediateTransaction: true,
+        operationStatus: "completed",
+        conversationSessionEntryKind: "user_prompt",
+        serializedConversationSessionEntryTextLength: expect.any(Number),
+        durationMs: expect.any(Number),
+      }),
+    }));
   } finally {
     conversationSessionStore.close();
   }

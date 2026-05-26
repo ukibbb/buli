@@ -17,12 +17,14 @@ export function logAssistantResponseEventEmitted(
 
 export async function submitProviderToolResultWithDiagnostics(input: {
   providerConversationTurn: ProviderConversationTurn;
+  conversationTurnId?: string | undefined;
   toolCallId: string;
   toolResultText: string;
   toolResultKind: SubmittedToolResultKind;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<void> {
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.tool_result_submitted", {
+    conversationTurnId: input.conversationTurnId ?? null,
     toolCallId: input.toolCallId,
     toolResultKind: input.toolResultKind,
     toolResultTextLength: input.toolResultText.length,

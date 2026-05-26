@@ -52,6 +52,11 @@ export async function relayAssistantResponseRunnerEvents(input: {
   onAssistantResponseEvents: (assistantResponseEvents: readonly AssistantResponseEvent[]) => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<AssistantResponseRelayResult> {
+  const conversationTurnId = input.conversationTurnRequest.conversationTurnId ?? randomUUID();
+  const conversationTurnRequest: ConversationTurnRequest = {
+    ...input.conversationTurnRequest,
+    conversationTurnId,
+  };
   let queuedAssistantResponseEvents: AssistantResponseEvent[] = [];
   let scheduledFlushTimeout: ReturnType<typeof setTimeout> | undefined;
   let lastFlushAtMs = 0;
@@ -80,6 +85,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
     try {
       input.onAssistantResponseEvents(assistantResponseEventsToFlush);
       logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "assistant_response_event_batch.flushed", {
+        conversationTurnId,
         assistantResponseEventCount: assistantResponseEventsToFlush.length,
         durationMs: Date.now() - assistantResponseEventDeliveryStartedAtMs,
       });
@@ -152,7 +158,14 @@ export async function relayAssistantResponseRunnerEvents(input: {
   }
 
   try {
-    activeConversationTurn = input.assistantConversationRunner.startConversationTurn(input.conversationTurnRequest);
+    logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "conversation_turn.relay_started", {
+      conversationTurnId,
+      selectedModelId: conversationTurnRequest.selectedModelId,
+      selectedReasoningEffort: conversationTurnRequest.selectedReasoningEffort ?? null,
+      userPromptLength: conversationTurnRequest.userPromptText.length,
+      userPromptImageAttachmentCount: conversationTurnRequest.userPromptImageAttachments?.length ?? 0,
+    });
+    activeConversationTurn = input.assistantConversationRunner.startConversationTurn(conversationTurnRequest);
     input.onConversationTurnStarted(activeConversationTurn);
 
     for await (const assistantResponseEvent of activeConversationTurn.streamAssistantResponseEvents()) {

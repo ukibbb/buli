@@ -26,6 +26,9 @@ type ProfileDiagnosticEvent = Readonly<{
 type ProfileProcessSampleEvent = Readonly<{
   type: "process_sample";
   atMs: number;
+  activeConversationTurnId: string | null;
+  activeConversationTurnCount: number;
+  sampleDurationMs: number;
   rssBytes: number;
   heapTotalBytes: number;
   heapUsedBytes: number;
@@ -33,13 +36,33 @@ type ProfileProcessSampleEvent = Readonly<{
   arrayBuffersBytes: number;
   cpuUserMicros: number;
   cpuSystemMicros: number;
+  cpuUserDeltaMicros: number;
+  cpuSystemDeltaMicros: number;
   eventLoopUtilization: number;
   eventLoopDelayMeanMs: number;
   eventLoopDelayMaxMs: number;
   eventLoopDelayP95Ms: number;
 }>;
 
-export type BuliProfileEvent = ProfileLifecycleEvent | ProfileDiagnosticEvent | ProfileProcessSampleEvent;
+type ProfileLoggerSummaryEvent = Readonly<{
+  type: "profile_logger_summary";
+  atMs: number;
+  profileFilePath: string;
+  sampleIntervalMs: number;
+  recordedEventCount: number;
+  writtenEventCount: number;
+  failedWriteEventCount: number;
+  flushCount: number;
+  failedFlushCount: number;
+  bytesWritten: number;
+  bufferedEventCount: number;
+  maxBufferedEventCount: number;
+  totalFlushDurationMs: number;
+  maxFlushDurationMs: number;
+  hasActiveFlush: boolean;
+}>;
+
+export type BuliProfileEvent = ProfileLifecycleEvent | ProfileDiagnosticEvent | ProfileProcessSampleEvent | ProfileLoggerSummaryEvent;
 
 export type BuliProfileLoggerInstallation = Readonly<{
   diagnosticLogger: BuliDiagnosticLogger | undefined;
@@ -105,6 +128,18 @@ class BufferedBuliProfileLogger {
   private activeFlushPromise: Promise<void> | undefined;
   private hasPendingFlushAfterActiveFlush = false;
   private previousEventLoopUtilization = performance.eventLoopUtilization();
+  private previousCpuUsage = process.cpuUsage();
+  private previousProcessSampleAtMs = Date.now();
+  private readonly activeConversationTurnIds = new Set<string>();
+  private recordedEventCount = 0;
+  private writtenEventCount = 0;
+  private failedWriteEventCount = 0;
+  private flushCount = 0;
+  private failedFlushCount = 0;
+  private bytesWritten = 0;
+  private maxBufferedEventCount = 0;
+  private totalFlushDurationMs = 0;
+  private maxFlushDurationMs = 0;
   private isDisposed = false;
 
   constructor(input: { profileFilePath: string; sampleIntervalMs: number }) {
@@ -127,6 +162,7 @@ class BufferedBuliProfileLogger {
   }
 
   recordDiagnosticEvent(diagnosticLogEvent: BuliDiagnosticLogEvent): void {
+    this.trackActiveConversationTurnFromDiagnosticEvent(diagnosticLogEvent);
     this.recordProfileEvent({
       type: "diagnostic_event",
       atMs: Date.now(),
@@ -134,6 +170,26 @@ class BufferedBuliProfileLogger {
       eventName: diagnosticLogEvent.eventName,
       ...(diagnosticLogEvent.fields ? { fields: diagnosticLogEvent.fields } : {}),
     });
+  }
+
+  private trackActiveConversationTurnFromDiagnosticEvent(diagnosticLogEvent: BuliDiagnosticLogEvent): void {
+    if (diagnosticLogEvent.subsystem !== "engine") {
+      return;
+    }
+
+    const conversationTurnId = diagnosticLogEvent.fields?.["conversationTurnId"];
+    if (typeof conversationTurnId !== "string" || conversationTurnId.length === 0) {
+      return;
+    }
+
+    if (diagnosticLogEvent.eventName === "conversation_turn.stream_started") {
+      this.activeConversationTurnIds.add(conversationTurnId);
+      return;
+    }
+
+    if (diagnosticLogEvent.eventName === "conversation_turn.summary") {
+      this.activeConversationTurnIds.delete(conversationTurnId);
+    }
   }
 
   async dispose(): Promise<void> {
@@ -150,6 +206,7 @@ class BufferedBuliProfileLogger {
       this.flushTimeout = undefined;
     }
     this.recordProcessSample();
+    this.recordProfileLoggerSummary();
     this.recordProfileEvent({
       type: "profile_stopped",
       atMs: Date.now(),
@@ -166,13 +223,19 @@ class BufferedBuliProfileLogger {
   }
 
   private recordProcessSample(): void {
+    const nowMs = Date.now();
     const memoryUsage = process.memoryUsage();
     const cpuUsage = process.cpuUsage();
+    const previousCpuUsage = this.previousCpuUsage;
     const eventLoopUtilizationDelta = performance.eventLoopUtilization(this.previousEventLoopUtilization);
     this.previousEventLoopUtilization = performance.eventLoopUtilization();
+    this.previousCpuUsage = cpuUsage;
     this.recordProfileEvent({
       type: "process_sample",
-      atMs: Date.now(),
+      atMs: nowMs,
+      activeConversationTurnId: this.resolveSingleActiveConversationTurnId(),
+      activeConversationTurnCount: this.activeConversationTurnIds.size,
+      sampleDurationMs: Math.max(0, nowMs - this.previousProcessSampleAtMs),
       rssBytes: memoryUsage.rss,
       heapTotalBytes: memoryUsage.heapTotal,
       heapUsedBytes: memoryUsage.heapUsed,
@@ -180,12 +243,39 @@ class BufferedBuliProfileLogger {
       arrayBuffersBytes: memoryUsage.arrayBuffers,
       cpuUserMicros: cpuUsage.user,
       cpuSystemMicros: cpuUsage.system,
+      cpuUserDeltaMicros: Math.max(0, cpuUsage.user - previousCpuUsage.user),
+      cpuSystemDeltaMicros: Math.max(0, cpuUsage.system - previousCpuUsage.system),
       eventLoopUtilization: eventLoopUtilizationDelta.utilization,
       eventLoopDelayMeanMs: convertEventLoopDelayNanosecondsToMilliseconds(this.eventLoopDelayMonitor.mean),
       eventLoopDelayMaxMs: convertEventLoopDelayNanosecondsToMilliseconds(this.eventLoopDelayMonitor.max),
       eventLoopDelayP95Ms: convertEventLoopDelayNanosecondsToMilliseconds(this.eventLoopDelayMonitor.percentile(95)),
     });
+    this.previousProcessSampleAtMs = nowMs;
     this.eventLoopDelayMonitor.reset();
+  }
+
+  private resolveSingleActiveConversationTurnId(): string | null {
+    return this.activeConversationTurnIds.size === 1 ? [...this.activeConversationTurnIds][0] ?? null : null;
+  }
+
+  private recordProfileLoggerSummary(): void {
+    this.recordProfileEvent({
+      type: "profile_logger_summary",
+      atMs: Date.now(),
+      profileFilePath: this.profileFilePath,
+      sampleIntervalMs: this.sampleIntervalMs,
+      recordedEventCount: this.recordedEventCount,
+      writtenEventCount: this.writtenEventCount,
+      failedWriteEventCount: this.failedWriteEventCount,
+      flushCount: this.flushCount,
+      failedFlushCount: this.failedFlushCount,
+      bytesWritten: this.bytesWritten,
+      bufferedEventCount: this.profileEventBuffer.length,
+      maxBufferedEventCount: this.maxBufferedEventCount,
+      totalFlushDurationMs: this.totalFlushDurationMs,
+      maxFlushDurationMs: this.maxFlushDurationMs,
+      hasActiveFlush: this.activeFlushPromise !== undefined,
+    });
   }
 
   private recordProfileEvent(profileEvent: BuliProfileEvent): void {
@@ -193,7 +283,9 @@ class BufferedBuliProfileLogger {
       return;
     }
 
+    this.recordedEventCount += 1;
     this.profileEventBuffer.push(`${JSON.stringify(profileEvent)}\n`);
+    this.maxBufferedEventCount = Math.max(this.maxBufferedEventCount, this.profileEventBuffer.length);
     if (this.profileEventBuffer.length >= maximumBufferedProfileEventCountBeforeFlush) {
       void this.flushProfileEvents();
       return;
@@ -235,14 +327,23 @@ class BufferedBuliProfileLogger {
     }
 
     this.profileEventBuffer = [];
-    this.activeFlushPromise = appendFile(this.profileFilePath, profileEventsToFlush.join(""), {
+    const flushStartedAtMs = Date.now();
+    const profileEventsTextToFlush = profileEventsToFlush.join("");
+    this.activeFlushPromise = appendFile(this.profileFilePath, profileEventsTextToFlush, {
       encoding: "utf8",
       mode: privateProfileLogFileMode,
     }).then(() => {
-      chmodSync(this.profileFilePath, privateProfileLogFileMode);
+      this.flushCount += 1;
+      this.writtenEventCount += profileEventsToFlush.length;
+      this.bytesWritten += Buffer.byteLength(profileEventsTextToFlush, "utf8");
     }).catch(() => {
+      this.failedFlushCount += 1;
+      this.failedWriteEventCount += profileEventsToFlush.length;
       // Profiling must never change product behavior.
     }).finally(() => {
+      const flushDurationMs = Math.max(0, Date.now() - flushStartedAtMs);
+      this.totalFlushDurationMs += flushDurationMs;
+      this.maxFlushDurationMs = Math.max(this.maxFlushDurationMs, flushDurationMs);
       this.activeFlushPromise = undefined;
     });
     await this.activeFlushPromise;

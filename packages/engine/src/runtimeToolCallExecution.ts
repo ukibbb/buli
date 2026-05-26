@@ -4,6 +4,7 @@ import {
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
   isFileMutationToolCallRequest,
+  isSkillToolCallRequest,
   isTaskToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
   type AssistantOperatingMode,
@@ -28,6 +29,7 @@ import {
   type AutoConcurrentRequestedToolCall,
 } from "./runtimeRequestedToolCallExecutionGroups.ts";
 import { streamAssistantResponseEventsForBashToolCall } from "./runtimeBashToolCallExecution.ts";
+import { streamAssistantResponseEventsForSkillToolCall } from "./runtimeSkillToolCallExecution.ts";
 import { streamAssistantResponseEventsForTaskToolCall } from "./runtimeTaskToolCallExecution.ts";
 import { streamAssistantResponseEventsForFileMutationToolCall } from "./runtimeFileMutationToolCallExecution.ts";
 import {
@@ -44,6 +46,7 @@ import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnosti
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
+import type { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export type {
@@ -55,6 +58,7 @@ export type {
 type RequestedToolName = AssistantToolRequestName;
 
 export type RuntimeToolCallExecutionContext = {
+  conversationTurnId: string;
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
   conversationTurnProvider: ConversationTurnProvider;
@@ -66,6 +70,7 @@ export type RuntimeToolCallExecutionContext = {
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   projectInstructionTracker: ProjectInstructionTracker;
+  skillCatalog: WorkspaceSkillCatalog;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   promptContextBrowseRootPath: string;
   promptContextStartingDirectoryPath: string;
@@ -74,6 +79,7 @@ export type RuntimeToolCallExecutionContext = {
   abortSignal: AbortSignal;
   canSpawnSubagent: boolean;
   subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
+  taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -105,6 +111,7 @@ const requestedToolCallExecutorByName = {
   glob: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   grep: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   task: streamAssistantResponseEventsForTaskRequestedToolCall,
+  skill: streamAssistantResponseEventsForSkillRequestedToolCall,
   edit: streamAssistantResponseEventsForFileMutationRequestedToolCall,
   edit_many: streamAssistantResponseEventsForFileMutationRequestedToolCall,
   patch: streamAssistantResponseEventsForFileMutationRequestedToolCall,
@@ -121,6 +128,7 @@ export async function* streamAssistantResponseEventsForRequestedToolCalls(
   }
 
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
+    conversationTurnId: input.conversationTurnId,
     conversationHistory: input.conversationHistory,
     diagnosticLogger: input.diagnosticLogger,
   });
@@ -159,6 +167,7 @@ function appendStartedRequestedToolCallSessionEntry(
     toolCallRequest: requestedToolCall.toolCallRequest,
   });
   logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_history.entry_appended", {
+    conversationTurnId: input.conversationTurnId,
     entryKind: "tool_call",
     toolCallId: requestedToolCall.toolCallId,
     toolName: requestedToolCall.toolCallRequest.toolName,
@@ -171,6 +180,7 @@ function logRequestedToolCall(
   requestedToolCall: ProviderRequestedToolCall,
 ): void {
   logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.requested", {
+    conversationTurnId: input.conversationTurnId,
     toolCallId: requestedToolCall.toolCallId,
     toolName: requestedToolCall.toolCallRequest.toolName,
     ...(requestedToolCall.toolCallRequest.toolName === "bash"
@@ -179,6 +189,13 @@ function logRequestedToolCall(
           commandDescriptionLength: requestedToolCall.toolCallRequest.commandDescription.length,
           hasRequestedWorkingDirectoryPath: requestedToolCall.toolCallRequest.workingDirectoryPath !== undefined,
           hasRequestedTimeoutMilliseconds: requestedToolCall.toolCallRequest.timeoutMilliseconds !== undefined,
+        }
+      : {}),
+    ...(requestedToolCall.toolCallRequest.toolName === "task"
+      ? {
+          subagentName: requestedToolCall.toolCallRequest.subagentName,
+          subagentDescriptionLength: requestedToolCall.toolCallRequest.subagentDescription.length,
+          subagentPromptLength: requestedToolCall.toolCallRequest.subagentPrompt.length,
         }
       : {}),
   });
@@ -193,7 +210,10 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
 
   const concurrentGroupStartedAtMs = Date.now();
   const concurrentGroupDiagnosticFields = buildConcurrentToolCallGroupDiagnosticFields(input.requestedToolCalls);
-  logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.concurrent_group_started", concurrentGroupDiagnosticFields);
+  logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.concurrent_group_started", {
+    conversationTurnId: input.conversationTurnId,
+    ...concurrentGroupDiagnosticFields,
+  });
 
   let concurrentGroupOutcomeKind: "completed" | "failed" = "completed";
   try {
@@ -201,6 +221,7 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
       yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
         assistantResponseMessageId: input.assistantResponseMessageId,
         providerConversationTurn: input.providerConversationTurn,
+        conversationTurnId: input.conversationTurnId,
         requestedToolCalls: input.requestedToolCalls,
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionTracker: input.projectInstructionTracker,
@@ -228,6 +249,7 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
     throw error;
   } finally {
     logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.concurrent_group_finished", {
+      conversationTurnId: input.conversationTurnId,
       ...concurrentGroupDiagnosticFields,
       outcomeKind: concurrentGroupOutcomeKind,
       durationMs: Date.now() - concurrentGroupStartedAtMs,
@@ -276,8 +298,10 @@ async function* streamAssistantResponseEventsForPolicyCheckedRequestedToolCall(
     throw error;
   } finally {
     logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.execution_finished", {
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolName: input.toolCallRequest.toolName,
+      ...(input.toolCallRequest.toolName === "task" ? { subagentName: input.toolCallRequest.subagentName } : {}),
       outcomeKind: toolCallExecutionOutcomeKind,
       durationMs: Date.now() - toolCallExecutionStartedAtMs,
     });
@@ -301,6 +325,7 @@ async function* streamAssistantResponseEventsForDeniedByPolicyRequestedToolCall(
     denialExplanation: input.denialText,
   });
   logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.mode_policy_blocked", {
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     toolName: input.toolCallRequest.toolName,
     assistantOperatingMode: input.assistantOperatingMode,
@@ -321,6 +346,7 @@ async function* streamAssistantResponseEventsForDeniedByPolicyRequestedToolCall(
   }));
   await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     toolResultText: input.denialText,
     toolResultKind: "denied",
@@ -348,6 +374,7 @@ async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(
   yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
     assistantResponseMessageId: input.assistantResponseMessageId,
     providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     toolCallRequest: input.toolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
@@ -371,6 +398,7 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     assistantResponseMessageId: input.assistantResponseMessageId,
     providerConversationTurn: input.providerConversationTurn,
     conversationTurnProvider: input.conversationTurnProvider,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     taskToolCallRequest: input.toolCallRequest,
     selectedModelId: input.selectedModelId,
@@ -380,8 +408,31 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
     subagentConversationConcurrencyLimiter: input.subagentConversationConcurrencyLimiter,
+    ...(input.taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
+      ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds: input.taskSubagentSoftElapsedTimeCheckpointMilliseconds }
+      : {}),
     abortSignal: input.abortSignal,
     canSpawnSubagent: input.canSpawnSubagent,
+    throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+    diagnosticLogger: input.diagnosticLogger,
+  });
+}
+
+async function* streamAssistantResponseEventsForSkillRequestedToolCall(
+  input: RuntimeRequestedToolCallExecutorInput,
+): AsyncGenerator<AssistantResponseEvent> {
+  if (!isSkillToolCallRequest(input.toolCallRequest)) {
+    throw new Error(`Skill tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
+  }
+
+  yield* streamAssistantResponseEventsForSkillToolCall({
+    assistantResponseMessageId: input.assistantResponseMessageId,
+    providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.toolCallId,
+    skillToolCallRequest: input.toolCallRequest,
+    skillCatalog: input.skillCatalog,
+    toolResultSessionRecorder: input.toolResultSessionRecorder,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,
   });
@@ -397,6 +448,7 @@ async function* streamAssistantResponseEventsForFileMutationRequestedToolCall(
   yield* streamAssistantResponseEventsForFileMutationToolCall({
     assistantResponseMessageId: input.assistantResponseMessageId,
     providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     fileMutationToolCallRequest: input.toolCallRequest,
     assistantOperatingMode: input.assistantOperatingMode,
@@ -419,6 +471,7 @@ async function* streamAssistantResponseEventsForBashRequestedToolCall(
   yield* streamAssistantResponseEventsForBashToolCall({
     assistantResponseMessageId: input.assistantResponseMessageId,
     providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     bashToolCallRequest: input.toolCallRequest,
     assistantOperatingMode: input.assistantOperatingMode,

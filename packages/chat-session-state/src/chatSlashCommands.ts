@@ -1,13 +1,21 @@
 import type { ReasoningSummaryDisplayMode, SlashCommand } from "./chatSessionState.ts";
+import {
+  isSkillChatSlashCommandValue,
+  listChatCommandDefinitions,
+  readSkillNameFromChatSlashCommandValue,
+  type BuiltInChatSlashCommandValue,
+  type ChatSlashCommandSkill,
+  type ChatSlashCommandValue,
+  type SkillChatSlashCommandValue,
+} from "./chatCommandCatalog.ts";
 
-export type ChatSlashCommandValue =
-  | "clear"
-  | "compact"
-  | "export-session"
-  | "help"
-  | "model"
-  | "sessions"
-  | "thinking";
+export type {
+  BuiltInChatSlashCommandValue,
+  ChatSlashCommandSkill,
+  ChatSlashCommandValue,
+  SkillChatSlashCommandValue,
+};
+export { isSkillChatSlashCommandValue, readSkillNameFromChatSlashCommandValue };
 
 export type ChatSlashCommand = SlashCommand & {
   value: ChatSlashCommandValue;
@@ -15,18 +23,11 @@ export type ChatSlashCommand = SlashCommand & {
 
 export function buildChatSlashCommands(input: {
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
+  availableSkills?: readonly ChatSlashCommandSkill[];
 }): readonly ChatSlashCommand[] {
-  return [
-    { name: "help", value: "help", description: "Show available commands and shortcuts" },
-    { name: "model", value: "model", description: "Choose OpenAI model and reasoning effort" },
-    { name: "clear", value: "clear", description: "Clear conversation history" },
-    { name: "compact", value: "compact", description: "Summarize old context for this session" },
-    { name: "sessions", value: "sessions", description: "Switch or delete saved sessions" },
-    { name: "export-session", value: "export-session", description: "Export current session as HTML" },
-    {
-      name: "thinking",
-      value: "thinking",
-      description: input.reasoningSummaryDisplayMode === "expanded" ? "Collapse thinking" : "Expand thinking",
-    },
-  ] as const satisfies readonly ChatSlashCommand[];
+  return listChatCommandDefinitions(input).map((chatCommandDefinition) => ({
+    name: chatCommandDefinition.name,
+    value: chatCommandDefinition.value,
+    description: chatCommandDefinition.description,
+  }));
 }

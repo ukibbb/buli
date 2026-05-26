@@ -11,6 +11,7 @@ export type { OpenAiResponseStepTerminalState, OpenAiStreamParserOptions } from 
 const MAX_OPENAI_SSE_FRAME_CHARACTER_COUNT = 1_048_576;
 
 type OpenAiSseReadOptions = Readonly<{
+  conversationTurnId?: string | undefined;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
   abortSignal?: AbortSignal | undefined;
   idleTimeoutMilliseconds?: number | undefined;
@@ -171,6 +172,7 @@ function readNextOpenAiSseChunk(
       idleTimeoutHandle = setTimeout(() => {
         const timeoutError = createOpenAiStreamIdleTimeoutError(idleTimeoutMilliseconds);
         logOpenAiDiagnosticEvent(options.diagnosticLogger, "stream.idle_timeout", {
+          conversationTurnId: options.conversationTurnId ?? null,
           idleTimeoutMilliseconds,
         });
         cancelOpenAiSseReader(reader, timeoutError);

@@ -22,17 +22,20 @@ import {
   type ConversationAutoCompactionResult,
   type ConversationCompactionRequest,
 } from "@buli/engine";
+import type { ChatSlashCommandSkill } from "@buli/chat-session-state";
 import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import { useTerminalDimensions } from "@opentui/react";
 import { classifyTerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import { ChatScreenLayout } from "./components/ChatScreenLayout.tsx";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
 import { useChatScreenController } from "./behavior/useChatScreenController.ts";
+import { ChatScreenSlot, ChatScreenSlotsProvider, type ChatScreenSlotPlugin } from "./slots/chatScreenSlots.tsx";
 
 export type ChatScreenProps = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort;
   selectedReasoningEffort?: ReasoningEffort;
+  availableSkills?: readonly ChatSlashCommandSkill[];
   initialConversationSessionId?: string;
   initialConversationSessionEntries?: readonly ConversationSessionEntry[];
   loadInitialConversationSessionEntries?:
@@ -61,6 +64,7 @@ export type ChatScreenProps = {
     | undefined;
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  chatScreenSlotPlugins?: readonly ChatScreenSlotPlugin[] | undefined;
 };
 
 export type {
@@ -91,12 +95,17 @@ export function ChatScreen(props: ChatScreenProps) {
   });
 
   return (
-    <ChatScreenLayout
-      terminalRowCount={rows}
-      terminalColumnCount={columns}
-      workingDirectoryPath={workingDirectoryPath}
-      mainAreaProps={chatScreenLayoutController.mainAreaProps}
-      liveInteractionChromeProps={chatScreenLayoutController.liveInteractionChromeProps}
-    />
+    <ChatScreenSlotsProvider plugins={props.chatScreenSlotPlugins}>
+      <box height={rows} position="relative" width={columns}>
+        <ChatScreenLayout
+          terminalRowCount={rows}
+          terminalColumnCount={columns}
+          workingDirectoryPath={workingDirectoryPath}
+          mainAreaProps={chatScreenLayoutController.mainAreaProps}
+          liveInteractionChromeProps={chatScreenLayoutController.liveInteractionChromeProps}
+        />
+        <ChatScreenSlot name="app_overlay" />
+      </box>
+    </ChatScreenSlotsProvider>
   );
 }

@@ -21,13 +21,16 @@ type WorkspacePatchSessionEntryInput = {
 };
 
 export class RuntimeToolResultSessionRecorder {
+  readonly conversationTurnId: string | undefined;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
 
   constructor(input: {
+    conversationTurnId?: string | undefined;
     conversationHistory: InMemoryConversationHistory;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
+    this.conversationTurnId = input.conversationTurnId;
     this.conversationHistory = input.conversationHistory;
     this.diagnosticLogger = input.diagnosticLogger;
   }
@@ -40,8 +43,10 @@ export class RuntimeToolResultSessionRecorder {
       toolResultText: input.toolResultText,
     });
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "completed_tool_result",
       toolCallId: input.toolCallId,
+      toolName: input.toolCallDetail.toolName,
       toolResultTextLength: input.toolResultText.length,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
@@ -56,8 +61,10 @@ export class RuntimeToolResultSessionRecorder {
       failureExplanation: input.failureExplanation,
     });
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "failed_tool_result",
       toolCallId: input.toolCallId,
+      toolName: input.toolCallDetail.toolName,
       toolResultTextLength: input.toolResultText.length,
       failureExplanation: input.failureExplanation,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
@@ -73,8 +80,10 @@ export class RuntimeToolResultSessionRecorder {
       denialExplanation: input.denialExplanation,
     });
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "denied_tool_result",
       toolCallId: input.toolCallId,
+      toolName: input.toolCallDetail.toolName,
       toolResultTextLength: input.toolResultText.length,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
@@ -86,6 +95,7 @@ export class RuntimeToolResultSessionRecorder {
       workspacePatch: input.workspacePatch,
     });
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "workspace_patch",
       toolCallId: input.workspacePatch.toolCallId,
       workspacePatchId: input.workspacePatch.workspacePatchId,

@@ -2,7 +2,9 @@ import { memo, useRef, type ReactNode, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ConversationMessagePart } from "@buli/contracts";
 import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
+import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
+import { AutoCompactingStatusLine } from "./AutoCompactingStatusLine.tsx";
 import {
   ConversationMessageRow,
   listRenderableConversationMessageParts,
@@ -22,6 +24,10 @@ export type ConversationMessageListProps = {
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
   terminalColumnCount?: number | undefined;
+  conversationSessionCompactionStatus?: ConversationSessionCompactionStatus | undefined;
+  queuedPromptCount?: number | undefined;
+  totalContextTokensUsed?: number | undefined;
+  contextWindowTokenCapacity?: number | undefined;
 };
 
 const MemoizedConversationMessageRow = memo(ConversationMessageRow, areConversationMessageRowPropsEqual);
@@ -77,6 +83,8 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
   });
   const shouldRenderHistoryRevealRow = props.hiddenOlderConversationMessageCount > 0 &&
     props.olderConversationMessageRevealCount > 0;
+  const shouldRenderAutoCompactingStatusLine = props.conversationSessionCompactionStatus?.step === "compacting" &&
+    props.conversationSessionCompactionStatus.source === "auto";
 
   return (
     <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
@@ -128,6 +136,20 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
             </box>
           );
         })}
+        {shouldRenderAutoCompactingStatusLine ? (
+          <box
+            flexDirection="column"
+            flexShrink={0}
+            marginTop={renderableConversationMessages.length === 0 && !shouldRenderHistoryRevealRow ? 0 : 1}
+            width="100%"
+          >
+            <AutoCompactingStatusLine
+              queuedPromptCount={props.queuedPromptCount ?? 0}
+              totalContextTokensUsed={props.totalContextTokensUsed}
+              contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+            />
+          </box>
+        ) : null}
       </scrollbox>
     </box>
   );

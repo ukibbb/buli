@@ -4,6 +4,7 @@ import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 export const USER_INTERRUPTED_CONVERSATION_TURN_REASON = "Interrupted by user.";
 
 export class RuntimeConversationTurnLifecycle {
+  private readonly conversationTurnId: string;
   private readonly selectedModelId: string;
   private readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   private readonly onConversationTurnFinished: () => void;
@@ -15,12 +16,14 @@ export class RuntimeConversationTurnLifecycle {
   private hasInterruptedConversationTurn = false;
 
   constructor(input: {
+    conversationTurnId: string;
     selectedModelId: string;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     onConversationTurnFinished: () => void;
     hasPendingToolApproval: () => boolean;
     resolvePendingToolApprovalAsInterrupted: () => void;
   }) {
+    this.conversationTurnId = input.conversationTurnId;
     this.selectedModelId = input.selectedModelId;
     this.diagnosticLogger = input.diagnosticLogger;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
@@ -55,6 +58,7 @@ export class RuntimeConversationTurnLifecycle {
 
     this.hasInterruptedConversationTurn = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.interrupt_requested", {
+      conversationTurnId: this.conversationTurnId,
       selectedModelId: this.selectedModelId,
       hasPendingToolApproval: this.hasPendingToolApproval(),
     });
@@ -70,6 +74,7 @@ export class RuntimeConversationTurnLifecycle {
     this.hasFinishedConversationTurn = true;
     this.onConversationTurnFinished();
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.finished", {
+      conversationTurnId: this.conversationTurnId,
       selectedModelId: this.selectedModelId,
       turnDurationMs: Date.now() - input.conversationTurnStartedAtMilliseconds,
     });

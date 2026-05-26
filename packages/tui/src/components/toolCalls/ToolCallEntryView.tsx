@@ -10,6 +10,7 @@ import { PatchToolCallCard } from "./PatchToolCallCard.tsx";
 import { ReadManyToolCallCard } from "./ReadManyToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import { SearchManyToolCallCard } from "./SearchManyToolCallCard.tsx";
+import { SkillToolCallCard } from "./SkillToolCallCard.tsx";
 import { TaskToolCallCard } from "./TaskToolCallCard.tsx";
 import { TodoWriteToolCallCard } from "./TodoWriteToolCallCard.tsx";
 import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
@@ -83,6 +84,7 @@ const toolCallEntryRendererByName: {
   bash: renderBashToolCallEntry,
   todowrite: renderTodoWriteToolCallEntry,
   task: renderTaskToolCallEntry,
+  skill: renderSkillToolCallEntry,
 };
 
 export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
@@ -179,4 +181,8 @@ function renderTaskToolCallEntry(props: ToolCallEntryRendererProps<"task">): Rea
       {...(props.errorText !== undefined ? { errorText: props.errorText } : {})}
     />
   );
+}
+
+function renderSkillToolCallEntry(props: ToolCallEntryRendererProps<"skill">): ReactNode {
+  return <SkillToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
 }

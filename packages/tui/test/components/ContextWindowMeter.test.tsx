@@ -46,13 +46,13 @@ describe("ContextWindowMeter (opentui)", () => {
     expect(captureCharFrame()).toContain("--");
   });
 
-  test("renders_zero_usage_fallback_when_usage_is_unknown_but_capacity_is_known", async () => {
+  test("renders_unknown_usage_fallback_when_usage_is_unknown_but_capacity_is_known", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={100_000} />,
       { width: 40, height: 3 },
     );
     await renderOnce();
-    expect(captureCharFrame()).toContain("0 / 100k (0%)");
+    expect(captureCharFrame()).toContain("--");
   });
 
   test("renders_used_token_count_when_no_capacity", async () => {

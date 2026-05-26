@@ -6,6 +6,7 @@ import {
 
 test("RuntimeConversationTurnLifecycle allows the assistant event stream to start once", () => {
   const runtimeConversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
+    conversationTurnId: "conversation-turn-1",
     selectedModelId: "gpt-5.4",
     onConversationTurnFinished: () => {},
     hasPendingToolApproval: () => false,
@@ -22,6 +23,7 @@ test("RuntimeConversationTurnLifecycle allows the assistant event stream to star
 test("RuntimeConversationTurnLifecycle interrupts once and aborts the turn signal", () => {
   let interruptedApprovalCount = 0;
   const runtimeConversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
+    conversationTurnId: "conversation-turn-1",
     selectedModelId: "gpt-5.4",
     onConversationTurnFinished: () => {},
     hasPendingToolApproval: () => true,
@@ -41,6 +43,7 @@ test("RuntimeConversationTurnLifecycle interrupts once and aborts the turn signa
 test("RuntimeConversationTurnLifecycle finishes once", () => {
   let finishedCount = 0;
   const runtimeConversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
+    conversationTurnId: "conversation-turn-1",
     selectedModelId: "gpt-5.4",
     onConversationTurnFinished: () => {
       finishedCount += 1;
@@ -58,6 +61,7 @@ test("RuntimeConversationTurnLifecycle finishes once", () => {
 
 test("RuntimeConversationTurnLifecycle throws after interruption", () => {
   const runtimeConversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
+    conversationTurnId: "conversation-turn-1",
     selectedModelId: "gpt-5.4",
     onConversationTurnFinished: () => {},
     hasPendingToolApproval: () => false,

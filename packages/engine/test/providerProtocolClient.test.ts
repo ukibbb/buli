@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   PROVIDER_PROTOCOL_VERSION,
+  isContextWindowOverflowError,
   type ProviderProtocolHostFrame,
   type ProviderProtocolProviderFrame,
   type ProviderProtocolRequestId,
@@ -339,6 +340,60 @@ test("ProviderProtocolConversationTurnProvider throws structured provider errors
       errorCode: "provider_turn_stream_failed",
       errorMessage: "OpenAI stream failed",
       providerName: "openai",
+    },
+  });
+});
+
+test("ProviderProtocolConversationTurnProvider preserves context-window overflow identity from stream errors", async () => {
+  const transport = new RecordingProviderProtocolClientTransport();
+  const provider = new ProviderProtocolConversationTurnProvider({
+    transport,
+    createRequestId: createSequentialRequestIdFactory(["req-start-1"]),
+    createTurnId: () => "turn-1",
+  });
+  const providerTurn = provider.startConversationTurn({
+    systemPromptText: "You are Buli.",
+    conversationSessionEntries: [],
+    selectedModelId: "gpt-5.5",
+  });
+  const collectedProviderEventsPromise = collectProviderEvents(providerTurn.streamProviderEvents());
+  transport.sendProviderFrame(createProviderProtocolAcknowledgementFrame({
+    requestId: "req-start-1",
+    turnId: "turn-1",
+    acknowledgedFrameKind: "host_start_turn",
+  }));
+  transport.sendProviderFrame({
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "provider_error",
+    turnId: "turn-1",
+    error: {
+      errorCode: "provider_turn_stream_failed",
+      errorMessage: "Your input exceeds the context window of this model.",
+      providerName: "openai",
+      details: {
+        errorName: "ContextWindowOverflowError",
+        failureKind: "context_window_overflow",
+      },
+    },
+  });
+
+  let thrownError: unknown;
+  try {
+    await collectedProviderEventsPromise;
+  } catch (error) {
+    thrownError = error;
+  }
+
+  expect(thrownError).toBeInstanceOf(ProviderProtocolRemoteProviderError);
+  expect(isContextWindowOverflowError(thrownError)).toBe(true);
+  expect(thrownError).toMatchObject({
+    failureKind: "context_window_overflow",
+    providerProtocolError: {
+      errorCode: "provider_turn_stream_failed",
+      details: {
+        errorName: "ContextWindowOverflowError",
+        failureKind: "context_window_overflow",
+      },
     },
   });
 });

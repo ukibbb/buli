@@ -38,12 +38,14 @@ import {
 } from "./runtimeReadOnlyToolCallExecution.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
+import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { buildBuliExplorerSystemPrompt } from "./systemPrompt.ts";
 import { resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 
 const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, read_many, search_many, glob, and grep instead.";
 const TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT = 192;
 const TASK_SUBAGENT_CHILD_TOOL_RESULT_TEXT_CHECKPOINT_LIMIT = 1_200_000;
+export const DEFAULT_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS = 120_000;
 const TASK_SUBAGENT_DEFAULT_READ_MAXIMUM_LINE_COUNT = 600;
 const MAX_FAILED_TASK_CHILD_TOOL_RESULT_TEXT_TOTAL_LENGTH = 20_000;
 const MAX_FAILED_TASK_CHILD_TOOL_RESULT_TEXT_LENGTH = 4_000;
@@ -84,6 +86,7 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
   conversationTurnProvider: ConversationTurnProvider;
+  conversationTurnId: string;
   toolCallId: string;
   taskToolCallRequest: TaskToolCallRequest;
   selectedModelId: string;
@@ -92,6 +95,7 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
+  taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   canSpawnSubagent: boolean;
@@ -142,6 +146,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
     }));
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolResultText: NESTED_SUBAGENT_DENIAL_TEXT,
       diagnosticLogger: input.diagnosticLogger,
@@ -159,12 +164,16 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
       () =>
         streamTaskSubagentConversationProgress({
           conversationTurnProvider: input.conversationTurnProvider,
+          conversationTurnId: input.conversationTurnId,
           taskToolCallRequest: input.taskToolCallRequest,
           selectedModelId: input.selectedModelId,
           ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
           workspaceRootPath: input.workspaceRootPath,
           projectInstructionTracker: input.projectInstructionTracker,
           readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+          ...(input.taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
+            ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds: input.taskSubagentSoftElapsedTimeCheckpointMilliseconds }
+            : {}),
           abortSignal: input.abortSignal,
           throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
           diagnosticLogger: input.diagnosticLogger,
@@ -254,6 +263,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
     }));
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolResultText: taskSubagentConversationOutcome.toolResultText,
       diagnosticLogger: input.diagnosticLogger,
@@ -285,6 +295,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
   }));
   await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     toolResultText: taskSubagentConversationOutcome.toolResultText,
     diagnosticLogger: input.diagnosticLogger,
@@ -294,12 +305,14 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
 
 async function* streamTaskSubagentConversationProgress(input: {
   conversationTurnProvider: ConversationTurnProvider;
+  conversationTurnId: string;
   taskToolCallRequest: TaskToolCallRequest;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   workspaceRootPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+  taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -308,12 +321,14 @@ async function* streamTaskSubagentConversationProgress(input: {
   const subagentPromptText = buildTaskSubagentPromptText(input.taskToolCallRequest);
   const subagentConversationHistory = new InMemoryConversationHistory();
   const subagentConversationSessionRecorder = new RuntimeConversationTurnSessionRecorder({
+    conversationTurnId: input.conversationTurnId,
     conversationHistory: subagentConversationHistory,
     userPromptText: subagentPromptText,
     assistantOperatingMode: "understand",
     diagnosticLogger: input.diagnosticLogger,
   });
   const subagentToolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
+    conversationTurnId: input.conversationTurnId,
     conversationHistory: subagentConversationHistory,
     diagnosticLogger: input.diagnosticLogger,
   });
@@ -332,6 +347,7 @@ async function* streamTaskSubagentConversationProgress(input: {
     nextResearchBudgetScanEntryIndex = subagentConversationHistory.conversationSessionEntries.length;
     const subagentDefinition = resolveBuiltInSubagentDefinition(input.taskToolCallRequest.subagentName);
     const subagentProviderConversationTurn = input.conversationTurnProvider.startConversationTurn({
+      conversationTurnId: input.conversationTurnId,
       systemPromptText: buildBuliExplorerSystemPrompt({
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionSnapshots: toProjectInstructionSnapshots(input.projectInstructionTracker.listProjectInstructionFiles()),
@@ -383,12 +399,31 @@ async function* streamTaskSubagentConversationProgress(input: {
           return;
         }
 
-        const subagentResearchBudgetDecision = decideTaskSubagentResearchBudget(subagentResearchBudget);
+        const subagentElapsedMilliseconds = Date.now() - subagentConversationStartedAtMs;
+        const softElapsedTimeCheckpointMilliseconds = input.taskSubagentSoftElapsedTimeCheckpointMilliseconds ??
+          DEFAULT_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS;
+        const subagentResearchBudgetDecision = decideTaskSubagentResearchBudget({
+          researchBudget: subagentResearchBudget,
+          elapsedMilliseconds: subagentElapsedMilliseconds,
+          softElapsedTimeCheckpointMilliseconds,
+        });
         if (subagentResearchBudgetDecision.shouldRequestCheckpoint) {
           subagentResearchCheckpoint = createTaskSubagentResearchCheckpoint({
             researchBudget: subagentResearchBudget,
             checkpointReason: subagentResearchBudgetDecision.checkpointReason,
             skippedChildToolCallCount: requestedToolCalls.length,
+            elapsedMilliseconds: subagentElapsedMilliseconds,
+            softElapsedTimeCheckpointMilliseconds,
+          });
+          logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.task_subagent_research_checkpoint_requested", {
+            conversationTurnId: input.conversationTurnId,
+            subagentName: input.taskToolCallRequest.subagentName,
+            checkpointReason: subagentResearchCheckpoint.checkpointReason,
+            childToolCallCount: subagentResearchCheckpoint.childToolCallCount,
+            childToolResultTextLength: subagentResearchCheckpoint.childToolResultTextLength,
+            skippedChildToolCallCount: subagentResearchCheckpoint.skippedChildToolCallCount,
+            elapsedMilliseconds: subagentResearchCheckpoint.elapsedMilliseconds ?? null,
+            softElapsedTimeCheckpointMilliseconds: subagentResearchCheckpoint.softElapsedTimeCheckpointMilliseconds ?? null,
           });
           yield {
             progressKind: "subagent_research_checkpoint_reached",
@@ -397,6 +432,7 @@ async function* streamTaskSubagentConversationProgress(input: {
           await submitTaskSubagentBudgetCheckpointToolResults({
             requestedToolCalls,
             subagentProviderConversationTurn,
+            conversationTurnId: input.conversationTurnId,
             subagentConversationHistory,
             subagentToolResultSessionRecorder,
             checkpointRequestText: buildTaskSubagentCheckpointRequestText(subagentResearchCheckpoint),
@@ -414,6 +450,7 @@ async function* streamTaskSubagentConversationProgress(input: {
         const subagentChildToolCallActivity = streamTaskSubagentChildToolCallActivity({
           requestedToolCalls,
           subagentProviderConversationTurn,
+          conversationTurnId: input.conversationTurnId,
           subagentConversationHistory,
           subagentToolResultSessionRecorder,
           workspaceRootPath: input.workspaceRootPath,
@@ -591,18 +628,32 @@ type TaskSubagentResearchBudget = {
   childToolResultTextLength: number;
 };
 
-function decideTaskSubagentResearchBudget(researchBudget: TaskSubagentResearchBudget): TaskSubagentResearchBudgetDecision {
-  if (researchBudget.childToolCallCount >= TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT) {
+function decideTaskSubagentResearchBudget(input: {
+  researchBudget: TaskSubagentResearchBudget;
+  elapsedMilliseconds: number;
+  softElapsedTimeCheckpointMilliseconds: number;
+}): TaskSubagentResearchBudgetDecision {
+  if (input.researchBudget.childToolCallCount >= TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT) {
     return {
       shouldRequestCheckpoint: true,
       checkpointReason: "child_tool_call_count",
     };
   }
 
-  if (researchBudget.childToolResultTextLength >= TASK_SUBAGENT_CHILD_TOOL_RESULT_TEXT_CHECKPOINT_LIMIT) {
+  if (input.researchBudget.childToolResultTextLength >= TASK_SUBAGENT_CHILD_TOOL_RESULT_TEXT_CHECKPOINT_LIMIT) {
     return {
       shouldRequestCheckpoint: true,
       checkpointReason: "child_tool_result_text_length",
+    };
+  }
+
+  if (
+    input.researchBudget.childToolCallCount > 0 &&
+    input.elapsedMilliseconds >= input.softElapsedTimeCheckpointMilliseconds
+  ) {
+    return {
+      shouldRequestCheckpoint: true,
+      checkpointReason: "elapsed_time",
     };
   }
 
@@ -613,12 +664,16 @@ function createTaskSubagentResearchCheckpoint(input: {
   researchBudget: TaskSubagentResearchBudget;
   checkpointReason: SubagentResearchCheckpoint["checkpointReason"];
   skippedChildToolCallCount: number;
+  elapsedMilliseconds: number;
+  softElapsedTimeCheckpointMilliseconds: number;
 }): SubagentResearchCheckpoint {
   return {
     checkpointReason: input.checkpointReason,
     childToolCallCount: input.researchBudget.childToolCallCount,
     childToolResultTextLength: input.researchBudget.childToolResultTextLength,
     skippedChildToolCallCount: input.skippedChildToolCallCount,
+    elapsedMilliseconds: input.elapsedMilliseconds,
+    softElapsedTimeCheckpointMilliseconds: input.softElapsedTimeCheckpointMilliseconds,
   };
 }
 
@@ -647,6 +702,7 @@ function updateTaskSubagentResearchBudgetFromNewEntries(input: {
 async function submitTaskSubagentBudgetCheckpointToolResults(input: {
   requestedToolCalls: readonly ProviderRequestedToolCall[];
   subagentProviderConversationTurn: ProviderConversationTurn;
+  conversationTurnId: string;
   subagentConversationHistory: InMemoryConversationHistory;
   subagentToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   checkpointRequestText: string;
@@ -667,6 +723,7 @@ async function submitTaskSubagentBudgetCheckpointToolResults(input: {
     });
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.subagentProviderConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: requestedToolCall.toolCallId,
       toolResultText: input.checkpointRequestText,
       toolResultKind: "denied",
@@ -678,6 +735,7 @@ async function submitTaskSubagentBudgetCheckpointToolResults(input: {
 async function* streamTaskSubagentChildToolCallActivity(input: {
   requestedToolCalls: readonly ProviderRequestedToolCall[];
   subagentProviderConversationTurn: ProviderConversationTurn;
+  conversationTurnId: string;
   subagentConversationHistory: InMemoryConversationHistory;
   subagentToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   workspaceRootPath: string;
@@ -705,6 +763,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
     for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
       assistantResponseMessageId: randomUUID(),
       providerConversationTurn: input.subagentProviderConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       requestedToolCalls: effectiveRequestedToolCalls,
       workspaceRootPath: input.workspaceRootPath,
       projectInstructionTracker: input.projectInstructionTracker,
@@ -731,6 +790,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
           toolCallRequest: requestedToolCall.toolCallRequest,
         },
         subagentProviderConversationTurn: input.subagentProviderConversationTurn,
+        conversationTurnId: input.conversationTurnId,
         subagentToolResultSessionRecorder: input.subagentToolResultSessionRecorder,
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionTracker: input.projectInstructionTracker,
@@ -754,6 +814,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
     });
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.subagentProviderConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: requestedToolCall.toolCallId,
       toolResultText: denialExplanation,
       toolResultKind: "denied",
@@ -792,6 +853,7 @@ function createEffectiveTaskSubagentRequestedToolCall(
 async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
   requestedToolCall: TaskSubagentReadOnlyRequestedToolCall;
   subagentProviderConversationTurn: ProviderConversationTurn;
+  conversationTurnId: string;
   subagentToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   workspaceRootPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
@@ -803,6 +865,7 @@ async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
   for await (const assistantResponseEvent of streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall({
     assistantResponseMessageId: randomUUID(),
     providerConversationTurn: input.subagentProviderConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.requestedToolCall.toolCallId,
     toolCallRequest: input.requestedToolCall.toolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
@@ -922,7 +985,8 @@ function createSubagentChildToolCallDetailFromToolCallDetail(
     toolCallDetail.toolName === "edit_many" ||
     toolCallDetail.toolName === "patch" ||
     toolCallDetail.toolName === "patch_many" ||
-    toolCallDetail.toolName === "write"
+    toolCallDetail.toolName === "write" ||
+    toolCallDetail.toolName === "skill"
   ) {
     return toolCallDetail;
   }
@@ -1033,18 +1097,32 @@ function isTaskSubagentToolResultConversationSessionEntry(
 }
 
 function buildTaskSubagentCheckpointRequestText(input: SubagentResearchCheckpoint): string {
-  const reasonText = input.checkpointReason === "child_tool_call_count"
-    ? `the child tool-call limit of ${TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT} was reached`
-    : `child tool output reached ${input.childToolResultTextLength} characters`;
+  const reasonText = formatTaskSubagentCheckpointReasonText(input);
   const skippedChildToolCallText = input.skippedChildToolCallCount === 1
     ? "This child tool call was not executed."
     : `These ${input.skippedChildToolCallCount} child tool calls were not executed.`;
+  const elapsedText = input.elapsedMilliseconds !== undefined ? `, ${input.elapsedMilliseconds} ms elapsed` : "";
   return [
     `Explorer research budget reached: ${reasonText}.`,
-    `Current research state: ${input.childToolCallCount} child tool calls, ${input.childToolResultTextLength} characters of child tool output.`,
+    `Current research state: ${input.childToolCallCount} child tool calls, ${input.childToolResultTextLength} characters of child tool output${elapsedText}.`,
     skippedChildToolCallText,
     "Stop requesting tools and return a concise checkpoint summary with findings, inspected files, important line references, remaining uncertainty, and recommended next searches.",
   ].join("\n");
+}
+
+function formatTaskSubagentCheckpointReasonText(input: SubagentResearchCheckpoint): string {
+  switch (input.checkpointReason) {
+    case "child_tool_call_count":
+      return `the child tool-call limit of ${TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT} was reached`;
+    case "child_tool_result_text_length":
+      return `child tool output reached ${input.childToolResultTextLength} characters`;
+    case "elapsed_time": {
+      const elapsedMilliseconds = input.elapsedMilliseconds ?? 0;
+      return input.softElapsedTimeCheckpointMilliseconds !== undefined
+        ? `the soft elapsed-time limit of ${input.softElapsedTimeCheckpointMilliseconds} ms was reached after ${elapsedMilliseconds} ms`
+        : `the soft elapsed-time limit was reached after ${elapsedMilliseconds} ms`;
+    }
+  }
 }
 
 function buildTaskSubagentRepeatedToolAfterCheckpointFailureText(input: {
@@ -1056,7 +1134,7 @@ function buildTaskSubagentRepeatedToolAfterCheckpointFailureText(input: {
   return [
     "Explorer continued requesting tools after the research checkpoint instead of returning a summary.",
     `Skipped ${requestedToolCallCount} additional child ${toolCallLabel}.`,
-    `Checkpoint state was ${input.subagentResearchCheckpoint.childToolCallCount} child tool calls and ${input.subagentResearchCheckpoint.childToolResultTextLength} characters of child tool output.`,
+    `Checkpoint state was ${input.subagentResearchCheckpoint.childToolCallCount} child tool calls and ${input.subagentResearchCheckpoint.childToolResultTextLength} characters of child tool output${input.subagentResearchCheckpoint.elapsedMilliseconds !== undefined ? ` after ${input.subagentResearchCheckpoint.elapsedMilliseconds} ms` : ""}.`,
   ].join(" ");
 }
 
@@ -1102,6 +1180,14 @@ function buildTaskSubagentResearchCheckpointXmlLines(
     `<child_tool_call_count>${subagentResearchCheckpoint.childToolCallCount}</child_tool_call_count>`,
     `<child_tool_result_text_length>${subagentResearchCheckpoint.childToolResultTextLength}</child_tool_result_text_length>`,
     `<skipped_child_tool_call_count>${subagentResearchCheckpoint.skippedChildToolCallCount}</skipped_child_tool_call_count>`,
+    ...(subagentResearchCheckpoint.elapsedMilliseconds !== undefined
+      ? [`<elapsed_ms>${subagentResearchCheckpoint.elapsedMilliseconds}</elapsed_ms>`]
+      : []),
+    ...(subagentResearchCheckpoint.softElapsedTimeCheckpointMilliseconds !== undefined
+      ? [
+          `<soft_elapsed_time_checkpoint_ms>${subagentResearchCheckpoint.softElapsedTimeCheckpointMilliseconds}</soft_elapsed_time_checkpoint_ms>`,
+        ]
+      : []),
     "</research_checkpoint>",
   ];
 }
@@ -1194,6 +1280,8 @@ function formatSubagentChildToolCallDetail(subagentChildToolCallDetail: Subagent
       return `patch_many ${subagentChildToolCallDetail.patchTargetText}`;
     case "write":
       return `write ${subagentChildToolCallDetail.writtenFilePath}`;
+    case "skill":
+      return `skill ${subagentChildToolCallDetail.skillName}`;
     case "task":
       return `task ${subagentChildToolCallDetail.subagentName}: ${subagentChildToolCallDetail.subagentDescription}`;
     default:

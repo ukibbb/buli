@@ -685,6 +685,116 @@ test("OpenAiProviderConversationTurn honors a configured response-step limit", a
   expect(requestBodies).toHaveLength(1);
 });
 
+test("OpenAiProviderConversationTurn stops before another response step when continuation context reaches Buli's performance budget", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_read_1", name: "read", arguments: "" },
+      }),
+      createOpenAiSseFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_1",
+        arguments: '{"filePath":"README.md"}',
+      }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: {
+          output: [{ id: "fc_1", type: "function_call", call_id: "call_read_1", name: "read", arguments: '{"filePath":"README.md"}' }],
+          usage: { input_tokens: 252_000, output_tokens: 0, total_tokens: 252_000 },
+        },
+      }),
+    ]),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Should not be requested" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 20, output_tokens: 4, total_tokens: 24 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.5",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read README"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  const emittedEvents: ProviderStreamEvent[] = [];
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    emittedEvents.push(emittedEvent);
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: "<path>README.md</path>\n1: # buli",
+      });
+    }
+  }
+
+  expect(emittedEvents).toEqual([
+    {
+      type: "tool_call_requested",
+      toolCallId: "call_read_1",
+      toolCallRequest: { toolName: "read", readTargetPath: "README.md" },
+    },
+    {
+      type: "incomplete",
+      incompleteReason: "context_window_near_limit",
+      usage: {
+        total: 252_000,
+        input: 252_000,
+        output: 0,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+      contextWindowUsage: {
+        total: 252_000,
+        input: 252_000,
+        output: 0,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+  expect(requestBodies).toHaveLength(1);
+  expect(providerTurn.getProviderTurnReplay()).toEqual({
+    provider: "openai",
+    inputItems: [
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_read_1",
+        name: "read",
+        arguments: '{"filePath":"README.md"}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_read_1",
+        output: "<path>README.md</path>\n1: # buli",
+      },
+    ],
+  });
+  const guardDiagnosticEvent = diagnosticEvents.find(
+    (diagnosticEvent) => diagnosticEvent.eventName === "response_step.continuation_context_guard_triggered",
+  );
+  expect(guardDiagnosticEvent?.fields).toMatchObject({
+    reason: "context_window_near_limit",
+    contextTokensUsed: 252_000,
+    promptInputTokensUsed: 252_000,
+    contextWindowTokenCapacity: 1_050_000,
+    inputTokenCapacity: null,
+    preferredContextPerformanceBudgetTokenCount: 272_000,
+    continuationTriggerTokenCount: 252_000,
+  });
+});
+
 test("OpenAiProviderConversationTurn lets the agent finish after more than twenty response steps by default", async () => {
   const requestBodies: string[] = [];
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
@@ -888,8 +998,8 @@ test("OpenAiProviderConversationTurn times out stalled response-step fetches", a
 
   await expect(collectProviderEvents(providerTurn)).rejects.toThrow("OpenAI response-step request timed out");
 
-  expect(requestBodies).toHaveLength(3);
-  expect(receivedAbortSignals).toHaveLength(3);
+  expect(requestBodies).toHaveLength(6);
+  expect(receivedAbortSignals).toHaveLength(6);
   expect(receivedAbortSignals.every((receivedAbortSignal) => receivedAbortSignal.aborted)).toBe(true);
 });
 
@@ -1031,6 +1141,9 @@ test("OpenAiProviderConversationTurn fails after exhausting transient response-s
       createOpenAiErrorResponse({ status: 429, message: "retry 1", headers: { "retry-after-ms": "0" } }),
       createOpenAiErrorResponse({ status: 429, message: "retry 2", headers: { "retry-after-ms": "0" } }),
       createOpenAiErrorResponse({ status: 429, message: "retry 3", headers: { "retry-after-ms": "0" } }),
+      createOpenAiErrorResponse({ status: 429, message: "retry 4", headers: { "retry-after-ms": "0" } }),
+      createOpenAiErrorResponse({ status: 429, message: "retry 5", headers: { "retry-after-ms": "0" } }),
+      createOpenAiErrorResponse({ status: 429, message: "retry 6", headers: { "retry-after-ms": "0" } }),
     ], requestBodies),
     loadRequestHeaders: async () => new Headers(),
     selectedModelId: "gpt-5.4",
@@ -1042,14 +1155,14 @@ test("OpenAiProviderConversationTurn fails after exhausting transient response-s
 
   await expect(collectProviderEvents(providerTurn)).rejects.toThrow("request failed with 429");
 
-  expect(requestBodies).toHaveLength(3);
+  expect(requestBodies).toHaveLength(6);
   expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.retry_scheduled"))
-    .toHaveLength(2);
+    .toHaveLength(5);
   expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "response_step.retry_exhausted")?.fields)
     .toMatchObject({
       responseStepIndex: 1,
-      responseStepRequestAttemptIndex: 3,
-      maxResponseStepHttpRetryCount: 2,
+      responseStepRequestAttemptIndex: 6,
+      maxResponseStepHttpRetryCount: 5,
       status: 429,
     });
 });
@@ -1120,7 +1233,7 @@ test("OpenAiProviderConversationTurn retries transient response-step transport f
   ]);
   expect(emittedEvents[0]).toMatchObject({
     type: "rate_limit_pending",
-    retryAfterSeconds: 1,
+    retryAfterSeconds: 0,
     retryReason: "transport_error",
   });
   expect(requestBodies).toHaveLength(3);
@@ -1145,6 +1258,9 @@ test("OpenAiProviderConversationTurn fails after exhausting transient response-s
       { outcomeKind: "rejection", error: new TypeError("fetch failed 1") },
       { outcomeKind: "rejection", error: new TypeError("fetch failed 2") },
       { outcomeKind: "rejection", error: new TypeError("fetch failed 3") },
+      { outcomeKind: "rejection", error: new TypeError("fetch failed 4") },
+      { outcomeKind: "rejection", error: new TypeError("fetch failed 5") },
+      { outcomeKind: "rejection", error: new TypeError("fetch failed 6") },
     ], requestBodies),
     loadRequestHeaders: async () => new Headers(),
     selectedModelId: "gpt-5.4",
@@ -1154,16 +1270,16 @@ test("OpenAiProviderConversationTurn fails after exhausting transient response-s
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
 
-  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("fetch failed 3");
+  await expect(collectProviderEvents(providerTurn)).rejects.toThrow("fetch failed 6");
 
-  expect(requestBodies).toHaveLength(3);
+  expect(requestBodies).toHaveLength(6);
   expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_scheduled"))
-    .toHaveLength(2);
+    .toHaveLength(5);
   expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "response_step.transport_retry_exhausted")?.fields)
     .toMatchObject({
       responseStepIndex: 1,
-      responseStepRequestAttemptIndex: 3,
-      maxResponseStepHttpRetryCount: 2,
+      responseStepRequestAttemptIndex: 6,
+      maxResponseStepHttpRetryCount: 5,
       transportErrorName: "TypeError",
     });
 });

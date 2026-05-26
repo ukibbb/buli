@@ -70,6 +70,7 @@ function createOpenAiConversationTurnRequest(
   turnRequest: OpenAiProviderProtocolHostTurnRequest,
 ): OpenAiConversationTurnRequest {
   return {
+    ...(turnRequest.conversationTurnId !== undefined ? { conversationTurnId: turnRequest.conversationTurnId } : {}),
     systemPromptText: turnRequest.systemPromptText,
     conversationSessionEntries: turnRequest.conversationSessionEntries,
     selectedModelId: turnRequest.selectedModelId,

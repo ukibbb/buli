@@ -4,6 +4,7 @@ import {
   formatPerformanceRunMarkdown,
 } from "../src/model/performanceRunSummary.ts";
 import type { PerformanceScenario } from "../src/model/performanceScenario.ts";
+import { listBuliPerformanceScenarioNames } from "../src/scenarios/scenarioRegistry.ts";
 
 const performanceScenarioStub: PerformanceScenario = {
   scenarioName: "scenario-a",
@@ -86,4 +87,9 @@ test("formatPerformanceRunMarkdown renders aggregate metric table", () => {
   });
 
   expect(formatPerformanceRunMarkdown(performanceRunSummary)).toContain("| duration | milliseconds | 4.250 | 4.250 | 4.250 | 4.250 | passed |");
+});
+
+test("scenario registry exposes storage and context-growth profiling scenarios", () => {
+  expect(listBuliPerformanceScenarioNames()).toContain("sqlite-session-large-history");
+  expect(listBuliPerformanceScenarioNames()).toContain("tool-output-context-growth");
 });

@@ -32,6 +32,7 @@ import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapsh
 export type StreamAssistantResponseEventsForBashToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
+  conversationTurnId: string;
   toolCallId: string;
   bashToolCallRequest: BashToolCallRequest;
   assistantOperatingMode: AssistantOperatingMode;
@@ -62,6 +63,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
       denialExplanation: denialText,
     });
     logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.read_only_mode_blocked", {
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       assistantOperatingMode: input.assistantOperatingMode,
       toolName: input.bashToolCallRequest.toolName,
@@ -81,6 +83,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     }));
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolResultText: denialText,
       toolResultKind: "denied",
@@ -94,6 +97,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     input.bashToolApprovalMode,
   );
   logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.approval_policy_classified", {
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     bashToolApprovalMode: input.bashToolApprovalMode,
     approvalPolicy: bashToolApprovalDecision.approvalPolicy,
@@ -134,6 +138,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     const approvalWaitStartedAtMs = Date.now();
     const approvalDecision = await approvalDecisionPromise;
     logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.bash_approval_wait_finished", {
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       approvalDecision,
       durationMs: Date.now() - approvalWaitStartedAtMs,
@@ -170,6 +175,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
       }));
       await submitProviderToolResultWithDiagnostics({
         providerConversationTurn: input.providerConversationTurn,
+        conversationTurnId: input.conversationTurnId,
         toolCallId: input.toolCallId,
         toolResultText: denialText,
         toolResultKind: "denied",
@@ -255,6 +261,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     }
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolResultText: completedToolResultText,
       toolResultKind: "completed",
@@ -297,6 +304,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   }
   await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     toolResultText: failedToolResultText,
     toolResultKind: "failed",

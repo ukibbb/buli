@@ -10,6 +10,7 @@ import type {
   ToolCallReadManyDetail,
   ToolCallReadDetail,
   ToolCallSearchManyDetail,
+  ToolCallSkillDetail,
   ToolCallTaskDetail,
   ToolCallWriteDetail,
 } from "./toolCallDetail.ts";
@@ -40,10 +41,11 @@ export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNa
   "patch_many",
   "write",
   "task",
+  "skill",
 ] as const);
 export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "edit_many", "patch", "patch_many", "write"] as const satisfies readonly AssistantToolRequestName[];
-export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep", "task"] as const satisfies readonly AssistantToolRequestName[];
+export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep", "task", "skill"] as const satisfies readonly AssistantToolRequestName[];
 export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite"] as const satisfies readonly ToolCallDetailName[];
 
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
@@ -95,6 +97,12 @@ export function isTaskToolCallRequest(
   return toolCallRequest.toolName === "task";
 }
 
+export function isSkillToolCallRequest(
+  toolCallRequest: ToolCallRequest,
+): toolCallRequest is ToolCallRequestByName<"skill"> {
+  return toolCallRequest.toolName === "skill";
+}
+
 export function isReadOnlyAssistantModeToolRequestName(
   toolName: AssistantToolRequestName,
 ): toolName is ReadOnlyAssistantModeToolRequestName {
@@ -141,7 +149,9 @@ export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCall
   if (toolCallRequest.toolName === "task") {
     return createStartedTaskToolCallDetail(toolCallRequest);
   }
-
+  if (toolCallRequest.toolName === "skill") {
+    return createStartedSkillToolCallDetail(toolCallRequest);
+  }
   return assertUnhandledToolCallRequest(toolCallRequest);
 }
 
@@ -233,6 +243,13 @@ function createStartedTaskToolCallDetail(toolCallRequest: ToolCallRequestByName<
     subagentName: toolCallRequest.subagentName,
     subagentDescription: toolCallRequest.subagentDescription,
     subagentPrompt: toolCallRequest.subagentPrompt,
+  };
+}
+
+function createStartedSkillToolCallDetail(toolCallRequest: ToolCallRequestByName<"skill">): ToolCallSkillDetail {
+  return {
+    toolName: "skill",
+    skillName: toolCallRequest.skillName,
   };
 }
 

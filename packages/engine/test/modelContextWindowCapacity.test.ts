@@ -5,12 +5,12 @@ import {
 } from "../src/modelContextWindowCapacity.ts";
 
 describe("lookupContextWindowTokenCapacityForModel", () => {
-  test("returns OpenCode-derived GPT 5.5 Codex OAuth capacities", () => {
-    expect(lookupContextWindowTokenCapacityForModel("gpt-5.5")).toBe(400_000);
-    expect(lookupContextWindowTokenCapacityForModel("gpt-5.5-pro")).toBe(400_000);
+  test("returns GPT 5.5 hard context capacities and Buli performance budgets", () => {
+    expect(lookupContextWindowTokenCapacityForModel("gpt-5.5")).toBe(1_050_000);
+    expect(lookupContextWindowTokenCapacityForModel("gpt-5.5-pro")).toBe(1_050_000);
     expect(lookupModelContextWindowTokenLimitsForModel("gpt-5.5")).toEqual({
-      contextWindowTokenCapacity: 400_000,
-      inputTokenCapacity: 272_000,
+      contextWindowTokenCapacity: 1_050_000,
+      preferredContextPerformanceBudgetTokenCount: 272_000,
     });
   });
 

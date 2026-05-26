@@ -12,6 +12,7 @@ import {
   type ChatSessionKeyboardEffect,
   type ChatSessionKeyboardInput,
   type ChatSessionState,
+  type ChatSlashCommandSkill,
   type ChatSlashCommandApplicationEffect,
   type PromptContextQueryIdentity,
 } from "@buli/chat-session-state";
@@ -22,6 +23,12 @@ import type {
   SubmittedChatAppPrompt,
 } from "./useChatAppAssistantTurnActions.ts";
 import { useChatAppModelSelectionActions } from "./useChatAppModelSelectionActions.ts";
+import { canChatAppPromptDraftBeEdited } from "./chatAppPromptDraftEditability.ts";
+import {
+  isAutoConversationSessionCompactionRunning,
+  isConversationSessionCompactionBlockingPromptInput,
+  type ConversationSessionCompactionStatus,
+} from "./conversationSessionStatus.ts";
 
 type MutableValueRef<T> = { current: T };
 
@@ -41,11 +48,11 @@ export type ChatAppKeyboardInputApplication = {
 };
 
 export type UseChatAppKeyboardActionsInput = {
-  chatSessionState: ChatSessionState;
+  availableSkills?: readonly ChatSlashCommandSkill[] | undefined;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
-  isConversationCompactionInFlightRef: MutableValueRef<boolean>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   requestActiveConversationTurnInterrupt: () => void;
   dismissActivePromptContextQuery: (dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined) => void;
@@ -108,6 +115,18 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         void loadAvailableModelsForSelection();
         return;
       }
+
+      if (chatSlashCommandApplicationEffect.effectType === "stream_assistant_response_for_selected_skill") {
+        input.isPromptSubmissionInFlightRef.current = true;
+        input.scrollConversationMessagesToBottom();
+        void input.streamAssistantResponseForSubmittedPrompt({
+          submittedPromptText: chatSlashCommandApplicationEffect.submittedPromptText,
+          submittedPromptImageAttachments: [],
+          submittedAssistantOperatingMode: input.latestChatSessionStateRef.current.selectedAssistantOperatingMode,
+          submittedUserSelectedSkillName: chatSlashCommandApplicationEffect.skillName,
+        });
+        return;
+      }
     },
   );
 
@@ -118,6 +137,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     );
     const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(
       chatSlashCommandApplication.nextChatSessionState,
+      input.availableSkills,
     );
     input.latestChatSessionStateRef.current = nextChatSessionState;
     input.setChatSessionState(nextChatSessionState);
@@ -177,13 +197,20 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     chatSessionKeyboardInput: ChatSessionKeyboardInput;
   }): ChatAppKeyboardInputApplication => {
     const previousChatSessionState = input.latestChatSessionStateRef.current;
+    const isPromptInputBlockedByCompaction = isConversationSessionCompactionBlockingPromptInput(
+      input.conversationSessionCompactionStatus,
+    );
     const keyboardInteraction = applyChatSessionKeyboardInputToChatSessionState({
       chatSessionState: previousChatSessionState,
       chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
-      isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || input.isConversationCompactionInFlightRef.current,
+      isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || isPromptInputBlockedByCompaction,
+      shouldQueueSubmittedPrompt: isAutoConversationSessionCompactionRunning(input.conversationSessionCompactionStatus),
     });
 
-    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(keyboardInteraction.nextChatSessionState);
+    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(
+      keyboardInteraction.nextChatSessionState,
+      input.availableSkills,
+    );
 
     if (nextChatSessionState !== previousChatSessionState) {
       const shouldReportModelSelection = shouldReportConversationSessionModelSelection({
@@ -213,17 +240,22 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
   });
 
   const applyPromptDraftEditToChatApp = useEffectEvent((promptDraftEdit: ChatAppPromptDraftEdit) => {
-    if (input.isConversationCompactionInFlightRef.current) {
+    const previousChatSessionState = input.latestChatSessionStateRef.current;
+    if (!canChatAppPromptDraftBeEdited({
+      chatSessionState: previousChatSessionState,
+      isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
+        input.conversationSessionCompactionStatus,
+      ),
+    })) {
       return;
     }
 
-    const previousChatSessionState = input.latestChatSessionStateRef.current;
     const editedChatSessionState = replacePromptDraftFromEditor({
       chatSessionState: previousChatSessionState,
       promptDraft: promptDraftEdit.promptDraft,
       promptDraftCursorOffset: promptDraftEdit.promptDraftCursorOffset,
     });
-    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(editedChatSessionState);
+    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(editedChatSessionState, input.availableSkills);
 
     if (nextChatSessionState === previousChatSessionState) {
       return;
@@ -235,11 +267,16 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
   });
 
   const insertSummarizedPastedTextIntoChatAppPrompt = useEffectEvent((summarizedPromptTextPaste: ChatAppSummarizedPromptTextPaste) => {
-    if (input.isConversationCompactionInFlightRef.current) {
+    const previousChatSessionState = input.latestChatSessionStateRef.current;
+    if (!canChatAppPromptDraftBeEdited({
+      chatSessionState: previousChatSessionState,
+      isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
+        input.conversationSessionCompactionStatus,
+      ),
+    })) {
       return;
     }
 
-    const previousChatSessionState = input.latestChatSessionStateRef.current;
     const editedChatSessionState = insertSummarizedPastedTextIntoPromptDraft({
       chatSessionState: previousChatSessionState,
       pastedText: summarizedPromptTextPaste.pastedText,
@@ -250,7 +287,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         ? { replacementEndOffset: summarizedPromptTextPaste.replacementEndOffset }
         : {}),
     });
-    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(editedChatSessionState);
+    const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(editedChatSessionState, input.availableSkills);
 
     if (nextChatSessionState === previousChatSessionState) {
       return;

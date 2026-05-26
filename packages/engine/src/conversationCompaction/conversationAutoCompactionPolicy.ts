@@ -141,6 +141,7 @@ export function decideConversationAutoCompaction(
     const reservedTokenTriggerTokenCount = calculateReservedTokenTriggerTokenCount({
       contextWindowTokenCapacity,
       inputTokenCapacity: modelContextWindowTokenLimits?.inputTokenCapacity,
+      preferredContextPerformanceBudgetTokenCount: modelContextWindowTokenLimits?.preferredContextPerformanceBudgetTokenCount,
       reservedTokenCount: input.reservedTokenCount,
     });
     return {
@@ -159,6 +160,7 @@ export function decideConversationAutoCompaction(
   const thresholdTriggerTokenCount = calculateThresholdTokenTriggerTokenCount({
     contextWindowTokenCapacity,
     inputTokenCapacity: modelContextWindowTokenLimits?.inputTokenCapacity,
+    preferredContextPerformanceBudgetTokenCount: modelContextWindowTokenLimits?.preferredContextPerformanceBudgetTokenCount,
     thresholdRatio,
     reservedTokenCount: DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT,
   });
@@ -177,43 +179,66 @@ export function decideConversationAutoCompaction(
 function calculateThresholdTokenTriggerTokenCount(input: {
   contextWindowTokenCapacity: number;
   inputTokenCapacity?: number | undefined;
+  preferredContextPerformanceBudgetTokenCount?: number | undefined;
   thresholdRatio: number;
   reservedTokenCount: number;
 }): number {
   const rawContextThresholdTokenCount = Math.floor(input.contextWindowTokenCapacity * input.thresholdRatio);
-  const usableInputTriggerTokenCount = calculateUsableInputTriggerTokenCount({
-    inputTokenCapacity: input.inputTokenCapacity,
+  const inputCapacityTriggerTokenCount = calculateReservedHeadroomTriggerTokenCount({
+    tokenCapacity: input.inputTokenCapacity,
+    reservedTokenCount: input.reservedTokenCount,
+  });
+  const preferredPerformanceBudgetTriggerTokenCount = calculateReservedHeadroomTriggerTokenCount({
+    tokenCapacity: input.preferredContextPerformanceBudgetTokenCount,
     reservedTokenCount: input.reservedTokenCount,
   });
 
-  return usableInputTriggerTokenCount === undefined
-    ? rawContextThresholdTokenCount
-    : Math.min(rawContextThresholdTokenCount, usableInputTriggerTokenCount);
+  return minDefinedTokenCount([
+    rawContextThresholdTokenCount,
+    inputCapacityTriggerTokenCount,
+    preferredPerformanceBudgetTriggerTokenCount,
+  ]);
 }
 
 function calculateReservedTokenTriggerTokenCount(input: {
   contextWindowTokenCapacity: number;
   inputTokenCapacity?: number | undefined;
+  preferredContextPerformanceBudgetTokenCount?: number | undefined;
   reservedTokenCount: number;
 }): number {
   const rawContextTriggerTokenCount = Math.max(0, input.contextWindowTokenCapacity - input.reservedTokenCount);
-  const usableInputTriggerTokenCount = calculateUsableInputTriggerTokenCount({
-    inputTokenCapacity: input.inputTokenCapacity,
+  const inputCapacityTriggerTokenCount = calculateReservedHeadroomTriggerTokenCount({
+    tokenCapacity: input.inputTokenCapacity,
+    reservedTokenCount: input.reservedTokenCount,
+  });
+  const preferredPerformanceBudgetTriggerTokenCount = calculateReservedHeadroomTriggerTokenCount({
+    tokenCapacity: input.preferredContextPerformanceBudgetTokenCount,
     reservedTokenCount: input.reservedTokenCount,
   });
 
-  return usableInputTriggerTokenCount === undefined
-    ? rawContextTriggerTokenCount
-    : Math.min(rawContextTriggerTokenCount, usableInputTriggerTokenCount);
+  return minDefinedTokenCount([
+    rawContextTriggerTokenCount,
+    inputCapacityTriggerTokenCount,
+    preferredPerformanceBudgetTriggerTokenCount,
+  ]);
 }
 
-function calculateUsableInputTriggerTokenCount(input: {
-  inputTokenCapacity?: number | undefined;
+function calculateReservedHeadroomTriggerTokenCount(input: {
+  tokenCapacity?: number | undefined;
   reservedTokenCount: number;
 }): number | undefined {
-  return input.inputTokenCapacity === undefined
+  return input.tokenCapacity === undefined
     ? undefined
-    : Math.max(0, input.inputTokenCapacity - input.reservedTokenCount);
+    : Math.max(0, input.tokenCapacity - input.reservedTokenCount);
+}
+
+function minDefinedTokenCount(tokenCounts: readonly (number | undefined)[]): number {
+  const definedTokenCounts = tokenCounts.filter((tokenCount): tokenCount is number => tokenCount !== undefined);
+  if (definedTokenCounts.length === 0) {
+    throw new Error("Cannot calculate a token trigger without at least one token count.");
+  }
+
+  return Math.min(...definedTokenCounts);
 }
 
 export { calculateContextTokensUsedFromTokenUsage } from "@buli/contracts";

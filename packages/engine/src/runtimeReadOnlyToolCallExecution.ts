@@ -68,6 +68,7 @@ const autoApprovedReadOnlyToolCallExecutorByName: {
 export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
+  conversationTurnId: string;
   toolCallId: string;
   toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
   workspaceRootPath: string;
@@ -225,6 +226,7 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
       pendingProviderToolResultSubmissions.push(startProviderToolResultSubmission({
         providerConversationTurn: input.providerConversationTurn,
         providerToolResult: recordedToolCallOutcome.providerToolResult,
+        conversationTurnId: input.conversationTurnId,
         diagnosticLogger: input.diagnosticLogger,
       }));
     }
@@ -239,6 +241,7 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
 function startProviderToolResultSubmission(input: {
   providerConversationTurn: ProviderConversationTurn;
   providerToolResult: RecordedAutoApprovedReadOnlyToolCallOutcome["providerToolResult"];
+  conversationTurnId: string;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): PendingProviderToolResultSubmission {
   const toolCallId = input.providerToolResult.toolCallId;
@@ -246,6 +249,7 @@ function startProviderToolResultSubmission(input: {
     toolCallId,
     submissionOutcome: submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId,
       toolResultText: input.providerToolResult.toolResultText,
       toolResultKind: input.providerToolResult.toolResultKind,

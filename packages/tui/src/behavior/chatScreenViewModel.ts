@@ -5,12 +5,17 @@ import {
   type ConversationMessage,
   type ConversationMessagePart,
 } from "@buli/contracts";
-import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
+import {
+  isConversationSessionCompactionBlockingPromptInput,
+  type ConversationSessionCompactionStatus,
+} from "@buli/chat-app-controller";
 import {
   buildChatSlashCommands,
+  canChatSessionPromptDraftBeEdited,
   resolveNextAssistantOperatingMode,
   type ChatSessionState,
   type ChatSlashCommand,
+  type ChatSlashCommandSkill,
   type ReasoningSummaryDisplayMode,
 } from "@buli/chat-session-state";
 import {
@@ -99,12 +104,17 @@ type ChatScreenInteractionPromptState = Pick<
 
 type ChatScreenInteractionSelectionState = Pick<
   ChatSessionState,
-  "conversationSessionSelectionState" | "modelAndReasoningSelectionState"
+  | "conversationSessionSelectionState"
+  | "modelAndReasoningSelectionState"
+  | "slashCommandSelectionState"
+  | "promptContextSelectionState"
+  | "isCommandHelpModalVisible"
 >;
 
 export function buildChatScreenViewModel(input: {
   chatSessionState: ChatSessionState;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+  availableSkills?: readonly ChatSlashCommandSkill[] | undefined;
   terminalRowCount: number;
   terminalColumnCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
@@ -116,6 +126,7 @@ export function buildChatScreenViewModel(input: {
       selectionState: input.chatSessionState,
       conversationSessionCompactionStatus: input.conversationSessionCompactionStatus,
       reasoningSummaryDisplayMode: input.chatSessionState.reasoningSummaryDisplayMode,
+      availableSkills: input.availableSkills,
       terminalRowCount: input.terminalRowCount,
       terminalColumnCount: input.terminalColumnCount,
       terminalSizeTierForChatScreen: input.terminalSizeTierForChatScreen,
@@ -132,17 +143,18 @@ export function buildChatScreenInteractionViewModel(input: {
   selectionState: ChatScreenInteractionSelectionState;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
+  availableSkills?: readonly ChatSlashCommandSkill[] | undefined;
   terminalRowCount: number;
   terminalColumnCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
 }): ChatScreenInteractionViewModel {
-  const isConversationCompactionRunning = input.conversationSessionCompactionStatus.step === "compacting";
   const isPromptInputDisabled =
-    isConversationCompactionRunning ||
+    isConversationSessionCompactionBlockingPromptInput(input.conversationSessionCompactionStatus) ||
     input.promptState.isInitialConversationSessionHydrationPending === true ||
-    input.promptState.conversationTurnStatus === "waiting_for_tool_approval" ||
-    input.selectionState.modelAndReasoningSelectionState.step !== "hidden" ||
-    input.selectionState.conversationSessionSelectionState.step !== "hidden";
+    !canChatSessionPromptDraftBeEdited({
+      ...input.promptState,
+      ...input.selectionState,
+    });
   const inputRegionRowCount =
     input.terminalSizeTierForChatScreen === minimumTerminalSizeTier
       ? MINIMUM_HEIGHT_PROMPT_STRIP_ROW_COUNT
@@ -154,7 +166,7 @@ export function buildChatScreenInteractionViewModel(input: {
 
   return {
     isPromptInputDisabled,
-    availableChatSlashCommands: listStableChatSlashCommands(input.reasoningSummaryDisplayMode),
+    availableChatSlashCommands: listStableChatSlashCommands(input.reasoningSummaryDisplayMode, input.availableSkills),
     shortModeLabel: formatAssistantOperatingModeShortLabel(input.promptState.selectedAssistantOperatingMode),
     nextShortModeLabel: formatAssistantOperatingModeShortLabel(nextAssistantOperatingMode),
     nextModeAccentColor: resolveAssistantOperatingModeAccentColor(nextAssistantOperatingMode),
@@ -337,7 +349,14 @@ function areConversationMessagePartReferencesEqual(
   );
 }
 
-function listStableChatSlashCommands(reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode): readonly ChatSlashCommand[] {
+function listStableChatSlashCommands(
+  reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode,
+  availableSkills: readonly ChatSlashCommandSkill[] | undefined,
+): readonly ChatSlashCommand[] {
+  if (availableSkills !== undefined && availableSkills.length > 0) {
+    return buildChatSlashCommands({ reasoningSummaryDisplayMode, availableSkills });
+  }
+
   return reasoningSummaryDisplayMode === "expanded"
     ? CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_EXPANDED
     : CHAT_SLASH_COMMANDS_WITH_REASONING_SUMMARY_COLLAPSED;

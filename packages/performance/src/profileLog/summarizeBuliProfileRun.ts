@@ -1,6 +1,7 @@
 import type {
   BuliProfileJsonlEvent,
   ProfileDiagnosticEvent,
+  ProfileLoggerSummaryEvent,
   ProfileProcessSampleEvent,
 } from "./readBuliProfileJsonl.ts";
 
@@ -23,8 +24,11 @@ export type BuliProfileRunSummary = Readonly<{
   diagnosticEventCounts: readonly DiagnosticEventCount[];
   diagnosticDurationSummaries: readonly DiagnosticDurationSummary[];
   processSampleCount: number;
+  profileLoggerSummary: ProfileLoggerSummaryEvent | undefined;
   maxRssBytes: number | undefined;
   maxHeapUsedBytes: number | undefined;
+  maxCpuUserDeltaMicros: number | undefined;
+  maxCpuSystemDeltaMicros: number | undefined;
   maxEventLoopDelayMs: number | undefined;
   maxEventLoopUtilization: number | undefined;
 }>;
@@ -38,6 +42,9 @@ export function summarizeBuliProfileRun(profileEvents: readonly BuliProfileJsonl
   const processSamples = profileEvents.filter((profileEvent): profileEvent is ProfileProcessSampleEvent =>
     profileEvent.type === "process_sample"
   );
+  const profileLoggerSummary = profileEvents.findLast((profileEvent): profileEvent is ProfileLoggerSummaryEvent =>
+    profileEvent.type === "profile_logger_summary"
+  );
 
   return {
     profileStartedAtMs: startedEvent?.atMs,
@@ -46,8 +53,13 @@ export function summarizeBuliProfileRun(profileEvents: readonly BuliProfileJsonl
     diagnosticEventCounts: countDiagnosticEvents(diagnosticEvents),
     diagnosticDurationSummaries: summarizeDiagnosticDurations(diagnosticEvents),
     processSampleCount: processSamples.length,
+    profileLoggerSummary,
     maxRssBytes: maxNumber(processSamples.map((sample) => sample.rssBytes)),
     maxHeapUsedBytes: maxNumber(processSamples.map((sample) => sample.heapUsedBytes)),
+    maxCpuUserDeltaMicros: maxNumber(processSamples.flatMap((sample) => sample.cpuUserDeltaMicros === undefined ? [] : [sample.cpuUserDeltaMicros])),
+    maxCpuSystemDeltaMicros: maxNumber(
+      processSamples.flatMap((sample) => sample.cpuSystemDeltaMicros === undefined ? [] : [sample.cpuSystemDeltaMicros]),
+    ),
     maxEventLoopDelayMs: maxNumber(processSamples.map((sample) => sample.eventLoopDelayMaxMs)),
     maxEventLoopUtilization: maxNumber(processSamples.map((sample) => sample.eventLoopUtilization)),
   };

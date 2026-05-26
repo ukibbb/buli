@@ -11,8 +11,10 @@ import type {
 } from "@buli/contracts";
 
 export type ConversationTurnRequest = {
+  conversationTurnId?: string;
   userPromptText: string;
   userPromptImageAttachments?: readonly UserPromptImageAttachment[];
+  userSelectedSkillName?: string;
   assistantOperatingMode?: AssistantOperatingMode;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -38,6 +40,7 @@ export interface ConversationCompactionRunner {
 }
 
 export type ProviderConversationTurnRequest = {
+  conversationTurnId?: string;
   systemPromptText: string;
   conversationSessionEntries: readonly ConversationSessionEntry[];
   selectedModelId: string;

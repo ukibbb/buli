@@ -14,7 +14,8 @@ import {
 } from "../src/runtimeReadOnlyToolCallExecution.ts";
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "../src/runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
-import { runReadManyToolCall } from "../src/tools/readManyTool.ts";
+import { MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH, runReadManyToolCall } from "../src/tools/readManyTool.ts";
+import { MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH, runSearchManyToolCall } from "../src/tools/searchManyTool.ts";
 
 class RecordingProviderConversationTurn implements ProviderConversationTurn {
   readonly submittedToolResults: ProviderToolResultSubmission[] = [];
@@ -184,6 +185,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records read_
 
   const assistantResponseEvents = await collectReadOnlyToolCallEvents({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     toolCallId: "call_read_many_1",
     toolCallRequest: {
@@ -255,6 +257,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records read_
   ]);
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("2: beta");
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Read failed: File not found: missing.txt");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<read_many_truncation>");
   expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
     entryKind: "completed_tool_result",
     toolCallId: "call_read_many_1",
@@ -296,6 +299,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records searc
 
   const assistantResponseEvents = await collectReadOnlyToolCallEvents({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     toolCallId: "call_search_many_1",
     toolCallRequest: {
@@ -371,6 +375,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records searc
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("src/app.ts");
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("----- next search result -----");
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Grep failed:");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<search_many_truncation>");
   expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
     entryKind: "completed_tool_result",
     toolCallId: "call_search_many_1",
@@ -381,6 +386,62 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records searc
     },
     toolResultText: expect.stringContaining("<search_many>"),
   });
+});
+
+test("runReadManyToolCall caps large batch output with continuation guidance", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-many-budget-"));
+  const largeFileText = Array.from({ length: 800 }, (_value, lineIndex) =>
+    `${lineIndex + 1}: ${"read-many-output ".repeat(8)}`
+  ).join("\n");
+  await writeFile(join(workspaceRootPath, "large.txt"), largeFileText, "utf8");
+
+  const toolCallOutcome = await runReadManyToolCall({
+    readManyToolCallRequest: {
+      toolName: "read_many",
+      readTargets: [{ readTargetPath: "large.txt", maximumLineCount: 800 }],
+    },
+    workspaceRootPath,
+    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
+      maximumConcurrentReadOnlyToolCalls: 2,
+    }),
+  });
+
+  expect(toolCallOutcome.outcomeKind).toBe("completed");
+  if (toolCallOutcome.outcomeKind !== "completed") {
+    throw new Error("Expected read_many to complete");
+  }
+  expect(toolCallOutcome.toolResultText.length).toBeLessThanOrEqual(MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH);
+  expect(toolCallOutcome.toolResultText).toContain("<read_many_truncation>");
+  expect(toolCallOutcome.toolResultText).toContain("Use read with one readTargetPath plus offsetLineNumber and maximumLineCount");
+  expect(toolCallOutcome.toolResultText).toContain("</read_many>");
+});
+
+test("runSearchManyToolCall caps large batch output with continuation guidance", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-search-many-budget-"));
+  const largeSearchText = Array.from({ length: 600 }, (_value, lineIndex) =>
+    `marker-${lineIndex + 1} ${"search-many-output ".repeat(8)}`
+  ).join("\n");
+  await writeFile(join(workspaceRootPath, "matches.txt"), largeSearchText, "utf8");
+
+  const toolCallOutcome = await runSearchManyToolCall({
+    searchManyToolCallRequest: {
+      toolName: "search_many",
+      searches: [{ searchKind: "grep", regexPattern: "marker", searchPath: "matches.txt" }],
+    },
+    workspaceRootPath,
+    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
+      maximumConcurrentReadOnlyToolCalls: 2,
+    }),
+  });
+
+  expect(toolCallOutcome.outcomeKind).toBe("completed");
+  if (toolCallOutcome.outcomeKind !== "completed") {
+    throw new Error("Expected search_many to complete");
+  }
+  expect(toolCallOutcome.toolResultText.length).toBeLessThanOrEqual(MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH);
+  expect(toolCallOutcome.toolResultText).toContain("<search_many_truncation>");
+  expect(toolCallOutcome.toolResultText).toContain("Use a narrower grep, glob, or search_many path/pattern");
+  expect(toolCallOutcome.toolResultText).toContain("</search_many>");
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and submits completed read results", async () => {
@@ -409,6 +470,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
 
   const assistantResponseEvents = await collectReadOnlyToolCallEvents({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     toolCallId: "call_read_1",
     toolCallRequest: {
@@ -496,6 +558,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
 
   const assistantResponseEvents = await collectReadOnlyToolCallEvents({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     toolCallId: "call_glob_1",
     toolCallRequest: {
@@ -558,6 +621,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
 
   const assistantResponseEvents = await collectReadOnlyToolCallEvents({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     toolCallId: "call_grep_1",
     toolCallRequest: {
@@ -641,6 +705,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls emits fast c
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
   const assistantResponseEventIterator = streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     requestedToolCalls,
     workspaceRootPath,
@@ -733,6 +798,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls does not blo
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
   const assistantResponseEventIterator = streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     requestedToolCalls,
     workspaceRootPath,
@@ -815,6 +881,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concu
 
   const assistantResponseEventsPromise = collectReadOnlyToolCallBatchEvents({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     requestedToolCalls,
     workspaceRootPath,
@@ -887,6 +954,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall limits read_m
 
   const assistantResponseEventsPromise = collectReadOnlyToolCallEvents({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     toolCallId: "call_read_many_1",
     toolCallRequest: {

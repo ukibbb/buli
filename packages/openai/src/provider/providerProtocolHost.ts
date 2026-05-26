@@ -1,6 +1,8 @@
 import {
+  CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND,
   PROVIDER_PROTOCOL_VERSION,
   encodeProviderProtocolFrameAsJsonLine,
+  isContextWindowOverflowError,
   streamProviderProtocolHostFramesFromJsonLines,
   type AvailableAssistantModel,
   type ProviderProtocolClosedReason,
@@ -419,14 +421,25 @@ function createProviderProtocolError(input: {
   error: unknown;
 }): ProviderProtocolError {
   const errorMessage = createErrorMessage(input.error);
+  const errorDetails = createProviderProtocolErrorDetails(input.error);
   return {
     errorCode: input.errorCode,
     errorMessage: errorMessage.length > 0 ? errorMessage : "Unknown OpenAI provider protocol host error.",
     providerName: input.providerName,
-    ...(input.error instanceof Error && input.error.name.length > 0
-      ? { details: { errorName: input.error.name } }
-      : {}),
+    ...(errorDetails ? { details: errorDetails } : {}),
   };
+}
+
+function createProviderProtocolErrorDetails(error: unknown): ProviderProtocolError["details"] | undefined {
+  const errorDetails: NonNullable<ProviderProtocolError["details"]> = {};
+  if (error instanceof Error && error.name.length > 0) {
+    errorDetails["errorName"] = error.name;
+  }
+  if (isContextWindowOverflowError(error)) {
+    errorDetails["failureKind"] = CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND;
+  }
+
+  return Object.keys(errorDetails).length > 0 ? errorDetails : undefined;
 }
 
 function createErrorMessage(error: unknown): string {

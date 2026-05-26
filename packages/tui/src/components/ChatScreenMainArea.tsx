@@ -1,4 +1,5 @@
 import type { ChatSlashCommand, ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
+import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import type { ChatScreenTheme, TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo, type ReactNode, type RefObject } from "react";
@@ -20,6 +21,10 @@ export type ChatScreenMainAreaProps = {
   olderConversationMessageRevealCount: number;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+  queuedPromptCount: number;
+  totalContextTokensUsed: number | undefined;
+  contextWindowTokenCapacity: number | undefined;
   onRevealOlderConversationMessages: () => void;
   onCommandHelpCloseRequested: () => void;
 };
@@ -51,6 +56,10 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
       accentColor={props.inputPanelAccentColor}
       terminalColumnCount={props.terminalColumnCount}
+      conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
+      queuedPromptCount={props.queuedPromptCount}
+      totalContextTokensUsed={props.totalContextTokensUsed}
+      contextWindowTokenCapacity={props.contextWindowTokenCapacity}
     />
   );
 }

@@ -15,6 +15,8 @@ export const MAX_PATCH_TOOL_PATCH_TEXT_LENGTH = 1_000_000;
 export const MAX_WRITE_TOOL_FILE_CONTENT_LENGTH = 1_000_000;
 export const MAX_TASK_TOOL_DESCRIPTION_LENGTH = 2_000;
 export const MAX_TASK_TOOL_PROMPT_LENGTH = 100_000;
+export const MAX_SKILL_NAME_LENGTH = 64;
+export const SKILL_NAME_PATTERN_TEXT = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
 
 const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
 const PATCH_FILE_SECTION_HEADER_PREFIXES = ["*** Add File:", "*** Update File:", "*** Delete File:"] as const;
@@ -195,6 +197,13 @@ export const TaskToolCallRequestSchema = z
   })
   .strict();
 
+export const SkillToolCallRequestSchema = z
+  .object({
+    toolName: z.literal("skill"),
+    skillName: z.string().min(1).max(MAX_SKILL_NAME_LENGTH).regex(new RegExp(SKILL_NAME_PATTERN_TEXT)),
+  })
+  .strict();
+
 export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   BashToolCallRequestSchema,
   ReadToolCallRequestSchema,
@@ -208,6 +217,7 @@ export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   PatchManyToolCallRequestSchema,
   WriteToolCallRequestSchema,
   TaskToolCallRequestSchema,
+  SkillToolCallRequestSchema,
 ]);
 
 export type BashToolCallRequest = z.infer<typeof BashToolCallRequestSchema>;
@@ -227,6 +237,7 @@ export type PatchToolCallRequest = z.infer<typeof PatchToolCallRequestSchema>;
 export type PatchManyToolCallRequest = z.infer<typeof PatchManyToolCallRequestSchema>;
 export type WriteToolCallRequest = z.infer<typeof WriteToolCallRequestSchema>;
 export type TaskToolCallRequest = z.infer<typeof TaskToolCallRequestSchema>;
+export type SkillToolCallRequest = z.infer<typeof SkillToolCallRequestSchema>;
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
 function inspectPatchTextStructure(patchText: string): PatchTextStructure {

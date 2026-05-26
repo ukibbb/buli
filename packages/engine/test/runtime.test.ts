@@ -8,9 +8,10 @@ import type {
   ConversationSessionEntry,
   ModelContextItem,
   ProviderStreamEvent,
+  TokenUsage,
   ProviderTurnReplay,
 } from "@buli/contracts";
-import { ContextWindowOverflowError } from "@buli/contracts";
+import { ContextWindowOverflowError, listModelVisibleConversationSessionEntries } from "@buli/contracts";
 import type {
   ConversationTurnProvider,
   ProviderConversationTurn,
@@ -18,6 +19,14 @@ import type {
   WorkspaceShellCommandExecutor,
 } from "../src/index.ts";
 import { AssistantConversationRuntime, InMemoryConversationHistory } from "../src/index.ts";
+
+const completedUsage: TokenUsage = {
+  total: 12,
+  input: 7,
+  output: 5,
+  reasoning: 0,
+  cache: { read: 0, write: 0 },
+};
 
 class ScriptedProviderTurn implements ProviderConversationTurn {
   readonly beforeToolResultEvents: ProviderStreamEvent[];
@@ -78,11 +87,29 @@ class ThrowingToolResultProviderTurn extends ScriptedProviderTurn {
   }
 }
 
+class ThrowingProviderTurn implements ProviderConversationTurn {
+  readonly error: Error;
+
+  constructor(error: Error) {
+    this.error = error;
+  }
+
+  async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
+    throw this.error;
+  }
+
+  async submitToolResult(): Promise<void> {}
+
+  getProviderTurnReplay(): ProviderTurnReplay | undefined {
+    return undefined;
+  }
+}
+
 class RecordingConversationTurnProvider implements ConversationTurnProvider {
   readonly startedTurnRequests: ProviderConversationTurnRequest[] = [];
-  readonly scriptedProviderTurns: ScriptedProviderTurn[];
+  readonly scriptedProviderTurns: ProviderConversationTurn[];
 
-  constructor(scriptedProviderTurns: ScriptedProviderTurn[]) {
+  constructor(scriptedProviderTurns: ProviderConversationTurn[]) {
     this.scriptedProviderTurns = [...scriptedProviderTurns];
   }
 
@@ -168,6 +195,74 @@ class DeferredCompletion {
   resolve(): void {
     this.resolvePromise?.();
   }
+}
+
+class ElapsedCheckpointExplorerProviderTurn implements ProviderConversationTurn {
+  readonly delayBeforeSecondToolMilliseconds: number;
+  readonly submittedToolResults: Array<{ toolCallId: string; toolResultText: string }> = [];
+  private readonly submittedToolResultWaiters: Array<{
+    submittedToolResultCount: number;
+    completion: DeferredCompletion;
+  }> = [];
+
+  constructor(input: { delayBeforeSecondToolMilliseconds: number }) {
+    this.delayBeforeSecondToolMilliseconds = input.delayBeforeSecondToolMilliseconds;
+  }
+
+  async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
+    yield {
+      type: "tool_call_requested",
+      toolCallId: "call_read_first",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    };
+    await this.waitForSubmittedToolResultCount(1);
+    await delayMilliseconds(this.delayBeforeSecondToolMilliseconds);
+    yield {
+      type: "tool_call_requested",
+      toolCallId: "call_read_second",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    };
+    await this.waitForSubmittedToolResultCount(2);
+    yield { type: "text_chunk", text: "Elapsed checkpoint summary." };
+    yield { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } };
+  }
+
+  async submitToolResult(input: { toolCallId: string; toolResultText: string }): Promise<void> {
+    this.submittedToolResults.push(input);
+    this.resolveSubmittedToolResultWaiters();
+  }
+
+  getProviderTurnReplay(): ProviderTurnReplay | undefined {
+    return undefined;
+  }
+
+  private waitForSubmittedToolResultCount(submittedToolResultCount: number): Promise<void> {
+    if (this.submittedToolResults.length >= submittedToolResultCount) {
+      return Promise.resolve();
+    }
+
+    const completion = new DeferredCompletion();
+    this.submittedToolResultWaiters.push({ submittedToolResultCount, completion });
+    return completion.promise;
+  }
+
+  private resolveSubmittedToolResultWaiters(): void {
+    for (const waiter of this.submittedToolResultWaiters) {
+      if (this.submittedToolResults.length >= waiter.submittedToolResultCount) {
+        waiter.completion.resolve();
+      }
+    }
+  }
+}
+
+function delayMilliseconds(milliseconds: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
 class ConcurrentExplorerStartBarrier {
@@ -667,7 +762,7 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
     "The output should be clean enough that Implementation mode can execute it without re-planning.",
   );
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
     entryKind: "user_prompt",
     assistantOperatingMode: "plan",
@@ -697,7 +792,7 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
 });
 
 test("AssistantConversationRuntime filters explicit tool overrides in read-only modes", async () => {
@@ -1069,6 +1164,157 @@ test("AssistantConversationRuntime marks context-window overflow failures", asyn
     failureKind: "context_window_overflow",
     failureExplanation: "Your input exceeds the context window of this model. | code=context_length_exceeded",
   });
+});
+
+test("AssistantConversationRuntime compacts prior history and replays the current prompt after context-window overflow", async () => {
+  const priorConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Earlier prompt",
+      modelFacingPromptText: "Earlier prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Earlier answer",
+    },
+  ];
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: priorConversationSessionEntries,
+  });
+  const provider = new RecordingConversationTurnProvider([
+    new ThrowingProviderTurn(new ContextWindowOverflowError("context length exceeded before streaming")),
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Goal: continue from compacted prior context." },
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Recovered after compaction." },
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    conversationHistory,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Current prompt",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.filter((assistantResponseEvent) => assistantResponseEvent.type === "assistant_message_failed")).toEqual([]);
+  expect(emittedAssistantEvents.at(-1)).toMatchObject({
+    type: "assistant_message_completed",
+    messageId: expect.any(String),
+  });
+  expect(provider.startedTurnRequests.length).toBe(3);
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toMatchObject([
+    { entryKind: "user_prompt", promptText: "Earlier prompt" },
+    { entryKind: "assistant_message", assistantMessageText: "Earlier answer" },
+    { entryKind: "user_prompt", promptText: "Current prompt" },
+  ]);
+  expect(provider.startedTurnRequests[1]?.conversationSessionEntries).not.toContainEqual(
+    expect.objectContaining({ entryKind: "user_prompt", promptText: "Current prompt" }),
+  );
+  const retryModelVisibleConversationSessionEntries = listModelVisibleConversationSessionEntries(
+    provider.startedTurnRequests[2]?.conversationSessionEntries ?? [],
+  );
+  expect(retryModelVisibleConversationSessionEntries).toMatchObject([
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue from compacted prior context.",
+      compactionSource: "auto",
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Current prompt",
+      modelFacingPromptText: "Current prompt",
+    },
+  ]);
+  expect(retryModelVisibleConversationSessionEntries.filter(
+    (conversationSessionEntry) =>
+      conversationSessionEntry.entryKind === "user_prompt" && conversationSessionEntry.promptText === "Current prompt",
+  )).toHaveLength(1);
+  expect(runtime.conversationHistory.listConversationSessionEntries().filter(
+    (conversationSessionEntry) =>
+      conversationSessionEntry.entryKind === "user_prompt" && conversationSessionEntry.promptText === "Current prompt",
+  )).toHaveLength(1);
+  expect(runtime.conversationHistory.listConversationSessionEntries().some(
+    (conversationSessionEntry) =>
+      conversationSessionEntry.entryKind === "assistant_message" && conversationSessionEntry.assistantMessageStatus === "failed",
+  )).toBe(false);
+});
+
+test("AssistantConversationRuntime emits one failed assistant message when overflow recovery overflows again", async () => {
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Earlier prompt",
+        modelFacingPromptText: "Earlier prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Earlier answer",
+      },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([
+    new ThrowingProviderTurn(new ContextWindowOverflowError("first overflow")),
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Goal: retry from compacted prior context." },
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+    new ThrowingProviderTurn(new ContextWindowOverflowError("second overflow")),
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    conversationHistory,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Still too large prompt",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  const failedAssistantEvents = emittedAssistantEvents.filter(
+    (assistantResponseEvent) => assistantResponseEvent.type === "assistant_message_failed",
+  );
+  expect(failedAssistantEvents).toEqual([
+    expect.objectContaining({
+      type: "assistant_message_failed",
+      errorText: "second overflow",
+      failureKind: "context_window_overflow",
+    }),
+  ]);
+  expect(provider.startedTurnRequests.length).toBe(3);
+  expect(provider.startedTurnRequests[1]?.conversationSessionEntries).not.toContainEqual(
+    expect.objectContaining({ entryKind: "user_prompt", promptText: "Still too large prompt" }),
+  );
+  expect(runtime.conversationHistory.listConversationSessionEntries().filter(
+    (conversationSessionEntry) =>
+      conversationSessionEntry.entryKind === "user_prompt" && conversationSessionEntry.promptText === "Still too large prompt",
+  )).toHaveLength(1);
+  expect(runtime.conversationHistory.listConversationSessionEntries().filter(
+    (conversationSessionEntry) =>
+      conversationSessionEntry.entryKind === "assistant_message" && conversationSessionEntry.assistantMessageStatus === "failed",
+  )).toHaveLength(1);
 });
 
 test("AssistantConversationRuntime emits failure when the provider stream ends without completion", async () => {
@@ -3617,11 +3863,13 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
   if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
     throw new Error("Expected completed Explorer task tool result");
   }
-  expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toEqual({
+  expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toMatchObject({
     checkpointReason: "child_tool_call_count",
     childToolCallCount: 192,
     childToolResultTextLength: expect.any(Number),
     skippedChildToolCallCount: 1,
+    elapsedMilliseconds: expect.any(Number),
+    softElapsedTimeCheckpointMilliseconds: 120_000,
   });
   expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
   expect(
@@ -3629,6 +3877,83 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
       (subagentChildToolCall) => subagentChildToolCall.subagentChildToolCallStatus === "denied",
     ),
   ).toBe(false);
+});
+
+test("AssistantConversationRuntime asks task subagents for a checkpoint after the soft elapsed-time budget", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-elapsed-budget-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nElapsed target\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs until elapsed budget",
+          subagentPrompt: "Read README.md, then keep reading until asked for a checkpoint.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Explorer elapsed budget acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const explorerProviderTurn = new ElapsedCheckpointExplorerProviderTurn({
+    delayBeforeSecondToolMilliseconds: 10,
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    taskSubagentSoftElapsedTimeCheckpointMilliseconds: 5,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs with an elapsed budget",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(explorerProviderTurn.submittedToolResults).toHaveLength(2);
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolCallId).toBe("call_read_first");
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Elapsed target");
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolCallId).toBe("call_read_second");
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("Explorer research budget reached");
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("soft elapsed-time limit");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Elapsed checkpoint summary");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<reason>elapsed_time</reason>");
+  const completedTaskToolResult = runtime.conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
+      conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
+  );
+  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+    throw new Error("Expected completed Explorer task tool result");
+  }
+  expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toMatchObject({
+    checkpointReason: "elapsed_time",
+    childToolCallCount: 1,
+    skippedChildToolCallCount: 1,
+    softElapsedTimeCheckpointMilliseconds: 5,
+  });
+  expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint?.elapsedMilliseconds).toBeGreaterThanOrEqual(5);
+  expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(1);
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "tool_call.task_subagent_research_checkpoint_requested",
+      fields: expect.objectContaining({
+        checkpointReason: "elapsed_time",
+        childToolCallCount: 1,
+        skippedChildToolCallCount: 1,
+      }),
+    }),
+  );
 });
 
 test("AssistantConversationRuntime lets Explorer exceed the old child output budget", async () => {
@@ -3826,11 +4151,13 @@ test("AssistantConversationRuntime fails Explorer clearly when it keeps requesti
     throw new Error("Expected failed Explorer task tool result");
   }
   expect(failedTaskToolResult.failureExplanation).toContain("Explorer continued requesting tools after the research checkpoint");
-  expect(failedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toEqual({
+  expect(failedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toMatchObject({
     checkpointReason: "child_tool_call_count",
     childToolCallCount: 192,
     childToolResultTextLength: expect.any(Number),
     skippedChildToolCallCount: 1,
+    elapsedMilliseconds: expect.any(Number),
+    softElapsedTimeCheckpointMilliseconds: 120_000,
   });
   expect(failedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
   expect(explorerProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).not.toContain(

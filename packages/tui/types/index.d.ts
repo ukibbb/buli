@@ -17,12 +17,14 @@ import type {
   ConversationTurnRequest,
   PromptContextCandidate,
 } from "@buli/engine";
+import type { ChatSlashCommandSkill } from "@buli/chat-session-state";
 import type { ReactNode } from "react";
 
 export type ChatScreenProps = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort;
   selectedReasoningEffort?: ReasoningEffort;
+  availableSkills?: readonly ChatSlashCommandSkill[];
   initialConversationSessionId?: string;
   initialConversationSessionEntries?: readonly ConversationSessionEntry[];
   loadInitialConversationSessionEntries?:
@@ -98,6 +100,7 @@ export type RenderChatScreenInTerminalInput = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
+  availableSkills?: ChatScreenProps["availableSkills"];
   initialConversationSessionId?: ChatScreenProps["initialConversationSessionId"];
   initialConversationSessionEntries?: ChatScreenProps["initialConversationSessionEntries"];
   loadInitialConversationSessionEntries?: ChatScreenProps["loadInitialConversationSessionEntries"];

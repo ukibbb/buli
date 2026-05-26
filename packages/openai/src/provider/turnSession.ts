@@ -12,6 +12,10 @@ import type {
   ToolCallRequest,
 } from "@buli/contracts";
 import {
+  calculateContextTokensUsedFromTokenUsage,
+  lookupModelContextWindowTokenLimitsForModel,
+} from "@buli/contracts";
+import {
   createFunctionCallOutputInputItem,
   createOpenAiResponseReplayItems,
   createOpenAiResponsesInputItems,
@@ -30,7 +34,7 @@ import {
   type OpenAiHttpErrorResponse,
 } from "./httpResponseDiagnostics.ts";
 import { fetchWithTimeout } from "../fetchWithTimeout.ts";
-import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
+import { requestOpenAiHttpResponseWithRetries, type OpenAiHttpRetryPolicy } from "./openAiHttpRetry.ts";
 import {
   createOpenAiResponsesHttpRequestBodyFromTemplate,
   createOpenAiResponsesHttpRequestTemplate,
@@ -67,9 +71,30 @@ type OpenAiResponseStepToolCallTerminalState = Extract<
 const DEFAULT_RESPONSE_STEP_DIAGNOSTIC_WARNING_THRESHOLD = 32;
 const DEFAULT_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 128;
 const DEFAULT_REPEATED_TOOL_CALL_DIAGNOSTIC_WARNING_THRESHOLD = 3;
-const DEFAULT_OPENAI_RESPONSE_STEP_FETCH_TIMEOUT_MILLISECONDS = 60_000;
+const DEFAULT_OPENAI_RESPONSE_STEP_FETCH_TIMEOUT_MILLISECONDS = 180_000;
 const DEFAULT_OPENAI_RESPONSE_STEP_STREAM_IDLE_TIMEOUT_MILLISECONDS = 300_000;
+const DEFAULT_OPENAI_RESPONSE_STEP_HTTP_RETRY_POLICY: OpenAiHttpRetryPolicy = {
+  maximumRetryCount: 5,
+  fallbackRetryDelayMilliseconds: 0,
+  maximumRetryElapsedMilliseconds: 900_000,
+};
+const DEFAULT_OPENAI_MID_TURN_CONTEXT_GUARD_THRESHOLD_RATIO = 0.8;
+const DEFAULT_OPENAI_MID_TURN_CONTEXT_GUARD_RESERVED_TOKEN_COUNT = 20_000;
+const OPENAI_MID_TURN_CONTEXT_GUARD_INCOMPLETE_REASON = "context_window_near_limit";
 const OPENAI_RESPONSE_STEP_FETCH_TIMEOUT_MESSAGE = "OpenAI response-step request timed out";
+
+export type OpenAiResponseStepContinuationContextGuardDecision = Readonly<{
+  shouldStopBeforeNextResponseStep: boolean;
+  reason: "context_window_unknown" | "context_window_below_limit" | "context_window_near_limit";
+  contextTokensUsed: number;
+  promptInputTokensUsed: number;
+  contextWindowTokenCapacity: number | undefined;
+  inputTokenCapacity: number | undefined;
+  preferredContextPerformanceBudgetTokenCount: number | undefined;
+  continuationTriggerTokenCount: number | undefined;
+  thresholdRatio: number;
+  reservedTokenCount: number;
+}>;
 
 function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenUsage: TokenUsage): TokenUsage {
   if (!accumulatedTokenUsage) {
@@ -92,7 +117,66 @@ function addTokenUsage(accumulatedTokenUsage: TokenUsage | undefined, nextTokenU
   };
 }
 
+export function decideOpenAiResponseStepContinuationContextGuard(input: Readonly<{
+  selectedModelId: string;
+  latestContextWindowUsage: TokenUsage;
+  thresholdRatio?: number | undefined;
+  reservedTokenCount?: number | undefined;
+}>): OpenAiResponseStepContinuationContextGuardDecision {
+  const thresholdRatio = input.thresholdRatio ?? DEFAULT_OPENAI_MID_TURN_CONTEXT_GUARD_THRESHOLD_RATIO;
+  const reservedTokenCount = input.reservedTokenCount ?? DEFAULT_OPENAI_MID_TURN_CONTEXT_GUARD_RESERVED_TOKEN_COUNT;
+  const contextTokensUsed = calculateContextTokensUsedFromTokenUsage(input.latestContextWindowUsage);
+  const promptInputTokensUsed = input.latestContextWindowUsage.input + input.latestContextWindowUsage.cache.read;
+  const modelContextWindowTokenLimits = lookupModelContextWindowTokenLimitsForModel(input.selectedModelId);
+  const contextWindowTokenCapacity = modelContextWindowTokenLimits?.contextWindowTokenCapacity;
+  const inputTokenCapacity = modelContextWindowTokenLimits?.inputTokenCapacity;
+  const preferredContextPerformanceBudgetTokenCount = modelContextWindowTokenLimits?.preferredContextPerformanceBudgetTokenCount;
+  const contextWindowTriggerTokenCount = contextWindowTokenCapacity === undefined
+    ? undefined
+    : Math.floor(contextWindowTokenCapacity * thresholdRatio);
+  const inputTriggerTokenCount = inputTokenCapacity === undefined
+    ? undefined
+    : Math.max(0, inputTokenCapacity - reservedTokenCount);
+  const performanceBudgetTriggerTokenCount = preferredContextPerformanceBudgetTokenCount === undefined
+    ? undefined
+    : Math.max(0, preferredContextPerformanceBudgetTokenCount - reservedTokenCount);
+  const continuationTriggerTokenCount = minDefinedNumber(
+    contextWindowTriggerTokenCount,
+    minDefinedNumber(inputTriggerTokenCount, performanceBudgetTriggerTokenCount),
+  );
+  if (continuationTriggerTokenCount === undefined) {
+    return {
+      shouldStopBeforeNextResponseStep: false,
+      reason: "context_window_unknown",
+      contextTokensUsed,
+      promptInputTokensUsed,
+      contextWindowTokenCapacity,
+      inputTokenCapacity,
+      preferredContextPerformanceBudgetTokenCount,
+      continuationTriggerTokenCount,
+      thresholdRatio,
+      reservedTokenCount,
+    };
+  }
+
+  const shouldStopBeforeNextResponseStep = contextTokensUsed >= continuationTriggerTokenCount ||
+    promptInputTokensUsed >= continuationTriggerTokenCount;
+  return {
+    shouldStopBeforeNextResponseStep,
+    reason: shouldStopBeforeNextResponseStep ? "context_window_near_limit" : "context_window_below_limit",
+    contextTokensUsed,
+    promptInputTokensUsed,
+    contextWindowTokenCapacity,
+    inputTokenCapacity,
+    preferredContextPerformanceBudgetTokenCount,
+    continuationTriggerTokenCount,
+    thresholdRatio,
+    reservedTokenCount,
+  };
+}
+
 export class OpenAiProviderConversationTurn {
+  readonly conversationTurnId: string | undefined;
   readonly endpoint: string;
   readonly fetchImpl: typeof fetch;
   readonly loadRequestHeaders: () => Promise<Headers>;
@@ -111,6 +195,7 @@ export class OpenAiProviderConversationTurn {
   readonly repeatedToolCallDiagnosticWarningThreshold: number;
   readonly responseStepFetchTimeoutMilliseconds: number;
   readonly responseStepStreamIdleTimeoutMilliseconds: number;
+  readonly responseStepHttpRetryPolicy: OpenAiHttpRetryPolicy;
   readonly rateLimitCoordinator: OpenAiRateLimitCoordinator | undefined;
   readonly openAiResponsesRequestTemplate: OpenAiResponsesHttpRequestTemplate;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
@@ -120,6 +205,7 @@ export class OpenAiProviderConversationTurn {
   hasStartedStreamingProviderEvents = false;
 
   constructor(input: {
+    conversationTurnId?: string;
     endpoint: string;
     fetchImpl: typeof fetch;
     loadRequestHeaders: () => Promise<Headers>;
@@ -138,9 +224,11 @@ export class OpenAiProviderConversationTurn {
     repeatedToolCallDiagnosticWarningThreshold?: number;
     responseStepFetchTimeoutMilliseconds?: number;
     responseStepStreamIdleTimeoutMilliseconds?: number;
+    responseStepHttpRetryPolicy?: OpenAiHttpRetryPolicy | undefined;
     rateLimitCoordinator?: OpenAiRateLimitCoordinator | undefined;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
+    this.conversationTurnId = input.conversationTurnId;
     this.endpoint = input.endpoint;
     this.fetchImpl = input.fetchImpl;
     this.loadRequestHeaders = input.loadRequestHeaders;
@@ -174,6 +262,7 @@ export class OpenAiProviderConversationTurn {
       input.responseStepStreamIdleTimeoutMilliseconds,
       DEFAULT_OPENAI_RESPONSE_STEP_STREAM_IDLE_TIMEOUT_MILLISECONDS,
     );
+    this.responseStepHttpRetryPolicy = input.responseStepHttpRetryPolicy ?? DEFAULT_OPENAI_RESPONSE_STEP_HTTP_RETRY_POLICY;
     this.rateLimitCoordinator = input.rateLimitCoordinator;
     this.openAiResponsesRequestTemplate = createOpenAiResponsesHttpRequestTemplate({
       selectedModelId: input.selectedModelId,
@@ -193,6 +282,7 @@ export class OpenAiProviderConversationTurn {
     if (pendingSubmissionWait) {
       this.clearPendingToolResultSubmissionWait(input.toolCallId, pendingSubmissionWait);
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.resolved_pending_wait", {
+        conversationTurnId: this.conversationTurnId ?? null,
         toolCallId: input.toolCallId,
         toolResultTextLength: input.toolResultText.length,
         waitDurationMs: Date.now() - pendingSubmissionWait.waitStartedAtMs,
@@ -203,6 +293,7 @@ export class OpenAiProviderConversationTurn {
 
     this.queuedToolResultSubmissionByToolCallId.set(input.toolCallId, input);
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.queued", {
+      conversationTurnId: this.conversationTurnId ?? null,
       toolCallId: input.toolCallId,
       toolResultTextLength: input.toolResultText.length,
       queuedToolResultSubmissionCount: this.queuedToolResultSubmissionByToolCallId.size,
@@ -228,6 +319,11 @@ export class OpenAiProviderConversationTurn {
     let accumulatedOpenAiTurnUsage: TokenUsage | undefined;
     let responseStepIndex = 0;
     let requestedToolCallCount = 0;
+    let totalRequestBodyTextLength = 0;
+    let maxRequestBodyTextLength = 0;
+    let maxRequestInputItemCount = 0;
+    let totalToolResultTextLength = 0;
+    let maxToolResultTextLength = 0;
     const observedRequestedToolCallIds = new Set<string>();
     const toolCallPatternObservationCountByFingerprint = new Map<string, number>();
     const turnStartedAtMs = Date.now();
@@ -272,6 +368,7 @@ export class OpenAiProviderConversationTurn {
       }
       if (responseStepIndex === this.responseStepDiagnosticWarningThreshold) {
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.response_step_warning_threshold_reached", {
+          conversationTurnId: this.conversationTurnId ?? null,
           responseStepIndex,
           responseStepDiagnosticWarningThreshold: this.responseStepDiagnosticWarningThreshold,
           requestedToolCallCount,
@@ -282,19 +379,34 @@ export class OpenAiProviderConversationTurn {
         requestTemplate: this.openAiResponsesRequestTemplate,
         openAiInputItems: this.openAiConversationInputItems,
       });
+      const responseStepRequestBodyText = JSON.stringify(requestBody);
+      const responseStepRequestBodyTextLength = responseStepRequestBodyText.length;
+      const responseStepRequestInputItemCount = requestBody.input.length;
+      totalRequestBodyTextLength += responseStepRequestBodyTextLength;
+      maxRequestBodyTextLength = Math.max(maxRequestBodyTextLength, responseStepRequestBodyTextLength);
+      maxRequestInputItemCount = Math.max(maxRequestInputItemCount, responseStepRequestInputItemCount);
       await this.writeRequestPreparedDiagnostics({ requestBody, responseStepIndex });
 
       let terminalState: OpenAiResponseStepTerminalState | undefined;
       let terminalUsageProviderEvent: OpenAiTerminalUsageProviderEvent | undefined;
+      let responseStepHttpWaitDurationMs = 0;
+      let responseStepRequestAttemptCount = 0;
+      let responseStepStreamDurationMs = 0;
+      let responseStepToolResultWaitDurationMs = 0;
+      let responseStepToolResultTextLength = 0;
+      let responseStepToolResultCount = 0;
       const responseStepStreamSlotWaitStartedAtMs = Date.now();
       const responseStepStreamSlot = await this.rateLimitCoordinator?.acquireResponseStepStreamSlot({
         abortSignal: this.abortSignal,
       });
+      const responseStepStreamSlotWaitDurationMs = Date.now() - responseStepStreamSlotWaitStartedAtMs;
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.stream_slot_wait_finished", {
+        conversationTurnId: this.conversationTurnId ?? null,
         responseStepIndex,
-        durationMs: Date.now() - responseStepStreamSlotWaitStartedAtMs,
+        durationMs: responseStepStreamSlotWaitDurationMs,
       });
       try {
+        const responseStepHttpWaitStartedAtMs = Date.now();
         const responseRetryIterator = requestOpenAiHttpResponseWithRetries({
           fetchResponse: async () => fetchWithTimeout({
             resource: this.endpoint,
@@ -305,17 +417,18 @@ export class OpenAiProviderConversationTurn {
             requestInit: {
               method: "POST",
               headers: await this.loadRequestHeaders(),
-              body: JSON.stringify(requestBody),
+              body: responseStepRequestBodyText,
             },
           }),
           diagnosticLogger: this.diagnosticLogger,
           diagnosticEventPrefix: "response_step",
-          diagnosticFields: { responseStepIndex },
+          diagnosticFields: { conversationTurnId: this.conversationTurnId ?? null, responseStepIndex },
           requestAttemptDiagnosticFieldName: "responseStepRequestAttemptIndex",
           maximumRetryCountDiagnosticFieldName: "maxResponseStepHttpRetryCount",
           debugLogTitlePrefix: "OpenAI response-step",
           abortSignal: this.abortSignal,
-          operationStartedAtMs: responseStepStartedAtMs,
+          operationStartedAtMs: responseStepHttpWaitStartedAtMs,
+          retryPolicy: this.responseStepHttpRetryPolicy,
           shouldYieldRetryPendingEvents: true,
           onResponseHeadersReceived: (responseHeaderObservation) => {
             this.rateLimitCoordinator?.observeResponseHeaders(responseHeaderObservation.headers, {
@@ -333,6 +446,7 @@ export class OpenAiProviderConversationTurn {
           }
 
           logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+            conversationTurnId: this.conversationTurnId ?? null,
             responseStepIndex,
             eventType: responseRetryResult.value.type,
             ...summarizeProviderStreamEventForDiagnostics(responseRetryResult.value),
@@ -345,10 +459,13 @@ export class OpenAiProviderConversationTurn {
         }
 
         const response = responseRetryResult.value.response;
+        responseStepRequestAttemptCount = responseRetryResult.value.requestAttemptIndex;
+        responseStepHttpWaitDurationMs = Date.now() - responseStepHttpWaitStartedAtMs;
         if (!response.ok) {
           if (this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
             const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
             logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
+              conversationTurnId: this.conversationTurnId ?? null,
               responseStepIndex,
               responseStepRequestAttemptIndex: responseRetryResult.value.requestAttemptIndex,
               ...failedResponseDebugPayload,
@@ -358,7 +475,9 @@ export class OpenAiProviderConversationTurn {
           throw await this.onStepRequestFailed(response);
         }
 
+        const responseStepStreamStartedAtMs = Date.now();
         const openAiStepEventIterator = parseOpenAiStream(response, {
+          conversationTurnId: this.conversationTurnId,
           diagnosticLogger: this.diagnosticLogger,
           abortSignal: this.abortSignal,
           idleTimeoutMilliseconds: this.responseStepStreamIdleTimeoutMilliseconds,
@@ -372,6 +491,7 @@ export class OpenAiProviderConversationTurn {
 
           if (nextStepItem.value.type === "completed" || nextStepItem.value.type === "incomplete") {
             logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.terminal_usage_received", {
+              conversationTurnId: this.conversationTurnId ?? null,
               responseStepIndex,
               eventType: nextStepItem.value.type,
               ...summarizeTokenUsageForDiagnostics(nextStepItem.value.usage),
@@ -387,6 +507,7 @@ export class OpenAiProviderConversationTurn {
               requestedToolCalls: listRequestedToolCallsFromProviderEvent(nextStepItem.value),
             });
             logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+              conversationTurnId: this.conversationTurnId ?? null,
               responseStepIndex,
               eventType: nextStepItem.value.type,
               ...summarizeProviderStreamEventForDiagnostics(nextStepItem.value),
@@ -396,12 +517,14 @@ export class OpenAiProviderConversationTurn {
           }
 
           logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
+            conversationTurnId: this.conversationTurnId ?? null,
             responseStepIndex,
             eventType: nextStepItem.value.type,
             ...summarizeProviderStreamEventForDiagnostics(nextStepItem.value),
           });
           yield nextStepItem.value;
         }
+        responseStepStreamDurationMs = Date.now() - responseStepStreamStartedAtMs;
       } finally {
         responseStepStreamSlot?.release();
       }
@@ -410,6 +533,7 @@ export class OpenAiProviderConversationTurn {
         throw new Error("OpenAI response step ended without a terminal state");
       }
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.finished", {
+        conversationTurnId: this.conversationTurnId ?? null,
         responseStepIndex,
         terminalKind: terminalState.terminalKind,
         durationMs: Date.now() - responseStepStartedAtMs,
@@ -437,6 +561,7 @@ export class OpenAiProviderConversationTurn {
             invalidFunctionCallIds: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionCallId),
             invalidFunctionNames: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionName),
             responseStepIndex,
+            conversationTurnId: this.conversationTurnId ?? null,
             responseOutputItemCount: terminalState.responseOutputItems.length,
             continuationInputItemCount: responseReplayItems.continuationInputItems.length,
             providerTurnReplayInputItemCount: responseReplayItems.providerTurnReplayInputItems.length,
@@ -458,9 +583,22 @@ export class OpenAiProviderConversationTurn {
 
         this.openAiConversationInputItems.push(...responseReplayItems.continuationInputItems);
         this.providerTurnReplayInputItems.push(...responseReplayItems.providerTurnReplayInputItems);
+        const toolResultWaitStartedAtMs = Date.now();
         const toolResultSubmissions = requestedToolCalls.length > 0
           ? await this.waitForToolResultSubmissions(requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId))
           : [];
+        responseStepToolResultWaitDurationMs = Date.now() - toolResultWaitStartedAtMs;
+        responseStepToolResultCount = toolResultSubmissions.length;
+        responseStepToolResultTextLength = toolResultSubmissions.reduce(
+          (totalTextLength, toolResultSubmission) => totalTextLength + toolResultSubmission.toolResultText.length,
+          0,
+        );
+        totalToolResultTextLength += responseStepToolResultTextLength;
+        maxToolResultTextLength = Math.max(
+          maxToolResultTextLength,
+          ...toolResultSubmissions.map((toolResultSubmission) => toolResultSubmission.toolResultText.length),
+          0,
+        );
         const toolResultSubmissionByToolCallId = new Map(
           toolResultSubmissions.map((toolResultSubmission) => [toolResultSubmission.toolCallId, toolResultSubmission]),
         );
@@ -489,6 +627,7 @@ export class OpenAiProviderConversationTurn {
         if (this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
           const toolResultDebugSummary = {
             responseStepIndex,
+            conversationTurnId: this.conversationTurnId ?? null,
             functionCallCount: providerFunctionCallIntents.length,
             toolCallCount: toolResultSubmissions.length,
             invalidFunctionCallCount: invalidFunctionCallIntents.length,
@@ -501,6 +640,53 @@ export class OpenAiProviderConversationTurn {
         }
         this.openAiConversationInputItems.push(...functionCallOutputInputItems);
         this.providerTurnReplayInputItems.push(...functionCallOutputInputItems);
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.summary", {
+          conversationTurnId: this.conversationTurnId ?? null,
+          responseStepIndex,
+          terminalKind: terminalState.terminalKind,
+          durationMs: Date.now() - responseStepStartedAtMs,
+          streamSlotWaitDurationMs: responseStepStreamSlotWaitDurationMs,
+          httpWaitDurationMs: responseStepHttpWaitDurationMs,
+          streamDurationMs: responseStepStreamDurationMs,
+          toolResultWaitDurationMs: responseStepToolResultWaitDurationMs,
+          requestAttemptCount: responseStepRequestAttemptCount,
+          requestBodyTextLength: responseStepRequestBodyTextLength,
+          requestInputItemCount: responseStepRequestInputItemCount,
+          requestFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(requestBody.input),
+          responseOutputItemCount: terminalState.responseOutputItems.length,
+          toolCallCount: requestedToolCalls.length,
+          invalidFunctionCallCount: invalidFunctionCallIntents.length,
+          toolResultCount: responseStepToolResultCount,
+          toolResultTextLength: responseStepToolResultTextLength,
+          ...summarizeTokenUsageForDiagnostics(terminalState.usage),
+        });
+        const continuationContextGuardDecision = decideOpenAiResponseStepContinuationContextGuard({
+          selectedModelId: this.selectedModelId,
+          latestContextWindowUsage: terminalState.usage,
+        });
+        if (continuationContextGuardDecision.shouldStopBeforeNextResponseStep) {
+          const guardedIncompleteProviderEvent = this.createContextGuardIncompleteProviderEvent({
+            accumulatedOpenAiTurnUsage,
+            latestContextWindowUsage: terminalState.usage,
+          });
+          this.logContextGuardTriggered({
+            responseStepIndex,
+            continuationContextGuardDecision,
+          });
+          this.logIncompleteProviderTurnSummary({
+            incompleteProviderEvent: guardedIncompleteProviderEvent,
+            responseStepIndex,
+            requestedToolCallCount,
+            turnStartedAtMs,
+            totalRequestBodyTextLength,
+            maxRequestBodyTextLength,
+            maxRequestInputItemCount,
+            totalToolResultTextLength,
+            maxToolResultTextLength,
+          });
+          yield guardedIncompleteProviderEvent;
+          return;
+        }
         continue;
       }
 
@@ -508,6 +694,26 @@ export class OpenAiProviderConversationTurn {
         if (!terminalUsageProviderEvent || terminalUsageProviderEvent.type !== "completed") {
           throw new Error("OpenAI completed response ended without a completed usage event");
         }
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.summary", {
+          conversationTurnId: this.conversationTurnId ?? null,
+          responseStepIndex,
+          terminalKind: terminalState.terminalKind,
+          durationMs: Date.now() - responseStepStartedAtMs,
+          streamSlotWaitDurationMs: responseStepStreamSlotWaitDurationMs,
+          httpWaitDurationMs: responseStepHttpWaitDurationMs,
+          streamDurationMs: responseStepStreamDurationMs,
+          toolResultWaitDurationMs: 0,
+          requestAttemptCount: responseStepRequestAttemptCount,
+          requestBodyTextLength: responseStepRequestBodyTextLength,
+          requestInputItemCount: responseStepRequestInputItemCount,
+          requestFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(requestBody.input),
+          responseOutputItemCount: 0,
+          toolCallCount: 0,
+          invalidFunctionCallCount: 0,
+          toolResultCount: 0,
+          toolResultTextLength: 0,
+          ...summarizeTokenUsageForDiagnostics(terminalUsageProviderEvent.usage),
+        });
 
         const completedProviderEvent = {
           ...terminalUsageProviderEvent,
@@ -515,9 +721,30 @@ export class OpenAiProviderConversationTurn {
           contextWindowUsage: terminalUsageProviderEvent.contextWindowUsage ?? terminalUsageProviderEvent.usage,
         };
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.completed", {
+          conversationTurnId: this.conversationTurnId ?? null,
           responseStepCount: responseStepIndex,
           requestedToolCallCount,
           durationMs: Date.now() - turnStartedAtMs,
+          totalRequestBodyTextLength,
+          maxRequestBodyTextLength,
+          maxRequestInputItemCount,
+          totalToolResultTextLength,
+          maxToolResultTextLength,
+          ...summarizeTokenUsageForDiagnostics(completedProviderEvent.usage),
+        });
+        logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.summary", {
+          conversationTurnId: this.conversationTurnId ?? null,
+          terminalKind: "completed",
+          responseStepCount: responseStepIndex,
+          requestedToolCallCount,
+          durationMs: Date.now() - turnStartedAtMs,
+          totalRequestBodyTextLength,
+          maxRequestBodyTextLength,
+          maxRequestInputItemCount,
+          totalToolResultTextLength,
+          maxToolResultTextLength,
+          providerTurnReplayInputItemCount: this.providerTurnReplayInputItems.length,
+          providerTurnReplayFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(this.providerTurnReplayInputItems),
           ...summarizeTokenUsageForDiagnostics(completedProviderEvent.usage),
         });
         yield completedProviderEvent;
@@ -527,22 +754,119 @@ export class OpenAiProviderConversationTurn {
       if (!terminalUsageProviderEvent || terminalUsageProviderEvent.type !== "incomplete") {
         throw new Error("OpenAI incomplete response ended without an incomplete usage event");
       }
+      logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.summary", {
+        conversationTurnId: this.conversationTurnId ?? null,
+        responseStepIndex,
+        terminalKind: terminalState.terminalKind,
+        durationMs: Date.now() - responseStepStartedAtMs,
+        streamSlotWaitDurationMs: responseStepStreamSlotWaitDurationMs,
+        httpWaitDurationMs: responseStepHttpWaitDurationMs,
+        streamDurationMs: responseStepStreamDurationMs,
+        toolResultWaitDurationMs: 0,
+        requestAttemptCount: responseStepRequestAttemptCount,
+        requestBodyTextLength: responseStepRequestBodyTextLength,
+        requestInputItemCount: responseStepRequestInputItemCount,
+        requestFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(requestBody.input),
+        responseOutputItemCount: 0,
+        toolCallCount: 0,
+        invalidFunctionCallCount: 0,
+        toolResultCount: 0,
+        toolResultTextLength: 0,
+        ...summarizeTokenUsageForDiagnostics(terminalUsageProviderEvent.usage),
+      });
 
       const incompleteProviderEvent = {
         ...terminalUsageProviderEvent,
         usage: accumulatedOpenAiTurnUsage ?? terminalUsageProviderEvent.usage,
         contextWindowUsage: terminalUsageProviderEvent.contextWindowUsage ?? terminalUsageProviderEvent.usage,
       };
-      logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.incomplete", {
-        responseStepCount: responseStepIndex,
+      this.logIncompleteProviderTurnSummary({
+        incompleteProviderEvent,
+        responseStepIndex,
         requestedToolCallCount,
-        durationMs: Date.now() - turnStartedAtMs,
-        incompleteReason: incompleteProviderEvent.incompleteReason,
-        ...summarizeTokenUsageForDiagnostics(incompleteProviderEvent.usage),
+        turnStartedAtMs,
+        totalRequestBodyTextLength,
+        maxRequestBodyTextLength,
+        maxRequestInputItemCount,
+        totalToolResultTextLength,
+        maxToolResultTextLength,
       });
       yield incompleteProviderEvent;
       return;
     }
+  }
+
+  private createContextGuardIncompleteProviderEvent(input: {
+    accumulatedOpenAiTurnUsage: TokenUsage | undefined;
+    latestContextWindowUsage: TokenUsage;
+  }): Extract<ProviderStreamEvent, { type: "incomplete" }> {
+    return {
+      type: "incomplete",
+      incompleteReason: OPENAI_MID_TURN_CONTEXT_GUARD_INCOMPLETE_REASON,
+      usage: input.accumulatedOpenAiTurnUsage ?? input.latestContextWindowUsage,
+      contextWindowUsage: input.latestContextWindowUsage,
+    };
+  }
+
+  private logContextGuardTriggered(input: {
+    responseStepIndex: number;
+    continuationContextGuardDecision: OpenAiResponseStepContinuationContextGuardDecision;
+  }): void {
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.continuation_context_guard_triggered", {
+      conversationTurnId: this.conversationTurnId ?? null,
+      responseStepIndex: input.responseStepIndex,
+      reason: input.continuationContextGuardDecision.reason,
+      contextTokensUsed: input.continuationContextGuardDecision.contextTokensUsed,
+      promptInputTokensUsed: input.continuationContextGuardDecision.promptInputTokensUsed,
+      contextWindowTokenCapacity: input.continuationContextGuardDecision.contextWindowTokenCapacity ?? null,
+      inputTokenCapacity: input.continuationContextGuardDecision.inputTokenCapacity ?? null,
+      preferredContextPerformanceBudgetTokenCount: input.continuationContextGuardDecision.preferredContextPerformanceBudgetTokenCount ?? null,
+      continuationTriggerTokenCount: input.continuationContextGuardDecision.continuationTriggerTokenCount ?? null,
+      thresholdRatio: input.continuationContextGuardDecision.thresholdRatio,
+      reservedTokenCount: input.continuationContextGuardDecision.reservedTokenCount,
+    });
+  }
+
+  private logIncompleteProviderTurnSummary(input: {
+    incompleteProviderEvent: Extract<ProviderStreamEvent, { type: "incomplete" }>;
+    responseStepIndex: number;
+    requestedToolCallCount: number;
+    turnStartedAtMs: number;
+    totalRequestBodyTextLength: number;
+    maxRequestBodyTextLength: number;
+    maxRequestInputItemCount: number;
+    totalToolResultTextLength: number;
+    maxToolResultTextLength: number;
+  }): void {
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.incomplete", {
+      conversationTurnId: this.conversationTurnId ?? null,
+      responseStepCount: input.responseStepIndex,
+      requestedToolCallCount: input.requestedToolCallCount,
+      durationMs: Date.now() - input.turnStartedAtMs,
+      incompleteReason: input.incompleteProviderEvent.incompleteReason,
+      totalRequestBodyTextLength: input.totalRequestBodyTextLength,
+      maxRequestBodyTextLength: input.maxRequestBodyTextLength,
+      maxRequestInputItemCount: input.maxRequestInputItemCount,
+      totalToolResultTextLength: input.totalToolResultTextLength,
+      maxToolResultTextLength: input.maxToolResultTextLength,
+      ...summarizeTokenUsageForDiagnostics(input.incompleteProviderEvent.usage),
+    });
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.summary", {
+      conversationTurnId: this.conversationTurnId ?? null,
+      terminalKind: "incomplete",
+      responseStepCount: input.responseStepIndex,
+      requestedToolCallCount: input.requestedToolCallCount,
+      durationMs: Date.now() - input.turnStartedAtMs,
+      incompleteReason: input.incompleteProviderEvent.incompleteReason,
+      totalRequestBodyTextLength: input.totalRequestBodyTextLength,
+      maxRequestBodyTextLength: input.maxRequestBodyTextLength,
+      maxRequestInputItemCount: input.maxRequestInputItemCount,
+      totalToolResultTextLength: input.totalToolResultTextLength,
+      maxToolResultTextLength: input.maxToolResultTextLength,
+      providerTurnReplayInputItemCount: this.providerTurnReplayInputItems.length,
+      providerTurnReplayFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(this.providerTurnReplayInputItems),
+      ...summarizeTokenUsageForDiagnostics(input.incompleteProviderEvent.usage),
+    });
   }
 
   private async writeRequestPreparedDiagnostics(input: {
@@ -554,7 +878,10 @@ export class OpenAiProviderConversationTurn {
     }
 
     const requestDebugSummary = summarizeOpenAiResponsesRequestForDiagnostics(input);
-    logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", requestDebugSummary);
+    logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", {
+      conversationTurnId: this.conversationTurnId ?? null,
+      ...requestDebugSummary,
+    });
     await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
   }
 
@@ -567,6 +894,7 @@ export class OpenAiProviderConversationTurn {
     if (queuedToolResultSubmission) {
       this.queuedToolResultSubmissionByToolCallId.delete(toolCallId);
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.consumed_queued", {
+        conversationTurnId: this.conversationTurnId ?? null,
         toolCallId,
         toolResultTextLength: queuedToolResultSubmission.toolResultText.length,
         waitDurationMs: 0,
@@ -579,6 +907,7 @@ export class OpenAiProviderConversationTurn {
     }
 
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.wait_started", {
+      conversationTurnId: this.conversationTurnId ?? null,
       toolCallId,
     });
     const waitStartedAtMs = Date.now();
@@ -628,6 +957,7 @@ export class OpenAiProviderConversationTurn {
       input.requestedToolCallCount >= this.toolCallDiagnosticWarningThreshold
     ) {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.tool_call_warning_threshold_reached", {
+        conversationTurnId: this.conversationTurnId ?? null,
         responseStepIndex: input.responseStepIndex,
         requestedToolCallCount: input.requestedToolCallCount,
         toolCallDiagnosticWarningThreshold: this.toolCallDiagnosticWarningThreshold,
@@ -646,6 +976,7 @@ export class OpenAiProviderConversationTurn {
       }
 
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.repeated_tool_call_pattern_observed", {
+        conversationTurnId: this.conversationTurnId ?? null,
         responseStepIndex: input.responseStepIndex,
         requestedToolCallCount: input.requestedToolCallCount,
         toolCallPatternObservationCount,
@@ -670,6 +1001,17 @@ function normalizePositiveIntegerThreshold(requestedThreshold: number | undefine
   }
 
   return Math.max(1, Math.floor(requestedThreshold));
+}
+
+function minDefinedNumber(leftNumber: number | undefined, rightNumber: number | undefined): number | undefined {
+  if (leftNumber === undefined) {
+    return rightNumber;
+  }
+  if (rightNumber === undefined) {
+    return leftNumber;
+  }
+
+  return Math.min(leftNumber, rightNumber);
 }
 
 function createToolCallPatternDiagnosticFingerprint(diagnosticFields: BuliDiagnosticLogFields): string {
@@ -752,6 +1094,11 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
         toolName: toolCallRequest.toolName,
         subagentDescriptionLength: toolCallRequest.subagentDescription.length,
         subagentPromptLength: toolCallRequest.subagentPrompt.length,
+      };
+    case "skill":
+      return {
+        toolName: toolCallRequest.toolName,
+        skillName: toolCallRequest.skillName,
       };
     default:
       return assertUnhandledToolCallPatternSummary(toolCallRequest);
@@ -882,6 +1229,18 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
   }
 
   return summarizeTokenUsageForDiagnostics(providerStreamEvent.usage);
+}
+
+function sumFunctionCallOutputTextLength(
+  openAiInputItems: readonly (OpenAiConversationInputItem | OpenAiProviderTurnReplayInputItem)[],
+): number {
+  return openAiInputItems.reduce((totalTextLength, openAiInputItem) => {
+    if (!("type" in openAiInputItem) || openAiInputItem.type !== "function_call_output") {
+      return totalTextLength;
+    }
+
+    return totalTextLength + openAiInputItem.output.length;
+  }, 0);
 }
 
 function createInvalidFunctionCallOutputText(invalidFunctionCallIntent: OpenAiInvalidFunctionCallIntent): string {

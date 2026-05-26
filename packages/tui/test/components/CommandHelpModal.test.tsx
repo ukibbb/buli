@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "../testRenderWithCleanup.ts";
 import { comfortableTerminalSizeTier, compactTerminalSizeTier } from "@buli/assistant-design-tokens";
 import { CommandHelpModal } from "../../src/components/CommandHelpModal.tsx";
+import { listChatScreenKeyboardShortcutHelpEntries } from "../../src/keyboard/chatScreenKeyboardShortcutCatalog.ts";
 
 const availableSlashCommands = [
   { name: "help", value: "help", description: "Show available commands and shortcuts" },
@@ -30,14 +31,10 @@ describe("CommandHelpModal", () => {
     expect(frame).toContain("/model");
     expect(frame).toContain("Choose OpenAI model and reasoning effort");
     expect(frame).toContain("shortcuts");
-    expect(frame).toContain("Tab");
-    expect(frame).toContain("Cycle operating mode");
-    expect(frame).toContain("Shift/Ctrl+Enter");
-    expect(frame).toContain("Insert newline in prompt");
-    expect(frame).toContain("PageUp/PageDown");
-    expect(frame).toContain("Scroll transcript by page");
-    expect(frame).toContain("Y/N");
-    expect(frame).toContain("Approve or deny tool");
+    for (const keyboardShortcutHelpEntry of listChatScreenKeyboardShortcutHelpEntries()) {
+      expect(frame).toContain(keyboardShortcutHelpEntry.helpLabel);
+      expect(frame).toContain(keyboardShortcutHelpEntry.description);
+    }
     expect(frame).not.toContain("ctrl + l");
     expect(frame).not.toContain("[ ? ]");
   });

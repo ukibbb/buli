@@ -10,6 +10,7 @@ import {
   getOpenAiRequestId,
   isRetryableOpenAiHttpResponseStatus,
   isRetryableOpenAiTransportError,
+  readOpenAiRateLimitHeaders,
   readOpenAiRetryAfterMilliseconds,
   type OpenAiHttpResponseHeaders,
   summarizeOpenAiRateLimitHeadersForDiagnostics,
@@ -18,6 +19,24 @@ import {
 
 const DEFAULT_OPENAI_HTTP_RETRY_COUNT = 2;
 const DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS = 500;
+
+export type OpenAiHttpRetryPolicy = Readonly<{
+  maximumRetryCount?: number | undefined;
+  fallbackRetryDelayMilliseconds?: number | undefined;
+  maximumRetryElapsedMilliseconds?: number | undefined;
+}>;
+
+type NormalizedOpenAiHttpRetryPolicy = Readonly<{
+  maximumRetryCount: number;
+  fallbackRetryDelayMilliseconds: number;
+  maximumRetryElapsedMilliseconds: number | undefined;
+}>;
+
+type OpenAiHttpRetryExhaustionReason = "maximum_retry_count_reached" | "maximum_retry_elapsed_time_reached";
+
+type OpenAiHttpRetryDecision =
+  | Readonly<{ canRetry: true }>
+  | Readonly<{ canRetry: false; retryExhaustionReason: OpenAiHttpRetryExhaustionReason }>;
 
 export type OpenAiHttpRetryResult = Readonly<{
   response: Response;
@@ -42,6 +61,7 @@ export type OpenAiHttpRetryInput = Readonly<{
   debugLogTitlePrefix: string;
   abortSignal?: AbortSignal | undefined;
   operationStartedAtMs?: number | undefined;
+  retryPolicy?: OpenAiHttpRetryPolicy | undefined;
   shouldYieldRetryPendingEvents?: boolean | undefined;
   onResponseHeadersReceived?: ((responseHeaderObservation: OpenAiHttpResponseHeaderObservation) => void) | undefined;
 }>;
@@ -50,6 +70,7 @@ export async function* requestOpenAiHttpResponseWithRetries(
   input: OpenAiHttpRetryInput,
 ): AsyncGenerator<ProviderRateLimitPendingEvent, OpenAiHttpRetryResult> {
   const operationStartedAtMs = input.operationStartedAtMs ?? Date.now();
+  const retryPolicy = normalizeOpenAiHttpRetryPolicy(input.retryPolicy);
   let requestAttemptIndex = 0;
   let transportRetryAttemptCount = 0;
 
@@ -61,14 +82,22 @@ export async function* requestOpenAiHttpResponseWithRetries(
       currentResponse = await input.fetchResponse();
     } catch (transportError) {
       const transportErrorDiagnosticFields = summarizeOpenAiTransportErrorForDiagnostics(transportError);
-      const canRetryTransportError =
-        isRetryableOpenAiTransportError(transportError) && requestAttemptIndex <= DEFAULT_OPENAI_HTTP_RETRY_COUNT;
+      const retryDelayMilliseconds = retryPolicy.fallbackRetryDelayMilliseconds;
+      const transportRetryDecision = decideOpenAiHttpRetryAttempt({
+        operationStartedAtMs,
+        requestAttemptIndex,
+        retryDelayMilliseconds,
+        retryPolicy,
+      });
+      const canRetryTransportError = isRetryableOpenAiTransportError(transportError) && transportRetryDecision.canRetry;
       if (!canRetryTransportError) {
         if (isRetryableOpenAiTransportError(transportError)) {
           logOpenAiDiagnosticEvent(input.diagnosticLogger, `${input.diagnosticEventPrefix}.transport_retry_exhausted`, {
             ...input.diagnosticFields,
             ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
-            ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input),
+            ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input, retryPolicy),
+            ...createOpenAiHttpRetryElapsedBudgetDiagnosticFields(retryPolicy),
+            ...(transportRetryDecision.canRetry ? {} : { retryExhaustionReason: transportRetryDecision.retryExhaustionReason }),
             ...transportErrorDiagnosticFields,
           });
         }
@@ -81,15 +110,15 @@ export async function* requestOpenAiHttpResponseWithRetries(
       }
 
       transportRetryAttemptCount += 1;
-      const retryDelayMilliseconds = DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS;
       const retryWaitStartedAtMs = Date.now();
       const retryScheduledDiagnosticFields = {
         ...input.diagnosticFields,
         ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
-        ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input),
+        ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input, retryPolicy),
+        ...createOpenAiHttpRetryElapsedBudgetDiagnosticFields(retryPolicy),
         retryDelayMilliseconds,
         retryWaitStartedAtMs,
-        remainingRetryCount: DEFAULT_OPENAI_HTTP_RETRY_COUNT - requestAttemptIndex,
+        remainingRetryCount: retryPolicy.maximumRetryCount - requestAttemptIndex,
         ...transportErrorDiagnosticFields,
       };
       logOpenAiDiagnosticEvent(
@@ -166,14 +195,24 @@ export async function* requestOpenAiHttpResponseWithRetries(
       return { response: currentResponse, requestAttemptIndex };
     }
 
-    const canRetryResponse =
-      isRetryableOpenAiHttpResponseStatus(currentResponse.status) && requestAttemptIndex <= DEFAULT_OPENAI_HTTP_RETRY_COUNT;
+    const retryDelayMilliseconds = retryAfterMilliseconds ??
+      readOpenAiExhaustedRateLimitResetMilliseconds(currentResponse.headers) ??
+      retryPolicy.fallbackRetryDelayMilliseconds;
+    const responseRetryDecision = decideOpenAiHttpRetryAttempt({
+      operationStartedAtMs,
+      requestAttemptIndex,
+      retryDelayMilliseconds,
+      retryPolicy,
+    });
+    const canRetryResponse = isRetryableOpenAiHttpResponseStatus(currentResponse.status) && responseRetryDecision.canRetry;
     if (!canRetryResponse) {
       if (isRetryableOpenAiHttpResponseStatus(currentResponse.status)) {
         logOpenAiDiagnosticEvent(input.diagnosticLogger, `${input.diagnosticEventPrefix}.retry_exhausted`, {
           ...input.diagnosticFields,
           ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
-          ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input),
+          ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input, retryPolicy),
+          ...createOpenAiHttpRetryElapsedBudgetDiagnosticFields(retryPolicy),
+          ...(responseRetryDecision.canRetry ? {} : { retryExhaustionReason: responseRetryDecision.retryExhaustionReason }),
           status: currentResponse.status,
           requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
           ...summarizeOpenAiRateLimitHeadersForDiagnostics(currentResponse.headers),
@@ -183,17 +222,17 @@ export async function* requestOpenAiHttpResponseWithRetries(
       return { response: currentResponse, requestAttemptIndex };
     }
 
-    const retryDelayMilliseconds = retryAfterMilliseconds ?? DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS;
     const retryWaitStartedAtMs = Date.now();
     const retryScheduledDiagnosticFields = {
       ...input.diagnosticFields,
       ...createOpenAiHttpRetryAttemptDiagnosticFields(input, requestAttemptIndex),
-      ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input),
+      ...createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(input, retryPolicy),
+      ...createOpenAiHttpRetryElapsedBudgetDiagnosticFields(retryPolicy),
       status: currentResponse.status,
       requestId: getOpenAiRequestId(currentResponse.headers) ?? null,
       retryDelayMilliseconds,
       retryWaitStartedAtMs,
-      remainingRetryCount: DEFAULT_OPENAI_HTTP_RETRY_COUNT - requestAttemptIndex,
+      remainingRetryCount: retryPolicy.maximumRetryCount - requestAttemptIndex,
       ...summarizeOpenAiRateLimitHeadersForDiagnostics(currentResponse.headers),
     };
     logOpenAiDiagnosticEvent(input.diagnosticLogger, `${input.diagnosticEventPrefix}.retry_scheduled`, retryScheduledDiagnosticFields);
@@ -236,6 +275,62 @@ async function cancelRetryableOpenAiHttpResponseBody(response: Response): Promis
   }
 }
 
+function normalizeOpenAiHttpRetryPolicy(retryPolicy: OpenAiHttpRetryPolicy | undefined): NormalizedOpenAiHttpRetryPolicy {
+  return {
+    maximumRetryCount: normalizeNonNegativeInteger(
+      retryPolicy?.maximumRetryCount,
+      DEFAULT_OPENAI_HTTP_RETRY_COUNT,
+    ),
+    fallbackRetryDelayMilliseconds: normalizeNonNegativeInteger(
+      retryPolicy?.fallbackRetryDelayMilliseconds,
+      DEFAULT_OPENAI_HTTP_RETRY_DELAY_MILLISECONDS,
+    ),
+    maximumRetryElapsedMilliseconds: normalizeOptionalPositiveInteger(retryPolicy?.maximumRetryElapsedMilliseconds),
+  };
+}
+
+function normalizeNonNegativeInteger(value: number | undefined, defaultValue: number): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return defaultValue;
+  }
+
+  return Math.max(0, Math.floor(value));
+}
+
+function normalizeOptionalPositiveInteger(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return Math.floor(value);
+}
+
+function decideOpenAiHttpRetryAttempt(input: {
+  operationStartedAtMs: number;
+  requestAttemptIndex: number;
+  retryDelayMilliseconds: number;
+  retryPolicy: NormalizedOpenAiHttpRetryPolicy;
+}): OpenAiHttpRetryDecision {
+  if (input.requestAttemptIndex > input.retryPolicy.maximumRetryCount) {
+    return { canRetry: false, retryExhaustionReason: "maximum_retry_count_reached" };
+  }
+
+  const maximumRetryElapsedMilliseconds = input.retryPolicy.maximumRetryElapsedMilliseconds;
+  if (maximumRetryElapsedMilliseconds === undefined) {
+    return { canRetry: true };
+  }
+
+  const retryElapsedMilliseconds = Math.max(0, Date.now() - input.operationStartedAtMs);
+  if (retryElapsedMilliseconds >= maximumRetryElapsedMilliseconds) {
+    return { canRetry: false, retryExhaustionReason: "maximum_retry_elapsed_time_reached" };
+  }
+  if (retryElapsedMilliseconds + input.retryDelayMilliseconds > maximumRetryElapsedMilliseconds) {
+    return { canRetry: false, retryExhaustionReason: "maximum_retry_elapsed_time_reached" };
+  }
+
+  return { canRetry: true };
+}
+
 function createOpenAiHttpRetryAttemptDiagnosticFields(
   input: Pick<OpenAiHttpRetryInput, "requestAttemptDiagnosticFieldName">,
   requestAttemptIndex: number,
@@ -247,10 +342,38 @@ function createOpenAiHttpRetryAttemptDiagnosticFields(
 
 function createOpenAiHttpRetryMaximumRetryCountDiagnosticFields(
   input: Pick<OpenAiHttpRetryInput, "maximumRetryCountDiagnosticFieldName">,
+  retryPolicy: Pick<NormalizedOpenAiHttpRetryPolicy, "maximumRetryCount">,
 ): BuliDiagnosticLogFields {
   return {
-    [input.maximumRetryCountDiagnosticFieldName]: DEFAULT_OPENAI_HTTP_RETRY_COUNT,
+    [input.maximumRetryCountDiagnosticFieldName]: retryPolicy.maximumRetryCount,
   };
+}
+
+function createOpenAiHttpRetryElapsedBudgetDiagnosticFields(
+  retryPolicy: Pick<NormalizedOpenAiHttpRetryPolicy, "maximumRetryElapsedMilliseconds">,
+): BuliDiagnosticLogFields {
+  if (retryPolicy.maximumRetryElapsedMilliseconds === undefined) {
+    return {};
+  }
+
+  return { maximumRetryElapsedMilliseconds: retryPolicy.maximumRetryElapsedMilliseconds };
+}
+
+function readOpenAiExhaustedRateLimitResetMilliseconds(headers: OpenAiHttpResponseHeaders): number | undefined {
+  const rateLimitHeaders = readOpenAiRateLimitHeaders(headers);
+  if (!rateLimitHeaders) {
+    return undefined;
+  }
+
+  const exhaustedRateLimitResetDurations: number[] = [];
+  if (rateLimitHeaders.requestsRemaining === 0 && rateLimitHeaders.requestsResetAfterMilliseconds !== undefined) {
+    exhaustedRateLimitResetDurations.push(rateLimitHeaders.requestsResetAfterMilliseconds);
+  }
+  if (rateLimitHeaders.tokensRemaining === 0 && rateLimitHeaders.tokensResetAfterMilliseconds !== undefined) {
+    exhaustedRateLimitResetDurations.push(rateLimitHeaders.tokensResetAfterMilliseconds);
+  }
+
+  return exhaustedRateLimitResetDurations.length === 0 ? undefined : Math.max(...exhaustedRateLimitResetDurations);
 }
 
 function createOpenAiHttpRetryPendingEvent(input: {

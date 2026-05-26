@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ConversationTurnStatus } from "@buli/contracts";
+import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { PromptDraftText } from "./PromptDraftText.tsx";
 import { PromptTextarea, type PromptTextareaEdit, type PromptTextareaSummarizedPaste } from "./PromptTextarea.tsx";
@@ -24,7 +25,7 @@ export type MinimumHeightPromptStripProps = {
   queuedPromptCount: number;
   accentColor: string;
   assistantResponseStatus: ConversationTurnStatus;
-  isConversationCompactionRunning: boolean;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   isActiveTurnInterruptConfirmationArmed?: boolean;
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
@@ -35,7 +36,8 @@ export type MinimumHeightPromptStripProps = {
 export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): ReactNode {
   const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
     props.assistantResponseStatus === "waiting_for_tool_approval";
-  if ((isAssistantTurnActive || props.isConversationCompactionRunning) && props.isPromptInputDisabled) {
+  const isConversationCompactionRunning = props.conversationSessionCompactionStatus.step === "compacting";
+  if ((isAssistantTurnActive || isConversationCompactionRunning) && props.isPromptInputDisabled) {
     return (
       <box
         backgroundColor={chatScreenTheme.surfaceOne}
@@ -63,6 +65,9 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
       <text fg={props.accentColor}>
         <b>{">"}</b>
       </text>
+      {props.conversationSessionCompactionStatus.step === "compacting" && props.conversationSessionCompactionStatus.source === "auto" ? (
+        <SnakeAnimationIndicator variant="sixCell" />
+      ) : null}
       <box flexGrow={1} minWidth={0} overflow="hidden" paddingRight={3}>
         {props.isPromptInputDisabled ? (
           <PromptDraftText

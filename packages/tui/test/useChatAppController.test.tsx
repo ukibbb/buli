@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ConversationSessionEntry, TokenUsage, UserPromptImageAttachment } from "@buli/contracts";
-import type { AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
+import type { AssistantConversationRunner, ConversationAutoCompactionResult, ConversationTurnRequest } from "@buli/engine";
 import {
   useChatAppController,
   type UseChatAppControllerInput,
@@ -213,6 +213,23 @@ async function waitForConversationTurnStatus(input: {
   throw new Error(`Expected conversation turn status ${input.conversationTurnStatus}.`);
 }
 
+async function waitForConversationSessionCompactionStatus(input: {
+  renderedHook: RenderedChatAppControllerHook;
+  conversationSessionCompactionStatus: UseChatAppControllerResult["conversationSessionCompactionStatus"];
+}): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await input.renderedHook.flushHookEffects();
+    if (
+      JSON.stringify(input.renderedHook.readCurrentController().conversationSessionCompactionStatus) ===
+        JSON.stringify(input.conversationSessionCompactionStatus)
+    ) {
+      return;
+    }
+  }
+
+  throw new Error(`Expected conversation compaction status ${JSON.stringify(input.conversationSessionCompactionStatus)}.`);
+}
+
 function ChatAppControllerHookProbe(props: {
   controllerInput: Partial<UseChatAppControllerInput>;
   observeController: (controller: UseChatAppControllerResult) => void;
@@ -259,6 +276,24 @@ test("useChatAppController hydrates initial entries and closes command help", as
   await renderedHook.flushHookEffects();
 
   expect(renderedHook.readCurrentController().chatSessionState.isCommandHelpModalVisible).toBe(false);
+});
+
+test("useChatAppController ignores prompt editor changes while command help owns interaction", async () => {
+  const renderedHook = await renderChatAppControllerHook();
+
+  await renderedHook.typeText("/help");
+  await renderedHook.pressReturn();
+  expect(renderedHook.readCurrentController().chatSessionState.isCommandHelpModalVisible).toBe(true);
+
+  await act(async () => {
+    renderedHook.readCurrentController().applyPromptDraftEditToChatApp({
+      promptDraft: "hidden edit",
+      promptDraftCursorOffset: "hidden edit".length,
+    });
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(renderedHook.readCurrentController().chatSessionState.promptDraft).toBe("");
 });
 
 test("useChatAppController hydrates lazy initial session entries before prompt submission", async () => {
@@ -574,6 +609,60 @@ test("useChatAppController queues prompts typed while streaming and drains them 
   await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
 });
 
+test("useChatAppController keeps prompt editable and queues prompts during auto-compaction", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  let resolveAutoCompaction: ((result: ConversationAutoCompactionResult) => void) | undefined;
+  const autoCompactionPromise = new Promise<ConversationAutoCompactionResult>((resolve) => {
+    resolveAutoCompaction = resolve;
+  });
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+    autoCompactCurrentConversationSession: () => autoCompactionPromise,
+  });
+
+  await renderedHook.typeText("Prompt before compaction");
+  await renderedHook.pressReturn();
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 1 });
+
+  await act(async () => {
+    controlledRunner.startedTurns[0]?.complete();
+  });
+  await waitForConversationSessionCompactionStatus({
+    renderedHook,
+    conversationSessionCompactionStatus: { step: "compacting", source: "auto" },
+  });
+
+  await renderedHook.typeText("Queued during compaction");
+  expect(renderedHook.readCurrentController().chatSessionState.promptDraft).toBe("Queued during compaction");
+
+  await renderedHook.pressReturn();
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(1);
+  expect(renderedHook.readCurrentController().queuedPromptPreviews).toMatchObject([
+    { submittedPromptText: "Queued during compaction", submittedPromptImageAttachmentCount: 0 },
+  ]);
+  expect(renderedHook.readCurrentController().chatSessionState.promptDraft).toBe("");
+  expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
+    "Prompt before compaction",
+  ]);
+
+  await act(async () => {
+    resolveAutoCompaction?.(createSkippedAutoCompactionResult());
+    await autoCompactionPromise;
+  });
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 2 });
+
+  expect(renderedHook.readCurrentController().queuedPromptCount).toBe(0);
+  expect(controlledRunner.startedTurns.map((startedTurn) => startedTurn.conversationTurnRequest.userPromptText)).toEqual([
+    "Prompt before compaction",
+    "Queued during compaction",
+  ]);
+
+  await act(async () => {
+    controlledRunner.startedTurns[1]?.complete();
+  });
+  await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
+});
+
 test("useChatAppController drains queued prompts after confirmed interruption settles", async () => {
   const controlledRunner = createControlledAssistantConversationRunner();
   const renderedHook = await renderChatAppControllerHook({
@@ -636,3 +725,22 @@ test("useChatAppController does not drain queued prompts after unmount", async (
     "First prompt",
   ]);
 });
+
+function createSkippedAutoCompactionResult(): ConversationAutoCompactionResult {
+  return {
+    didCompact: false,
+    decision: {
+      shouldCompact: false,
+      reason: "context_usage_below_threshold",
+      selectedModelId: "gpt-5.4",
+      contextTokensUsed: 0,
+      contextUsageRatio: undefined,
+      contextWindowTokenCapacity: undefined,
+      contextCompactionTriggerTokenCount: undefined,
+      reservedTokenCount: undefined,
+      thresholdRatio: 0.8,
+      triggerKind: undefined,
+      sessionEntryCountAfterLatestCompactionSummary: 2,
+    },
+  };
+}

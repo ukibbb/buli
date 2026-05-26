@@ -4,9 +4,11 @@ import {
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_GREP_CONTEXT_LINE_COUNT,
   MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
+  MAX_SKILL_NAME_LENGTH,
   ToolCallRequestSchema,
   isAssistantSubagentName,
   isAssistantToolRequestName,
+  SKILL_NAME_PATTERN_TEXT,
   type AssistantSubagentName,
   type AssistantToolRequestName,
   type ProviderAvailableToolName,
@@ -28,6 +30,7 @@ type OpenAiToolParameterProperty = {
   readonly maxLength?: number;
   readonly minItems?: number;
   readonly enum?: readonly string[];
+  readonly pattern?: string;
   readonly items?: OpenAiToolParameterProperty;
   readonly properties?: Record<string, OpenAiToolParameterProperty>;
   readonly required?: readonly string[];
@@ -461,6 +464,28 @@ export function createTaskToolDefinition(): OpenAiToolDefinition<"task"> {
   };
 }
 
+export function createSkillToolDefinition(): OpenAiToolDefinition<"skill"> {
+  return {
+    type: "function",
+    name: "skill",
+    description: "Load a Buli skill's full instructions by exact skill name. Use this when the user's task matches a skill listed in <available_skills>. The model initially sees only skill names and descriptions; call this tool to lazy-load the full markdown instructions before applying that specialized workflow.",
+    parameters: {
+      type: "object",
+      properties: {
+        skillName: {
+          type: "string",
+          maxLength: MAX_SKILL_NAME_LENGTH,
+          pattern: SKILL_NAME_PATTERN_TEXT,
+          description: "Exact skill name from <available_skills> to load.",
+        },
+      },
+      required: ["skillName"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
 const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]: OpenAiToolAdapter<ToolName> } = {
   bash: {
     toolName: "bash",
@@ -521,6 +546,11 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     toolName: "task",
     definition: createTaskToolDefinition(),
     parseToolCallRequest: parseTaskOpenAiToolCallRequest,
+  },
+  skill: {
+    toolName: "skill",
+    definition: createSkillToolDefinition(),
+    parseToolCallRequest: parseSkillOpenAiToolCallRequest,
   },
 };
 
@@ -771,6 +801,13 @@ function parseTaskOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
     subagentName: readRequiredAssistantSubagentNameToolArgument(parsedArguments, "subagent", "task"),
     subagentDescription: readRequiredStringToolArgument(parsedArguments, "description", "task"),
     subagentPrompt: readRequiredStringToolArgument(parsedArguments, "prompt", "task"),
+  };
+}
+
+function parseSkillOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"skill"> {
+  return {
+    toolName: "skill",
+    skillName: readRequiredStringToolArgument(parsedArguments, "skillName", "skill"),
   };
 }
 

@@ -83,6 +83,7 @@ const fileMutationToolCallPreparerByName: {
 export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
+  conversationTurnId: string;
   toolCallId: string;
   fileMutationToolCallRequest: FileMutationToolCallRequest;
   assistantOperatingMode: AssistantOperatingMode;
@@ -124,6 +125,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
     }));
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolResultText: denialText,
       toolResultKind: "denied",
@@ -163,6 +165,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
     }));
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolResultText: preparedFileMutationToolCall.toolResultText,
       toolResultKind: "failed",
@@ -227,6 +230,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
     }
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolResultText: toolCallOutcome.toolResultText,
       toolResultKind: "completed",
@@ -265,6 +269,7 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
   }
   await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     toolResultText: toolCallOutcome.toolResultText,
     toolResultKind: "failed",

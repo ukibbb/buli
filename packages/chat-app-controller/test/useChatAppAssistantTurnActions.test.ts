@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { AssistantResponseEvent } from "@buli/contracts";
 import type { ConversationAutoCompactionResult } from "@buli/engine";
 import {
+  resolveAutoCompactionRequestAfterAssistantTurn,
   resolveAutoCompactionFollowUpPromptAfterAssistantTurn,
   type SubmittedChatAppPrompt,
 } from "../src/useChatAppAssistantTurnActions.ts";
@@ -10,10 +11,9 @@ type TerminalAssistantResponseEvent = Extract<AssistantResponseEvent, {
   type: "assistant_message_completed" | "assistant_message_incomplete" | "assistant_message_failed" | "assistant_message_interrupted";
 }>;
 
-test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn retries the original prompt after overflow compaction", () => {
-  const activeSubmittedPrompt = createSubmittedPrompt();
+test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not retry the original prompt after overflow compaction", () => {
   const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
-    activeSubmittedPrompt,
+    activeSubmittedPrompt: createSubmittedPrompt(),
     terminalAssistantResponseEvent: {
       type: "assistant_message_failed",
       messageId: "assistant-1",
@@ -26,15 +26,10 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn retries the original
     }),
   });
 
-  expect(followUpPrompt).toEqual({
-    submittedPromptText: activeSubmittedPrompt.submittedPromptText,
-    submittedPromptImageAttachments: activeSubmittedPrompt.submittedPromptImageAttachments,
-    submittedAssistantOperatingMode: "plan",
-    submittedPromptSource: "auto_compaction_retry",
-  });
+  expect(followUpPrompt).toBeUndefined();
 });
 
-test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not retry an overflow retry again", () => {
+test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not continue an overflow retry again", () => {
   const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
     activeSubmittedPrompt: createSubmittedPrompt("auto_compaction_retry"),
     terminalAssistantResponseEvent: {
@@ -56,6 +51,24 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues after regu
   const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
     activeSubmittedPrompt: createSubmittedPrompt(),
     terminalAssistantResponseEvent: createCompletedAssistantResponseEvent(),
+    autoCompactionResult: createCompactedAutoCompactionResult({
+      reason: "context_usage_threshold_reached",
+      triggerKind: "threshold_ratio",
+    }),
+  });
+
+  expect(followUpPrompt).toEqual({
+    submittedPromptText: "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+    submittedPromptImageAttachments: [],
+    submittedAssistantOperatingMode: "plan",
+    submittedPromptSource: "auto_compaction_continue",
+  });
+});
+
+test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues after near-limit context guard compaction", () => {
+  const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
+    activeSubmittedPrompt: createSubmittedPrompt(),
+    terminalAssistantResponseEvent: createIncompleteAssistantResponseEvent("context_window_near_limit"),
     autoCompactionResult: createCompactedAutoCompactionResult({
       reason: "context_usage_threshold_reached",
       triggerKind: "threshold_ratio",
@@ -112,6 +125,23 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not continue re
   });
 
   expect(followUpPrompt).toBeUndefined();
+});
+
+test("resolveAutoCompactionRequestAfterAssistantTurn requests overflow compaction after context overflow failure", () => {
+  expect(resolveAutoCompactionRequestAfterAssistantTurn({
+    terminalAssistantResponseEvent: {
+      type: "assistant_message_failed",
+      messageId: "assistant-1",
+      errorText: "Input exceeds the model context window.",
+      failureKind: "context_window_overflow",
+    },
+  })).toEqual({ requestTriggerKind: "context_window_overflow" });
+});
+
+test("resolveAutoCompactionRequestAfterAssistantTurn keeps regular compaction request after completed turns", () => {
+  expect(resolveAutoCompactionRequestAfterAssistantTurn({
+    terminalAssistantResponseEvent: createCompletedAssistantResponseEvent(),
+  })).toEqual({});
 });
 
 function createSubmittedPrompt(submittedPromptSource?: SubmittedChatAppPrompt["submittedPromptSource"]): SubmittedChatAppPrompt {

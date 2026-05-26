@@ -5,6 +5,10 @@ export type {
   ConversationSessionExportStatus,
 } from "./conversationSessionStatus.ts";
 export {
+  isAutoConversationSessionCompactionRunning,
+  isConversationSessionCompactionBlockingPromptInput,
+} from "./conversationSessionStatus.ts";
+export {
   useChatAppController,
   type ChatAppInteractionStatusState,
   type ChatAppConversationTranscriptScrollDirection,

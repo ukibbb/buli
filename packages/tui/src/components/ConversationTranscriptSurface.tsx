@@ -1,5 +1,6 @@
 import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
 import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
+import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ReactNode, RefObject } from "react";
 import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
@@ -16,6 +17,10 @@ export type ConversationTranscriptSurfaceProps = {
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   accentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   terminalColumnCount: number;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+  queuedPromptCount: number;
+  totalContextTokensUsed: number | undefined;
+  contextWindowTokenCapacity: number | undefined;
 };
 
 export function ConversationTranscriptSurface(props: ConversationTranscriptSurfaceProps): ReactNode {
@@ -33,6 +38,10 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
       horizontalRuleColor={props.accentColor}
       userMessageBorderColor={props.accentColor}
       terminalColumnCount={props.terminalColumnCount}
+      conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
+      queuedPromptCount={props.queuedPromptCount}
+      totalContextTokensUsed={props.totalContextTokensUsed}
+      contextWindowTokenCapacity={props.contextWindowTokenCapacity}
     />
   );
 }

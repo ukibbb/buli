@@ -585,6 +585,26 @@
                 "subagentPrompt"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "skill"
+                },
+                "skillName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                }
+              },
+              "required": [
+                "toolName",
+                "skillName"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -644,7 +664,7 @@
           "$ref": "#/$defs/__schema18"
         },
         "toolResultText": {
-          "$ref": "#/$defs/__schema35"
+          "$ref": "#/$defs/__schema36"
         },
         "entryKind": {
           "type": "string",
@@ -669,7 +689,7 @@
           "$ref": "#/$defs/__schema18"
         },
         "toolResultText": {
-          "$ref": "#/$defs/__schema35"
+          "$ref": "#/$defs/__schema36"
         },
         "entryKind": {
           "type": "string",
@@ -699,7 +719,7 @@
           "$ref": "#/$defs/__schema18"
         },
         "toolResultText": {
-          "$ref": "#/$defs/__schema35"
+          "$ref": "#/$defs/__schema36"
         },
         "entryKind": {
           "type": "string",
@@ -1295,6 +1315,9 @@
                         "$ref": "#/$defs/__schema33"
                       },
                       {
+                        "$ref": "#/$defs/__schema35"
+                      },
+                      {
                         "type": "object",
                         "properties": {
                           "toolName": {
@@ -1351,7 +1374,8 @@
                   "type": "string",
                   "enum": [
                     "child_tool_call_count",
-                    "child_tool_result_text_length"
+                    "child_tool_result_text_length",
+                    "elapsed_time"
                   ]
                 },
                 "childToolCallCount": {
@@ -1367,6 +1391,16 @@
                 "skippedChildToolCallCount": {
                   "type": "integer",
                   "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "elapsedMilliseconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "softElapsedTimeCheckpointMilliseconds": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
                   "maximum": 9007199254740991
                 }
               },
@@ -1388,6 +1422,9 @@
             "subagentDescription"
           ],
           "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/__schema35"
         }
       ]
     },
@@ -2122,6 +2159,41 @@
       "additionalProperties": false
     },
     "__schema35": {
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "const": "skill"
+        },
+        "skillName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skillDescription": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skillSourceKind": {
+          "type": "string",
+          "enum": [
+            "built_in",
+            "buli",
+            "claude",
+            "agents"
+          ]
+        },
+        "skillInstructionFilePath": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "toolName",
+        "skillName"
+      ],
+      "additionalProperties": false
+    },
+    "__schema36": {
       "type": "string"
     }
   },

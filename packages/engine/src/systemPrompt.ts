@@ -1,5 +1,8 @@
+import { pathToFileURL } from "node:url";
 import { DEFAULT_ASSISTANT_OPERATING_MODE, type AssistantOperatingMode, type ProjectInstructionSnapshot } from "@buli/contracts";
+import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 import { buildProjectInstructionPromptBlock } from "./projectInstructions.ts";
+import type { AvailableSkill } from "./skills/skillCatalog.ts";
 
 const UNDERSTAND_MODE_SYSTEM_REMINDER = `<system-reminder>
 # Understand Agent - System Reminder
@@ -137,9 +140,11 @@ export function buildBuliSystemPrompt(input: {
   workspaceRootPath: string;
   assistantOperatingMode?: AssistantOperatingMode;
   projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
+  availableSkills?: readonly AvailableSkill[];
 }): string {
   const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
   const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
+  const availableSkillsPromptBlock = buildAvailableSkillsPromptBlock(input.availableSkills);
   return [
     [
       "Identity:",
@@ -151,6 +156,7 @@ export function buildBuliSystemPrompt(input: {
     ...(assistantOperatingMode === "plan" ? [PLAN_MODE_SYSTEM_REMINDER] : []),
     ...(assistantOperatingMode === "implementation" ? [IMPLEMENTATION_MODE_SYSTEM_REMINDER] : []),
     ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
+    ...(availableSkillsPromptBlock ? [availableSkillsPromptBlock] : []),
     [
       "Default workflow:",
       "- Start by understanding what Lukasz wants to learn, decide, or improve; do not assume code must change.",
@@ -284,6 +290,34 @@ export function buildBuliSystemPrompt(input: {
       "- Do not read files outside the workspace unless the user explicitly asks and the tool policy allows it.",
     ].join("\n"),
   ].join("\n\n");
+}
+
+function buildAvailableSkillsPromptBlock(availableSkills: readonly AvailableSkill[] | undefined): string | undefined {
+  if (!availableSkills || availableSkills.length === 0) {
+    return undefined;
+  }
+
+  return [
+    "Skills provide specialized instructions and workflows for specific tasks.",
+    "Use the skill tool to load a skill when a task matches its description. The skill tool returns the full instructions only when needed.",
+    "<available_skills>",
+    ...availableSkills.flatMap((availableSkill) => [
+      `  <skill name="${escapeModelFacingXmlAttributeValue(availableSkill.name)}">`,
+      `    <description>${escapeModelFacingXmlText(availableSkill.description ?? "No description provided.")}</description>`,
+      `    <source>${availableSkill.sourceKind}</source>`,
+      ...formatAvailableSkillLocationLines(availableSkill),
+      "  </skill>",
+    ]),
+    "</available_skills>",
+  ].join("\n");
+}
+
+function formatAvailableSkillLocationLines(availableSkill: AvailableSkill): string[] {
+  if (!availableSkill.instructionFilePath) {
+    return [];
+  }
+
+  return [`    <location>${escapeModelFacingXmlText(pathToFileURL(availableSkill.instructionFilePath).href)}</location>`];
 }
 
 export function buildBuliExplorerSystemPrompt(input: {

@@ -11,6 +11,7 @@ import {
 import type { ProjectInstructionTracker } from "../projectInstructions.ts";
 import { runReadToolCall } from "./readTool.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
+import { buildBudgetedTaggedToolResultText } from "./toolResultTextBudget.ts";
 
 export interface ReadManyToolCallConcurrencyLimiter {
   run<ReadManyChildResult>(
@@ -28,6 +29,8 @@ type UniqueReadManyChildToolCall = {
   firstReadTargetIndex: number;
   readTarget: ReadManyToolCallTarget;
 };
+
+export const MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH = 32_000;
 
 export function createStartedReadManyToolCallDetail(
   readManyToolCallRequest: ReadManyToolCallRequest,
@@ -221,22 +224,29 @@ function buildReadManyToolResultText(input: {
   completedReadCount: number;
   failedReadCount: number;
 }): string {
-  return [
-    "<read_many>",
-    `<summary>${input.completedReadCount} completed, ${input.failedReadCount} failed</summary>`,
-    ...input.childToolCallOutcomes.map(formatReadManyChildToolResultText),
-    "</read_many>",
-  ].join("\n");
+  return buildBudgetedTaggedToolResultText({
+    openingTag: "<read_many>",
+    closingTag: "</read_many>",
+    contentLines: [
+      `<summary>${input.completedReadCount} completed, ${input.failedReadCount} failed</summary>`,
+      ...input.childToolCallOutcomes.flatMap(formatReadManyChildToolResultLines),
+    ],
+    maximumCharacterCount: MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH,
+    truncationTagName: "read_many_truncation",
+    continuationGuidanceLines: [
+      "Use read with one readTargetPath plus offsetLineNumber and maximumLineCount for the specific file range you need next.",
+    ],
+  });
 }
 
-function formatReadManyChildToolResultText(childToolCallOutcome: ReadManyChildToolCallOutcome): string {
+function formatReadManyChildToolResultLines(childToolCallOutcome: ReadManyChildToolCallOutcome): readonly string[] {
   const readDetail = assertReadToolCallDetail(childToolCallOutcome.readToolCallOutcome.toolCallDetail);
   return [
     "<read_many_result>",
     `<index>${childToolCallOutcome.readTargetIndex + 1}</index>`,
     `<status>${childToolCallOutcome.readToolCallOutcome.outcomeKind}</status>`,
     `<path>${readDetail.readFilePath}</path>`,
-    childToolCallOutcome.readToolCallOutcome.toolResultText,
+    ...childToolCallOutcome.readToolCallOutcome.toolResultText.split("\n"),
     "</read_many_result>",
-  ].join("\n");
+  ];
 }

@@ -275,6 +275,20 @@ export const ToolCallTodoWriteDetailSchema = z
   .strict();
 export type ToolCallTodoWriteDetail = z.infer<typeof ToolCallTodoWriteDetailSchema>;
 
+export const ToolCallSkillSourceKindSchema = z.enum(["built_in", "buli", "claude", "agents"]);
+export type ToolCallSkillSourceKind = z.infer<typeof ToolCallSkillSourceKindSchema>;
+
+export const ToolCallSkillDetailSchema = z
+  .object({
+    toolName: z.literal("skill"),
+    skillName: z.string().min(1),
+    skillDescription: z.string().min(1).optional(),
+    skillSourceKind: ToolCallSkillSourceKindSchema.optional(),
+    skillInstructionFilePath: z.string().min(1).optional(),
+  })
+  .strict();
+export type ToolCallSkillDetail = z.infer<typeof ToolCallSkillDetailSchema>;
+
 export const SubagentChildTaskToolCallDetailSchema = z
   .object({
     toolName: z.literal("task"),
@@ -300,6 +314,7 @@ export const SubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName"
   ToolCallPatchDetailSchema,
   ToolCallPatchManyDetailSchema,
   ToolCallWriteDetailSchema,
+  ToolCallSkillDetailSchema,
   SubagentChildTaskToolCallDetailSchema,
 ]);
 export type SubagentChildToolCallDetail = z.infer<typeof SubagentChildToolCallDetailSchema>;
@@ -317,7 +332,11 @@ export const SubagentChildToolCallSchema = z
   .strict();
 export type SubagentChildToolCall = z.infer<typeof SubagentChildToolCallSchema>;
 
-export const SubagentResearchCheckpointReasonSchema = z.enum(["child_tool_call_count", "child_tool_result_text_length"]);
+export const SubagentResearchCheckpointReasonSchema = z.enum([
+  "child_tool_call_count",
+  "child_tool_result_text_length",
+  "elapsed_time",
+]);
 export type SubagentResearchCheckpointReason = z.infer<typeof SubagentResearchCheckpointReasonSchema>;
 
 export const SubagentResearchCheckpointSchema = z
@@ -326,6 +345,8 @@ export const SubagentResearchCheckpointSchema = z
     childToolCallCount: z.number().int().nonnegative(),
     childToolResultTextLength: z.number().int().nonnegative(),
     skippedChildToolCallCount: z.number().int().nonnegative(),
+    elapsedMilliseconds: z.number().int().nonnegative().optional(),
+    softElapsedTimeCheckpointMilliseconds: z.number().int().positive().optional(),
   })
   .strict();
 export type SubagentResearchCheckpoint = z.infer<typeof SubagentResearchCheckpointSchema>;
@@ -357,5 +378,6 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallBashDetailSchema,
   ToolCallTodoWriteDetailSchema,
   ToolCallTaskDetailSchema,
+  ToolCallSkillDetailSchema,
 ]);
 export type ToolCallDetail = z.infer<typeof ToolCallDetailSchema>;

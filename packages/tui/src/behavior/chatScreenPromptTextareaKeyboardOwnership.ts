@@ -1,7 +1,13 @@
-import type { ChatSessionKeyboardInput, ChatSessionState } from "@buli/chat-session-state";
+import {
+  canChatSessionPromptDraftBeEdited,
+  resolveChatSessionInteractionScope,
+  type ChatSessionKeyboardInput,
+  type ChatSessionState,
+} from "@buli/chat-session-state";
 import {
   canChatAppPromptDraftBeEdited,
-  canChatSessionPromptDraftBeEdited,
+  isConversationSessionCompactionBlockingPromptInput,
+  type ConversationSessionCompactionStatus,
 } from "@buli/chat-app-controller";
 
 export function canPromptTextareaEditChatSessionState(chatSessionState: ChatSessionState): boolean {
@@ -10,9 +16,14 @@ export function canPromptTextareaEditChatSessionState(chatSessionState: ChatSess
 
 export function canPromptTextareaEditChatScreenInput(input: {
   chatSessionState: ChatSessionState;
-  isConversationCompactionInFlight: boolean;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
 }): boolean {
-  return canChatAppPromptDraftBeEdited(input);
+  return canChatAppPromptDraftBeEdited({
+    chatSessionState: input.chatSessionState,
+    isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
+      input.conversationSessionCompactionStatus,
+    ),
+  });
 }
 
 export function isPromptInteractionKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {
@@ -35,10 +46,9 @@ export function shouldPromptTextareaHandleKeyboardInput(input: {
     return false;
   }
 
-  if (
-    input.chatSessionState.slashCommandSelectionState.step !== "hidden" ||
-    input.chatSessionState.promptContextSelectionState.step !== "hidden"
-  ) {
+  const interactionScope = resolveChatSessionInteractionScope(input.chatSessionState);
+
+  if (interactionScope === "slash_command_selection" || interactionScope === "prompt_context_selection") {
     return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
       input.chatSessionKeyboardInput.keyName !== "up" &&
       input.chatSessionKeyboardInput.keyName !== "down" &&
@@ -46,8 +56,12 @@ export function shouldPromptTextareaHandleKeyboardInput(input: {
       input.chatSessionKeyboardInput.keyName !== "escape";
   }
 
-  return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
-    input.chatSessionKeyboardInput.keyName !== "escape";
+  if (interactionScope === "prompt_draft_editing") {
+    return isPromptTextareaEditingKeyboardInput(input.chatSessionKeyboardInput) &&
+      input.chatSessionKeyboardInput.keyName !== "escape";
+  }
+
+  return false;
 }
 
 export function isPromptTextareaEditingKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {

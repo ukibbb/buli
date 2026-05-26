@@ -53,6 +53,7 @@ export const ProviderProtocolErrorSchema = z.strictObject({
 });
 
 export const ProviderProtocolTurnRequestSchema = z.strictObject({
+  conversationTurnId: z.string().min(1).optional(),
   systemPromptText: z.string(),
   conversationSessionEntries: z.array(ConversationSessionEntrySchema),
   selectedModelId: z.string().min(1),

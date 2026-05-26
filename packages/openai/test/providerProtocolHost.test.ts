@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  ContextWindowOverflowError,
   PROVIDER_PROTOCOL_VERSION,
   type ProviderProtocolHostFrame,
   type ProviderProtocolProviderFrame,
@@ -113,8 +114,14 @@ class AbortTrackingOpenAiProtocolTurn implements OpenAiProviderProtocolHostConve
 }
 
 class ThrowingOpenAiProtocolTurn implements OpenAiProviderProtocolHostConversationTurn {
+  readonly error: Error;
+
+  constructor(error: Error = new Error("scripted provider stream failed")) {
+    this.error = error;
+  }
+
   async *streamProviderEvents(): AsyncGenerator<ProviderStreamEvent> {
-    throw new Error("scripted provider stream failed");
+    throw this.error;
   }
 
   async submitToolResult(): Promise<void> {}
@@ -385,6 +392,33 @@ test("runOpenAiProviderProtocolHost maps provider stream failures to structured 
     frameKind: "provider_turn_closed",
     turnId: "turn-1",
     closedReason: "failed",
+  });
+  await runtime.stop();
+});
+
+test("runOpenAiProviderProtocolHost marks context-window overflow stream failures", async () => {
+  const runtime = new OpenAiProviderProtocolHostTestRuntime(
+    new ScriptedOpenAiProtocolProvider([
+      new ThrowingOpenAiProtocolTurn(new ContextWindowOverflowError("context window overflow")),
+    ]),
+  );
+
+  runtime.hostFrameQueue.enqueue(createHostStartTurnFrame());
+  await waitForProviderFrameCount({ runtime, expectedFrameCount: 3 });
+
+  expect(runtime.sentProviderFrames[1]).toMatchObject({
+    protocol: PROVIDER_PROTOCOL_VERSION,
+    frameKind: "provider_error",
+    turnId: "turn-1",
+    error: {
+      errorCode: "provider_turn_stream_failed",
+      errorMessage: "context window overflow",
+      providerName: "openai",
+      details: {
+        errorName: "ContextWindowOverflowError",
+        failureKind: "context_window_overflow",
+      },
+    },
   });
   await runtime.stop();
 });

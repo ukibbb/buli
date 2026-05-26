@@ -18,6 +18,7 @@ import {
   hideCommandHelpModal,
   hydrateConversationTranscriptFromSessionEntries,
   type ChatSessionState,
+  type ChatSlashCommandSkill,
 } from "@buli/chat-session-state";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
@@ -51,6 +52,7 @@ export type UseChatAppControllerInput = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort | undefined;
   selectedReasoningEffort?: ReasoningEffort | undefined;
+  availableSkills?: readonly ChatSlashCommandSkill[] | undefined;
   initialConversationSessionId?: string | undefined;
   initialConversationSessionEntries?: readonly ConversationSessionEntry[] | undefined;
   loadInitialConversationSessionEntries?:
@@ -116,7 +118,7 @@ export type UseChatAppControllerResult = {
   requestConversationSessionDeletion: (conversationSessionId: string) => Promise<void>;
   hideCommandHelpModalInChatApp: () => void;
   readLatestChatSessionState: () => ChatSessionState;
-  readIsConversationCompactionInFlight: () => boolean;
+  readConversationSessionCompactionStatus: () => ConversationSessionCompactionStatus;
 };
 
 export type ChatAppTranscriptState = Pick<
@@ -404,11 +406,11 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     applyPromptDraftEditToChatApp,
     insertSummarizedPastedTextIntoChatAppPrompt,
   } = useChatAppKeyboardActions({
-    chatSessionState,
+    availableSkills: input.availableSkills,
+    conversationSessionCompactionStatus,
     loadAvailableAssistantModels: input.loadAvailableAssistantModels,
     latestChatSessionStateRef,
     isPromptSubmissionInFlightRef,
-    isConversationCompactionInFlightRef,
     setChatSessionState,
     requestActiveConversationTurnInterrupt,
     dismissActivePromptContextQuery,
@@ -432,7 +434,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     pasteClipboardImageAttachmentIntoChatAppPrompt,
   } = useChatAppPromptImageAttachmentActions({
     latestChatSessionStateRef,
-    isConversationCompactionInFlightRef,
+    conversationSessionCompactionStatus,
     setChatSessionState,
   });
 
@@ -444,7 +446,9 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     });
   });
   const readLatestChatSessionState = useEffectEvent((): ChatSessionState => latestChatSessionStateRef.current);
-  const readIsConversationCompactionInFlight = useEffectEvent((): boolean => isConversationCompactionInFlightRef.current);
+  const readConversationSessionCompactionStatus = useEffectEvent(
+    (): ConversationSessionCompactionStatus => conversationSessionCompactionStatus,
+  );
 
   const transcriptState = selectStableChatAppTranscriptState({
     previousState: stableTranscriptStateRef.current,
@@ -499,7 +503,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     requestConversationSessionDeletion,
     hideCommandHelpModalInChatApp,
     readLatestChatSessionState,
-    readIsConversationCompactionInFlight,
+    readConversationSessionCompactionStatus,
   };
 }
 

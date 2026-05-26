@@ -10,7 +10,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task"] });
+  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task", "skill"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
@@ -51,6 +51,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation 
       "patch_many",
       "write",
       "task",
+      "skill",
     ],
   });
 });
@@ -64,7 +65,7 @@ test("resolveAssistantOperatingModeToolAccess denies bash in plan mode", () => {
     }),
   ).toEqual({
     accessKind: "denied",
-    effectiveAvailableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task"],
+    effectiveAvailableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task", "skill"],
     denialText: "Plan Agent is read-only, so this bash command was not executed.",
   });
 });

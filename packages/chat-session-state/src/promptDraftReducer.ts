@@ -544,11 +544,17 @@ export function submitPromptDraft(chatSessionState: ChatSessionState): PromptDra
   };
 }
 
-export function queuePromptDraftForLaterSubmission(chatSessionState: ChatSessionState): PromptDraftSubmission {
+export function queuePromptDraftForLaterSubmission(input: {
+  chatSessionState: ChatSessionState;
+  shouldAllowWaitingForUserInput?: boolean | undefined;
+}): PromptDraftSubmission {
+  const chatSessionState = input.chatSessionState;
   const submittedUserPrompt = readSubmittablePromptDraft(chatSessionState);
+  const isQueuableConversationTurnStatus = chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
+    (input.shouldAllowWaitingForUserInput === true && chatSessionState.conversationTurnStatus === "waiting_for_user_input");
   if (
     !submittedUserPrompt ||
-    chatSessionState.conversationTurnStatus !== "streaming_assistant_response" ||
+    !isQueuableConversationTurnStatus ||
     chatSessionState.promptContextSelectionState.step !== "hidden" ||
     chatSessionState.modelAndReasoningSelectionState.step !== "hidden"
   ) {
@@ -626,7 +632,6 @@ export function appendSubmittedUserPromptToConversation(input: {
       ...input.chatSessionState,
       conversationTurnStatus: "streaming_assistant_response",
       latestTokenUsage: undefined,
-      latestContextWindowUsage: undefined,
       pendingToolApprovalRequest: undefined,
     },
     conversationMessage: userConversationMessage,

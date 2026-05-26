@@ -3,14 +3,15 @@ import type { TokenUsage } from "./provider.ts";
 export type ModelContextWindowTokenLimits = {
   contextWindowTokenCapacity: number;
   inputTokenCapacity?: number | undefined;
+  preferredContextPerformanceBudgetTokenCount?: number | undefined;
 };
 
 // Known context-window limits keyed by model id. Raw context capacity remains
-// the UI-facing value, while input capacity lets auto-compaction preserve output
-// headroom for split input/output models.
+// the UI-facing value. Preferred performance budget is a Buli soft cap that
+// keeps long-running agent turns responsive below provider hard limits.
 const MODEL_CONTEXT_WINDOW_TOKEN_LIMITS: Record<string, ModelContextWindowTokenLimits> = {
-  "gpt-5.5": { contextWindowTokenCapacity: 400_000, inputTokenCapacity: 272_000 },
-  "gpt-5.5-pro": { contextWindowTokenCapacity: 400_000, inputTokenCapacity: 272_000 },
+  "gpt-5.5": { contextWindowTokenCapacity: 1_050_000, preferredContextPerformanceBudgetTokenCount: 272_000 },
+  "gpt-5.5-pro": { contextWindowTokenCapacity: 1_050_000, preferredContextPerformanceBudgetTokenCount: 272_000 },
   "gpt-5.4": { contextWindowTokenCapacity: 1_050_000 },
   "gpt-5.4-pro": { contextWindowTokenCapacity: 1_050_000 },
   "gpt-5.4-mini": { contextWindowTokenCapacity: 400_000, inputTokenCapacity: 272_000 },

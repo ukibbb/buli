@@ -237,6 +237,31 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Thinking");
   });
 
+  test("renders auto-compaction status in the transcript area", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        visibleConversationMessageRows={[]}
+        reasoningSummaryDisplayMode="expanded"
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
+        userMessageBorderColor="#10B981"
+        conversationSessionCompactionStatus={{ step: "compacting", source: "auto" }}
+        queuedPromptCount={2}
+        totalContextTokensUsed={252_000}
+        contextWindowTokenCapacity={1_100_000}
+      />,
+      { width: 100, height: 8 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("▰");
+    expect(frame).toContain("Auto-compacting history...");
+    expect(frame).toContain("Queued: 2");
+    expect(frame).toContain("252k / 1.1m (23%)");
+  });
+
   test("renders auto compaction separator before streamed summary text", async () => {
     const conversationMessages: ConversationMessage[] = [
       {

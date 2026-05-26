@@ -45,7 +45,24 @@ test("buildChatScreenViewModel disables prompt input while waiting for tool appr
   expect(viewModel.isPromptInputDisabled).toBe(true);
 });
 
-test("buildChatScreenViewModel disables prompt input while conversation compaction is running", () => {
+test("buildChatScreenViewModel disables prompt input while command help owns interaction", () => {
+  const chatSessionState = {
+    ...insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "hidden draft"),
+    isCommandHelpModalVisible: true,
+  };
+
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState,
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.isPromptInputDisabled).toBe(true);
+});
+
+test("buildChatScreenViewModel keeps prompt input enabled while auto conversation compaction is running", () => {
   const chatSessionState = insertTextIntoPromptDraftAtCursor(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     "next prompt",
@@ -54,6 +71,23 @@ test("buildChatScreenViewModel disables prompt input while conversation compacti
   const viewModel = buildChatScreenViewModel({
     chatSessionState,
     conversationSessionCompactionStatus: { step: "compacting", source: "auto" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.isPromptInputDisabled).toBe(false);
+});
+
+test("buildChatScreenViewModel disables prompt input while manual conversation compaction is running", () => {
+  const chatSessionState = insertTextIntoPromptDraftAtCursor(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "next prompt",
+  );
+
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState,
+    conversationSessionCompactionStatus: { step: "compacting", source: "manual" },
     terminalRowCount: 32,
     terminalColumnCount: 120,
     terminalSizeTierForChatScreen: "comfortable",

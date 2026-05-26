@@ -12,7 +12,9 @@ process.env["BULI_DISABLE_TUI_ANIMATION_TIMERS"] = "1";
 // OpenTUI creates one TerminalConsole listener per test renderer even when the
 // console overlay is disabled. Component tests intentionally run concurrently,
 // so the default Node/Bun listener threshold is too low for the shared cache.
-EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 256);
+// The full component suite can exceed 256 simultaneous cache listeners when
+// several large tool-card files run together.
+EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 1024);
 
 afterEach(async () => {
   await destroyActiveOpenTuiTestRenderers();

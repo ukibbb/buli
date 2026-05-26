@@ -16,6 +16,7 @@ import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./proj
 import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
+import { formatUserSelectedSkillPromptForModel, type WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
 
 export type StartedRuntimeConversationTurn = {
   providerConversationTurn: ProviderConversationTurn;
@@ -32,6 +33,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
   promptContextBrowseRootPath: string;
   promptContextStartingDirectoryPath: string;
   projectInstructionTracker: ProjectInstructionTracker;
+  skillCatalog: WorkspaceSkillCatalog;
   promptCacheKey?: string | undefined;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
   abortSignal: AbortSignal;
@@ -40,14 +42,16 @@ export async function startAcceptedRuntimeConversationTurn(input: {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<StartedRuntimeConversationTurn> {
   input.throwIfConversationTurnInterrupted();
-  const modelFacingPromptTextForAcceptedTurn = await buildModelFacingPromptTextFromPromptContextReferences({
-    promptText: input.conversationTurnInput.userPromptText,
+  const modelFacingPromptTextForAcceptedTurn = await buildModelFacingPromptTextForAcceptedTurn({
+    conversationTurnInput: input.conversationTurnInput,
     promptContextBrowseRootPath: input.promptContextBrowseRootPath,
     promptContextStartingDirectoryPath: input.promptContextStartingDirectoryPath,
+    skillCatalog: input.skillCatalog,
     abortSignal: input.abortSignal,
   });
   input.throwIfConversationTurnInterrupted();
   logEngineDiagnosticEvent(input.diagnosticLogger, "conversation_turn.prompt_context_expanded", {
+    conversationTurnId: input.conversationTurnInput.conversationTurnId ?? null,
     userPromptLength: input.conversationTurnInput.userPromptText.length,
     modelFacingPromptLength: modelFacingPromptTextForAcceptedTurn.length,
     promptContextBrowseRootPath: input.promptContextBrowseRootPath,
@@ -59,6 +63,13 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       abortSignal: input.abortSignal,
     }),
   );
+  const effectiveToolAvailability = resolveAvailableToolNamesForAssistantOperatingMode({
+    assistantOperatingMode: input.assistantOperatingMode,
+    requestedAvailableToolNames: input.availableToolNames,
+  });
+  const availableSkillsForAcceptedTurn = effectiveToolAvailability.availableToolNames?.includes("skill")
+    ? await input.skillCatalog.listAvailableSkills()
+    : [];
   input.throwIfConversationTurnInterrupted();
   input.conversationTurnSessionRecorder.appendAcceptedUserPromptSessionEntry(
     modelFacingPromptTextForAcceptedTurn,
@@ -66,6 +77,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
   );
 
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.start_requested", {
+    conversationTurnId: input.conversationTurnInput.conversationTurnId ?? null,
     selectedModelId: input.conversationTurnInput.selectedModelId,
     selectedReasoningEffort: input.conversationTurnInput.selectedReasoningEffort ?? null,
     conversationSessionEntryCount: input.conversationHistory.listConversationSessionEntries().length,
@@ -73,10 +85,14 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     assistantOperatingMode: input.assistantOperatingMode,
   });
   const providerConversationTurn = input.conversationTurnProvider.startConversationTurn({
+    ...(input.conversationTurnInput.conversationTurnId !== undefined
+      ? { conversationTurnId: input.conversationTurnInput.conversationTurnId }
+      : {}),
     systemPromptText: buildBuliSystemPrompt({
       workspaceRootPath: input.workspaceRootPath,
       assistantOperatingMode: input.assistantOperatingMode,
       projectInstructionSnapshots: projectInstructionSnapshotsForAcceptedTurn,
+      availableSkills: availableSkillsForAcceptedTurn,
     }),
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     selectedModelId: input.conversationTurnInput.selectedModelId,
@@ -84,13 +100,11 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       ? { selectedReasoningEffort: input.conversationTurnInput.selectedReasoningEffort }
       : {}),
     ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
-    ...resolveAvailableToolNamesForAssistantOperatingMode({
-      assistantOperatingMode: input.assistantOperatingMode,
-      requestedAvailableToolNames: input.availableToolNames,
-    }),
+    ...effectiveToolAvailability,
     abortSignal: input.abortSignal,
   });
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.started", {
+    conversationTurnId: input.conversationTurnInput.conversationTurnId ?? null,
     selectedModelId: input.conversationTurnInput.selectedModelId,
   });
 
@@ -99,4 +113,28 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     modelFacingPromptTextForAcceptedTurn,
     projectInstructionSnapshotsForAcceptedTurn,
   };
+}
+
+async function buildModelFacingPromptTextForAcceptedTurn(input: {
+  conversationTurnInput: ConversationTurnRequest;
+  promptContextBrowseRootPath: string;
+  promptContextStartingDirectoryPath: string;
+  skillCatalog: WorkspaceSkillCatalog;
+  abortSignal: AbortSignal;
+}): Promise<string> {
+  if (input.conversationTurnInput.userSelectedSkillName !== undefined) {
+    const userSelectedSkill = await input.skillCatalog.loadSkillByName(input.conversationTurnInput.userSelectedSkillName);
+    if (!userSelectedSkill) {
+      throw new Error(`Selected skill not found: ${input.conversationTurnInput.userSelectedSkillName}`);
+    }
+
+    return formatUserSelectedSkillPromptForModel(userSelectedSkill);
+  }
+
+  return buildModelFacingPromptTextFromPromptContextReferences({
+    promptText: input.conversationTurnInput.userPromptText,
+    promptContextBrowseRootPath: input.promptContextBrowseRootPath,
+    promptContextStartingDirectoryPath: input.promptContextStartingDirectoryPath,
+    abortSignal: input.abortSignal,
+  });
 }

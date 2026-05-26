@@ -112,6 +112,7 @@ const toolCallRequestExportRendererByName: {
   patch_many: { renderPurpose: renderPatchToolCallRequestPurpose, renderBody: renderPatchToolCallRequestBody },
   write: { renderPurpose: renderWriteToolCallRequestPurpose, renderBody: renderWriteToolCallRequestBody },
   task: { renderPurpose: renderTaskToolCallRequestPurpose, renderBody: renderTaskToolCallRequestBody },
+  skill: { renderPurpose: renderSkillToolCallRequestPurpose, renderBody: renderSkillToolCallRequestBody },
 };
 
 function resolveToolCallRequestExportRenderer<ToolName extends ToolCallRequestName>(
@@ -244,6 +245,14 @@ function renderTaskToolCallRequestBody(toolCallRequest: ToolCallRequestByName<"t
 <div class="panel-section"><div class="panel-section-label">Prompt</div><pre class="output">${escapeHtml(toolCallRequest.subagentPrompt)}</pre></div>`;
 }
 
+function renderSkillToolCallRequestPurpose(toolCallRequest: ToolCallRequestByName<"skill">): string {
+  return `<span class="panel-purpose">${escapeHtml(toolCallRequest.skillName)}</span>`;
+}
+
+function renderSkillToolCallRequestBody(toolCallRequest: ToolCallRequestByName<"skill">): string {
+  return `<div class="arg"><b>skill</b> ${escapeHtml(toolCallRequest.skillName)}</div>`;
+}
+
 type ToolCallDetailName = ToolCallDetail["toolName"];
 type ToolCallDetailByName<ToolName extends ToolCallDetailName> = Extract<ToolCallDetail, { toolName: ToolName }>;
 
@@ -266,6 +275,7 @@ const toolCallDetailExportRendererByName: {
   patch_many: { renderPurpose: renderPatchToolResultPurpose },
   write: { renderPurpose: renderWriteToolResultPurpose },
   task: { renderPurpose: renderTaskToolResultPurpose },
+  skill: { renderPurpose: renderSkillToolResultPurpose },
   todowrite: { renderPurpose: renderTodoWriteToolResultPurpose },
 };
 
@@ -349,6 +359,11 @@ function renderTaskToolResultPurpose(toolCallDetail: ToolCallDetailByName<"task"
   return `<span class="panel-purpose">${escapeHtml(`${toolCallDetail.subagentName}: ${toolCallDetail.subagentDescription}`)}</span>`;
 }
 
+function renderSkillToolResultPurpose(toolCallDetail: ToolCallDetailByName<"skill">): string {
+  const skillDescriptionText = toolCallDetail.skillDescription ? `: ${toolCallDetail.skillDescription}` : "";
+  return `<span class="panel-purpose">${escapeHtml(`${toolCallDetail.skillName}${skillDescriptionText}`)}</span>`;
+}
+
 function renderTodoWriteToolResultPurpose(toolCallDetail: ToolCallDetailByName<"todowrite">): string {
   return `<span class="panel-purpose">${toolCallDetail.todoItems.length} items</span>`;
 }
@@ -376,6 +391,9 @@ function formatToolDisplayName(toolName: string): string {
   }
   if (toolName === "patch_many") {
     return "PatchMany";
+  }
+  if (toolName === "skill") {
+    return "Skill";
   }
   return toolName;
 }
@@ -481,6 +499,7 @@ const subagentChildToolCallDetailSummaryRendererByName: {
   patch: renderPatchSubagentChildToolCallDetailSummary,
   patch_many: renderPatchSubagentChildToolCallDetailSummary,
   write: renderWriteSubagentChildToolCallDetailSummary,
+  skill: renderSkillSubagentChildToolCallDetailSummary,
   task: renderTaskSubagentChildToolCallDetailSummary,
 };
 
@@ -558,6 +577,12 @@ function renderWriteSubagentChildToolCallDetailSummary(
   subagentChildToolCallDetail: SubagentChildToolCallDetailByName<"write">,
 ): string {
   return `<div class="arg"><b>write</b> ${escapeHtml(subagentChildToolCallDetail.writtenFilePath)}</div>`;
+}
+
+function renderSkillSubagentChildToolCallDetailSummary(
+  subagentChildToolCallDetail: SubagentChildToolCallDetailByName<"skill">,
+): string {
+  return `<div class="arg"><b>skill</b> ${escapeHtml(subagentChildToolCallDetail.skillName)}</div>`;
 }
 
 function renderTaskSubagentChildToolCallDetailSummary(

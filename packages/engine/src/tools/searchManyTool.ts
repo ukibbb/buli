@@ -13,6 +13,7 @@ import {
 import { runGlobToolCall } from "./globTool.ts";
 import { runGrepToolCall } from "./grepTool.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
+import { buildBudgetedTaggedToolResultText } from "./toolResultTextBudget.ts";
 
 export interface SearchManyToolCallConcurrencyLimiter {
   run<SearchManyChildResult>(
@@ -27,6 +28,7 @@ type SearchManyChildToolCallOutcome = {
 };
 
 const SEARCH_MANY_RESULT_SEPARATOR = "----- next search result -----";
+export const MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH = 32_000;
 
 export function createStartedSearchManyToolCallDetail(
   searchManyToolCallRequest: SearchManyToolCallRequest,
@@ -186,18 +188,25 @@ function buildSearchManyToolResultText(input: {
   completedSearchCount: number;
   failedSearchCount: number;
 }): string {
-  return [
-    "<search_many>",
-    `<summary>${input.completedSearchCount} completed, ${input.failedSearchCount} failed</summary>`,
-    ...input.childToolCallOutcomes.flatMap((childToolCallOutcome, childToolCallOutcomeIndex) => [
-      ...(childToolCallOutcomeIndex > 0 ? [SEARCH_MANY_RESULT_SEPARATOR] : []),
-      formatSearchManyChildToolResultText(childToolCallOutcome),
-    ]),
-    "</search_many>",
-  ].join("\n");
+  return buildBudgetedTaggedToolResultText({
+    openingTag: "<search_many>",
+    closingTag: "</search_many>",
+    contentLines: [
+      `<summary>${input.completedSearchCount} completed, ${input.failedSearchCount} failed</summary>`,
+      ...input.childToolCallOutcomes.flatMap((childToolCallOutcome, childToolCallOutcomeIndex) => [
+        ...(childToolCallOutcomeIndex > 0 ? [SEARCH_MANY_RESULT_SEPARATOR] : []),
+        ...formatSearchManyChildToolResultLines(childToolCallOutcome),
+      ]),
+    ],
+    maximumCharacterCount: MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH,
+    truncationTagName: "search_many_truncation",
+    continuationGuidanceLines: [
+      "Use a narrower grep, glob, or search_many path/pattern to continue with the omitted results.",
+    ],
+  });
 }
 
-function formatSearchManyChildToolResultText(childToolCallOutcome: SearchManyChildToolCallOutcome): string {
+function formatSearchManyChildToolResultLines(childToolCallOutcome: SearchManyChildToolCallOutcome): readonly string[] {
   const searchDetail = assertSearchToolCallDetail(childToolCallOutcome.searchToolCallOutcome.toolCallDetail);
   return [
     "<search_many_result>",
@@ -205,9 +214,9 @@ function formatSearchManyChildToolResultText(childToolCallOutcome: SearchManyChi
     `<status>${childToolCallOutcome.searchToolCallOutcome.outcomeKind}</status>`,
     `<kind>${searchDetail.toolName}</kind>`,
     ...formatSearchDetailForResultText(searchDetail),
-    childToolCallOutcome.searchToolCallOutcome.toolResultText,
+    ...childToolCallOutcome.searchToolCallOutcome.toolResultText.split("\n"),
     "</search_many_result>",
-  ].join("\n");
+  ];
 }
 
 function formatSearchDetailForResultText(searchDetail: ToolCallGlobDetail | ToolCallGrepDetail): string[] {

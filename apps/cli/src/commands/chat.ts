@@ -153,7 +153,7 @@ export async function runInteractiveChat(input: {
 
     const conversationSessionLoadStartedAtMs = Date.now();
     const conversationSessionStore = input.conversationSessionStore ??
-      (defaultConversationSessionStore = new SqliteConversationSessionStore());
+      (defaultConversationSessionStore = new SqliteConversationSessionStore({ diagnosticLogger }));
     const activeConversationSessionMetadata = conversationSessionStore.loadActiveConversationSessionMetadata();
     const initialModelSelectionResolution = resolveInitialConversationSessionModelSelection({
       requestedModelId: input.selectedModelId,
@@ -297,9 +297,11 @@ export async function runInteractiveChat(input: {
       openBrowserUrl: input.openBrowserUrl,
       diagnosticLogger,
     });
+    const availableSkills = await assistantConversationRunner.listAvailableSkills();
     const resolvedConversationTurnProvider = conversationTurnProviderResolution;
     const renderArgs: RenderChatScreenInTerminalInput = {
       assistantConversationRunner,
+      availableSkills,
       loadAvailableAssistantModels: async () => [...await resolvedConversationTurnProvider.listAvailableAssistantModels()],
       loadPromptContextCandidates: (promptContextQueryText: string) =>
         promptContextCandidateCatalog.listPromptContextCandidates(promptContextQueryText),

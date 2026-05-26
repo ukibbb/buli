@@ -10,6 +10,15 @@ import {
 } from "./terminalChatScreenRuntime.ts";
 
 export { ChatScreen } from "./ChatScreen.tsx";
+export {
+  ChatScreenSlot,
+  ChatScreenSlotsProvider,
+  type ChatScreenSlotContext,
+  type ChatScreenSlotMap,
+  type ChatScreenSlotMode,
+  type ChatScreenSlotPlugin,
+  type ChatScreenSlotProps,
+} from "./slots/chatScreenSlots.tsx";
 export type {
   ChatScreenProps,
   ConversationSessionCompactionResult,

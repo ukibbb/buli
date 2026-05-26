@@ -95,7 +95,7 @@ describe("ChatScreen responsive layout", () => {
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("╭");
-    expect(frame).toContain("0 / 1.1m (0%)");
+    expect(frame).toContain("--");
     expect(frame).not.toContain("ctx");
     expect(frame).toContain("Understand");
   });

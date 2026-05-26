@@ -71,6 +71,13 @@ export {
   toProjectInstructionSnapshots,
 } from "./projectInstructions.ts";
 export { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "./systemPrompt.ts";
+export {
+  formatSkillContentForModel,
+  formatUserSelectedSkillPromptForModel,
+  parseSkillMarkdown,
+  WorkspaceSkillCatalog,
+} from "./skills/skillCatalog.ts";
+export type { AvailableSkill, LoadedSkill } from "./skills/skillCatalog.ts";
 export { createStartedBashToolCallDetail, runApprovedBashToolCall } from "./tools/bashTool.ts";
 export { createStartedEditToolCallDetail, prepareEditToolCall, runPreparedEditToolCall } from "./tools/editTool.ts";
 export { createStartedEditManyToolCallDetail, prepareEditManyToolCall, runPreparedEditManyToolCall } from "./tools/editManyTool.ts";
@@ -101,6 +108,7 @@ export {
 } from "./tools/readTool.ts";
 export { createStartedReadManyToolCallDetail, runReadManyToolCall } from "./tools/readManyTool.ts";
 export { createStartedSearchManyToolCallDetail, runSearchManyToolCall } from "./tools/searchManyTool.ts";
+export { createStartedSkillToolCallDetail, runSkillToolCall } from "./tools/skillTool.ts";
 export { createStartedWriteToolCallDetail, prepareWriteToolCall, runPreparedWriteToolCall } from "./tools/writeTool.ts";
 export {
   BASH_TOOL_APPROVAL_MODES,

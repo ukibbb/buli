@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
+  CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND,
   PROVIDER_PROTOCOL_VERSION,
   type AvailableAssistantModel,
+  type ContextWindowOverflowFailureKind,
   type ProviderProtocolAcknowledgedFrameKind,
   type ProviderProtocolCancellationReason,
   type ProviderProtocolError,
@@ -64,12 +66,32 @@ const DEFAULT_PROVIDER_PROTOCOL_REQUEST_ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 3
 
 export class ProviderProtocolRemoteProviderError extends Error {
   readonly providerProtocolError: ProviderProtocolError;
+  readonly failureKind: ContextWindowOverflowFailureKind | undefined;
 
   constructor(providerProtocolError: ProviderProtocolError) {
     super(providerProtocolError.errorMessage);
     this.name = "ProviderProtocolRemoteProviderError";
     this.providerProtocolError = providerProtocolError;
+    this.failureKind = readProviderProtocolRemoteFailureKind(providerProtocolError);
   }
+}
+
+function readProviderProtocolRemoteFailureKind(
+  providerProtocolError: ProviderProtocolError,
+): ContextWindowOverflowFailureKind | undefined {
+  if (providerProtocolError.details?.["failureKind"] === CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND) {
+    return CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND;
+  }
+
+  if (providerProtocolError.details?.["errorName"] === "ContextWindowOverflowError") {
+    return CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND;
+  }
+
+  if (providerProtocolError.errorCode === CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND) {
+    return CONTEXT_WINDOW_OVERFLOW_FAILURE_KIND;
+  }
+
+  return undefined;
 }
 
 export class ProviderProtocolConversationTurnProvider implements ConversationTurnProvider {
@@ -580,6 +602,7 @@ function createProviderProtocolHostListModelsFrame(input: {
 
 function createProviderProtocolTurnRequest(input: ProviderConversationTurnRequest): ProviderProtocolTurnRequest {
   return {
+    ...(input.conversationTurnId !== undefined ? { conversationTurnId: input.conversationTurnId } : {}),
     systemPromptText: input.systemPromptText,
     conversationSessionEntries: [...input.conversationSessionEntries],
     selectedModelId: input.selectedModelId,

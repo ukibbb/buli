@@ -60,12 +60,30 @@ export class ConversationSessionCompactor {
   }
 
   async compactCurrentConversationSession(input: ConversationCompactionRequest): Promise<ConversationCompactionResult> {
+    return this.compactCurrentConversationSessionWithPolicy({
+      ...input,
+      shouldBlockDuringConversationTurn: true,
+    });
+  }
+
+  async compactCurrentConversationSessionForContextOverflowRecovery(
+    input: ConversationCompactionRequest,
+  ): Promise<ConversationCompactionResult> {
+    return this.compactCurrentConversationSessionWithPolicy({
+      ...input,
+      shouldBlockDuringConversationTurn: false,
+    });
+  }
+
+  private async compactCurrentConversationSessionWithPolicy(
+    input: ConversationCompactionRequest & { shouldBlockDuringConversationTurn: boolean },
+  ): Promise<ConversationCompactionResult> {
     const conversationSessionEntriesBeforeCompaction = this.conversationHistory.listConversationSessionEntries();
     if (conversationSessionEntriesBeforeCompaction.length === 0) {
       throw new Error("Nothing to compact yet.");
     }
 
-    if (this.isConversationTurnRunning()) {
+    if (input.shouldBlockDuringConversationTurn && this.isConversationTurnRunning()) {
       throw new Error("Cannot compact while a conversation turn is running.");
     }
 

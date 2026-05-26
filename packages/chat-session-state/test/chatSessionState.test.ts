@@ -131,6 +131,19 @@ test("submitPromptDraft appends a completed user message and enters streaming st
   ]);
 });
 
+test("submitPromptDraft preserves latest context-window usage while the next turn starts", () => {
+  const promptDraftSubmission = submitPromptDraft(
+    insertTextIntoPromptDraftAtCursor({
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      latestTokenUsage: { total: 12, input: 5, output: 5, reasoning: 2, cache: { read: 0, write: 0 } },
+      latestContextWindowUsage: { total: 8, input: 5, output: 1, reasoning: 2, cache: { read: 0, write: 0 } },
+    }, "Hello"),
+  );
+
+  expect(promptDraftSubmission.nextChatSessionState.latestTokenUsage).toBeUndefined();
+  expect(promptDraftSubmission.nextChatSessionState.latestContextWindowUsage?.total).toBe(8);
+});
+
 test("replacePromptDraftFromEditor replaces text and clamps cursor offset", () => {
   const chatSessionState = replacePromptDraftFromEditor({
     chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

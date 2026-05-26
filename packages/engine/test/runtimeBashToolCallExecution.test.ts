@@ -73,6 +73,7 @@ async function collectBashToolCallEvents(input: {
 
   for await (const assistantResponseEvent of streamAssistantResponseEventsForBashToolCall({
     assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
     toolCallId: "call_bash_1",
     bashToolCallRequest: {

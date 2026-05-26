@@ -52,11 +52,7 @@ export function ContextWindowMeter(props: ContextWindowMeterProps): ReactNode {
 }
 
 function resolveDisplayedContextTokensUsed(props: ContextWindowMeterProps): number | undefined {
-  if (props.totalTokensUsed !== undefined) {
-    return props.totalTokensUsed;
-  }
-
-  return props.contextWindowTokenCapacity !== undefined && props.contextWindowTokenCapacity > 0 ? 0 : undefined;
+  return props.totalTokensUsed;
 }
 
 function formatContextWindowUsagePercent(totalTokensUsed: number, contextWindowTokenCapacity: number): string {

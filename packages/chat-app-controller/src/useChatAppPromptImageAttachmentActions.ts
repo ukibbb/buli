@@ -7,6 +7,10 @@ import {
 } from "@buli/chat-session-state";
 import { useEffectEvent, type Dispatch, type SetStateAction } from "react";
 import { canChatAppPromptDraftBeEdited } from "./chatAppPromptDraftEditability.ts";
+import {
+  isConversationSessionCompactionBlockingPromptInput,
+  type ConversationSessionCompactionStatus,
+} from "./conversationSessionStatus.ts";
 
 type MutableValueRef<T> = { current: T };
 
@@ -22,7 +26,7 @@ export type PasteClipboardImageAttachmentIntoChatAppPromptInput = {
 
 export type UseChatAppPromptImageAttachmentActionsInput = {
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
-  isConversationCompactionInFlightRef: MutableValueRef<boolean>;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
 };
 
@@ -60,7 +64,9 @@ export function useChatAppPromptImageAttachmentActions(
       const previousChatSessionState = input.latestChatSessionStateRef.current;
       if (!canChatAppPromptDraftBeEdited({
         chatSessionState: previousChatSessionState,
-        isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
+        isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
+          input.conversationSessionCompactionStatus,
+        ),
       })) {
         return;
       }
@@ -80,7 +86,9 @@ export function useChatAppPromptImageAttachmentActions(
 
       if (!canChatAppPromptDraftBeEdited({
         chatSessionState: latestChatSessionStateAfterClipboardRead,
-        isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
+        isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
+          input.conversationSessionCompactionStatus,
+        ),
       })) {
         return;
       }
@@ -114,6 +122,15 @@ function removePromptImageAttachmentPlaceholderFromChatApp(input: {
   removePromptImageAttachmentPlaceholder: (chatSessionState: ChatSessionState) => ChatSessionState;
 }): ChatAppPromptImageAttachmentRemovalResult {
   const previousChatSessionState = input.actionInput.latestChatSessionStateRef.current;
+  if (!canChatAppPromptDraftBeEdited({
+    chatSessionState: previousChatSessionState,
+    isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
+      input.actionInput.conversationSessionCompactionStatus,
+    ),
+  })) {
+    return { didRemovePromptImageAttachmentPlaceholder: false };
+  }
+
   const nextChatSessionState = input.removePromptImageAttachmentPlaceholder(previousChatSessionState);
 
   if (nextChatSessionState === previousChatSessionState) {

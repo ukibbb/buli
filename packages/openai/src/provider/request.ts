@@ -502,6 +502,14 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
+  if (conversationSessionEntry.toolCallRequest.toolName === "skill") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: skill",
+      `Skill: ${conversationSessionEntry.toolCallRequest.skillName}`,
+    ].join("\n");
+  }
+
   return assertUnhandledToolCallRequest(conversationSessionEntry.toolCallRequest);
 }
 

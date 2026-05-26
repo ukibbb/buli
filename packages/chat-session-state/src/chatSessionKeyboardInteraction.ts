@@ -45,16 +45,10 @@ import {
   submitPromptDraft,
 } from "./promptDraftReducer.ts";
 import { buildPromptContextQueryIdentity, type PromptContextQueryIdentity } from "./promptContextQueryIdentity.ts";
-
-export type ChatSessionInteractionScope =
-  | "command_help_modal"
-  | "model_selection"
-  | "reasoning_effort_selection"
-  | "conversation_session_selection"
-  | "slash_command_selection"
-  | "prompt_context_selection"
-  | "tool_approval"
-  | "prompt_draft_editing";
+import {
+  resolveChatSessionInteractionScope,
+  type ChatSessionInteractionScope,
+} from "./chatSessionInteractionScope.ts";
 
 export type ChatSessionKeyboardKeyName =
   | "backspace"
@@ -137,6 +131,7 @@ type ChatSessionKeyboardScopeHandlerInput = {
   chatSessionState: ChatSessionState;
   chatSessionKeyboardInput: ChatSessionKeyboardInput;
   isPromptSubmissionInFlight: boolean;
+  shouldQueueSubmittedPrompt: boolean;
 };
 
 type ChatSessionKeyboardScopeHandler = (
@@ -163,45 +158,11 @@ const chatSessionKeyboardScopeHandlerByScope: {
   prompt_draft_editing: applyKeyboardInputToPromptDraftEditingState,
 };
 
-export function resolveChatSessionInteractionScope(chatSessionState: ChatSessionState): ChatSessionInteractionScope {
-  if (chatSessionState.isCommandHelpModalVisible) {
-    return "command_help_modal";
-  }
-
-  if (chatSessionState.modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices") {
-    return "reasoning_effort_selection";
-  }
-
-  if (chatSessionState.modelAndReasoningSelectionState.step !== "hidden") {
-    return "model_selection";
-  }
-
-  if (chatSessionState.conversationSessionSelectionState.step !== "hidden") {
-    return "conversation_session_selection";
-  }
-
-  if (chatSessionState.slashCommandSelectionState.step !== "hidden") {
-    return "slash_command_selection";
-  }
-
-  if (chatSessionState.promptContextSelectionState.step !== "hidden") {
-    return "prompt_context_selection";
-  }
-
-  if (
-    chatSessionState.conversationTurnStatus === "waiting_for_tool_approval" &&
-    chatSessionState.pendingToolApprovalRequest
-  ) {
-    return "tool_approval";
-  }
-
-  return "prompt_draft_editing";
-}
-
 export function applyChatSessionKeyboardInputToChatSessionState(input: {
   chatSessionState: ChatSessionState;
   chatSessionKeyboardInput: ChatSessionKeyboardInput;
   isPromptSubmissionInFlight: boolean;
+  shouldQueueSubmittedPrompt?: boolean | undefined;
 }): ChatSessionKeyboardInteraction {
   const interactionScope = resolveChatSessionInteractionScope(input.chatSessionState);
 
@@ -233,7 +194,10 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
     });
   }
 
-  return chatSessionKeyboardScopeHandlerByScope[interactionScope](input);
+  return chatSessionKeyboardScopeHandlerByScope[interactionScope]({
+    ...input,
+    shouldQueueSubmittedPrompt: input.shouldQueueSubmittedPrompt === true,
+  });
 }
 
 function shouldIgnorePromptDraftEditingDuringToolApproval(
@@ -544,10 +508,14 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
   chatSessionState: ChatSessionState;
   chatSessionKeyboardInput: ChatSessionKeyboardInput;
   isPromptSubmissionInFlight: boolean;
+  shouldQueueSubmittedPrompt: boolean;
 }): ChatSessionKeyboardInteraction {
   if (input.chatSessionKeyboardInput.keyName === "return") {
-    if (input.chatSessionState.conversationTurnStatus === "streaming_assistant_response") {
-      const queuedPromptDraftSubmission = queuePromptDraftForLaterSubmission(input.chatSessionState);
+    if (input.chatSessionState.conversationTurnStatus === "streaming_assistant_response" || input.shouldQueueSubmittedPrompt) {
+      const queuedPromptDraftSubmission = queuePromptDraftForLaterSubmission({
+        chatSessionState: input.chatSessionState,
+        shouldAllowWaitingForUserInput: input.shouldQueueSubmittedPrompt,
+      });
       if (queuedPromptDraftSubmission.submittedPromptText === undefined) {
         return createChatSessionKeyboardInteraction({
           nextChatSessionState: queuedPromptDraftSubmission.nextChatSessionState,

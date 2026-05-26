@@ -16,7 +16,7 @@ describe("MinimumHeightPromptStrip", () => {
         queuedPromptCount={0}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
-        isConversationCompactionRunning={false}
+        conversationSessionCompactionStatus={{ step: "idle" }}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -37,7 +37,7 @@ describe("MinimumHeightPromptStrip", () => {
         queuedPromptCount={0}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="streaming_assistant_response"
-        isConversationCompactionRunning={false}
+        conversationSessionCompactionStatus={{ step: "idle" }}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -51,7 +51,7 @@ describe("MinimumHeightPromptStrip", () => {
     expect(frame).not.toContain("anything");
   });
 
-  test("renders_only_the_snake_when_compaction_is_running", async () => {
+  test("renders_only_the_snake_when_manual_compaction_is_running", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <MinimumHeightPromptStrip
         promptDraft="anything"
@@ -60,7 +60,7 @@ describe("MinimumHeightPromptStrip", () => {
         queuedPromptCount={0}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
-        isConversationCompactionRunning={true}
+        conversationSessionCompactionStatus={{ step: "compacting", source: "manual" }}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,
@@ -72,6 +72,27 @@ describe("MinimumHeightPromptStrip", () => {
     expect(frame).not.toContain("anything");
   });
 
+  test("keeps_the_prompt_visible_when_auto_compaction_is_running", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <MinimumHeightPromptStrip
+        promptDraft="next prompt"
+        promptDraftCursorOffset={11}
+        isPromptInputDisabled={false}
+        queuedPromptCount={1}
+        accentColor={chatScreenTheme.accentGreen}
+        assistantResponseStatus="waiting_for_user_input"
+        conversationSessionCompactionStatus={{ step: "compacting", source: "auto" }}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
+      />,
+      { width: 50, height: 6 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("▰");
+    expect(frame).toContain("next prompt");
+  });
+
   test("does_not_render_context_meter_or_help_shortcuts_footer", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <MinimumHeightPromptStrip
@@ -81,7 +102,7 @@ describe("MinimumHeightPromptStrip", () => {
         queuedPromptCount={0}
         accentColor={chatScreenTheme.accentGreen}
         assistantResponseStatus="waiting_for_user_input"
-        isConversationCompactionRunning={false}
+        conversationSessionCompactionStatus={{ step: "idle" }}
         onPromptDraftEdited={noopPromptDraftEdited}
         onPromptSubmitted={noopPromptSubmitted}
       />,

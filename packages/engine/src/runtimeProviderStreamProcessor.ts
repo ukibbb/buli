@@ -27,6 +27,7 @@ export type RuntimeProviderStreamProcessingOutcome =
   | { outcomeKind: "provider_stream_ended" };
 
 type RuntimeProviderStreamProcessorInput = {
+  conversationTurnId: string;
   providerConversationTurn: ProviderConversationTurn;
   providerStreamEventTranslator: RuntimeProviderStreamEventTranslator;
   conversationTurnSessionRecorder: RuntimeConversationTurnSessionRecorder;
@@ -218,6 +219,7 @@ function translateProviderStreamIteratorResult(input: {
   const providerStreamEvent = input.providerStreamIteratorResult.value;
   input.input.throwIfConversationTurnInterrupted();
   logEngineDiagnosticEvent(input.input.diagnosticLogger, "provider_stream.event_received", {
+    conversationTurnId: input.input.conversationTurnId,
     eventType: providerStreamEvent.type,
     ...summarizeProviderStreamEventForDiagnostics(providerStreamEvent),
   });

@@ -53,6 +53,7 @@ export type RenderChatScreenInTerminalInput = {
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
+  availableSkills?: ChatScreenProps["availableSkills"];
   initialConversationSessionId?: ChatScreenProps["initialConversationSessionId"];
   initialConversationSessionEntries?: ChatScreenProps["initialConversationSessionEntries"];
   loadInitialConversationSessionEntries?: ChatScreenProps["loadInitialConversationSessionEntries"];
@@ -234,6 +235,7 @@ export async function renderChatScreenInTerminalWithRuntime<
           ? { onConversationSessionModelSelectionChanged: input.onConversationSessionModelSelectionChanged }
           : {}),
         selectedModelId: input.selectedModelId,
+        ...(input.availableSkills !== undefined ? { availableSkills: input.availableSkills } : {}),
         ...(input.initialConversationSessionId !== undefined
           ? { initialConversationSessionId: input.initialConversationSessionId }
           : {}),

@@ -1,5 +1,6 @@
 import type { PendingPromptImageAttachment, PendingPromptTextPaste } from "@buli/chat-session-state";
 import type { ConversationTurnStatus } from "@buli/contracts";
+import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
 import { memo, type ReactNode } from "react";
 import { InputPanel } from "./InputPanel.tsx";
@@ -9,7 +10,7 @@ import type { PromptTextareaEdit, PromptTextareaSummarizedPaste } from "./Prompt
 
 export type PromptComposerChromeProps = {
   conversationTurnStatus: ConversationTurnStatus;
-  isConversationCompactionRunning: boolean;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   promptDraft: string;
   promptDraftCursorOffset: number;
   pendingPromptImageAttachments: readonly PendingPromptImageAttachment[];
@@ -56,7 +57,7 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
             queuedPromptCount={props.queuedPromptCount}
             accentColor={props.inputPanelAccentColor}
             assistantResponseStatus={props.conversationTurnStatus}
-            isConversationCompactionRunning={props.isConversationCompactionRunning}
+            conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
             isActiveTurnInterruptConfirmationArmed={props.isActiveTurnInterruptConfirmationArmed}
             onPromptDraftEdited={props.onPromptDraftEdited}
             onPromptSubmitted={props.onPromptSubmitted}
@@ -72,6 +73,7 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
             promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
             promptTextPastePlaceholderTexts={promptTextPastePlaceholderTexts}
             selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+            selectedModelId={props.selectedModelId}
             isPromptInputDisabled={props.isPromptInputDisabled}
             accentColor={props.inputPanelAccentColor}
             onPromptDraftEdited={props.onPromptDraftEdited}
@@ -81,6 +83,7 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
           />
           <InputStatusStrip
             assistantResponseStatus={props.conversationTurnStatus}
+            conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
             queuedPromptCount={props.queuedPromptCount}
             {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}
             accentColor={props.inputPanelAccentColor}

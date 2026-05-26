@@ -63,6 +63,7 @@ export type SubmittedChatAppPrompt = {
   submittedPromptText: string;
   submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
   submittedAssistantOperatingMode: AssistantOperatingMode;
+  submittedUserSelectedSkillName?: string | undefined;
   submittedPromptSource?: UserPromptSource | undefined;
 };
 
@@ -94,16 +95,8 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
   const didFailBecauseContextWindowOverflow =
     input.terminalAssistantResponseEvent?.type === "assistant_message_failed" &&
     input.terminalAssistantResponseEvent.failureKind === "context_window_overflow";
-  if (
-    didFailBecauseContextWindowOverflow &&
-    input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_retry"
-  ) {
-    return {
-      submittedPromptText: input.activeSubmittedPrompt.submittedPromptText,
-      submittedPromptImageAttachments: input.activeSubmittedPrompt.submittedPromptImageAttachments,
-      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
-      submittedPromptSource: "auto_compaction_retry",
-    };
+  if (didFailBecauseContextWindowOverflow) {
+    return undefined;
   }
 
   const didStopBecauseMaxOutputTokens =
@@ -134,6 +127,15 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
   }
 
   return undefined;
+}
+
+export function resolveAutoCompactionRequestAfterAssistantTurn(input: {
+  terminalAssistantResponseEvent: TerminalAssistantResponseEvent | undefined;
+}): AutoCompactionAfterAssistantTurnRequest {
+  const didFailBecauseContextWindowOverflow =
+    input.terminalAssistantResponseEvent?.type === "assistant_message_failed" &&
+    input.terminalAssistantResponseEvent.failureKind === "context_window_overflow";
+  return didFailBecauseContextWindowOverflow ? { requestTriggerKind: "context_window_overflow" } : {};
 }
 
 export function useChatAppAssistantTurnActions(
@@ -191,6 +193,9 @@ export function useChatAppAssistantTurnActions(
           ...(activeSubmittedPrompt.submittedPromptImageAttachments.length > 0
             ? { userPromptImageAttachments: activeSubmittedPrompt.submittedPromptImageAttachments }
             : {}),
+          ...(activeSubmittedPrompt.submittedUserSelectedSkillName !== undefined
+            ? { userSelectedSkillName: activeSubmittedPrompt.submittedUserSelectedSkillName }
+            : {}),
           assistantOperatingMode: activeSubmittedPrompt.submittedAssistantOperatingMode,
           selectedModelId: input.latestChatSessionStateRef.current.selectedModelId,
           ...(input.latestChatSessionStateRef.current.selectedReasoningEffort
@@ -218,11 +223,10 @@ export function useChatAppAssistantTurnActions(
           return;
         }
 
-        const didFailBecauseContextWindowOverflow =
-          assistantResponseRelayResult.terminalAssistantResponseEvent?.type === "assistant_message_failed" &&
-          assistantResponseRelayResult.terminalAssistantResponseEvent.failureKind === "context_window_overflow";
         const autoCompactionResult = await input.autoCompactCurrentConversationSessionAfterAssistantTurn(
-          didFailBecauseContextWindowOverflow ? { requestTriggerKind: "context_window_overflow" } : undefined,
+          resolveAutoCompactionRequestAfterAssistantTurn({
+            terminalAssistantResponseEvent: assistantResponseRelayResult.terminalAssistantResponseEvent,
+          }),
         );
         if (!input.isChatAppControllerMountedRef.current) {
           return;

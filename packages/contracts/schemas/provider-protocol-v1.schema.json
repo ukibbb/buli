@@ -41,6 +41,10 @@
         "turnRequest": {
           "type": "object",
           "properties": {
+            "conversationTurnId": {
+              "type": "string",
+              "minLength": 1
+            },
             "systemPromptText": {
               "type": "string"
             },
@@ -393,7 +397,7 @@
                         "$ref": "#/$defs/__schema24"
                       },
                       "toolResultText": {
-                        "$ref": "#/$defs/__schema41"
+                        "$ref": "#/$defs/__schema42"
                       },
                       "entryKind": {
                         "type": "string",
@@ -418,7 +422,7 @@
                         "$ref": "#/$defs/__schema24"
                       },
                       "toolResultText": {
-                        "$ref": "#/$defs/__schema41"
+                        "$ref": "#/$defs/__schema42"
                       },
                       "entryKind": {
                         "type": "string",
@@ -448,7 +452,7 @@
                         "$ref": "#/$defs/__schema24"
                       },
                       "toolResultText": {
-                        "$ref": "#/$defs/__schema41"
+                        "$ref": "#/$defs/__schema42"
                       },
                       "entryKind": {
                         "type": "string",
@@ -549,7 +553,7 @@
               "minLength": 1
             },
             "selectedReasoningEffort": {
-              "$ref": "#/$defs/__schema42"
+              "$ref": "#/$defs/__schema43"
             },
             "promptCacheKey": {
               "type": "string",
@@ -571,7 +575,8 @@
                   "patch",
                   "patch_many",
                   "write",
-                  "task"
+                  "task",
+                  "skill"
                 ]
               }
             }
@@ -724,12 +729,12 @@
                 "minLength": 1
               },
               "defaultReasoningEffort": {
-                "$ref": "#/$defs/__schema42"
+                "$ref": "#/$defs/__schema43"
               },
               "supportedReasoningEfforts": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema42"
+                  "$ref": "#/$defs/__schema43"
                 }
               }
             },
@@ -764,7 +769,7 @@
           "$ref": "#/$defs/__schema2"
         },
         "sequenceNumber": {
-          "$ref": "#/$defs/__schema43"
+          "$ref": "#/$defs/__schema44"
         },
         "providerStreamEvent": {
           "oneOf": [
@@ -912,7 +917,7 @@
                   "minItems": 1,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema44"
+                    "$ref": "#/$defs/__schema45"
                   }
                 }
               },
@@ -978,7 +983,7 @@
                   "minItems": 1,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema45"
+                    "$ref": "#/$defs/__schema46"
                   }
                 }
               },
@@ -1045,12 +1050,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/__schema46"
+                    "$ref": "#/$defs/__schema47"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "$ref": "#/$defs/__schema46"
+                      "$ref": "#/$defs/__schema47"
                     }
                   }
                 ]
@@ -1094,7 +1099,7 @@
           ]
         },
         "finalSequenceNumber": {
-          "$ref": "#/$defs/__schema43"
+          "$ref": "#/$defs/__schema44"
         },
         "providerTurnReplay": {
           "$ref": "#/$defs/__schema10"
@@ -1655,6 +1660,26 @@
             "subagentPrompt"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "skill"
+            },
+            "skillName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            }
+          },
+          "required": [
+            "toolName",
+            "skillName"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -1930,6 +1955,9 @@
                         "$ref": "#/$defs/__schema39"
                       },
                       {
+                        "$ref": "#/$defs/__schema41"
+                      },
+                      {
                         "type": "object",
                         "properties": {
                           "toolName": {
@@ -1986,7 +2014,8 @@
                   "type": "string",
                   "enum": [
                     "child_tool_call_count",
-                    "child_tool_result_text_length"
+                    "child_tool_result_text_length",
+                    "elapsed_time"
                   ]
                 },
                 "childToolCallCount": {
@@ -2002,6 +2031,16 @@
                 "skippedChildToolCallCount": {
                   "type": "integer",
                   "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "elapsedMilliseconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "softElapsedTimeCheckpointMilliseconds": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
                   "maximum": 9007199254740991
                 }
               },
@@ -2023,6 +2062,9 @@
             "subagentDescription"
           ],
           "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/__schema41"
         }
       ]
     },
@@ -2757,9 +2799,44 @@
       "additionalProperties": false
     },
     "__schema41": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "const": "skill"
+        },
+        "skillName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skillDescription": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skillSourceKind": {
+          "type": "string",
+          "enum": [
+            "built_in",
+            "buli",
+            "claude",
+            "agents"
+          ]
+        },
+        "skillInstructionFilePath": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "toolName",
+        "skillName"
+      ],
+      "additionalProperties": false
     },
     "__schema42": {
+      "type": "string"
+    },
+    "__schema43": {
       "type": "string",
       "enum": [
         "none",
@@ -2770,12 +2847,12 @@
         "xhigh"
       ]
     },
-    "__schema43": {
+    "__schema44": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema44": {
+    "__schema45": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -2792,7 +2869,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema45": {
+    "__schema46": {
       "type": "object",
       "properties": {
         "stepIndex": {
@@ -2823,7 +2900,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema46": {
+    "__schema47": {
       "anyOf": [
         {
           "type": "string"

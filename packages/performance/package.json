@@ -13,6 +13,8 @@
   "scripts": {
     "profile": "bun src/runBuliPerformanceProfile.ts",
     "compare": "bun src/compareBuliPerformanceProfiles.ts",
+    "manual": "bun src/runManualBuliProfile.ts",
+    "report": "bun src/reportBuliProfileRun.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   }

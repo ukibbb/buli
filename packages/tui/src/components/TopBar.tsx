@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
+import { ChatScreenSlot } from "../slots/chatScreenSlots.tsx";
 
 // Pen frame cbMSE. The design's 1-pixel h1Divider1 (pen tFwmC) below the bar
 // reads as a chunky grey strip on a terminal cell grid, so we drop it and
@@ -29,6 +30,8 @@ export function TopBar(props: TopBarProps): ReactNode {
       <box flexShrink={1} minWidth={0} overflow="hidden">
         <text fg={chatScreenTheme.textSecondary} truncate={true} wrapMode="none">{props.workingDirectoryPath}</text>
       </box>
+      <box flexGrow={1} minWidth={0} />
+      <ChatScreenSlot name="top_bar_right" workingDirectoryPath={props.workingDirectoryPath} />
     </box>
   );
 }

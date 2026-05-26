@@ -46,7 +46,7 @@ test("prompt textarea owns editing input while the chat session is editable", ()
   expect(canPromptTextareaEditChatSessionState(createChatSessionState())).toBe(true);
   expect(canPromptTextareaEditChatScreenInput({
     chatSessionState: createChatSessionState(),
-    isConversationCompactionInFlight: false,
+    conversationSessionCompactionStatus: { step: "idle" },
   })).toBe(true);
   expect(shouldPromptTextareaHandleInput({ textInput: "x" })).toBe(true);
   expect(shouldPromptTextareaHandleInput({ keyName: "left" })).toBe(true);
@@ -55,11 +55,18 @@ test("prompt textarea owns editing input while the chat session is editable", ()
   expect(shouldPromptTextareaHandleInput({ keyName: "return" })).toBe(true);
 });
 
-test("prompt textarea cannot edit while conversation compaction is in flight", () => {
+test("prompt textarea cannot edit while manual conversation compaction is in flight", () => {
   expect(canPromptTextareaEditChatScreenInput({
     chatSessionState: createChatSessionState(),
-    isConversationCompactionInFlight: true,
+    conversationSessionCompactionStatus: { step: "compacting", source: "manual" },
   })).toBe(false);
+});
+
+test("prompt textarea can edit while auto conversation compaction is in flight", () => {
+  expect(canPromptTextareaEditChatScreenInput({
+    chatSessionState: createChatSessionState(),
+    conversationSessionCompactionStatus: { step: "compacting", source: "auto" },
+  })).toBe(true);
 });
 
 test("prompt textarea can edit while an assistant response is streaming", () => {
@@ -68,7 +75,7 @@ test("prompt textarea can edit while an assistant response is streaming", () => 
   expect(canPromptTextareaEditChatSessionState(streamingChatSessionState)).toBe(true);
   expect(canPromptTextareaEditChatScreenInput({
     chatSessionState: streamingChatSessionState,
-    isConversationCompactionInFlight: false,
+    conversationSessionCompactionStatus: { step: "idle" },
   })).toBe(true);
   expect(shouldPromptTextareaHandleInput({ chatSessionState: streamingChatSessionState, textInput: "x" })).toBe(true);
   expect(shouldPromptTextareaHandleInput({ chatSessionState: streamingChatSessionState, keyName: "return" })).toBe(true);

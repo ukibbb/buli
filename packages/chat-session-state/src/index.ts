@@ -12,9 +12,17 @@ export {
   createInitialChatSessionState,
 } from "./chatSessionState.ts";
 export {
+  type ChatCommandCategory,
+  type ChatCommandDefinition,
+  listChatCommandDefinitions,
+} from "./chatCommandCatalog.ts";
+export {
   type ChatSlashCommand,
+  type ChatSlashCommandSkill,
   type ChatSlashCommandValue,
   buildChatSlashCommands,
+  isSkillChatSlashCommandValue,
+  readSkillNameFromChatSlashCommandValue,
 } from "./chatSlashCommands.ts";
 export {
   type ChatSlashCommandApplication,
@@ -29,15 +37,21 @@ export {
   shouldHideResolvedPromptContextCandidatesForQuery,
 } from "./promptContextQueryIdentity.ts";
 export {
-  type ChatSessionInteractionScope,
   type ChatSessionKeyboardEffect,
   type ChatSessionKeyboardInput,
   type ChatSessionKeyboardInteraction,
   type ChatSessionKeyboardKeyName,
   type PromptSubmissionRejectionReason,
   applyChatSessionKeyboardInputToChatSessionState,
-  resolveChatSessionInteractionScope,
 } from "./chatSessionKeyboardInteraction.ts";
+export {
+  type ChatSessionInteractionScope,
+  type ChatSessionInteractionState,
+  canChatSessionInteractionScopeEditPromptDraft,
+  canChatSessionPromptDraftBeEdited,
+  canChatSessionShowSlashCommandSelectionForPromptDraft,
+  resolveChatSessionInteractionScope,
+} from "./chatSessionInteractionScope.ts";
 export { cycleAssistantOperatingMode, selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 export { resolveNextAssistantOperatingMode } from "./resolveNextAssistantOperatingMode.ts";
 export {

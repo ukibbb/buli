@@ -8,6 +8,7 @@ import {
   type PromptTextareaEdit,
   type PromptTextareaSummarizedPaste,
 } from "./PromptTextarea.tsx";
+import { ChatScreenSlot } from "../slots/chatScreenSlots.tsx";
 
 // Frame is pure prompt: 2 border rows + the textarea body.
 export const INPUT_PANEL_MAX_ROW_COUNT = 2 + PROMPT_TEXTAREA_MAX_ROW_COUNT;
@@ -18,6 +19,7 @@ export type InputPanelProps = {
   promptImageAttachmentPlaceholderTexts?: readonly string[] | undefined;
   promptTextPastePlaceholderTexts?: readonly string[] | undefined;
   selectedPromptContextReferenceTexts?: readonly string[];
+  selectedModelId?: string | undefined;
   isPromptInputDisabled: boolean;
   accentColor: string;
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
@@ -73,6 +75,11 @@ export function InputPanel(props: InputPanelProps): ReactNode {
             />
           )}
         </box>
+        <ChatScreenSlot
+          name="prompt_right"
+          selectedModelId={props.selectedModelId ?? ""}
+          isPromptInputDisabled={props.isPromptInputDisabled}
+        />
       </box>
     </box>
   );

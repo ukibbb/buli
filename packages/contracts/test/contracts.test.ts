@@ -40,6 +40,7 @@ import {
   isAssistantSubagentName,
   isFileMutationToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
+  isSkillToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
   listModelVisibleConversationSessionEntries,
   UserPromptImageAttachmentSchema,
@@ -585,6 +586,19 @@ test("AssistantToolCallConversationMessagePartSchema parses a task tool call wit
             matchedFileCount: 1,
           },
         },
+        {
+          subagentChildToolCallId: "call-skill-1",
+          subagentChildToolCallStatus: "completed",
+          subagentChildToolCallStartedAtMs: 5,
+          subagentChildToolCallDurationMs: 2,
+          subagentChildToolCallDetail: {
+            toolName: "skill",
+            skillName: "code-review",
+            skillDescription: "Review code changes",
+            skillSourceKind: "buli",
+            skillInstructionFilePath: "/workspace/.buli/skills/code-review/SKILL.md",
+          },
+        },
       ],
     },
   });
@@ -602,6 +616,12 @@ test("AssistantToolCallConversationMessagePartSchema parses a task tool call wit
         subagentChildToolCallStatus: "completed",
         subagentChildToolCallDurationMs: 4,
         subagentChildToolCallDetail: { toolName: "grep", searchPattern: "Explorer" },
+      },
+      {
+        subagentChildToolCallId: "call-skill-1",
+        subagentChildToolCallStatus: "completed",
+        subagentChildToolCallDurationMs: 2,
+        subagentChildToolCallDetail: { toolName: "skill", skillName: "code-review" },
       },
     ],
   });
@@ -684,6 +704,8 @@ test("AssistantToolCallConversationMessagePartSchema parses subagent research ch
         childToolCallCount: 39,
         childToolResultTextLength: 314_820,
         skippedChildToolCallCount: 1,
+        elapsedMilliseconds: 42_000,
+        softElapsedTimeCheckpointMilliseconds: 120_000,
       },
       subagentResultSummary: "Partial runtime map returned after checkpoint.",
     },
@@ -696,6 +718,46 @@ test("AssistantToolCallConversationMessagePartSchema parses subagent research ch
       childToolCallCount: 39,
       childToolResultTextLength: 314_820,
       skippedChildToolCallCount: 1,
+      elapsedMilliseconds: 42_000,
+      softElapsedTimeCheckpointMilliseconds: 120_000,
+    },
+  });
+});
+
+test("AssistantToolCallConversationMessagePartSchema parses elapsed-time subagent research checkpoints", () => {
+  const parsedMessagePart = AssistantToolCallConversationMessagePartSchema.parse({
+    id: "tool-part-task-elapsed-checkpoint",
+    partKind: "assistant_tool_call",
+    toolCallId: "call-task-elapsed-checkpoint",
+    toolCallStatus: "completed",
+    toolCallStartedAtMs: 1,
+    durationMs: 125_000,
+    toolCallDetail: {
+      toolName: "task",
+      subagentName: "explore",
+      subagentDescription: "map slow runtime",
+      subagentPrompt: "Map runtime files and return a checkpoint if elapsed time is bounded.",
+      subagentResearchCheckpoint: {
+        checkpointReason: "elapsed_time",
+        childToolCallCount: 7,
+        childToolResultTextLength: 24_000,
+        skippedChildToolCallCount: 2,
+        elapsedMilliseconds: 125_000,
+        softElapsedTimeCheckpointMilliseconds: 120_000,
+      },
+      subagentResultSummary: "Partial runtime map returned after elapsed-time checkpoint.",
+    },
+  });
+
+  expect(parsedMessagePart.toolCallDetail).toMatchObject({
+    toolName: "task",
+    subagentResearchCheckpoint: {
+      checkpointReason: "elapsed_time",
+      childToolCallCount: 7,
+      childToolResultTextLength: 24_000,
+      skippedChildToolCallCount: 2,
+      elapsedMilliseconds: 125_000,
+      softElapsedTimeCheckpointMilliseconds: 120_000,
     },
   });
 });
@@ -996,6 +1058,15 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
     subagentDescription: "map runtime flow",
     subagentPrompt: "Inspect runtime and provider flow.",
   });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "skill",
+      skillName: "code-review",
+    }),
+  ).toEqual({
+    toolName: "skill",
+    skillName: "code-review",
+  });
 });
 
 test("tool catalog lists assistant request tools by execution boundary", () => {
@@ -1012,10 +1083,11 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
     "patch_many",
     "write",
     "task",
+    "skill",
   ]);
   expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "edit_many", "patch", "patch_many", "write"]);
-  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep", "task"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
   expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite"]);
 });
 
@@ -1024,6 +1096,7 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("read_many")).toBe(true);
   expect(isAssistantToolRequestName("search_many")).toBe(true);
   expect(isAssistantToolRequestName("task")).toBe(true);
+  expect(isAssistantToolRequestName("skill")).toBe(true);
   expect(isAssistantToolRequestName("explore")).toBe(false);
   expect(isAssistantToolRequestName("general")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
@@ -1040,7 +1113,10 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isReadOnlyAssistantModeToolRequestName("read_many")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("search_many")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("task")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("skill")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
+  expect(isSkillToolCallRequest({ toolName: "skill", skillName: "code-review" })).toBe(true);
+  expect(isSkillToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
 });
 
 test("createStartedToolCallDetailFromRequest maps requests to render details", () => {
@@ -1124,6 +1200,10 @@ test("createStartedToolCallDetailFromRequest maps requests to render details", (
     subagentName: "explore",
     subagentDescription: "map runtime",
     subagentPrompt: "Inspect runtime.",
+  });
+  expect(createStartedToolCallDetailFromRequest({ toolName: "skill", skillName: "code-review" })).toEqual({
+    toolName: "skill",
+    skillName: "code-review",
   });
 });
 

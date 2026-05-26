@@ -4,6 +4,7 @@ import {
 } from "@buli/contracts";
 import type { ChatSessionKeyboardInput } from "@buli/chat-session-state";
 import {
+  isConversationSessionCompactionBlockingPromptInput,
   type PasteClipboardImageAttachmentIntoChatAppPromptInput,
   type UseChatAppControllerResult,
 } from "@buli/chat-app-controller";
@@ -29,7 +30,7 @@ type OpenTuiConsumableInputEvent = Pick<KeyEvent, "preventDefault" | "stopPropag
 export type UseChatScreenKeyboardInputActionsInput = {
   readClipboardImageAttachment?: (() => Promise<UserPromptImageAttachment | undefined>) | undefined;
   readLatestChatSessionState: UseChatAppControllerResult["readLatestChatSessionState"];
-  readIsConversationCompactionInFlight: UseChatAppControllerResult["readIsConversationCompactionInFlight"];
+  readConversationSessionCompactionStatus: UseChatAppControllerResult["readConversationSessionCompactionStatus"];
   applyChatAppKeyboardInput: UseChatAppControllerResult["applyChatAppKeyboardInput"];
   applyPromptDraftEditToChatApp: UseChatAppControllerResult["applyPromptDraftEditToChatApp"];
   removePromptImageAttachmentPlaceholderBeforeCursorFromChatApp:
@@ -65,7 +66,7 @@ export function useChatScreenKeyboardInputActions(
     }
 
     if (
-      input.readIsConversationCompactionInFlight() &&
+      isConversationSessionCompactionBlockingPromptInput(input.readConversationSessionCompactionStatus()) &&
       isPromptInteractionKeyboardInput(keyboardInput.chatSessionKeyboardInput)
     ) {
       keyboardInput.inputEvent?.preventDefault();
@@ -130,7 +131,7 @@ export function useChatScreenKeyboardInputActions(
   const handlePasteOutsidePromptTextarea = useEffectEvent((pasteEvent: PasteEvent) => {
     if (canPromptTextareaEditChatScreenInput({
       chatSessionState: input.readLatestChatSessionState(),
-      isConversationCompactionInFlight: input.readIsConversationCompactionInFlight(),
+      conversationSessionCompactionStatus: input.readConversationSessionCompactionStatus(),
     })) {
       return;
     }

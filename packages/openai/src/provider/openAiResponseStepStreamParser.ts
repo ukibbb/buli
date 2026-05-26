@@ -46,6 +46,7 @@ import {
 export type { OpenAiResponseStepTerminalState } from "./openAiResponseStepTerminalStateBuilder.ts";
 
 export type OpenAiStreamParserOptions = {
+  conversationTurnId?: string | undefined;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
   abortSignal?: AbortSignal | undefined;
   idleTimeoutMilliseconds?: number | undefined;
@@ -59,6 +60,7 @@ export type OpenAiStreamParserOptions = {
 // paragraph separator so the UI can render them as one entry.
 export class OpenAiResponseStepStreamParser {
   private readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
+  private readonly conversationTurnId: string | undefined;
   private readonly streamStartedAtMs: number;
   private readonly reasoningSummaryStreamProjector = new OpenAiReasoningSummaryStreamProjector();
   private readonly functionCallStreamAccumulator: OpenAiFunctionCallStreamAccumulator;
@@ -90,6 +92,7 @@ export class OpenAiResponseStepStreamParser {
 
   constructor(options: OpenAiStreamParserOptions = {}) {
     this.diagnosticLogger = options.diagnosticLogger;
+    this.conversationTurnId = options.conversationTurnId;
     this.functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator({
       diagnosticLogger: options.diagnosticLogger,
     });
@@ -98,6 +101,7 @@ export class OpenAiResponseStepStreamParser {
 
   start(input: { contentType: string | null }): void {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.started", {
+      conversationTurnId: this.conversationTurnId ?? null,
       contentType: input.contentType,
     });
   }
@@ -109,6 +113,7 @@ export class OpenAiResponseStepStreamParser {
       value = JSON.parse(data) as unknown;
     } catch {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.sse_event_malformed_json", {
+        conversationTurnId: this.conversationTurnId ?? null,
         sseFrameCount: this.sseFrameCount,
         frameCharacterCount: data.length,
       });
@@ -117,6 +122,7 @@ export class OpenAiResponseStepStreamParser {
     if (!isOpenAiResponseObject(value)) {
       this.ignoredSseEventCount += 1;
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.sse_event_ignored", {
+        conversationTurnId: this.conversationTurnId ?? null,
         reason: "not_object_with_type",
         sseFrameCount: this.sseFrameCount,
       });
@@ -124,6 +130,7 @@ export class OpenAiResponseStepStreamParser {
     }
 
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.sse_event_received", {
+      conversationTurnId: this.conversationTurnId ?? null,
       openAiEventType: value.type,
       sseFrameCount: this.sseFrameCount,
     });
@@ -157,6 +164,7 @@ export class OpenAiResponseStepStreamParser {
     this.textDeltaEventCount += 1;
     this.textDeltaCharacterCount += outputTextDelta.delta.length;
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.text_delta_received", {
+      conversationTurnId: this.conversationTurnId ?? null,
       textDeltaLength: outputTextDelta.delta.length,
       textDeltaEventCount: this.textDeltaEventCount,
       textDeltaCharacterCount: this.textDeltaCharacterCount,
@@ -191,6 +199,7 @@ export class OpenAiResponseStepStreamParser {
     this.reasoningDeltaEventCount += 1;
     this.reasoningDeltaCharacterCount += reasoningSummaryTextDelta.delta.length;
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.reasoning_delta_received", {
+      conversationTurnId: this.conversationTurnId ?? null,
       itemId: reasoningSummaryTextDelta.item_id,
       summaryIndex,
       reasoningDeltaLength: reasoningSummaryTextDelta.delta.length,
@@ -228,6 +237,7 @@ export class OpenAiResponseStepStreamParser {
       summaryIndex: reasoningSummaryPartAdded.summary_index,
     });
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.reasoning_summary_part_added", {
+      conversationTurnId: this.conversationTurnId ?? null,
       itemId: reasoningSummaryPartAdded.item_id,
       summaryIndex: reasoningSummaryPartAdded.summary_index,
     });
@@ -244,6 +254,7 @@ export class OpenAiResponseStepStreamParser {
     this.functionCallArgumentDeltaEventCount += 1;
     this.functionCallArgumentCharacterCount += functionCallArgumentsDelta.delta.length;
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.function_call_arguments_delta_received", {
+      conversationTurnId: this.conversationTurnId ?? null,
       functionCallArgumentDeltaLength: functionCallArgumentsDelta.delta.length,
       functionCallArgumentDeltaEventCount: this.functionCallArgumentDeltaEventCount,
       functionCallArgumentCharacterCount: this.functionCallArgumentCharacterCount,
@@ -271,6 +282,7 @@ export class OpenAiResponseStepStreamParser {
       responseOutputItem: outputItemAdded.item,
     });
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.output_item_added", {
+      conversationTurnId: this.conversationTurnId ?? null,
       outputIndex: outputItemAdded.output_index,
       outputItemType: outputItemAdded.item.type,
       trackedOutputItemCount: this.outputItemTracker.trackedOutputItemCount,
@@ -303,6 +315,7 @@ export class OpenAiResponseStepStreamParser {
     }
 
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.function_call_arguments_completed", {
+      conversationTurnId: this.conversationTurnId ?? null,
       itemId: functionCallArgumentsDone.item_id,
       functionArgumentsLength: functionCallArgumentsDone.arguments.length,
     });
@@ -323,6 +336,7 @@ export class OpenAiResponseStepStreamParser {
     }
 
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.output_item_completed", {
+      conversationTurnId: this.conversationTurnId ?? null,
       outputIndex: outputItemDone.output_index ?? null,
       outputItemType: outputItemDone.item.type,
     });
@@ -407,6 +421,7 @@ export class OpenAiResponseStepStreamParser {
     }
 
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.finished", {
+      conversationTurnId: this.conversationTurnId ?? null,
       terminalKind: this.terminalState.terminalKind,
       durationMs: Date.now() - this.streamStartedAtMs,
       sseFrameCount: this.sseFrameCount,
@@ -426,6 +441,7 @@ export class OpenAiResponseStepStreamParser {
   private ignoreSseEvent(reason: string, openAiEventType: string): void {
     this.ignoredSseEventCount += 1;
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.sse_event_ignored", {
+      conversationTurnId: this.conversationTurnId ?? null,
       reason,
       openAiEventType,
       sseFrameCount: this.sseFrameCount,
@@ -454,6 +470,7 @@ export class OpenAiResponseStepStreamParser {
       pendingProviderFunctionCallIntents,
     );
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_observed", {
+      conversationTurnId: this.conversationTurnId ?? null,
       terminalKind: chooseOpenAiResponseStepTerminalKind({
         requestedToolCallCount: pendingProviderFunctionCallIntentClassification.requestedToolCalls.length,
         invalidFunctionCallCount: pendingProviderFunctionCallIntentClassification.invalidFunctionCallIntents.length,
@@ -464,6 +481,7 @@ export class OpenAiResponseStepStreamParser {
     });
     if (terminalAssistantTextChunks.length > 0) {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "stream.terminal_assistant_text_recovered", {
+        conversationTurnId: this.conversationTurnId ?? null,
         textChunkCount: terminalAssistantTextChunks.length,
         textCharacterCount: terminalAssistantTextChunks.reduce(
           (textCharacterCount, terminalAssistantTextChunk) => textCharacterCount + terminalAssistantTextChunk.length,

@@ -5,38 +5,23 @@ import {
   comfortableTerminalSizeTier,
   type TerminalSizeTierForChatScreen,
 } from "@buli/assistant-design-tokens";
+import {
+  listChatScreenKeyboardShortcutHelpEntries,
+  type ChatScreenKeyboardShortcutCatalogEntry,
+} from "../keyboard/chatScreenKeyboardShortcutCatalog.ts";
 
 const COMMAND_HELP_COLUMN_WIDTH_IN_CELLS = 56;
 const COMMAND_NAME_COLUMN_WIDTH_IN_CELLS = 16;
 const KEYBOARD_SHORTCUT_COLUMN_WIDTH_IN_CELLS = 18;
 const COMMAND_HELP_MODAL_MAX_WIDTH_IN_CELLS = 112;
 
-type KeyboardShortcutHelpEntry = {
-  shortcutLabel: string;
-  description: string;
-};
-
 type CommandHelpModalRow =
   | { rowKind: "column_headings" }
   | {
       rowKind: "command_and_shortcut";
       slashCommand: SlashCommand | undefined;
-      keyboardShortcut: KeyboardShortcutHelpEntry | undefined;
+      keyboardShortcut: ChatScreenKeyboardShortcutCatalogEntry | undefined;
     };
-
-const chatScreenKeyboardShortcutHelpEntries = [
-  { shortcutLabel: "Tab", description: "Cycle operating mode" },
-  { shortcutLabel: "Enter", description: "Submit or choose item" },
-  { shortcutLabel: "Shift/Ctrl+Enter", description: "Insert newline in prompt" },
-  { shortcutLabel: "Esc", description: "Close panel or interrupt turn" },
-  { shortcutLabel: "Up/Down", description: "Move through selections" },
-  { shortcutLabel: "PageUp/PageDown", description: "Scroll transcript by page" },
-  { shortcutLabel: "Left/Right", description: "Move prompt cursor" },
-  { shortcutLabel: "Home/End", description: "Jump prompt cursor" },
-  { shortcutLabel: "Delete/Backspace", description: "Delete text or session" },
-  { shortcutLabel: "Y/N", description: "Approve or deny tool" },
-  { shortcutLabel: "Ctrl+V", description: "Paste clipboard image" },
-] as const satisfies readonly KeyboardShortcutHelpEntry[];
 
 export type CommandHelpModalProps = {
   onCloseRequested: () => void;
@@ -81,9 +66,10 @@ export function CommandHelpModal(props: CommandHelpModalProps): ReactNode {
 }
 
 function buildCommandHelpModalRows(availableSlashCommands: readonly SlashCommand[]): readonly CommandHelpModalRow[] {
+  const keyboardShortcutHelpEntries = listChatScreenKeyboardShortcutHelpEntries();
   const commandOrShortcutRowCount = Math.max(
     availableSlashCommands.length,
-    chatScreenKeyboardShortcutHelpEntries.length,
+    keyboardShortcutHelpEntries.length,
   );
 
   return [
@@ -91,7 +77,7 @@ function buildCommandHelpModalRows(availableSlashCommands: readonly SlashCommand
     ...Array.from({ length: commandOrShortcutRowCount }, (_unusedValue, rowIndex) => ({
       rowKind: "command_and_shortcut" as const,
       slashCommand: availableSlashCommands[rowIndex],
-      keyboardShortcut: chatScreenKeyboardShortcutHelpEntries[rowIndex],
+      keyboardShortcut: keyboardShortcutHelpEntries[rowIndex],
     })),
   ];
 }
@@ -117,7 +103,11 @@ function renderCommandHelpModalRow(commandHelpModalRow: CommandHelpModalRow): Re
   return (
     <box
       flexDirection="row"
-      key={`row:${commandHelpModalRow.slashCommand?.value ?? "none"}:${commandHelpModalRow.keyboardShortcut?.shortcutLabel ?? "none"}`}
+      key={[
+        "row",
+        commandHelpModalRow.slashCommand?.value ?? "none",
+        commandHelpModalRow.keyboardShortcut?.shortcutId ?? "none",
+      ].join(":")}
     >
       <box flexDirection="row" width={COMMAND_HELP_COLUMN_WIDTH_IN_CELLS}>
         {commandHelpModalRow.slashCommand ? renderSlashCommandHelp(commandHelpModalRow.slashCommand) : null}
@@ -146,12 +136,12 @@ function renderSlashCommandHelp(slashCommand: SlashCommand): ReactNode {
   );
 }
 
-function renderKeyboardShortcutHelp(keyboardShortcut: KeyboardShortcutHelpEntry): ReactNode {
+function renderKeyboardShortcutHelp(keyboardShortcut: ChatScreenKeyboardShortcutCatalogEntry): ReactNode {
   return (
     <>
       <box width={KEYBOARD_SHORTCUT_COLUMN_WIDTH_IN_CELLS}>
         <text fg={chatScreenTheme.accentGreen} wrapMode="none">
-          <b>{keyboardShortcut.shortcutLabel}</b>
+          <b>{keyboardShortcut.helpLabel}</b>
         </text>
       </box>
       <text fg={chatScreenTheme.textSecondary} wrapMode="none" truncate={true}>

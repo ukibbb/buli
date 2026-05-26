@@ -51,6 +51,8 @@ import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyTool
 import { RuntimeSubagentConversationConcurrencyLimiter } from "./runtimeSubagentConversationConcurrencyLimiter.ts";
 import { startAcceptedRuntimeConversationTurn } from "./runtimeConversationTurnStart.ts";
 import { streamAssistantResponseEventsFromProviderStream } from "./runtimeProviderStreamProcessor.ts";
+import { summarizeConversationHistoryResourceUsageForDiagnostics } from "./runtimeConversationResourceDiagnostics.ts";
+import { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
 import {
   finalizeFailedConversationTurn,
   finalizeInterruptedConversationTurn,
@@ -73,7 +75,9 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly canSpawnSubagent: boolean;
   readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
+  readonly taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
+  readonly skillCatalog: WorkspaceSkillCatalog;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
 
@@ -92,7 +96,10 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     canSpawnSubagent?: boolean;
     maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
+    taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
     projectInstructionTracker?: ProjectInstructionTracker;
+    skillCatalog?: WorkspaceSkillCatalog;
+    skillHomeDirectoryPath?: string | undefined;
     autoCompactionThresholdRatio?: number | undefined;
     autoCompactionReservedTokenCount?: number | undefined;
   }) {
@@ -111,8 +118,15 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.canSpawnSubagent = input.canSpawnSubagent ?? true;
     this.maximumConcurrentReadOnlyToolCalls = input.maximumConcurrentReadOnlyToolCalls;
     this.maximumConcurrentSubagentConversations = input.maximumConcurrentSubagentConversations;
+    this.taskSubagentSoftElapsedTimeCheckpointMilliseconds = validateTaskSubagentSoftElapsedTimeCheckpointMilliseconds(
+      input.taskSubagentSoftElapsedTimeCheckpointMilliseconds,
+    );
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
+    });
+    this.skillCatalog = input.skillCatalog ?? new WorkspaceSkillCatalog({
+      workspaceRootPath: input.workspaceRootPath,
+      ...(input.skillHomeDirectoryPath !== undefined ? { homeDirectoryPath: input.skillHomeDirectoryPath } : {}),
     });
     this.conversationSessionCompactor = new ConversationSessionCompactor({
       conversationTurnProvider: this.conversationTurnProvider,
@@ -132,6 +146,10 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
     const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
+    const conversationTurnInput: ConversationTurnRequest = {
+      ...input,
+      conversationTurnId: input.conversationTurnId ?? randomUUID(),
+    };
     if (this.conversationSessionCompactor.isCompactingCurrentConversationSession()) {
       throw new Error("Cannot start a conversation turn while compaction is running.");
     }
@@ -139,18 +157,20 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     if (this.currentPendingConversationTurn && !this.currentPendingConversationTurn.hasFinishedTurn()) {
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.rejected", {
         reason: "turn_already_running",
-        selectedModelId: input.selectedModelId,
-        userPromptLength: input.userPromptText.length,
-        userPromptImageAttachmentCount: input.userPromptImageAttachments?.length ?? 0,
+        conversationTurnId: conversationTurnInput.conversationTurnId ?? null,
+        selectedModelId: conversationTurnInput.selectedModelId,
+        userPromptLength: conversationTurnInput.userPromptText.length,
+        userPromptImageAttachmentCount: conversationTurnInput.userPromptImageAttachments?.length ?? 0,
       });
       throw new Error("A conversation turn is already running");
     }
 
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.accepted", {
-      selectedModelId: input.selectedModelId,
-      selectedReasoningEffort: input.selectedReasoningEffort ?? null,
-      userPromptLength: input.userPromptText.length,
-      userPromptImageAttachmentCount: input.userPromptImageAttachments?.length ?? 0,
+      conversationTurnId: conversationTurnInput.conversationTurnId ?? null,
+      selectedModelId: conversationTurnInput.selectedModelId,
+      selectedReasoningEffort: conversationTurnInput.selectedReasoningEffort ?? null,
+      userPromptLength: conversationTurnInput.userPromptText.length,
+      userPromptImageAttachmentCount: conversationTurnInput.userPromptImageAttachments?.length ?? 0,
       conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
       bashToolApprovalMode: this.bashToolApprovalMode,
@@ -158,9 +178,10 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     });
 
     const runtimeConversationTurn = new RuntimeConversationTurn({
-      conversationTurnInput: input,
+      conversationTurnInput,
       assistantOperatingMode,
       conversationTurnProvider: this.conversationTurnProvider,
+      conversationSessionCompactor: this.conversationSessionCompactor,
       conversationHistory: this.conversationHistory,
       workspaceRootPath: this.workspaceRootPath,
       promptContextBrowseRootPath: this.promptContextBrowseRootPath,
@@ -178,7 +199,11 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       ...(this.maximumConcurrentSubagentConversations !== undefined
         ? { maximumConcurrentSubagentConversations: this.maximumConcurrentSubagentConversations }
         : {}),
+      ...(this.taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
+        ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds: this.taskSubagentSoftElapsedTimeCheckpointMilliseconds }
+        : {}),
       projectInstructionTracker: this.projectInstructionTracker,
+      skillCatalog: this.skillCatalog,
       onConversationTurnFinished: () => {
         if (this.currentPendingConversationTurn === runtimeConversationTurn) {
           this.currentPendingConversationTurn = undefined;
@@ -212,12 +237,18 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   async autoCompactConversationSession(input: ConversationAutoCompactionRequest): Promise<ConversationAutoCompactionResult> {
     return this.conversationSessionCompactor.autoCompactCurrentConversationSession(input);
   }
+
+  async listAvailableSkills() {
+    return this.skillCatalog.listAvailableSkills();
+  }
 }
 
 class RuntimeConversationTurn implements ActiveConversationTurn {
+  readonly conversationTurnId: string;
   readonly conversationTurnInput: ConversationTurnRequest;
   readonly assistantOperatingMode: AssistantOperatingMode;
   readonly conversationTurnProvider: ConversationTurnProvider;
+  readonly conversationSessionCompactor: ConversationSessionCompactor;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly workspaceRootPath: string;
   readonly promptContextBrowseRootPath: string;
@@ -231,7 +262,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly canSpawnSubagent: boolean;
   readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
+  readonly taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
+  readonly skillCatalog: WorkspaceSkillCatalog;
   readonly onConversationTurnFinished: () => void;
   readonly pendingToolApprovalController: RuntimePendingToolApprovalController;
   readonly conversationTurnLifecycle: RuntimeConversationTurnLifecycle;
@@ -242,6 +275,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     conversationTurnInput: ConversationTurnRequest;
     assistantOperatingMode: AssistantOperatingMode;
     conversationTurnProvider: ConversationTurnProvider;
+    conversationSessionCompactor: ConversationSessionCompactor;
     conversationHistory: InMemoryConversationHistory;
     workspaceRootPath: string;
     promptContextBrowseRootPath: string;
@@ -255,12 +289,16 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     canSpawnSubagent: boolean;
     maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
+    taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
     projectInstructionTracker: ProjectInstructionTracker;
+    skillCatalog: WorkspaceSkillCatalog;
     onConversationTurnFinished: () => void;
   }) {
     this.conversationTurnInput = input.conversationTurnInput;
+    this.conversationTurnId = input.conversationTurnInput.conversationTurnId ?? randomUUID();
     this.assistantOperatingMode = input.assistantOperatingMode;
     this.conversationTurnProvider = input.conversationTurnProvider;
+    this.conversationSessionCompactor = input.conversationSessionCompactor;
     this.conversationHistory = input.conversationHistory;
     this.workspaceRootPath = input.workspaceRootPath;
     this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
@@ -274,7 +312,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.canSpawnSubagent = input.canSpawnSubagent;
     this.maximumConcurrentReadOnlyToolCalls = input.maximumConcurrentReadOnlyToolCalls;
     this.maximumConcurrentSubagentConversations = input.maximumConcurrentSubagentConversations;
+    this.taskSubagentSoftElapsedTimeCheckpointMilliseconds = input.taskSubagentSoftElapsedTimeCheckpointMilliseconds;
     this.projectInstructionTracker = input.projectInstructionTracker;
+    this.skillCatalog = input.skillCatalog;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
     this.pendingToolApprovalController = new RuntimePendingToolApprovalController({
       diagnosticLogger: this.diagnosticLogger,
@@ -292,6 +332,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         : {}),
     });
     this.conversationTurnLifecycle = new RuntimeConversationTurnLifecycle({
+      conversationTurnId: this.conversationTurnId,
       selectedModelId: this.conversationTurnInput.selectedModelId,
       diagnosticLogger: this.diagnosticLogger,
       onConversationTurnFinished: this.onConversationTurnFinished,
@@ -324,27 +365,36 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     const conversationTurnStartedAtMilliseconds = Date.now();
     const assistantResponseMessageId = randomUUID();
     const assistantTextPartId = randomUUID();
-    const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
-      conversationHistory: this.conversationHistory,
-      userPromptText: this.conversationTurnInput.userPromptText,
-      assistantOperatingMode: this.assistantOperatingMode,
-      ...(this.conversationTurnInput.promptSource ? { promptSource: this.conversationTurnInput.promptSource } : {}),
-      ...(this.conversationTurnInput.userPromptImageAttachments
-        ? { userPromptImageAttachments: this.conversationTurnInput.userPromptImageAttachments }
-        : {}),
-      diagnosticLogger: this.diagnosticLogger,
-    });
-    const providerStreamEventTranslator = new RuntimeProviderStreamEventTranslator({
-      assistantResponseMessageId,
-      assistantTextPartId,
-      conversationTurnStartedAtMilliseconds,
-      assistantOperatingMode: this.assistantOperatingMode,
-      selectedModelId: this.conversationTurnInput.selectedModelId,
-    });
+    const createConversationTurnSessionRecorder = (): RuntimeConversationTurnSessionRecorder =>
+      new RuntimeConversationTurnSessionRecorder({
+        conversationTurnId: this.conversationTurnId,
+        conversationHistory: this.conversationHistory,
+        userPromptText: this.conversationTurnInput.userPromptText,
+        assistantOperatingMode: this.assistantOperatingMode,
+        ...(this.conversationTurnInput.promptSource ? { promptSource: this.conversationTurnInput.promptSource } : {}),
+        ...(this.conversationTurnInput.userPromptImageAttachments
+          ? { userPromptImageAttachments: this.conversationTurnInput.userPromptImageAttachments }
+          : {}),
+        diagnosticLogger: this.diagnosticLogger,
+      });
+    const createProviderStreamEventTranslator = (): RuntimeProviderStreamEventTranslator =>
+      new RuntimeProviderStreamEventTranslator({
+        assistantResponseMessageId,
+        assistantTextPartId,
+        conversationTurnStartedAtMilliseconds,
+        assistantOperatingMode: this.assistantOperatingMode,
+        selectedModelId: this.conversationTurnInput.selectedModelId,
+      });
+    let conversationTurnSessionRecorder = createConversationTurnSessionRecorder();
+    let providerStreamEventTranslator = createProviderStreamEventTranslator();
     let modelFacingPromptTextForAcceptedTurn: string | undefined;
     let projectInstructionSnapshotsForAcceptedTurn: readonly ProjectInstructionSnapshot[] = [];
+    let assistantResponseEventCount = 0;
+    let conversationTurnOutcomeKind = "unknown";
     const logAssistantResponseEventEmitted = (assistantResponseEvent: AssistantResponseEvent): AssistantResponseEvent => {
+      assistantResponseEventCount += 1;
       logEngineDiagnosticEvent(this.diagnosticLogger, "assistant_response_event.emitted", {
+        conversationTurnId: this.conversationTurnId,
         eventType: assistantResponseEvent.type,
         ...summarizeAssistantResponseEventForDiagnostics(assistantResponseEvent),
       });
@@ -353,11 +403,20 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
 
     try {
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.stream_started", {
+        conversationTurnId: this.conversationTurnId,
         selectedModelId: this.conversationTurnInput.selectedModelId,
         selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort ?? null,
         userPromptLength: this.conversationTurnInput.userPromptText.length,
         userPromptImageAttachmentCount: this.conversationTurnInput.userPromptImageAttachments?.length ?? 0,
         assistantOperatingMode: this.assistantOperatingMode,
+      });
+      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.context_snapshot", {
+        conversationTurnId: this.conversationTurnId,
+        snapshotPhase: "before_user_prompt",
+        ...summarizeConversationHistoryResourceUsageForDiagnostics({
+          conversationSessionEntries: this.conversationHistory.listConversationSessionEntries(),
+          modelContextItems: this.conversationHistory.listModelContextItems(),
+        }),
       });
       yield logAssistantResponseEventEmitted(AssistantTurnStartedEventSchema.parse({
         type: "assistant_turn_started",
@@ -365,51 +424,99 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         startedAtMs: conversationTurnStartedAtMilliseconds,
       }));
 
-      const startedRuntimeConversationTurn = await startAcceptedRuntimeConversationTurn({
-        conversationTurnInput: this.conversationTurnInput,
-        assistantOperatingMode: this.assistantOperatingMode,
-        conversationTurnProvider: this.conversationTurnProvider,
-        conversationHistory: this.conversationHistory,
-        workspaceRootPath: this.workspaceRootPath,
-        promptContextBrowseRootPath: this.promptContextBrowseRootPath,
-        promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
-        projectInstructionTracker: this.projectInstructionTracker,
-        ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
-        ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
-        abortSignal: this.conversationTurnLifecycle.abortSignal,
-        conversationTurnSessionRecorder,
-        throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
-        diagnosticLogger: this.diagnosticLogger,
-      });
-      modelFacingPromptTextForAcceptedTurn = startedRuntimeConversationTurn.modelFacingPromptTextForAcceptedTurn;
-      projectInstructionSnapshotsForAcceptedTurn = startedRuntimeConversationTurn.projectInstructionSnapshotsForAcceptedTurn;
+      let hasRetriedAfterContextWindowOverflow = false;
+      while (true) {
+        const conversationSessionEntriesBeforeAttempt = this.conversationHistory.listConversationSessionEntries();
+        const assistantResponseEventCountBeforeAttempt = assistantResponseEventCount;
+        try {
+          const startedRuntimeConversationTurn = await startAcceptedRuntimeConversationTurn({
+            conversationTurnInput: this.conversationTurnInput,
+            assistantOperatingMode: this.assistantOperatingMode,
+            conversationTurnProvider: this.conversationTurnProvider,
+            conversationHistory: this.conversationHistory,
+            workspaceRootPath: this.workspaceRootPath,
+            promptContextBrowseRootPath: this.promptContextBrowseRootPath,
+            promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
+            projectInstructionTracker: this.projectInstructionTracker,
+            skillCatalog: this.skillCatalog,
+            ...(this.promptCacheKey ? { promptCacheKey: this.promptCacheKey } : {}),
+            ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
+            abortSignal: this.conversationTurnLifecycle.abortSignal,
+            conversationTurnSessionRecorder,
+            throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
+            diagnosticLogger: this.diagnosticLogger,
+          });
+          modelFacingPromptTextForAcceptedTurn = startedRuntimeConversationTurn.modelFacingPromptTextForAcceptedTurn;
+          projectInstructionSnapshotsForAcceptedTurn = startedRuntimeConversationTurn.projectInstructionSnapshotsForAcceptedTurn;
 
-      const providerStreamProcessingOutcome = yield* streamAssistantResponseEventsFromProviderStream({
-        providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
-        providerStreamEventTranslator,
-        conversationTurnSessionRecorder,
-        createRequestedToolCallsExecutionContext: () => this.createRequestedToolCallsExecutionContext({
-          assistantResponseMessageId,
-          providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
-        }),
-        throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
-        logAssistantResponseEventEmitted,
-        diagnosticLogger: this.diagnosticLogger,
-      });
-      if (providerStreamProcessingOutcome.outcomeKind === "terminal_assistant_response") {
-        return;
-      }
+          const providerStreamProcessingOutcome = yield* streamAssistantResponseEventsFromProviderStream({
+            conversationTurnId: this.conversationTurnId,
+            providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
+            providerStreamEventTranslator,
+            conversationTurnSessionRecorder,
+            createRequestedToolCallsExecutionContext: () => this.createRequestedToolCallsExecutionContext({
+              assistantResponseMessageId,
+              providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
+            }),
+            throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
+            logAssistantResponseEventEmitted,
+            diagnosticLogger: this.diagnosticLogger,
+          });
+          if (providerStreamProcessingOutcome.outcomeKind === "terminal_assistant_response") {
+            conversationTurnOutcomeKind = "terminal_assistant_response";
+            return;
+          }
 
-      for (const assistantResponseEvent of finalizeProviderStreamEndedBeforeCompletion({
-        assistantResponseMessageId,
-        conversationTurnSessionRecorder,
-        providerStreamEventTranslator,
-      })) {
-        yield logAssistantResponseEventEmitted(assistantResponseEvent);
+          conversationTurnOutcomeKind = "provider_stream_ended_before_completion";
+          for (const assistantResponseEvent of finalizeProviderStreamEndedBeforeCompletion({
+            assistantResponseMessageId,
+            conversationTurnSessionRecorder,
+            providerStreamEventTranslator,
+          })) {
+            yield logAssistantResponseEventEmitted(assistantResponseEvent);
+          }
+          return;
+        } catch (error) {
+          const canRecoverContextWindowOverflow = isContextWindowOverflowError(error) &&
+            !hasRetriedAfterContextWindowOverflow &&
+            conversationSessionEntriesBeforeAttempt.length > 0 &&
+            providerStreamEventTranslator.assistantMessageText.length === 0 &&
+            assistantResponseEventCount === assistantResponseEventCountBeforeAttempt &&
+            !conversationTurnSessionRecorder.hasAppendedTerminalAssistantMessageSessionEntry();
+          if (!canRecoverContextWindowOverflow) {
+            throw error;
+          }
+
+          hasRetriedAfterContextWindowOverflow = true;
+          conversationTurnOutcomeKind = "context_window_overflow_recovering";
+          this.conversationHistory.replaceConversationSessionEntries(conversationSessionEntriesBeforeAttempt);
+          conversationTurnSessionRecorder = createConversationTurnSessionRecorder();
+          providerStreamEventTranslator = createProviderStreamEventTranslator();
+          logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.context_window_overflow_recovery_started", {
+            conversationTurnId: this.conversationTurnId,
+            selectedModelId: this.conversationTurnInput.selectedModelId,
+            conversationSessionEntryCount: conversationSessionEntriesBeforeAttempt.length,
+          });
+          await this.conversationSessionCompactor.compactCurrentConversationSessionForContextOverflowRecovery({
+            selectedModelId: this.conversationTurnInput.selectedModelId,
+            compactionSource: "auto",
+            ...(this.conversationTurnInput.selectedReasoningEffort
+              ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
+              : {}),
+            abortSignal: this.conversationTurnLifecycle.abortSignal,
+          });
+          logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.context_window_overflow_recovery_completed", {
+            conversationTurnId: this.conversationTurnId,
+            selectedModelId: this.conversationTurnInput.selectedModelId,
+            conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
+          });
+        }
       }
     } catch (error) {
       if (this.conversationTurnLifecycle.hasInterruptedTurn() || this.conversationTurnLifecycle.abortSignal.aborted) {
+        conversationTurnOutcomeKind = "interrupted";
         logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.interrupted", {
+          conversationTurnId: this.conversationTurnId,
           selectedModelId: this.conversationTurnInput.selectedModelId,
           assistantMessageTextLength: providerStreamEventTranslator.assistantMessageText.length,
         });
@@ -433,7 +540,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         rawErrorText.length > 0 ? rawErrorText : "Unknown conversation turn failure",
       );
       const failureKind = isContextWindowOverflowError(error) ? "context_window_overflow" : undefined;
+      conversationTurnOutcomeKind = failureKind ?? "failed";
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.failed", {
+        conversationTurnId: this.conversationTurnId,
         failureExplanationLength: failureExplanation.length,
         rawErrorTextLength: rawErrorText.length,
         failureKind: failureKind ?? null,
@@ -454,6 +563,19 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       }
     } finally {
       this.pendingToolApprovalController.clearPendingToolApproval();
+      logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.summary", {
+        conversationTurnId: this.conversationTurnId,
+        selectedModelId: this.conversationTurnInput.selectedModelId,
+        selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort ?? null,
+        assistantOperatingMode: this.assistantOperatingMode,
+        outcomeKind: conversationTurnOutcomeKind,
+        assistantResponseEventCount,
+        turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
+        ...summarizeConversationHistoryResourceUsageForDiagnostics({
+          conversationSessionEntries: this.conversationHistory.listConversationSessionEntries(),
+          modelContextItems: this.conversationHistory.listModelContextItems(),
+        }),
+      });
       this.conversationTurnLifecycle.finish({ conversationTurnStartedAtMilliseconds });
     }
   }
@@ -469,6 +591,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     return {
       assistantResponseMessageId: input.assistantResponseMessageId,
       providerConversationTurn: input.providerConversationTurn,
+      conversationTurnId: this.conversationTurnId,
       conversationTurnProvider: this.conversationTurnProvider,
       selectedModelId: this.conversationTurnInput.selectedModelId,
       ...(this.conversationTurnInput.selectedReasoningEffort
@@ -480,6 +603,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       workspaceRootPath: this.workspaceRootPath,
       workspaceSnapshotStore: this.workspaceSnapshotStore,
       projectInstructionTracker: this.projectInstructionTracker,
+      skillCatalog: this.skillCatalog,
       promptContextBrowseRootPath: this.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
@@ -487,6 +611,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       abortSignal: this.conversationTurnLifecycle.abortSignal,
       readOnlyToolCallConcurrencyLimiter: this.readOnlyToolCallConcurrencyLimiter,
       subagentConversationConcurrencyLimiter: this.subagentConversationConcurrencyLimiter,
+      ...(this.taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
+        ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds: this.taskSubagentSoftElapsedTimeCheckpointMilliseconds }
+        : {}),
       canSpawnSubagent: this.canSpawnSubagent,
       createPendingToolApproval: (pendingToolApprovalInput) => this.createPendingToolApproval(pendingToolApprovalInput),
       throwIfConversationTurnInterrupted: () => {
@@ -503,4 +630,21 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
 
 function sanitizeRuntimeFailureExplanation(failureExplanation: string): string {
   return redactSensitiveText(failureExplanation);
+}
+
+function validateTaskSubagentSoftElapsedTimeCheckpointMilliseconds(
+  taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined,
+): number | undefined {
+  if (taskSubagentSoftElapsedTimeCheckpointMilliseconds === undefined) {
+    return undefined;
+  }
+
+  if (
+    !Number.isInteger(taskSubagentSoftElapsedTimeCheckpointMilliseconds) ||
+    taskSubagentSoftElapsedTimeCheckpointMilliseconds < 1
+  ) {
+    throw new Error("Task subagent soft elapsed-time checkpoint must be a positive integer number of milliseconds.");
+  }
+
+  return taskSubagentSoftElapsedTimeCheckpointMilliseconds;
 }
