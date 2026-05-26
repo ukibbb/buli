@@ -42,6 +42,19 @@ type TaskSubagentCallSummary = Readonly<{
   toolResultTextLength: number;
 }>;
 
+type ProviderTurnKindAttribution = {
+  providerTurnKind: string;
+  providerTurnCount: number;
+  responseStepCount: number;
+  providerTurnDurationMs: number;
+  requestedToolCallCount: number;
+  httpWaitDurationMs: number;
+  streamDurationMs: number;
+  toolResultWaitDurationMs: number;
+  requestConstructionDurationMs: number;
+  maxRequestBodyTextLength: number;
+};
+
 export async function writeBuliProfileRunReport(input: BuliProfileReportCliOptions): Promise<string> {
   const profileEvents = await readBuliProfileJsonl(input.profileFilePath);
   const reportMarkdown = formatBuliProfileRunReportMarkdown({
@@ -90,9 +103,13 @@ export function formatBuliProfileRunReportMarkdown(input: {
     ...formatProcessSampleAttributionSection(processSamples),
     ...formatConversationTurnSection(diagnosticEvents),
     ...formatOpenAiProviderTurnSection(diagnosticEvents),
+    ...formatOpenAiProviderTurnKindAttributionSection(diagnosticEvents),
     ...formatOpenAiResponseStepSection(diagnosticEvents),
     ...formatOpenAiRetrySection(diagnosticEvents),
+    ...formatOpenAiRequestConstructionSection(diagnosticEvents),
+    ...formatOpenAiReplayInputAgeSection(diagnosticEvents),
     ...formatToolAttributionSection(diagnosticEvents),
+    ...formatToolResultDuplicationSection(diagnosticEvents),
     ...formatTaskSubagentAttributionSection(diagnosticEvents),
     ...formatOpenAiContextGuardSection(diagnosticEvents),
     ...formatRequestAndContextGrowthSection(diagnosticEvents),
@@ -281,6 +298,55 @@ function formatOpenAiProviderTurnSection(diagnosticEvents: readonly ProfileDiagn
   ];
 }
 
+function formatOpenAiProviderTurnKindAttributionSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
+  const providerTurnSummaries = listDiagnosticEvents(diagnosticEvents, "openai", "provider_turn.summary");
+  const responseStepSummaries = listDiagnosticEvents(diagnosticEvents, "openai", "response_step.summary");
+  if (![...providerTurnSummaries, ...responseStepSummaries].some((event) => readStringField(event.fields, "providerTurnKind") !== undefined)) {
+    return ["## OpenAI Provider Turn Kind Attribution", "", "No provider-turn kind attribution fields were recorded.", ""];
+  }
+
+  const attributionByKind = new Map<string, ProviderTurnKindAttribution>();
+  for (const providerTurnSummary of providerTurnSummaries) {
+    const attribution = getProviderTurnKindAttribution(attributionByKind, readProviderTurnKind(providerTurnSummary.fields));
+    attribution.providerTurnCount += 1;
+    attribution.providerTurnDurationMs += readNumberField(providerTurnSummary.fields, "durationMs");
+    attribution.requestedToolCallCount += readNumberField(providerTurnSummary.fields, "requestedToolCallCount");
+    attribution.maxRequestBodyTextLength = Math.max(
+      attribution.maxRequestBodyTextLength,
+      readNumberField(providerTurnSummary.fields, "maxRequestBodyTextLength"),
+    );
+  }
+  for (const responseStepSummary of responseStepSummaries) {
+    const attribution = getProviderTurnKindAttribution(attributionByKind, readProviderTurnKind(responseStepSummary.fields));
+    attribution.responseStepCount += 1;
+    attribution.httpWaitDurationMs += readNumberField(responseStepSummary.fields, "httpWaitDurationMs");
+    attribution.streamDurationMs += readNumberField(responseStepSummary.fields, "streamDurationMs");
+    attribution.toolResultWaitDurationMs += readNumberField(responseStepSummary.fields, "toolResultWaitDurationMs");
+    attribution.requestConstructionDurationMs += readNumberField(responseStepSummary.fields, "requestConstructionDurationMs");
+    attribution.maxRequestBodyTextLength = Math.max(
+      attribution.maxRequestBodyTextLength,
+      readNumberField(responseStepSummary.fields, "requestBodyTextLength"),
+    );
+  }
+
+  const providerTurnKindAttributions = [...attributionByKind.values()].sort((leftAttribution, rightAttribution) =>
+    rightAttribution.providerTurnDurationMs - leftAttribution.providerTurnDurationMs ||
+    rightAttribution.httpWaitDurationMs - leftAttribution.httpWaitDurationMs ||
+    leftAttribution.providerTurnKind.localeCompare(rightAttribution.providerTurnKind)
+  );
+
+  return [
+    "## OpenAI Provider Turn Kind Attribution",
+    "",
+    "| Kind | Provider Turns | Provider Duration | Steps | Tool Calls | HTTP Wait | Stream | Tool Wait | Request Build | Max Request Body |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...providerTurnKindAttributions.map((attribution) =>
+      `| ${attribution.providerTurnKind} | ${formatInteger(attribution.providerTurnCount)} | ${formatMilliseconds(attribution.providerTurnDurationMs)} | ${formatInteger(attribution.responseStepCount)} | ${formatInteger(attribution.requestedToolCallCount)} | ${formatMilliseconds(attribution.httpWaitDurationMs)} | ${formatMilliseconds(attribution.streamDurationMs)} | ${formatMilliseconds(attribution.toolResultWaitDurationMs)} | ${formatMilliseconds(attribution.requestConstructionDurationMs)} | ${formatBytes(attribution.maxRequestBodyTextLength)} |`
+    ),
+    "",
+  ];
+}
+
 function formatOpenAiResponseStepSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
   const responseStepSummaries = listDiagnosticEvents(diagnosticEvents, "openai", "response_step.summary");
   if (responseStepSummaries.length === 0) {
@@ -372,6 +438,74 @@ function formatOpenAiRetrySection(diagnosticEvents: readonly ProfileDiagnosticEv
   ];
 }
 
+function formatOpenAiRequestConstructionSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
+  const responseStepSummaries = listDiagnosticEvents(diagnosticEvents, "openai", "response_step.summary");
+  if (!responseStepSummaries.some((event) => readOptionalNumberField(event.fields, "requestConstructionDurationMs") !== undefined)) {
+    return ["## OpenAI Request Construction", "", "No request construction timing fields were recorded.", ""];
+  }
+
+  const requestConstructionDuration = aggregateNumericField(responseStepSummaries, "requestConstructionDurationMs");
+  const requestObjectBuildDuration = aggregateNumericField(responseStepSummaries, "requestObjectBuildDurationMs");
+  const requestSerializationDuration = aggregateNumericField(responseStepSummaries, "requestSerializationDurationMs");
+  const serializedRequestBodyText = aggregateNumericField(responseStepSummaries, "requestBodyTextLength");
+  const slowestRequestConstructions = [...responseStepSummaries].sort((leftEvent, rightEvent) =>
+    readNumberField(rightEvent.fields, "requestConstructionDurationMs") - readNumberField(leftEvent.fields, "requestConstructionDurationMs")
+  ).slice(0, 10);
+
+  return [
+    "## OpenAI Request Construction",
+    "",
+    `- Response steps with timing: ${formatInteger(requestConstructionDuration.count)}`,
+    `- Total request construction: ${formatMilliseconds(requestConstructionDuration.total)}`,
+    `- Max request construction: ${formatMilliseconds(requestConstructionDuration.max)}`,
+    `- Total request object build: ${formatMilliseconds(requestObjectBuildDuration.total)}`,
+    `- Total request serialization: ${formatMilliseconds(requestSerializationDuration.total)}`,
+    `- Serialized request body text across steps: ${formatBytes(serializedRequestBodyText.total)}`,
+    "",
+    "| Turn | Kind | Step | Construction | Object Build | Serialization | Request Body | Input Items |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...slowestRequestConstructions.map((event) => {
+      const fields = event.fields;
+      return `| ${formatShortField(fields, "conversationTurnId")} | ${readProviderTurnKind(fields)} | ${formatNumberField(fields, "responseStepIndex")} | ${formatMilliseconds(readNumberField(fields, "requestConstructionDurationMs"))} | ${formatMilliseconds(readNumberField(fields, "requestObjectBuildDurationMs"))} | ${formatMilliseconds(readNumberField(fields, "requestSerializationDurationMs"))} | ${formatBytes(readNumberField(fields, "requestBodyTextLength"))} | ${formatNumberField(fields, "requestInputItemCount")} |`;
+    }),
+    "",
+  ];
+}
+
+function formatOpenAiReplayInputAgeSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
+  const responseStepSummaries = listDiagnosticEvents(diagnosticEvents, "openai", "response_step.summary");
+  if (!responseStepSummaries.some((event) => readOptionalNumberField(event.fields, "requestHistoricalFunctionCallOutputTextLength") !== undefined)) {
+    return ["## OpenAI Replay Input Age", "", "No replay-age fields were recorded.", ""];
+  }
+
+  const totalFunctionCallOutputText = aggregateNumericField(responseStepSummaries, "requestFunctionCallOutputTextLength");
+  const historicalFunctionCallOutputText = aggregateNumericField(responseStepSummaries, "requestHistoricalFunctionCallOutputTextLength");
+  const currentTurnFunctionCallOutputText = aggregateNumericField(responseStepSummaries, "requestCurrentTurnFunctionCallOutputTextLength");
+  const largestReplayRequests = [...responseStepSummaries].sort((leftEvent, rightEvent) =>
+    readNumberField(rightEvent.fields, "requestFunctionCallOutputTextLength") -
+      readNumberField(leftEvent.fields, "requestFunctionCallOutputTextLength")
+  ).slice(0, 10);
+
+  return [
+    "## OpenAI Replay Input Age",
+    "",
+    `- Function-output text across response-step requests: ${formatBytes(totalFunctionCallOutputText.total)}`,
+    `- Historical function-output text: ${formatBytes(historicalFunctionCallOutputText.total)}`,
+    `- Current-turn function-output text: ${formatBytes(currentTurnFunctionCallOutputText.total)}`,
+    `- Max historical function-output text on one request: ${formatBytes(historicalFunctionCallOutputText.max)}`,
+    `- Max current-turn function-output text on one request: ${formatBytes(currentTurnFunctionCallOutputText.max)}`,
+    "- Note: totals are bytes sent across provider requests, not unique retained bytes.",
+    "",
+    "| Turn | Kind | Step | Total Function Output | Historical | Current Turn | Request Body |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    ...largestReplayRequests.map((event) => {
+      const fields = event.fields;
+      return `| ${formatShortField(fields, "conversationTurnId")} | ${readProviderTurnKind(fields)} | ${formatNumberField(fields, "responseStepIndex")} | ${formatBytes(readNumberField(fields, "requestFunctionCallOutputTextLength"))} | ${formatBytes(readNumberField(fields, "requestHistoricalFunctionCallOutputTextLength"))} | ${formatBytes(readNumberField(fields, "requestCurrentTurnFunctionCallOutputTextLength"))} | ${formatBytes(readNumberField(fields, "requestBodyTextLength"))} |`;
+    }),
+    "",
+  ];
+}
+
 function formatToolAttributionSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
   const toolNameByToolCallId = buildToolNameByToolCallId(diagnosticEvents);
   const toolResultSubmittedEvents = listDiagnosticEvents(diagnosticEvents, "engine", "provider_turn.tool_result_submitted");
@@ -436,6 +570,56 @@ function formatToolAttributionSection(diagnosticEvents: readonly ProfileDiagnost
     `- Total approval wait: ${formatMilliseconds(bashApprovalWaitDuration.total)}`,
     `- Max approval wait: ${formatMilliseconds(bashApprovalWaitDuration.max)}`,
     `- Approval decisions: ${formatCountByField(bashApprovalWaitFinishedEvents, "approvalDecision")}`,
+    "",
+  ];
+}
+
+function formatToolResultDuplicationSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
+  const toolNameByToolCallId = buildToolNameByToolCallId(diagnosticEvents);
+  const duplicateToolResultEvents = listDiagnosticEvents(diagnosticEvents, "engine", "conversation_history.entry_appended")
+    .filter((event) => isToolResultEntryKind(readStringField(event.fields, "entryKind")))
+    .filter((event) => readNumberField(event.fields, "duplicateToolResultTextPreviousCount") > 0);
+  if (duplicateToolResultEvents.length === 0) {
+    return ["## Tool Result Duplication", "", "No exact duplicate tool-result text events were recorded.", ""];
+  }
+
+  const duplicateToolResultTextLength = aggregateNumericField(duplicateToolResultEvents, "toolResultTextLength");
+  const previousDuplicateMatchCount = aggregateNumericField(duplicateToolResultEvents, "duplicateToolResultTextPreviousCount");
+  const previousSameToolDuplicateMatchCount = aggregateNumericField(duplicateToolResultEvents, "duplicateToolResultTextSameToolNamePreviousCount");
+  const duplicateTextLengthByToolName = aggregateToolCallNumericField({
+    diagnosticEvents: duplicateToolResultEvents,
+    toolNameByToolCallId,
+    fieldName: "toolResultTextLength",
+  });
+  const largestDuplicateToolResults = [...duplicateToolResultEvents].sort((leftEvent, rightEvent) =>
+    readNumberField(rightEvent.fields, "toolResultTextLength") - readNumberField(leftEvent.fields, "toolResultTextLength") ||
+    readNumberField(rightEvent.fields, "duplicateToolResultTextPreviousCount") -
+      readNumberField(leftEvent.fields, "duplicateToolResultTextPreviousCount")
+  ).slice(0, 10);
+
+  return [
+    "## Tool Result Duplication",
+    "",
+    `- Duplicate result entries: ${formatInteger(duplicateToolResultEvents.length)}`,
+    `- Duplicate result text total: ${formatBytes(duplicateToolResultTextLength.total)}`,
+    `- Previous exact-text matches observed: ${formatInteger(previousDuplicateMatchCount.total)}`,
+    `- Previous same-tool matches observed: ${formatInteger(previousSameToolDuplicateMatchCount.total)}`,
+    "",
+    "### Duplicate Text By Tool",
+    "",
+    ...formatToolAggregateTable({
+      aggregateByToolName: duplicateTextLengthByToolName,
+      valueHeader: "Duplicate Text",
+      formatValue: formatBytes,
+    }),
+    "### Largest Duplicate Results",
+    "",
+    "| Turn | Tool | Tool Call | Text | Previous Matches | Same-Tool Matches | First Tool Call | First Tool |",
+    "| --- | --- | --- | ---: | ---: | ---: | --- | --- |",
+    ...largestDuplicateToolResults.map((event) => {
+      const fields = event.fields;
+      return `| ${formatShortField(fields, "conversationTurnId")} | ${formatStringField(fields, "toolName")} | ${formatShortField(fields, "toolCallId")} | ${formatBytes(readNumberField(fields, "toolResultTextLength"))} | ${formatNumberField(fields, "duplicateToolResultTextPreviousCount")} | ${formatNumberField(fields, "duplicateToolResultTextSameToolNamePreviousCount")} | ${formatShortField(fields, "duplicateToolResultFirstToolCallId")} | ${formatStringField(fields, "duplicateToolResultFirstToolName")} |`;
+    }),
     "",
   ];
 }
@@ -666,6 +850,39 @@ function buildToolNameByToolCallId(diagnosticEvents: readonly ProfileDiagnosticE
   }
 
   return toolNameByToolCallId;
+}
+
+function getProviderTurnKindAttribution(
+  attributionByKind: Map<string, ProviderTurnKindAttribution>,
+  providerTurnKind: string,
+): ProviderTurnKindAttribution {
+  const existingAttribution = attributionByKind.get(providerTurnKind);
+  if (existingAttribution) {
+    return existingAttribution;
+  }
+
+  const attribution: ProviderTurnKindAttribution = {
+    providerTurnKind,
+    providerTurnCount: 0,
+    responseStepCount: 0,
+    providerTurnDurationMs: 0,
+    requestedToolCallCount: 0,
+    httpWaitDurationMs: 0,
+    streamDurationMs: 0,
+    toolResultWaitDurationMs: 0,
+    requestConstructionDurationMs: 0,
+    maxRequestBodyTextLength: 0,
+  };
+  attributionByKind.set(providerTurnKind, attribution);
+  return attribution;
+}
+
+function readProviderTurnKind(fields: ProfileDiagnosticEvent["fields"] | undefined): string {
+  return readStringField(fields, "providerTurnKind") ?? "unknown";
+}
+
+function isToolResultEntryKind(entryKind: string | undefined): boolean {
+  return entryKind === "completed_tool_result" || entryKind === "failed_tool_result" || entryKind === "denied_tool_result";
 }
 
 function buildTaskSubagentCallSummaries(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly TaskSubagentCallSummary[] {

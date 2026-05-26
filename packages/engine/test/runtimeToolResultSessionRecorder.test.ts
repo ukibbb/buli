@@ -69,6 +69,44 @@ test("RuntimeToolResultSessionRecorder records a completed tool result with diag
   ]);
 });
 
+test("RuntimeToolResultSessionRecorder reports exact duplicate tool-result text", () => {
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: acceptedToolCallConversationSessionEntries,
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
+    conversationTurnId: "conversation-turn-1",
+    conversationHistory,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+  const toolResultText = "Working directory: /repo";
+
+  toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
+    toolCallId: "call_bash_1",
+    toolCallDetail: bashToolCallDetail,
+    toolResultText,
+  });
+  toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
+    toolCallId: "call_bash_2",
+    toolCallDetail: bashToolCallDetail,
+    toolResultText,
+  });
+
+  expect(diagnosticEvents[0]?.fields).not.toHaveProperty("duplicateToolResultTextPreviousCount");
+  expect(diagnosticEvents[1]?.fields).toMatchObject({
+    conversationTurnId: "conversation-turn-1",
+    entryKind: "completed_tool_result",
+    toolCallId: "call_bash_2",
+    toolName: "bash",
+    toolResultTextLength: toolResultText.length,
+    duplicateToolResultTextPreviousCount: 1,
+    duplicateToolResultTextSameToolNamePreviousCount: 1,
+    duplicateToolResultFirstToolCallId: "call_bash_1",
+    duplicateToolResultFirstToolName: "bash",
+    conversationSessionEntryCount: 4,
+  });
+});
+
 test("RuntimeToolResultSessionRecorder records a failed tool result with diagnostics", () => {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const conversationHistory = new InMemoryConversationHistory({

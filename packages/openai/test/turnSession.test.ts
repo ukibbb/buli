@@ -324,6 +324,76 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
   });
 });
 
+test("OpenAiProviderConversationTurn emits turn metadata, request timing, and replay-age diagnostics", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const toolResultText = "Command: pwd\nWorking directory: /tmp\nExit code: 0";
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}\n\n',
+      'data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"bash","arguments":"{\\"command\\":\\"pwd\\",\\"description\\":\\"Print working directory\\"}"}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n',
+    ]),
+    createOpenAiStepResponse([
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","delta":"Done"}\n\n',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":20,"output_tokens":4,"total_tokens":24}}}\n\n',
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    conversationTurnId: "conversation-turn-1",
+    providerTurnKind: "task_subagent",
+    parentTaskToolCallId: "call_task_1",
+    subagentName: "explore",
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Run pwd"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText,
+      });
+    }
+  }
+
+  const responseStepSummaries = diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.summary");
+  expect(responseStepSummaries).toHaveLength(2);
+  expect(responseStepSummaries[0]?.fields).toMatchObject({
+    conversationTurnId: "conversation-turn-1",
+    providerTurnKind: "task_subagent",
+    parentTaskToolCallId: "call_task_1",
+    subagentName: "explore",
+    compactionSource: null,
+    requestConstructionDurationMs: expect.any(Number),
+    requestObjectBuildDurationMs: expect.any(Number),
+    requestSerializationDurationMs: expect.any(Number),
+    requestInputItemCount: 1,
+    requestFunctionCallOutputTextLength: 0,
+    requestHistoricalFunctionCallOutputTextLength: 0,
+    requestCurrentTurnFunctionCallOutputTextLength: 0,
+  });
+  expect(responseStepSummaries[1]?.fields).toMatchObject({
+    providerTurnKind: "task_subagent",
+    requestInputItemCount: 3,
+    requestFunctionCallOutputTextLength: toolResultText.length,
+    requestHistoricalFunctionCallOutputTextLength: 0,
+    requestCurrentTurnFunctionCallOutputTextLength: toolResultText.length,
+  });
+  expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.summary")?.fields).toMatchObject({
+    conversationTurnId: "conversation-turn-1",
+    providerTurnKind: "task_subagent",
+    parentTaskToolCallId: "call_task_1",
+    subagentName: "explore",
+  });
+});
+
 test("OpenAiProviderConversationTurn captures replay items for a completed typed read tool turn", async () => {
   const requestBodies: string[] = [];
   const queuedResponses = [

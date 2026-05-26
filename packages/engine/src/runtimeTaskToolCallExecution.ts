@@ -165,6 +165,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
         streamTaskSubagentConversationProgress({
           conversationTurnProvider: input.conversationTurnProvider,
           conversationTurnId: input.conversationTurnId,
+          parentTaskToolCallId: input.toolCallId,
           taskToolCallRequest: input.taskToolCallRequest,
           selectedModelId: input.selectedModelId,
           ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
@@ -306,6 +307,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
 async function* streamTaskSubagentConversationProgress(input: {
   conversationTurnProvider: ConversationTurnProvider;
   conversationTurnId: string;
+  parentTaskToolCallId: string;
   taskToolCallRequest: TaskToolCallRequest;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
@@ -348,6 +350,9 @@ async function* streamTaskSubagentConversationProgress(input: {
     const subagentDefinition = resolveBuiltInSubagentDefinition(input.taskToolCallRequest.subagentName);
     const subagentProviderConversationTurn = input.conversationTurnProvider.startConversationTurn({
       conversationTurnId: input.conversationTurnId,
+      providerTurnKind: "task_subagent",
+      parentTaskToolCallId: input.parentTaskToolCallId,
+      subagentName: input.taskToolCallRequest.subagentName,
       systemPromptText: buildBuliExplorerSystemPrompt({
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionSnapshots: toProjectInstructionSnapshots(input.projectInstructionTracker.listProjectInstructionFiles()),

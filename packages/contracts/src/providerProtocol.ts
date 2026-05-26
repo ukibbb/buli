@@ -15,6 +15,7 @@ const ProviderProtocolBaseFields = {
 export const ProviderProtocolRequestIdSchema = z.string().min(1);
 export const ProviderProtocolTurnIdSchema = z.string().min(1);
 export const ProviderProtocolSequenceNumberSchema = z.number().int().positive();
+export const ProviderProtocolTurnKindSchema = z.enum(["assistant", "task_subagent", "conversation_compaction"]);
 export const ProviderProtocolCancellationReasonSchema = z.enum([
   "user_interrupted",
   "host_shutdown",
@@ -54,6 +55,10 @@ export const ProviderProtocolErrorSchema = z.strictObject({
 
 export const ProviderProtocolTurnRequestSchema = z.strictObject({
   conversationTurnId: z.string().min(1).optional(),
+  providerTurnKind: ProviderProtocolTurnKindSchema.optional(),
+  parentTaskToolCallId: z.string().min(1).optional(),
+  subagentName: z.string().min(1).optional(),
+  compactionSource: z.enum(["manual", "auto"]).optional(),
   systemPromptText: z.string(),
   conversationSessionEntries: z.array(ConversationSessionEntrySchema),
   selectedModelId: z.string().min(1),
@@ -163,6 +168,7 @@ export const ProviderProtocolFrameSchema = z.discriminatedUnion("frameKind", [
 export type ProviderProtocolRequestId = z.infer<typeof ProviderProtocolRequestIdSchema>;
 export type ProviderProtocolTurnId = z.infer<typeof ProviderProtocolTurnIdSchema>;
 export type ProviderProtocolSequenceNumber = z.infer<typeof ProviderProtocolSequenceNumberSchema>;
+export type ProviderProtocolTurnKind = z.infer<typeof ProviderProtocolTurnKindSchema>;
 export type ProviderProtocolCancellationReason = z.infer<typeof ProviderProtocolCancellationReasonSchema>;
 export type ProviderProtocolClosedReason = z.infer<typeof ProviderProtocolClosedReasonSchema>;
 export type ProviderProtocolAcknowledgedFrameKind = z.infer<typeof ProviderProtocolAcknowledgedFrameKindSchema>;

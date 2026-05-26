@@ -177,6 +177,10 @@ export function decideOpenAiResponseStepContinuationContextGuard(input: Readonly
 
 export class OpenAiProviderConversationTurn {
   readonly conversationTurnId: string | undefined;
+  readonly providerTurnKind: "assistant" | "task_subagent" | "conversation_compaction" | undefined;
+  readonly parentTaskToolCallId: string | undefined;
+  readonly subagentName: string | undefined;
+  readonly compactionSource: "manual" | "auto" | undefined;
   readonly endpoint: string;
   readonly fetchImpl: typeof fetch;
   readonly loadRequestHeaders: () => Promise<Headers>;
@@ -199,6 +203,7 @@ export class OpenAiProviderConversationTurn {
   readonly rateLimitCoordinator: OpenAiRateLimitCoordinator | undefined;
   readonly openAiResponsesRequestTemplate: OpenAiResponsesHttpRequestTemplate;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
+  readonly initialOpenAiConversationInputItemCount: number;
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
   readonly pendingToolResultSubmissionWaitByToolCallId: Map<string, PendingOpenAiToolResultSubmissionWait>;
@@ -206,6 +211,10 @@ export class OpenAiProviderConversationTurn {
 
   constructor(input: {
     conversationTurnId?: string;
+    providerTurnKind?: "assistant" | "task_subagent" | "conversation_compaction";
+    parentTaskToolCallId?: string;
+    subagentName?: string;
+    compactionSource?: "manual" | "auto";
     endpoint: string;
     fetchImpl: typeof fetch;
     loadRequestHeaders: () => Promise<Headers>;
@@ -229,6 +238,10 @@ export class OpenAiProviderConversationTurn {
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   }) {
     this.conversationTurnId = input.conversationTurnId;
+    this.providerTurnKind = input.providerTurnKind;
+    this.parentTaskToolCallId = input.parentTaskToolCallId;
+    this.subagentName = input.subagentName;
+    this.compactionSource = input.compactionSource;
     this.endpoint = input.endpoint;
     this.fetchImpl = input.fetchImpl;
     this.loadRequestHeaders = input.loadRequestHeaders;
@@ -272,6 +285,7 @@ export class OpenAiProviderConversationTurn {
       systemPromptText: input.systemPromptText,
     });
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
+    this.initialOpenAiConversationInputItemCount = this.openAiConversationInputItems.length;
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
     this.pendingToolResultSubmissionWaitByToolCallId = new Map<string, PendingOpenAiToolResultSubmissionWait>();
@@ -283,6 +297,7 @@ export class OpenAiProviderConversationTurn {
       this.clearPendingToolResultSubmissionWait(input.toolCallId, pendingSubmissionWait);
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.resolved_pending_wait", {
         conversationTurnId: this.conversationTurnId ?? null,
+        ...this.createProviderTurnDiagnosticFields(),
         toolCallId: input.toolCallId,
         toolResultTextLength: input.toolResultText.length,
         waitDurationMs: Date.now() - pendingSubmissionWait.waitStartedAtMs,
@@ -294,6 +309,7 @@ export class OpenAiProviderConversationTurn {
     this.queuedToolResultSubmissionByToolCallId.set(input.toolCallId, input);
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.queued", {
       conversationTurnId: this.conversationTurnId ?? null,
+      ...this.createProviderTurnDiagnosticFields(),
       toolCallId: input.toolCallId,
       toolResultTextLength: input.toolResultText.length,
       queuedToolResultSubmissionCount: this.queuedToolResultSubmissionByToolCallId.size,
@@ -369,19 +385,30 @@ export class OpenAiProviderConversationTurn {
       if (responseStepIndex === this.responseStepDiagnosticWarningThreshold) {
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.response_step_warning_threshold_reached", {
           conversationTurnId: this.conversationTurnId ?? null,
+          ...this.createProviderTurnDiagnosticFields(),
           responseStepIndex,
           responseStepDiagnosticWarningThreshold: this.responseStepDiagnosticWarningThreshold,
           requestedToolCallCount,
         });
       }
       const responseStepStartedAtMs = Date.now();
+      const responseStepRequestConstructionStartedAtMs = Date.now();
+      const responseStepRequestObjectBuildStartedAtMs = Date.now();
       const requestBody = createOpenAiResponsesHttpRequestBodyFromTemplate({
         requestTemplate: this.openAiResponsesRequestTemplate,
         openAiInputItems: this.openAiConversationInputItems,
       });
+      const responseStepRequestObjectBuildDurationMs = Date.now() - responseStepRequestObjectBuildStartedAtMs;
+      const responseStepRequestSerializationStartedAtMs = Date.now();
       const responseStepRequestBodyText = JSON.stringify(requestBody);
+      const responseStepRequestSerializationDurationMs = Date.now() - responseStepRequestSerializationStartedAtMs;
+      const responseStepRequestConstructionDurationMs = Date.now() - responseStepRequestConstructionStartedAtMs;
       const responseStepRequestBodyTextLength = responseStepRequestBodyText.length;
       const responseStepRequestInputItemCount = requestBody.input.length;
+      const requestFunctionCallOutputTextLengthByReplayAge = summarizeFunctionCallOutputTextLengthByReplayAge({
+        openAiInputItems: requestBody.input,
+        currentTurnFirstInputItemIndex: this.initialOpenAiConversationInputItemCount,
+      });
       totalRequestBodyTextLength += responseStepRequestBodyTextLength;
       maxRequestBodyTextLength = Math.max(maxRequestBodyTextLength, responseStepRequestBodyTextLength);
       maxRequestInputItemCount = Math.max(maxRequestInputItemCount, responseStepRequestInputItemCount);
@@ -402,6 +429,7 @@ export class OpenAiProviderConversationTurn {
       const responseStepStreamSlotWaitDurationMs = Date.now() - responseStepStreamSlotWaitStartedAtMs;
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.stream_slot_wait_finished", {
         conversationTurnId: this.conversationTurnId ?? null,
+        ...this.createProviderTurnDiagnosticFields(),
         responseStepIndex,
         durationMs: responseStepStreamSlotWaitDurationMs,
       });
@@ -422,7 +450,11 @@ export class OpenAiProviderConversationTurn {
           }),
           diagnosticLogger: this.diagnosticLogger,
           diagnosticEventPrefix: "response_step",
-          diagnosticFields: { conversationTurnId: this.conversationTurnId ?? null, responseStepIndex },
+          diagnosticFields: {
+            conversationTurnId: this.conversationTurnId ?? null,
+            ...this.createProviderTurnDiagnosticFields(),
+            responseStepIndex,
+          },
           requestAttemptDiagnosticFieldName: "responseStepRequestAttemptIndex",
           maximumRetryCountDiagnosticFieldName: "maxResponseStepHttpRetryCount",
           debugLogTitlePrefix: "OpenAI response-step",
@@ -447,6 +479,7 @@ export class OpenAiProviderConversationTurn {
 
           logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
             conversationTurnId: this.conversationTurnId ?? null,
+            ...this.createProviderTurnDiagnosticFields(),
             responseStepIndex,
             eventType: responseRetryResult.value.type,
             ...summarizeProviderStreamEventForDiagnostics(responseRetryResult.value),
@@ -466,6 +499,7 @@ export class OpenAiProviderConversationTurn {
             const failedResponseDebugPayload = await createFailedResponseDebugPayload(response.clone());
             logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_failed", {
               conversationTurnId: this.conversationTurnId ?? null,
+              ...this.createProviderTurnDiagnosticFields(),
               responseStepIndex,
               responseStepRequestAttemptIndex: responseRetryResult.value.requestAttemptIndex,
               ...failedResponseDebugPayload,
@@ -492,6 +526,7 @@ export class OpenAiProviderConversationTurn {
           if (nextStepItem.value.type === "completed" || nextStepItem.value.type === "incomplete") {
             logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.terminal_usage_received", {
               conversationTurnId: this.conversationTurnId ?? null,
+              ...this.createProviderTurnDiagnosticFields(),
               responseStepIndex,
               eventType: nextStepItem.value.type,
               ...summarizeTokenUsageForDiagnostics(nextStepItem.value.usage),
@@ -508,6 +543,7 @@ export class OpenAiProviderConversationTurn {
             });
             logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
               conversationTurnId: this.conversationTurnId ?? null,
+              ...this.createProviderTurnDiagnosticFields(),
               responseStepIndex,
               eventType: nextStepItem.value.type,
               ...summarizeProviderStreamEventForDiagnostics(nextStepItem.value),
@@ -518,6 +554,7 @@ export class OpenAiProviderConversationTurn {
 
           logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_event.yielded", {
             conversationTurnId: this.conversationTurnId ?? null,
+            ...this.createProviderTurnDiagnosticFields(),
             responseStepIndex,
             eventType: nextStepItem.value.type,
             ...summarizeProviderStreamEventForDiagnostics(nextStepItem.value),
@@ -534,6 +571,7 @@ export class OpenAiProviderConversationTurn {
       }
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.finished", {
         conversationTurnId: this.conversationTurnId ?? null,
+        ...this.createProviderTurnDiagnosticFields(),
         responseStepIndex,
         terminalKind: terminalState.terminalKind,
         durationMs: Date.now() - responseStepStartedAtMs,
@@ -562,6 +600,7 @@ export class OpenAiProviderConversationTurn {
             invalidFunctionNames: invalidFunctionCallIntents.map((invalidFunctionCallIntent) => invalidFunctionCallIntent.functionName),
             responseStepIndex,
             conversationTurnId: this.conversationTurnId ?? null,
+            ...this.createProviderTurnDiagnosticFields(),
             responseOutputItemCount: terminalState.responseOutputItems.length,
             continuationInputItemCount: responseReplayItems.continuationInputItems.length,
             providerTurnReplayInputItemCount: responseReplayItems.providerTurnReplayInputItems.length,
@@ -628,6 +667,7 @@ export class OpenAiProviderConversationTurn {
           const toolResultDebugSummary = {
             responseStepIndex,
             conversationTurnId: this.conversationTurnId ?? null,
+            ...this.createProviderTurnDiagnosticFields(),
             functionCallCount: providerFunctionCallIntents.length,
             toolCallCount: toolResultSubmissions.length,
             invalidFunctionCallCount: invalidFunctionCallIntents.length,
@@ -642,6 +682,7 @@ export class OpenAiProviderConversationTurn {
         this.providerTurnReplayInputItems.push(...functionCallOutputInputItems);
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.summary", {
           conversationTurnId: this.conversationTurnId ?? null,
+          ...this.createProviderTurnDiagnosticFields(),
           responseStepIndex,
           terminalKind: terminalState.terminalKind,
           durationMs: Date.now() - responseStepStartedAtMs,
@@ -650,9 +691,14 @@ export class OpenAiProviderConversationTurn {
           streamDurationMs: responseStepStreamDurationMs,
           toolResultWaitDurationMs: responseStepToolResultWaitDurationMs,
           requestAttemptCount: responseStepRequestAttemptCount,
+          requestConstructionDurationMs: responseStepRequestConstructionDurationMs,
+          requestObjectBuildDurationMs: responseStepRequestObjectBuildDurationMs,
+          requestSerializationDurationMs: responseStepRequestSerializationDurationMs,
           requestBodyTextLength: responseStepRequestBodyTextLength,
           requestInputItemCount: responseStepRequestInputItemCount,
-          requestFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(requestBody.input),
+          requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
+          requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
+          requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
           responseOutputItemCount: terminalState.responseOutputItems.length,
           toolCallCount: requestedToolCalls.length,
           invalidFunctionCallCount: invalidFunctionCallIntents.length,
@@ -696,6 +742,7 @@ export class OpenAiProviderConversationTurn {
         }
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.summary", {
           conversationTurnId: this.conversationTurnId ?? null,
+          ...this.createProviderTurnDiagnosticFields(),
           responseStepIndex,
           terminalKind: terminalState.terminalKind,
           durationMs: Date.now() - responseStepStartedAtMs,
@@ -704,9 +751,14 @@ export class OpenAiProviderConversationTurn {
           streamDurationMs: responseStepStreamDurationMs,
           toolResultWaitDurationMs: 0,
           requestAttemptCount: responseStepRequestAttemptCount,
+          requestConstructionDurationMs: responseStepRequestConstructionDurationMs,
+          requestObjectBuildDurationMs: responseStepRequestObjectBuildDurationMs,
+          requestSerializationDurationMs: responseStepRequestSerializationDurationMs,
           requestBodyTextLength: responseStepRequestBodyTextLength,
           requestInputItemCount: responseStepRequestInputItemCount,
-          requestFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(requestBody.input),
+          requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
+          requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
+          requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
           responseOutputItemCount: 0,
           toolCallCount: 0,
           invalidFunctionCallCount: 0,
@@ -722,6 +774,7 @@ export class OpenAiProviderConversationTurn {
         };
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.completed", {
           conversationTurnId: this.conversationTurnId ?? null,
+          ...this.createProviderTurnDiagnosticFields(),
           responseStepCount: responseStepIndex,
           requestedToolCallCount,
           durationMs: Date.now() - turnStartedAtMs,
@@ -734,6 +787,7 @@ export class OpenAiProviderConversationTurn {
         });
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.summary", {
           conversationTurnId: this.conversationTurnId ?? null,
+          ...this.createProviderTurnDiagnosticFields(),
           terminalKind: "completed",
           responseStepCount: responseStepIndex,
           requestedToolCallCount,
@@ -756,6 +810,7 @@ export class OpenAiProviderConversationTurn {
       }
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.summary", {
         conversationTurnId: this.conversationTurnId ?? null,
+        ...this.createProviderTurnDiagnosticFields(),
         responseStepIndex,
         terminalKind: terminalState.terminalKind,
         durationMs: Date.now() - responseStepStartedAtMs,
@@ -764,9 +819,14 @@ export class OpenAiProviderConversationTurn {
         streamDurationMs: responseStepStreamDurationMs,
         toolResultWaitDurationMs: 0,
         requestAttemptCount: responseStepRequestAttemptCount,
+        requestConstructionDurationMs: responseStepRequestConstructionDurationMs,
+        requestObjectBuildDurationMs: responseStepRequestObjectBuildDurationMs,
+        requestSerializationDurationMs: responseStepRequestSerializationDurationMs,
         requestBodyTextLength: responseStepRequestBodyTextLength,
         requestInputItemCount: responseStepRequestInputItemCount,
-        requestFunctionCallOutputTextLength: sumFunctionCallOutputTextLength(requestBody.input),
+        requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
+        requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
+        requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
         responseOutputItemCount: 0,
         toolCallCount: 0,
         invalidFunctionCallCount: 0,
@@ -814,6 +874,7 @@ export class OpenAiProviderConversationTurn {
   }): void {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.continuation_context_guard_triggered", {
       conversationTurnId: this.conversationTurnId ?? null,
+      ...this.createProviderTurnDiagnosticFields(),
       responseStepIndex: input.responseStepIndex,
       reason: input.continuationContextGuardDecision.reason,
       contextTokensUsed: input.continuationContextGuardDecision.contextTokensUsed,
@@ -840,6 +901,7 @@ export class OpenAiProviderConversationTurn {
   }): void {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.incomplete", {
       conversationTurnId: this.conversationTurnId ?? null,
+      ...this.createProviderTurnDiagnosticFields(),
       responseStepCount: input.responseStepIndex,
       requestedToolCallCount: input.requestedToolCallCount,
       durationMs: Date.now() - input.turnStartedAtMs,
@@ -853,6 +915,7 @@ export class OpenAiProviderConversationTurn {
     });
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.summary", {
       conversationTurnId: this.conversationTurnId ?? null,
+      ...this.createProviderTurnDiagnosticFields(),
       terminalKind: "incomplete",
       responseStepCount: input.responseStepIndex,
       requestedToolCallCount: input.requestedToolCallCount,
@@ -880,6 +943,7 @@ export class OpenAiProviderConversationTurn {
     const requestDebugSummary = summarizeOpenAiResponsesRequestForDiagnostics(input);
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", {
       conversationTurnId: this.conversationTurnId ?? null,
+      ...this.createProviderTurnDiagnosticFields(),
       ...requestDebugSummary,
     });
     await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
@@ -895,6 +959,7 @@ export class OpenAiProviderConversationTurn {
       this.queuedToolResultSubmissionByToolCallId.delete(toolCallId);
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.consumed_queued", {
         conversationTurnId: this.conversationTurnId ?? null,
+        ...this.createProviderTurnDiagnosticFields(),
         toolCallId,
         toolResultTextLength: queuedToolResultSubmission.toolResultText.length,
         waitDurationMs: 0,
@@ -908,6 +973,7 @@ export class OpenAiProviderConversationTurn {
 
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "tool_result_submission.wait_started", {
       conversationTurnId: this.conversationTurnId ?? null,
+      ...this.createProviderTurnDiagnosticFields(),
       toolCallId,
     });
     const waitStartedAtMs = Date.now();
@@ -958,6 +1024,7 @@ export class OpenAiProviderConversationTurn {
     ) {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.tool_call_warning_threshold_reached", {
         conversationTurnId: this.conversationTurnId ?? null,
+        ...this.createProviderTurnDiagnosticFields(),
         responseStepIndex: input.responseStepIndex,
         requestedToolCallCount: input.requestedToolCallCount,
         toolCallDiagnosticWarningThreshold: this.toolCallDiagnosticWarningThreshold,
@@ -977,6 +1044,7 @@ export class OpenAiProviderConversationTurn {
 
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.repeated_tool_call_pattern_observed", {
         conversationTurnId: this.conversationTurnId ?? null,
+        ...this.createProviderTurnDiagnosticFields(),
         responseStepIndex: input.responseStepIndex,
         requestedToolCallCount: input.requestedToolCallCount,
         toolCallPatternObservationCount,
@@ -984,6 +1052,15 @@ export class OpenAiProviderConversationTurn {
         ...toolCallPatternDiagnosticFields,
       });
     }
+  }
+
+  private createProviderTurnDiagnosticFields(): BuliDiagnosticLogFields {
+    return {
+      providerTurnKind: this.providerTurnKind ?? null,
+      parentTaskToolCallId: this.parentTaskToolCallId ?? null,
+      subagentName: this.subagentName ?? null,
+      compactionSource: this.compactionSource ?? null,
+    };
   }
 }
 
@@ -1241,6 +1318,31 @@ function sumFunctionCallOutputTextLength(
 
     return totalTextLength + openAiInputItem.output.length;
   }, 0);
+}
+
+function summarizeFunctionCallOutputTextLengthByReplayAge(input: {
+  openAiInputItems: readonly OpenAiConversationInputItem[];
+  currentTurnFirstInputItemIndex: number;
+}): { totalTextLength: number; historicalTextLength: number; currentTurnTextLength: number } {
+  let historicalTextLength = 0;
+  let currentTurnTextLength = 0;
+  for (const [inputItemIndex, openAiInputItem] of input.openAiInputItems.entries()) {
+    if (!("type" in openAiInputItem) || openAiInputItem.type !== "function_call_output") {
+      continue;
+    }
+
+    if (inputItemIndex < input.currentTurnFirstInputItemIndex) {
+      historicalTextLength += openAiInputItem.output.length;
+    } else {
+      currentTurnTextLength += openAiInputItem.output.length;
+    }
+  }
+
+  return {
+    totalTextLength: historicalTextLength + currentTurnTextLength,
+    historicalTextLength,
+    currentTurnTextLength,
+  };
 }
 
 function createInvalidFunctionCallOutputText(invalidFunctionCallIntent: OpenAiInvalidFunctionCallIntent): string {

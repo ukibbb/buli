@@ -115,7 +115,10 @@ export class ConversationSessionCompactor {
     });
     try {
       const compactionPromptEntry = createConversationCompactionPromptSessionEntry();
+      const compactionSource = input.compactionSource ?? "manual";
       const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
+        providerTurnKind: "conversation_compaction",
+        compactionSource,
         systemPromptText: buildConversationCompactionSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
         conversationSessionEntries: [
           ...compactionRequestProjection.conversationSessionEntries,
@@ -142,7 +145,7 @@ export class ConversationSessionCompactor {
         compactedEntryCount: compactionResult.compactedEntryCount,
         retainedRecentConversationSessionEntryCount:
           selectedConversationEntriesForCompaction.retainedRecentConversationSessionEntryCount,
-        compactionSource: input.compactionSource ?? "manual",
+        compactionSource,
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.completed", {
         compactedEntryCount: compactionResult.compactedEntryCount,

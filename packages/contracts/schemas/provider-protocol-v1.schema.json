@@ -45,6 +45,29 @@
               "type": "string",
               "minLength": 1
             },
+            "providerTurnKind": {
+              "type": "string",
+              "enum": [
+                "assistant",
+                "task_subagent",
+                "conversation_compaction"
+              ]
+            },
+            "parentTaskToolCallId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "subagentName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "compactionSource": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "auto"
+              ]
+            },
             "systemPromptText": {
               "type": "string"
             },

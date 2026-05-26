@@ -626,6 +626,8 @@ test("AssistantConversationRuntime exposes compaction status while compacting", 
   providerTurn.allowCompletion.resolve();
   await compactionPromise;
 
+  expect(provider.startedTurnRequests[0]?.providerTurnKind).toBe("conversation_compaction");
+  expect(provider.startedTurnRequests[0]?.compactionSource).toBe("manual");
   expect(runtime.readConversationTurnRuntimeStatus()).toEqual({ statusKind: "idle" });
 });
 
@@ -714,6 +716,7 @@ test("AssistantConversationRuntime emits a message-part turn for streamed text",
   );
 
   expect(provider.startedTurnRequests).toHaveLength(1);
+  expect(provider.startedTurnRequests[0]?.providerTurnKind).toBe("assistant");
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toMatchObject([
     { entryKind: "user_prompt", modelFacingPromptText: "Say hello", assistantOperatingMode: "understand" },
   ]);
@@ -3448,6 +3451,10 @@ test("AssistantConversationRuntime runs task as an isolated read-only child turn
   );
 
   expect(provider.startedTurnRequests).toHaveLength(2);
+  expect(provider.startedTurnRequests[0]?.providerTurnKind).toBe("assistant");
+  expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
+  expect(provider.startedTurnRequests[1]?.parentTaskToolCallId).toBe("call_explore_1");
+  expect(provider.startedTurnRequests[1]?.subagentName).toBe("explore");
   expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer target");
@@ -3584,6 +3591,10 @@ test("AssistantConversationRuntime runs task as a built-in Explorer subagent", a
   );
 
   expect(provider.startedTurnRequests).toHaveLength(2);
+  expect(provider.startedTurnRequests[0]?.providerTurnKind).toBe("assistant");
+  expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
+  expect(provider.startedTurnRequests[1]?.parentTaskToolCallId).toBe("call_task_1");
+  expect(provider.startedTurnRequests[1]?.subagentName).toBe("explore");
   expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(taskSubagentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Task target");

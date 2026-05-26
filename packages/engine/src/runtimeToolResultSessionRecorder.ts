@@ -2,6 +2,11 @@ import type { BuliDiagnosticLogger, ToolCallDetail, WorkspacePatch } from "@buli
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 
+type ToolResultConversationSessionEntry = Extract<
+  InMemoryConversationHistory["conversationSessionEntries"][number],
+  { entryKind: "completed_tool_result" | "failed_tool_result" | "denied_tool_result" }
+>;
+
 type CompletedToolResultSessionEntryInput = {
   toolCallId: string;
   toolCallDetail: ToolCallDetail;
@@ -36,6 +41,10 @@ export class RuntimeToolResultSessionRecorder {
   }
 
   appendCompletedToolResultSessionEntry(input: CompletedToolResultSessionEntryInput): void {
+    const duplicateToolResultDiagnosticFields = this.createDuplicateToolResultDiagnosticFields({
+      toolCallDetail: input.toolCallDetail,
+      toolResultText: input.toolResultText,
+    });
     this.conversationHistory.appendConversationSessionEntry({
       entryKind: "completed_tool_result",
       toolCallId: input.toolCallId,
@@ -48,11 +57,16 @@ export class RuntimeToolResultSessionRecorder {
       toolCallId: input.toolCallId,
       toolName: input.toolCallDetail.toolName,
       toolResultTextLength: input.toolResultText.length,
+      ...duplicateToolResultDiagnosticFields,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 
   appendFailedToolResultSessionEntry(input: FailedToolResultSessionEntryInput): void {
+    const duplicateToolResultDiagnosticFields = this.createDuplicateToolResultDiagnosticFields({
+      toolCallDetail: input.toolCallDetail,
+      toolResultText: input.toolResultText,
+    });
     this.conversationHistory.appendConversationSessionEntry({
       entryKind: "failed_tool_result",
       toolCallId: input.toolCallId,
@@ -66,12 +80,17 @@ export class RuntimeToolResultSessionRecorder {
       toolCallId: input.toolCallId,
       toolName: input.toolCallDetail.toolName,
       toolResultTextLength: input.toolResultText.length,
+      ...duplicateToolResultDiagnosticFields,
       failureExplanation: input.failureExplanation,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
 
   appendDeniedToolResultSessionEntry(input: DeniedToolResultSessionEntryInput): void {
+    const duplicateToolResultDiagnosticFields = this.createDuplicateToolResultDiagnosticFields({
+      toolCallDetail: input.toolCallDetail,
+      toolResultText: input.toolResultText,
+    });
     this.conversationHistory.appendConversationSessionEntry({
       entryKind: "denied_tool_result",
       toolCallId: input.toolCallId,
@@ -85,6 +104,7 @@ export class RuntimeToolResultSessionRecorder {
       toolCallId: input.toolCallId,
       toolName: input.toolCallDetail.toolName,
       toolResultTextLength: input.toolResultText.length,
+      ...duplicateToolResultDiagnosticFields,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
@@ -103,4 +123,50 @@ export class RuntimeToolResultSessionRecorder {
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
+
+  private createDuplicateToolResultDiagnosticFields(input: {
+    toolCallDetail: ToolCallDetail;
+    toolResultText: string;
+  }): Record<string, string | number> {
+    if (!this.diagnosticLogger) {
+      return {};
+    }
+
+    let duplicateToolResultTextPreviousCount = 0;
+    let duplicateToolResultTextSameToolNamePreviousCount = 0;
+    let firstDuplicateToolResultEntry: ToolResultConversationSessionEntry | undefined;
+    for (const conversationSessionEntry of this.conversationHistory.conversationSessionEntries) {
+      if (
+        !isToolResultConversationSessionEntry(conversationSessionEntry) ||
+        conversationSessionEntry.toolResultText !== input.toolResultText
+      ) {
+        continue;
+      }
+
+      duplicateToolResultTextPreviousCount += 1;
+      if (conversationSessionEntry.toolCallDetail.toolName === input.toolCallDetail.toolName) {
+        duplicateToolResultTextSameToolNamePreviousCount += 1;
+      }
+      firstDuplicateToolResultEntry ??= conversationSessionEntry;
+    }
+
+    if (!firstDuplicateToolResultEntry) {
+      return {};
+    }
+
+    return {
+      duplicateToolResultTextPreviousCount,
+      duplicateToolResultTextSameToolNamePreviousCount,
+      duplicateToolResultFirstToolCallId: firstDuplicateToolResultEntry.toolCallId,
+      duplicateToolResultFirstToolName: firstDuplicateToolResultEntry.toolCallDetail.toolName,
+    };
+  }
+}
+
+function isToolResultConversationSessionEntry(
+  conversationSessionEntry: InMemoryConversationHistory["conversationSessionEntries"][number],
+): conversationSessionEntry is ToolResultConversationSessionEntry {
+  return conversationSessionEntry.entryKind === "completed_tool_result" ||
+    conversationSessionEntry.entryKind === "failed_tool_result" ||
+    conversationSessionEntry.entryKind === "denied_tool_result";
 }

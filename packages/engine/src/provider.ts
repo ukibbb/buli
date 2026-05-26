@@ -35,12 +35,18 @@ export type ConversationCompactionResult = {
   compactedEntryCount: number;
 };
 
+export type ProviderConversationTurnKind = "assistant" | "task_subagent" | "conversation_compaction";
+
 export interface ConversationCompactionRunner {
   compactConversationSession(input: ConversationCompactionRequest): Promise<ConversationCompactionResult>;
 }
 
 export type ProviderConversationTurnRequest = {
   conversationTurnId?: string;
+  providerTurnKind?: ProviderConversationTurnKind;
+  parentTaskToolCallId?: string;
+  subagentName?: string;
+  compactionSource?: "manual" | "auto";
   systemPromptText: string;
   conversationSessionEntries: readonly ConversationSessionEntry[];
   selectedModelId: string;

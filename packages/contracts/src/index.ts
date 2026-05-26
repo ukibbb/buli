@@ -337,6 +337,7 @@ export {
   ProviderProtocolRequestIdSchema,
   ProviderProtocolSequenceNumberSchema,
   ProviderProtocolTurnIdSchema,
+  ProviderProtocolTurnKindSchema,
   ProviderProtocolTurnRequestSchema,
   createProviderProtocolJsonSchema,
   decodeProviderProtocolFrameFromJsonLine,
@@ -378,6 +379,7 @@ export type {
   ProviderProtocolRequestId,
   ProviderProtocolSequenceNumber,
   ProviderProtocolTurnId,
+  ProviderProtocolTurnKind,
   ProviderProtocolTurnRequest,
 } from "./providerProtocol.ts";
 export {

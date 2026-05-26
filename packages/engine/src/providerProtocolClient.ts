@@ -603,6 +603,10 @@ function createProviderProtocolHostListModelsFrame(input: {
 function createProviderProtocolTurnRequest(input: ProviderConversationTurnRequest): ProviderProtocolTurnRequest {
   return {
     ...(input.conversationTurnId !== undefined ? { conversationTurnId: input.conversationTurnId } : {}),
+    ...(input.providerTurnKind !== undefined ? { providerTurnKind: input.providerTurnKind } : {}),
+    ...(input.parentTaskToolCallId !== undefined ? { parentTaskToolCallId: input.parentTaskToolCallId } : {}),
+    ...(input.subagentName !== undefined ? { subagentName: input.subagentName } : {}),
+    ...(input.compactionSource !== undefined ? { compactionSource: input.compactionSource } : {}),
     systemPromptText: input.systemPromptText,
     conversationSessionEntries: [...input.conversationSessionEntries],
     selectedModelId: input.selectedModelId,

@@ -88,6 +88,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     ...(input.conversationTurnInput.conversationTurnId !== undefined
       ? { conversationTurnId: input.conversationTurnInput.conversationTurnId }
       : {}),
+    providerTurnKind: "assistant",
     systemPromptText: buildBuliSystemPrompt({
       workspaceRootPath: input.workspaceRootPath,
       assistantOperatingMode: input.assistantOperatingMode,

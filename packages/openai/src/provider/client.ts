@@ -19,6 +19,10 @@ import { OpenAiProviderConversationTurn } from "./turnSession.ts";
 
 export type OpenAiConversationTurnRequest = {
   conversationTurnId?: string;
+  providerTurnKind?: "assistant" | "task_subagent" | "conversation_compaction";
+  parentTaskToolCallId?: string;
+  subagentName?: string;
+  compactionSource?: "manual" | "auto";
   systemPromptText: string;
   conversationSessionEntries: readonly ConversationSessionEntry[];
   selectedModelId: string;
@@ -152,6 +156,10 @@ export class OpenAiProvider {
   startConversationTurn(input: OpenAiConversationTurnRequest): OpenAiProviderConversationTurn {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.created", {
       conversationTurnId: input.conversationTurnId ?? null,
+      providerTurnKind: input.providerTurnKind ?? null,
+      parentTaskToolCallId: input.parentTaskToolCallId ?? null,
+      subagentName: input.subagentName ?? null,
+      compactionSource: input.compactionSource ?? null,
       selectedModelId: input.selectedModelId,
       selectedReasoningEffort: input.selectedReasoningEffort ?? null,
       conversationSessionEntryCount: input.conversationSessionEntries.length,
@@ -163,6 +171,11 @@ export class OpenAiProvider {
       loadRequestHeaders: async () => {
         const auth = await this.loadCachedOpenAiAuth({ abortSignal: input.abortSignal });
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "auth.loaded_for_stream", {
+          providerTurnKind: input.providerTurnKind ?? null,
+          parentTaskToolCallId: input.parentTaskToolCallId ?? null,
+          subagentName: input.subagentName ?? null,
+          compactionSource: input.compactionSource ?? null,
+          conversationTurnId: input.conversationTurnId ?? null,
           hasAccountId: auth.accountId !== undefined,
           expiresInMs: Math.max(0, auth.expiresAt - Date.now()),
         });
@@ -170,6 +183,11 @@ export class OpenAiProvider {
         const headers = createRequestHeaders(auth, "text/event-stream");
         headers.set("Content-Type", "application/json");
         logOpenAiDiagnosticEvent(this.diagnosticLogger, "request_headers.created", {
+          providerTurnKind: input.providerTurnKind ?? null,
+          parentTaskToolCallId: input.parentTaskToolCallId ?? null,
+          subagentName: input.subagentName ?? null,
+          compactionSource: input.compactionSource ?? null,
+          conversationTurnId: input.conversationTurnId ?? null,
           accept: headers.get("accept") ?? null,
           contentType: headers.get("content-type") ?? null,
           originator: headers.get("originator") ?? null,
@@ -180,6 +198,10 @@ export class OpenAiProvider {
         return headers;
       },
       selectedModelId: input.selectedModelId,
+      ...(input.providerTurnKind ? { providerTurnKind: input.providerTurnKind } : {}),
+      ...(input.parentTaskToolCallId ? { parentTaskToolCallId: input.parentTaskToolCallId } : {}),
+      ...(input.subagentName ? { subagentName: input.subagentName } : {}),
+      ...(input.compactionSource ? { compactionSource: input.compactionSource } : {}),
       ...(input.conversationTurnId ? { conversationTurnId: input.conversationTurnId } : {}),
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),

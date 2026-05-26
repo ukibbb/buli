@@ -124,14 +124,21 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       eventName: "response_step.summary",
       fields: {
         conversationTurnId: "conversation-turn-1",
+        providerTurnKind: "assistant",
         responseStepIndex: 1,
         terminalKind: "tool_calls_requested",
         durationMs: 20,
         httpWaitDurationMs: 8,
         streamDurationMs: 10,
         toolResultWaitDurationMs: 2,
+        requestConstructionDurationMs: 3,
+        requestObjectBuildDurationMs: 1,
+        requestSerializationDurationMs: 2,
         requestBodyTextLength: 300,
+        requestInputItemCount: 2,
         requestFunctionCallOutputTextLength: 90,
+        requestHistoricalFunctionCallOutputTextLength: 30,
+        requestCurrentTurnFunctionCallOutputTextLength: 60,
         toolResultTextLength: 120,
         inputTokens: 40,
         cacheReadTokens: 1,
@@ -146,19 +153,66 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       eventName: "response_step.summary",
       fields: {
         conversationTurnId: "conversation-turn-1",
+        providerTurnKind: "task_subagent",
+        parentTaskToolCallId: "tool-call-task",
+        subagentName: "explore",
         responseStepIndex: 2,
         terminalKind: "message_completed",
         durationMs: 50,
         httpWaitDurationMs: 30,
         streamDurationMs: 15,
         toolResultWaitDurationMs: 5,
+        requestConstructionDurationMs: 4,
+        requestObjectBuildDurationMs: 1,
+        requestSerializationDurationMs: 3,
         requestBodyTextLength: 900,
+        requestInputItemCount: 6,
         requestFunctionCallOutputTextLength: 420,
+        requestHistoricalFunctionCallOutputTextLength: 420,
+        requestCurrentTurnFunctionCallOutputTextLength: 0,
         toolResultTextLength: 300,
         inputTokens: 140,
         cacheReadTokens: 2,
         cacheWriteTokens: 1,
         requestAttemptCount: 2,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_015,
+      subsystem: "openai",
+      eventName: "provider_turn.summary",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        providerTurnKind: "assistant",
+        terminalKind: "completed",
+        responseStepCount: 1,
+        requestedToolCallCount: 1,
+        durationMs: 20,
+        maxRequestBodyTextLength: 300,
+        totalToolResultTextLength: 120,
+        inputTokens: 40,
+        outputTokens: 6,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_015,
+      subsystem: "openai",
+      eventName: "provider_turn.summary",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        providerTurnKind: "task_subagent",
+        parentTaskToolCallId: "tool-call-task",
+        subagentName: "explore",
+        terminalKind: "completed",
+        responseStepCount: 1,
+        requestedToolCallCount: 0,
+        durationMs: 50,
+        maxRequestBodyTextLength: 900,
+        totalToolResultTextLength: 300,
+        inputTokens: 140,
+        outputTokens: 12,
       },
     }),
     JSON.stringify({
@@ -173,6 +227,24 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         maxResponseStepHttpRetryCount: 2,
         retryDelayMilliseconds: 500,
         transportErrorName: "TimeoutError",
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_021,
+      subsystem: "engine",
+      eventName: "conversation_history.entry_appended",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        entryKind: "completed_tool_result",
+        toolCallId: "tool-call-read-many-duplicate",
+        toolName: "read_many",
+        toolResultTextLength: 64,
+        duplicateToolResultTextPreviousCount: 1,
+        duplicateToolResultTextSameToolNamePreviousCount: 1,
+        duplicateToolResultFirstToolCallId: "tool-call-read-many",
+        duplicateToolResultFirstToolName: "read_many",
+        conversationSessionEntryCount: 12,
       },
     }),
     JSON.stringify({
@@ -413,12 +485,20 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
 
   expect(reportMarkdown).toContain("## OpenAI Response Steps");
   expect(reportMarkdown).toContain("Total cache read tokens: 3");
+  expect(reportMarkdown).toContain("## OpenAI Provider Turn Kind Attribution");
+  expect(reportMarkdown).toContain("task_subagent");
   expect(reportMarkdown).toContain("## OpenAI Retries And Timeouts");
   expect(reportMarkdown).toContain("Timeout transport retries scheduled: 1");
   expect(reportMarkdown).toContain("Transport retry error names: TimeoutError (1)");
+  expect(reportMarkdown).toContain("## OpenAI Request Construction");
+  expect(reportMarkdown).toContain("Total request construction: 7 ms");
+  expect(reportMarkdown).toContain("## OpenAI Replay Input Age");
+  expect(reportMarkdown).toContain("Historical function-output text: 450 B");
   expect(reportMarkdown).toContain("## Tool Attribution");
   expect(reportMarkdown).toContain("read_many");
   expect(reportMarkdown).toContain("Total approval wait: 13 ms");
+  expect(reportMarkdown).toContain("## Tool Result Duplication");
+  expect(reportMarkdown).toContain("Duplicate result entries: 1");
   expect(reportMarkdown).toContain("## Task Subagent Attribution");
   expect(reportMarkdown).toContain("Per-call task execution total: 89 ms");
   expect(reportMarkdown).toContain("Per-call parent tool-result wait total: 21 ms");
