@@ -90,6 +90,18 @@ const assistantMarkdownCalloutSyntaxStyleByKind: Record<AssistantMarkdownCallout
 };
 
 const defaultAssistantMarkdownTerminalColumnCount = 80;
+const assistantMarkdownTableOptions = {
+  borders: true,
+  borderColor: chatScreenTheme.borderSubtle,
+  borderStyle: "single",
+  cellPadding: 0,
+  columnFitter: "balanced",
+  outerBorder: true,
+  selectable: true,
+  style: "grid",
+  widthMode: "content",
+  wrapMode: "word",
+} satisfies NonNullable<MarkdownOptions["tableOptions"]>;
 
 function createAssistantMarkdownPlainTextChunk(input: {
   text: string;
@@ -156,18 +168,7 @@ function AssistantMarkdownTextSection(props: {
       renderNode={props.renderNode}
       streaming={props.isStreaming}
       syntaxStyle={assistantMarkdownSyntaxStyle}
-      tableOptions={{
-        borders: true,
-        borderColor: chatScreenTheme.borderSubtle,
-        borderStyle: "single",
-        cellPadding: 0,
-        columnFitter: "balanced",
-        outerBorder: true,
-        selectable: true,
-        style: "grid",
-        widthMode: "content",
-        wrapMode: "word",
-      }}
+      tableOptions={assistantMarkdownTableOptions}
       treeSitterClient={openTuiSharedTreeSitterClient}
       width="100%"
     />
@@ -180,6 +181,21 @@ function AssistantMarkdownParagraphBlock(props: { paragraphText: string }): Reac
       <text fg={chatScreenTheme.textPrimary} wrapMode="word">
         <AssistantMarkdownInlineText inlineText={props.paragraphText} />
       </text>
+    </box>
+  );
+}
+
+function AssistantMarkdownStreamingTailBlock(props: { streamingTailText: string }): ReactNode {
+  const streamingTailLines = props.streamingTailText.split("\n");
+  return (
+    <box flexDirection="column" marginBottom={1} width="100%">
+      {streamingTailLines.map((streamingTailLine, index) => (
+        <box key={`assistant-streaming-tail-line-${index}`} width="100%">
+          <text fg={chatScreenTheme.textPrimary} wrapMode="word">
+            <AssistantMarkdownInlineText inlineText={streamingTailLine} />
+          </text>
+        </box>
+      ))}
     </box>
   );
 }
@@ -245,18 +261,7 @@ function AssistantMarkdownTableBlock(props: {
         renderNode={props.renderNode}
         streaming={props.isStreaming}
         syntaxStyle={assistantMarkdownSyntaxStyle}
-        tableOptions={{
-          borders: true,
-          borderColor: chatScreenTheme.borderSubtle,
-          borderStyle: "single",
-          cellPadding: 0,
-          columnFitter: "balanced",
-          outerBorder: true,
-          selectable: true,
-          style: "grid",
-          widthMode: "content",
-          wrapMode: "word",
-        }}
+        tableOptions={assistantMarkdownTableOptions}
         treeSitterClient={openTuiSharedTreeSitterClient}
         width="100%"
       />
@@ -499,9 +504,6 @@ function AssistantCodeFenceBlock(props: {
   codeFenceInfo: AssistantMarkdownCodeFenceInfo;
   codeFenceText: string;
 }): ReactNode {
-  const codeFenceLines = props.codeFenceText.split("\n");
-  const visibleCodeFenceLines = codeFenceLines.length === 1 && codeFenceLines[0] === "" ? [] : codeFenceLines;
-  const codeBlockLines = visibleCodeFenceLines.map((lineText) => ({ lineText }));
   return (
     <box flexDirection="column" marginBottom={1} width="100%">
       {props.codeFenceInfo.codeFenceDisplayLabel ? (
@@ -511,7 +513,7 @@ function AssistantCodeFenceBlock(props: {
       ) : null}
       <FencedCodeBlock
         variant="embedded"
-        codeLines={codeBlockLines}
+        codeText={props.codeFenceText}
         decorateTeachingComments={true}
         {...(props.codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: props.codeFenceInfo.codeFenceFilePath } : {})}
         languageLabel={props.codeFenceInfo.codeLanguageLabel}
@@ -526,6 +528,8 @@ const MemoizedAssistantCodeFenceBlock = memo(AssistantCodeFenceBlock, (previousP
   return previousProps.codeFenceText === nextProps.codeFenceText &&
     areAssistantMarkdownCodeFenceInfoValuesEqual(previousProps.codeFenceInfo, nextProps.codeFenceInfo);
 });
+const MemoizedAssistantMarkdownTextSection = memo(AssistantMarkdownTextSection);
+const MemoizedAssistantMarkdownStreamingTailBlock = memo(AssistantMarkdownStreamingTailBlock);
 const MemoizedAssistantMarkdownParagraphBlock = memo(AssistantMarkdownParagraphBlock);
 const MemoizedAssistantMarkdownHeadingBlock = memo(AssistantMarkdownHeadingBlock);
 const MemoizedAssistantMarkdownHorizontalRuleBlock = memo(AssistantMarkdownHorizontalRuleBlock);
@@ -561,6 +565,7 @@ const assistantMarkdownRenderSectionRendererByKind: {
   readonly [SectionKind in AssistantMarkdownRenderSectionKind]: AssistantMarkdownRenderSectionRenderer<SectionKind>;
 } = {
   markdown: renderMarkdownTextRenderSection,
+  streamingTail: renderStreamingTailRenderSection,
   paragraph: renderParagraphRenderSection,
   heading: renderHeadingRenderSection,
   horizontalRule: renderHorizontalRuleRenderSection,
@@ -573,7 +578,7 @@ const assistantMarkdownRenderSectionRendererByKind: {
   diffSnippet: renderDiffSnippetRenderSection,
 };
 
-export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): ReactNode {
+function AssistantMarkdownBlockComponent(props: AssistantMarkdownBlockProps): ReactNode {
   const renderSectionCacheRef = useRef<AssistantMarkdownRenderSectionCache | undefined>(undefined);
   const terminalColumnCount = props.terminalColumnCount ?? defaultAssistantMarkdownTerminalColumnCount;
   const markdownChromeColumnCount = Math.max(20, terminalColumnCount - 4);
@@ -682,6 +687,18 @@ export function AssistantMarkdownBlock(props: AssistantMarkdownBlockProps): Reac
   );
 }
 
+function areAssistantMarkdownBlockPropsEqual(
+  previousProps: AssistantMarkdownBlockProps,
+  nextProps: AssistantMarkdownBlockProps,
+): boolean {
+  return previousProps.markdownText === nextProps.markdownText &&
+    previousProps.isStreaming === nextProps.isStreaming &&
+    previousProps.horizontalRuleColor === nextProps.horizontalRuleColor &&
+    previousProps.terminalColumnCount === nextProps.terminalColumnCount;
+}
+
+export const AssistantMarkdownBlock = memo(AssistantMarkdownBlockComponent, areAssistantMarkdownBlockPropsEqual);
+
 function renderAssistantMarkdownRenderSection(input: {
   assistantMarkdownRenderSection: AssistantMarkdownRenderSection;
   horizontalRuleColor: string;
@@ -701,11 +718,20 @@ function resolveAssistantMarkdownRenderSectionRenderer<SectionKind extends Assis
 
 function renderMarkdownTextRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"markdown">): ReactNode {
   return (
-    <AssistantMarkdownTextSection
+    <MemoizedAssistantMarkdownTextSection
       isStreaming={input.isStreaming}
       key={input.assistantMarkdownRenderSection.sectionKey}
       markdownText={input.assistantMarkdownRenderSection.markdownText}
       renderNode={input.renderNode}
+    />
+  );
+}
+
+function renderStreamingTailRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"streamingTail">): ReactNode {
+  return (
+    <MemoizedAssistantMarkdownStreamingTailBlock
+      key={input.assistantMarkdownRenderSection.sectionKey}
+      streamingTailText={input.assistantMarkdownRenderSection.streamingTailText}
     />
   );
 }

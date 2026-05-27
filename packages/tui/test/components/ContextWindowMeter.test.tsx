@@ -39,7 +39,7 @@ describe("resolveContextMeterUsedTokenColor", () => {
 describe("ContextWindowMeter (opentui)", () => {
   test("renders_fallback_when_usage_and_capacity_are_unknown", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={undefined} />,
+      <ContextWindowMeter totalTokensUsed={undefined} contextMeterTokenLimit={undefined} />,
       { width: 40, height: 3 },
     );
     await renderOnce();
@@ -48,7 +48,7 @@ describe("ContextWindowMeter (opentui)", () => {
 
   test("renders_unknown_usage_fallback_when_usage_is_unknown_but_capacity_is_known", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ContextWindowMeter totalTokensUsed={undefined} contextWindowTokenCapacity={100_000} />,
+      <ContextWindowMeter totalTokensUsed={undefined} contextMeterTokenLimit={100_000} />,
       { width: 40, height: 3 },
     );
     await renderOnce();
@@ -57,7 +57,7 @@ describe("ContextWindowMeter (opentui)", () => {
 
   test("renders_used_token_count_when_no_capacity", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ContextWindowMeter totalTokensUsed={500} contextWindowTokenCapacity={undefined} />,
+      <ContextWindowMeter totalTokensUsed={500} contextMeterTokenLimit={undefined} />,
       { width: 40, height: 3 },
     );
     await renderOnce();
@@ -66,7 +66,7 @@ describe("ContextWindowMeter (opentui)", () => {
 
   test("renders_used_limit_and_percent_when_capacity_known", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ContextWindowMeter totalTokensUsed={50_000} contextWindowTokenCapacity={200_000} />,
+      <ContextWindowMeter totalTokensUsed={50_000} contextMeterTokenLimit={200_000} />,
       { width: 40, height: 3 },
     );
     await renderOnce();
@@ -77,12 +77,21 @@ describe("ContextWindowMeter (opentui)", () => {
 
   test("renders_decimal_thousands_without_ctx_label", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <ContextWindowMeter totalTokensUsed={22_200} contextWindowTokenCapacity={320_000} />,
+      <ContextWindowMeter totalTokensUsed={22_200} contextMeterTokenLimit={320_000} />,
       { width: 60, height: 2 },
     );
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).toContain("22.2k / 320k (7%)");
     expect(frame).not.toContain("ctx");
+  });
+
+  test("renders_effective_working_budget_instead_of_hard_provider_window", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ContextWindowMeter totalTokensUsed={27_200} contextMeterTokenLimit={252_000} />,
+      { width: 60, height: 2 },
+    );
+    await renderOnce();
+    expect(captureCharFrame()).toContain("27.2k / 252k (11%)");
   });
 });

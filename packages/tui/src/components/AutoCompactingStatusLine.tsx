@@ -6,7 +6,7 @@ import { SnakeAnimationIndicator } from "./SnakeAnimationIndicator.tsx";
 export type AutoCompactingStatusLineProps = {
   queuedPromptCount: number;
   totalContextTokensUsed: number | undefined;
-  contextWindowTokenCapacity: number | undefined;
+  contextMeterTokenLimit: number | undefined;
 };
 
 export function AutoCompactingStatusLine(props: AutoCompactingStatusLineProps): ReactNode {
@@ -26,7 +26,7 @@ export function AutoCompactingStatusLine(props: AutoCompactingStatusLineProps): 
       <box flexShrink={0}>
         <ContextWindowMeter
           totalTokensUsed={props.totalContextTokensUsed}
-          contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+          contextMeterTokenLimit={props.contextMeterTokenLimit}
         />
       </box>
     </box>

@@ -7,6 +7,12 @@ type BudgetedTaggedToolResultTextInput = Readonly<{
   continuationGuidanceLines: readonly string[];
 }>;
 
+type HeadTailBudgetedTextInput = Readonly<{
+  sourceText: string;
+  maximumCharacterCount: number;
+  createTruncationNotice: (omittedCharacterCount: number) => string;
+}>;
+
 export function buildBudgetedTaggedToolResultText(input: BudgetedTaggedToolResultTextInput): string {
   const completeToolResultText = [input.openingTag, ...input.contentLines, input.closingTag].join("\n");
   if (completeToolResultText.length <= input.maximumCharacterCount) {
@@ -63,4 +69,35 @@ function countJoinedLineCharacters(lines: readonly string[]): number {
   }
 
   return lines.reduce((totalCharacterCount, line) => totalCharacterCount + line.length, 0) + lines.length - 1;
+}
+
+export function buildHeadTailBudgetedText(input: HeadTailBudgetedTextInput): string {
+  const maximumCharacterCount = Math.max(0, Math.floor(input.maximumCharacterCount));
+  if (input.sourceText.length <= maximumCharacterCount) {
+    return input.sourceText;
+  }
+
+  let truncationNotice = input.createTruncationNotice(input.sourceText.length);
+  for (let attemptIndex = 0; attemptIndex < 10; attemptIndex += 1) {
+    const retainedCharacterCount = maximumCharacterCount - truncationNotice.length;
+    if (retainedCharacterCount <= 0) {
+      return truncationNotice.slice(0, maximumCharacterCount);
+    }
+
+    const retainedHeadCharacterCount = Math.ceil(retainedCharacterCount / 2);
+    const retainedTailCharacterCount = Math.floor(retainedCharacterCount / 2);
+    const omittedCharacterCount = input.sourceText.length - retainedHeadCharacterCount - retainedTailCharacterCount;
+    const nextTruncationNotice = input.createTruncationNotice(omittedCharacterCount);
+    if (nextTruncationNotice.length === truncationNotice.length || attemptIndex === 9) {
+      return [
+        input.sourceText.slice(0, retainedHeadCharacterCount),
+        nextTruncationNotice,
+        retainedTailCharacterCount > 0 ? input.sourceText.slice(-retainedTailCharacterCount) : "",
+      ].join("");
+    }
+
+    truncationNotice = nextTruncationNotice;
+  }
+
+  return input.sourceText.slice(0, maximumCharacterCount);
 }

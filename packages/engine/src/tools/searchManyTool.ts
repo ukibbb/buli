@@ -10,6 +10,11 @@ import {
   type ToolCallSearchManyDetail,
   type ToolCallSearchManyResult,
 } from "@buli/contracts";
+import {
+  createDuplicateReadOnlyToolResultText,
+  type ReadOnlyToolCallEvidenceIndex,
+  type ReusableSearchToolEvidence,
+} from "../readOnlyToolCallEvidenceIndex.ts";
 import { runGlobToolCall } from "./globTool.ts";
 import { runGrepToolCall } from "./grepTool.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
@@ -41,6 +46,7 @@ export async function runSearchManyToolCall(input: {
   parentToolCallId?: string;
   workspaceRootPath: string;
   readOnlyToolCallConcurrencyLimiter: SearchManyToolCallConcurrencyLimiter;
+  readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
   abortSignal?: AbortSignal;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
@@ -48,8 +54,16 @@ export async function runSearchManyToolCall(input: {
 
   try {
     const childToolCallOutcomes = await Promise.all(
-      input.searchManyToolCallRequest.searches.map((search, searchIndex) =>
-        input.readOnlyToolCallConcurrencyLimiter.run(
+      input.searchManyToolCallRequest.searches.map((search, searchIndex) => {
+        const reusableSearchEvidence = input.readOnlyToolCallEvidenceIndex?.findReusableSearchManySearchEvidence(search);
+        if (reusableSearchEvidence) {
+          return Promise.resolve(createDuplicateSearchManyChildToolCallOutcome({
+            searchIndex,
+            reusableSearchEvidence,
+          }));
+        }
+
+        return input.readOnlyToolCallConcurrencyLimiter.run(
           () =>
             runSearchManyChildToolCall({
               search,
@@ -63,8 +77,8 @@ export async function runSearchManyToolCall(input: {
             toolName: search.searchKind,
             childIndex: searchIndex,
           },
-        )
-      ),
+        );
+      }),
     );
     const searchResults = childToolCallOutcomes.map(createSearchManyResultFromChildOutcome);
     const completedSearchCount = searchResults.filter((searchResult) => searchResult.searchStatus === "completed").length;
@@ -101,6 +115,21 @@ export async function runSearchManyToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+function createDuplicateSearchManyChildToolCallOutcome(input: {
+  searchIndex: number;
+  reusableSearchEvidence: ReusableSearchToolEvidence;
+}): SearchManyChildToolCallOutcome {
+  return {
+    searchIndex: input.searchIndex,
+    searchToolCallOutcome: {
+      outcomeKind: "completed",
+      toolCallDetail: input.reusableSearchEvidence.toolCallDetail,
+      toolResultText: createDuplicateReadOnlyToolResultText(input.reusableSearchEvidence),
+      durationMilliseconds: 0,
+    },
+  };
 }
 
 async function runSearchManyChildToolCall(input: {

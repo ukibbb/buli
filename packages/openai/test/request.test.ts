@@ -1,5 +1,16 @@
 import { expect, test } from "bun:test";
-import { createOpenAiResponseReplayItems, createOpenAiResponsesInputItems } from "../src/provider/request.ts";
+import type {
+  AssistantMessageConversationSessionEntry,
+  ConversationSessionEntry,
+  OpenAiProviderTurnReplayInputItem,
+} from "@buli/contracts";
+import {
+  OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
+  OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT,
+  createOpenAiResponseReplayItems,
+  createOpenAiResponsesInputItems,
+} from "../src/provider/request.ts";
+import type { OpenAiFunctionCallOutputInputItem } from "../src/provider/request.ts";
 
 test("createOpenAiResponsesInputItems serializes replayed conversation messages as plain string content", () => {
   expect(
@@ -440,6 +451,477 @@ test("createOpenAiResponsesInputItems replays stored OpenAI tool items before th
       content: "Done.",
     },
   ]);
+});
+
+test("createOpenAiResponsesInputItems keeps historical tool outputs below the aggregate turn budget full", () => {
+  const storedFunctionCallOutputText = `read-start-${"x".repeat(12_000)}-read-end`;
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Read file",
+      modelFacingPromptText: "Read file",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_read_small",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_read_small",
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: "README.md",
+      },
+      toolResultText: storedFunctionCallOutputText,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Done.",
+      providerTurnReplay: {
+        provider: "openai",
+        inputItems: [
+          {
+            type: "function_call",
+            id: "fc_read_small",
+            call_id: "call_read_small",
+            name: "read",
+            arguments: '{"filePath":"README.md"}',
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_read_small",
+            output: storedFunctionCallOutputText,
+          },
+        ],
+      },
+    },
+  ]);
+
+  const projectedFunctionCallOutputItem = projectedInputItems.find(
+    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
+      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
+  );
+
+  expect(projectedFunctionCallOutputItem?.output).toBe(storedFunctionCallOutputText);
+});
+
+test("createOpenAiResponsesInputItems budgets historical tool outputs at request projection without mutating stored replay", () => {
+  const storedFunctionCallOutputText = `start-${"x".repeat(96_000)}-end`;
+  const assistantMessageEntry = {
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Done.",
+    providerTurnReplay: {
+      provider: "openai",
+      inputItems: [
+        {
+          type: "function_call",
+          id: "fc_1",
+          call_id: "call_1",
+          name: "bash",
+          arguments: '{"command":"generate-output","description":"Generate output"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: storedFunctionCallOutputText,
+        },
+      ],
+    },
+  } satisfies AssistantMessageConversationSessionEntry;
+
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Generate output",
+      modelFacingPromptText: "Generate output",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "generate-output",
+        commandDescription: "Generate output",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_1",
+      toolCallDetail: {
+        toolName: "bash",
+        commandLine: "generate-output",
+        commandDescription: "Generate output",
+        exitCode: 0,
+      },
+      toolResultText: storedFunctionCallOutputText,
+    },
+    assistantMessageEntry,
+  ]);
+
+  const projectedFunctionCallOutputItem = projectedInputItems.find(
+    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
+      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
+  );
+
+  expect(projectedInputItems.map((projectedInputItem) =>
+    "type" in projectedInputItem ? projectedInputItem.type : projectedInputItem.role
+  )).toEqual([
+    "user",
+    "function_call",
+    "function_call_output",
+    "assistant",
+  ]);
+  expect(projectedFunctionCallOutputItem).toBeDefined();
+  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
+  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
+    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
+  );
+  expect(projectedFunctionCallOutputItem?.output.startsWith("start-")).toBe(true);
+  expect(projectedFunctionCallOutputItem?.output).toContain("Historical tool output was truncated only for this future request projection.");
+  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
+  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_1");
+  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: bash");
+  expect(projectedFunctionCallOutputItem?.output).toContain("toolResultEntryKind: completed_tool_result");
+  expect(projectedFunctionCallOutputItem?.output).toContain(`originalCharacterCount: ${storedFunctionCallOutputText.length}`);
+  expect(projectedFunctionCallOutputItem?.output).toContain(
+    `projectedCharacterBudget: ${OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT}`,
+  );
+  expect(projectedFunctionCallOutputItem?.output).toContain("Do not rely on omitted content; request a narrower follow-up tool call if those details are needed.");
+  expect(projectedFunctionCallOutputItem?.output.endsWith("-end")).toBe(true);
+  const storedFunctionCallOutputItem = assistantMessageEntry.providerTurnReplay.inputItems.find(
+    (providerTurnReplayInputItem): providerTurnReplayInputItem is OpenAiFunctionCallOutputInputItem =>
+      providerTurnReplayInputItem.type === "function_call_output",
+  );
+  expect(storedFunctionCallOutputItem?.output).toBe(storedFunctionCallOutputText);
+});
+
+test("createOpenAiResponsesInputItems budgets historical read outputs with an explicit projection marker", () => {
+  const storedFunctionCallOutputText = `read-start-${"x".repeat(96_000)}-read-end`;
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Read file",
+      modelFacingPromptText: "Read file",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_read",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_read",
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: "README.md",
+      },
+      toolResultText: storedFunctionCallOutputText,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Done.",
+      providerTurnReplay: {
+        provider: "openai",
+        inputItems: [
+          {
+            type: "function_call",
+            id: "fc_read",
+            call_id: "call_read",
+            name: "read",
+            arguments: '{"filePath":"README.md"}',
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_read",
+            output: storedFunctionCallOutputText,
+          },
+        ],
+      },
+    },
+  ]);
+
+  const projectedFunctionCallOutputItem = projectedInputItems.find(
+    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
+      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
+  );
+
+  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
+  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
+    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
+  );
+  expect(projectedFunctionCallOutputItem?.output.startsWith("read-start-")).toBe(true);
+  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
+  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_read");
+  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: read");
+  expect(projectedFunctionCallOutputItem?.output.endsWith("-read-end")).toBe(true);
+});
+
+test("createOpenAiResponsesInputItems budgets non-zero historical bash outputs with an explicit projection marker", () => {
+  const storedFunctionCallOutputText = `nonzero-start-${"x".repeat(96_000)}-nonzero-end`;
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Run failing command",
+      modelFacingPromptText: "Run failing command",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_bash",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "generate-failure",
+        commandDescription: "Generate failure",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_bash",
+      toolCallDetail: {
+        toolName: "bash",
+        commandLine: "generate-failure",
+        commandDescription: "Generate failure",
+        exitCode: 1,
+      },
+      toolResultText: storedFunctionCallOutputText,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Done.",
+      providerTurnReplay: {
+        provider: "openai",
+        inputItems: [
+          {
+            type: "function_call",
+            id: "fc_bash",
+            call_id: "call_bash",
+            name: "bash",
+            arguments: '{"command":"generate-failure","description":"Generate failure"}',
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_bash",
+            output: storedFunctionCallOutputText,
+          },
+        ],
+      },
+    },
+  ]);
+
+  const projectedFunctionCallOutputItem = projectedInputItems.find(
+    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
+      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
+  );
+
+  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
+  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
+    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
+  );
+  expect(projectedFunctionCallOutputItem?.output.startsWith("nonzero-start-")).toBe(true);
+  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
+  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_bash");
+  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: bash");
+  expect(projectedFunctionCallOutputItem?.output).toContain("toolResultEntryKind: completed_tool_result");
+  expect(projectedFunctionCallOutputItem?.output.endsWith("-nonzero-end")).toBe(true);
+});
+
+test("createOpenAiResponsesInputItems budgets failed historical bash outputs with an explicit projection marker", () => {
+  const storedFunctionCallOutputText = `failed-start-${"x".repeat(96_000)}-failed-end`;
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Run command",
+      modelFacingPromptText: "Run command",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_failed_bash",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "generate-error",
+        commandDescription: "Generate error",
+      },
+    },
+    {
+      entryKind: "failed_tool_result",
+      toolCallId: "call_failed_bash",
+      toolCallDetail: {
+        toolName: "bash",
+        commandLine: "generate-error",
+        commandDescription: "Generate error",
+      },
+      toolResultText: storedFunctionCallOutputText,
+      failureExplanation: "executor failed",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Done.",
+      providerTurnReplay: {
+        provider: "openai",
+        inputItems: [
+          {
+            type: "function_call",
+            id: "fc_failed_bash",
+            call_id: "call_failed_bash",
+            name: "bash",
+            arguments: '{"command":"generate-error","description":"Generate error"}',
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_failed_bash",
+            output: storedFunctionCallOutputText,
+          },
+        ],
+      },
+    },
+  ]);
+
+  const projectedFunctionCallOutputItem = projectedInputItems.find(
+    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
+      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
+  );
+
+  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
+  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
+    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
+  );
+  expect(projectedFunctionCallOutputItem?.output.startsWith("failed-start-")).toBe(true);
+  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
+  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_failed_bash");
+  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: bash");
+  expect(projectedFunctionCallOutputItem?.output).toContain("toolResultEntryKind: failed_tool_result");
+  expect(projectedFunctionCallOutputItem?.output.endsWith("-failed-end")).toBe(true);
+});
+
+test("createOpenAiResponsesInputItems keeps aggregate historical replay projection within the turn budget", () => {
+  const readOutputText = `read-start-${"r".repeat(16_000)}-read-end`;
+  const failedBashOutputText = `failed-start-${"f".repeat(16_000)}-failed-end`;
+  const readToolSessionEntries = Array.from({ length: 8 }, (_, readIndex): ConversationSessionEntry[] => [
+    {
+      entryKind: "tool_call",
+      toolCallId: `call_read_${readIndex}`,
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: `file-${readIndex}.ts`,
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: `call_read_${readIndex}`,
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: `file-${readIndex}.ts`,
+      },
+      toolResultText: readOutputText,
+    },
+  ]).flat();
+  const readReplayInputItems = Array.from({ length: 8 }, (_, readIndex): OpenAiProviderTurnReplayInputItem[] => [
+    {
+      type: "function_call",
+      id: `fc_read_${readIndex}`,
+      call_id: `call_read_${readIndex}`,
+      name: "read",
+      arguments: JSON.stringify({ filePath: `file-${readIndex}.ts` }),
+    },
+    {
+      type: "function_call_output",
+      call_id: `call_read_${readIndex}`,
+      output: readOutputText,
+    },
+  ]).flat();
+  const assistantMessageEntry = {
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Done.",
+    providerTurnReplay: {
+      provider: "openai",
+      inputItems: [
+        ...readReplayInputItems,
+        {
+          type: "function_call",
+          id: "fc_failed_bash",
+          call_id: "call_failed_bash",
+          name: "bash",
+          arguments: '{"command":"generate-error","description":"Generate error"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_failed_bash",
+          output: failedBashOutputText,
+        },
+      ],
+    },
+  } satisfies AssistantMessageConversationSessionEntry;
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Inspect many outputs",
+      modelFacingPromptText: "Inspect many outputs",
+    },
+    ...readToolSessionEntries,
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_failed_bash",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "generate-error",
+        commandDescription: "Generate error",
+      },
+    },
+    {
+      entryKind: "failed_tool_result",
+      toolCallId: "call_failed_bash",
+      toolCallDetail: {
+        toolName: "bash",
+        commandLine: "generate-error",
+        commandDescription: "Generate error",
+      },
+      toolResultText: failedBashOutputText,
+      failureExplanation: "executor failed",
+    },
+    assistantMessageEntry,
+  ]);
+
+  const projectedFunctionCallOutputItems = projectedInputItems.filter(
+    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
+      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
+  );
+  const projectedOutputTextLength = projectedFunctionCallOutputItems.reduce(
+    (totalTextLength, projectedFunctionCallOutputItem) => totalTextLength + projectedFunctionCallOutputItem.output.length,
+    0,
+  );
+  const firstProjectedReadOutput = projectedFunctionCallOutputItems.find((projectedFunctionCallOutputItem) =>
+    projectedFunctionCallOutputItem.call_id === "call_read_0"
+  );
+  const projectedFailedBashOutput = projectedFunctionCallOutputItems.find((projectedFunctionCallOutputItem) =>
+    projectedFunctionCallOutputItem.call_id === "call_failed_bash"
+  );
+
+  expect(projectedOutputTextLength).toBeLessThanOrEqual(OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT);
+  expect(firstProjectedReadOutput).toBeDefined();
+  expect(projectedFailedBashOutput).toBeDefined();
+  if (!firstProjectedReadOutput || !projectedFailedBashOutput) {
+    throw new Error("Expected projected read and failed bash outputs to be present.");
+  }
+  expect(projectedFailedBashOutput.output.length).toBeGreaterThan(firstProjectedReadOutput.output.length);
+  expect(firstProjectedReadOutput.output).toContain("omitted content is not currently visible in this request");
+  expect(projectedFailedBashOutput.output).toContain("toolResultEntryKind: failed_tool_result");
+  expect(assistantMessageEntry.providerTurnReplay.inputItems.at(-1)).toEqual({
+    type: "function_call_output",
+    call_id: "call_failed_bash",
+    output: failedBashOutputText,
+  });
 });
 
 test("createOpenAiResponseReplayItems reconstructs reasoning, assistant text, and function calls from response output", () => {

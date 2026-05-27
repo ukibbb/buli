@@ -34,6 +34,109 @@ describe("assistantMarkdownRenderSections", () => {
     expect(secondCodeFenceSection).toBe(firstCodeFenceSection);
   });
 
+  test("reuses_stable_prefix_sections_when_streaming_appends_after_a_longer_prefix", () => {
+    const firstMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: ["# Stable heading", "", "Stable paragraph", "", "```ts", "const stable = true;", "```"].join("\n"),
+      isStreaming: true,
+      previousCache: undefined,
+    });
+
+    const secondMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: [
+        "# Stable heading",
+        "",
+        "Stable paragraph",
+        "",
+        "```ts",
+        "const stable = true;",
+        "```",
+        "",
+        "Streaming tail",
+      ].join("\n"),
+      isStreaming: true,
+      previousCache: firstMarkdownSections.nextCache,
+    });
+
+    expect(firstMarkdownSections.renderSections.map((renderSection) => renderSection.sectionKind)).toEqual([
+      "heading",
+      "paragraph",
+      "codeFence",
+    ]);
+    expect(secondMarkdownSections.renderSections[0]).toBe(firstMarkdownSections.renderSections[0]);
+    expect(secondMarkdownSections.renderSections[1]).toBe(firstMarkdownSections.renderSections[1]);
+    expect(secondMarkdownSections.renderSections[2]).toBe(firstMarkdownSections.renderSections[2]);
+    expect(secondMarkdownSections.renderSections[3]).toMatchObject({
+      sectionKind: "streamingTail",
+      streamingTailText: "Streaming tail",
+    });
+  });
+
+  test("renders_active_streaming_tail_as_streaming_tail_section_after_stable_prefix", () => {
+    const markdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: ["# Stable heading", "", "Stable paragraph", "", "## Tail still typing"].join("\n"),
+      isStreaming: true,
+      previousCache: undefined,
+    });
+
+    expect(markdownSections.renderSections).toMatchObject([
+      { sectionKind: "heading", headingText: "Stable heading" },
+      { sectionKind: "paragraph", paragraphText: "Stable paragraph" },
+      { sectionKind: "streamingTail", streamingTailText: "## Tail still typing" },
+    ]);
+  });
+
+  test("promotes_active_tail_to_rich_markdown_when_streaming_completes", () => {
+    const markdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: ["# Stable heading", "", "Stable paragraph", "", "## Tail completed"].join("\n"),
+      isStreaming: false,
+      previousCache: undefined,
+    });
+
+    expect(markdownSections.renderSections).toMatchObject([
+      { sectionKind: "heading", headingText: "Stable heading" },
+      { sectionKind: "paragraph", paragraphText: "Stable paragraph" },
+      { sectionKind: "heading", headingText: "Tail completed" },
+    ]);
+  });
+
+  test("reuses_the_cached_render_sections_when_prepared_markdown_and_streaming_mode_are_unchanged", () => {
+    const firstMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: ["# Stable", "", "No changes."].join("\n"),
+      isStreaming: false,
+      previousCache: undefined,
+    });
+
+    const secondMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: ["# Stable", "", "No changes."].join("\n"),
+      isStreaming: false,
+      previousCache: firstMarkdownSections.nextCache,
+    });
+
+    expect(secondMarkdownSections.renderSections).toBe(firstMarkdownSections.renderSections);
+    expect(secondMarkdownSections.nextCache).toBe(firstMarkdownSections.nextCache);
+  });
+
+  test("does_not_reuse_the_cache_when_streaming_mode_changes_the_visible_markdown", () => {
+    const streamingMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: "Still **typing",
+      isStreaming: true,
+      previousCache: undefined,
+    });
+
+    const completedMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: "Still **typing",
+      isStreaming: false,
+      previousCache: streamingMarkdownSections.nextCache,
+    });
+
+    expect(completedMarkdownSections.renderSections).not.toBe(streamingMarkdownSections.renderSections);
+    expect(completedMarkdownSections.nextCache).not.toBe(streamingMarkdownSections.nextCache);
+    expect(completedMarkdownSections.renderSections[0]).toMatchObject({
+      sectionKind: "paragraph",
+      paragraphText: "Still **typing",
+    });
+  });
+
   test("TypeScriptAssistantMarkdownRenderSectionBuilder matches the default builder", () => {
     const input = {
       markdownText: ["# Heading", "", "```diff", "+added", "```"].join("\n"),

@@ -84,7 +84,7 @@ function assertOpenAiSseFrameWithinLimit(frameCharacterCount: number): void {
 
 async function* readSseData(body: ReadableStream<Uint8Array>, options: OpenAiSseReadOptions = {}): AsyncGenerator<string> {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "";
+  const bufferChunks: string[] = [];
 
   try {
     while (true) {
@@ -93,7 +93,10 @@ async function* readSseData(body: ReadableStream<Uint8Array>, options: OpenAiSse
         break;
       }
 
-      buffer += chunk.value;
+      bufferChunks.push(chunk.value);
+
+      let buffer = bufferChunks.length === 1 ? bufferChunks[0]! : bufferChunks.join("");
+      bufferChunks.length = 0;
 
       while (true) {
         const boundary = nextFrameBoundary(buffer);
@@ -112,10 +115,15 @@ async function* readSseData(body: ReadableStream<Uint8Array>, options: OpenAiSse
           yield data;
         }
       }
+
+      if (buffer.length > 0) {
+        bufferChunks.push(buffer);
+      }
     }
 
-    assertOpenAiSseFrameWithinLimit(buffer.length);
-    const data = extractData(buffer);
+    const remainingBuffer = bufferChunks.length === 0 ? "" : bufferChunks.join("");
+    assertOpenAiSseFrameWithinLimit(remainingBuffer.length);
+    const data = extractData(remainingBuffer);
 
     if (data) {
       yield data;

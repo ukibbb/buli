@@ -218,6 +218,56 @@ test("prompt textarea creates non-virtual extmarks for selected prompt-context r
   ]);
 });
 
+test("prompt textarea clears decorative extmarks after decorations are removed", async () => {
+  type PromptTextareaDecorationState = {
+    promptDraft: string;
+    promptDraftCursorOffset: number;
+    promptImageAttachmentPlaceholderTexts?: readonly string[] | undefined;
+  };
+  let setPromptTextareaDecorationState: ((nextState: PromptTextareaDecorationState) => void) | undefined;
+
+  function PromptTextareaDecorationHarness() {
+    const [promptTextareaDecorationState, setPromptTextareaDecorationStateValue] = useState<PromptTextareaDecorationState>({
+      promptDraft: "Describe [Image 1]",
+      promptDraftCursorOffset: "Describe [Image 1]".length,
+      promptImageAttachmentPlaceholderTexts: ["[Image 1]"],
+    });
+    setPromptTextareaDecorationState = setPromptTextareaDecorationStateValue;
+
+    return (
+      <PromptTextarea
+        promptDraft={promptTextareaDecorationState.promptDraft}
+        promptDraftCursorOffset={promptTextareaDecorationState.promptDraftCursorOffset}
+        promptImageAttachmentPlaceholderTexts={promptTextareaDecorationState.promptImageAttachmentPlaceholderTexts}
+        isFocused={true}
+        onPromptDraftEdited={noopPromptDraftEdited}
+        onPromptSubmitted={noopPromptSubmitted}
+      />
+    );
+  }
+
+  const renderedPromptTextarea = await testRender(<PromptTextareaDecorationHarness />, { width: 80, height: 4 });
+  await renderedPromptTextarea.renderOnce();
+
+  const promptTextarea = readFocusedPromptTextarea(renderedPromptTextarea);
+  expect(promptTextarea.extmarks.getAll()).toHaveLength(1);
+
+  if (!setPromptTextareaDecorationState) {
+    throw new Error("PromptTextareaDecorationHarness did not expose its decoration setter");
+  }
+  const removePromptTextareaDecorations = setPromptTextareaDecorationState;
+
+  await act(async () => {
+    removePromptTextareaDecorations({
+      promptDraft: "Describe plain text",
+      promptDraftCursorOffset: "Describe plain text".length,
+    });
+  });
+  await renderedPromptTextarea.renderOnce();
+
+  expect(promptTextarea.extmarks.getAll()).toEqual([]);
+});
+
 test("prompt textarea requests native clipboard paste only for empty paste bytes", async () => {
   let nativeClipboardPasteRequestCount = 0;
   const publishedPromptTextareaEdits: PromptTextareaEdit[] = [];

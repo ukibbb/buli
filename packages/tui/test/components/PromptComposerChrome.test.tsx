@@ -32,7 +32,7 @@ function createStoreBackedPromptComposerProps(
     nextModeAccentColor: chatScreenTheme.accentAmber,
     reasoningEffortLabel: "default",
     totalContextTokensUsed: undefined,
-    contextWindowTokenCapacity: undefined,
+    contextMeterTokenLimit: undefined,
     onPromptDraftEdited: noopPromptDraftEdited,
     onPromptSubmitted: noopPromptSubmitted,
     onNativeClipboardPasteRequested: noopClipboardPasteRequested,

@@ -148,6 +148,103 @@ test("relayAssistantResponseRunnerEvents batches streaming text updates until a 
   ]);
 });
 
+test("relayAssistantResponseRunnerEvents keeps only the latest streaming update per message part in one batch", async () => {
+  const releaseTerminalEvent = new DeferredCompletion();
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn() {
+      return {
+        async *streamAssistantResponseEvents() {
+          yield { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 };
+          yield {
+            type: "assistant_message_part_updated",
+            messageId: "assistant-1",
+            part: {
+              id: "text-part-1",
+              partKind: "assistant_text",
+              partStatus: "streaming",
+              rawMarkdownText: "H",
+            },
+          };
+          yield {
+            type: "assistant_message_part_updated",
+            messageId: "assistant-1",
+            part: {
+              id: "reasoning-part-1",
+              partKind: "assistant_reasoning",
+              partStatus: "streaming",
+              reasoningStartedAtMs: 1,
+              reasoningSummaryText: "Thinking",
+            },
+          };
+          yield {
+            type: "assistant_message_part_updated",
+            messageId: "assistant-1",
+            part: {
+              id: "text-part-1",
+              partKind: "assistant_text",
+              partStatus: "streaming",
+              rawMarkdownText: "Hello",
+            },
+          };
+          yield {
+            type: "assistant_message_part_updated",
+            messageId: "assistant-1",
+            part: {
+              id: "reasoning-part-1",
+              partKind: "assistant_reasoning",
+              partStatus: "streaming",
+              reasoningStartedAtMs: 1,
+              reasoningSummaryText: "Thinking more",
+            },
+          };
+          await releaseTerminalEvent.promise;
+          yield {
+            type: "assistant_message_completed",
+            messageId: "assistant-1",
+            usage: { total: 10, input: 4, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
+          };
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const emittedEventBatches: AssistantResponseEvent[][] = [];
+
+  const relayPromise = relayAssistantResponseRunnerEvents({
+    assistantConversationRunner,
+    conversationTurnRequest: { userPromptText: "say hi", selectedModelId: "gpt-5.4" },
+    onConversationTurnStarted: () => {},
+    onConversationTurnFinished: () => {},
+    onAssistantResponseEvents: (assistantResponseEvents) => {
+      emittedEventBatches.push([...assistantResponseEvents]);
+    },
+  });
+
+  await waitMilliseconds(10);
+  expect(emittedEventBatches.map((eventBatch) => eventBatch.map((assistantResponseEvent) => assistantResponseEvent.type))).toEqual([
+    ["assistant_turn_started"],
+  ]);
+
+  releaseTerminalEvent.complete();
+  await relayPromise;
+  const streamingBatch = emittedEventBatches[1] ?? [];
+  expect(streamingBatch.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_message_part_updated",
+    "assistant_message_part_updated",
+    "assistant_message_completed",
+  ]);
+  expect(streamingBatch[0]).toMatchObject({
+    type: "assistant_message_part_updated",
+    part: { id: "text-part-1", rawMarkdownText: "Hello" },
+  });
+  expect(streamingBatch[1]).toMatchObject({
+    type: "assistant_message_part_updated",
+    part: { id: "reasoning-part-1", reasoningSummaryText: "Thinking more" },
+  });
+});
+
 test("relayAssistantResponseRunnerEvents flushes tool-call events without waiting for the streaming batch window", async () => {
   const releaseTerminalEvent = new DeferredCompletion();
   const assistantConversationRunner: AssistantConversationRunner = {

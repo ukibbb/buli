@@ -295,7 +295,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     }
 
     input.latestChatSessionStateRef.current = nextChatSessionState;
-    input.setChatSessionState(nextChatSessionState);
+    input.setPromptLocalChatSessionState(nextChatSessionState);
     input.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
   });
 

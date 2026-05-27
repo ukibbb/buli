@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { PromptDraftText } from "./PromptDraftText.tsx";
 import {
@@ -28,7 +28,7 @@ export type InputPanelProps = {
   onSummarizedPromptTextPasted?: (summarizedPromptTextPaste: PromptTextareaSummarizedPaste) => void;
 };
 
-export function InputPanel(props: InputPanelProps): ReactNode {
+function InputPanelComponent(props: InputPanelProps): ReactNode {
   return (
     <box
       borderStyle="rounded"
@@ -84,3 +84,20 @@ export function InputPanel(props: InputPanelProps): ReactNode {
     </box>
   );
 }
+
+function areInputPanelPropsEqual(previousProps: InputPanelProps, nextProps: InputPanelProps): boolean {
+  return previousProps.promptDraft === nextProps.promptDraft &&
+    previousProps.promptDraftCursorOffset === nextProps.promptDraftCursorOffset &&
+    previousProps.promptImageAttachmentPlaceholderTexts === nextProps.promptImageAttachmentPlaceholderTexts &&
+    previousProps.promptTextPastePlaceholderTexts === nextProps.promptTextPastePlaceholderTexts &&
+    previousProps.selectedPromptContextReferenceTexts === nextProps.selectedPromptContextReferenceTexts &&
+    previousProps.selectedModelId === nextProps.selectedModelId &&
+    previousProps.isPromptInputDisabled === nextProps.isPromptInputDisabled &&
+    previousProps.accentColor === nextProps.accentColor &&
+    previousProps.onPromptDraftEdited === nextProps.onPromptDraftEdited &&
+    previousProps.onPromptSubmitted === nextProps.onPromptSubmitted &&
+    previousProps.onNativeClipboardPasteRequested === nextProps.onNativeClipboardPasteRequested &&
+    previousProps.onSummarizedPromptTextPasted === nextProps.onSummarizedPromptTextPasted;
+}
+
+export const InputPanel = memo(InputPanelComponent, areInputPanelPropsEqual);

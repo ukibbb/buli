@@ -65,6 +65,8 @@ const listMarkerPattern = /(^|\n)(\s*)((?:☑|☐|-|[•◦▪▫]|\d+\.))(?=\s)
 const inlineCodeSpanPattern = /`([^`\n]+)`/g;
 const strongAsteriskSpanPattern = /\*\*([^*\n]+)\*\*/g;
 const strongUnderscoreSpanPattern = /__([^_\n]+)__/g;
+const likelyShellCommandPrefixPattern = /\b(?:bun|npm|pnpm|yarn|git|gh)\s/;
+const likelyListMarkerPattern = /[-☑☐•◦▪▫]|\d+\./;
 
 function cloneTextChunkWithText(textChunk: TextChunk, text: string): TextChunk {
   return { ...textChunk, text };
@@ -119,6 +121,10 @@ function pushRemainingPlainText(input: {
 }
 
 function splitTextChunkByFilePathReferences(textChunk: TextChunk): TextChunk[] {
+  if (!textChunk.text.includes("/")) {
+    return [textChunk];
+  }
+
   const textChunks: TextChunk[] = [];
   let nextPlainTextStartIndex = 0;
 
@@ -159,6 +165,10 @@ function splitTextChunkByFilePathReferences(textChunk: TextChunk): TextChunk[] {
 }
 
 function splitTextChunkByShellCommands(textChunk: TextChunk): TextChunk[] {
+  if (!likelyShellCommandPrefixPattern.test(textChunk.text)) {
+    return [textChunk];
+  }
+
   const textChunks: TextChunk[] = [];
   let nextPlainTextStartIndex = 0;
 
@@ -244,6 +254,10 @@ function splitTextChunkByInlineMarkdownPattern(
 }
 
 function splitTextChunkByInlineCodeSpans(textChunk: TextChunk): TextChunk[] {
+  if (!textChunk.text.includes("`")) {
+    return [textChunk];
+  }
+
   return splitTextChunkByInlineMarkdownPattern(textChunk, inlineCodeSpanPattern, {
     fg: inlineCodeForegroundColor,
     attributes: inlineCodeTextAttributes,
@@ -251,6 +265,10 @@ function splitTextChunkByInlineCodeSpans(textChunk: TextChunk): TextChunk[] {
 }
 
 function splitTextChunkByStrongAsteriskSpans(textChunk: TextChunk): TextChunk[] {
+  if (!textChunk.text.includes("**")) {
+    return [textChunk];
+  }
+
   return splitTextChunkByInlineMarkdownPattern(textChunk, strongAsteriskSpanPattern, {
     fg: strongForegroundColor,
     attributes: strongTextAttributes,
@@ -258,6 +276,10 @@ function splitTextChunkByStrongAsteriskSpans(textChunk: TextChunk): TextChunk[] 
 }
 
 function splitTextChunkByStrongUnderscoreSpans(textChunk: TextChunk): TextChunk[] {
+  if (!textChunk.text.includes("__")) {
+    return [textChunk];
+  }
+
   return splitTextChunkByInlineMarkdownPattern(textChunk, strongUnderscoreSpanPattern, {
     fg: strongForegroundColor,
     attributes: strongTextAttributes,
@@ -278,6 +300,10 @@ function resolveDiagnosticSeverityStyle(diagnosticSeverityText: string): Assista
 }
 
 function splitTextChunkByDiagnostics(textChunk: TextChunk): TextChunk[] {
+  if (!textChunk.text.includes("/")) {
+    return [textChunk];
+  }
+
   const textChunks: TextChunk[] = [];
   let nextPlainTextStartIndex = 0;
 
@@ -362,6 +388,10 @@ function resolveListMarkerForegroundColor(listMarker: string): RGBA {
 }
 
 function splitTextChunkByListMarkers(textChunk: TextChunk): TextChunk[] {
+  if (!likelyListMarkerPattern.test(textChunk.text)) {
+    return [textChunk];
+  }
+
   const textChunks: TextChunk[] = [];
   let nextPlainTextStartIndex = 0;
 
@@ -432,6 +462,10 @@ function resolveDiffLineStyle(diffLineText: string): AssistantMarkdownTextChunkS
 }
 
 function splitTextChunkByDiffLines(textChunk: TextChunk): TextChunk[] {
+  if (!textChunk.text.includes("│") && !textChunk.text.includes("╭") && !textChunk.text.includes("╰")) {
+    return [textChunk];
+  }
+
   const textChunks: TextChunk[] = [];
   let currentLineStartIndex = 0;
 

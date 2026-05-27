@@ -763,7 +763,7 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
     "compare viable approaches before choosing the plan",
   );
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
-    "The output should be clean enough that Implementation mode can execute it without re-planning.",
+    "The output should be clean enough that Implementation mode can execute it without re-planning or broad rediscovery.",
   );
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
@@ -796,6 +796,77 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
+});
+
+test("AssistantConversationRuntime rejects plan mode before understand when workflow enforcement is enabled", () => {
+  const provider = new RecordingConversationTurnProvider([]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    enforceAssistantWorkflowModeTransitions: true,
+  });
+
+  expect(() =>
+    runtime.startConversationTurn({
+      userPromptText: "Create a plan",
+      assistantOperatingMode: "plan",
+      selectedModelId: "gpt-5.4",
+    })
+  ).toThrow("Plan Agent cannot start yet");
+  expect(provider.startedTurnRequests).toHaveLength(0);
+});
+
+test("AssistantConversationRuntime allows enforced understand to plan to implementation sequence", async () => {
+  const provider = new RecordingConversationTurnProvider([
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Plan." },
+        { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    }),
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Implemented." },
+        { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    }),
+  ]);
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Understanding complete.",
+        assistantOperatingMode: "understand",
+      },
+    ],
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    conversationHistory,
+    enforceAssistantWorkflowModeTransitions: true,
+  });
+
+  await collectAssistantEvents(runtime.startConversationTurn({
+    userPromptText: "Create a plan",
+    assistantOperatingMode: "plan",
+    selectedModelId: "gpt-5.4",
+  }));
+  await collectAssistantEvents(runtime.startConversationTurn({
+    userPromptText: "execute",
+    assistantOperatingMode: "implementation",
+    selectedModelId: "gpt-5.4",
+  }));
+
+  expect(provider.startedTurnRequests.map((startedTurnRequest) =>
+    startedTurnRequest.conversationSessionEntries.at(-1)
+  )).toMatchObject([
+    { entryKind: "user_prompt", assistantOperatingMode: "plan" },
+    { entryKind: "user_prompt", assistantOperatingMode: "implementation" },
+  ]);
 });
 
 test("AssistantConversationRuntime filters explicit tool overrides in read-only modes", async () => {

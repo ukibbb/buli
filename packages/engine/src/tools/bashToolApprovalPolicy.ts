@@ -17,6 +17,7 @@ export type BashCommandRiskKind =
 export type BashToolApprovalDecision =
   | {
       approvalPolicy: "auto_run";
+      isReadOnly: boolean;
     }
   | {
       approvalPolicy: "requires_user_approval";
@@ -88,6 +89,19 @@ const SHELL_INTERPRETER_COMMAND_NAMES = new Set(["bash", "dash", "env", "exec", 
 
 const PACKAGE_INSTALL_OR_GENERATOR_COMMAND_NAMES = new Set(["brew", "bunx", "npx"]);
 
+const SAFE_BUN_VERIFICATION_SCRIPT_NAMES = new Set(["test", "typecheck"]);
+const BUN_DEPENDENCY_MUTATION_SUBCOMMAND_NAMES = new Set([
+  "add",
+  "install",
+  "link",
+  "outdated",
+  "patch",
+  "pm",
+  "remove",
+  "unlink",
+  "update",
+]);
+
 const SAFE_GIT_SUBCOMMAND_NAMES = new Set([
   "blame",
   "diff",
@@ -117,7 +131,7 @@ export function classifyBashToolApprovalRequirement(
   bashToolApprovalMode: BashToolApprovalMode = DEFAULT_BASH_TOOL_APPROVAL_MODE,
 ): BashToolApprovalDecision {
   if (bashToolApprovalMode === "trusted") {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: false };
   }
 
   const trimmedShellCommand = bashToolCallRequest.shellCommand.trim();
@@ -148,7 +162,7 @@ export function classifyBashToolApprovalRequirement(
     }
   }
 
-  return { approvalPolicy: "auto_run" };
+  return { approvalPolicy: "auto_run", isReadOnly: true };
 }
 
 function classifyAmbiguousShellSyntax(shellCommand: string): BashToolApprovalDecision | undefined {
@@ -212,7 +226,7 @@ function classifyCommandSegment(commandSegment: string): BashToolApprovalDecisio
 
   const commandTokenIndex = findCommandTokenIndex(commandTokens);
   if (commandTokenIndex >= commandTokens.length) {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   const commandName = normalizeCommandName(commandTokens[commandTokenIndex]!);
@@ -247,6 +261,14 @@ function classifyCommandSegment(commandSegment: string): BashToolApprovalDecisio
     return classifyGitCommand(commandArguments);
   }
 
+  if (commandName === "bun") {
+    return classifyBunCommand(commandArguments);
+  }
+
+  if (commandName === "tsc") {
+    return classifyTypeScriptCompilerCommand(commandArguments);
+  }
+
   if (commandName === "curl") {
     return classifyCurlCommand(commandArguments);
   }
@@ -260,7 +282,7 @@ function classifyCommandSegment(commandSegment: string): BashToolApprovalDecisio
   }
 
   if (SAFE_READ_ONLY_COMMAND_NAMES.has(commandName)) {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   return requiresUserApproval(
@@ -313,23 +335,218 @@ function classifyEnvCommand(commandArguments: string[]): BashToolApprovalDecisio
     );
   }
 
-  return { approvalPolicy: "auto_run" };
+  return { approvalPolicy: "auto_run", isReadOnly: true };
 }
 
 function classifyGitCommand(commandArguments: string[]): BashToolApprovalDecision {
   if (commandArguments.length === 0) {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   const gitSubcommand = commandArguments[0]!;
   if (SAFE_GIT_SUBCOMMAND_NAMES.has(gitSubcommand)) {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   return requiresUserApproval(
     "git_mutation",
     "This git command can change repository state or is not classified as read-only, so it still requires explicit user approval.",
   );
+}
+
+function classifyBunCommand(commandArguments: string[]): BashToolApprovalDecision {
+  const bunCommand = parseBunCommandAfterSafeGlobalOptions(commandArguments);
+  if (!bunCommand) {
+    return requiresUserApproval(
+      "indirect_command_execution",
+      "This bun command uses options that are not classified as local verification, so it still requires explicit user approval.",
+    );
+  }
+
+  if (bunCommand.bunSubcommand === "run") {
+    return classifyBunRunCommand(bunCommand.bunSubcommandArguments);
+  }
+
+  if (
+    SAFE_BUN_VERIFICATION_SCRIPT_NAMES.has(bunCommand.bunSubcommand) &&
+    bunCommand.bunSubcommandArguments.length === 0
+  ) {
+    return { approvalPolicy: "auto_run", isReadOnly: true };
+  }
+
+  if (BUN_DEPENDENCY_MUTATION_SUBCOMMAND_NAMES.has(bunCommand.bunSubcommand)) {
+    return requiresUserApproval(
+      "indirect_command_execution",
+      "This bun command can install, update, or link dependencies, so it still requires explicit user approval.",
+    );
+  }
+
+  return requiresUserApproval(
+    "indirect_command_execution",
+    "This bun command can execute project code that is not classified as local verification, so it still requires explicit user approval.",
+  );
+}
+
+function classifyBunRunCommand(commandArguments: string[]): BashToolApprovalDecision {
+  const bunRunScript = parseBunRunScriptAfterSafeOptions(commandArguments);
+  if (!bunRunScript) {
+    return requiresUserApproval(
+      "indirect_command_execution",
+      "This bun run command is not classified as local verification, so it still requires explicit user approval.",
+    );
+  }
+
+  if (SAFE_BUN_VERIFICATION_SCRIPT_NAMES.has(bunRunScript.scriptName) && bunRunScript.scriptArguments.length === 0) {
+    return { approvalPolicy: "auto_run", isReadOnly: true };
+  }
+
+  return requiresUserApproval(
+    "indirect_command_execution",
+    "This bun run script is not classified as local verification, so it still requires explicit user approval.",
+  );
+}
+
+function parseBunCommandAfterSafeGlobalOptions(
+  commandArguments: string[],
+): { bunSubcommand: string; bunSubcommandArguments: string[] } | undefined {
+  let commandArgumentIndex = 0;
+
+  while (commandArgumentIndex < commandArguments.length) {
+    const commandArgument = commandArguments[commandArgumentIndex]!;
+
+    if (commandArgument === "--filter") {
+      if (commandArgumentIndex + 1 >= commandArguments.length) {
+        return undefined;
+      }
+      commandArgumentIndex += 2;
+      continue;
+    }
+
+    if (commandArgument.startsWith("--filter=")) {
+      commandArgumentIndex += 1;
+      continue;
+    }
+
+    if (commandArgument.startsWith("-")) {
+      return undefined;
+    }
+
+    return {
+      bunSubcommand: commandArgument,
+      bunSubcommandArguments: commandArguments.slice(commandArgumentIndex + 1),
+    };
+  }
+
+  return undefined;
+}
+
+function parseBunRunScriptAfterSafeOptions(
+  commandArguments: string[],
+): { scriptName: string; scriptArguments: string[] } | undefined {
+  let commandArgumentIndex = 0;
+
+  while (commandArgumentIndex < commandArguments.length) {
+    const commandArgument = commandArguments[commandArgumentIndex]!;
+
+    if (commandArgument === "--filter") {
+      if (commandArgumentIndex + 1 >= commandArguments.length) {
+        return undefined;
+      }
+      commandArgumentIndex += 2;
+      continue;
+    }
+
+    if (commandArgument.startsWith("--filter=")) {
+      commandArgumentIndex += 1;
+      continue;
+    }
+
+    if (commandArgument === "--workspaces" || commandArgument === "--if-present") {
+      commandArgumentIndex += 1;
+      continue;
+    }
+
+    if (commandArgument.startsWith("-")) {
+      return undefined;
+    }
+
+    return {
+      scriptName: commandArgument,
+      scriptArguments: commandArguments.slice(commandArgumentIndex + 1),
+    };
+  }
+
+  return undefined;
+}
+
+function classifyTypeScriptCompilerCommand(commandArguments: string[]): BashToolApprovalDecision {
+  if (isSafeNoEmitTypeScriptCompilerCommand(commandArguments)) {
+    return { approvalPolicy: "auto_run", isReadOnly: true };
+  }
+
+  return requiresUserApproval(
+    "filesystem_change",
+    "This tsc command can write build outputs unless no-emit verification is clearly classified, so it still requires explicit user approval.",
+  );
+}
+
+function isSafeNoEmitTypeScriptCompilerCommand(commandArguments: string[]): boolean {
+  let hasNoEmitOption = false;
+
+  for (let commandArgumentIndex = 0; commandArgumentIndex < commandArguments.length; commandArgumentIndex += 1) {
+    const commandArgument = commandArguments[commandArgumentIndex]!;
+
+    if (commandArgument === "--noEmit") {
+      const nextCommandArgument = commandArguments[commandArgumentIndex + 1];
+      if (nextCommandArgument === "false") {
+        return false;
+      }
+      if (nextCommandArgument === "true") {
+        commandArgumentIndex += 1;
+      }
+      hasNoEmitOption = true;
+      continue;
+    }
+
+    if (commandArgument === "--noEmit=true") {
+      hasNoEmitOption = true;
+      continue;
+    }
+
+    if (commandArgument === "--noEmit=false") {
+      return false;
+    }
+
+    if (commandArgument === "--project" || commandArgument === "-p") {
+      if (commandArgumentIndex + 1 >= commandArguments.length) {
+        return false;
+      }
+      commandArgumentIndex += 1;
+      continue;
+    }
+
+    if (commandArgument.startsWith("--project=")) {
+      continue;
+    }
+
+    if (commandArgument === "--pretty") {
+      const nextCommandArgument = commandArguments[commandArgumentIndex + 1];
+      if (nextCommandArgument === "true" || nextCommandArgument === "false") {
+        commandArgumentIndex += 1;
+      }
+      continue;
+    }
+
+    if (commandArgument.startsWith("--pretty=")) {
+      continue;
+    }
+
+    if (commandArgument.startsWith("-")) {
+      return false;
+    }
+  }
+
+  return hasNoEmitOption;
 }
 
 function classifyCurlCommand(commandArguments: string[]): BashToolApprovalDecision {
@@ -411,7 +628,7 @@ function classifyCurlCommand(commandArguments: string[]): BashToolApprovalDecisi
     }
   }
 
-  return { approvalPolicy: "auto_run" };
+  return { approvalPolicy: "auto_run", isReadOnly: true };
 }
 
 function classifyWgetCommand(commandArguments: string[]): BashToolApprovalDecision {
@@ -466,7 +683,7 @@ function classifyWgetCommand(commandArguments: string[]): BashToolApprovalDecisi
   }
 
   if (usesSpiderMode || writesOnlyToStdout) {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   return requiresUserApproval(
@@ -477,7 +694,7 @@ function classifyWgetCommand(commandArguments: string[]): BashToolApprovalDecisi
 
 function classifyGitHubCliCommand(commandArguments: string[]): BashToolApprovalDecision {
   if (commandArguments.length === 0) {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   const githubSubcommand = commandArguments[0]!;
@@ -512,7 +729,7 @@ function classifyGitHubCliCommand(commandArguments: string[]): BashToolApprovalD
   }
 
   if (githubSubcommand === "search") {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   return requiresUserApproval(
@@ -579,7 +796,7 @@ function classifyGitHubApiCommand(commandArguments: string[]): BashToolApprovalD
     }
   }
 
-  return { approvalPolicy: "auto_run" };
+  return { approvalPolicy: "auto_run", isReadOnly: true };
 }
 
 function classifySafeNestedSubcommand(
@@ -596,7 +813,7 @@ function classifySafeNestedSubcommand(
 
   const nestedSubcommand = commandArguments[0]!;
   if (safeNestedSubcommandNames.has(nestedSubcommand)) {
-    return { approvalPolicy: "auto_run" };
+    return { approvalPolicy: "auto_run", isReadOnly: true };
   }
 
   return requiresUserApproval(

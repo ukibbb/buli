@@ -4,6 +4,7 @@ import {
   appendSubmittedUserPromptToConversation,
   applyAssistantResponseEventsToChatSessionStateWithChangeSet,
   createInitialChatSessionState,
+  showCommandHelpModal,
 } from "@buli/chat-session-state";
 import {
   buildChatAppRenderStoreChangeSetFromChatSessionStateChange,
@@ -260,4 +261,66 @@ test("ChatAppRenderStore routes controller chrome changes to chrome subscribers 
     step: "compacting",
     source: "auto",
   });
+});
+
+test("ChatAppRenderStore does not notify prompt composer subscribers for interaction changes that keep prompt editing enabled", () => {
+  const initialChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  const chatAppRenderStore = createChatAppRenderStore({ initialChatSessionState });
+  let promptNotificationCount = 0;
+  let interactionStatusNotificationCount = 0;
+
+  chatAppRenderStore.subscribePromptComposer(() => {
+    promptNotificationCount += 1;
+  });
+  chatAppRenderStore.subscribeInteractionStatus(() => {
+    interactionStatusNotificationCount += 1;
+  });
+
+  const nextChatSessionState: typeof initialChatSessionState = {
+    ...initialChatSessionState,
+    slashCommandSelectionState: {
+      step: "showing_slash_commands",
+      slashCommandQueryText: "he",
+      availableSlashCommands: [{ name: "help", value: "/help", description: "Show help" }],
+      highlightedSlashCommandIndex: 0,
+    },
+  };
+  chatAppRenderStore.replaceChatSessionState({
+    nextChatSessionState,
+    changeSet: buildChatAppRenderStoreChangeSetFromChatSessionStateChange({
+      previousChatSessionState: initialChatSessionState,
+      nextChatSessionState,
+    }),
+  });
+
+  expect(promptNotificationCount).toBe(0);
+  expect(interactionStatusNotificationCount).toBe(1);
+  expect(chatAppRenderStore.readPromptComposerSnapshot().isPromptInputDisabled).toBe(false);
+});
+
+test("ChatAppRenderStore notifies prompt composer subscribers when interaction changes disable prompt editing", () => {
+  const initialChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  const chatAppRenderStore = createChatAppRenderStore({ initialChatSessionState });
+  let promptNotificationCount = 0;
+  let interactionStatusNotificationCount = 0;
+
+  chatAppRenderStore.subscribePromptComposer(() => {
+    promptNotificationCount += 1;
+  });
+  chatAppRenderStore.subscribeInteractionStatus(() => {
+    interactionStatusNotificationCount += 1;
+  });
+
+  const nextChatSessionState = showCommandHelpModal(initialChatSessionState);
+  chatAppRenderStore.replaceChatSessionState({
+    nextChatSessionState,
+    changeSet: buildChatAppRenderStoreChangeSetFromChatSessionStateChange({
+      previousChatSessionState: initialChatSessionState,
+      nextChatSessionState,
+    }),
+  });
+
+  expect(promptNotificationCount).toBe(1);
+  expect(interactionStatusNotificationCount).toBe(1);
+  expect(chatAppRenderStore.readPromptComposerSnapshot().isPromptInputDisabled).toBe(true);
 });

@@ -475,6 +475,24 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         baseDurationMs: 6,
       },
     }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_034,
+      subsystem: "tui",
+      eventName: "chat_screen.react_render_summary",
+      fields: {
+        commitCount: 3,
+        mountCommitCount: 1,
+        updateCommitCount: 2,
+        totalActualDurationMs: 15,
+        maxActualDurationMs: 9,
+        meanActualDurationMs: 5,
+        totalBaseDurationMs: 20,
+        maxBaseDurationMs: 10,
+        firstCommitAtMs: 1_001,
+        lastCommitAtMs: 1_034,
+      },
+    }),
     JSON.stringify({ type: "profile_stopped", atMs: 1_040, profileFilePath: "profile.jsonl", sampleIntervalMs: 250 }),
   ].join("\n"));
 
@@ -515,8 +533,9 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("Request body growth: 600 B");
   expect(reportMarkdown).toContain("`conversa`");
   expect(reportMarkdown).toContain("## TUI Render");
-  expect(reportMarkdown).toContain("Commit count: 1");
-  expect(reportMarkdown).toContain("Mean actual duration: 4 ms");
+  expect(reportMarkdown).toContain("Commit count: 3");
+  expect(reportMarkdown).toContain("Max actual duration: 9 ms");
+  expect(reportMarkdown).toContain("Mean actual duration: 5 ms");
   expect(reportMarkdown).toContain("## SQLite Storage");
   expect(reportMarkdown).toContain("append_entry");
 });

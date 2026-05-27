@@ -260,6 +260,8 @@ Rules:
 - Produce a concrete, honest apply plan for the agreed outcome.
 - For non-trivial work, make the plan file-by-file.
 - Include intended code changes, verification steps, and the key risks or assumptions that still matter.
+- End with an Implementation handoff that says whether apply can start without more discovery.
+- If more context is still needed before apply, list only the exact targeted reads needed.
 - If important uncertainty remains, resolve it before asking to apply.
 
 Your turn should end with either:
@@ -278,6 +280,9 @@ The user has agreed on the intended outcome and approved applying the change.
 
 Rules:
 - Execute the agreed plan faithfully.
+- If the handoff says enough context is visible, apply the planned mutations before doing more discovery.
+- Do not do broad rediscovery or re-read files already visible in context before the first mutation.
+- Use targeted reads only when the plan explicitly asked for them, patching conflicts, verification fails, user changes conflict, or a safety/product decision appears.
 - Keep explaining important why and how details while applying.
 - Prefer the smallest correct change.
 - Verify important results before claiming success.

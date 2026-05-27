@@ -28,7 +28,7 @@ export type ChatScreenMainAreaProps = {
   conversationSessionCompactionStatus?: ConversationSessionCompactionStatus | undefined;
   queuedPromptCount?: number | undefined;
   totalContextTokensUsed?: number | undefined;
-  contextWindowTokenCapacity?: number | undefined;
+  contextMeterTokenLimit?: number | undefined;
   onRevealOlderConversationMessages: () => void;
   onCommandHelpCloseRequested: () => void;
 };
@@ -67,7 +67,7 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
       conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
       queuedPromptCount={props.queuedPromptCount}
       totalContextTokensUsed={props.totalContextTokensUsed}
-      contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+      contextMeterTokenLimit={props.contextMeterTokenLimit}
     />
   );
 }

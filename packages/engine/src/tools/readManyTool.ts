@@ -9,9 +9,13 @@ import {
   type ToolCallReadManyResult,
 } from "@buli/contracts";
 import type { ProjectInstructionTracker } from "../projectInstructions.ts";
+import {
+  createDuplicateReadOnlyToolResultText,
+  type ReadOnlyToolCallEvidenceIndex,
+  type ReusableReadToolEvidence,
+} from "../readOnlyToolCallEvidenceIndex.ts";
 import { runReadToolCall } from "./readTool.ts";
 import type { ToolCallOutcome } from "./toolCallOutcome.ts";
-import { buildBudgetedTaggedToolResultText } from "./toolResultTextBudget.ts";
 
 export interface ReadManyToolCallConcurrencyLimiter {
   run<ReadManyChildResult>(
@@ -30,8 +34,6 @@ type UniqueReadManyChildToolCall = {
   readTarget: ReadManyToolCallTarget;
 };
 
-export const MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH = 32_000;
-
 export function createStartedReadManyToolCallDetail(
   readManyToolCallRequest: ReadManyToolCallRequest,
 ): ToolCallReadManyDetail {
@@ -44,6 +46,7 @@ export async function runReadManyToolCall(input: {
   workspaceRootPath: string;
   readOnlyToolCallConcurrencyLimiter: ReadManyToolCallConcurrencyLimiter;
   projectInstructionTracker?: ProjectInstructionTracker;
+  readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
   abortSignal?: AbortSignal;
 }): Promise<ToolCallOutcome> {
   const startedAtMilliseconds = Date.now();
@@ -52,8 +55,18 @@ export async function runReadManyToolCall(input: {
   try {
     const uniqueReadManyChildToolCalls = listUniqueReadManyChildToolCalls(input.readManyToolCallRequest.readTargets);
     const uniqueChildToolCallOutcomes = await Promise.all(
-      uniqueReadManyChildToolCalls.map((uniqueReadManyChildToolCall) =>
-        input.readOnlyToolCallConcurrencyLimiter.run(
+      uniqueReadManyChildToolCalls.map((uniqueReadManyChildToolCall) => {
+        const reusableReadEvidence = input.readOnlyToolCallEvidenceIndex?.findReusableReadManyTargetEvidence(
+          uniqueReadManyChildToolCall.readTarget,
+        );
+        if (reusableReadEvidence) {
+          return Promise.resolve(createDuplicateReadManyChildToolCallOutcome({
+            readTargetIndex: uniqueReadManyChildToolCall.firstReadTargetIndex,
+            reusableReadEvidence,
+          }));
+        }
+
+        return input.readOnlyToolCallConcurrencyLimiter.run(
           () =>
             runReadManyChildToolCall({
               readTarget: uniqueReadManyChildToolCall.readTarget,
@@ -68,8 +81,8 @@ export async function runReadManyToolCall(input: {
             toolName: "read",
             childIndex: uniqueReadManyChildToolCall.firstReadTargetIndex,
           },
-        )
-      ),
+        );
+      }),
     );
     const childToolCallOutcomes = createReadManyChildOutcomesForRequestedTargets({
       readTargets: input.readManyToolCallRequest.readTargets,
@@ -110,6 +123,21 @@ export async function runReadManyToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+function createDuplicateReadManyChildToolCallOutcome(input: {
+  readTargetIndex: number;
+  reusableReadEvidence: ReusableReadToolEvidence;
+}): ReadManyChildToolCallOutcome {
+  return {
+    readTargetIndex: input.readTargetIndex,
+    readToolCallOutcome: {
+      outcomeKind: "completed",
+      toolCallDetail: input.reusableReadEvidence.toolCallDetail,
+      toolResultText: createDuplicateReadOnlyToolResultText(input.reusableReadEvidence),
+      durationMilliseconds: 0,
+    },
+  };
 }
 
 function listUniqueReadManyChildToolCalls(
@@ -224,19 +252,12 @@ function buildReadManyToolResultText(input: {
   completedReadCount: number;
   failedReadCount: number;
 }): string {
-  return buildBudgetedTaggedToolResultText({
-    openingTag: "<read_many>",
-    closingTag: "</read_many>",
-    contentLines: [
-      `<summary>${input.completedReadCount} completed, ${input.failedReadCount} failed</summary>`,
-      ...input.childToolCallOutcomes.flatMap(formatReadManyChildToolResultLines),
-    ],
-    maximumCharacterCount: MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH,
-    truncationTagName: "read_many_truncation",
-    continuationGuidanceLines: [
-      "Use read with one readTargetPath plus offsetLineNumber and maximumLineCount for the specific file range you need next.",
-    ],
-  });
+  return [
+    "<read_many>",
+    `<summary>${input.completedReadCount} completed, ${input.failedReadCount} failed</summary>`,
+    ...input.childToolCallOutcomes.flatMap(formatReadManyChildToolResultLines),
+    "</read_many>",
+  ].join("\n");
 }
 
 function formatReadManyChildToolResultLines(childToolCallOutcome: ReadManyChildToolCallOutcome): readonly string[] {

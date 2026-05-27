@@ -14,7 +14,7 @@ import {
 } from "../src/runtimeReadOnlyToolCallExecution.ts";
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "../src/runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
-import { MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH, runReadManyToolCall } from "../src/tools/readManyTool.ts";
+import { runReadManyToolCall } from "../src/tools/readManyTool.ts";
 import { MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH, runSearchManyToolCall } from "../src/tools/searchManyTool.ts";
 
 class RecordingProviderConversationTurn implements ProviderConversationTurn {
@@ -155,6 +155,143 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
     writeTargetPath: "notes.txt",
     fileContent: "new\n",
   })).toBe(false);
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a compact reference for duplicate reads", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-read-"));
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read_1",
+        toolCallRequest: { toolName: "read", readTargetPath: "notes.txt" },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_read_1",
+        toolCallDetail: {
+          toolName: "read",
+          readFilePath: "notes.txt",
+          returnedLineCount: 1,
+          previewLines: [{ lineNumber: 1, lineText: "alpha" }],
+        },
+        toolResultText: "1: alpha",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read_2",
+        toolCallRequest: { toolName: "read", readTargetPath: "notes.txt" },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  const assistantResponseEvents = await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_read_2",
+    toolCallRequest: { toolName: "read", readTargetPath: "notes.txt" },
+    workspaceRootPath,
+    conversationHistory,
+    toolResultSessionRecorder,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  expect(assistantResponseEvents).toContainEqual(expect.objectContaining({
+    type: "assistant_message_part_updated",
+    part: expect.objectContaining({
+      partKind: "assistant_tool_call",
+      toolCallId: "call_read_2",
+      toolCallStatus: "completed",
+      toolCallDetail: expect.objectContaining({
+        toolName: "read",
+        readFilePath: "notes.txt",
+      }),
+    }),
+  }));
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_read_2",
+      toolResultText: expect.stringContaining("<duplicate_read_only_tool_result>"),
+    },
+  ]);
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("call_read_1");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("1: alpha");
+  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolCallId: "call_read_2",
+    toolResultText: expect.stringContaining("<duplicate_read_only_tool_result>"),
+  });
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall deduplicates read_many children independently", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-read-many-"));
+  await writeFile(join(workspaceRootPath, "fresh.txt"), "new content\n", "utf8");
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read_1",
+        toolCallRequest: { toolName: "read", readTargetPath: "cached.txt" },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_read_1",
+        toolCallDetail: {
+          toolName: "read",
+          readFilePath: "cached.txt",
+          returnedLineCount: 1,
+          previewLines: [{ lineNumber: 1, lineText: "cached content" }],
+        },
+        toolResultText: "1: cached content",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read_many_2",
+        toolCallRequest: {
+          toolName: "read_many",
+          readTargets: [
+            { readTargetPath: "cached.txt" },
+            { readTargetPath: "fresh.txt" },
+          ],
+        },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_read_many_2",
+    toolCallRequest: {
+      toolName: "read_many",
+      readTargets: [
+        { readTargetPath: "cached.txt" },
+        { readTargetPath: "fresh.txt" },
+      ],
+    },
+    workspaceRootPath,
+    conversationHistory,
+    toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
+      maximumConcurrentReadOnlyToolCalls: 2,
+    }),
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  const submittedToolResultText = providerConversationTurn.submittedToolResults[0]?.toolResultText ?? "";
+  expect(submittedToolResultText).toContain("<summary>2 completed, 0 failed</summary>");
+  expect(submittedToolResultText).toContain("<duplicate_read_only_tool_result>");
+  expect(submittedToolResultText).toContain("call_read_1");
+  expect(submittedToolResultText).toContain("1: new content");
+  expect(submittedToolResultText).not.toContain("1: cached content");
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records read_many partial failures as one completed batch", async () => {
@@ -388,7 +525,7 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records searc
   });
 });
 
-test("runReadManyToolCall caps large batch output with continuation guidance", async () => {
+test("runReadManyToolCall preserves large batch output", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-many-budget-"));
   const largeFileText = Array.from({ length: 800 }, (_value, lineIndex) =>
     `${lineIndex + 1}: ${"read-many-output ".repeat(8)}`
@@ -410,9 +547,9 @@ test("runReadManyToolCall caps large batch output with continuation guidance", a
   if (toolCallOutcome.outcomeKind !== "completed") {
     throw new Error("Expected read_many to complete");
   }
-  expect(toolCallOutcome.toolResultText.length).toBeLessThanOrEqual(MAX_READ_MANY_TOOL_RESULT_TEXT_LENGTH);
-  expect(toolCallOutcome.toolResultText).toContain("<read_many_truncation>");
-  expect(toolCallOutcome.toolResultText).toContain("Use read with one readTargetPath plus offsetLineNumber and maximumLineCount");
+  expect(toolCallOutcome.toolResultText).not.toContain("<read_many_truncation>");
+  expect(toolCallOutcome.toolResultText).toContain("1: 1: read-many-output");
+  expect(toolCallOutcome.toolResultText).toContain("800: 800: read-many-output");
   expect(toolCallOutcome.toolResultText).toContain("</read_many>");
 });
 

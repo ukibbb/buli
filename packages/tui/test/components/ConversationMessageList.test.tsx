@@ -414,7 +414,7 @@ describe("ConversationMessageList", () => {
         conversationSessionCompactionStatus={{ step: "compacting", source: "auto" }}
         queuedPromptCount={2}
         totalContextTokensUsed={252_000}
-        contextWindowTokenCapacity={1_100_000}
+        contextMeterTokenLimit={252_000}
       />,
       { width: 100, height: 8 },
     );
@@ -424,7 +424,7 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("▰");
     expect(frame).toContain("Auto-compacting history...");
     expect(frame).toContain("Queued: 2");
-    expect(frame).toContain("252k / 1.1m (23%)");
+    expect(frame).toContain("252k / 252k (100%)");
   });
 
   test("renders auto compaction separator before streamed summary text", async () => {

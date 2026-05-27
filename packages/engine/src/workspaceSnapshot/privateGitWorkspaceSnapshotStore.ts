@@ -103,16 +103,12 @@ export class PrivateGitWorkspaceSnapshotStore implements WorkspaceSnapshotStore 
       baselineSnapshotHash: input.baselineSnapshotHash,
       abortSignal: input.abortSignal,
     });
-    const changedFiles = await Promise.all(
-      changedFileStatuses.map((changedFileStatus) =>
-        this.buildWorkspacePatchFileDiff({
-          baselineSnapshotHash: input.baselineSnapshotHash,
-          changedFileStatus,
-          lineStatsByFilePath,
-          abortSignal: input.abortSignal,
-        })
-      ),
-    );
+    const changedFiles = await this.buildAllWorkspacePatchFileDiffs({
+      baselineSnapshotHash: input.baselineSnapshotHash,
+      changedFileStatuses,
+      lineStatsByFilePath,
+      abortSignal: input.abortSignal,
+    });
     const addedLineCount = changedFiles.reduce((sum, changedFile) => sum + changedFile.addedLineCount, 0);
     const removedLineCount = changedFiles.reduce((sum, changedFile) => sum + changedFile.removedLineCount, 0);
 
@@ -239,35 +235,33 @@ export class PrivateGitWorkspaceSnapshotStore implements WorkspaceSnapshotStore 
     );
   }
 
-  private async buildWorkspacePatchFileDiff(input: {
+  private async buildAllWorkspacePatchFileDiffs(input: {
     baselineSnapshotHash: string;
-    changedFileStatus: GitDiffNameStatus;
+    changedFileStatuses: GitDiffNameStatus[];
     lineStatsByFilePath: Map<string, GitDiffLineStat>;
     abortSignal: AbortSignal | undefined;
-  }): Promise<WorkspacePatchFileDiff> {
-    const lineStat = input.lineStatsByFilePath.get(input.changedFileStatus.filePath);
-    const unifiedDiffResult = await this.runPrivateGitCommand(
-      [
-        "diff",
-        "--cached",
-        "--no-ext-diff",
-        "--no-renames",
-        input.baselineSnapshotHash,
-        "--",
-        input.changedFileStatus.filePath,
-      ],
+  }): Promise<WorkspacePatchFileDiff[]> {
+    const batchedDiffResult = await this.runPrivateGitCommand(
+      ["diff", "--cached", "--no-ext-diff", "--no-renames", input.baselineSnapshotHash, "--", "."],
       { abortSignal: input.abortSignal },
     );
-    assertSuccessfulGitCommand(unifiedDiffResult, `build private workspace snapshot file diff: ${input.changedFileStatus.filePath}`);
-    const unifiedDiffText = normalizeStoredUnifiedDiffText(unifiedDiffResult.stdoutText);
+    assertSuccessfulGitCommand(batchedDiffResult, "build private workspace snapshot file diffs");
 
-    return {
-      filePath: input.changedFileStatus.filePath,
-      changeKind: input.changedFileStatus.changeKind,
-      addedLineCount: lineStat?.addedLineCount ?? 0,
-      removedLineCount: lineStat?.removedLineCount ?? 0,
-      ...(unifiedDiffText ? { unifiedDiffText } : {}),
-    };
+    const diffTextByFilePath = splitCombinedDiffOutput(batchedDiffResult.stdoutText);
+
+    return input.changedFileStatuses.map((changedFileStatus) => {
+      const lineStat = input.lineStatsByFilePath.get(changedFileStatus.filePath);
+      const rawDiffText = diffTextByFilePath.get(changedFileStatus.filePath);
+      const unifiedDiffText = normalizeStoredUnifiedDiffText(rawDiffText ?? "");
+
+      return {
+        filePath: changedFileStatus.filePath,
+        changeKind: changedFileStatus.changeKind,
+        addedLineCount: lineStat?.addedLineCount ?? 0,
+        removedLineCount: lineStat?.removedLineCount ?? 0,
+        ...(unifiedDiffText ? { unifiedDiffText } : {}),
+      };
+    });
   }
 
   private async assertWorkspacePatchFilesStillMatchResultingSnapshot(input: {
@@ -452,6 +446,30 @@ function parseGitDiffNumstatLine(lineText: string): Array<GitDiffLineStat & { fi
 function parseNonnegativeGitLineCount(lineCountText: string): number {
   const lineCount = Number.parseInt(lineCountText, 10);
   return Number.isFinite(lineCount) && lineCount >= 0 ? lineCount : 0;
+}
+
+function splitCombinedDiffOutput(combinedDiffText: string): Map<string, string> {
+  const diffTextByFilePath = new Map<string, string>();
+  if (combinedDiffText.length === 0) {
+    return diffTextByFilePath;
+  }
+
+  // Split on "diff --git " at the start of a line, keeping each header with its content
+  const fileDiffSections = combinedDiffText.split(/(?=^diff --git )/m);
+  for (const section of fileDiffSections) {
+    if (section.length === 0) {
+      continue;
+    }
+    // Extract file path from "diff --git a/<path> b/<path>"
+    const headerMatch = section.match(/^diff --git a\/(.+?) b\/(.+?)$/m);
+    if (!headerMatch) {
+      continue;
+    }
+    const filePath = headerMatch[2]!;
+    diffTextByFilePath.set(filePath, section);
+  }
+
+  return diffTextByFilePath;
 }
 
 function normalizeStoredUnifiedDiffText(unifiedDiffText: string): string | undefined {

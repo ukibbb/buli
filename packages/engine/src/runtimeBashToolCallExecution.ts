@@ -25,9 +25,12 @@ import {
   classifyBashToolApprovalRequirement,
   type BashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
+import { buildHeadTailBudgetedText } from "./tools/toolResultTextBudget.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 import { appendWorkspacePatchSummaryToToolResultText } from "./workspaceSnapshot/workspacePatchSummary.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
+
+export const BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT = 32 * 1024;
 
 export type StreamAssistantResponseEventsForBashToolCallInput = {
   assistantResponseMessageId: string;
@@ -212,12 +215,15 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   }
 
   input.throwIfConversationTurnInterrupted();
-  const workspacePatchCapture = await beginRuntimeWorkspacePatchCapture({
-    workspaceSnapshotStore: input.workspaceSnapshotStore,
-    toolCallId: input.toolCallId,
-    abortSignal: input.abortSignal,
-    diagnosticLogger: input.diagnosticLogger,
-  });
+  const isReadOnlyCommand = bashToolApprovalDecision.approvalPolicy === "auto_run" && bashToolApprovalDecision.isReadOnly;
+  const workspacePatchCapture = isReadOnlyCommand
+    ? undefined
+    : await beginRuntimeWorkspacePatchCapture({
+        workspaceSnapshotStore: input.workspaceSnapshotStore,
+        toolCallId: input.toolCallId,
+        abortSignal: input.abortSignal,
+        diagnosticLogger: input.diagnosticLogger,
+      });
   const bashToolCallOutcome = await runApprovedBashToolCall({
     bashToolCallRequest: input.bashToolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
@@ -229,10 +235,13 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   input.throwIfConversationTurnInterrupted();
 
   if (bashToolCallOutcome.outcomeKind === "completed") {
-    const completedToolResultText = appendWorkspacePatchSummaryToToolResultText({
+    const completedToolResultTextWithWorkspacePatchSummary = appendWorkspacePatchSummaryToToolResultText({
       toolResultText: bashToolCallOutcome.toolResultText,
       workspacePatch,
     });
+    const completedToolResultText = bashToolCallOutcome.toolCallDetail.exitCode === 0
+      ? createBudgetedBashProviderToolResultText(completedToolResultTextWithWorkspacePatchSummary)
+      : completedToolResultTextWithWorkspacePatchSummary;
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: bashToolCallOutcome.toolCallDetail,
@@ -309,5 +318,14 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     toolResultText: failedToolResultText,
     toolResultKind: "failed",
     diagnosticLogger: input.diagnosticLogger,
+  });
+}
+
+function createBudgetedBashProviderToolResultText(toolResultText: string): string {
+  return buildHeadTailBudgetedText({
+    sourceText: toolResultText,
+    maximumCharacterCount: BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT,
+    createTruncationNotice: (omittedCharacterCount) =>
+      `\n[bash result truncated to stay within ${BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT} characters; omitted ${omittedCharacterCount} characters]\n`,
   });
 }

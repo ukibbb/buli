@@ -861,11 +861,17 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(readToolDefinition?.description).toContain("Use this only for exact paths already evidenced");
   expect(readToolDefinition?.description).toContain("Do not read paths inferred from imports, symbols, filenames, likely extensions, or project conventions");
   expect(readToolDefinition?.description).toContain("discover uncertain paths with search_many, glob, or grep first");
+  expect(readToolDefinition?.description).toContain("Prefer precise bounded reads");
+  expect(readToolDefinition?.description).toContain("set offset and limit around the relevant range");
+  expect(readToolDefinition?.description).toContain("Use null offset/limit only when the full default window is intentionally needed");
   expect(readToolDefinition?.description).toContain("Do not guess offsets");
   expect(readToolDefinition?.description).toContain("continue only from line counts returned by previous reads");
   expect(readManyToolDefinition?.description).toContain("Read multiple files or directories");
   expect(readManyToolDefinition?.description).toContain("several exact paths are already evidenced");
   expect(readManyToolDefinition?.description).toContain("one larger independent read_many batch");
+  expect(readManyToolDefinition?.description).toContain("Keep each target precise");
+  expect(readManyToolDefinition?.description).toContain("set that target's offset and limit around the relevant range");
+  expect(readManyToolDefinition?.description).toContain("Use null offset/limit only when the full default window is intentionally needed for that target");
   expect(readManyToolDefinition?.parameters.properties["targets"]?.minItems).toBe(1);
   expect(searchManyToolDefinition?.description).toContain("Run multiple independent glob and grep searches");
   expect(searchManyToolDefinition?.description).toContain("contextLineCount");

@@ -5,7 +5,7 @@ import type {
   ConversationSessionCompactionStatus,
 } from "@buli/chat-app-controller";
 import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
-import { memo, useCallback, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { InputPanel } from "./InputPanel.tsx";
 import { InputStatusStrip } from "./InputStatusStrip.tsx";
 import { MinimumHeightPromptStrip } from "./MinimumHeightPromptStrip.tsx";
@@ -29,7 +29,7 @@ type PromptComposerChromeCommonProps = {
   nextModeAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   reasoningEffortLabel: string;
   totalContextTokensUsed: number | undefined;
-  contextWindowTokenCapacity: number | undefined;
+  contextMeterTokenLimit: number | undefined;
   onPromptDraftEdited: (promptTextareaEdit: PromptTextareaEdit) => void;
   onPromptSubmitted: () => void;
   onNativeClipboardPasteRequested: () => void | Promise<void>;
@@ -53,6 +53,8 @@ type PromptComposerChromeRenderState = {
   selectedPromptContextReferenceTexts: readonly string[];
   selectedModelId: string;
 };
+
+const emptyPromptPlaceholderTexts: readonly string[] = [];
 
 function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactNode {
   if (props.chatAppRenderStore) {
@@ -86,11 +88,23 @@ function PromptComposerChromeLayout(
   props: PromptComposerChromeCommonProps & { promptComposerRenderState: PromptComposerChromeRenderState },
 ): ReactNode {
   const promptComposerRenderState = props.promptComposerRenderState;
-  const promptImageAttachmentPlaceholderTexts = promptComposerRenderState.pendingPromptImageAttachments.map(
-    (pendingPromptImageAttachment) => pendingPromptImageAttachment.promptDraftPlaceholderText,
+  const promptImageAttachmentPlaceholderTexts = useMemo(
+    () =>
+      promptComposerRenderState.pendingPromptImageAttachments.length === 0
+        ? emptyPromptPlaceholderTexts
+        : promptComposerRenderState.pendingPromptImageAttachments.map(
+            (pendingPromptImageAttachment) => pendingPromptImageAttachment.promptDraftPlaceholderText,
+          ),
+    [promptComposerRenderState.pendingPromptImageAttachments],
   );
-  const promptTextPastePlaceholderTexts = promptComposerRenderState.pendingPromptTextPastes.map(
-    (pendingPromptTextPaste) => pendingPromptTextPaste.promptDraftPlaceholderText,
+  const promptTextPastePlaceholderTexts = useMemo(
+    () =>
+      promptComposerRenderState.pendingPromptTextPastes.length === 0
+        ? emptyPromptPlaceholderTexts
+        : promptComposerRenderState.pendingPromptTextPastes.map(
+            (pendingPromptTextPaste) => pendingPromptTextPaste.promptDraftPlaceholderText,
+          ),
+    [promptComposerRenderState.pendingPromptTextPastes],
   );
 
   return (
@@ -104,7 +118,6 @@ function PromptComposerChromeLayout(
             promptTextPastePlaceholderTexts={promptTextPastePlaceholderTexts}
             selectedPromptContextReferenceTexts={promptComposerRenderState.selectedPromptContextReferenceTexts}
             isPromptInputDisabled={props.isPromptInputDisabled}
-            queuedPromptCount={props.queuedPromptCount}
             accentColor={props.inputPanelAccentColor}
             assistantResponseStatus={promptComposerRenderState.conversationTurnStatus}
             conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
@@ -143,7 +156,7 @@ function PromptComposerChromeLayout(
             modelIdentifier={promptComposerRenderState.selectedModelId}
             reasoningEffortLabel={props.reasoningEffortLabel}
             totalContextTokensUsed={props.totalContextTokensUsed}
-            contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+            contextMeterTokenLimit={props.contextMeterTokenLimit}
           />
         </box>
       )}
@@ -188,7 +201,7 @@ function arePromptComposerChromeCommonPropsEqual(
     previousProps.nextModeAccentColor === nextProps.nextModeAccentColor &&
     previousProps.reasoningEffortLabel === nextProps.reasoningEffortLabel &&
     previousProps.totalContextTokensUsed === nextProps.totalContextTokensUsed &&
-    previousProps.contextWindowTokenCapacity === nextProps.contextWindowTokenCapacity &&
+    previousProps.contextMeterTokenLimit === nextProps.contextMeterTokenLimit &&
     previousProps.onPromptDraftEdited === nextProps.onPromptDraftEdited &&
     previousProps.onPromptSubmitted === nextProps.onPromptSubmitted &&
     previousProps.onNativeClipboardPasteRequested === nextProps.onNativeClipboardPasteRequested &&

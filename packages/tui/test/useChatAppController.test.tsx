@@ -541,6 +541,35 @@ test("useChatAppController keeps render store prompt snapshot current without no
   expect(nextController.readLatestChatSessionState().promptDraft).toBe("Next prompt");
 });
 
+test("useChatAppController keeps summarized paste updates prompt-local", async () => {
+  const renderedHook = await renderChatAppControllerHook();
+  const previousController = renderedHook.readCurrentController();
+  const previousRenderCount = renderedHook.readRenderCount();
+  let promptNotificationCount = 0;
+  previousController.chatAppRenderStore.subscribePromptComposer(() => {
+    promptNotificationCount += 1;
+  });
+
+  await act(async () => {
+    previousController.insertSummarizedPastedTextIntoChatAppPrompt({
+      pastedText: ["first pasted line", "second pasted line", "third pasted line"].join("\n"),
+    });
+  });
+  await renderedHook.flushHookEffects();
+
+  const nextController = renderedHook.readCurrentController();
+  const promptComposerSnapshot = nextController.chatAppRenderStore.readPromptComposerSnapshot();
+  expect(renderedHook.readRenderCount()).toBe(previousRenderCount);
+  expect(nextController.promptComposerState).toBe(previousController.promptComposerState);
+  expect(promptNotificationCount).toBe(1);
+  expect(promptComposerSnapshot.promptDraft).toBe("[Pasted ~3 lines] ");
+  expect(promptComposerSnapshot.pendingPromptTextPastes).toMatchObject([
+    { pastedText: "first pasted line\nsecond pasted line\nthird pasted line", promptDraftPlaceholderText: "[Pasted ~3 lines]" },
+  ]);
+  expect(nextController.chatSessionState.promptDraft).toBe("");
+  expect(nextController.readLatestChatSessionState().promptDraft).toBe("[Pasted ~3 lines] ");
+});
+
 test("useChatAppController routes assistant response events through render store row subscriptions", async () => {
   const externallyDrivenRunner = createExternallyDrivenAssistantConversationRunner();
   const renderedHook = await renderChatAppControllerHook({

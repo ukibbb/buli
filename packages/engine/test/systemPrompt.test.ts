@@ -28,6 +28,21 @@ test("separates read-only planning from implementation execution", () => {
   );
 });
 
+test("includes the read-only evidence ledger when provided", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    readOnlyToolEvidenceLedgerText: [
+      "Read-only evidence already visible in this conversation:",
+      "- read src/app.ts lines 1-20 via call_read_1",
+      "Do not request the same read-only evidence again unless it is stale.",
+    ].join("\n"),
+  });
+
+  expect(systemPromptText).toContain("Context evidence ledger:");
+  expect(systemPromptText).toContain("read src/app.ts lines 1-20 via call_read_1");
+  expect(systemPromptText).toContain("Do not request the same read-only evidence again");
+});
+
 test("uses file-by-file apply plans for non-trivial work", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
@@ -52,6 +67,15 @@ test("uses file-by-file apply plans for non-trivial work", () => {
   );
   expect(systemPromptText).toContain(
     "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+  );
+  expect(systemPromptText).toContain(
+    "Prefer precise reads: use grep/search_many to locate relevant symbols first, then read only the file ranges needed to answer the question instead of broad full-file windows.",
+  );
+  expect(systemPromptText).toContain(
+    "When grep/search_many returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
+  );
+  expect(systemPromptText).toContain(
+    "If a result says content was truncated or omitted content is not currently visible, do not rely on or claim the omitted content; request a narrower follow-up read/search if those details matter.",
   );
   expect(systemPromptText).toContain(
     "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with search_many, glob, or grep before reading.",
@@ -91,7 +115,7 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "Move to planning only after the mechanics and decision points are clear and Lukasz agrees on the intended outcome and approach.",
   );
   expect(systemPromptText).toContain(
-    "In Plan mode, non-trivial plans should be concrete enough for execution: exact files, intended changes, verification commands, and code-level direction when useful.",
+    "In Plan mode, non-trivial plans should be concrete enough for execution: exact files, intended changes, verification commands, code-level direction when useful, and whether Implementation can apply without more discovery.",
   );
   expect(systemPromptText).toContain(
     "Do not apply Plan mode proposals until Lukasz approves the plan or says execute.",
@@ -103,9 +127,15 @@ test("requires context completeness before workspace conclusions", () => {
 
   expect(systemPromptText).toContain("Context completeness:");
   expect(systemPromptText).toContain(
-    "Before answering, explaining, planning, or editing a non-trivial workspace question",
+    "Before answering, explaining, or planning a non-trivial workspace question",
   );
   expect(systemPromptText).toContain("directly relevant files and likely tests, contracts, configs, and call sites");
+  expect(systemPromptText).toContain(
+    "In Implementation mode, treat context completeness as inherited from the latest completed Plan when that Plan names exact files, operations, anchors, and verification commands.",
+  );
+  expect(systemPromptText).toContain(
+    "In Implementation mode, do not redo broad discovery before mutating when the Plan handoff says enough context is already visible",
+  );
   expect(systemPromptText).toContain(
     "If context is still incomplete, either keep researching or state exactly what was not inspected",
   );
@@ -202,6 +232,14 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("You may ONLY observe, research, explain, compare options, and clarify understanding.");
   expect(systemPromptText).toContain("teach Lukasz the current situation before planning or applying code");
   expect(systemPromptText).toContain("Act like a patient teacher: explain the system in simple words first");
+  expect(systemPromptText).toContain("smart but green student");
+  expect(systemPromptText).toContain("explain the flow in execution order");
+  expect(systemPromptText).toContain("Use concrete example data");
+  expect(systemPromptText).toContain("Cover every behavior-changing branch");
+  expect(systemPromptText).toContain("Remove timing ambiguity");
+  expect(systemPromptText).toContain("concurrent, parallel, interleaved, streamed, scheduled later, or callback-driven");
+  expect(systemPromptText).toContain("Do not use words like");
+  expect(systemPromptText).toContain("Explain language, framework, library, runtime, and tool-specific concepts");
   expect(systemPromptText).toContain("For non-trivial workspace questions, do a deep-dive research pass before answering.");
   expect(systemPromptText).toContain("Follow important imports, call sites, tests, contracts, and collaborators far enough to validate the explanation.");
   expect(systemPromptText).toContain("If you cannot find the context, say what you searched and do not invent the missing behavior.");
@@ -261,12 +299,18 @@ test("plan mode points inspection toward read-only capabilities", () => {
   expect(systemPromptText).toContain("If important context cannot be found, say exactly what was searched and keep the plan scoped to verified facts.");
   expect(systemPromptText).toContain("At least one simple approach and, when warranted, one deeper refactor approach.");
   expect(systemPromptText).toContain("Tradeoffs for each meaningful approach: simplicity, risk, correctness, maintainability, reversibility, and test impact.");
+  expect(systemPromptText).toContain(
+    "Implementation handoff that states whether Implementation can start applying without additional discovery",
+  );
+  expect(systemPromptText).toContain(
+    "For non-trivial plans, end with a clear Implementation handoff: target files, intended operations or patch-ready code anchors, verification commands",
+  );
   expect(systemPromptText).toContain("Small code examples or pseudocode snippets when they make the plan easier to understand.");
   expect(systemPromptText).toContain("Prefer concise file-by-file plans over full patch dumps.");
   expect(systemPromptText).toContain("Include full proposed diffs only when Lukasz explicitly asks for patch text.");
   expect(systemPromptText).not.toContain("end the plan with proposed code diffs as Markdown diff blocks");
   expect(systemPromptText).toContain("Only Implementation mode may write to files.");
-  expect(systemPromptText).toContain("The output should be clean enough that Implementation mode can execute it without re-planning.");
+  expect(systemPromptText).toContain("The output should be clean enough that Implementation mode can execute it without re-planning or broad rediscovery.");
 });
 
 test("implementation mode reminds the assistant to apply the agreed direction", () => {
@@ -281,6 +325,19 @@ test("implementation mode reminds the assistant to apply the agreed direction", 
   expect(systemPromptText).toContain("Apply the smallest correct slice");
   expect(systemPromptText).toContain("Do not ask for approval before each file edit");
   expect(systemPromptText).toContain("the user's switch to Implementation mode is the approval to execute the agreed direction");
+  expect(systemPromptText).toContain(
+    "If the latest completed Plan handoff gives enough exact files, anchors, operations, and verification commands, start by applying the planned mutations.",
+  );
+  expect(systemPromptText).toContain("Do not do broad discovery or re-read files already visible in context before the first mutation.");
+  expect(systemPromptText).toContain("The Plan handoff explicitly listed exact targeted pre-apply reads.");
+  expect(systemPromptText).toContain("A patch/edit fails, the workspace changed, or user changes conflict with the plan.");
+  expect(systemPromptText).toContain("Verification fails and targeted diagnosis is needed.");
+  expect(systemPromptText).toContain(
+    "After applying the planned patch, run the planned verification. If verification fails, inspect only the failing area",
+  );
+  expect(systemPromptText).toContain(
+    "In Implementation mode, if the latest Plan provides enough exact context, apply first; inspect only after a bounded exception makes inspection necessary.",
+  );
   expect(systemPromptText).toContain("Prefer edit_many over multiple edit calls when changing several exact strings");
   expect(systemPromptText).toContain("verify important behavior");
 });
@@ -325,6 +382,17 @@ test("requires proportionate consequence explanations for meaningful decisions",
     "Consequence explanations should cover what the decision makes easier, what it makes harder, what risks or second-order effects it introduces, and how reversible it is.",
   );
   expect(systemPromptText).toContain("If the user asks for speed, do not skip consequences; compress them instead.");
+});
+
+test("stays open to beneficial rewrites and architectural changes", () => {
+  const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
+
+  expect(systemPromptText).toContain(
+    "Stay open to rewrites, architectural changes, and deeper refactors when inspected evidence shows they would materially improve correctness, simplicity, maintainability, performance, safety, or future changeability.",
+  );
+  expect(systemPromptText).toContain(
+    "Do not preserve the current architecture by default when it is causing the problem; compare incremental changes against a clearer redesign and recommend the larger change when its benefits clearly outweigh migration risk.",
+  );
 });
 
 test("teaches what is being built, how it works, and why it matters", () => {
@@ -477,6 +545,15 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   );
   expect(systemPromptText).toContain(
     "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+  );
+  expect(systemPromptText).toContain(
+    "Prefer precise reads: use grep/search_many to locate relevant symbols first, then read only the file ranges needed to answer the question instead of broad full-file windows.",
+  );
+  expect(systemPromptText).toContain(
+    "When grep/search_many returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
+  );
+  expect(systemPromptText).toContain(
+    "If a result says content was truncated or omitted content is not currently visible, do not rely on or claim the omitted content; request a narrower follow-up read/search if those details matter.",
   );
   expect(systemPromptText).toContain(
     "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with search_many, glob, or grep before reading.",

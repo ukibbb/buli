@@ -47,6 +47,7 @@ type PromptTextareaDecorativeExtmarkTypeIds = {
   promptImageAttachmentPlaceholderExtmarkTypeId: number | undefined;
   promptTextPastePlaceholderExtmarkTypeId: number | undefined;
   promptContextReferenceExtmarkTypeId: number | undefined;
+  hasPromptTextareaDecorativeExtmarks: boolean;
 };
 
 const promptTextareaKeyBindings: KeyBinding[] = [
@@ -111,6 +112,7 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
   const promptTextPastePlaceholderExtmarkTypeIdRef = useRef<number | undefined>(undefined);
   const promptContextReferenceExtmarkTypeIdRef = useRef<number | undefined>(undefined);
   const promptTextareaDecorativeExtmarkOwnerRef = useRef<TextareaRenderable | null>(null);
+  const hasPromptTextareaDecorativeExtmarksRef = useRef(false);
   const isSynchronizingTextareaFromPromptStateRef = useRef(false);
   const promptTextareaRowSizing =
     props.rowCount === undefined
@@ -175,6 +177,7 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       promptImageAttachmentPlaceholderExtmarkTypeIdRef.current = undefined;
       promptTextPastePlaceholderExtmarkTypeIdRef.current = undefined;
       promptContextReferenceExtmarkTypeIdRef.current = undefined;
+      hasPromptTextareaDecorativeExtmarksRef.current = false;
     }
 
     const promptTextareaDecorativeExtmarkTypeIds = syncPromptTextareaDecorativeExtmarks({
@@ -187,6 +190,7 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       promptImageAttachmentPlaceholderExtmarkTypeId: promptImageAttachmentPlaceholderExtmarkTypeIdRef.current,
       promptTextPastePlaceholderExtmarkTypeId: promptTextPastePlaceholderExtmarkTypeIdRef.current,
       promptContextReferenceExtmarkTypeId: promptContextReferenceExtmarkTypeIdRef.current,
+      hasPromptTextareaDecorativeExtmarks: hasPromptTextareaDecorativeExtmarksRef.current,
     });
     promptImageAttachmentPlaceholderExtmarkTypeIdRef.current =
       promptTextareaDecorativeExtmarkTypeIds.promptImageAttachmentPlaceholderExtmarkTypeId;
@@ -194,6 +198,8 @@ export function PromptTextarea(props: PromptTextareaProps): ReactNode {
       promptTextareaDecorativeExtmarkTypeIds.promptTextPastePlaceholderExtmarkTypeId;
     promptContextReferenceExtmarkTypeIdRef.current =
       promptTextareaDecorativeExtmarkTypeIds.promptContextReferenceExtmarkTypeId;
+    hasPromptTextareaDecorativeExtmarksRef.current =
+      promptTextareaDecorativeExtmarkTypeIds.hasPromptTextareaDecorativeExtmarks;
   }, [
     props.promptContextReferenceTextColor,
     props.promptDraft,
@@ -287,8 +293,24 @@ function syncPromptTextareaDecorativeExtmarks(input: {
   promptImageAttachmentPlaceholderExtmarkTypeId: number | undefined;
   promptTextPastePlaceholderExtmarkTypeId: number | undefined;
   promptContextReferenceExtmarkTypeId: number | undefined;
+  hasPromptTextareaDecorativeExtmarks: boolean;
 }): PromptTextareaDecorativeExtmarkTypeIds {
+  if (
+    input.promptImageAttachmentPlaceholderTexts.length === 0 &&
+    input.promptTextPastePlaceholderTexts.length === 0 &&
+    input.selectedPromptContextReferenceTexts.length === 0 &&
+    !input.hasPromptTextareaDecorativeExtmarks
+  ) {
+    return {
+      promptImageAttachmentPlaceholderExtmarkTypeId: input.promptImageAttachmentPlaceholderExtmarkTypeId,
+      promptTextPastePlaceholderExtmarkTypeId: input.promptTextPastePlaceholderExtmarkTypeId,
+      promptContextReferenceExtmarkTypeId: input.promptContextReferenceExtmarkTypeId,
+      hasPromptTextareaDecorativeExtmarks: false,
+    };
+  }
+
   input.promptTextarea.extmarks.clear();
+  let hasPromptTextareaDecorativeExtmarks = false;
 
   let promptImageAttachmentPlaceholderExtmarkTypeId = input.promptImageAttachmentPlaceholderExtmarkTypeId;
   if (input.promptImageAttachmentPlaceholderTexts.length > 0) {
@@ -309,6 +331,7 @@ function syncPromptTextareaDecorativeExtmarks(input: {
         styleId: promptImageAttachmentPlaceholderStyleId,
         typeId: promptImageAttachmentPlaceholderExtmarkTypeId,
       });
+      hasPromptTextareaDecorativeExtmarks = true;
       searchStartOffset = endOffset;
     }
   }
@@ -332,15 +355,18 @@ function syncPromptTextareaDecorativeExtmarks(input: {
         styleId: promptTextPastePlaceholderStyleId,
         typeId: promptTextPastePlaceholderExtmarkTypeId,
       });
+      hasPromptTextareaDecorativeExtmarks = true;
       searchStartOffset = endOffset;
     }
   }
 
   let promptContextReferenceExtmarkTypeId = input.promptContextReferenceExtmarkTypeId;
-  const selectedPromptContextReferenceRanges = listSelectedPromptContextReferenceRanges({
-    promptDraft: input.promptDraft,
-    selectedPromptContextReferenceTexts: input.selectedPromptContextReferenceTexts,
-  });
+  const selectedPromptContextReferenceRanges = input.selectedPromptContextReferenceTexts.length === 0
+    ? []
+    : listSelectedPromptContextReferenceRanges({
+        promptDraft: input.promptDraft,
+        selectedPromptContextReferenceTexts: input.selectedPromptContextReferenceTexts,
+      });
   if (selectedPromptContextReferenceRanges.length > 0) {
     promptContextReferenceExtmarkTypeId = promptContextReferenceExtmarkTypeId ??
       input.promptTextarea.extmarks.registerType(promptContextReferenceExtmarkTypeName);
@@ -353,6 +379,7 @@ function syncPromptTextareaDecorativeExtmarks(input: {
         styleId: promptContextReferenceStyleId,
         typeId: promptContextReferenceExtmarkTypeId,
       });
+      hasPromptTextareaDecorativeExtmarks = true;
     }
   }
 
@@ -360,6 +387,7 @@ function syncPromptTextareaDecorativeExtmarks(input: {
     promptImageAttachmentPlaceholderExtmarkTypeId,
     promptTextPastePlaceholderExtmarkTypeId,
     promptContextReferenceExtmarkTypeId,
+    hasPromptTextareaDecorativeExtmarks,
   };
 }
 

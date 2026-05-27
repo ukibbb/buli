@@ -48,6 +48,7 @@ export {
   calculateContextTokensUsedFromTokenUsage,
   decideConversationAutoCompaction,
   isGpt5ModelIdentifier,
+  lookupDefaultConversationAutoCompactionTriggerTokenCountForModel,
 } from "./conversationCompaction/conversationAutoCompactionPolicy.ts";
 export { ConversationSessionCompactor } from "./conversationCompaction/ConversationSessionCompactor.ts";
 export {

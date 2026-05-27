@@ -3,6 +3,7 @@ import type { ConversationSessionEntry, TokenUsage } from "@buli/contracts";
 import {
   calculateContextTokensUsedFromTokenUsage,
   decideConversationAutoCompaction,
+  lookupDefaultConversationAutoCompactionTriggerTokenCountForModel,
 } from "../src/index.ts";
 
 const completedConversationTurnEntries: ConversationSessionEntry[] = [
@@ -29,6 +30,15 @@ function createTokenUsage(totalTokenCount: number): TokenUsage {
 }
 
 describe("decideConversationAutoCompaction", () => {
+  test("reports the default effective working budget for GPT 5.5", () => {
+    expect(lookupDefaultConversationAutoCompactionTriggerTokenCountForModel("gpt-5.5")).toBe(252_000);
+    expect(lookupDefaultConversationAutoCompactionTriggerTokenCountForModel("gpt-5.5-pro")).toBe(252_000);
+  });
+
+  test("reports the default threshold for models without a preferred working budget", () => {
+    expect(lookupDefaultConversationAutoCompactionTriggerTokenCountForModel("gpt-4o")).toBe(102_400);
+  });
+
   test("compacts known OpenAI models when context usage reaches the default 80 percent threshold", () => {
     const decision = decideConversationAutoCompaction({
       conversationSessionEntries: completedConversationTurnEntries,

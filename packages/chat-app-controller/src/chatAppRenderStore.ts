@@ -250,7 +250,13 @@ export function createChatAppRenderStore(input: {
       ) {
         notifyListeners(transcriptListeners);
       }
-      if (replacement.changeSet.didPromptComposerStateChange || replacement.changeSet.didInteractionStatusStateChange) {
+      if (
+        replacement.changeSet.didPromptComposerStateChange ||
+        didPromptComposerDerivedEditabilityChange({
+          previousChatSessionState,
+          nextChatSessionState: replacement.nextChatSessionState,
+        })
+      ) {
         notifyListeners(promptComposerListeners);
       }
       if (replacement.changeSet.didInteractionStatusStateChange) {
@@ -381,6 +387,14 @@ function didPromptComposerRenderStateChange(input: {
     input.previousChatSessionState.selectedModelDefaultReasoningEffort !== input.nextChatSessionState.selectedModelDefaultReasoningEffort ||
     input.previousChatSessionState.selectedReasoningEffort !== input.nextChatSessionState.selectedReasoningEffort ||
     input.previousChatSessionState.latestContextWindowUsage !== input.nextChatSessionState.latestContextWindowUsage;
+}
+
+function didPromptComposerDerivedEditabilityChange(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+}): boolean {
+  return canChatSessionPromptDraftBeEdited(input.previousChatSessionState) !==
+    canChatSessionPromptDraftBeEdited(input.nextChatSessionState);
 }
 
 function didInteractionStatusRenderStateChange(input: {

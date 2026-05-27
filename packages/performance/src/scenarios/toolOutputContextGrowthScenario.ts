@@ -8,6 +8,11 @@ import {
   runSearchManyToolCall,
 } from "@buli/engine";
 import {
+  OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT,
+  createOpenAiResponsesInputItems,
+  type OpenAiConversationInputItem,
+} from "@buli/openai";
+import {
   createBytesMetric,
   createCountMetric,
   createDurationMetric,
@@ -25,20 +30,23 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
   defaultRepeatCount: 5,
   async runIteration(input) {
     const conversationSessionEntries = createToolOutputHeavyConversationSessionEntries();
-    const budgetedBatchToolOutputWorkspacePath = await createBudgetedBatchToolOutputWorkspace(input);
+    const batchToolOutputWorkspacePath = await createBatchToolOutputWorkspace(input);
     const heapUsedBeforeScenario = process.memoryUsage().heapUsed;
     const modelContextProjection = await measureDurationMs(() =>
       projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)
     );
+    const openAiRequestProjection = await measureDurationMs(() =>
+      createOpenAiResponsesInputItems(conversationSessionEntries)
+    );
     const compactionProjection = await measureDurationMs(() =>
       prepareConversationEntriesForCompactionRequest({ conversationSessionEntries })
     );
-    const budgetedReadManyToolCall = await measureDurationMs(() => runReadManyToolCall({
+    const readManyToolCall = await measureDurationMs(() => runReadManyToolCall({
       readManyToolCallRequest: {
         toolName: "read_many",
         readTargets: [{ readTargetPath: "large-read.txt", maximumLineCount: 800 }],
       },
-      workspaceRootPath: budgetedBatchToolOutputWorkspacePath,
+      workspaceRootPath: batchToolOutputWorkspacePath,
       readOnlyToolCallConcurrencyLimiter: immediateReadOnlyToolCallConcurrencyLimiter,
     }));
     const budgetedSearchManyToolCall = await measureDurationMs(() => runSearchManyToolCall({
@@ -46,7 +54,7 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
         toolName: "search_many",
         searches: [{ searchKind: "grep", regexPattern: "marker", searchPath: "large-search.txt" }],
       },
-      workspaceRootPath: budgetedBatchToolOutputWorkspacePath,
+      workspaceRootPath: batchToolOutputWorkspacePath,
       readOnlyToolCallConcurrencyLimiter: immediateReadOnlyToolCallConcurrencyLimiter,
     }));
     const heapUsedAfterScenario = process.memoryUsage().heapUsed;
@@ -65,8 +73,13 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
           budget: { warnAbove: 50, failAbove: 200 },
         }),
         createDurationMetric({
-          metricName: "tool_output_context_growth.budgeted_read_many.duration_ms",
-          durationMs: budgetedReadManyToolCall.durationMs,
+          metricName: "tool_output_context_growth.openai_request_projection.duration_ms",
+          durationMs: openAiRequestProjection.durationMs,
+          budget: { warnAbove: 25, failAbove: 100 },
+        }),
+        createDurationMetric({
+          metricName: "tool_output_context_growth.read_many.duration_ms",
+          durationMs: readManyToolCall.durationMs,
           budget: { warnAbove: 50, failAbove: 200 },
         }),
         createDurationMetric({
@@ -97,9 +110,16 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
           bytes: sumProviderReplayFunctionCallOutputLength(conversationSessionEntries),
         }),
         createBytesMetric({
-          metricName: "tool_output_context_growth.budgeted_read_many_tool_result_text_bytes",
-          bytes: budgetedReadManyToolCall.measuredValue.toolResultText.length,
-          budget: { warnAbove: 32_000, failAbove: 34_000 },
+          metricName: "tool_output_context_growth.openai_projected_function_call_output_bytes",
+          bytes: sumOpenAiProjectedFunctionCallOutputLength(openAiRequestProjection.measuredValue),
+          budget: {
+            warnAbove: OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT,
+            failAbove: OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT + 2_048,
+          },
+        }),
+        createBytesMetric({
+          metricName: "tool_output_context_growth.read_many_tool_result_text_bytes",
+          bytes: readManyToolCall.measuredValue.toolResultText.length,
         }),
         createBytesMetric({
           metricName: "tool_output_context_growth.budgeted_search_many_tool_result_text_bytes",
@@ -134,7 +154,7 @@ const immediateReadOnlyToolCallConcurrencyLimiter = {
   },
 };
 
-async function createBudgetedBatchToolOutputWorkspace(input: {
+async function createBatchToolOutputWorkspace(input: {
   runOutputDirectoryPath: string;
   iterationIndex: number;
   isWarmup: boolean;
@@ -171,25 +191,37 @@ function createToolOutputHeavyConversationSessionEntries(): readonly Conversatio
   for (let toolCallIndex = 0; toolCallIndex < syntheticToolCallCount; toolCallIndex += 1) {
     const toolCallId = `call_large_${toolCallIndex}`;
     const toolResultText = createSyntheticToolResultText(toolCallIndex);
+    const toolCallRequest = toolCallIndex % 2 === 0
+      ? {
+          toolName: "bash" as const,
+          shellCommand: `printf 'large output ${toolCallIndex}'`,
+          commandDescription: "Generate large output",
+        }
+      : {
+          toolName: "read" as const,
+          readTargetPath: `large-output-${toolCallIndex}.txt`,
+        };
+    const toolCallDetail = toolCallRequest.toolName === "bash"
+      ? {
+          toolName: "bash" as const,
+          commandLine: toolCallRequest.shellCommand,
+          commandDescription: toolCallRequest.commandDescription,
+          exitCode: 0,
+        }
+      : {
+          toolName: "read" as const,
+          readFilePath: toolCallRequest.readTargetPath,
+        };
     conversationSessionEntries.push(
       {
         entryKind: "tool_call",
         toolCallId,
-        toolCallRequest: {
-          toolName: "bash",
-          shellCommand: `printf 'large output ${toolCallIndex}'`,
-          commandDescription: "Generate large output",
-        },
+        toolCallRequest,
       },
       {
         entryKind: "completed_tool_result",
         toolCallId,
-        toolCallDetail: {
-          toolName: "bash",
-          commandLine: `printf 'large output ${toolCallIndex}'`,
-          commandDescription: "Generate large output",
-          exitCode: 0,
-        },
+        toolCallDetail,
         toolResultText,
       },
     );
@@ -198,8 +230,8 @@ function createToolOutputHeavyConversationSessionEntries(): readonly Conversatio
         type: "function_call",
         id: `fc_${toolCallIndex}`,
         call_id: toolCallId,
-        name: "bash",
-        arguments: JSON.stringify({ shellCommand: `printf 'large output ${toolCallIndex}'` }),
+        name: toolCallRequest.toolName,
+        arguments: JSON.stringify(toolCallRequest),
       },
       {
         type: "function_call_output",
@@ -263,4 +295,14 @@ function sumProviderReplayFunctionCallOutputLength(conversationSessionEntries: r
       0,
     );
   }, 0);
+}
+
+function sumOpenAiProjectedFunctionCallOutputLength(openAiInputItems: readonly OpenAiConversationInputItem[]): number {
+  return openAiInputItems.reduce(
+    (totalOutputLength, openAiInputItem) =>
+      "type" in openAiInputItem && openAiInputItem.type === "function_call_output"
+        ? totalOutputLength + openAiInputItem.output.length
+        : totalOutputLength,
+    0,
+  );
 }

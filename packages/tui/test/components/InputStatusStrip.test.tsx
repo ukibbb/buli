@@ -17,7 +17,7 @@ test("idle strip shows the mode word, model id, effort, destination keycap and c
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
-      contextWindowTokenCapacity={400_000}
+      contextMeterTokenLimit={400_000}
     />,
     { width: 120, height: 3 },
   );
@@ -47,7 +47,7 @@ test("streaming state renders the snake indicator and the meter, omits mode chip
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
-      contextWindowTokenCapacity={400_000}
+      contextMeterTokenLimit={400_000}
     />,
     { width: 120, height: 3 },
   );
@@ -73,7 +73,7 @@ test("streaming state shows queued prompt count", async () => {
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
-      contextWindowTokenCapacity={400_000}
+      contextMeterTokenLimit={400_000}
     />,
     { width: 120, height: 3 },
   );
@@ -96,7 +96,7 @@ test("auto-compaction state leaves progress text out of the footer", async () =>
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
-      contextWindowTokenCapacity={400_000}
+      contextMeterTokenLimit={400_000}
     />,
     { width: 120, height: 3 },
   );
@@ -123,7 +123,7 @@ test("hint override replaces the mode cluster without rendering attachment statu
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
-      contextWindowTokenCapacity={400_000}
+      contextMeterTokenLimit={400_000}
     />,
     { width: 120, height: 3 },
   );

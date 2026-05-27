@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { ConversationTurnStatus } from "@buli/contracts";
 import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
@@ -22,7 +22,6 @@ export type MinimumHeightPromptStripProps = {
   promptTextPastePlaceholderTexts?: readonly string[] | undefined;
   selectedPromptContextReferenceTexts?: readonly string[];
   isPromptInputDisabled: boolean;
-  queuedPromptCount: number;
   accentColor: string;
   assistantResponseStatus: ConversationTurnStatus;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
@@ -33,7 +32,7 @@ export type MinimumHeightPromptStripProps = {
   onSummarizedPromptTextPasted?: (summarizedPromptTextPaste: PromptTextareaSummarizedPaste) => void;
 };
 
-export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): ReactNode {
+function MinimumHeightPromptStripComponent(props: MinimumHeightPromptStripProps): ReactNode {
   const isAssistantTurnActive = props.assistantResponseStatus === "streaming_assistant_response" ||
     props.assistantResponseStatus === "waiting_for_tool_approval";
   const isConversationCompactionRunning = props.conversationSessionCompactionStatus.step === "compacting";
@@ -98,3 +97,47 @@ export function MinimumHeightPromptStrip(props: MinimumHeightPromptStripProps): 
     </box>
   );
 }
+
+function areMinimumHeightPromptStripPropsEqual(
+  previousProps: MinimumHeightPromptStripProps,
+  nextProps: MinimumHeightPromptStripProps,
+): boolean {
+  return previousProps.promptDraft === nextProps.promptDraft &&
+    previousProps.promptDraftCursorOffset === nextProps.promptDraftCursorOffset &&
+    previousProps.promptImageAttachmentPlaceholderTexts === nextProps.promptImageAttachmentPlaceholderTexts &&
+    previousProps.promptTextPastePlaceholderTexts === nextProps.promptTextPastePlaceholderTexts &&
+    previousProps.selectedPromptContextReferenceTexts === nextProps.selectedPromptContextReferenceTexts &&
+    previousProps.isPromptInputDisabled === nextProps.isPromptInputDisabled &&
+    previousProps.accentColor === nextProps.accentColor &&
+    previousProps.assistantResponseStatus === nextProps.assistantResponseStatus &&
+    areConversationSessionCompactionStatusesEqual(
+      previousProps.conversationSessionCompactionStatus,
+      nextProps.conversationSessionCompactionStatus,
+    ) &&
+    previousProps.isActiveTurnInterruptConfirmationArmed === nextProps.isActiveTurnInterruptConfirmationArmed &&
+    previousProps.onPromptDraftEdited === nextProps.onPromptDraftEdited &&
+    previousProps.onPromptSubmitted === nextProps.onPromptSubmitted &&
+    previousProps.onNativeClipboardPasteRequested === nextProps.onNativeClipboardPasteRequested &&
+    previousProps.onSummarizedPromptTextPasted === nextProps.onSummarizedPromptTextPasted;
+}
+
+function areConversationSessionCompactionStatusesEqual(
+  previousStatus: ConversationSessionCompactionStatus,
+  nextStatus: ConversationSessionCompactionStatus,
+): boolean {
+  if (previousStatus.step !== nextStatus.step) {
+    return false;
+  }
+
+  if (previousStatus.step === "compacting" && nextStatus.step === "compacting") {
+    return previousStatus.source === nextStatus.source;
+  }
+
+  if (previousStatus.step === "failed" && nextStatus.step === "failed") {
+    return previousStatus.errorMessage === nextStatus.errorMessage;
+  }
+
+  return true;
+}
+
+export const MinimumHeightPromptStrip = memo(MinimumHeightPromptStripComponent, areMinimumHeightPromptStripPropsEqual);

@@ -138,8 +138,22 @@ test("buildChatScreenViewModel derives context usage and minimum input branch", 
 
   expect(viewModel.totalContextTokensUsed).toBe(60);
   expect(viewModel.contextWindowTokenCapacity).toBe(1_050_000);
+  expect(viewModel.contextMeterTokenLimit).toBe(840_000);
   expect(viewModel.shouldRenderMinimumHeightPromptStrip).toBe(true);
   expect(viewModel.inputRegionRowCount).toBe(1);
+});
+
+test("buildChatScreenViewModel derives the effective GPT 5.5 working budget for the context meter", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.5" }),
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 140,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.contextWindowTokenCapacity).toBe(1_050_000);
+  expect(viewModel.contextMeterTokenLimit).toBe(252_000);
 });
 
 test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at comfortable tier", () => {

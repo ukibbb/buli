@@ -8,6 +8,7 @@ const STREAMING_ASSISTANT_RESPONSE_EVENT_BATCH_WINDOW_MS = 48;
 type TerminalAssistantResponseEvent = Extract<AssistantResponseEvent, {
   type: "assistant_message_completed" | "assistant_message_incomplete" | "assistant_message_failed" | "assistant_message_interrupted";
 }>;
+type BatchableStreamingAssistantResponseEvent = Extract<AssistantResponseEvent, { type: "assistant_message_part_updated" }>;
 
 export type AssistantResponseRelayResult = {
   terminalAssistantResponseEvent: TerminalAssistantResponseEvent | undefined;
@@ -22,7 +23,9 @@ function isTerminalAssistantResponseEvent(assistantResponseEvent: AssistantRespo
   );
 }
 
-function isBatchableStreamingAssistantResponseEvent(assistantResponseEvent: AssistantResponseEvent): boolean {
+function isBatchableStreamingAssistantResponseEvent(
+  assistantResponseEvent: AssistantResponseEvent,
+): assistantResponseEvent is BatchableStreamingAssistantResponseEvent {
   return (
     assistantResponseEvent.type === "assistant_message_part_updated" &&
     (
@@ -30,6 +33,63 @@ function isBatchableStreamingAssistantResponseEvent(assistantResponseEvent: Assi
       (assistantResponseEvent.part.partKind === "assistant_reasoning" && assistantResponseEvent.part.partStatus === "streaming")
     )
   );
+}
+
+function readStreamingAssistantResponseEventCompactionKey(assistantResponseEvent: AssistantResponseEvent): string | undefined {
+  if (!isBatchableStreamingAssistantResponseEvent(assistantResponseEvent)) {
+    return undefined;
+  }
+
+  return `${assistantResponseEvent.messageId}\u0000${assistantResponseEvent.part.id}`;
+}
+
+function compactBatchableStreamingAssistantResponseEvents(
+  assistantResponseEvents: readonly AssistantResponseEvent[],
+): AssistantResponseEvent[] {
+  const latestAssistantResponseEventIndexByCompactionKey = new Map<string, number>();
+  assistantResponseEvents.forEach((assistantResponseEvent, assistantResponseEventIndex) => {
+    const compactionKey = readStreamingAssistantResponseEventCompactionKey(assistantResponseEvent);
+    if (compactionKey !== undefined) {
+      latestAssistantResponseEventIndexByCompactionKey.set(compactionKey, assistantResponseEventIndex);
+    }
+  });
+
+  return assistantResponseEvents.filter((assistantResponseEvent, assistantResponseEventIndex) => {
+    const compactionKey = readStreamingAssistantResponseEventCompactionKey(assistantResponseEvent);
+    return compactionKey === undefined ||
+      latestAssistantResponseEventIndexByCompactionKey.get(compactionKey) === assistantResponseEventIndex;
+  });
+}
+
+function compactSupersededStreamingAssistantResponseEvents(
+  assistantResponseEvents: readonly AssistantResponseEvent[],
+): AssistantResponseEvent[] {
+  const compactedAssistantResponseEvents: AssistantResponseEvent[] = [];
+  let batchableStreamingAssistantResponseEventSegment: AssistantResponseEvent[] = [];
+
+  const flushBatchableStreamingAssistantResponseEventSegment = (): void => {
+    if (batchableStreamingAssistantResponseEventSegment.length === 0) {
+      return;
+    }
+
+    compactedAssistantResponseEvents.push(
+      ...compactBatchableStreamingAssistantResponseEvents(batchableStreamingAssistantResponseEventSegment),
+    );
+    batchableStreamingAssistantResponseEventSegment = [];
+  };
+
+  for (const assistantResponseEvent of assistantResponseEvents) {
+    if (isBatchableStreamingAssistantResponseEvent(assistantResponseEvent)) {
+      batchableStreamingAssistantResponseEventSegment.push(assistantResponseEvent);
+      continue;
+    }
+
+    flushBatchableStreamingAssistantResponseEventSegment();
+    compactedAssistantResponseEvents.push(assistantResponseEvent);
+  }
+
+  flushBatchableStreamingAssistantResponseEventSegment();
+  return compactedAssistantResponseEvents;
 }
 
 function resolveAssistantResponseEventMessageId(assistantResponseEvent: AssistantResponseEvent): string | undefined {
@@ -76,7 +136,7 @@ export async function relayAssistantResponseRunnerEvents(input: {
       return;
     }
 
-    const assistantResponseEventsToFlush = queuedAssistantResponseEvents;
+    const assistantResponseEventsToFlush = compactSupersededStreamingAssistantResponseEvents(queuedAssistantResponseEvents);
     queuedAssistantResponseEvents = [];
     scheduledFlushTimeout = undefined;
     const flushedAtMs = Date.now();

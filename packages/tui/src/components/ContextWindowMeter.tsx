@@ -3,24 +3,24 @@ import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { formatCompactTokenCount } from "./formatCompactTokenCount.ts";
 
 // Used-token fill ratio thresholds: under 60% stays green, 60-85% warns amber,
-// over 85% shifts to pink so the meter signals limit pressure before the user
-// hits a context-window error.
+// over 85% shifts to pink so the meter signals pressure against Buli's
+// effective working budget before compaction or continuation guards fire.
 const CONTEXT_METER_AMBER_RATIO_THRESHOLD = 0.6;
 const CONTEXT_METER_PINK_RATIO_THRESHOLD = 0.85;
 
 export type ContextWindowMeterProps = {
   totalTokensUsed: number | undefined;
-  contextWindowTokenCapacity: number | undefined;
+  contextMeterTokenLimit: number | undefined;
 };
 
 export function resolveContextMeterUsedTokenColor(
   totalTokensUsed: number | undefined,
-  contextWindowTokenCapacity: number | undefined,
+  contextMeterTokenLimit: number | undefined,
 ): string {
-  if (totalTokensUsed === undefined || contextWindowTokenCapacity === undefined || contextWindowTokenCapacity <= 0) {
+  if (totalTokensUsed === undefined || contextMeterTokenLimit === undefined || contextMeterTokenLimit <= 0) {
     return chatScreenTheme.textMuted;
   }
-  const fillRatio = totalTokensUsed / contextWindowTokenCapacity;
+  const fillRatio = totalTokensUsed / contextMeterTokenLimit;
   if (fillRatio >= CONTEXT_METER_PINK_RATIO_THRESHOLD) {
     return chatScreenTheme.accentPink;
   }
@@ -36,8 +36,8 @@ export function ContextWindowMeter(props: ContextWindowMeterProps): ReactNode {
     return <text fg={chatScreenTheme.textMuted}>{"--"}</text>;
   }
 
-  const usedTokenColor = resolveContextMeterUsedTokenColor(props.totalTokensUsed, props.contextWindowTokenCapacity);
-  if (props.contextWindowTokenCapacity === undefined || props.contextWindowTokenCapacity <= 0) {
+  const usedTokenColor = resolveContextMeterUsedTokenColor(props.totalTokensUsed, props.contextMeterTokenLimit);
+  if (props.contextMeterTokenLimit === undefined || props.contextMeterTokenLimit <= 0) {
     return <text fg={usedTokenColor}>{formatCompactTokenCount(displayedTokensUsed)}</text>;
   }
 
@@ -45,7 +45,7 @@ export function ContextWindowMeter(props: ContextWindowMeterProps): ReactNode {
     <text>
       <span fg={usedTokenColor}>{formatCompactTokenCount(displayedTokensUsed)}</span>
       <span fg={chatScreenTheme.textMuted}>
-        {` / ${formatCompactTokenCount(props.contextWindowTokenCapacity)} (${formatContextWindowUsagePercent(displayedTokensUsed, props.contextWindowTokenCapacity)})`}
+        {` / ${formatCompactTokenCount(props.contextMeterTokenLimit)} (${formatContextWindowUsagePercent(displayedTokensUsed, props.contextMeterTokenLimit)})`}
       </span>
     </text>
   );
@@ -55,6 +55,6 @@ function resolveDisplayedContextTokensUsed(props: ContextWindowMeterProps): numb
   return props.totalTokensUsed;
 }
 
-function formatContextWindowUsagePercent(totalTokensUsed: number, contextWindowTokenCapacity: number): string {
-  return `${Math.round((totalTokensUsed / contextWindowTokenCapacity) * 100)}%`;
+function formatContextWindowUsagePercent(totalTokensUsed: number, contextMeterTokenLimit: number): string {
+  return `${Math.round((totalTokensUsed / contextMeterTokenLimit) * 100)}%`;
 }

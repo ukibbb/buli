@@ -71,13 +71,13 @@ type InteractiveChatStartupConfiguration = {
 
 type InteractiveChatStartupConfigurationResolution =
   | {
-      status: "ready";
-      configuration: InteractiveChatStartupConfiguration;
-    }
+    status: "ready";
+    configuration: InteractiveChatStartupConfiguration;
+  }
   | {
-      status: "failed";
-      message: string;
-    };
+    status: "failed";
+    message: string;
+  };
 
 export async function runInteractiveChat(input: {
   selectedModelId?: string;
@@ -149,7 +149,7 @@ export async function runInteractiveChat(input: {
     });
 
     const rendererLoadTask = loadInteractiveChatRenderer(input.renderChatScreen);
-    void rendererLoadTask.catch(() => {});
+    void rendererLoadTask.catch(() => { });
 
     const conversationSessionLoadStartedAtMs = Date.now();
     const conversationSessionStore = input.conversationSessionStore ??
@@ -205,10 +205,10 @@ export async function runInteractiveChat(input: {
     const provider = externalProviderHostCommand
       ? undefined
       : new OpenAiProvider({
-          store,
-          ...(maximumConcurrentResponseStepStreams !== undefined ? { maximumConcurrentResponseStepStreams } : {}),
-          diagnosticLogger,
-        });
+        store,
+        ...(maximumConcurrentResponseStepStreams !== undefined ? { maximumConcurrentResponseStepStreams } : {}),
+        diagnosticLogger,
+      });
     conversationTurnProviderResolution = resolveInteractiveChatConversationTurnProvider({
       ...(provider !== undefined ? { openAiProvider: provider } : {}),
       store,
@@ -217,8 +217,8 @@ export async function runInteractiveChat(input: {
       ...(externalProviderHostCommand !== undefined
         ? { providerHostCommand: externalProviderHostCommand, providerHostKind: "external" }
         : input.providerHostCommand !== undefined
-        ? { providerHostCommand: input.providerHostCommand }
-        : {}),
+          ? { providerHostCommand: input.providerHostCommand }
+          : {}),
       ...(input.createProviderProtocolTransport !== undefined
         ? { createProviderProtocolTransport: input.createProviderProtocolTransport }
         : {}),
@@ -280,6 +280,7 @@ export async function runInteractiveChat(input: {
       conversationHistory,
       workspaceSnapshotStore,
       bashToolApprovalMode,
+      enforceAssistantWorkflowModeTransitions: true,
       ...(conversationSessionStore.promptCacheKey ? { promptCacheKey: conversationSessionStore.promptCacheKey } : {}),
       diagnosticLogger,
       ...(autoCompactionThresholdRatio !== undefined ? { autoCompactionThresholdRatio } : {}),
@@ -299,6 +300,7 @@ export async function runInteractiveChat(input: {
     });
     const availableSkills = await assistantConversationRunner.listAvailableSkills();
     const resolvedConversationTurnProvider = conversationTurnProviderResolution;
+
     const renderArgs: RenderChatScreenInTerminalInput = {
       assistantConversationRunner,
       availableSkills,
@@ -309,13 +311,13 @@ export async function runInteractiveChat(input: {
       initialConversationSessionId: activeConversationSessionMetadata.sessionId,
       ...(activeConversationSessionMetadata.conversationSessionEntryCount > 0
         ? {
-            loadInitialConversationSessionEntries,
-            onInitialConversationSessionEntriesHydrated: (initialConversationSessionEntriesLoadResult) => {
-              conversationHistory.replaceConversationSessionEntries(
-                initialConversationSessionEntriesLoadResult.conversationSessionEntries,
-              );
-            },
-          }
+          loadInitialConversationSessionEntries,
+          onInitialConversationSessionEntriesHydrated: (initialConversationSessionEntriesLoadResult) => {
+            conversationHistory.replaceConversationSessionEntries(
+              initialConversationSessionEntriesLoadResult.conversationSessionEntries,
+            );
+          },
+        }
         : { initialConversationSessionEntries: [] }),
       selectedModelId,
       ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
@@ -464,6 +466,6 @@ function areConversationSessionModelSelectionsEqual(
 
   return persistedModelSelection.selectedModelId === resolvedModelSelection.selectedModelId &&
     persistedModelSelection.selectedModelDefaultReasoningEffort ===
-      resolvedModelSelection.selectedModelDefaultReasoningEffort &&
+    resolvedModelSelection.selectedModelDefaultReasoningEffort &&
     persistedModelSelection.selectedReasoningEffort === resolvedModelSelection.selectedReasoningEffort;
 }

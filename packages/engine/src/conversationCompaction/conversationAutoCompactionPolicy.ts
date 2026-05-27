@@ -176,6 +176,23 @@ export function decideConversationAutoCompaction(
   };
 }
 
+export function lookupDefaultConversationAutoCompactionTriggerTokenCountForModel(
+  modelIdentifier: string,
+): number | undefined {
+  const modelContextWindowTokenLimits = lookupModelContextWindowTokenLimitsForModel(modelIdentifier);
+  if (!modelContextWindowTokenLimits) {
+    return undefined;
+  }
+
+  return calculateThresholdTokenTriggerTokenCount({
+    contextWindowTokenCapacity: modelContextWindowTokenLimits.contextWindowTokenCapacity,
+    inputTokenCapacity: modelContextWindowTokenLimits.inputTokenCapacity,
+    preferredContextPerformanceBudgetTokenCount: modelContextWindowTokenLimits.preferredContextPerformanceBudgetTokenCount,
+    thresholdRatio: DEFAULT_CONVERSATION_AUTO_COMPACTION_THRESHOLD_RATIO,
+    reservedTokenCount: DEFAULT_CONVERSATION_AUTO_COMPACTION_RESERVED_TOKEN_COUNT,
+  });
+}
+
 function calculateThresholdTokenTriggerTokenCount(input: {
   contextWindowTokenCapacity: number;
   inputTokenCapacity?: number | undefined;

@@ -13,6 +13,7 @@ import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { buildBuliSystemPrompt } from "./systemPrompt.ts";
 import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
+import { buildReadOnlyToolEvidenceLedgerText } from "./readOnlyToolCallEvidenceIndex.ts";
 import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
@@ -75,6 +76,9 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     modelFacingPromptTextForAcceptedTurn,
     projectInstructionSnapshotsForAcceptedTurn,
   );
+  const readOnlyToolEvidenceLedgerText = buildReadOnlyToolEvidenceLedgerText({
+    conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
+  });
 
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.start_requested", {
     conversationTurnId: input.conversationTurnInput.conversationTurnId ?? null,
@@ -94,6 +98,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       assistantOperatingMode: input.assistantOperatingMode,
       projectInstructionSnapshots: projectInstructionSnapshotsForAcceptedTurn,
       availableSkills: availableSkillsForAcceptedTurn,
+      ...(readOnlyToolEvidenceLedgerText ? { readOnlyToolEvidenceLedgerText } : {}),
     }),
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     selectedModelId: input.conversationTurnInput.selectedModelId,

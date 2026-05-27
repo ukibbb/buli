@@ -117,7 +117,7 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
   return {
     type: "function",
     name: "read",
-    description: "Read a file or directory inside the current workspace. Use this only for exact paths already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Do not read paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. For files, lines are returned with 1-indexed line numbers. Do not guess offsets; if output is truncated and the missing lines may affect the answer, continue only from line counts returned by previous reads.",
+    description: "Read a file or directory inside the current workspace. Use this only for exact paths already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Do not read paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. For files, lines are returned with 1-indexed line numbers. Prefer precise bounded reads: when grep/search_many returns exact line numbers or symbols, set offset and limit around the relevant range instead of reading the whole/default window. Use null offset/limit only when the full default window is intentionally needed. Do not guess offsets; if output is truncated and the missing lines may affect the answer, continue only from line counts returned by previous reads.",
     parameters: {
       type: "object",
       properties: {
@@ -147,7 +147,7 @@ export function createReadManyToolDefinition(): OpenAiToolDefinition<"read_many"
   return {
     type: "function",
     name: "read_many",
-    description: "Read multiple files or directories inside the current workspace in one batched call. Use this when several exact paths are already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Prefer one larger independent read_many batch over many small sequential read calls because batch children run concurrently. Do not include paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. Each target uses the same offset and limit semantics as read.",
+    description: "Read multiple files or directories inside the current workspace in one batched call. Use this when several exact paths are already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Prefer one larger independent read_many batch over many small sequential read calls because batch children run concurrently. Keep each target precise: when grep/search_many returns exact line numbers or symbols, set that target's offset and limit around the relevant range instead of reading whole/default windows. Use null offset/limit only when the full default window is intentionally needed for that target. Do not include paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. Each target uses the same offset and limit semantics as read.",
     parameters: {
       type: "object",
       properties: {

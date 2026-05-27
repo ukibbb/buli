@@ -12,7 +12,7 @@ import type {
   QueuedChatAppPromptPreview,
 } from "@buli/chat-app-controller";
 import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
-import { memo, useCallback, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { ConversationSessionSelectionPane } from "./ConversationSessionSelectionPane.tsx";
 import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
 import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
@@ -50,6 +50,9 @@ type LiveInteractionStatusStackRenderState = {
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
 };
 
+const emptyQueuedPromptPreviews: readonly QueuedChatAppPromptPreview[] = [];
+const emptyModelAndReasoningVisibleChoices: string[] = [];
+
 function LiveInteractionStatusStackComponent(props: LiveInteractionStatusStackProps): ReactNode {
   if (props.chatAppRenderStore) {
     return <StoreBackedLiveInteractionStatusStack {...props} chatAppRenderStore={props.chatAppRenderStore} />;
@@ -82,7 +85,30 @@ function LiveInteractionStatusStackLayout(
   props: LiveInteractionStatusStackCommonProps & { statusStackRenderState: LiveInteractionStatusStackRenderState },
 ): ReactNode {
   const statusStackRenderState = props.statusStackRenderState;
-  const queuedPromptPreviews = props.shouldHideQueuedPromptPreviews ? [] : statusStackRenderState.queuedPromptPreviews;
+  const modelAndReasoningSelectionState = statusStackRenderState.modelAndReasoningSelectionState;
+  const queuedPromptPreviews = props.shouldHideQueuedPromptPreviews
+    ? emptyQueuedPromptPreviews
+    : statusStackRenderState.queuedPromptPreviews;
+  const availableModelDisplayNames = useMemo(
+    () =>
+      modelAndReasoningSelectionState.step === "showing_available_models"
+        ? modelAndReasoningSelectionState.availableModels.map((availableAssistantModel) => availableAssistantModel.displayName)
+        : emptyModelAndReasoningVisibleChoices,
+    [modelAndReasoningSelectionState.step === "showing_available_models" ? modelAndReasoningSelectionState.availableModels : undefined],
+  );
+  const availableReasoningEffortChoiceLabels = useMemo(
+    () =>
+      modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices"
+        ? modelAndReasoningSelectionState.availableReasoningEffortChoices.map(
+          (availableReasoningEffortChoice) => availableReasoningEffortChoice.displayLabel,
+        )
+        : emptyModelAndReasoningVisibleChoices,
+    [
+      modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices"
+        ? modelAndReasoningSelectionState.availableReasoningEffortChoices
+        : undefined,
+    ],
+  );
 
   return (
     <>
@@ -90,7 +116,11 @@ function LiveInteractionStatusStackLayout(
       {renderConversationSessionCompactionStatusPane(statusStackRenderState.conversationSessionCompactionStatus)}
       <QueuedPromptStack queuedPromptPreviews={queuedPromptPreviews} accentColor={props.inputPanelAccentColor} />
       {renderConversationSessionSelectionPane(props)}
-      {renderModelAndReasoningSelectionPane(props)}
+      {renderModelAndReasoningSelectionPane({
+        ...props,
+        availableModelDisplayNames,
+        availableReasoningEffortChoiceLabels,
+      })}
       {renderSlashCommandSelectionPane(props)}
       {renderPromptContextSelectionPane(props)}
     </>
@@ -176,7 +206,11 @@ function renderPromptContextSelectionPane(
 }
 
 function renderModelAndReasoningSelectionPane(
-  props: LiveInteractionStatusStackCommonProps & { statusStackRenderState: LiveInteractionStatusStackRenderState },
+  props: LiveInteractionStatusStackCommonProps & {
+    statusStackRenderState: LiveInteractionStatusStackRenderState;
+    availableModelDisplayNames: string[];
+    availableReasoningEffortChoiceLabels: string[];
+  },
 ): ReactNode {
   const modelAndReasoningSelectionState = props.statusStackRenderState.modelAndReasoningSelectionState;
   return modelAndReasoningSelectionState.step === "loading_available_models" ? (
@@ -189,17 +223,13 @@ function renderModelAndReasoningSelectionPane(
     </box>
   ) : modelAndReasoningSelectionState.step === "showing_available_models" ? (
     <ModelAndReasoningSelectionPane
-      visibleChoices={modelAndReasoningSelectionState.availableModels.map(
-        (availableAssistantModel) => availableAssistantModel.displayName,
-      )}
+      visibleChoices={props.availableModelDisplayNames}
       highlightedChoiceIndex={modelAndReasoningSelectionState.highlightedModelIndex}
       accentColor={props.inputPanelAccentColor}
     />
   ) : modelAndReasoningSelectionState.step === "showing_reasoning_effort_choices" ? (
     <ModelAndReasoningSelectionPane
-      visibleChoices={modelAndReasoningSelectionState.availableReasoningEffortChoices.map(
-        (availableReasoningEffortChoice) => availableReasoningEffortChoice.displayLabel,
-      )}
+      visibleChoices={props.availableReasoningEffortChoiceLabels}
       highlightedChoiceIndex={modelAndReasoningSelectionState.highlightedReasoningEffortChoiceIndex}
       accentColor={props.inputPanelAccentColor}
     />

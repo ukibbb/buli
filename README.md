@@ -132,6 +132,8 @@ buli --bash-approval risk_based
 buli --bash-approval trusted
 ```
 
+`risk_based` auto-runs clearly non-destructive inspection and local verification commands such as `bun --filter @buli/engine test`, `bun run typecheck`, and `tsc --noEmit -p tsconfig.json`. It still asks before package installs, build/dev scripts, file-system mutations, git/GitHub mutations, network side effects, and ambiguous shell syntax. `trusted` auto-runs every Bash command.
+
 Show CLI help:
 
 ```bash

@@ -1,8 +1,9 @@
 import { memo, useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { calculateContextTokensUsedFromTokenUsage, lookupContextWindowTokenCapacityForModel, type ConversationMessagePart } from "@buli/contracts";
+import { calculateContextTokensUsedFromTokenUsage, type ConversationMessagePart } from "@buli/contracts";
 import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { ChatAppRenderStore, ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
+import { lookupDefaultConversationAutoCompactionTriggerTokenCountForModel } from "@buli/engine";
 import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
 import { AutoCompactingStatusLine } from "./AutoCompactingStatusLine.tsx";
 import {
@@ -39,7 +40,7 @@ type ConversationMessageListCommonProps = {
   conversationSessionCompactionStatus?: ConversationSessionCompactionStatus | undefined;
   queuedPromptCount?: number | undefined;
   totalContextTokensUsed?: number | undefined;
-  contextWindowTokenCapacity?: number | undefined;
+  contextMeterTokenLimit?: number | undefined;
 };
 
 export type ConversationMessageListProps = ConversationMessageListCommonProps & (
@@ -97,6 +98,9 @@ function areConversationMessagePartReferencesEqual(
 }
 
 export function ConversationMessageList(props: ConversationMessageListProps): ReactNode {
+  const scrollboxViewportOptions = useMemo(() => ({ paddingRight: 0 }), []);
+  const hiddenVerticalScrollbarOptions = useMemo(() => ({ visible: false, showArrows: false }), []);
+  const hiddenHorizontalScrollbarOptions = useMemo(() => ({ visible: false, showArrows: false }), []);
   const subscribeToTranscriptAuxiliary = useCallback(
     (listener: () => void) => props.chatAppRenderStore?.subscribeTranscriptAuxiliary(listener) ?? (() => {}),
     [props.chatAppRenderStore],
@@ -111,31 +115,49 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
     readTranscriptAuxiliarySnapshot,
   );
   const preparationCacheRef = useRef(createConversationMessageListPreparationCache());
-  const renderableConversationMessages = props.visibleConversationMessageRows
-    ? prepareRenderableConversationMessages({
-      visibleConversationMessageRows: props.visibleConversationMessageRows,
-      reasoningSummaryDisplayMode: props.reasoningSummaryDisplayMode,
-      preparationCache: preparationCacheRef.current,
-    })
-    : undefined;
+  const renderableConversationMessages = useMemo(
+    () =>
+      props.visibleConversationMessageRows
+        ? prepareRenderableConversationMessages({
+          visibleConversationMessageRows: props.visibleConversationMessageRows,
+          reasoningSummaryDisplayMode: props.reasoningSummaryDisplayMode,
+          preparationCache: preparationCacheRef.current,
+        })
+        : undefined,
+    [props.reasoningSummaryDisplayMode, props.visibleConversationMessageRows],
+  );
   const shouldRenderHistoryRevealRow = props.hiddenOlderConversationMessageCount > 0 &&
     props.olderConversationMessageRevealCount > 0;
   const conversationSessionCompactionStatus = transcriptAuxiliarySnapshot?.conversationSessionCompactionStatus ??
     props.conversationSessionCompactionStatus;
   const queuedPromptCount = transcriptAuxiliarySnapshot?.queuedPromptCount ?? props.queuedPromptCount ?? 0;
-  const activePendingToolApprovalDecision = resolvePendingToolApprovalDecision({
-    pendingToolApprovalRequest: transcriptAuxiliarySnapshot?.pendingToolApprovalRequest,
-    pendingToolApprovalDecision: props.pendingToolApprovalDecision,
-    pendingToolApprovalDecisionCallbacks: props.pendingToolApprovalDecisionCallbacks,
-  });
+  const transcriptPendingToolApprovalRequest = transcriptAuxiliarySnapshot?.pendingToolApprovalRequest;
+  const pendingToolApprovalDecisionCallbacks = props.pendingToolApprovalDecisionCallbacks;
+  const directPendingToolApprovalDecision = transcriptPendingToolApprovalRequest && pendingToolApprovalDecisionCallbacks
+    ? undefined
+    : props.pendingToolApprovalDecision;
+  const activePendingToolApprovalDecision = useMemo(
+    () =>
+      resolvePendingToolApprovalDecision({
+        pendingToolApprovalRequest: transcriptPendingToolApprovalRequest,
+        pendingToolApprovalDecision: directPendingToolApprovalDecision,
+        pendingToolApprovalDecisionCallbacks,
+      }),
+    [
+      directPendingToolApprovalDecision,
+      pendingToolApprovalDecisionCallbacks?.onPendingToolApprovalApproved,
+      pendingToolApprovalDecisionCallbacks?.onPendingToolApprovalDenied,
+      transcriptPendingToolApprovalRequest,
+    ],
+  );
   const totalContextTokensUsed = transcriptAuxiliarySnapshot
     ? transcriptAuxiliarySnapshot.latestContextWindowUsage
       ? calculateContextTokensUsedFromTokenUsage(transcriptAuxiliarySnapshot.latestContextWindowUsage)
       : undefined
     : props.totalContextTokensUsed;
-  const contextWindowTokenCapacity = transcriptAuxiliarySnapshot
-    ? lookupContextWindowTokenCapacityForModel(transcriptAuxiliarySnapshot.selectedModelId)
-    : props.contextWindowTokenCapacity;
+  const contextMeterTokenLimit = transcriptAuxiliarySnapshot
+    ? lookupDefaultConversationAutoCompactionTriggerTokenCountForModel(transcriptAuxiliarySnapshot.selectedModelId)
+    : props.contextMeterTokenLimit;
   const shouldRenderAutoCompactingStatusLine = conversationSessionCompactionStatus?.step === "compacting" &&
     conversationSessionCompactionStatus.source === "auto";
 
@@ -151,9 +173,9 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
         stickyScroll={true}
         stickyStart="bottom"
         viewportCulling={true}
-        viewportOptions={{ paddingRight: 0 }}
-        verticalScrollbarOptions={{ visible: false, showArrows: false }}
-        horizontalScrollbarOptions={{ visible: false, showArrows: false }}
+        viewportOptions={scrollboxViewportOptions}
+        verticalScrollbarOptions={hiddenVerticalScrollbarOptions}
+        horizontalScrollbarOptions={hiddenHorizontalScrollbarOptions}
       >
         {shouldRenderHistoryRevealRow ? (
           <ConversationHistoryRevealRow
@@ -204,7 +226,7 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
             <AutoCompactingStatusLine
               queuedPromptCount={queuedPromptCount}
               totalContextTokensUsed={totalContextTokensUsed}
-              contextWindowTokenCapacity={contextWindowTokenCapacity}
+              contextMeterTokenLimit={contextMeterTokenLimit}
             />
           </box>
         ) : null}
@@ -245,7 +267,7 @@ function ConversationMessageRowContainer(props: ConversationMessageRowContainerP
           reasoningSummaryDisplayMode: props.reasoningSummaryDisplayMode,
         })
         : [],
-    [conversationMessageRowSnapshot, props.reasoningSummaryDisplayMode],
+    [conversationMessageRowSnapshot?.conversationMessageParts, props.reasoningSummaryDisplayMode],
   );
 
   if (!conversationMessageRowSnapshot) {

@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database, type Statement } from "bun:sqlite";
 import {
   ConversationSessionEntrySchema,
   ConversationSessionModelSelectionSchema,
@@ -46,9 +46,89 @@ export class ConversationSessionSqliteGateway {
   private readonly database: Database;
   private readonly workspaceRootPath: string;
 
+  private readonly insertSessionStmt: Statement<void, [string, string, number, number, string, number, string | null]>;
+  private readonly insertEntryStmt: Statement<void, [string, number, string, number, string, string]>;
+  private readonly deleteEntriesStmt: Statement<void, [string]>;
+  private readonly insertModelSelectionStmt: Statement<void, [string, number, string]>;
+  private readonly updateModelSelectionStmt: Statement<void, [string, string, string]>;
+  private readonly updateSummaryStmt: Statement<void, [string, number, number, string, string]>;
+  private readonly upsertActiveSessionStmt: Statement<void, [string, string]>;
+  private readonly deleteSessionStmt: Statement<void, [string, string]>;
+  private readonly loadActiveSessionIdStmt: Statement<ActiveConversationSessionRow, [string]>;
+  private readonly loadMostRecentSessionStmt: Statement<ConversationSessionRow, [string]>;
+  private readonly loadSessionByIdStmt: Statement<ConversationSessionRow, [string, string]>;
+  private readonly listSessionSummariesStmt: Statement<ConversationSessionRow, [string]>;
+  private readonly loadEntriesStmt: Statement<ConversationSessionEntryRow, [string]>;
+
   constructor(input: { database: Database; workspaceRootPath: string }) {
     this.database = input.database;
     this.workspaceRootPath = input.workspaceRootPath;
+
+    this.insertSessionStmt = this.database.query(
+      `INSERT INTO conversation_session (
+        session_id, workspace_root_path, created_at_ms, updated_at_ms, title,
+        conversation_session_entry_count, current_model_selection_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    this.insertEntryStmt = this.database.query(
+      `INSERT INTO conversation_session_entry (
+        session_id, entry_sequence, session_entry_id, recorded_at_ms, entry_kind,
+        conversation_session_entry_json
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    this.deleteEntriesStmt = this.database.query("DELETE FROM conversation_session_entry WHERE session_id = ?");
+    this.insertModelSelectionStmt = this.database.query(
+      `INSERT INTO conversation_session_model_selection (session_id, recorded_at_ms, model_selection_json)
+       VALUES (?, ?, ?)`,
+    );
+    this.updateModelSelectionStmt = this.database.query(
+      `UPDATE conversation_session
+       SET current_model_selection_json = ?
+       WHERE session_id = ? AND workspace_root_path = ?`,
+    );
+    this.updateSummaryStmt = this.database.query(
+      `UPDATE conversation_session
+       SET title = ?, updated_at_ms = ?, conversation_session_entry_count = ?
+       WHERE session_id = ? AND workspace_root_path = ?`,
+    );
+    this.upsertActiveSessionStmt = this.database.query(
+      `INSERT INTO active_conversation_session (workspace_root_path, session_id)
+       VALUES (?, ?)
+       ON CONFLICT(workspace_root_path) DO UPDATE SET session_id = excluded.session_id`,
+    );
+    this.deleteSessionStmt = this.database.query(
+      "DELETE FROM conversation_session WHERE session_id = ? AND workspace_root_path = ?",
+    );
+    this.loadActiveSessionIdStmt = this.database.query(
+      "SELECT session_id FROM active_conversation_session WHERE workspace_root_path = ?",
+    );
+    this.loadMostRecentSessionStmt = this.database.query(
+      `SELECT session_id, workspace_root_path, created_at_ms, updated_at_ms, title,
+        conversation_session_entry_count, current_model_selection_json
+       FROM conversation_session
+       WHERE workspace_root_path = ?
+       ORDER BY updated_at_ms DESC, created_at_ms DESC, session_id ASC
+       LIMIT 1`,
+    );
+    this.loadSessionByIdStmt = this.database.query(
+      `SELECT session_id, workspace_root_path, created_at_ms, updated_at_ms, title,
+        conversation_session_entry_count, current_model_selection_json
+       FROM conversation_session
+       WHERE session_id = ? AND workspace_root_path = ?`,
+    );
+    this.listSessionSummariesStmt = this.database.query(
+      `SELECT session_id, workspace_root_path, created_at_ms, updated_at_ms, title,
+        conversation_session_entry_count, current_model_selection_json
+       FROM conversation_session
+       WHERE workspace_root_path = ?
+       ORDER BY updated_at_ms DESC, created_at_ms DESC, session_id ASC`,
+    );
+    this.loadEntriesStmt = this.database.query(
+      `SELECT entry_sequence, conversation_session_entry_json
+       FROM conversation_session_entry
+       WHERE session_id = ?
+       ORDER BY entry_sequence ASC`,
+    );
   }
 
   insertConversationSessionMetadata(input: {
@@ -57,25 +137,14 @@ export class ConversationSessionSqliteGateway {
     title: string;
     modelSelection: ConversationSessionModelSelection | undefined;
   }): PersistedConversationSessionMetadata {
-    this.database.run(
-      `INSERT INTO conversation_session (
-        session_id,
-        workspace_root_path,
-        created_at_ms,
-        updated_at_ms,
-        title,
-        conversation_session_entry_count,
-        current_model_selection_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        input.sessionId,
-        this.workspaceRootPath,
-        input.createdAtMs,
-        input.createdAtMs,
-        input.title,
-        0,
-        serializeOptionalConversationSessionModelSelection(input.modelSelection),
-      ],
+    this.insertSessionStmt.run(
+      input.sessionId,
+      this.workspaceRootPath,
+      input.createdAtMs,
+      input.createdAtMs,
+      input.title,
+      0,
+      serializeOptionalConversationSessionModelSelection(input.modelSelection),
     );
 
     return {
@@ -92,23 +161,13 @@ export class ConversationSessionSqliteGateway {
     sessionId: string;
     recordedConversationSessionEntry: RecordedConversationSessionEntry;
   }): void {
-    this.database.run(
-      `INSERT INTO conversation_session_entry (
-        session_id,
-        entry_sequence,
-        session_entry_id,
-        recorded_at_ms,
-        entry_kind,
-        conversation_session_entry_json
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        input.sessionId,
-        input.recordedConversationSessionEntry.entrySequence,
-        input.recordedConversationSessionEntry.sessionEntryId,
-        input.recordedConversationSessionEntry.recordedAtMs,
-        input.recordedConversationSessionEntry.conversationSessionEntry.entryKind,
-        JSON.stringify(input.recordedConversationSessionEntry.conversationSessionEntry),
-      ],
+    this.insertEntryStmt.run(
+      input.sessionId,
+      input.recordedConversationSessionEntry.entrySequence,
+      input.recordedConversationSessionEntry.sessionEntryId,
+      input.recordedConversationSessionEntry.recordedAtMs,
+      input.recordedConversationSessionEntry.conversationSessionEntry.entryKind,
+      JSON.stringify(input.recordedConversationSessionEntry.conversationSessionEntry),
     );
   }
 
@@ -116,7 +175,7 @@ export class ConversationSessionSqliteGateway {
     sessionId: string;
     recordedConversationSessionEntries: readonly RecordedConversationSessionEntry[];
   }): void {
-    this.database.run("DELETE FROM conversation_session_entry WHERE session_id = ?", [input.sessionId]);
+    this.deleteEntriesStmt.run(input.sessionId);
     for (const recordedConversationSessionEntry of input.recordedConversationSessionEntries) {
       this.insertConversationSessionEntry({
         sessionId: input.sessionId,
@@ -130,23 +189,14 @@ export class ConversationSessionSqliteGateway {
     recordedAtMs: number;
     modelSelection: ConversationSessionModelSelection;
   }): void {
-    this.database.run(
-      `INSERT INTO conversation_session_model_selection (session_id, recorded_at_ms, model_selection_json)
-       VALUES (?, ?, ?)`,
-      [input.sessionId, input.recordedAtMs, JSON.stringify(input.modelSelection)],
-    );
+    this.insertModelSelectionStmt.run(input.sessionId, input.recordedAtMs, JSON.stringify(input.modelSelection));
   }
 
   updateConversationSessionCurrentModelSelection(input: {
     sessionId: string;
     modelSelection: ConversationSessionModelSelection;
   }): void {
-    this.database.run(
-      `UPDATE conversation_session
-       SET current_model_selection_json = ?
-       WHERE session_id = ? AND workspace_root_path = ?`,
-      [JSON.stringify(input.modelSelection), input.sessionId, this.workspaceRootPath],
-    );
+    this.updateModelSelectionStmt.run(JSON.stringify(input.modelSelection), input.sessionId, this.workspaceRootPath);
   }
 
   updateConversationSessionSummary(input: {
@@ -155,114 +205,46 @@ export class ConversationSessionSqliteGateway {
     updatedAtMs: number;
     conversationSessionEntryCount: number;
   }): void {
-    this.database.run(
-      `UPDATE conversation_session
-       SET title = ?, updated_at_ms = ?, conversation_session_entry_count = ?
-       WHERE session_id = ? AND workspace_root_path = ?`,
-      [
-        input.title,
-        input.updatedAtMs,
-        input.conversationSessionEntryCount,
-        input.sessionId,
-        this.workspaceRootPath,
-      ],
+    this.updateSummaryStmt.run(
+      input.title,
+      input.updatedAtMs,
+      input.conversationSessionEntryCount,
+      input.sessionId,
+      this.workspaceRootPath,
     );
   }
 
   writeActiveConversationSessionId(sessionId: string): void {
-    this.database.run(
-      `INSERT INTO active_conversation_session (workspace_root_path, session_id)
-       VALUES (?, ?)
-       ON CONFLICT(workspace_root_path) DO UPDATE SET session_id = excluded.session_id`,
-      [this.workspaceRootPath, sessionId],
-    );
+    this.upsertActiveSessionStmt.run(this.workspaceRootPath, sessionId);
   }
 
   deleteConversationSession(sessionId: string): void {
-    this.database.run("DELETE FROM conversation_session WHERE session_id = ? AND workspace_root_path = ?", [
-      sessionId,
-      this.workspaceRootPath,
-    ]);
+    this.deleteSessionStmt.run(sessionId, this.workspaceRootPath);
   }
 
   loadActiveConversationSessionMetadataIfPresent(): PersistedConversationSessionMetadata | undefined {
-    const activeConversationSessionId = this.database
-      .query<ActiveConversationSessionRow, [string]>(
-        "SELECT session_id FROM active_conversation_session WHERE workspace_root_path = ?",
-      )
-      .get(this.workspaceRootPath)?.session_id;
+    const activeConversationSessionId = this.loadActiveSessionIdStmt.get(this.workspaceRootPath)?.session_id;
     return activeConversationSessionId
       ? this.loadConversationSessionMetadataById(activeConversationSessionId)
       : undefined;
   }
 
   loadMostRecentlyUpdatedConversationSessionMetadata(): PersistedConversationSessionMetadata | undefined {
-    const conversationSessionRow = this.database
-      .query<ConversationSessionRow, [string]>(
-        `SELECT
-          session_id,
-          workspace_root_path,
-          created_at_ms,
-          updated_at_ms,
-          title,
-          conversation_session_entry_count,
-          current_model_selection_json
-         FROM conversation_session
-         WHERE workspace_root_path = ?
-         ORDER BY updated_at_ms DESC, created_at_ms DESC, session_id ASC
-         LIMIT 1`,
-      )
-      .get(this.workspaceRootPath);
+    const conversationSessionRow = this.loadMostRecentSessionStmt.get(this.workspaceRootPath);
     return conversationSessionRow ? mapConversationSessionRowToMetadata(conversationSessionRow) : undefined;
   }
 
   loadConversationSessionMetadataById(sessionId: string): PersistedConversationSessionMetadata | undefined {
-    const conversationSessionRow = this.database
-      .query<ConversationSessionRow, [string, string]>(
-        `SELECT
-          session_id,
-          workspace_root_path,
-          created_at_ms,
-          updated_at_ms,
-          title,
-          conversation_session_entry_count,
-          current_model_selection_json
-         FROM conversation_session
-         WHERE session_id = ? AND workspace_root_path = ?`,
-      )
-      .get(sessionId, this.workspaceRootPath);
+    const conversationSessionRow = this.loadSessionByIdStmt.get(sessionId, this.workspaceRootPath);
     return conversationSessionRow ? mapConversationSessionRowToMetadata(conversationSessionRow) : undefined;
   }
 
   listConversationSessionSummaries(): readonly ConversationSessionSummary[] {
-    return this.database
-      .query<ConversationSessionRow, [string]>(
-        `SELECT
-          session_id,
-          workspace_root_path,
-          created_at_ms,
-          updated_at_ms,
-          title,
-          conversation_session_entry_count,
-          current_model_selection_json
-         FROM conversation_session
-         WHERE workspace_root_path = ?
-         ORDER BY updated_at_ms DESC, created_at_ms DESC, session_id ASC`,
-      )
-      .all(this.workspaceRootPath)
-      .map(mapConversationSessionRowToSummary);
+    return this.listSessionSummariesStmt.all(this.workspaceRootPath).map(mapConversationSessionRowToSummary);
   }
 
   loadConversationSessionEntries(sessionId: string): readonly ConversationSessionEntry[] {
-    return this.database
-      .query<ConversationSessionEntryRow, [string]>(
-        `SELECT entry_sequence, conversation_session_entry_json
-         FROM conversation_session_entry
-         WHERE session_id = ?
-         ORDER BY entry_sequence ASC`,
-      )
-      .all(sessionId)
-      .map((row) => parseConversationSessionEntryJson(row));
+    return this.loadEntriesStmt.all(sessionId).map((row) => parseConversationSessionEntryJson(row));
   }
 }
 

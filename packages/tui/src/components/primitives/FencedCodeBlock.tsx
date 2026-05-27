@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { SyntaxHighlightSpan } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
@@ -24,18 +24,22 @@ export type FencedCodeBlockLine = {
 // drops the chrome because an outer SurfaceCard already provides it.
 export type FencedCodeBlockVariant = "standalone" | "embedded";
 
-export type FencedCodeBlockProps = {
+type FencedCodeBlockCommonProps = {
   variant?: FencedCodeBlockVariant;
   languageLabel?: string;
   displayLabel?: string;
   showLabel?: boolean;
   showLineNumbers?: boolean;
   filePath?: string;
-  codeLines: FencedCodeBlockLine[];
   conceal?: boolean;
   decorateTeachingComments?: boolean;
   wrapMode?: "char" | "none" | "word";
 };
+
+export type FencedCodeBlockProps = FencedCodeBlockCommonProps & (
+  | { codeLines: FencedCodeBlockLine[]; codeText?: undefined }
+  | { codeText: string; codeLines?: undefined }
+);
 
 export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
   const variant: FencedCodeBlockVariant = props.variant ?? "standalone";
@@ -43,9 +47,10 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
   const codeWrapMode = props.wrapMode ?? "none";
   const shouldShowLineNumbers = props.showLineNumbers ?? true;
   const visibleLabel = props.showLabel === false ? undefined : props.displayLabel ?? props.languageLabel;
-  const hasAnyPreSuppliedSyntaxHighlightSpans = props.codeLines.some(
+  const codeLines = props.codeLines;
+  const hasAnyPreSuppliedSyntaxHighlightSpans = codeLines?.some(
     (codeLine) => codeLine.syntaxHighlightSpans && codeLine.syntaxHighlightSpans.length > 0,
-  );
+  ) ?? false;
   return (
     <box
       {...(isStandalone
@@ -66,15 +71,16 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
           <text fg={chatScreenTheme.textDim}>{`// ${visibleLabel}`}</text>
         </box>
       ) : null}
-      {hasAnyPreSuppliedSyntaxHighlightSpans ? (
+      {hasAnyPreSuppliedSyntaxHighlightSpans && codeLines !== undefined ? (
         <FencedCodeBlockPreSuppliedSpanContent
-          codeLines={props.codeLines}
+          codeLines={codeLines}
           showLineNumbers={shouldShowLineNumbers}
           wrapMode={codeWrapMode}
         />
       ) : (
         <OpenTuiFencedCodeContent
           codeLines={props.codeLines}
+          codeText={props.codeText}
           conceal={props.conceal}
           decorateTeachingComments={props.decorateTeachingComments}
           filePath={props.filePath}
@@ -88,7 +94,8 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
 }
 
 function OpenTuiFencedCodeContent(props: {
-  codeLines: FencedCodeBlockLine[];
+  codeLines: FencedCodeBlockLine[] | undefined;
+  codeText: string | undefined;
   conceal: boolean | undefined;
   decorateTeachingComments: boolean | undefined;
   filePath: string | undefined;
@@ -96,10 +103,15 @@ function OpenTuiFencedCodeContent(props: {
   showLineNumbers: boolean;
   wrapMode: "char" | "none" | "word";
 }): ReactNode {
-  const codeText = props.codeLines.map((codeLine) => codeLine.lineText).join("\n");
-  const codeFiletype = resolveOpenTuiCodeFiletype(props.filePath, props.languageLabel);
-  const hasAnyLineNumber = props.showLineNumbers && props.codeLines.some((codeLine) => codeLine.lineNumber !== undefined);
-  if (!hasAnyLineNumber) {
+  const codeText = props.codeText ?? props.codeLines?.map((codeLine) => codeLine.lineText).join("\n") ?? "";
+  const codeFiletype = useMemo(
+    () => resolveOpenTuiCodeFiletype(props.filePath, props.languageLabel),
+    [props.filePath, props.languageLabel],
+  );
+  const lineNumberedCodeLines = props.showLineNumbers && props.codeLines?.some((codeLine) => codeLine.lineNumber !== undefined)
+    ? props.codeLines
+    : undefined;
+  if (!lineNumberedCodeLines) {
     return (
       <code
         content={codeText}
@@ -121,9 +133,9 @@ function OpenTuiFencedCodeContent(props: {
     <line-number
       bg={githubLikeTerminalCodeColors.canvas}
       fg={codeLineNumberGutterForegroundColor}
-      hideLineNumbers={buildHiddenLineNumberSetForCodeLines(props.codeLines)}
-      lineNumbers={buildLineNumberOverrideMapForCodeLines(props.codeLines)}
-      minWidth={computeLineNumberGutterWidth(props.codeLines)}
+      hideLineNumbers={buildHiddenLineNumberSetForCodeLines(lineNumberedCodeLines)}
+      lineNumbers={buildLineNumberOverrideMapForCodeLines(lineNumberedCodeLines)}
+      minWidth={computeLineNumberGutterWidth(lineNumberedCodeLines)}
       paddingRight={1}
       width="100%"
     >

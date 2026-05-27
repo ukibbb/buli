@@ -177,7 +177,7 @@ Lives in the engine layer. Each provider maps its models to profiles. Default pr
 
 **A12. Streaming tool-result summarization.** For results above 8KB, summarize before including in context. Full result stored in session history.
 
-**A13. Reference-based tool results.** Store results in a turn-scoped store indexed by tool call ID. Include only reference and excerpt in context. Add a `recall` tool for on-demand retrieval.
+**A13. Reference-based duplicate results.** Keep intentional tool results model-visible, but return compact references for repeated read-only requests whose prior result is still visible and still valid. Do not add an on-demand recall tool.
 
 ## Boundary 5: Local Pipeline
 
@@ -301,87 +301,86 @@ Within each phase, implement in boundary order (1 → 2 → 3 → 4 → 5) since
 | A10 | Task subagents | Aggressive | Subagent priority scheduling |
 | A11 | Tool results | Aggressive | Tool-result eviction |
 | A12 | Tool results | Aggressive | Streaming tool-result summarization |
-| A13 | Tool results | Aggressive | Reference-based tool results |
+| A13 | Tool results | Aggressive | Reference-based duplicate results |
 | A14 | Local pipeline | Aggressive | Worker-thread serialization |
 | A15 | Local pipeline | Aggressive | Virtual transcript rendering |
 | A16 | Local pipeline | Aggressive | Speculative session hydration |
 
-## Phase-Enforced Agent Workflow (Open Design)
+## Phase-Enforced Agent Workflow
 
-Beyond per-boundary optimizations, a structural change to how the agent works: enforce an **Understand → Plan → Implement** workflow at the runtime level. The user can currently switch phases via tab, but the model isn't constrained — it can call `edit` without reading the file or implement without a plan. The idea is to make phases architecturally enforced, not just suggested.
+Beyond per-boundary optimizations, enforce an **Understand -> Plan -> Implementation** workflow at the runtime level. The current UI already lets the user cycle these modes with Tab. The runtime should make that sequence real instead of relying on prompt wording alone.
 
-### Core Mechanism: Tool Availability Per Phase
+### Chosen Runtime Shape
 
-**Understand phase:**
-- Available tools: `read`, `read_many`, `search_many`, `grep`, `glob`, `bash` (read-only only), `task` (research subagents)
-- Unavailable: `edit`, `edit_many`, `write`, `patch`, `bash` (mutations)
-- The model cannot implement because mutation tools are not in its tool list
-- Context accumulates freely — the agent explores the codebase
+- Use the existing modes as separate provider turns: `understand`, `plan`, and `implementation`.
+- Share context through the existing conversation session history. Plan sees Understanding, and Implementation sees Plan plus relevant Understanding evidence.
+- Do not delete, hide, or externalize intentional code reads behind a recall mechanism. If the model intentionally read code, that code remains in model-visible history until normal compaction.
+- Add a lightweight deterministic ledger to the system context so the model can see what has already been inspected before requesting more tools.
+- Add duplicate read-only tool-call suppression at the tool layer so repeated requests return compact references instead of repeated content.
 
-**Plan phase:**
-- Available tools: none, or a single `submit_plan` tool
-- The model produces a plan as text output based on what it learned
-- **Context reshaping happens here**: raw tool results from Understand get compacted into a structured findings summary
-- The 200KB of file contents becomes a compact "here's what I learned" summary
+### Tool Availability Per Mode
 
-**Implement phase:**
-- Available tools: all tools unlocked
-- Context: the plan + findings summary (compact), not the raw Understand outputs
-- The model follows its plan, reads specific files as needed for edits
-- Much smaller starting context → faster response steps, fewer tokens
+**Understand mode:**
+- Available tools: `read`, `read_many`, `search_many`, `grep`, `glob`, read-only `task`, and `skill`.
+- Unavailable: `edit`, `edit_many`, `write`, `patch`, `patch_many`, and `bash`.
+- Purpose: understand the system, inspect relevant files, explain mechanics, and align on the intended outcome.
 
-Always enforced, even for simple tasks — phases can be instant (one `read` call, one-sentence plan, then implement). No special cases, predictable behavior.
+**Plan mode:**
+- Available tools: same read-only inspection tools as Understand.
+- Unavailable: mutation tools and `bash`.
+- Purpose: turn the Understanding context into an executable plan with exact files, intended changes, risks, and verification commands.
 
-### Why This Solves Both Problems
+**Implementation mode:**
+- Available tools: all assistant tools allowed by the current runtime policy.
+- Purpose: execute the agreed plan, mutate files as needed, and verify behavior.
+- Re-reads are allowed after relevant mutations because prior file-read evidence becomes stale.
 
-- **Fewer tool calls**: the model can't duplicate work across phases because raw results are compacted at transitions. It works from its summary, not by re-calling tools.
-- **Better context**: each phase starts with right-sized context. Implement doesn't carry 200KB of exploration — it carries a plan and a summary.
+### Sequence Enforcement
 
-### Tool-Call Ledger
+- `understand` can always start a new workflow slice.
+- `plan` is allowed only after a completed `understand` turn or while continuing a `plan` turn.
+- `implementation` is allowed only after a completed `plan` turn or while continuing an implementation/auto-compaction turn.
+- If the user selects a later mode too early, the runtime fails the turn with a clear explanation rather than silently downgrading modes.
 
-A running manifest injected as a lightweight context item during the Understand phase that tracks what the agent has seen:
+This keeps the user's mode selection explicit while preventing the model from jumping directly into mutation.
 
+### Tool-Call Evidence Ledger
+
+Before each provider turn, inject a compact inventory of visible read-only evidence:
+
+```text
+Already inspected:
+- read: src/foo.ts lines 1-80 via call_read_1
+- read: src/bar.ts full/default window via call_read_2
+- grep: "handleSubmit" in packages/tui via call_grep_1
+- glob: packages/**/*.ts via call_glob_1
 ```
-Files read: src/foo.ts (lines 1-80), src/bar.ts (full)
-Searches: "handleSubmit" → 4 matches in packages/tui/
-Bash: "bun run test" → 3 failures
-```
 
-Small (~500 bytes), always up-to-date. Gives the model a structured "what do I already know" reference before deciding to call a tool. Helps prevent redundant tool calls within the Understand phase itself.
+The ledger is derived from existing visible session entries. It is not canonical history and does not change provider replay. Its job is to guide the model away from duplicate inspection while preserving the real tool results in normal context.
 
-### Open Questions
+### Deterministic Duplicate Suppression
 
-**Phase transition signal — how does the runtime know when Understand is done?**
+When a read-only tool call exactly repeats visible, still-valid evidence, the runtime returns a completed reference result instead of executing the tool again:
 
-- **Option 1: `phase_complete` tool.** A special tool that only exists during Understand and Plan phases. When the model calls it, the runtime transitions. The model includes a brief summary in the call arguments (synthesis of findings). Explicit, model-controlled.
-- **Option 2: Heuristic detection.** The runtime detects phase transitions automatically — e.g., after N read-only calls without new information, or when the model's text output looks like a plan. Implicit, risk of misfire.
-- **Option 3: Hybrid.** The runtime suggests a transition (e.g., "you've explored 15 files — ready to plan?") but the model decides.
+- `read("src/foo.ts", 1, 80)` already visible and unchanged -> return a reference to the previous `toolCallId`.
+- `read_many` executes only targets that are new or stale; duplicate child reads become per-target reference results.
+- `glob`, `grep`, and `search_many` use exact request keys and are invalidated after any workspace mutation.
+- Failed, denied, or already-reference results are not used as reusable evidence.
 
-**Context reshaping at Understand → Plan — how to summarize findings?**
+Mutation invalidation is conservative:
 
-- **Option A: Model-generated summary.** The `phase_complete` call arguments include the model's own synthesis. The model already has everything in context so this is essentially free — it summarizes as part of the transition call.
-- **Option B: Runtime-generated summary.** Deterministic extraction of metadata (files read, search results, key facts) without an extra LLM call. Cheaper but less intelligent.
-- **Option C: Both.** Runtime generates a structured metadata summary (file list, search results), model adds its qualitative synthesis on top.
+- Workspace patches invalidate read evidence for touched files.
+- Any workspace mutation invalidates search evidence because global search results can change.
+- Mutating `bash` is never deduplicated. Bash duplicate handling can be considered separately only for exact safe read-only commands.
 
-**Context reshaping at Plan → Implement — what survives?**
+The provider still receives a required result for every requested tool call. The difference is that duplicate results are short references rather than repeated file/search content.
 
-- The plan (model-generated text)
-- The findings summary (from Understand → Plan transition)
-- Conversation history (compacted)
-- Raw tool results from Understand: dropped entirely
+### Context Strategy
 
-**Runtime implementation — phases within one turn or separate turns?**
-
-- **Option A: Phases as response steps within one turn.** The runtime swaps tool definitions between response steps. The user sees one continuous response. Fits the existing `turnSession.ts` response-step loop — tool definitions already get rebuilt per step.
-- **Option B: Phases as separate turns.** Each phase is a distinct provider turn. Three turns per user prompt. Cleaner separation but the user sees three turns for one question.
-
-**Transparent deduplication safety net:**
-
-Regardless of phase enforcement, a turn-scoped tool-result cache at the tool layer:
-- `read("src/foo.ts", 1, 80)` already executed in this turn → return cached result instantly
-- `grep("handleSubmit", "packages/tui/")` already executed → return cached result
-- Transparent to the model — it gets the same result faster
-- Catches accidental duplication that the ledger and phases don't prevent
+- Useful code context stays model-visible when intentionally requested.
+- Compaction remains the normal mechanism for reducing old history.
+- Duplicate suppression reduces repeated content without requiring hidden stores, paging, or `recall_tool_result`.
+- Phase summaries can be added later, but they should supplement visible evidence, not replace intentional reads by default.
 
 ## Codebase-Specific Optimization Opportunities (Open Design)
 

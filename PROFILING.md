@@ -144,7 +144,7 @@ Use these metrics when judging rewrites:
 - `sqlite_session_large_history.switch_session.duration_ms`
 - `tool_output_context_growth.model_context_projection.duration_ms`
 - `tool_output_context_growth.compaction_projection.duration_ms`
-- `tool_output_context_growth.budgeted_read_many_tool_result_text_bytes`
+- `tool_output_context_growth.read_many_tool_result_text_bytes`
 - `tool_output_context_growth.budgeted_search_many_tool_result_text_bytes`
 - `*.heap_used_delta_bytes`
 

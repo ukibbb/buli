@@ -187,3 +187,23 @@ test("split render diagnostic builders keep transcript, prompt, and status field
     reasoningSummaryDisplayMode: "expanded",
   });
 });
+
+test("buildChatScreenTranscriptRenderDiagnosticFields includes build durations when supplied", () => {
+  expect(
+    buildChatScreenTranscriptRenderDiagnosticFields({
+      terminalRowCount: 24,
+      terminalColumnCount: 120,
+      terminalSizeTierForChatScreen: "comfortable",
+      orderedConversationMessageCount: 10,
+      renderedConversationMessageCount: 4,
+      hiddenOlderConversationMessageCount: 6,
+      orderedConversationMessagePartCount: 18,
+      renderedConversationMessagePartCount: 7,
+      interactionViewModelBuildDurationMs: 3,
+      transcriptViewModelBuildDurationMs: 5,
+    }),
+  ).toMatchObject({
+    interactionViewModelBuildDurationMs: 3,
+    transcriptViewModelBuildDurationMs: 5,
+  });
+});

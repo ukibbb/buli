@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { ConversationTurnStatus } from "@buli/contracts";
 import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import { TextAttributes } from "@opentui/core";
@@ -25,10 +25,10 @@ export type InputStatusStripProps = {
   modelIdentifier: string;
   reasoningEffortLabel: string;
   totalContextTokensUsed: number | undefined;
-  contextWindowTokenCapacity: number | undefined;
+  contextMeterTokenLimit: number | undefined;
 };
 
-export function InputStatusStrip(props: InputStatusStripProps): ReactNode {
+function InputStatusStripComponent(props: InputStatusStripProps): ReactNode {
   return (
     <box
       flexDirection="row"
@@ -44,11 +44,48 @@ export function InputStatusStrip(props: InputStatusStripProps): ReactNode {
       <box flexShrink={0}>
         <ContextWindowMeter
           totalTokensUsed={props.totalContextTokensUsed}
-          contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+          contextMeterTokenLimit={props.contextMeterTokenLimit}
         />
       </box>
     </box>
   );
+}
+
+function areInputStatusStripPropsEqual(previousProps: InputStatusStripProps, nextProps: InputStatusStripProps): boolean {
+  return previousProps.assistantResponseStatus === nextProps.assistantResponseStatus &&
+    areConversationSessionCompactionStatusesEqual(
+      previousProps.conversationSessionCompactionStatus,
+      nextProps.conversationSessionCompactionStatus,
+    ) &&
+    previousProps.queuedPromptCount === nextProps.queuedPromptCount &&
+    previousProps.promptInputHintOverride === nextProps.promptInputHintOverride &&
+    previousProps.accentColor === nextProps.accentColor &&
+    previousProps.shortModeLabel === nextProps.shortModeLabel &&
+    previousProps.nextShortModeLabel === nextProps.nextShortModeLabel &&
+    previousProps.nextModeAccentColor === nextProps.nextModeAccentColor &&
+    previousProps.modelIdentifier === nextProps.modelIdentifier &&
+    previousProps.reasoningEffortLabel === nextProps.reasoningEffortLabel &&
+    previousProps.totalContextTokensUsed === nextProps.totalContextTokensUsed &&
+    previousProps.contextMeterTokenLimit === nextProps.contextMeterTokenLimit;
+}
+
+function areConversationSessionCompactionStatusesEqual(
+  previousStatus: ConversationSessionCompactionStatus,
+  nextStatus: ConversationSessionCompactionStatus,
+): boolean {
+  if (previousStatus.step !== nextStatus.step) {
+    return false;
+  }
+
+  if (previousStatus.step === "compacting" && nextStatus.step === "compacting") {
+    return previousStatus.source === nextStatus.source;
+  }
+
+  if (previousStatus.step === "failed" && nextStatus.step === "failed") {
+    return previousStatus.errorMessage === nextStatus.errorMessage;
+  }
+
+  return true;
 }
 
 function renderLeftCluster(props: InputStatusStripProps): ReactNode {
@@ -123,3 +160,5 @@ function renderIdleLeftCluster(props: InputStatusStripProps): ReactNode {
     </text>
   );
 }
+
+export const InputStatusStrip = memo(InputStatusStripComponent, areInputStatusStripPropsEqual);

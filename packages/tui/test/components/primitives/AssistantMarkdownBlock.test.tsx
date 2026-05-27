@@ -162,6 +162,25 @@ describe("AssistantMarkdownBlock", () => {
     expect(captureCharFrame()).toContain("Still");
   });
 
+  test("renders_active_streaming_heading_tail_without_promoting_it_to_heading", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={true}
+        markdownText={["# Stable heading", "", "Stable paragraph", "", "## Tail still typing"].join("\n")}
+      />,
+      { width: 80, height: 12 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("▌ Stable heading");
+    expect(frame).toContain("Stable paragraph");
+    expect(frame).toContain("Tail still typing");
+    expect(frame).not.toContain("◆ Tail still typing");
+  });
+
   test("hides_incomplete_streaming_inline_markdown_delimiters", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock

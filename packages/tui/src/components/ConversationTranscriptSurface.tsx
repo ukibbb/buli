@@ -24,7 +24,7 @@ export type ConversationTranscriptSurfaceProps = {
   conversationSessionCompactionStatus?: ConversationSessionCompactionStatus | undefined;
   queuedPromptCount?: number | undefined;
   totalContextTokensUsed?: number | undefined;
-  contextWindowTokenCapacity?: number | undefined;
+  contextMeterTokenLimit?: number | undefined;
 };
 
 export function ConversationTranscriptSurface(props: ConversationTranscriptSurfaceProps): ReactNode {
@@ -49,7 +49,7 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
       conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
       queuedPromptCount={props.queuedPromptCount}
       totalContextTokensUsed={props.totalContextTokensUsed}
-      contextWindowTokenCapacity={props.contextWindowTokenCapacity}
+      contextMeterTokenLimit={props.contextMeterTokenLimit}
     />
   );
 }

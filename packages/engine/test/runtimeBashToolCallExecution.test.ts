@@ -5,7 +5,10 @@ import { join } from "node:path";
 import type { AssistantOperatingMode, AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
 import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../src/provider.ts";
-import { streamAssistantResponseEventsForBashToolCall } from "../src/runtimeBashToolCallExecution.ts";
+import {
+  BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT,
+  streamAssistantResponseEventsForBashToolCall,
+} from "../src/runtimeBashToolCallExecution.ts";
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "../src/runtimeToolApproval.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
 import type { BashToolApprovalMode } from "../src/tools/bashToolApprovalPolicy.ts";
@@ -113,6 +116,20 @@ function createSuccessfulWorkspaceShellCommandExecutor(stdoutText: string): Work
     async runShellCommand() {
       return {
         exitCode: 0,
+        stdoutText,
+        stderrText: "",
+      };
+    },
+  } satisfies WorkspaceShellCommandExecutor;
+}
+
+function createNonZeroWorkspaceShellCommandExecutor(stdoutText: string): WorkspaceShellCommandExecutor {
+  return {
+    workspaceRootPath: process.cwd(),
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+    async runShellCommand() {
+      return {
+        exitCode: 1,
         stdoutText,
         stderrText: "",
       };
@@ -278,6 +295,33 @@ test("streamAssistantResponseEventsForBashToolCall records auto-run bash success
   });
 });
 
+test("streamAssistantResponseEventsForBashToolCall auto-runs local verification commands in risk-based mode", async () => {
+  const executedShellCommands: string[] = [];
+  const { assistantResponseEvents, providerConversationTurn } = await collectBashToolCallEvents({
+    shellCommand: "bun --filter @buli/engine test",
+    bashToolApprovalMode: "risk_based",
+    workspaceShellCommandExecutor: {
+      workspaceRootPath: process.cwd(),
+      shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+      async runShellCommand(input) {
+        executedShellCommands.push(input.shellCommand);
+        return {
+          exitCode: 0,
+          stdoutText: "tests passed\n",
+          stderrText: "",
+        };
+      },
+    },
+  });
+
+  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_message_part_added",
+    "assistant_message_part_updated",
+  ]);
+  expect(executedShellCommands).toEqual(["bun --filter @buli/engine test"]);
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("tests passed");
+});
+
 test("streamAssistantResponseEventsForBashToolCall records workspace patches from bash side effects", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-bash-workspace-patch-"));
   const privateGitDirectoryPath = await mkdtemp(join(tmpdir(), "buli-bash-workspace-patch-git-"));
@@ -325,6 +369,88 @@ test("streamAssistantResponseEventsForBashToolCall records workspace patches fro
   }));
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Workspace changes:");
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("added generated.txt");
+});
+
+test("streamAssistantResponseEventsForBashToolCall caps stored bash results after workspace patch summaries", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-bash-result-budget-"));
+  const privateGitDirectoryPath = await mkdtemp(join(tmpdir(), "buli-bash-result-budget-git-"));
+  const workspaceSnapshotStore = new PrivateGitWorkspaceSnapshotStore({
+    workspaceRootPath,
+    privateGitDirectoryPath,
+    createWorkspacePatchId: () => "patch-1",
+    nowMs: () => 1234,
+  });
+  const longStdoutText = `${"stdout-line".repeat(5_000)}\n`;
+  const workspaceShellCommandExecutor = {
+    workspaceRootPath,
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+    async runShellCommand() {
+      await writeFile(join(workspaceRootPath, "generated.txt"), "hello\n", "utf8");
+      return {
+        exitCode: 0,
+        stdoutText: longStdoutText,
+        stderrText: "",
+      };
+    },
+  } satisfies WorkspaceShellCommandExecutor;
+
+  const { assistantResponseEvents, providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
+    shellCommand: "printf hello > generated.txt",
+    workspaceRootPath,
+    workspaceSnapshotStore,
+    workspaceShellCommandExecutor,
+  });
+
+  const submittedToolResultText = providerConversationTurn.submittedToolResults[0]?.toolResultText ?? "";
+  const storedToolResultEntry = conversationHistory.listConversationSessionEntries().find((conversationSessionEntry) =>
+    conversationSessionEntry.entryKind === "completed_tool_result"
+  );
+  const completedToolCallEvent = assistantResponseEvents.find((assistantResponseEvent) =>
+    assistantResponseEvent.type === "assistant_message_part_updated"
+  );
+
+  expect(submittedToolResultText.length).toBeLessThanOrEqual(BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT);
+  expect(submittedToolResultText).toContain("bash result truncated");
+  expect(submittedToolResultText).toContain("Workspace changes:");
+  expect(submittedToolResultText).toContain("added generated.txt");
+  expect(storedToolResultEntry).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolResultText: submittedToolResultText,
+  });
+  if (completedToolCallEvent?.type !== "assistant_message_part_updated") {
+    throw new Error("Expected completed bash tool call event");
+  }
+  expect(completedToolCallEvent.part).toMatchObject({
+    partKind: "assistant_tool_call",
+    toolCallStatus: "completed",
+    toolCallDetail: {
+      outputLines: [{ lineKind: "prompt" }, { lineKind: "stdout", lineText: longStdoutText.trimEnd() }],
+    },
+  });
+});
+
+test("streamAssistantResponseEventsForBashToolCall preserves non-zero bash output", async () => {
+  const longStdoutText = `${"non-zero-output".repeat(5_000)}\n`;
+
+  const { providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
+    shellCommand: "generate failing output",
+    workspaceShellCommandExecutor: createNonZeroWorkspaceShellCommandExecutor(longStdoutText),
+  });
+
+  const submittedToolResultText = providerConversationTurn.submittedToolResults[0]?.toolResultText ?? "";
+
+  expect(submittedToolResultText.length).toBeGreaterThan(BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT);
+  expect(submittedToolResultText).not.toContain("bash result truncated");
+  expect(submittedToolResultText).toContain("Exit code: 1");
+  expect(submittedToolResultText).toContain(longStdoutText.trimEnd());
+  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolCallDetail: {
+      toolName: "bash",
+      exitCode: 1,
+    },
+    toolResultText: submittedToolResultText,
+  });
 });
 
 test("streamAssistantResponseEventsForBashToolCall records failed bash execution", async () => {

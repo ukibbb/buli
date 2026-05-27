@@ -5,6 +5,7 @@ import {
   type ConversationMessage,
   type ConversationMessagePart,
 } from "@buli/contracts";
+import { lookupDefaultConversationAutoCompactionTriggerTokenCountForModel } from "@buli/engine";
 import {
   isConversationSessionCompactionBlockingPromptInput,
   type ConversationSessionCompactionStatus,
@@ -54,6 +55,7 @@ export type ChatScreenInteractionViewModel = {
   availableCommandHelpModalRowCount: number;
   totalContextTokensUsed: number | undefined;
   contextWindowTokenCapacity: number | undefined;
+  contextMeterTokenLimit: number | undefined;
   shouldRenderMinimumHeightPromptStrip: boolean;
 };
 
@@ -178,6 +180,9 @@ export function buildChatScreenInteractionViewModel(input: {
     ),
     totalContextTokensUsed,
     contextWindowTokenCapacity: lookupContextWindowTokenCapacityForModel(input.promptState.selectedModelId),
+    contextMeterTokenLimit: lookupDefaultConversationAutoCompactionTriggerTokenCountForModel(
+      input.promptState.selectedModelId,
+    ),
     shouldRenderMinimumHeightPromptStrip: input.terminalSizeTierForChatScreen === minimumTerminalSizeTier,
   };
 }

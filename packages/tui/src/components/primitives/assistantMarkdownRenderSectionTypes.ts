@@ -44,6 +44,7 @@ type AssistantMarkdownRenderSectionBase = {
 
 export type AssistantMarkdownRenderSection =
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "markdown"; markdownText: string })
+  | (AssistantMarkdownRenderSectionBase & { sectionKind: "streamingTail"; streamingTailText: string })
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "paragraph"; paragraphText: string })
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "heading"; headingDepth: number; headingText: string })
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "horizontalRule" })
@@ -66,6 +67,7 @@ export type AssistantMarkdownRenderSection =
 export type AssistantMarkdownRenderSectionCache = {
   renderSections: readonly AssistantMarkdownRenderSection[];
   preparedMarkdownText?: string | undefined;
+  isStreaming?: boolean | undefined;
   renderSectionStartOffsetByKey?: ReadonlyMap<string, number> | undefined;
 };
 

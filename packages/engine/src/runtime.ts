@@ -30,6 +30,10 @@ import {
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
   type BashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
+import {
+  formatAssistantWorkflowModeTransitionDenialText,
+  resolveAssistantWorkflowModeTransition,
+} from "./assistantWorkflowModeTransitionPolicy.ts";
 import { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 import {
   logEngineDiagnosticEvent,
@@ -76,6 +80,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
+  readonly enforceAssistantWorkflowModeTransitions: boolean;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly skillCatalog: WorkspaceSkillCatalog;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
@@ -97,6 +102,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
     taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
+    enforceAssistantWorkflowModeTransitions?: boolean | undefined;
     projectInstructionTracker?: ProjectInstructionTracker;
     skillCatalog?: WorkspaceSkillCatalog;
     skillHomeDirectoryPath?: string | undefined;
@@ -121,6 +127,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.taskSubagentSoftElapsedTimeCheckpointMilliseconds = validateTaskSubagentSoftElapsedTimeCheckpointMilliseconds(
       input.taskSubagentSoftElapsedTimeCheckpointMilliseconds,
     );
+    this.enforceAssistantWorkflowModeTransitions = input.enforceAssistantWorkflowModeTransitions ?? false;
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
     });
@@ -163,6 +170,27 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
         userPromptImageAttachmentCount: conversationTurnInput.userPromptImageAttachments?.length ?? 0,
       });
       throw new Error("A conversation turn is already running");
+    }
+
+    if (this.enforceAssistantWorkflowModeTransitions) {
+      const assistantWorkflowModeTransitionDecision = resolveAssistantWorkflowModeTransition({
+        requestedAssistantOperatingMode: assistantOperatingMode,
+        conversationSessionEntries: this.conversationHistory.listConversationSessionEntries(),
+        ...(conversationTurnInput.promptSource ? { promptSource: conversationTurnInput.promptSource } : {}),
+      });
+      if (assistantWorkflowModeTransitionDecision.transitionKind === "denied") {
+        const denialText = formatAssistantWorkflowModeTransitionDenialText({
+          requestedAssistantOperatingMode: assistantOperatingMode,
+          denialText: assistantWorkflowModeTransitionDecision.denialText,
+        });
+        logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.rejected", {
+          reason: "assistant_workflow_mode_transition_denied",
+          conversationTurnId: conversationTurnInput.conversationTurnId ?? null,
+          selectedModelId: conversationTurnInput.selectedModelId,
+          assistantOperatingMode,
+        });
+        throw new Error(denialText);
+      }
     }
 
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.accepted", {
