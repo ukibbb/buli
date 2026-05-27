@@ -5,12 +5,14 @@ import type {
   SlashCommandSelectionState,
 } from "@buli/chat-session-state";
 import type {
+  ChatAppInteractionStatusRenderSnapshot,
+  ChatAppRenderStore,
   ConversationSessionCompactionStatus,
   ConversationSessionExportStatus,
   QueuedChatAppPromptPreview,
 } from "@buli/chat-app-controller";
 import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
-import { memo, type ReactNode } from "react";
+import { memo, useCallback, useSyncExternalStore, type ReactNode } from "react";
 import { ConversationSessionSelectionPane } from "./ConversationSessionSelectionPane.tsx";
 import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
 import { PromptContextSelectionPane } from "./PromptContextSelectionPane.tsx";
@@ -19,7 +21,26 @@ import { SlashCommandSelectionPane } from "./SlashCommandSelectionPane.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { QueuedPromptStack } from "./QueuedPromptStack.tsx";
 
-export type LiveInteractionStatusStackProps = {
+export type LiveInteractionStatusStackProps = LiveInteractionStatusStackCommonProps & (
+  | StoreBackedLiveInteractionStatusStackProps
+  | DirectLiveInteractionStatusStackProps
+);
+
+type LiveInteractionStatusStackCommonProps = {
+  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  shouldHideQueuedPromptPreviews?: boolean | undefined;
+  onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
+};
+
+type StoreBackedLiveInteractionStatusStackProps = {
+  chatAppRenderStore: ChatAppRenderStore;
+};
+
+type DirectLiveInteractionStatusStackProps = LiveInteractionStatusStackRenderState & {
+  chatAppRenderStore?: undefined;
+};
+
+type LiveInteractionStatusStackRenderState = {
   conversationSessionSelectionState: ConversationSessionSelectionState;
   modelAndReasoningSelectionState: ModelAndReasoningSelectionState;
   slashCommandSelectionState: SlashCommandSelectionState;
@@ -27,16 +48,47 @@ export type LiveInteractionStatusStackProps = {
   conversationSessionExportStatus: ConversationSessionExportStatus;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
-  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
-  onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };
 
 function LiveInteractionStatusStackComponent(props: LiveInteractionStatusStackProps): ReactNode {
+  if (props.chatAppRenderStore) {
+    return <StoreBackedLiveInteractionStatusStack {...props} chatAppRenderStore={props.chatAppRenderStore} />;
+  }
+
+  return <LiveInteractionStatusStackLayout {...props} statusStackRenderState={props} />;
+}
+
+function StoreBackedLiveInteractionStatusStack(
+  props: LiveInteractionStatusStackCommonProps & StoreBackedLiveInteractionStatusStackProps,
+): ReactNode {
+  const subscribeToInteractionStatus = useCallback(
+    (listener: () => void) => props.chatAppRenderStore.subscribeInteractionStatus(listener),
+    [props.chatAppRenderStore],
+  );
+  const readInteractionStatusSnapshot = useCallback(
+    () => props.chatAppRenderStore.readInteractionStatusSnapshot(),
+    [props.chatAppRenderStore],
+  );
+  const interactionStatusSnapshot = useSyncExternalStore(
+    subscribeToInteractionStatus,
+    readInteractionStatusSnapshot,
+    readInteractionStatusSnapshot,
+  );
+
+  return <LiveInteractionStatusStackLayout {...props} statusStackRenderState={toStatusStackRenderState(interactionStatusSnapshot)} />;
+}
+
+function LiveInteractionStatusStackLayout(
+  props: LiveInteractionStatusStackCommonProps & { statusStackRenderState: LiveInteractionStatusStackRenderState },
+): ReactNode {
+  const statusStackRenderState = props.statusStackRenderState;
+  const queuedPromptPreviews = props.shouldHideQueuedPromptPreviews ? [] : statusStackRenderState.queuedPromptPreviews;
+
   return (
     <>
-      {renderConversationSessionExportStatusPane(props.conversationSessionExportStatus)}
-      {renderConversationSessionCompactionStatusPane(props.conversationSessionCompactionStatus)}
-      <QueuedPromptStack queuedPromptPreviews={props.queuedPromptPreviews} accentColor={props.inputPanelAccentColor} />
+      {renderConversationSessionExportStatusPane(statusStackRenderState.conversationSessionExportStatus)}
+      {renderConversationSessionCompactionStatusPane(statusStackRenderState.conversationSessionCompactionStatus)}
+      <QueuedPromptStack queuedPromptPreviews={queuedPromptPreviews} accentColor={props.inputPanelAccentColor} />
       {renderConversationSessionSelectionPane(props)}
       {renderModelAndReasoningSelectionPane(props)}
       {renderSlashCommandSelectionPane(props)}
@@ -46,6 +98,20 @@ function LiveInteractionStatusStackComponent(props: LiveInteractionStatusStackPr
 }
 
 export const LiveInteractionStatusStack = memo(LiveInteractionStatusStackComponent);
+
+function toStatusStackRenderState(
+  interactionStatusSnapshot: ChatAppInteractionStatusRenderSnapshot,
+): LiveInteractionStatusStackRenderState {
+  return {
+    conversationSessionSelectionState: interactionStatusSnapshot.conversationSessionSelectionState,
+    modelAndReasoningSelectionState: interactionStatusSnapshot.modelAndReasoningSelectionState,
+    slashCommandSelectionState: interactionStatusSnapshot.slashCommandSelectionState,
+    promptContextSelectionState: interactionStatusSnapshot.promptContextSelectionState,
+    conversationSessionExportStatus: interactionStatusSnapshot.conversationSessionExportStatus,
+    conversationSessionCompactionStatus: interactionStatusSnapshot.conversationSessionCompactionStatus,
+    queuedPromptPreviews: interactionStatusSnapshot.queuedPromptPreviews,
+  };
+}
 
 function renderConversationSessionExportStatusPane(conversationSessionExportStatus: ConversationSessionExportStatus): ReactNode {
   return conversationSessionExportStatus.step === "failed" ? (
@@ -65,27 +131,29 @@ function renderConversationSessionCompactionStatusPane(
   ) : null;
 }
 
-function renderConversationSessionSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  return props.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
+function renderConversationSessionSelectionPane(
+  props: LiveInteractionStatusStackCommonProps & { statusStackRenderState: LiveInteractionStatusStackRenderState },
+): ReactNode {
+  return props.statusStackRenderState.conversationSessionSelectionState.step === "loading_conversation_sessions" ? (
     <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
       <text fg={chatScreenTheme.textSecondary}>Loading sessions...</text>
     </SelectionPaneFrame>
-  ) : props.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
+  ) : props.statusStackRenderState.conversationSessionSelectionState.step === "showing_session_loading_error" ? (
     <box paddingX={2}>
       <ErrorBannerBlock
         titleText="Could not load sessions"
-        errorText={props.conversationSessionSelectionState.errorMessage}
+        errorText={props.statusStackRenderState.conversationSessionSelectionState.errorMessage}
       />
     </box>
-  ) : props.conversationSessionSelectionState.step === "showing_conversation_sessions" ? (
+  ) : props.statusStackRenderState.conversationSessionSelectionState.step === "showing_conversation_sessions" ? (
     <ConversationSessionSelectionPane
-      conversationSessions={props.conversationSessionSelectionState.conversationSessions}
+      conversationSessions={props.statusStackRenderState.conversationSessionSelectionState.conversationSessions}
       highlightedConversationSessionIndex={
-        props.conversationSessionSelectionState.highlightedConversationSessionIndex
+        props.statusStackRenderState.conversationSessionSelectionState.highlightedConversationSessionIndex
       }
-      activeConversationSessionId={props.conversationSessionSelectionState.activeConversationSessionId}
+      activeConversationSessionId={props.statusStackRenderState.conversationSessionSelectionState.activeConversationSessionId}
       pendingDeletionConversationSessionId={
-        props.conversationSessionSelectionState.pendingDeletionConversationSessionId
+        props.statusStackRenderState.conversationSessionSelectionState.pendingDeletionConversationSessionId
       }
       accentColor={props.inputPanelAccentColor}
       onConversationSessionDeletionRequested={props.onConversationSessionDeletionRequested}
@@ -93,20 +161,24 @@ function renderConversationSessionSelectionPane(props: LiveInteractionStatusStac
   ) : null;
 }
 
-function renderPromptContextSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  return props.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
+function renderPromptContextSelectionPane(
+  props: LiveInteractionStatusStackCommonProps & { statusStackRenderState: LiveInteractionStatusStackRenderState },
+): ReactNode {
+  return props.statusStackRenderState.promptContextSelectionState.step === "showing_prompt_context_candidates" ? (
     <PromptContextSelectionPane
-      promptContextCandidates={props.promptContextSelectionState.promptContextCandidates}
+      promptContextCandidates={props.statusStackRenderState.promptContextSelectionState.promptContextCandidates}
       highlightedPromptContextCandidateIndex={
-        props.promptContextSelectionState.highlightedPromptContextCandidateIndex
+        props.statusStackRenderState.promptContextSelectionState.highlightedPromptContextCandidateIndex
       }
       accentColor={props.inputPanelAccentColor}
     />
   ) : null;
 }
 
-function renderModelAndReasoningSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  const modelAndReasoningSelectionState = props.modelAndReasoningSelectionState;
+function renderModelAndReasoningSelectionPane(
+  props: LiveInteractionStatusStackCommonProps & { statusStackRenderState: LiveInteractionStatusStackRenderState },
+): ReactNode {
+  const modelAndReasoningSelectionState = props.statusStackRenderState.modelAndReasoningSelectionState;
   return modelAndReasoningSelectionState.step === "loading_available_models" ? (
     <SelectionPaneFrame accentColor={props.inputPanelAccentColor}>
       <text fg={chatScreenTheme.textSecondary}>Loading models...</text>
@@ -134,11 +206,13 @@ function renderModelAndReasoningSelectionPane(props: LiveInteractionStatusStackP
   ) : null;
 }
 
-function renderSlashCommandSelectionPane(props: LiveInteractionStatusStackProps): ReactNode {
-  return props.slashCommandSelectionState.step === "showing_slash_commands" ? (
+function renderSlashCommandSelectionPane(
+  props: LiveInteractionStatusStackCommonProps & { statusStackRenderState: LiveInteractionStatusStackRenderState },
+): ReactNode {
+  return props.statusStackRenderState.slashCommandSelectionState.step === "showing_slash_commands" ? (
     <SlashCommandSelectionPane
-      availableSlashCommands={props.slashCommandSelectionState.availableSlashCommands}
-      highlightedSlashCommandIndex={props.slashCommandSelectionState.highlightedSlashCommandIndex}
+      availableSlashCommands={props.statusStackRenderState.slashCommandSelectionState.availableSlashCommands}
+      highlightedSlashCommandIndex={props.statusStackRenderState.slashCommandSelectionState.highlightedSlashCommandIndex}
       accentColor={props.inputPanelAccentColor}
     />
   ) : null;

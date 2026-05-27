@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { ConversationMessage, ConversationMessagePart, PendingToolApprovalRequest, WorkspacePatch } from "@buli/contracts";
+import {
+  buildChatAppRenderStoreChangeSetFromChatSessionStateChange,
+  createChatAppRenderStore,
+} from "@buli/chat-app-controller";
+import { createInitialChatSessionState } from "@buli/chat-session-state";
 import type { ScrollBoxRenderable } from "@opentui/core";
+import { act } from "react";
 import { testRender } from "../testRenderWithCleanup.ts";
 import {
   ConversationMessageList,
@@ -180,6 +186,165 @@ describe("ConversationMessageList", () => {
 
     expect(visibleReasoningMessages).toHaveLength(1);
     expect(hiddenReasoningMessages).toHaveLength(1);
+  });
+
+  test("renders row updates delivered through the chat app render store", async () => {
+    const conversationMessage = {
+      id: "assistant-1",
+      role: "assistant",
+      messageStatus: "streaming",
+      createdAtMs: 1,
+      partIds: ["assistant-text-1"],
+    } satisfies ConversationMessage;
+    const initialConversationMessagePart = {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "streaming",
+      rawMarkdownText: "Initial streamed answer",
+    } satisfies ConversationMessagePart;
+    const initialChatSessionState = {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      conversationMessagesById: { [conversationMessage.id]: conversationMessage },
+      conversationMessagePartsById: { [initialConversationMessagePart.id]: initialConversationMessagePart },
+      orderedConversationMessageIds: [conversationMessage.id],
+      conversationMessagePartCount: 1,
+    };
+    const chatAppRenderStore = createChatAppRenderStore({ initialChatSessionState });
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        chatAppRenderStore={chatAppRenderStore}
+        visibleConversationMessageIds={[conversationMessage.id]}
+        reasoningSummaryDisplayMode="expanded"
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+        userMessageBorderColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
+      />,
+    );
+    await renderOnce();
+
+    expect(captureCharFrame()).toContain("Initial streamed answer");
+
+    const nextChatSessionState = {
+      ...initialChatSessionState,
+      conversationMessagePartsById: {
+        [initialConversationMessagePart.id]: {
+          ...initialConversationMessagePart,
+          rawMarkdownText: "Updated streamed answer",
+        },
+      },
+    };
+    await act(async () => {
+      chatAppRenderStore.replaceChatSessionState({
+        nextChatSessionState,
+        changeSet: buildChatAppRenderStoreChangeSetFromChatSessionStateChange({
+          previousChatSessionState: initialChatSessionState,
+          nextChatSessionState,
+        }),
+      });
+    });
+    await renderOnce();
+
+    expect(captureCharFrame()).toContain("Updated streamed answer");
+  });
+
+  test("renders pending approval delivered through the chat app render store", async () => {
+    const pendingToolApprovalRequest: PendingToolApprovalRequest = {
+      approvalId: "approval-1",
+      pendingToolCallId: "call-edit-1",
+      pendingToolCallDetail: {
+        toolName: "edit",
+        editedFilePath: "packages/engine/test/systemPrompt.test.ts",
+      },
+      riskExplanation: "This edit will modify packages/engine/test/systemPrompt.test.ts. Review",
+    };
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-unmatched",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: 1,
+        partIds: ["tool-unmatched"],
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "streaming",
+        createdAtMs: 2,
+        partIds: ["tool-1"],
+      },
+    ];
+    const conversationMessagePartsById = collectConversationMessagePartsById({
+      "assistant-unmatched": [
+        {
+          id: "tool-unmatched",
+          partKind: "assistant_tool_call",
+          toolCallId: "call-edit-unmatched",
+          toolCallStatus: "pending_approval",
+          toolCallStartedAtMs: 1,
+          toolCallDetail: { toolName: "edit", editedFilePath: "src/unrelated.ts" },
+        },
+      ],
+      "assistant-1": [
+        {
+          id: "tool-1",
+          partKind: "assistant_tool_call",
+          toolCallId: "call-edit-1",
+          toolCallStatus: "pending_approval",
+          toolCallStartedAtMs: 2,
+          toolCallDetail: pendingToolApprovalRequest.pendingToolCallDetail,
+        },
+      ],
+    });
+    const initialChatSessionState = {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      conversationMessagesById: Object.fromEntries(
+        conversationMessages.map((conversationMessage) => [conversationMessage.id, conversationMessage]),
+      ),
+      conversationMessagePartsById,
+      orderedConversationMessageIds: conversationMessages.map((conversationMessage) => conversationMessage.id),
+      conversationMessagePartCount: Object.keys(conversationMessagePartsById).length,
+    };
+    const chatAppRenderStore = createChatAppRenderStore({ initialChatSessionState });
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        chatAppRenderStore={chatAppRenderStore}
+        visibleConversationMessageIds={conversationMessages.map((conversationMessage) => conversationMessage.id)}
+        reasoningSummaryDisplayMode="expanded"
+        conversationMessageScrollBoxRef={{ current: null }}
+        horizontalRuleColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
+        pendingToolApprovalDecisionCallbacks={{
+          onPendingToolApprovalApproved: () => {},
+          onPendingToolApprovalDenied: () => {},
+        }}
+        userMessageBorderColor="#10B981"
+      />,
+      { width: 120, height: 16 },
+    );
+    await renderOnce();
+    expect(findRenderedLineContaining(captureCharFrame(), "packages/engine/test/systemPrompt.test.ts")).not.toContain("Yes");
+
+    const nextChatSessionState = {
+      ...initialChatSessionState,
+      pendingToolApprovalRequest,
+    };
+    await act(async () => {
+      chatAppRenderStore.replaceChatSessionState({
+        nextChatSessionState,
+        changeSet: buildChatAppRenderStoreChangeSetFromChatSessionStateChange({
+          previousChatSessionState: initialChatSessionState,
+          nextChatSessionState,
+        }),
+      });
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(findRenderedLineContaining(frame, "src/unrelated.ts")).not.toContain("Yes");
+    const matchingEditHeaderLine = findRenderedLineContaining(frame, "packages/engine/test/systemPrompt.test.ts");
+    expect(matchingEditHeaderLine).toContain("Yes");
+    expect(matchingEditHeaderLine).toContain("No");
   });
 
   test("renders show older messages reveal row", async () => {

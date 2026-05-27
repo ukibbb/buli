@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ConversationSessionEntry, TokenUsage, UserPromptImageAttachment } from "@buli/contracts";
+import type { AssistantResponseEvent, ConversationSessionEntry, TokenUsage, UserPromptImageAttachment } from "@buli/contracts";
 import type { AssistantConversationRunner, ConversationAutoCompactionResult, ConversationTurnRequest } from "@buli/engine";
 import {
   useChatAppController,
@@ -11,6 +11,7 @@ import { testRender } from "./testRenderWithCleanup.ts";
 
 type RenderedChatAppControllerHook = {
   readCurrentController: () => UseChatAppControllerResult;
+  readRenderCount: () => number;
   typeText: (text: string) => Promise<void>;
   pressReturn: () => Promise<void>;
   pressEscape: () => Promise<void>;
@@ -28,6 +29,18 @@ type ControlledAssistantTurn = {
 type ControlledAssistantConversationRunner = {
   assistantConversationRunner: AssistantConversationRunner;
   startedTurns: ControlledAssistantTurn[];
+};
+
+type ExternallyDrivenAssistantResponseEventStream = {
+  queuedAssistantResponseEvents: AssistantResponseEvent[];
+  isClosed: boolean;
+  resumeAssistantResponseEventStream: (() => void) | undefined;
+};
+
+type ExternallyDrivenAssistantConversationRunner = {
+  assistantConversationRunner: AssistantConversationRunner;
+  startedTurnRequests: ConversationTurnRequest[];
+  emitAssistantResponseEvent: (assistantResponseEvent: AssistantResponseEvent) => void;
 };
 
 const zeroTokenUsage = {
@@ -55,10 +68,12 @@ async function renderChatAppControllerHook(
   input: Partial<UseChatAppControllerInput> = {},
 ): Promise<RenderedChatAppControllerHook> {
   let latestController: UseChatAppControllerResult | undefined;
+  let renderCount = 0;
   const renderedHook = await testRender(
     <ChatAppControllerHookProbe
       controllerInput={input}
       observeController={(controller) => {
+        renderCount += 1;
         latestController = controller;
       }}
     />,
@@ -74,6 +89,7 @@ async function renderChatAppControllerHook(
 
   return {
     readCurrentController,
+    readRenderCount: () => renderCount,
     async typeText(text: string): Promise<void> {
       for (const character of text) {
         await act(async () => {
@@ -184,6 +200,78 @@ function createControlledAssistantConversationRunner(): ControlledAssistantConve
   };
 }
 
+function createExternallyDrivenAssistantConversationRunner(): ExternallyDrivenAssistantConversationRunner {
+  const startedTurnRequests: ConversationTurnRequest[] = [];
+  let activeAssistantResponseEventStream: ExternallyDrivenAssistantResponseEventStream | undefined;
+
+  const wakeActiveAssistantResponseEventStream = (): void => {
+    const resumeAssistantResponseEventStream = activeAssistantResponseEventStream?.resumeAssistantResponseEventStream;
+    if (activeAssistantResponseEventStream) {
+      activeAssistantResponseEventStream.resumeAssistantResponseEventStream = undefined;
+    }
+    resumeAssistantResponseEventStream?.();
+  };
+
+  return {
+    startedTurnRequests,
+    emitAssistantResponseEvent(assistantResponseEvent) {
+      if (!activeAssistantResponseEventStream) {
+        throw new Error("Assistant response event stream has not started.");
+      }
+
+      activeAssistantResponseEventStream.queuedAssistantResponseEvents.push(assistantResponseEvent);
+      if (isTerminalAssistantResponseEventForTest(assistantResponseEvent)) {
+        activeAssistantResponseEventStream.isClosed = true;
+      }
+      wakeActiveAssistantResponseEventStream();
+    },
+    assistantConversationRunner: {
+      startConversationTurn(conversationTurnRequest) {
+        startedTurnRequests.push(conversationTurnRequest);
+        const assistantResponseEventStream: ExternallyDrivenAssistantResponseEventStream = {
+          queuedAssistantResponseEvents: [],
+          isClosed: false,
+          resumeAssistantResponseEventStream: undefined,
+        };
+        activeAssistantResponseEventStream = assistantResponseEventStream;
+
+        return {
+          async *streamAssistantResponseEvents() {
+            while (true) {
+              const nextAssistantResponseEvent = assistantResponseEventStream.queuedAssistantResponseEvents.shift();
+              if (nextAssistantResponseEvent) {
+                yield nextAssistantResponseEvent;
+                continue;
+              }
+
+              if (assistantResponseEventStream.isClosed) {
+                return;
+              }
+
+              await new Promise<void>((resolve) => {
+                assistantResponseEventStream.resumeAssistantResponseEventStream = resolve;
+              });
+            }
+          },
+          async approvePendingToolCall() {},
+          async denyPendingToolCall() {},
+          interrupt() {
+            assistantResponseEventStream.isClosed = true;
+            wakeActiveAssistantResponseEventStream();
+          },
+        };
+      },
+    },
+  };
+}
+
+function isTerminalAssistantResponseEventForTest(assistantResponseEvent: AssistantResponseEvent): boolean {
+  return assistantResponseEvent.type === "assistant_message_completed" ||
+    assistantResponseEvent.type === "assistant_message_incomplete" ||
+    assistantResponseEvent.type === "assistant_message_failed" ||
+    assistantResponseEvent.type === "assistant_message_interrupted";
+}
+
 async function waitForStartedTurnCount(input: {
   renderedHook: RenderedChatAppControllerHook;
   controlledRunner: ControlledAssistantConversationRunner;
@@ -197,6 +285,21 @@ async function waitForStartedTurnCount(input: {
   }
 
   throw new Error(`Expected ${input.expectedStartedTurnCount} started turns.`);
+}
+
+async function waitForExternallyDrivenStartedTurnCount(input: {
+  renderedHook: RenderedChatAppControllerHook;
+  externallyDrivenRunner: ExternallyDrivenAssistantConversationRunner;
+  expectedStartedTurnCount: number;
+}): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await input.renderedHook.flushHookEffects();
+    if (input.externallyDrivenRunner.startedTurnRequests.length >= input.expectedStartedTurnCount) {
+      return;
+    }
+  }
+
+  throw new Error(`Expected ${input.expectedStartedTurnCount} externally driven started turns.`);
 }
 
 async function waitForConversationTurnStatus(input: {
@@ -368,6 +471,7 @@ test("useChatAppController keeps non-prompt slices stable across prompt-only edi
     ],
   });
   const previousController = renderedHook.readCurrentController();
+  const previousRenderCount = renderedHook.readRenderCount();
 
   await act(async () => {
     previousController.applyPromptDraftEditToChatApp({
@@ -378,11 +482,169 @@ test("useChatAppController keeps non-prompt slices stable across prompt-only edi
   await renderedHook.flushHookEffects();
 
   const nextController = renderedHook.readCurrentController();
-  expect(nextController.promptComposerState.promptDraft).toBe("Next prompt");
-  expect(nextController.promptComposerState).not.toBe(previousController.promptComposerState);
+  expect(renderedHook.readRenderCount()).toBe(previousRenderCount);
+  expect(nextController.promptComposerState).toBe(previousController.promptComposerState);
+  expect(nextController.chatAppRenderStore.readPromptComposerSnapshot().promptDraft).toBe("Next prompt");
+  expect(nextController.readLatestChatSessionState().promptDraft).toBe("Next prompt");
   expect(nextController.transcriptState).toBe(previousController.transcriptState);
   expect(nextController.interactionStatusState).toBe(previousController.interactionStatusState);
   expect(nextController.selectionState).toBe(previousController.selectionState);
+});
+
+test("useChatAppController keeps render store prompt snapshot current without notifying rows for prompt-only edits", async () => {
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Initial prompt",
+        modelFacingPromptText: "Initial prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Initial answer",
+      },
+    ],
+  });
+  const previousController = renderedHook.readCurrentController();
+  const existingConversationMessageId = previousController.chatSessionState.orderedConversationMessageIds.at(-1);
+  if (!existingConversationMessageId) {
+    throw new Error("Expected an initial conversation message.");
+  }
+
+  let rowNotificationCount = 0;
+  let promptNotificationCount = 0;
+  previousController.chatAppRenderStore.subscribeConversationMessageRow(existingConversationMessageId, () => {
+    rowNotificationCount += 1;
+  });
+  previousController.chatAppRenderStore.subscribePromptComposer(() => {
+    promptNotificationCount += 1;
+  });
+  const previousRenderCount = renderedHook.readRenderCount();
+
+  await act(async () => {
+    previousController.applyPromptDraftEditToChatApp({
+      promptDraft: "Next prompt",
+      promptDraftCursorOffset: "Next prompt".length,
+    });
+  });
+  await renderedHook.flushHookEffects();
+
+  const nextController = renderedHook.readCurrentController();
+  expect(rowNotificationCount).toBe(0);
+  expect(promptNotificationCount).toBe(1);
+  expect(renderedHook.readRenderCount()).toBe(previousRenderCount);
+  expect(nextController.chatAppRenderStore).toBe(previousController.chatAppRenderStore);
+  expect(nextController.chatAppRenderStore.readPromptComposerSnapshot().promptDraft).toBe("Next prompt");
+  expect(nextController.chatAppRenderStore.readChatSessionState().promptDraft).toBe("Next prompt");
+  expect(nextController.chatSessionState.promptDraft).toBe("");
+  expect(nextController.readLatestChatSessionState().promptDraft).toBe("Next prompt");
+});
+
+test("useChatAppController routes assistant response events through render store row subscriptions", async () => {
+  const externallyDrivenRunner = createExternallyDrivenAssistantConversationRunner();
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Initial prompt",
+        modelFacingPromptText: "Initial prompt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Initial answer",
+      },
+    ],
+    assistantConversationRunner: externallyDrivenRunner.assistantConversationRunner,
+  });
+  const existingConversationMessageId = renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds.at(-1);
+  if (!existingConversationMessageId) {
+    throw new Error("Expected an initial conversation message.");
+  }
+
+  await renderedHook.typeText("Stream a fresh answer");
+  await renderedHook.pressReturn();
+  await waitForExternallyDrivenStartedTurnCount({
+    renderedHook,
+    externallyDrivenRunner,
+    expectedStartedTurnCount: 1,
+  });
+
+  await act(async () => {
+    externallyDrivenRunner.emitAssistantResponseEvent({
+      type: "assistant_turn_started",
+      messageId: "assistant-streamed-1",
+      startedAtMs: 1,
+    });
+  });
+  await renderedHook.flushHookEffects();
+
+  let existingRowNotificationCount = 0;
+  let streamedRowNotificationCount = 0;
+  const chatAppRenderStore = renderedHook.readCurrentController().chatAppRenderStore;
+  chatAppRenderStore.subscribeConversationMessageRow(existingConversationMessageId, () => {
+    existingRowNotificationCount += 1;
+  });
+  chatAppRenderStore.subscribeConversationMessageRow("assistant-streamed-1", () => {
+    streamedRowNotificationCount += 1;
+  });
+
+  await act(async () => {
+    externallyDrivenRunner.emitAssistantResponseEvent({
+      type: "assistant_message_part_added",
+      messageId: "assistant-streamed-1",
+      part: {
+        id: "assistant-streamed-text-1",
+        partKind: "assistant_text",
+        partStatus: "streaming",
+        rawMarkdownText: "Partial streamed answer",
+      },
+    });
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(existingRowNotificationCount).toBe(0);
+  expect(streamedRowNotificationCount).toBe(1);
+  expect(chatAppRenderStore.readConversationMessageRowSnapshot("assistant-streamed-1")?.conversationMessageParts).toMatchObject([
+    { rawMarkdownText: "Partial streamed answer" },
+  ]);
+
+  const controllerRenderCountAfterPartAdded = renderedHook.readRenderCount();
+  await act(async () => {
+    externallyDrivenRunner.emitAssistantResponseEvent({
+      type: "assistant_message_part_updated",
+      messageId: "assistant-streamed-1",
+      part: {
+        id: "assistant-streamed-text-1",
+        partKind: "assistant_text",
+        partStatus: "streaming",
+        rawMarkdownText: "Updated streamed answer",
+      },
+    });
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(streamedRowNotificationCount).toBe(2);
+  expect(renderedHook.readRenderCount()).toBe(controllerRenderCountAfterPartAdded);
+  expect(chatAppRenderStore.readConversationMessageRowSnapshot("assistant-streamed-1")?.conversationMessageParts).toMatchObject([
+    { rawMarkdownText: "Updated streamed answer" },
+  ]);
+  expect(
+    renderedHook.readCurrentController().readLatestChatSessionState().conversationMessagePartsById["assistant-streamed-text-1"],
+  ).toMatchObject({ rawMarkdownText: "Updated streamed answer" });
+
+  await act(async () => {
+    externallyDrivenRunner.emitAssistantResponseEvent({
+      type: "assistant_message_completed",
+      messageId: "assistant-streamed-1",
+      usage: zeroTokenUsage,
+    });
+  });
+  await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
 });
 
 test("useChatAppController switches to a selected conversation session from keyboard actions", async () => {

@@ -4,7 +4,10 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { ChatScreenProps } from "../ChatScreen.tsx";
 import type { ChatScreenMainAreaProps } from "../components/ChatScreenMainArea.tsx";
 import type { ChatScreenLayoutProps } from "../components/ChatScreenLayout.tsx";
-import type { LiveInteractionChromeProps } from "../components/LiveInteractionChrome.tsx";
+import type {
+  LiveInteractionChromeProps,
+  LiveInteractionChromeStatusExtraProps,
+} from "../components/LiveInteractionChrome.tsx";
 import type { LiveInteractionStatusStackProps } from "../components/LiveInteractionStatusStack.tsx";
 import type { PromptComposerChromeProps } from "../components/PromptComposerChrome.tsx";
 import {
@@ -24,8 +27,6 @@ import {
 import { useChatScreenKeyboardInputActions } from "./useChatScreenKeyboardInputActions.ts";
 import { useConversationTranscriptViewport } from "./useConversationTranscriptViewport.ts";
 import { logTuiDiagnosticEvent as logChatScreenDiagnosticEvent } from "../diagnostics/logTuiDiagnosticEvent.ts";
-
-const EMPTY_QUEUED_PROMPT_PREVIEWS = [] as const;
 
 export type UseChatScreenControllerInput = {
   chatScreenProps: ChatScreenProps;
@@ -48,6 +49,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const chatScreenTranscriptViewModelCacheRef = useRef<ChatScreenTranscriptViewModelCache | undefined>(undefined);
   const stableMainAreaPropsRef = useRef<ChatScreenMainAreaProps | undefined>(undefined);
   const stableStatusStackPropsRef = useRef<LiveInteractionStatusStackProps | undefined>(undefined);
+  const stableLiveStatusExtraPropsRef = useRef<LiveInteractionChromeStatusExtraProps | undefined>(undefined);
   const stablePromptComposerPropsRef = useRef<PromptComposerChromeProps | undefined>(undefined);
   const stableLiveInteractionChromePropsRef = useRef<LiveInteractionChromeProps | undefined>(undefined);
 
@@ -160,7 +162,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const {
     conversationTranscriptWindow,
     orderedConversationMessagePartCount,
-    visibleConversationMessageRows,
+    visibleConversationMessageIds,
     visibleConversationMessagePartCount,
   } = stableTranscriptViewModel.transcriptViewModel;
   const revealOlderConversationMessages = useEffectEvent(() => {
@@ -267,14 +269,10 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     diagnosticLogger,
   ]);
 
-  const pendingToolApprovalRequest = chatAppController.interactionStatusState.pendingToolApprovalRequest;
-  const pendingToolApprovalDecision = pendingToolApprovalRequest === undefined
-    ? undefined
-    : {
-        pendingToolApprovalRequest,
-        onPendingToolApprovalApproved: approvePendingToolApprovalRequest,
-        onPendingToolApprovalDenied: denyPendingToolApprovalRequest,
-      };
+  const pendingToolApprovalDecisionCallbacks = {
+    onPendingToolApprovalApproved: approvePendingToolApprovalRequest,
+    onPendingToolApprovalDenied: denyPendingToolApprovalRequest,
+  };
 
   const currentMainAreaProps: ChatScreenMainAreaProps = {
     isCommandHelpModalVisible: chatAppController.transcriptState.isCommandHelpModalVisible,
@@ -284,36 +282,29 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     terminalSizeTierForChatScreen,
     terminalColumnCount,
     availableChatSlashCommands,
-    visibleConversationMessageRows,
+    chatAppRenderStore: chatAppController.chatAppRenderStore,
+    visibleConversationMessageIds,
     hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
     olderConversationMessageRevealCount: conversationTranscriptWindow.olderConversationMessageRevealCount,
-    ...(pendingToolApprovalDecision !== undefined ? { pendingToolApprovalDecision } : {}),
+    pendingToolApprovalDecisionCallbacks,
     conversationMessageScrollBoxRef,
-    conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
-    queuedPromptCount: chatAppController.promptComposerState.queuedPromptCount,
-    totalContextTokensUsed,
-    contextWindowTokenCapacity,
     onRevealOlderConversationMessages: revealOlderConversationMessages,
     onCommandHelpCloseRequested: chatAppController.hideCommandHelpModalInChatApp,
   };
   const currentStatusStackProps: LiveInteractionStatusStackProps = {
-    conversationSessionSelectionState: chatAppController.selectionState.conversationSessionSelectionState,
-    modelAndReasoningSelectionState: chatAppController.selectionState.modelAndReasoningSelectionState,
-    slashCommandSelectionState: chatAppController.selectionState.slashCommandSelectionState,
-    promptContextSelectionState: chatAppController.selectionState.promptContextSelectionState,
-    conversationSessionExportStatus: chatAppController.interactionStatusState.conversationSessionExportStatus,
-    conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
-    queuedPromptPreviews: shouldRenderMinimumHeightPromptStrip
-      ? EMPTY_QUEUED_PROMPT_PREVIEWS
-      : chatAppController.promptComposerState.queuedPromptPreviews,
+    chatAppRenderStore: chatAppController.chatAppRenderStore,
+    shouldHideQueuedPromptPreviews: shouldRenderMinimumHeightPromptStrip,
     inputPanelAccentColor,
     onConversationSessionDeletionRequested: chatAppController.requestConversationSessionDeletion,
+  };
+  const currentLiveStatusExtraProps: LiveInteractionChromeStatusExtraProps = {
+    chatAppRenderStore: chatAppController.chatAppRenderStore,
   };
   const mainAreaProps = selectShallowStableObject({
     previousValue: stableMainAreaPropsRef.current,
     nextValue: currentMainAreaProps,
     equalityByProperty: {
-      pendingToolApprovalDecision: arePendingToolApprovalDecisionsEqual,
+      pendingToolApprovalDecisionCallbacks: () => true,
       onRevealOlderConversationMessages: () => true,
       onCommandHelpCloseRequested: () => true,
     },
@@ -325,15 +316,13 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
       onConversationSessionDeletionRequested: () => true,
     },
   });
+  const liveStatusExtraProps = selectShallowStableObject({
+    previousValue: stableLiveStatusExtraPropsRef.current,
+    nextValue: currentLiveStatusExtraProps,
+  });
   const currentPromptComposerProps: PromptComposerChromeProps = {
-    conversationTurnStatus: chatAppController.promptComposerState.conversationTurnStatus,
+    chatAppRenderStore: chatAppController.chatAppRenderStore,
     conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
-    promptDraft: chatAppController.promptComposerState.promptDraft,
-    promptDraftCursorOffset: chatAppController.promptComposerState.promptDraftCursorOffset,
-    pendingPromptImageAttachments: chatAppController.promptComposerState.pendingPromptImageAttachments,
-    pendingPromptTextPastes: chatAppController.promptComposerState.pendingPromptTextPastes,
-    selectedPromptContextReferenceTexts: chatAppController.promptComposerState.selectedPromptContextReferenceTexts,
-    selectedModelId: chatAppController.promptComposerState.selectedModelId,
     shouldRenderMinimumHeightPromptStrip,
     isPromptInputDisabled,
     queuedPromptCount: chatAppController.promptComposerState.queuedPromptCount,
@@ -354,16 +343,24 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const promptComposerProps = selectShallowStableObject({
     previousValue: stablePromptComposerPropsRef.current,
     nextValue: currentPromptComposerProps,
+    equalityByProperty: {
+      onPromptDraftEdited: () => true,
+      onPromptSubmitted: () => true,
+      onNativeClipboardPasteRequested: () => true,
+      onSummarizedPromptTextPasted: () => true,
+    },
   });
   const liveInteractionChromeProps = selectShallowStableObject({
     previousValue: stableLiveInteractionChromePropsRef.current,
     nextValue: {
       statusStackProps,
+      liveStatusExtraProps,
       promptComposerProps,
     },
   });
   stableMainAreaPropsRef.current = mainAreaProps;
   stableStatusStackPropsRef.current = statusStackProps;
+  stableLiveStatusExtraPropsRef.current = liveStatusExtraProps;
   stablePromptComposerPropsRef.current = promptComposerProps;
   stableLiveInteractionChromePropsRef.current = liveInteractionChromeProps;
 
@@ -407,21 +404,4 @@ function selectShallowStableObject<T extends object>(input: {
   }
 
   return input.previousValue;
-}
-
-function arePendingToolApprovalDecisionsEqual(
-  previousPendingToolApprovalDecision: ChatScreenMainAreaProps["pendingToolApprovalDecision"],
-  nextPendingToolApprovalDecision: ChatScreenMainAreaProps["pendingToolApprovalDecision"],
-): boolean {
-  return previousPendingToolApprovalDecision === nextPendingToolApprovalDecision ||
-    (
-      previousPendingToolApprovalDecision !== undefined &&
-      nextPendingToolApprovalDecision !== undefined &&
-      previousPendingToolApprovalDecision.pendingToolApprovalRequest ===
-        nextPendingToolApprovalDecision.pendingToolApprovalRequest &&
-      previousPendingToolApprovalDecision.onPendingToolApprovalApproved ===
-        nextPendingToolApprovalDecision.onPendingToolApprovalApproved &&
-      previousPendingToolApprovalDecision.onPendingToolApprovalDenied ===
-        nextPendingToolApprovalDecision.onPendingToolApprovalDenied
-    );
 }

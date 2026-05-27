@@ -1,22 +1,23 @@
 import type { PendingPromptImageAttachment, PendingPromptTextPaste } from "@buli/chat-session-state";
 import type { ConversationTurnStatus } from "@buli/contracts";
-import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
+import type {
+  ChatAppRenderStore,
+  ConversationSessionCompactionStatus,
+} from "@buli/chat-app-controller";
 import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
-import { memo, type ReactNode } from "react";
+import { memo, useCallback, useSyncExternalStore, type ReactNode } from "react";
 import { InputPanel } from "./InputPanel.tsx";
 import { InputStatusStrip } from "./InputStatusStrip.tsx";
 import { MinimumHeightPromptStrip } from "./MinimumHeightPromptStrip.tsx";
 import type { PromptTextareaEdit, PromptTextareaSummarizedPaste } from "./PromptTextarea.tsx";
 
-export type PromptComposerChromeProps = {
-  conversationTurnStatus: ConversationTurnStatus;
+export type PromptComposerChromeProps = PromptComposerChromeCommonProps & (
+  | StoreBackedPromptComposerChromeStateProps
+  | DirectPromptComposerChromeStateProps
+);
+
+type PromptComposerChromeCommonProps = {
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
-  promptDraft: string;
-  promptDraftCursorOffset: number;
-  pendingPromptImageAttachments: readonly PendingPromptImageAttachment[];
-  pendingPromptTextPastes: readonly PendingPromptTextPaste[];
-  selectedPromptContextReferenceTexts: readonly string[];
-  selectedModelId: string;
   shouldRenderMinimumHeightPromptStrip: boolean;
   isPromptInputDisabled: boolean;
   queuedPromptCount: number;
@@ -35,11 +36,60 @@ export type PromptComposerChromeProps = {
   onSummarizedPromptTextPasted: (summarizedPromptTextPaste: PromptTextareaSummarizedPaste) => void;
 };
 
+type StoreBackedPromptComposerChromeStateProps = {
+  chatAppRenderStore: ChatAppRenderStore;
+};
+
+type DirectPromptComposerChromeStateProps = PromptComposerChromeRenderState & {
+  chatAppRenderStore?: undefined;
+};
+
+type PromptComposerChromeRenderState = {
+  conversationTurnStatus: ConversationTurnStatus;
+  promptDraft: string;
+  promptDraftCursorOffset: number;
+  pendingPromptImageAttachments: readonly PendingPromptImageAttachment[];
+  pendingPromptTextPastes: readonly PendingPromptTextPaste[];
+  selectedPromptContextReferenceTexts: readonly string[];
+  selectedModelId: string;
+};
+
 function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactNode {
-  const promptImageAttachmentPlaceholderTexts = props.pendingPromptImageAttachments.map(
+  if (props.chatAppRenderStore) {
+    return <StoreBackedPromptComposerChrome {...props} chatAppRenderStore={props.chatAppRenderStore} />;
+  }
+
+  return <PromptComposerChromeLayout {...props} promptComposerRenderState={props} />;
+}
+
+function StoreBackedPromptComposerChrome(
+  props: PromptComposerChromeCommonProps & StoreBackedPromptComposerChromeStateProps,
+): ReactNode {
+  const subscribeToPromptComposer = useCallback(
+    (listener: () => void) => props.chatAppRenderStore.subscribePromptComposer(listener),
+    [props.chatAppRenderStore],
+  );
+  const readPromptComposerSnapshot = useCallback(
+    () => props.chatAppRenderStore.readPromptComposerSnapshot(),
+    [props.chatAppRenderStore],
+  );
+  const promptComposerRenderState = useSyncExternalStore(
+    subscribeToPromptComposer,
+    readPromptComposerSnapshot,
+    readPromptComposerSnapshot,
+  );
+
+  return <PromptComposerChromeLayout {...props} promptComposerRenderState={promptComposerRenderState} />;
+}
+
+function PromptComposerChromeLayout(
+  props: PromptComposerChromeCommonProps & { promptComposerRenderState: PromptComposerChromeRenderState },
+): ReactNode {
+  const promptComposerRenderState = props.promptComposerRenderState;
+  const promptImageAttachmentPlaceholderTexts = promptComposerRenderState.pendingPromptImageAttachments.map(
     (pendingPromptImageAttachment) => pendingPromptImageAttachment.promptDraftPlaceholderText,
   );
-  const promptTextPastePlaceholderTexts = props.pendingPromptTextPastes.map(
+  const promptTextPastePlaceholderTexts = promptComposerRenderState.pendingPromptTextPastes.map(
     (pendingPromptTextPaste) => pendingPromptTextPaste.promptDraftPlaceholderText,
   );
 
@@ -48,15 +98,15 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
       {props.shouldRenderMinimumHeightPromptStrip ? (
         <box paddingX={2} width="100%">
           <MinimumHeightPromptStrip
-            promptDraft={props.promptDraft}
-            promptDraftCursorOffset={props.promptDraftCursorOffset}
+            promptDraft={promptComposerRenderState.promptDraft}
+            promptDraftCursorOffset={promptComposerRenderState.promptDraftCursorOffset}
             promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
             promptTextPastePlaceholderTexts={promptTextPastePlaceholderTexts}
-            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
+            selectedPromptContextReferenceTexts={promptComposerRenderState.selectedPromptContextReferenceTexts}
             isPromptInputDisabled={props.isPromptInputDisabled}
             queuedPromptCount={props.queuedPromptCount}
             accentColor={props.inputPanelAccentColor}
-            assistantResponseStatus={props.conversationTurnStatus}
+            assistantResponseStatus={promptComposerRenderState.conversationTurnStatus}
             conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
             isActiveTurnInterruptConfirmationArmed={props.isActiveTurnInterruptConfirmationArmed}
             onPromptDraftEdited={props.onPromptDraftEdited}
@@ -68,12 +118,12 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
       ) : (
         <box flexDirection="column" flexShrink={0} width="100%">
           <InputPanel
-            promptDraft={props.promptDraft}
-            promptDraftCursorOffset={props.promptDraftCursorOffset}
+            promptDraft={promptComposerRenderState.promptDraft}
+            promptDraftCursorOffset={promptComposerRenderState.promptDraftCursorOffset}
             promptImageAttachmentPlaceholderTexts={promptImageAttachmentPlaceholderTexts}
             promptTextPastePlaceholderTexts={promptTextPastePlaceholderTexts}
-            selectedPromptContextReferenceTexts={props.selectedPromptContextReferenceTexts}
-            selectedModelId={props.selectedModelId}
+            selectedPromptContextReferenceTexts={promptComposerRenderState.selectedPromptContextReferenceTexts}
+            selectedModelId={promptComposerRenderState.selectedModelId}
             isPromptInputDisabled={props.isPromptInputDisabled}
             accentColor={props.inputPanelAccentColor}
             onPromptDraftEdited={props.onPromptDraftEdited}
@@ -82,7 +132,7 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
             onSummarizedPromptTextPasted={props.onSummarizedPromptTextPasted}
           />
           <InputStatusStrip
-            assistantResponseStatus={props.conversationTurnStatus}
+            assistantResponseStatus={promptComposerRenderState.conversationTurnStatus}
             conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
             queuedPromptCount={props.queuedPromptCount}
             {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}
@@ -90,7 +140,7 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
             shortModeLabel={props.shortModeLabel}
             nextShortModeLabel={props.nextShortModeLabel}
             nextModeAccentColor={props.nextModeAccentColor}
-            modelIdentifier={props.selectedModelId}
+            modelIdentifier={promptComposerRenderState.selectedModelId}
             reasoningEffortLabel={props.reasoningEffortLabel}
             totalContextTokensUsed={props.totalContextTokensUsed}
             contextWindowTokenCapacity={props.contextWindowTokenCapacity}
@@ -101,4 +151,48 @@ function PromptComposerChromeComponent(props: PromptComposerChromeProps): ReactN
   );
 }
 
-export const PromptComposerChrome = memo(PromptComposerChromeComponent);
+function arePromptComposerChromePropsEqual(
+  previousProps: PromptComposerChromeProps,
+  nextProps: PromptComposerChromeProps,
+): boolean {
+  if (previousProps.chatAppRenderStore || nextProps.chatAppRenderStore) {
+    return previousProps.chatAppRenderStore !== undefined &&
+      nextProps.chatAppRenderStore !== undefined &&
+      arePromptComposerChromeCommonPropsEqual(previousProps, nextProps) &&
+      previousProps.chatAppRenderStore === nextProps.chatAppRenderStore;
+  }
+
+  return arePromptComposerChromeCommonPropsEqual(previousProps, nextProps) &&
+    previousProps.conversationTurnStatus === nextProps.conversationTurnStatus &&
+    previousProps.promptDraft === nextProps.promptDraft &&
+    previousProps.promptDraftCursorOffset === nextProps.promptDraftCursorOffset &&
+    previousProps.pendingPromptImageAttachments === nextProps.pendingPromptImageAttachments &&
+    previousProps.pendingPromptTextPastes === nextProps.pendingPromptTextPastes &&
+    previousProps.selectedPromptContextReferenceTexts === nextProps.selectedPromptContextReferenceTexts &&
+    previousProps.selectedModelId === nextProps.selectedModelId;
+}
+
+function arePromptComposerChromeCommonPropsEqual(
+  previousProps: PromptComposerChromeCommonProps,
+  nextProps: PromptComposerChromeCommonProps,
+): boolean {
+  return previousProps.conversationSessionCompactionStatus === nextProps.conversationSessionCompactionStatus &&
+    previousProps.shouldRenderMinimumHeightPromptStrip === nextProps.shouldRenderMinimumHeightPromptStrip &&
+    previousProps.isPromptInputDisabled === nextProps.isPromptInputDisabled &&
+    previousProps.queuedPromptCount === nextProps.queuedPromptCount &&
+    previousProps.isActiveTurnInterruptConfirmationArmed === nextProps.isActiveTurnInterruptConfirmationArmed &&
+    previousProps.inputPanelAccentColor === nextProps.inputPanelAccentColor &&
+    previousProps.promptInputHintOverride === nextProps.promptInputHintOverride &&
+    previousProps.shortModeLabel === nextProps.shortModeLabel &&
+    previousProps.nextShortModeLabel === nextProps.nextShortModeLabel &&
+    previousProps.nextModeAccentColor === nextProps.nextModeAccentColor &&
+    previousProps.reasoningEffortLabel === nextProps.reasoningEffortLabel &&
+    previousProps.totalContextTokensUsed === nextProps.totalContextTokensUsed &&
+    previousProps.contextWindowTokenCapacity === nextProps.contextWindowTokenCapacity &&
+    previousProps.onPromptDraftEdited === nextProps.onPromptDraftEdited &&
+    previousProps.onPromptSubmitted === nextProps.onPromptSubmitted &&
+    previousProps.onNativeClipboardPasteRequested === nextProps.onNativeClipboardPasteRequested &&
+    previousProps.onSummarizedPromptTextPasted === nextProps.onSummarizedPromptTextPasted;
+}
+
+export const PromptComposerChrome = memo(PromptComposerChromeComponent, arePromptComposerChromePropsEqual);

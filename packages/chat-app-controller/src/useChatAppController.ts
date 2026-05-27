@@ -20,8 +20,14 @@ import {
   type ChatSessionState,
   type ChatSlashCommandSkill,
 } from "@buli/chat-session-state";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
+import {
+  buildChatAppRenderStoreChangeSetFromChatSessionStateChange,
+  createChatAppRenderStore,
+  type ChatAppControllerChromeRenderState,
+  type ChatAppRenderStore,
+} from "./chatAppRenderStore.ts";
 import type { ConversationSessionCompactionStatus, ConversationSessionExportStatus } from "./conversationSessionStatus.ts";
 import {
   useChatAppAssistantTurnActions,
@@ -96,6 +102,7 @@ export type InitialConversationSessionEntriesLoadResult = {
 export type UseChatAppControllerResult = {
   activeConversationSessionId: string | undefined;
   chatSessionState: ChatSessionState;
+  chatAppRenderStore: ChatAppRenderStore;
   transcriptState: ChatAppTranscriptState;
   promptComposerState: ChatAppPromptComposerState;
   interactionStatusState: ChatAppInteractionStatusState;
@@ -205,6 +212,19 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
       ? hydrateConversationTranscriptFromSessionEntries(initialChatSessionState, input.initialConversationSessionEntries)
       : initialChatSessionState;
   });
+  const chatAppRenderStoreRef = useRef<ChatAppRenderStore | undefined>(undefined);
+  chatAppRenderStoreRef.current ??= createChatAppRenderStore({
+    initialChatSessionState: chatSessionState,
+    initialControllerChromeRenderState: {
+      conversationSessionExportStatus,
+      conversationSessionCompactionStatus,
+      queuedPromptCount,
+      queuedPromptPreviews,
+      isActiveTurnInterruptConfirmationArmed: false,
+      isInitialConversationSessionHydrationPending,
+    },
+  });
+  const chatAppRenderStore = chatAppRenderStoreRef.current;
 
   const latestChatSessionStateRef = useRef<ChatSessionState>(chatSessionState);
   const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
@@ -220,8 +240,103 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   const stableInteractionStatusStateRef = useRef<ChatAppInteractionStatusState | undefined>(undefined);
   const stableSelectionStateRef = useRef<ChatAppSelectionState | undefined>(undefined);
 
-  latestChatSessionStateRef.current = chatSessionState;
+  latestChatSessionStateRef.current = chatAppRenderStore.readChatSessionState();
   latestActiveConversationSessionIdRef.current = activeConversationSessionId;
+
+  const setChatSessionStateAndUpdateRenderStore = useCallback<Dispatch<SetStateAction<ChatSessionState>>>((chatSessionStateUpdate) => {
+    const previousChatSessionState = chatAppRenderStore.readChatSessionState();
+    const nextChatSessionState = resolveNextChatSessionStateForControllerStateUpdate({
+      previousChatSessionState,
+      chatSessionStateUpdate,
+    });
+    latestChatSessionStateRef.current = nextChatSessionState;
+    chatAppRenderStore.replaceChatSessionState({
+      nextChatSessionState,
+      changeSet: buildChatAppRenderStoreChangeSetFromChatSessionStateChange({
+        previousChatSessionState,
+        nextChatSessionState,
+      }),
+    });
+    setChatSessionState(nextChatSessionState);
+  }, [chatAppRenderStore]);
+  const setPromptLocalChatSessionStateAndUpdateRenderStore = useCallback<Dispatch<SetStateAction<ChatSessionState>>>(
+    (chatSessionStateUpdate) => {
+      const previousChatSessionState = chatAppRenderStore.readChatSessionState();
+      const nextChatSessionState = resolveNextChatSessionStateForControllerStateUpdate({
+        previousChatSessionState,
+        chatSessionStateUpdate,
+      });
+      latestChatSessionStateRef.current = nextChatSessionState;
+      chatAppRenderStore.replaceChatSessionState({
+        nextChatSessionState,
+        changeSet: buildChatAppRenderStoreChangeSetFromChatSessionStateChange({
+          previousChatSessionState,
+          nextChatSessionState,
+        }),
+      });
+    },
+    [chatAppRenderStore],
+  );
+  const replaceControllerChromeRenderState = useCallback(
+    (buildNextControllerChromeRenderState: (
+      currentControllerChromeRenderState: ChatAppControllerChromeRenderState,
+    ) => ChatAppControllerChromeRenderState): void => {
+      chatAppRenderStore.replaceControllerChromeRenderState({
+        nextControllerChromeRenderState: buildNextControllerChromeRenderState(
+          chatAppRenderStore.readControllerChromeRenderState(),
+        ),
+      });
+    },
+    [chatAppRenderStore],
+  );
+  const setConversationSessionExportStatusAndUpdateRenderStore = useCallback<Dispatch<SetStateAction<ConversationSessionExportStatus>>>(
+    (conversationSessionExportStatusUpdate) => {
+      const nextConversationSessionExportStatus = resolveNextControllerStateValue({
+        previousValue: chatAppRenderStore.readControllerChromeRenderState().conversationSessionExportStatus,
+        valueUpdate: conversationSessionExportStatusUpdate,
+      });
+      replaceControllerChromeRenderState((currentControllerChromeRenderState) => ({
+        ...currentControllerChromeRenderState,
+        conversationSessionExportStatus: nextConversationSessionExportStatus,
+      }));
+      setConversationSessionExportStatus(nextConversationSessionExportStatus);
+    },
+    [chatAppRenderStore, replaceControllerChromeRenderState],
+  );
+  const setConversationSessionCompactionStatusAndUpdateRenderStore = useCallback<Dispatch<SetStateAction<ConversationSessionCompactionStatus>>>(
+    (conversationSessionCompactionStatusUpdate) => {
+      const nextConversationSessionCompactionStatus = resolveNextControllerStateValue({
+        previousValue: chatAppRenderStore.readControllerChromeRenderState().conversationSessionCompactionStatus,
+        valueUpdate: conversationSessionCompactionStatusUpdate,
+      });
+      replaceControllerChromeRenderState((currentControllerChromeRenderState) => ({
+        ...currentControllerChromeRenderState,
+        conversationSessionCompactionStatus: nextConversationSessionCompactionStatus,
+      }));
+      setConversationSessionCompactionStatus(nextConversationSessionCompactionStatus);
+    },
+    [chatAppRenderStore, replaceControllerChromeRenderState],
+  );
+  const setIsInitialConversationSessionHydrationPendingAndUpdateRenderStore = useCallback<Dispatch<SetStateAction<boolean>>>(
+    (isInitialConversationSessionHydrationPendingUpdate) => {
+      const nextIsInitialConversationSessionHydrationPending = resolveNextControllerStateValue({
+        previousValue: chatAppRenderStore.readControllerChromeRenderState().isInitialConversationSessionHydrationPending,
+        valueUpdate: isInitialConversationSessionHydrationPendingUpdate,
+      });
+      replaceControllerChromeRenderState((currentControllerChromeRenderState) => ({
+        ...currentControllerChromeRenderState,
+        isInitialConversationSessionHydrationPending: nextIsInitialConversationSessionHydrationPending,
+      }));
+      setIsInitialConversationSessionHydrationPending(nextIsInitialConversationSessionHydrationPending);
+    },
+    [chatAppRenderStore, replaceControllerChromeRenderState],
+  );
+  const setActiveTurnInterruptConfirmationArmedInRenderStore = useEffectEvent((isActiveTurnInterruptConfirmationArmed: boolean) => {
+    replaceControllerChromeRenderState((currentControllerChromeRenderState) => ({
+      ...currentControllerChromeRenderState,
+      isActiveTurnInterruptConfirmationArmed,
+    }));
+  });
 
   useEffect(() => {
     isChatAppControllerMountedRef.current = true;
@@ -240,13 +355,14 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     requestActiveConversationTurnInterrupt,
   } = useChatAppActiveTurnInterrupt({
     activeConversationTurnShutdownCoordinator: input.activeConversationTurnShutdownCoordinator,
+    onActiveTurnInterruptConfirmationArmedChanged: setActiveTurnInterruptConfirmationArmedInRenderStore,
   });
   const {
     dismissActivePromptContextQuery,
     refreshPromptContextSelectionForChatSessionState,
   } = useChatAppPromptContextSelectionRefresh({
-    chatSessionState,
-    setChatSessionState,
+    chatSessionState: latestChatSessionStateRef.current,
+    setChatSessionState: setPromptLocalChatSessionStateAndUpdateRenderStore,
     loadPromptContextCandidates: input.loadPromptContextCandidates,
   });
   const enqueueQueuedSubmittedPrompt = useEffectEvent((queuedChatAppPrompt: QueuedChatAppPrompt): number => {
@@ -258,9 +374,15 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
         queuedPromptId: `queued-prompt-${nextQueuedPromptIdRef.current}`,
       },
     ];
+    const nextQueuedPromptPreviews = toQueuedChatAppPromptPreviews(nextQueuedChatAppPrompts);
     queuedChatAppPromptsRef.current = nextQueuedChatAppPrompts;
+    replaceControllerChromeRenderState((currentControllerChromeRenderState) => ({
+      ...currentControllerChromeRenderState,
+      queuedPromptCount: nextQueuedChatAppPrompts.length,
+      queuedPromptPreviews: nextQueuedPromptPreviews,
+    }));
     setQueuedPromptCount(nextQueuedChatAppPrompts.length);
-    setQueuedPromptPreviews(toQueuedChatAppPromptPreviews(nextQueuedChatAppPrompts));
+    setQueuedPromptPreviews(nextQueuedPromptPreviews);
     return nextQueuedChatAppPrompts.length;
   });
   const dequeueQueuedSubmittedPrompt = useEffectEvent((): QueuedChatAppPrompt | undefined => {
@@ -269,9 +391,15 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
       return undefined;
     }
 
+    const nextQueuedPromptPreviews = toQueuedChatAppPromptPreviews(remainingQueuedChatAppPrompts);
     queuedChatAppPromptsRef.current = remainingQueuedChatAppPrompts;
+    replaceControllerChromeRenderState((currentControllerChromeRenderState) => ({
+      ...currentControllerChromeRenderState,
+      queuedPromptCount: remainingQueuedChatAppPrompts.length,
+      queuedPromptPreviews: nextQueuedPromptPreviews,
+    }));
     setQueuedPromptCount(remainingQueuedChatAppPrompts.length);
-    setQueuedPromptPreviews(toQueuedChatAppPromptPreviews(remainingQueuedChatAppPrompts));
+    setQueuedPromptPreviews(nextQueuedPromptPreviews);
     return nextQueuedChatAppPrompt;
   });
   const {
@@ -295,10 +423,10 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     latestActiveConversationSessionIdRef,
     isPromptSubmissionInFlightRef,
     isConversationCompactionInFlightRef,
-    setChatSessionState,
+    setChatSessionState: setChatSessionStateAndUpdateRenderStore,
     setActiveConversationSessionId,
-    setConversationSessionExportStatus,
-    setConversationSessionCompactionStatus,
+    setConversationSessionExportStatus: setConversationSessionExportStatusAndUpdateRenderStore,
+    setConversationSessionCompactionStatus: setConversationSessionCompactionStatusAndUpdateRenderStore,
   });
 
   useEffect(() => {
@@ -319,7 +447,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     hasStartedInitialConversationSessionHydrationRef.current = true;
     let isInitialConversationSessionHydrationCancelled = false;
     isPromptSubmissionInFlightRef.current = true;
-    setIsInitialConversationSessionHydrationPending(true);
+    setIsInitialConversationSessionHydrationPendingAndUpdateRenderStore(true);
 
     void Promise.resolve()
       .then(() => loadInitialConversationSessionEntries(initialConversationSessionId))
@@ -368,7 +496,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
         }
 
         isPromptSubmissionInFlightRef.current = false;
-        setIsInitialConversationSessionHydrationPending(false);
+        setIsInitialConversationSessionHydrationPendingAndUpdateRenderStore(false);
       });
 
     return () => {
@@ -380,6 +508,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     input.initialConversationSessionId,
     input.loadInitialConversationSessionEntries,
     input.onInitialConversationSessionEntriesHydrated,
+    setIsInitialConversationSessionHydrationPendingAndUpdateRenderStore,
   ]);
   const {
     streamAssistantResponseForSubmittedPrompt,
@@ -391,7 +520,8 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     isPromptSubmissionInFlightRef,
     isChatAppControllerMountedRef,
     submittedToolApprovalDecisionApprovalIdRef,
-    setChatSessionState,
+    setChatSessionState: setChatSessionStateAndUpdateRenderStore,
+    chatAppRenderStore,
     getActiveConversationTurn,
     registerActiveConversationTurnStarted,
     registerActiveConversationTurnFinished,
@@ -411,7 +541,8 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     loadAvailableAssistantModels: input.loadAvailableAssistantModels,
     latestChatSessionStateRef,
     isPromptSubmissionInFlightRef,
-    setChatSessionState,
+    setChatSessionState: setChatSessionStateAndUpdateRenderStore,
+    setPromptLocalChatSessionState: setPromptLocalChatSessionStateAndUpdateRenderStore,
     requestActiveConversationTurnInterrupt,
     dismissActivePromptContextQuery,
     refreshPromptContextSelectionForChatSessionState,
@@ -435,11 +566,11 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   } = useChatAppPromptImageAttachmentActions({
     latestChatSessionStateRef,
     conversationSessionCompactionStatus,
-    setChatSessionState,
+    setChatSessionState: setPromptLocalChatSessionStateAndUpdateRenderStore,
   });
 
   const hideCommandHelpModalInChatApp = useEffectEvent(() => {
-    setChatSessionState((currentChatSessionState) => {
+    setChatSessionStateAndUpdateRenderStore((currentChatSessionState) => {
       const nextChatSessionState = hideCommandHelpModal(currentChatSessionState);
       latestChatSessionStateRef.current = nextChatSessionState;
       return nextChatSessionState;
@@ -484,6 +615,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   return {
     activeConversationSessionId,
     chatSessionState,
+    chatAppRenderStore,
     transcriptState,
     promptComposerState,
     interactionStatusState,
@@ -505,6 +637,27 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     readLatestChatSessionState,
     readConversationSessionCompactionStatus,
   };
+}
+
+function resolveNextChatSessionStateForControllerStateUpdate(input: {
+  previousChatSessionState: ChatSessionState;
+  chatSessionStateUpdate: SetStateAction<ChatSessionState>;
+}): ChatSessionState {
+  return typeof input.chatSessionStateUpdate === "function"
+    ? input.chatSessionStateUpdate(input.previousChatSessionState)
+    : input.chatSessionStateUpdate;
+}
+
+function resolveNextControllerStateValue<T>(input: {
+  previousValue: T;
+  valueUpdate: SetStateAction<T>;
+}): T {
+  if (typeof input.valueUpdate !== "function") {
+    return input.valueUpdate;
+  }
+
+  const buildNextValue = input.valueUpdate as (previousValue: T) => T;
+  return buildNextValue(input.previousValue);
 }
 
 function buildChatAppTranscriptState(chatSessionState: ChatSessionState): ChatAppTranscriptState {

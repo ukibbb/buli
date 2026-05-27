@@ -6,6 +6,7 @@ const ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS = 5_000;
 
 export type UseChatAppActiveTurnInterruptInput = {
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator | undefined;
+  onActiveTurnInterruptConfirmationArmedChanged?: ((isActiveTurnInterruptConfirmationArmed: boolean) => void) | undefined;
 };
 
 export type UseChatAppActiveTurnInterruptResult = {
@@ -32,6 +33,7 @@ export function useChatAppActiveTurnInterrupt(
       clearTimeout(activeTurnInterruptConfirmationTimeoutRef.current);
       activeTurnInterruptConfirmationTimeoutRef.current = undefined;
     }
+    input.onActiveTurnInterruptConfirmationArmedChanged?.(false);
     setIsActiveTurnInterruptConfirmationArmed(false);
   });
 
@@ -43,8 +45,10 @@ export function useChatAppActiveTurnInterrupt(
     activeTurnInterruptConfirmationTimeoutRef.current = setTimeout(() => {
       activeTurnInterruptConfirmationExpiresAtMsRef.current = undefined;
       activeTurnInterruptConfirmationTimeoutRef.current = undefined;
+      input.onActiveTurnInterruptConfirmationArmedChanged?.(false);
       setIsActiveTurnInterruptConfirmationArmed(false);
     }, ACTIVE_TURN_INTERRUPT_CONFIRMATION_WINDOW_MS);
+    input.onActiveTurnInterruptConfirmationArmedChanged?.(true);
     setIsActiveTurnInterruptConfirmationArmed(true);
   });
 

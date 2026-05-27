@@ -213,7 +213,7 @@ test("buildChatScreenViewModel hydrates only the requested visible tail for larg
   expect(viewModel.conversationTranscriptWindow.totalConversationMessageCount).toBe(10_000);
   expect(viewModel.conversationTranscriptWindow.visibleConversationMessageCount).toBe(12);
   expect(viewModel.conversationTranscriptWindow.hiddenOlderConversationMessageCount).toBe(9_988);
-  expect(viewModel.conversationTranscriptWindow.visibleConversationMessages.map((message) => message.id)).toEqual([
+  expect(viewModel.visibleConversationMessageIds).toEqual([
     "message-9988",
     "message-9989",
     "message-9990",
@@ -241,20 +241,7 @@ test("buildChatScreenViewModel hydrates only the requested visible tail for larg
     "message-9998",
     "message-9999",
   ]);
-  expect(readConversationMessagePartIds).toEqual([
-    "part-9988",
-    "part-9989",
-    "part-9990",
-    "part-9991",
-    "part-9992",
-    "part-9993",
-    "part-9994",
-    "part-9995",
-    "part-9996",
-    "part-9997",
-    "part-9998",
-    "part-9999",
-  ]);
+  expect(readConversationMessagePartIds).toEqual([]);
   expect(viewModel.visibleConversationMessagePartCount).toBe(12);
   expect(viewModel.orderedConversationMessagePartCount).toBe(10_000);
 });
@@ -277,8 +264,8 @@ test("buildStableChatScreenTranscriptViewModel reuses transcript output across p
   });
 
   expect(secondTranscriptSelection.transcriptViewModel).toBe(firstTranscriptSelection.transcriptViewModel);
-  expect(secondTranscriptSelection.transcriptViewModel.conversationTranscriptWindow.visibleConversationMessages).toBe(
-    firstTranscriptSelection.transcriptViewModel.conversationTranscriptWindow.visibleConversationMessages,
+  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageIds).toBe(
+    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageIds,
   );
 });
 
@@ -308,7 +295,7 @@ test("buildStableChatScreenTranscriptViewModel reuses transcript output when onl
   expect(secondTranscriptSelection.transcriptViewModel).toBe(firstTranscriptSelection.transcriptViewModel);
 });
 
-test("buildStableChatScreenTranscriptViewModel reuses unchanged visible rows when one visible part changes", () => {
+test("buildStableChatScreenTranscriptViewModel reuses transcript output when row content changes", () => {
   const chatSessionState = createChatSessionStateWithTranscript({
     conversationMessageCount: 100,
   });
@@ -336,19 +323,10 @@ test("buildStableChatScreenTranscriptViewModel reuses unchanged visible rows whe
     previousCache: firstTranscriptSelection.nextCache,
   });
 
-  expect(secondTranscriptSelection.transcriptViewModel).not.toBe(firstTranscriptSelection.transcriptViewModel);
-  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[0]).toBe(
-    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[0],
+  expect(secondTranscriptSelection.transcriptViewModel).toBe(firstTranscriptSelection.transcriptViewModel);
+  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageIds).toBe(
+    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageIds,
   );
-  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[1]).toBe(
-    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[1],
-  );
-  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[2]).not.toBe(
-    firstTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[2],
-  );
-  expect(secondTranscriptSelection.transcriptViewModel.visibleConversationMessageRows[2]?.conversationMessageParts).toEqual([
-    changedVisiblePart,
-  ]);
 });
 
 function createChatSessionStateWithTranscript(input: {

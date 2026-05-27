@@ -14,10 +14,12 @@ import type {
 } from "@buli/engine";
 import {
   appendSubmittedUserPromptToConversation,
-  applyAssistantResponseEventsToChatSessionState,
+  applyAssistantResponseEventsToChatSessionStateWithChangeSet,
+  type AssistantResponseEventsChatSessionStateApplication,
   type ChatSessionState,
 } from "@buli/chat-session-state";
 import { startTransition, useEffect, useEffectEvent, type Dispatch, type SetStateAction } from "react";
+import type { ChatAppRenderStore } from "./chatAppRenderStore.ts";
 import { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
 import { logChatAppControllerDiagnosticEvent } from "./logChatAppControllerDiagnosticEvent.ts";
 
@@ -44,6 +46,7 @@ export type UseChatAppAssistantTurnActionsInput = {
   isChatAppControllerMountedRef: MutableValueRef<boolean>;
   submittedToolApprovalDecisionApprovalIdRef: MutableValueRef<string | undefined>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
+  chatAppRenderStore: ChatAppRenderStore;
   getActiveConversationTurn: () => ActiveConversationTurn | undefined;
   registerActiveConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
   registerActiveConversationTurnFinished: () => void;
@@ -150,10 +153,12 @@ export function useChatAppAssistantTurnActions(
 
   const applyIncomingAssistantResponseEventsToChatAppState = useEffectEvent((assistantResponseEvents: readonly AssistantResponseEvent[]): void => {
     const reducerStartedAtMs = Date.now();
-    const nextChatSessionState = applyAssistantResponseEventsToChatSessionState(
-      input.latestChatSessionStateRef.current,
+    const previousChatSessionState = input.latestChatSessionStateRef.current;
+    const assistantResponseEventsApplication = applyAssistantResponseEventsToChatSessionStateWithChangeSet(
+      previousChatSessionState,
       assistantResponseEvents,
     );
+    const nextChatSessionState = assistantResponseEventsApplication.nextChatSessionState;
     logChatAppControllerDiagnosticEvent(input.diagnosticLogger, "assistant_response_events.reduced", {
       assistantResponseEventCount: assistantResponseEvents.length,
       durationMs: Date.now() - reducerStartedAtMs,
@@ -161,6 +166,16 @@ export function useChatAppAssistantTurnActions(
       conversationMessagePartCount: nextChatSessionState.conversationMessagePartCount,
     });
     input.latestChatSessionStateRef.current = nextChatSessionState;
+    input.chatAppRenderStore.replaceChatSessionState(assistantResponseEventsApplication);
+    if (
+      !shouldUpdateControllerStateForAssistantResponseEvents({
+        previousChatSessionState,
+        assistantResponseEventsApplication,
+      })
+    ) {
+      return;
+    }
+
     startTransition(() => {
       input.setChatSessionState(nextChatSessionState);
     });
@@ -289,4 +304,16 @@ export function useChatAppAssistantTurnActions(
     streamAssistantResponseForSubmittedPrompt,
     submitPendingToolApprovalDecision,
   };
+}
+
+function shouldUpdateControllerStateForAssistantResponseEvents(input: {
+  previousChatSessionState: ChatSessionState;
+  assistantResponseEventsApplication: AssistantResponseEventsChatSessionStateApplication;
+}): boolean {
+  const changeSet = input.assistantResponseEventsApplication.changeSet;
+  return changeSet.didConversationMessageOrderChange ||
+    changeSet.didPromptComposerStateChange ||
+    changeSet.didInteractionStatusStateChange ||
+    input.previousChatSessionState.conversationMessagePartCount !==
+      input.assistantResponseEventsApplication.nextChatSessionState.conversationMessagePartCount;
 }

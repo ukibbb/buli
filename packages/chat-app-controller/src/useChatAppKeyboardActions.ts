@@ -54,6 +54,7 @@ export type UseChatAppKeyboardActionsInput = {
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
+  setPromptLocalChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   requestActiveConversationTurnInterrupt: () => void;
   dismissActivePromptContextQuery: (dismissedPromptContextQueryIdentity: PromptContextQueryIdentity | undefined) => void;
   refreshPromptContextSelectionForChatSessionState: (chatSessionState: ChatSessionState) => void;
@@ -262,7 +263,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     }
 
     input.latestChatSessionStateRef.current = nextChatSessionState;
-    input.setChatSessionState(nextChatSessionState);
+    input.setPromptLocalChatSessionState(nextChatSessionState);
     input.refreshPromptContextSelectionForChatSessionState(nextChatSessionState);
   });
 

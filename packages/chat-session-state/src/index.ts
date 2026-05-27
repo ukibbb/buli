@@ -55,8 +55,12 @@ export {
 export { cycleAssistantOperatingMode, selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 export { resolveNextAssistantOperatingMode } from "./resolveNextAssistantOperatingMode.ts";
 export {
+  type AssistantResponseEventsChatSessionStateApplication,
+  type AssistantResponseEventsChatSessionStateChangeSet,
   applyAssistantResponseEventToChatSessionState,
+  applyAssistantResponseEventToChatSessionStateWithChangeSet,
   applyAssistantResponseEventsToChatSessionState,
+  applyAssistantResponseEventsToChatSessionStateWithChangeSet,
 } from "./assistantTurnEventReducer.ts";
 export { listOrderedConversationMessageParts, listOrderedConversationMessages } from "./chatSessionSelectors.ts";
 export {

@@ -1,5 +1,22 @@
 export { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
 export { relayAssistantResponseRunnerEvents } from "./relayAssistantResponseRunnerEvents.ts";
+export {
+  buildChatAppRenderStoreChangeSetFromChatSessionStateChange,
+  createInitialChatAppControllerChromeRenderState,
+  createChatAppRenderStore,
+  type ChatAppControllerChromeRenderState,
+  type ChatAppControllerChromeRenderStateReplacement,
+  type ChatAppRenderStoreChangeSet,
+  type ChatAppConversationMessageRowSnapshot,
+  type ChatAppInteractionStatusRenderSnapshot,
+  type ChatAppPromptComposerRenderSnapshot,
+  type ChatAppQueuedPromptPreview,
+  type ChatAppRenderStore,
+  type ChatAppRenderStoreListener,
+  type ChatAppRenderStoreStateReplacement,
+  type ChatAppTranscriptAuxiliaryRenderSnapshot,
+  type ChatAppTranscriptRenderSnapshot,
+} from "./chatAppRenderStore.ts";
 export type {
   ConversationSessionCompactionStatus,
   ConversationSessionExportStatus,

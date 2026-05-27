@@ -598,6 +598,19 @@ type AssistantResponseEventByType<EventType extends AssistantResponseEventType> 
   AssistantResponseEvent,
   { type: EventType }
 >;
+
+export type AssistantResponseEventsChatSessionStateChangeSet = {
+  changedConversationMessageIds: readonly string[];
+  didConversationMessageOrderChange: boolean;
+  didTranscriptGlobalStateChange: boolean;
+  didPromptComposerStateChange: boolean;
+  didInteractionStatusStateChange: boolean;
+};
+
+export type AssistantResponseEventsChatSessionStateApplication = {
+  nextChatSessionState: ChatSessionState;
+  changeSet: AssistantResponseEventsChatSessionStateChangeSet;
+};
 type AssistantResponseEventReducer<EventType extends AssistantResponseEventType> = (
   chatSessionState: ChatSessionState,
   assistantResponseEvent: AssistantResponseEventByType<EventType>,
@@ -628,6 +641,21 @@ export function applyAssistantResponseEventToChatSessionState(
   assistantResponseEvent: AssistantResponseEvent,
 ): ChatSessionState {
   return resolveAssistantResponseEventReducer(assistantResponseEvent)(chatSessionState, assistantResponseEvent);
+}
+
+export function applyAssistantResponseEventToChatSessionStateWithChangeSet(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvent: AssistantResponseEvent,
+): AssistantResponseEventsChatSessionStateApplication {
+  const nextChatSessionState = applyAssistantResponseEventToChatSessionState(chatSessionState, assistantResponseEvent);
+  return {
+    nextChatSessionState,
+    changeSet: buildAssistantResponseEventChangeSet({
+      previousChatSessionState: chatSessionState,
+      nextChatSessionState,
+      assistantResponseEvent,
+    }),
+  };
 }
 
 function applyAssistantTurnStartedEvent(
@@ -818,9 +846,183 @@ export function applyAssistantResponseEventsToChatSessionState(
   chatSessionState: ChatSessionState,
   assistantResponseEvents: readonly AssistantResponseEvent[],
 ): ChatSessionState {
+  return applyAssistantResponseEventsToChatSessionStateWithChangeSet(
+    chatSessionState,
+    assistantResponseEvents,
+  ).nextChatSessionState;
+}
+
+export function applyAssistantResponseEventsToChatSessionStateWithChangeSet(
+  chatSessionState: ChatSessionState,
+  assistantResponseEvents: readonly AssistantResponseEvent[],
+): AssistantResponseEventsChatSessionStateApplication {
   let nextChatSessionState = chatSessionState;
+  let changeSet = createEmptyAssistantResponseEventsChatSessionStateChangeSet();
   for (const assistantResponseEvent of assistantResponseEvents) {
-    nextChatSessionState = applyAssistantResponseEventToChatSessionState(nextChatSessionState, assistantResponseEvent);
+    const eventApplication = applyAssistantResponseEventToChatSessionStateWithChangeSet(
+      nextChatSessionState,
+      assistantResponseEvent,
+    );
+    nextChatSessionState = eventApplication.nextChatSessionState;
+    changeSet = mergeAssistantResponseEventsChatSessionStateChangeSets(changeSet, eventApplication.changeSet);
   }
-  return nextChatSessionState;
+  return { nextChatSessionState, changeSet };
+}
+
+function createEmptyAssistantResponseEventsChatSessionStateChangeSet(): AssistantResponseEventsChatSessionStateChangeSet {
+  return {
+    changedConversationMessageIds: [],
+    didConversationMessageOrderChange: false,
+    didTranscriptGlobalStateChange: false,
+    didPromptComposerStateChange: false,
+    didInteractionStatusStateChange: false,
+  };
+}
+
+function buildAssistantResponseEventChangeSet(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+  assistantResponseEvent: AssistantResponseEvent;
+}): AssistantResponseEventsChatSessionStateChangeSet {
+  if (input.previousChatSessionState === input.nextChatSessionState) {
+    return createEmptyAssistantResponseEventsChatSessionStateChangeSet();
+  }
+
+  const changedConversationMessageId = resolveChangedConversationMessageId({
+    previousChatSessionState: input.previousChatSessionState,
+    nextChatSessionState: input.nextChatSessionState,
+    assistantResponseEvent: input.assistantResponseEvent,
+  });
+
+  return {
+    changedConversationMessageIds: changedConversationMessageId ? [changedConversationMessageId] : [],
+    didConversationMessageOrderChange:
+      input.previousChatSessionState.orderedConversationMessageIds !== input.nextChatSessionState.orderedConversationMessageIds,
+    didTranscriptGlobalStateChange: didTranscriptRelevantStateChange(input),
+    didPromptComposerStateChange: didPromptComposerRelevantStateChange(input),
+    didInteractionStatusStateChange: didInteractionStatusRelevantStateChange(input),
+  };
+}
+
+function resolveChangedConversationMessageId(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+  assistantResponseEvent: AssistantResponseEvent;
+}): string | undefined {
+  const conversationMessageId = readAssistantResponseEventConversationMessageId(input.assistantResponseEvent);
+  if (!conversationMessageId) {
+    return undefined;
+  }
+
+  if (
+    input.previousChatSessionState.conversationMessagesById[conversationMessageId] !==
+      input.nextChatSessionState.conversationMessagesById[conversationMessageId] ||
+    hasConversationMessagePartChanged({
+      previousChatSessionState: input.previousChatSessionState,
+      nextChatSessionState: input.nextChatSessionState,
+      conversationMessageId,
+    })
+  ) {
+    return conversationMessageId;
+  }
+
+  return undefined;
+}
+
+function readAssistantResponseEventConversationMessageId(
+  assistantResponseEvent: AssistantResponseEvent,
+): string | undefined {
+  if (assistantResponseEvent.type === "assistant_pending_tool_approval_requested") {
+    return undefined;
+  }
+  if (assistantResponseEvent.type === "assistant_pending_tool_approval_cleared") {
+    return undefined;
+  }
+  return assistantResponseEvent.messageId;
+}
+
+function hasConversationMessagePartChanged(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+  conversationMessageId: string;
+}): boolean {
+  const previousConversationMessage = input.previousChatSessionState.conversationMessagesById[input.conversationMessageId];
+  const nextConversationMessage = input.nextChatSessionState.conversationMessagesById[input.conversationMessageId];
+  const conversationMessagePartIds = nextConversationMessage?.partIds ?? previousConversationMessage?.partIds ?? [];
+  return conversationMessagePartIds.some((conversationMessagePartId) =>
+    input.previousChatSessionState.conversationMessagePartsById[conversationMessagePartId] !==
+      input.nextChatSessionState.conversationMessagePartsById[conversationMessagePartId]
+  );
+}
+
+function didTranscriptRelevantStateChange(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+}): boolean {
+  return input.previousChatSessionState.conversationMessagesById !== input.nextChatSessionState.conversationMessagesById ||
+    input.previousChatSessionState.conversationMessagePartsById !== input.nextChatSessionState.conversationMessagePartsById ||
+    input.previousChatSessionState.orderedConversationMessageIds !== input.nextChatSessionState.orderedConversationMessageIds ||
+    input.previousChatSessionState.conversationMessagePartCount !== input.nextChatSessionState.conversationMessagePartCount ||
+    input.previousChatSessionState.reasoningSummaryDisplayMode !== input.nextChatSessionState.reasoningSummaryDisplayMode ||
+    input.previousChatSessionState.isCommandHelpModalVisible !== input.nextChatSessionState.isCommandHelpModalVisible;
+}
+
+function didPromptComposerRelevantStateChange(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+}): boolean {
+  return input.previousChatSessionState.conversationTurnStatus !== input.nextChatSessionState.conversationTurnStatus ||
+    input.previousChatSessionState.promptDraft !== input.nextChatSessionState.promptDraft ||
+    input.previousChatSessionState.promptDraftCursorOffset !== input.nextChatSessionState.promptDraftCursorOffset ||
+    input.previousChatSessionState.pendingPromptImageAttachments !== input.nextChatSessionState.pendingPromptImageAttachments ||
+    input.previousChatSessionState.pendingPromptTextPastes !== input.nextChatSessionState.pendingPromptTextPastes ||
+    input.previousChatSessionState.selectedPromptContextReferenceTexts !== input.nextChatSessionState.selectedPromptContextReferenceTexts ||
+    input.previousChatSessionState.selectedAssistantOperatingMode !== input.nextChatSessionState.selectedAssistantOperatingMode ||
+    input.previousChatSessionState.selectedModelId !== input.nextChatSessionState.selectedModelId ||
+    input.previousChatSessionState.selectedModelDefaultReasoningEffort !== input.nextChatSessionState.selectedModelDefaultReasoningEffort ||
+    input.previousChatSessionState.selectedReasoningEffort !== input.nextChatSessionState.selectedReasoningEffort ||
+    input.previousChatSessionState.latestContextWindowUsage !== input.nextChatSessionState.latestContextWindowUsage;
+}
+
+function didInteractionStatusRelevantStateChange(input: {
+  previousChatSessionState: ChatSessionState;
+  nextChatSessionState: ChatSessionState;
+}): boolean {
+  return input.previousChatSessionState.conversationTurnStatus !== input.nextChatSessionState.conversationTurnStatus ||
+    input.previousChatSessionState.pendingToolApprovalRequest !== input.nextChatSessionState.pendingToolApprovalRequest;
+}
+
+function mergeAssistantResponseEventsChatSessionStateChangeSets(
+  previousChangeSet: AssistantResponseEventsChatSessionStateChangeSet,
+  nextChangeSet: AssistantResponseEventsChatSessionStateChangeSet,
+): AssistantResponseEventsChatSessionStateChangeSet {
+  return {
+    changedConversationMessageIds: mergeConversationMessageIds(
+      previousChangeSet.changedConversationMessageIds,
+      nextChangeSet.changedConversationMessageIds,
+    ),
+    didConversationMessageOrderChange:
+      previousChangeSet.didConversationMessageOrderChange || nextChangeSet.didConversationMessageOrderChange,
+    didTranscriptGlobalStateChange:
+      previousChangeSet.didTranscriptGlobalStateChange || nextChangeSet.didTranscriptGlobalStateChange,
+    didPromptComposerStateChange:
+      previousChangeSet.didPromptComposerStateChange || nextChangeSet.didPromptComposerStateChange,
+    didInteractionStatusStateChange:
+      previousChangeSet.didInteractionStatusStateChange || nextChangeSet.didInteractionStatusStateChange,
+  };
+}
+
+function mergeConversationMessageIds(
+  previousConversationMessageIds: readonly string[],
+  nextConversationMessageIds: readonly string[],
+): string[] {
+  const mergedConversationMessageIds = [...previousConversationMessageIds];
+  const mergedConversationMessageIdSet = new Set(mergedConversationMessageIds);
+  for (const conversationMessageId of nextConversationMessageIds) {
+    if (!mergedConversationMessageIdSet.has(conversationMessageId)) {
+      mergedConversationMessageIds.push(conversationMessageId);
+      mergedConversationMessageIdSet.add(conversationMessageId);
+    }
+  }
+  return mergedConversationMessageIds;
 }
