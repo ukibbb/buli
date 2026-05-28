@@ -16,26 +16,25 @@ import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSi
 import type { ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import {
-  buildReadOnlyToolCallEvidenceIndex,
-  createDuplicateReadOnlyToolResultText,
-  type ReadOnlyToolCallEvidenceIndex,
-  type ReusableReadOnlyToolEvidence,
-} from "./readOnlyToolCallEvidenceIndex.ts";
-import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+  createReadOnlyToolCallExecutionKey,
+  createSameStepDuplicateReadOnlyToolResultText,
+} from "./readOnlyToolCallCoalescing.ts";
+import {
+  RuntimeReadOnlyToolCallConcurrencyLimiter,
+  type RuntimeReadOnlyToolCallConcurrencyCategory,
+} from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { runGlobToolCall } from "./tools/globTool.ts";
 import { runGrepToolCall } from "./tools/grepTool.ts";
-import { runQueryCodebaseKnowledgeToolCall } from "./tools/queryCodebaseKnowledgeTool.ts";
-import { runReadManyToolCall } from "./tools/readManyTool.ts";
+import { runLocateCodebaseSymbolsToolCall } from "./tools/locateCodebaseSymbolsTool.ts";
 import { runReadToolCall } from "./tools/readTool.ts";
-import { runSearchManyToolCall } from "./tools/searchManyTool.ts";
 import type { ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 
 export type AutoApprovedReadOnlyToolCallRequest = WorkspaceInspectionToolCallRequest;
 
 type AutoApprovedReadOnlyToolName = WorkspaceInspectionToolRequestName;
-type SingleReadOnlyToolName = Exclude<AutoApprovedReadOnlyToolName, "read_many" | "search_many">;
+type SingleReadOnlyToolName = AutoApprovedReadOnlyToolName;
 type AutoApprovedReadOnlyToolCallRequestByName<ToolName extends AutoApprovedReadOnlyToolName> = Extract<
   AutoApprovedReadOnlyToolCallRequest,
   { toolName: ToolName }
@@ -47,7 +46,6 @@ type AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName extends AutoApprovedR
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
-  readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
   workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   abortSignal: AbortSignal;
 };
@@ -62,20 +60,14 @@ const autoApprovedReadOnlyToolCallExecutorByName: {
   read: {
     runToolCall: runReadAutoApprovedReadOnlyToolCall,
   },
-  read_many: {
-    runToolCall: runReadManyAutoApprovedReadOnlyToolCall,
-  },
-  search_many: {
-    runToolCall: runSearchManyAutoApprovedReadOnlyToolCall,
-  },
   glob: {
     runToolCall: runGlobAutoApprovedReadOnlyToolCall,
   },
   grep: {
     runToolCall: runGrepAutoApprovedReadOnlyToolCall,
   },
-  query_codebase_knowledge: {
-    runToolCall: runQueryCodebaseKnowledgeAutoApprovedReadOnlyToolCall,
+  locate_codebase_symbols: {
+    runToolCall: runLocateCodebaseSymbolsAutoApprovedReadOnlyToolCall,
   },
 };
 
@@ -130,6 +122,11 @@ type SettledAutoApprovedReadOnlyToolCallExecution =
   | FulfilledAutoApprovedReadOnlyToolCallExecution
   | RejectedAutoApprovedReadOnlyToolCallExecution;
 
+type PendingAutoApprovedReadOnlyToolCallExecutionGroup = {
+  canonicalPendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  duplicatePendingToolCallExecutions: readonly PendingAutoApprovedReadOnlyToolCallExecution[];
+};
+
 type SubmittedAutoApprovedReadOnlyToolResultKind = "completed" | "failed";
 
 type RecordedAutoApprovedReadOnlyToolCallOutcome = {
@@ -178,11 +175,6 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
   const readOnlyToolCallConcurrencyLimiter = input.readOnlyToolCallConcurrencyLimiter ?? new RuntimeReadOnlyToolCallConcurrencyLimiter({
     diagnosticLogger: input.diagnosticLogger,
   });
-  const readOnlyToolCallEvidenceIndex = input.conversationHistory
-    ? buildReadOnlyToolCallEvidenceIndex({
-        conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
-      })
-    : undefined;
 
   const pendingToolCallExecutions = input.requestedToolCalls.map((requestedToolCall): PendingAutoApprovedReadOnlyToolCallExecution => ({
     ...requestedToolCall,
@@ -207,13 +199,19 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
   }
 
   input.throwIfConversationTurnInterrupted();
+  const pendingToolCallExecutionGroups = groupPendingAutoApprovedReadOnlyToolCallExecutions(pendingToolCallExecutions);
+  const pendingToolCallExecutionGroupByCanonicalPartId = new Map(
+    pendingToolCallExecutionGroups.map((pendingToolCallExecutionGroup) => [
+      pendingToolCallExecutionGroup.canonicalPendingToolCallExecution.toolCallPartId,
+      pendingToolCallExecutionGroup,
+    ]),
+  );
   const activeToolCallExecutionPromisesByPartId = new Map(
-    pendingToolCallExecutions.map((pendingToolCallExecution) => [
-      pendingToolCallExecution.toolCallPartId,
+    pendingToolCallExecutionGroups.map((pendingToolCallExecutionGroup) => [
+      pendingToolCallExecutionGroup.canonicalPendingToolCallExecution.toolCallPartId,
       runPendingAutoApprovedReadOnlyToolCallExecution({
-        pendingToolCallExecution,
+        pendingToolCallExecution: pendingToolCallExecutionGroup.canonicalPendingToolCallExecution,
         readOnlyToolCallConcurrencyLimiter,
-        readOnlyToolCallEvidenceIndex,
         workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
         workspaceRootPath: input.workspaceRootPath,
         ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
@@ -238,20 +236,34 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
         throw settledToolCallExecution.error;
       }
 
-      const recordedToolCallOutcome = recordAutoApprovedReadOnlyToolCallOutcome({
-        assistantResponseMessageId: input.assistantResponseMessageId,
-        pendingToolCallExecution: settledToolCallExecution.pendingToolCallExecution,
-        toolCallOutcome: settledToolCallExecution.toolCallOutcome,
-        toolResultSessionRecorder: input.toolResultSessionRecorder,
-        diagnosticLogger: input.diagnosticLogger,
-      });
-      yield recordedToolCallOutcome.assistantResponseEvent;
-      pendingProviderToolResultSubmissions.push(startProviderToolResultSubmission({
-        providerConversationTurn: input.providerConversationTurn,
-        providerToolResult: recordedToolCallOutcome.providerToolResult,
-        conversationTurnId: input.conversationTurnId,
-        diagnosticLogger: input.diagnosticLogger,
-      }));
+      const pendingToolCallExecutionGroup = pendingToolCallExecutionGroupByCanonicalPartId.get(
+        settledToolCallExecution.pendingToolCallExecution.toolCallPartId,
+      );
+      if (!pendingToolCallExecutionGroup) {
+        throw new Error(
+          `Missing read-only tool-call execution group for canonical part ${settledToolCallExecution.pendingToolCallExecution.toolCallPartId}.`,
+        );
+      }
+
+      for (const { pendingToolCallExecution, toolCallOutcome } of listToolCallOutcomesForSettledReadOnlyExecution({
+        settledToolCallExecution,
+        pendingToolCallExecutionGroup,
+      })) {
+        const recordedToolCallOutcome = recordAutoApprovedReadOnlyToolCallOutcome({
+          assistantResponseMessageId: input.assistantResponseMessageId,
+          pendingToolCallExecution,
+          toolCallOutcome,
+          toolResultSessionRecorder: input.toolResultSessionRecorder,
+          diagnosticLogger: input.diagnosticLogger,
+        });
+        yield recordedToolCallOutcome.assistantResponseEvent;
+        pendingProviderToolResultSubmissions.push(startProviderToolResultSubmission({
+          providerConversationTurn: input.providerConversationTurn,
+          providerToolResult: recordedToolCallOutcome.providerToolResult,
+          conversationTurnId: input.conversationTurnId,
+          diagnosticLogger: input.diagnosticLogger,
+        }));
+      }
     }
   } catch (error) {
     await waitForPendingProviderToolResultSubmissionsToSettle(pendingProviderToolResultSubmissions);
@@ -308,10 +320,81 @@ function waitForPendingProviderToolResultSubmissionsToSettle(
   );
 }
 
+function groupPendingAutoApprovedReadOnlyToolCallExecutions(
+  pendingToolCallExecutions: readonly PendingAutoApprovedReadOnlyToolCallExecution[],
+): PendingAutoApprovedReadOnlyToolCallExecutionGroup[] {
+  const pendingToolCallExecutionGroupsByKey = new Map<string, PendingAutoApprovedReadOnlyToolCallExecution[]>();
+  for (const pendingToolCallExecution of pendingToolCallExecutions) {
+    const executionKey = createReadOnlyToolCallExecutionKey(pendingToolCallExecution.toolCallRequest);
+    const pendingToolCallExecutionGroup = pendingToolCallExecutionGroupsByKey.get(executionKey);
+    if (pendingToolCallExecutionGroup) {
+      pendingToolCallExecutionGroup.push(pendingToolCallExecution);
+      continue;
+    }
+
+    pendingToolCallExecutionGroupsByKey.set(executionKey, [pendingToolCallExecution]);
+  }
+
+  return [...pendingToolCallExecutionGroupsByKey.values()].map((pendingToolCallExecutionGroup) => {
+    const [canonicalPendingToolCallExecution, ...duplicatePendingToolCallExecutions] = pendingToolCallExecutionGroup;
+    if (!canonicalPendingToolCallExecution) {
+      throw new Error("Cannot create an empty read-only tool-call execution group.");
+    }
+
+    return {
+      canonicalPendingToolCallExecution,
+      duplicatePendingToolCallExecutions,
+    };
+  });
+}
+
+function listToolCallOutcomesForSettledReadOnlyExecution(input: {
+  settledToolCallExecution: FulfilledAutoApprovedReadOnlyToolCallExecution;
+  pendingToolCallExecutionGroup: PendingAutoApprovedReadOnlyToolCallExecutionGroup;
+}): Array<{
+  pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  toolCallOutcome: ToolCallOutcome;
+}> {
+  return [
+    {
+      pendingToolCallExecution: input.pendingToolCallExecutionGroup.canonicalPendingToolCallExecution,
+      toolCallOutcome: input.settledToolCallExecution.toolCallOutcome,
+    },
+    ...input.pendingToolCallExecutionGroup.duplicatePendingToolCallExecutions.map((duplicatePendingToolCallExecution) => ({
+      pendingToolCallExecution: duplicatePendingToolCallExecution,
+      toolCallOutcome: createSameStepDuplicateReadOnlyToolCallOutcome({
+        canonicalPendingToolCallExecution: input.pendingToolCallExecutionGroup.canonicalPendingToolCallExecution,
+        canonicalToolCallOutcome: input.settledToolCallExecution.toolCallOutcome,
+      }),
+    })),
+  ];
+}
+
+function createSameStepDuplicateReadOnlyToolCallOutcome(input: {
+  canonicalPendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  canonicalToolCallOutcome: ToolCallOutcome;
+}): ToolCallOutcome {
+  if (input.canonicalToolCallOutcome.outcomeKind === "completed") {
+    return {
+      outcomeKind: "completed",
+      toolCallDetail: input.canonicalToolCallOutcome.toolCallDetail,
+      toolResultText: createSameStepDuplicateReadOnlyToolResultText({
+        toolName: input.canonicalToolCallOutcome.toolCallDetail.toolName,
+        previousToolCallId: input.canonicalPendingToolCallExecution.toolCallId,
+      }),
+      durationMilliseconds: 0,
+    };
+  }
+
+  return {
+    ...input.canonicalToolCallOutcome,
+    durationMilliseconds: 0,
+  };
+}
+
 async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
   pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
-  readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
   workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
@@ -325,7 +408,6 @@ async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
         toolCallRequest: input.pendingToolCallExecution.toolCallRequest,
         toolCallId: input.pendingToolCallExecution.toolCallId,
         readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
-        ...(input.readOnlyToolCallEvidenceIndex ? { readOnlyToolCallEvidenceIndex: input.readOnlyToolCallEvidenceIndex } : {}),
         ...(input.workspaceCodebaseKnowledgeIndex ? { workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex } : {}),
         workspaceRootPath: input.workspaceRootPath,
         ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
@@ -415,43 +497,13 @@ function runAutoApprovedReadOnlyToolCall(input: {
   toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
   toolCallId: string;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
-  readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
   workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
 }): Promise<ToolCallOutcome> {
-  const duplicateReadOnlyToolCallOutcome = createDuplicateReadOnlyToolCallOutcomeIfAvailable({
-    toolCallRequest: input.toolCallRequest,
-    readOnlyToolCallEvidenceIndex: input.readOnlyToolCallEvidenceIndex,
-  });
-  if (duplicateReadOnlyToolCallOutcome) {
-    return Promise.resolve(duplicateReadOnlyToolCallOutcome);
-  }
-
   const toolCallExecutor = resolveAutoApprovedReadOnlyToolCallExecutor(input.toolCallRequest);
   return toolCallExecutor.runToolCall(input);
-}
-
-function createDuplicateReadOnlyToolCallOutcomeIfAvailable(input: {
-  toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
-  readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
-}): ToolCallOutcome | undefined {
-  const reusableEvidence = input.readOnlyToolCallEvidenceIndex?.findReusableToolCallEvidence(input.toolCallRequest);
-  if (!reusableEvidence) {
-    return undefined;
-  }
-
-  return createDuplicateReadOnlyToolCallOutcome(reusableEvidence);
-}
-
-function createDuplicateReadOnlyToolCallOutcome(reusableEvidence: ReusableReadOnlyToolEvidence): ToolCallOutcome {
-  return {
-    outcomeKind: "completed",
-    toolCallDetail: reusableEvidence.toolCallDetail,
-    toolResultText: createDuplicateReadOnlyToolResultText(reusableEvidence),
-    durationMilliseconds: 0,
-  };
 }
 
 function resolveAutoApprovedReadOnlyToolCallExecutor<ToolName extends AutoApprovedReadOnlyToolName>(
@@ -471,33 +523,6 @@ function runReadAutoApprovedReadOnlyToolCall(
       abortSignal: input.abortSignal,
     })
   );
-}
-
-function runReadManyAutoApprovedReadOnlyToolCall(
-  input: AutoApprovedReadOnlyToolCallExecutorRunInput<"read_many">,
-): Promise<ToolCallOutcome> {
-  return runReadManyToolCall({
-    readManyToolCallRequest: input.toolCallRequest,
-    parentToolCallId: input.toolCallId,
-    workspaceRootPath: input.workspaceRootPath,
-    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
-    ...(input.readOnlyToolCallEvidenceIndex ? { readOnlyToolCallEvidenceIndex: input.readOnlyToolCallEvidenceIndex } : {}),
-    ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
-    abortSignal: input.abortSignal,
-  });
-}
-
-function runSearchManyAutoApprovedReadOnlyToolCall(
-  input: AutoApprovedReadOnlyToolCallExecutorRunInput<"search_many">,
-): Promise<ToolCallOutcome> {
-  return runSearchManyToolCall({
-    searchManyToolCallRequest: input.toolCallRequest,
-    parentToolCallId: input.toolCallId,
-    workspaceRootPath: input.workspaceRootPath,
-    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
-    ...(input.readOnlyToolCallEvidenceIndex ? { readOnlyToolCallEvidenceIndex: input.readOnlyToolCallEvidenceIndex } : {}),
-    abortSignal: input.abortSignal,
-  });
 }
 
 function runGlobAutoApprovedReadOnlyToolCall(
@@ -524,17 +549,17 @@ function runGrepAutoApprovedReadOnlyToolCall(
   );
 }
 
-function runQueryCodebaseKnowledgeAutoApprovedReadOnlyToolCall(
-  input: AutoApprovedReadOnlyToolCallExecutorRunInput<"query_codebase_knowledge">,
+function runLocateCodebaseSymbolsAutoApprovedReadOnlyToolCall(
+  input: AutoApprovedReadOnlyToolCallExecutorRunInput<"locate_codebase_symbols">,
 ): Promise<ToolCallOutcome> {
   if (!input.workspaceCodebaseKnowledgeIndex) {
-    throw new Error("Codebase knowledge index is not available for query_codebase_knowledge.");
+    throw new Error("Codebase knowledge index is not available for locate_codebase_symbols.");
   }
   const workspaceCodebaseKnowledgeIndex = input.workspaceCodebaseKnowledgeIndex;
 
-  return runSingleAutoApprovedReadOnlyToolCall(input, "query_codebase_knowledge", () =>
-    runQueryCodebaseKnowledgeToolCall({
-      queryCodebaseKnowledgeToolCallRequest: input.toolCallRequest,
+  return runSingleAutoApprovedReadOnlyToolCall(input, "locate_codebase_symbols", () =>
+    runLocateCodebaseSymbolsToolCall({
+      locateCodebaseSymbolsToolCallRequest: input.toolCallRequest,
       workspaceCodebaseKnowledgeIndex,
       abortSignal: input.abortSignal,
     })
@@ -546,11 +571,27 @@ function runSingleAutoApprovedReadOnlyToolCall<ToolName extends SingleReadOnlyTo
   toolName: ToolName,
   runToolCall: () => Promise<ToolCallOutcome>,
 ): Promise<ToolCallOutcome> {
+  const concurrencyCategory = resolveReadOnlyToolCallConcurrencyCategory(toolName);
   return input.readOnlyToolCallConcurrencyLimiter.run(
     runToolCall,
     {
       toolCallId: input.toolCallId,
       toolName,
     },
+    concurrencyCategory,
   );
+}
+
+function resolveReadOnlyToolCallConcurrencyCategory(
+  toolName: SingleReadOnlyToolName,
+): RuntimeReadOnlyToolCallConcurrencyCategory {
+  if (toolName === "read") {
+    return "read";
+  }
+
+  if (toolName === "locate_codebase_symbols") {
+    return "knowledge";
+  }
+
+  return "search";
 }

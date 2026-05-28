@@ -57,37 +57,43 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "Use read only for exact paths already evidenced by the user, glob, grep, a previous directory read, or a previous successful read.",
   );
   expect(systemPromptText).toContain(
-    "Use read_many when you already have several exact evidenced paths to inspect; do not use separate read calls for independent known paths unless only one path is needed.",
+    "When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
   );
   expect(systemPromptText).toContain(
-    "Use query_codebase_knowledge first for broad orientation when you need to locate where behavior, symbols, flows, or concepts live; treat results as compact pointers, not source truth.",
+    "After grep surfaces a symbol name, call locate_codebase_symbols with that name to get its exact file and start-end line span, then read that exact range.",
   );
   expect(systemPromptText).toContain(
-    "Use search_many when you have several independent glob and grep searches to map files or text before reading; do not issue separate glob/grep calls when they can run as one batch.",
+    "Call locate_codebase_symbols with filePaths to get a file's imports, exports, and symbol list before reading it.",
   );
   expect(systemPromptText).toContain(
-    "For broad codebase research, start with query_codebase_knowledge when orientation is useful, use search_many for missing file/text discovery, then follow with one read_many for the exact relevant paths found.",
+    "When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
   );
   expect(systemPromptText).toContain(
-    "Always verify query_codebase_knowledge recommendations with read/read_many before relying on implementation details.",
+    "For many locate_codebase_symbols symbolNames or filePaths, prefer small batches and multiple concurrent locate_codebase_symbols calls over one large lookup.",
   );
   expect(systemPromptText).toContain(
-    "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+    "When several independent glob and grep searches are needed, request separate glob and grep calls in the same response step so the runtime can execute them concurrently.",
   );
   expect(systemPromptText).toContain(
-    "Prefer precise reads: use grep/search_many to locate relevant symbols first, then read only the file ranges needed to answer the question instead of broad full-file windows.",
+    "Always verify locate_codebase_symbols results with read before relying on implementation details.",
   );
   expect(systemPromptText).toContain(
-    "When grep/search_many returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
+    "For grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+  );
+  expect(systemPromptText).toContain(
+    "Prefer precise reads: use grep to locate relevant symbols first, then read small file windows needed to answer the question instead of broad full-file windows.",
+  );
+  expect(systemPromptText).toContain(
+    "When grep returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
   );
   expect(systemPromptText).toContain(
     "If a result says content was truncated or omitted content is not currently visible, do not rely on or claim the omitted content; request a narrower follow-up read/search if those details matter.",
   );
   expect(systemPromptText).toContain(
-    "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with search_many, glob, or grep before reading.",
+    "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with glob or grep before reading.",
   );
   expect(systemPromptText).toContain(
-    "After a File not found result, do not retry another guessed path variant; use search_many, glob, grep, or a known parent directory read to discover the actual path.",
+    "After a File not found result, do not retry another guessed path variant; use glob, grep, or a known parent directory read to discover the actual path.",
   );
   expect(systemPromptText).toContain(
     "Do not guess read offsets. Continue only from line counts returned by a previous read result.",
@@ -258,6 +264,27 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("Treat Understand mode as teach-first");
 });
 
+test("understand mode starts non-trivial explanations with a mental model", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "understand",
+  });
+
+  expect(systemPromptText).toContain("Mental Model First");
+  expect(systemPromptText).toContain(
+    "Before giving conclusions, optimization targets, implementation advice, or source-heavy details",
+  );
+  expect(systemPromptText).toContain("The boxes: important objects");
+  expect(systemPromptText).toContain("The arrows: what calls, sends, stores, renders, waits, streams, replays, owns, or mutates what.");
+  expect(systemPromptText).toContain(
+    "The moving thing: data, control, text, tokens, bytes, events, tool results, state, ownership, or permissions.",
+  );
+  expect(systemPromptText).toContain("The pressure point: where size grows");
+  expect(systemPromptText).toContain("Do not lead with jargon.");
+  expect(systemPromptText).toContain("Metrics are evidence, not the mental model");
+  expect(systemPromptText).toContain("What objects and arrows Lukasz should picture.");
+});
+
 test("understand mode uses source-explained markdown for code behavior", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
@@ -272,6 +299,7 @@ test("understand mode uses source-explained markdown for code behavior", () => {
   expect(systemPromptText).toContain("what data/state exists");
   expect(systemPromptText).toContain("which condition or branch decides the next path");
   expect(systemPromptText).toContain("which collaborator receives control next");
+  expect(systemPromptText).toContain("Use source snippets after the mental model.");
   expect(systemPromptText).toContain('path="file:line-line"');
   expect(systemPromptText).toContain('```ts path="packages/example/src/runtime.ts:10-12"');
   expect(systemPromptText).toContain("Put short teaching comments directly inside the code fence immediately before the source line they explain.");
@@ -541,37 +569,43 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "Use read only for exact paths already evidenced by the parent prompt, glob, grep, a previous directory read, or a previous successful read.",
   );
   expect(systemPromptText).toContain(
-    "Use read_many when you already have several exact evidenced paths to inspect; batch those known paths in one call instead of issuing separate read calls.",
+    "When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
   );
   expect(systemPromptText).toContain(
-    "Use query_codebase_knowledge first for broad orientation when you need to locate where behavior, symbols, flows, or concepts live; treat results as compact pointers, not source truth.",
+    "After grep surfaces a symbol name, call locate_codebase_symbols with that name to get its exact file and start-end line span, then read that exact range.",
   );
   expect(systemPromptText).toContain(
-    "Use search_many when you have several independent glob and grep searches to map files or text before reading; batch those searches in one call instead of issuing separate glob/grep calls.",
+    "Call locate_codebase_symbols with filePaths to get a file's imports, exports, and symbol list before reading it.",
   );
   expect(systemPromptText).toContain(
-    "For broad exploration, start with query_codebase_knowledge when orientation is useful, use search_many for missing file/text discovery, then follow with one read_many for the exact relevant paths found.",
+    "When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
   );
   expect(systemPromptText).toContain(
-    "Always verify query_codebase_knowledge recommendations with read/read_many before relying on implementation details.",
+    "For many locate_codebase_symbols symbolNames or filePaths, prefer small batches and multiple concurrent locate_codebase_symbols calls over one large lookup.",
   );
   expect(systemPromptText).toContain(
-    "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+    "When several independent glob and grep searches are needed, request separate glob and grep calls in the same response step so the runtime can execute them concurrently.",
   );
   expect(systemPromptText).toContain(
-    "Prefer precise reads: use grep/search_many to locate relevant symbols first, then read only the file ranges needed to answer the question instead of broad full-file windows.",
+    "Always verify locate_codebase_symbols results with read before relying on implementation details.",
   );
   expect(systemPromptText).toContain(
-    "When grep/search_many returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
+    "For grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
+  );
+  expect(systemPromptText).toContain(
+    "Prefer precise reads: use grep to locate relevant symbols first, then read small file windows needed to answer the question instead of broad full-file windows.",
+  );
+  expect(systemPromptText).toContain(
+    "When grep returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
   );
   expect(systemPromptText).toContain(
     "If a result says content was truncated or omitted content is not currently visible, do not rely on or claim the omitted content; request a narrower follow-up read/search if those details matter.",
   );
   expect(systemPromptText).toContain(
-    "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with search_many, glob, or grep before reading.",
+    "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with glob or grep before reading.",
   );
   expect(systemPromptText).toContain(
-    "After a File not found result, do not retry another guessed path variant; use search_many, glob, grep, or a known parent directory read to discover the actual path.",
+    "After a File not found result, do not retry another guessed path variant; use glob, grep, or a known parent directory read to discover the actual path.",
   );
   expect(systemPromptText).toContain(
     "Do not guess read offsets. Continue only from line counts returned by a previous read result.",
@@ -581,16 +615,13 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "When multiple inspections are independent, request them together so they can run concurrently.",
   );
   expect(systemPromptText).toContain(
-    "Prefer larger independent read_many and search_many batches over many small sequential batches; the runtime can execute read-only batch children concurrently.",
+    "Prefer concurrent independent read, glob, and grep calls over many small sequential steps; the runtime can execute read-only tool calls concurrently.",
   );
   expect(systemPromptText).toContain(
-    "Batch independent glob and grep work with search_many aggressively, and use read_many for independent known paths, instead of waiting for one result when the inspections do not depend on each other.",
+    "Request independent glob, grep, and read calls together instead of waiting for one result when the inspections do not depend on each other.",
   );
   expect(systemPromptText).toContain(
-    "Run query_codebase_knowledge concurrently with independent read_many or search_many calls when those inspections do not depend on the query result.",
-  );
-  expect(systemPromptText).toContain(
-    "For broad prompts, start with query_codebase_knowledge for orientation when useful, search_many for independent mapping searches, then read the most relevant results in concurrent batches.",
+    "Run locate_codebase_symbols concurrently with independent read, glob, or grep calls when those inspections do not depend on its result.",
   );
   expect(systemPromptText).toContain("Do not modify files, run commands");
   expect(systemPromptText).toContain("Return a concise report for the parent assistant.");

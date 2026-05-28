@@ -1,16 +1,11 @@
 import { expect, test } from "bun:test";
-import type {
-  AssistantMessageConversationSessionEntry,
-  ConversationSessionEntry,
-  OpenAiProviderTurnReplayInputItem,
-} from "@buli/contracts";
+import type { ConversationSessionEntry } from "@buli/contracts";
 import {
-  OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
+  OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT,
   OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT,
   createOpenAiResponseReplayItems,
   createOpenAiResponsesInputItems,
 } from "../src/provider/request.ts";
-import type { OpenAiFunctionCallOutputInputItem } from "../src/provider/request.ts";
 
 test("createOpenAiResponsesInputItems serializes replayed conversation messages as plain string content", () => {
   expect(
@@ -272,6 +267,104 @@ test("createOpenAiResponsesInputItems keeps paired tool side effects from interr
   ]);
 });
 
+test("createOpenAiResponsesInputItems truncates large historical tool outputs from failed turns", () => {
+  const largeHistoricalToolResultText = `start-${"x".repeat(OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT)}-tail`;
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Read a large file",
+      modelFacingPromptText: "Read a large file",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_read",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "large.txt",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_read",
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: "large.txt",
+        readLineCount: 1,
+      },
+      toolResultText: largeHistoricalToolResultText,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "",
+      failureExplanation: "Provider failed mid-turn",
+    },
+  ]);
+
+  const assistantInputItem = projectedInputItems[1];
+  if (!assistantInputItem || "type" in assistantInputItem || assistantInputItem.role !== "assistant") {
+    throw new Error("Expected failed turn to project a historical assistant transcript.");
+  }
+
+  expect(assistantInputItem.content).toContain("start-");
+  expect(assistantInputItem.content).not.toContain("-tail");
+  expect(assistantInputItem.content).toContain(
+    "[Historical tool result truncated for model context: omitted",
+  );
+});
+
+test("createOpenAiResponsesInputItems applies a turn budget to failed historical tool transcripts", () => {
+  const failedTurnToolEntries: ConversationSessionEntry[] = Array.from({ length: 24 }, (_value, index) => [
+    {
+      entryKind: "tool_call" as const,
+      toolCallId: `call_read_${index}`,
+      toolCallRequest: {
+        toolName: "read" as const,
+        readTargetPath: `file-${index}.txt`,
+      },
+    },
+    {
+      entryKind: "completed_tool_result" as const,
+      toolCallId: `call_read_${index}`,
+      toolCallDetail: {
+        toolName: "read" as const,
+        readFilePath: `file-${index}.txt`,
+        readLineCount: 1,
+      },
+      toolResultText: `result-${index}-${"x".repeat(4_000)}-tail-${index}`,
+    },
+  ]).flat();
+
+  const projectedInputItems = createOpenAiResponsesInputItems([
+    {
+      entryKind: "user_prompt",
+      promptText: "Read many files",
+      modelFacingPromptText: "Read many files",
+    },
+    ...failedTurnToolEntries,
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "interrupted",
+      assistantMessageText: "",
+      interruptionReason: "Interrupted by user.",
+    },
+  ]);
+
+  const assistantInputItem = projectedInputItems[1];
+  if (!assistantInputItem || "type" in assistantInputItem || assistantInputItem.role !== "assistant") {
+    throw new Error("Expected interrupted turn to project a historical assistant transcript.");
+  }
+
+  expect(assistantInputItem.content.length).toBeLessThanOrEqual(
+    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT,
+  );
+  expect(assistantInputItem.content).toContain("result-0-");
+  expect(assistantInputItem.content).not.toContain("-tail-23");
+  expect(assistantInputItem.content).toContain(
+    "[Historical tool transcript truncated for model context: omitted",
+  );
+});
+
 test("createOpenAiResponsesInputItems starts at the latest compaction summary", () => {
   expect(
     createOpenAiResponsesInputItems([
@@ -368,7 +461,7 @@ test("createOpenAiResponsesInputItems ignores retained recent entries after comp
   ]);
 });
 
-test("createOpenAiResponsesInputItems replays stored OpenAI tool items before the assistant message", () => {
+test("createOpenAiResponsesInputItems keeps historical OpenAI tool replay out of future requests", () => {
   expect(
     createOpenAiResponsesInputItems([
       {
@@ -429,90 +522,15 @@ test("createOpenAiResponsesInputItems replays stored OpenAI tool items before th
       content: "Run pwd",
     },
     {
-      type: "reasoning",
-      id: "rs_1",
-      encrypted_content: "encrypted-reasoning",
-      summary: [{ type: "summary_text", text: "I should inspect the directory first." }],
-    },
-    {
-      type: "function_call",
-      id: "fc_1",
-      call_id: "call_1",
-      name: "bash",
-      arguments: '{"command":"pwd","description":"Print working directory"}',
-    },
-    {
-      type: "function_call_output",
-      call_id: "call_1",
-      output: "Working directory: /tmp/demo",
-    },
-    {
       role: "assistant",
       content: "Done.",
     },
   ]);
 });
 
-test("createOpenAiResponsesInputItems keeps historical tool outputs below the aggregate turn budget full", () => {
-  const storedFunctionCallOutputText = `read-start-${"x".repeat(12_000)}-read-end`;
-  const projectedInputItems = createOpenAiResponsesInputItems([
-    {
-      entryKind: "user_prompt",
-      promptText: "Read file",
-      modelFacingPromptText: "Read file",
-    },
-    {
-      entryKind: "tool_call",
-      toolCallId: "call_read_small",
-      toolCallRequest: {
-        toolName: "read",
-        readTargetPath: "README.md",
-      },
-    },
-    {
-      entryKind: "completed_tool_result",
-      toolCallId: "call_read_small",
-      toolCallDetail: {
-        toolName: "read",
-        readFilePath: "README.md",
-      },
-      toolResultText: storedFunctionCallOutputText,
-    },
-    {
-      entryKind: "assistant_message",
-      assistantMessageStatus: "completed",
-      assistantMessageText: "Done.",
-      providerTurnReplay: {
-        provider: "openai",
-        inputItems: [
-          {
-            type: "function_call",
-            id: "fc_read_small",
-            call_id: "call_read_small",
-            name: "read",
-            arguments: '{"filePath":"README.md"}',
-          },
-          {
-            type: "function_call_output",
-            call_id: "call_read_small",
-            output: storedFunctionCallOutputText,
-          },
-        ],
-      },
-    },
-  ]);
-
-  const projectedFunctionCallOutputItem = projectedInputItems.find(
-    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
-      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
-  );
-
-  expect(projectedFunctionCallOutputItem?.output).toBe(storedFunctionCallOutputText);
-});
-
-test("createOpenAiResponsesInputItems budgets historical tool outputs at request projection without mutating stored replay", () => {
+test("createOpenAiResponsesInputItems preserves archived provider replay while omitting it from future requests", () => {
   const storedFunctionCallOutputText = `start-${"x".repeat(96_000)}-end`;
-  const assistantMessageEntry = {
+  const assistantMessageEntry: ConversationSessionEntry = {
     entryKind: "assistant_message",
     assistantMessageStatus: "completed",
     assistantMessageText: "Done.",
@@ -533,7 +551,7 @@ test("createOpenAiResponsesInputItems budgets historical tool outputs at request
         },
       ],
     },
-  } satisfies AssistantMessageConversationSessionEntry;
+  };
 
   const projectedInputItems = createOpenAiResponsesInputItems([
     {
@@ -564,364 +582,26 @@ test("createOpenAiResponsesInputItems budgets historical tool outputs at request
     assistantMessageEntry,
   ]);
 
-  const projectedFunctionCallOutputItem = projectedInputItems.find(
-    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
-      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
-  );
-
   expect(projectedInputItems.map((projectedInputItem) =>
     "type" in projectedInputItem ? projectedInputItem.type : projectedInputItem.role
   )).toEqual([
     "user",
-    "function_call",
-    "function_call_output",
     "assistant",
   ]);
-  expect(projectedFunctionCallOutputItem).toBeDefined();
-  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
-  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
-    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
-  );
-  expect(projectedFunctionCallOutputItem?.output.startsWith("start-")).toBe(true);
-  expect(projectedFunctionCallOutputItem?.output).toContain("Historical tool output was truncated only for this future request projection.");
-  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
-  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_1");
-  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: bash");
-  expect(projectedFunctionCallOutputItem?.output).toContain("toolResultEntryKind: completed_tool_result");
-  expect(projectedFunctionCallOutputItem?.output).toContain(`originalCharacterCount: ${storedFunctionCallOutputText.length}`);
-  expect(projectedFunctionCallOutputItem?.output).toContain(
-    `projectedCharacterBudget: ${OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT}`,
-  );
-  expect(projectedFunctionCallOutputItem?.output).toContain("Do not rely on omitted content; request a narrower follow-up tool call if those details are needed.");
-  expect(projectedFunctionCallOutputItem?.output.endsWith("-end")).toBe(true);
-  const storedFunctionCallOutputItem = assistantMessageEntry.providerTurnReplay.inputItems.find(
-    (providerTurnReplayInputItem): providerTurnReplayInputItem is OpenAiFunctionCallOutputInputItem =>
-      providerTurnReplayInputItem.type === "function_call_output",
-  );
-  expect(storedFunctionCallOutputItem?.output).toBe(storedFunctionCallOutputText);
-});
-
-test("createOpenAiResponsesInputItems budgets historical read outputs with an explicit projection marker", () => {
-  const storedFunctionCallOutputText = `read-start-${"x".repeat(96_000)}-read-end`;
-  const projectedInputItems = createOpenAiResponsesInputItems([
-    {
-      entryKind: "user_prompt",
-      promptText: "Read file",
-      modelFacingPromptText: "Read file",
-    },
-    {
-      entryKind: "tool_call",
-      toolCallId: "call_read",
-      toolCallRequest: {
-        toolName: "read",
-        readTargetPath: "README.md",
-      },
-    },
-    {
-      entryKind: "completed_tool_result",
-      toolCallId: "call_read",
-      toolCallDetail: {
-        toolName: "read",
-        readFilePath: "README.md",
-      },
-      toolResultText: storedFunctionCallOutputText,
-    },
-    {
-      entryKind: "assistant_message",
-      assistantMessageStatus: "completed",
-      assistantMessageText: "Done.",
-      providerTurnReplay: {
-        provider: "openai",
-        inputItems: [
-          {
-            type: "function_call",
-            id: "fc_read",
-            call_id: "call_read",
-            name: "read",
-            arguments: '{"filePath":"README.md"}',
-          },
-          {
-            type: "function_call_output",
-            call_id: "call_read",
-            output: storedFunctionCallOutputText,
-          },
-        ],
-      },
-    },
+  expect(projectedInputItems).toEqual([
+    { role: "user", content: "Generate output" },
+    { role: "assistant", content: "Done." },
   ]);
-
-  const projectedFunctionCallOutputItem = projectedInputItems.find(
-    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
-      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
+  const storedFunctionCallOutputItem = assistantMessageEntry.entryKind === "assistant_message"
+    ? assistantMessageEntry.providerTurnReplay?.provider === "openai"
+      ? assistantMessageEntry.providerTurnReplay.inputItems.find((providerTurnReplayInputItem) =>
+        providerTurnReplayInputItem.type === "function_call_output"
+      )
+      : undefined
+    : undefined;
+  expect(storedFunctionCallOutputItem).toMatchObject(
+    { type: "function_call_output", call_id: "call_1", output: storedFunctionCallOutputText },
   );
-
-  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
-  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
-    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
-  );
-  expect(projectedFunctionCallOutputItem?.output.startsWith("read-start-")).toBe(true);
-  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
-  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_read");
-  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: read");
-  expect(projectedFunctionCallOutputItem?.output.endsWith("-read-end")).toBe(true);
-});
-
-test("createOpenAiResponsesInputItems budgets non-zero historical bash outputs with an explicit projection marker", () => {
-  const storedFunctionCallOutputText = `nonzero-start-${"x".repeat(96_000)}-nonzero-end`;
-  const projectedInputItems = createOpenAiResponsesInputItems([
-    {
-      entryKind: "user_prompt",
-      promptText: "Run failing command",
-      modelFacingPromptText: "Run failing command",
-    },
-    {
-      entryKind: "tool_call",
-      toolCallId: "call_bash",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "generate-failure",
-        commandDescription: "Generate failure",
-      },
-    },
-    {
-      entryKind: "completed_tool_result",
-      toolCallId: "call_bash",
-      toolCallDetail: {
-        toolName: "bash",
-        commandLine: "generate-failure",
-        commandDescription: "Generate failure",
-        exitCode: 1,
-      },
-      toolResultText: storedFunctionCallOutputText,
-    },
-    {
-      entryKind: "assistant_message",
-      assistantMessageStatus: "completed",
-      assistantMessageText: "Done.",
-      providerTurnReplay: {
-        provider: "openai",
-        inputItems: [
-          {
-            type: "function_call",
-            id: "fc_bash",
-            call_id: "call_bash",
-            name: "bash",
-            arguments: '{"command":"generate-failure","description":"Generate failure"}',
-          },
-          {
-            type: "function_call_output",
-            call_id: "call_bash",
-            output: storedFunctionCallOutputText,
-          },
-        ],
-      },
-    },
-  ]);
-
-  const projectedFunctionCallOutputItem = projectedInputItems.find(
-    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
-      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
-  );
-
-  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
-  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
-    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
-  );
-  expect(projectedFunctionCallOutputItem?.output.startsWith("nonzero-start-")).toBe(true);
-  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
-  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_bash");
-  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: bash");
-  expect(projectedFunctionCallOutputItem?.output).toContain("toolResultEntryKind: completed_tool_result");
-  expect(projectedFunctionCallOutputItem?.output.endsWith("-nonzero-end")).toBe(true);
-});
-
-test("createOpenAiResponsesInputItems budgets failed historical bash outputs with an explicit projection marker", () => {
-  const storedFunctionCallOutputText = `failed-start-${"x".repeat(96_000)}-failed-end`;
-  const projectedInputItems = createOpenAiResponsesInputItems([
-    {
-      entryKind: "user_prompt",
-      promptText: "Run command",
-      modelFacingPromptText: "Run command",
-    },
-    {
-      entryKind: "tool_call",
-      toolCallId: "call_failed_bash",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "generate-error",
-        commandDescription: "Generate error",
-      },
-    },
-    {
-      entryKind: "failed_tool_result",
-      toolCallId: "call_failed_bash",
-      toolCallDetail: {
-        toolName: "bash",
-        commandLine: "generate-error",
-        commandDescription: "Generate error",
-      },
-      toolResultText: storedFunctionCallOutputText,
-      failureExplanation: "executor failed",
-    },
-    {
-      entryKind: "assistant_message",
-      assistantMessageStatus: "completed",
-      assistantMessageText: "Done.",
-      providerTurnReplay: {
-        provider: "openai",
-        inputItems: [
-          {
-            type: "function_call",
-            id: "fc_failed_bash",
-            call_id: "call_failed_bash",
-            name: "bash",
-            arguments: '{"command":"generate-error","description":"Generate error"}',
-          },
-          {
-            type: "function_call_output",
-            call_id: "call_failed_bash",
-            output: storedFunctionCallOutputText,
-          },
-        ],
-      },
-    },
-  ]);
-
-  const projectedFunctionCallOutputItem = projectedInputItems.find(
-    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
-      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
-  );
-
-  expect(projectedFunctionCallOutputItem?.output).not.toBe(storedFunctionCallOutputText);
-  expect(projectedFunctionCallOutputItem?.output.length).toBeLessThanOrEqual(
-    OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT,
-  );
-  expect(projectedFunctionCallOutputItem?.output.startsWith("failed-start-")).toBe(true);
-  expect(projectedFunctionCallOutputItem?.output).toContain("omitted content is not currently visible in this request");
-  expect(projectedFunctionCallOutputItem?.output).toContain("sourceToolCallId: call_failed_bash");
-  expect(projectedFunctionCallOutputItem?.output).toContain("toolName: bash");
-  expect(projectedFunctionCallOutputItem?.output).toContain("toolResultEntryKind: failed_tool_result");
-  expect(projectedFunctionCallOutputItem?.output.endsWith("-failed-end")).toBe(true);
-});
-
-test("createOpenAiResponsesInputItems keeps aggregate historical replay projection within the turn budget", () => {
-  const readOutputText = `read-start-${"r".repeat(16_000)}-read-end`;
-  const failedBashOutputText = `failed-start-${"f".repeat(16_000)}-failed-end`;
-  const readToolSessionEntries = Array.from({ length: 8 }, (_, readIndex): ConversationSessionEntry[] => [
-    {
-      entryKind: "tool_call",
-      toolCallId: `call_read_${readIndex}`,
-      toolCallRequest: {
-        toolName: "read",
-        readTargetPath: `file-${readIndex}.ts`,
-      },
-    },
-    {
-      entryKind: "completed_tool_result",
-      toolCallId: `call_read_${readIndex}`,
-      toolCallDetail: {
-        toolName: "read",
-        readFilePath: `file-${readIndex}.ts`,
-      },
-      toolResultText: readOutputText,
-    },
-  ]).flat();
-  const readReplayInputItems = Array.from({ length: 8 }, (_, readIndex): OpenAiProviderTurnReplayInputItem[] => [
-    {
-      type: "function_call",
-      id: `fc_read_${readIndex}`,
-      call_id: `call_read_${readIndex}`,
-      name: "read",
-      arguments: JSON.stringify({ filePath: `file-${readIndex}.ts` }),
-    },
-    {
-      type: "function_call_output",
-      call_id: `call_read_${readIndex}`,
-      output: readOutputText,
-    },
-  ]).flat();
-  const assistantMessageEntry = {
-    entryKind: "assistant_message",
-    assistantMessageStatus: "completed",
-    assistantMessageText: "Done.",
-    providerTurnReplay: {
-      provider: "openai",
-      inputItems: [
-        ...readReplayInputItems,
-        {
-          type: "function_call",
-          id: "fc_failed_bash",
-          call_id: "call_failed_bash",
-          name: "bash",
-          arguments: '{"command":"generate-error","description":"Generate error"}',
-        },
-        {
-          type: "function_call_output",
-          call_id: "call_failed_bash",
-          output: failedBashOutputText,
-        },
-      ],
-    },
-  } satisfies AssistantMessageConversationSessionEntry;
-  const projectedInputItems = createOpenAiResponsesInputItems([
-    {
-      entryKind: "user_prompt",
-      promptText: "Inspect many outputs",
-      modelFacingPromptText: "Inspect many outputs",
-    },
-    ...readToolSessionEntries,
-    {
-      entryKind: "tool_call",
-      toolCallId: "call_failed_bash",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "generate-error",
-        commandDescription: "Generate error",
-      },
-    },
-    {
-      entryKind: "failed_tool_result",
-      toolCallId: "call_failed_bash",
-      toolCallDetail: {
-        toolName: "bash",
-        commandLine: "generate-error",
-        commandDescription: "Generate error",
-      },
-      toolResultText: failedBashOutputText,
-      failureExplanation: "executor failed",
-    },
-    assistantMessageEntry,
-  ]);
-
-  const projectedFunctionCallOutputItems = projectedInputItems.filter(
-    (projectedInputItem): projectedInputItem is OpenAiFunctionCallOutputInputItem =>
-      "type" in projectedInputItem && projectedInputItem.type === "function_call_output",
-  );
-  const projectedOutputTextLength = projectedFunctionCallOutputItems.reduce(
-    (totalTextLength, projectedFunctionCallOutputItem) => totalTextLength + projectedFunctionCallOutputItem.output.length,
-    0,
-  );
-  const firstProjectedReadOutput = projectedFunctionCallOutputItems.find((projectedFunctionCallOutputItem) =>
-    projectedFunctionCallOutputItem.call_id === "call_read_0"
-  );
-  const projectedFailedBashOutput = projectedFunctionCallOutputItems.find((projectedFunctionCallOutputItem) =>
-    projectedFunctionCallOutputItem.call_id === "call_failed_bash"
-  );
-
-  expect(projectedOutputTextLength).toBeLessThanOrEqual(OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT);
-  expect(firstProjectedReadOutput).toBeDefined();
-  expect(projectedFailedBashOutput).toBeDefined();
-  if (!firstProjectedReadOutput || !projectedFailedBashOutput) {
-    throw new Error("Expected projected read and failed bash outputs to be present.");
-  }
-  expect(projectedFailedBashOutput.output.length).toBeGreaterThan(firstProjectedReadOutput.output.length);
-  expect(firstProjectedReadOutput.output).toContain("omitted content is not currently visible in this request");
-  expect(projectedFailedBashOutput.output).toContain("toolResultEntryKind: failed_tool_result");
-  expect(assistantMessageEntry.providerTurnReplay.inputItems.at(-1)).toEqual({
-    type: "function_call_output",
-    call_id: "call_failed_bash",
-    output: failedBashOutputText,
-  });
 });
 
 test("createOpenAiResponseReplayItems reconstructs reasoning, assistant text, and function calls from response output", () => {
@@ -1015,7 +695,7 @@ test("createOpenAiResponseReplayItems concatenates only valid assistant output t
   });
 });
 
-test("createOpenAiResponsesInputItems falls back to assistant transcript text for legacy tool history without replay state", () => {
+test("createOpenAiResponsesInputItems keeps legacy tool history out of completed future request context", () => {
   expect(
     createOpenAiResponsesInputItems([
       {
@@ -1051,11 +731,6 @@ test("createOpenAiResponsesInputItems falls back to assistant transcript text fo
     {
       role: "user",
       content: "Run pwd",
-    },
-    {
-      role: "assistant",
-      content:
-        "[assistant tool call call_1]\nTool: bash\nCommand: pwd\nDescription: Print working directory\n\n[assistant tool result call_1]\nWorking directory: /tmp/demo",
     },
     {
       role: "assistant",
@@ -1111,16 +786,12 @@ test("createOpenAiResponsesInputItems keeps segmented assistant text as terminal
     },
     {
       role: "assistant",
-      content: "[assistant tool call call_read]\nTool: read\nPath: README.md\n\n[assistant tool result call_read]\n1: # Demo",
-    },
-    {
-      role: "assistant",
       content: "I will inspect README first.\n\nREADME.md contains a Demo heading.",
     },
   ]);
 });
 
-test("createOpenAiResponsesInputItems includes typed tools in legacy transcript fallback", () => {
+test("createOpenAiResponsesInputItems keeps completed typed tool history out of future request context", () => {
   expect(
     createOpenAiResponsesInputItems([
       {
@@ -1218,19 +889,6 @@ test("createOpenAiResponsesInputItems includes typed tools in legacy transcript 
     {
       role: "user",
       content: "Inspect files",
-    },
-    {
-      role: "assistant",
-      content: [
-        "[assistant tool call call_read]\nTool: read\nPath: README.md\nOffset line: 2\nLine limit: 5",
-        "[assistant tool result call_read]\n2: docs",
-        "[assistant tool call call_glob]\nTool: glob\nPattern: **/*.ts\nDirectory: packages",
-        "[assistant tool result call_glob]\npackages/contracts/src/index.ts",
-        "[assistant tool call call_grep]\nTool: grep\nPattern: ToolCallRequest\nPath: packages\nInclude: *.ts",
-        "[assistant tool failure call_grep]\nGrep failed: invalid regex",
-        "[assistant tool call call_task]\nTool: task\nSubagent: explore\nDescription: map contracts\nPrompt: Inspect contracts and summarize tool request types.",
-        "[assistant tool result call_task]\ncontracts define typed tool requests",
-      ].join("\n\n"),
     },
     {
       role: "assistant",

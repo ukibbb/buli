@@ -2,7 +2,7 @@ import type {
   ProviderRequestedToolCall,
   ProviderStreamEvent,
   TokenUsage,
-  ToolCallRequest,
+  AssistantToolCallRequest,
 } from "@buli/contracts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import type { OpenAiProviderFunctionCallIntent } from "./toolDefinitions.ts";
@@ -11,7 +11,7 @@ export function createProviderTextChunkEvent(text: string): ProviderStreamEvent 
   return { type: "text_chunk", text };
 }
 
-export function createProviderToolCallRequestedEvent(toolCallId: string, toolCallRequest: ToolCallRequest): ProviderStreamEvent {
+export function createProviderToolCallRequestedEvent(toolCallId: string, toolCallRequest: AssistantToolCallRequest): ProviderStreamEvent {
   return { type: "tool_call_requested", toolCallId, toolCallRequest };
 }
 

@@ -108,14 +108,12 @@ export type {
 } from "./tools/fileMutationDiff.ts";
 export { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
 export { createStartedGrepToolCallDetail, runGrepToolCall } from "./tools/grepTool.ts";
-export { createStartedQueryCodebaseKnowledgeToolCallDetail, runQueryCodebaseKnowledgeToolCall } from "./tools/queryCodebaseKnowledgeTool.ts";
+export { createStartedLocateCodebaseSymbolsToolCallDetail, runLocateCodebaseSymbolsToolCall } from "./tools/locateCodebaseSymbolsTool.ts";
 export {
   createStartedReadToolCallDetail,
   runReadToolCall,
   TypeScriptWorkspaceTextFileLineWindowReader,
 } from "./tools/readTool.ts";
-export { createStartedReadManyToolCallDetail, runReadManyToolCall } from "./tools/readManyTool.ts";
-export { createStartedSearchManyToolCallDetail, runSearchManyToolCall } from "./tools/searchManyTool.ts";
 export { createStartedSkillToolCallDetail, runSkillToolCall } from "./tools/skillTool.ts";
 export { createStartedWriteToolCallDetail, prepareWriteToolCall, runPreparedWriteToolCall } from "./tools/writeTool.ts";
 export {
@@ -152,8 +150,6 @@ export type {
   WorkspaceTextFileLineWindowReader,
   WorkspaceTextFileLineWindowRequest,
 } from "./tools/readTool.ts";
-export type { ReadManyToolCallConcurrencyLimiter } from "./tools/readManyTool.ts";
-export type { SearchManyToolCallConcurrencyLimiter } from "./tools/searchManyTool.ts";
 export type { CaptureWorkspacePatchInput, WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 export type {
   ActiveConversationTurn,

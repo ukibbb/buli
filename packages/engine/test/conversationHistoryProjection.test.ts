@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import type { ConversationSessionEntry, ModelContextItem } from "@buli/contracts";
+import {
+  HISTORICAL_TOOL_RESULT_TEXT_PER_OUTPUT_MAX_CHARACTER_COUNT,
+  type ConversationSessionEntry,
+  type ModelContextItem,
+} from "@buli/contracts";
 import {
   projectConversationSessionEntriesToModelContextItems,
   projectConversationSessionEntryToModelContextItems,
@@ -152,21 +156,11 @@ test("projectConversationSessionEntriesToModelContextItems projects completed an
     { itemKind: "user_message", messageText: "First prompt" },
     { itemKind: "assistant_message", messageText: "First answer" },
     { itemKind: "user_message", messageText: "Second prompt" },
-    {
-      itemKind: "tool_call",
-      toolCallId: "call_1",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print working directory",
-      },
-    },
-    { itemKind: "tool_result", toolCallId: "call_1", toolResultText: "Working directory: /tmp" },
     { itemKind: "assistant_message", messageText: "Second partial answer" },
   ]);
 });
 
-test("projectConversationSessionEntriesToModelContextItems includes paired typed tool calls and results", () => {
+test("projectConversationSessionEntriesToModelContextItems keeps completed tool outputs out of future active context", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
@@ -237,12 +231,6 @@ test("projectConversationSessionEntriesToModelContextItems includes paired typed
 
   expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
     { itemKind: "user_message", messageText: "Inspect files" },
-    { itemKind: "tool_call", toolCallId: "call_read", toolCallRequest: { toolName: "read", readTargetPath: "README.md" } },
-    { itemKind: "tool_result", toolCallId: "call_read", toolResultText: "1: # buli" },
-    { itemKind: "tool_call", toolCallId: "call_glob", toolCallRequest: { toolName: "glob", globPattern: "**/*.ts" } },
-    { itemKind: "tool_result", toolCallId: "call_glob", toolResultText: "src/index.ts" },
-    { itemKind: "tool_call", toolCallId: "call_grep", toolCallRequest: { toolName: "grep", regexPattern: "ToolCallRequest" } },
-    { itemKind: "tool_result", toolCallId: "call_grep", toolResultText: "Grep failed: invalid regex" },
     { itemKind: "assistant_message", messageText: "Inspection complete." },
   ]);
 });
@@ -320,6 +308,58 @@ test("projectConversationSessionEntriesToModelContextItems keeps completed tool 
     },
     { itemKind: "tool_result", toolCallId: "call_write", toolResultText: "Wrote generated.txt" },
   ]);
+});
+
+test("projectConversationSessionEntriesToModelContextItems truncates large failed-turn tool side effects", () => {
+  const largeHistoricalToolResultText = `start-${"x".repeat(HISTORICAL_TOOL_RESULT_TEXT_PER_OUTPUT_MAX_CHARACTER_COUNT)}-tail`;
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Read a large file",
+      modelFacingPromptText: "Read a large file",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_read",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "large.txt",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_read",
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: "large.txt",
+        readLineCount: 1,
+      },
+      toolResultText: largeHistoricalToolResultText,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "failed",
+      assistantMessageText: "",
+      failureExplanation: "Provider failed mid-turn",
+    },
+  ];
+
+  const projectedModelContextItems = projectConversationSessionEntriesToModelContextItems(conversationSessionEntries);
+  const toolResultModelContextItem = projectedModelContextItems.find(
+    (modelContextItem) => modelContextItem.itemKind === "tool_result",
+  );
+  if (!toolResultModelContextItem || toolResultModelContextItem.itemKind !== "tool_result") {
+    throw new Error("Expected failed turn to project its paired tool result.");
+  }
+
+  expect(toolResultModelContextItem.toolResultText.length).toBeLessThanOrEqual(
+    HISTORICAL_TOOL_RESULT_TEXT_PER_OUTPUT_MAX_CHARACTER_COUNT,
+  );
+  expect(toolResultModelContextItem.toolResultText).toContain("start-");
+  expect(toolResultModelContextItem.toolResultText).not.toContain("-tail");
+  expect(toolResultModelContextItem.toolResultText).toContain(
+    "[Historical tool result truncated for model context: omitted",
+  );
 });
 
 test("projectConversationSessionEntriesToModelContextItems skips interrupted turns", () => {

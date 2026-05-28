@@ -43,6 +43,22 @@ test("TreeSitterTypeScriptCodebaseStructureIndexer indexes TypeScript imports an
 
   expect(indexedFile.hasSyntaxError).toBe(false);
   expect(indexedFile.importedModuleSpecifiers).toEqual(["./provider.ts", "node:crypto"]);
+  expect(indexedFile.importDeclarations).toEqual([
+    {
+      moduleSpecifier: "node:crypto",
+      importedSymbolNames: ["randomUUID"],
+      isTypeOnly: false,
+      startLineNumber: 1,
+      endLineNumber: 1,
+    },
+    {
+      moduleSpecifier: "./provider.ts",
+      importedSymbolNames: ["ProviderConversationTurn"],
+      isTypeOnly: true,
+      startLineNumber: 2,
+      endLineNumber: 2,
+    },
+  ]);
   expect(indexedFile.symbols.map((symbol) => [symbol.symbolName, symbol.symbolKind, symbol.isExported])).toEqual([
     ["streamAssistantResponseEventsForRequestedToolCalls", "function", true],
     ["LocalRuntimeState", "type", false],
@@ -54,11 +70,34 @@ test("TreeSitterTypeScriptCodebaseStructureIndexer indexes TypeScript imports an
     "RuntimeToolBoundary",
     "createRuntimeToolBoundary",
   ]);
+  expect(indexedFile.exportDeclarations).toEqual([
+    {
+      exportedSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      startLineNumber: 4,
+      endLineNumber: 6,
+    },
+    {
+      exportedSymbolNames: ["RuntimeToolBoundary"],
+      startLineNumber: 9,
+      endLineNumber: 9,
+    },
+    {
+      exportedSymbolNames: ["createRuntimeToolBoundary"],
+      startLineNumber: 10,
+      endLineNumber: 10,
+    },
+  ]);
+  expect(indexedFile.symbols.find((symbol) => symbol.symbolName === "streamAssistantResponseEventsForRequestedToolCalls")?.declarationPreview)
+    .toEqual({ declarationPreviewText: "export function streamAssistantResponseEventsForRequestedToolCalls() { … }" });
   expect(indexedFile.knowledgeRecords.find((record) => record.recordKind === "file")?.summary).toContain(
     "defines exported function streamAssistantResponseEventsForRequestedToolCalls",
   );
+  expect(indexedFile.knowledgeRecords.find((record) => record.recordKind === "file")).toMatchObject({
+    importDeclarations: indexedFile.importDeclarations,
+    exportDeclarations: indexedFile.exportDeclarations,
+  });
   expect(indexedFile.knowledgeRecords.find((record) => record.recordId.includes("createRuntimeToolBoundary"))).toMatchObject({
-    freshness: "fresh",
+    declarationPreview: { declarationPreviewText: "export const createRuntimeToolBoundary = …" },
     updatedAtMs: 123,
   });
 });
@@ -107,6 +146,36 @@ test("TreeSitterCodebaseStructureIndexer indexes Python imports and public symbo
   expect(indexedFile.languageId).toBe("python");
   expect(indexedFile.hasSyntaxError).toBe(false);
   expect(indexedFile.importedModuleSpecifiers).toEqual(["__future__", "billing.invoices", "os", "pathlib"]);
+  expect(indexedFile.importDeclarations).toEqual([
+    {
+      moduleSpecifier: "__future__",
+      importedSymbolNames: ["annotations"],
+      isTypeOnly: false,
+      startLineNumber: 1,
+      endLineNumber: 1,
+    },
+    {
+      moduleSpecifier: "os",
+      importedSymbolNames: ["os"],
+      isTypeOnly: false,
+      startLineNumber: 2,
+      endLineNumber: 2,
+    },
+    {
+      moduleSpecifier: "pathlib",
+      importedSymbolNames: ["pathlib", "pathlib_module"],
+      isTypeOnly: false,
+      startLineNumber: 2,
+      endLineNumber: 2,
+    },
+    {
+      moduleSpecifier: "billing.invoices",
+      importedSymbolNames: ["Invoice"],
+      isTypeOnly: false,
+      startLineNumber: 3,
+      endLineNumber: 3,
+    },
+  ]);
   expect(indexedFile.symbols.map((symbol) => [symbol.symbolName, symbol.symbolKind, symbol.isExported])).toEqual([
     ["DEFAULT_RETRY_COUNT", "variable", true],
     ["OrderProcessor", "class", true],
@@ -118,11 +187,29 @@ test("TreeSitterCodebaseStructureIndexer indexes Python imports and public symbo
     "OrderProcessor",
     "confirm_order_payment",
   ]);
+  expect(indexedFile.exportDeclarations).toEqual([
+    {
+      exportedSymbolNames: ["DEFAULT_RETRY_COUNT"],
+      startLineNumber: 5,
+      endLineNumber: 5,
+    },
+    {
+      exportedSymbolNames: ["OrderProcessor"],
+      startLineNumber: 7,
+      endLineNumber: 8,
+    },
+    {
+      exportedSymbolNames: ["confirm_order_payment"],
+      startLineNumber: 10,
+      endLineNumber: 12,
+    },
+  ]);
+  expect(indexedFile.symbols.find((symbol) => symbol.symbolName === "confirm_order_payment")?.declarationPreview)
+    .toEqual({ declarationPreviewText: "def confirm_order_payment(order_id: str) -> None:" });
   expect(indexedFile.knowledgeRecords.find((record) => record.recordKind === "file")?.summary).toContain(
     "python file src/order_processing.py imports __future__, billing.invoices, os, pathlib",
   );
   expect(indexedFile.knowledgeRecords.find((record) => record.recordId.includes("_normalize_order_id"))).toMatchObject({
-    freshness: "fresh",
     tags: ["python", "_normalize_order_id", "function", "private"],
     updatedAtMs: 456,
   });

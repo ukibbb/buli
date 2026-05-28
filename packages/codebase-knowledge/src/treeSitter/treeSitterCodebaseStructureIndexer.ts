@@ -2,11 +2,14 @@ import { createHash } from "node:crypto";
 import { Parser, type Node } from "web-tree-sitter";
 import type {
   CodebaseEvidenceSourceRange,
+  CodebaseExportDeclaration,
   CodebaseFileKnowledgeRecord,
+  CodebaseImportDeclaration,
   CodebaseKnowledgeRecord,
   CodebaseStructureFileRecord,
   CodebaseStructureIndexer,
   CodebaseStructureSymbolRecord,
+  CodebaseSymbolDeclarationPreview,
   CodebaseSymbolKind,
   CodebaseSymbolKnowledgeRecord,
 } from "../codebaseKnowledgeTypes.ts";
@@ -43,23 +46,34 @@ export class TreeSitterCodebaseStructureIndexer implements CodebaseStructureInde
     }
 
     try {
-      const contentHash = createContentHash(input.fileText);
-      const importedModuleSpecifiers = collectImportedModuleSpecifiers({
+      const contentHash = createCodebaseSourceContentHash(input.fileText);
+      const importDeclarations = collectImportDeclarations({
         rootNode: syntaxTree.rootNode,
         languageKind,
       });
+      const importedModuleSpecifiers = listUniqueSortedStrings(importDeclarations.map((importDeclaration) => importDeclaration.moduleSpecifier));
       const symbols = collectTopLevelSymbols({
         rootNode: syntaxTree.rootNode,
         languageKind,
       });
-      const exportedSymbolNames = symbols.filter((symbol) => symbol.isExported).map((symbol) => symbol.symbolName);
+      const exportDeclarations = collectExportDeclarations({
+        rootNode: syntaxTree.rootNode,
+        languageKind,
+        symbols,
+      });
+      const exportedSymbolNames = listUniqueStringsInEncounterOrder([
+        ...symbols.filter((symbol) => symbol.isExported).map((symbol) => symbol.symbolName),
+        ...exportDeclarations.flatMap((exportDeclaration) => exportDeclaration.exportedSymbolNames),
+      ]);
       const knowledgeRecords = buildKnowledgeRecordsForIndexedFile({
         filePath: input.filePath,
         fileText: input.fileText,
         languageKind,
         contentHash,
         importedModuleSpecifiers,
+        importDeclarations,
         exportedSymbolNames,
+        exportDeclarations,
         symbols,
         indexedAtMs: input.indexedAtMs ?? Date.now(),
       });
@@ -70,7 +84,9 @@ export class TreeSitterCodebaseStructureIndexer implements CodebaseStructureInde
         contentHash,
         hasSyntaxError: syntaxTree.rootNode.hasError,
         importedModuleSpecifiers,
+        importDeclarations,
         exportedSymbolNames,
+        exportDeclarations,
         symbols,
         knowledgeRecords,
       };
@@ -91,17 +107,17 @@ export async function createTreeSitterTypeScriptCodebaseStructureIndexer(): Prom
   return createTreeSitterCodebaseStructureIndexer();
 }
 
-function collectImportedModuleSpecifiers(input: {
+function collectImportDeclarations(input: {
   rootNode: Node;
   languageKind: TreeSitterCodebaseLanguageKind;
-}): readonly string[] {
+}): readonly CodebaseImportDeclaration[] {
   return input.languageKind === "python"
-    ? collectPythonImportedModuleSpecifiers(input.rootNode)
-    : collectTypeScriptImportedModuleSpecifiers(input.rootNode);
+    ? collectPythonImportDeclarations(input.rootNode)
+    : collectTypeScriptImportDeclarations(input.rootNode);
 }
 
-function collectTypeScriptImportedModuleSpecifiers(rootNode: Node): readonly string[] {
-  const importedModuleSpecifierSet = new Set<string>();
+function collectTypeScriptImportDeclarations(rootNode: Node): readonly CodebaseImportDeclaration[] {
+  const importDeclarations: CodebaseImportDeclaration[] = [];
 
   for (const childNode of rootNode.namedChildren) {
     if (childNode.type !== "import_statement") {
@@ -110,38 +126,97 @@ function collectTypeScriptImportedModuleSpecifiers(rootNode: Node): readonly str
 
     const sourceNode = childNode.childForFieldName("source");
     if (sourceNode) {
-      importedModuleSpecifierSet.add(stripStringLiteralQuotes(sourceNode.text));
+      importDeclarations.push({
+        moduleSpecifier: stripStringLiteralQuotes(sourceNode.text),
+        importedSymbolNames: parseTypeScriptImportedSymbolNames(childNode.text),
+        isTypeOnly: isTypeScriptImportDeclarationTypeOnly(childNode.text),
+        ...createSourceLineRange(childNode),
+      });
     }
   }
 
-  return [...importedModuleSpecifierSet].sort();
+  return importDeclarations;
 }
 
-function collectPythonImportedModuleSpecifiers(rootNode: Node): readonly string[] {
-  const importedModuleSpecifierSet = new Set<string>();
+function collectPythonImportDeclarations(rootNode: Node): readonly CodebaseImportDeclaration[] {
+  const importDeclarations: CodebaseImportDeclaration[] = [];
 
   for (const childNode of rootNode.namedChildren) {
     if (childNode.type === "import_statement") {
-      for (const importedModuleSpecifier of parsePythonImportStatementModuleSpecifiers(childNode.text)) {
-        importedModuleSpecifierSet.add(importedModuleSpecifier);
-      }
+      importDeclarations.push(...parsePythonImportStatementImportDeclarations(childNode));
       continue;
     }
 
     if (childNode.type === "import_from_statement") {
-      const importedModuleSpecifier = childNode.childForFieldName("module_name")?.text.trim();
-      if (importedModuleSpecifier) {
-        importedModuleSpecifierSet.add(importedModuleSpecifier);
+      const importDeclaration = parsePythonImportFromDeclaration(childNode);
+      if (importDeclaration) {
+        importDeclarations.push(importDeclaration);
       }
       continue;
     }
 
     if (childNode.type === "future_import_statement") {
-      importedModuleSpecifierSet.add("__future__");
+      const importDeclaration = parsePythonImportFromDeclaration(childNode);
+      if (importDeclaration) {
+        importDeclarations.push(importDeclaration);
+      }
     }
   }
 
-  return [...importedModuleSpecifierSet].sort();
+  return importDeclarations;
+}
+
+function collectExportDeclarations(input: {
+  rootNode: Node;
+  languageKind: TreeSitterCodebaseLanguageKind;
+  symbols: readonly CodebaseStructureSymbolRecord[];
+}): readonly CodebaseExportDeclaration[] {
+  return input.languageKind === "python"
+    ? collectPythonExportDeclarations(input.symbols)
+    : collectTypeScriptExportDeclarations(input.rootNode);
+}
+
+function collectTypeScriptExportDeclarations(rootNode: Node): readonly CodebaseExportDeclaration[] {
+  const exportDeclarations: CodebaseExportDeclaration[] = [];
+
+  for (const childNode of rootNode.namedChildren) {
+    if (childNode.type !== "export_statement") {
+      continue;
+    }
+
+    const sourceNode = childNode.childForFieldName("source");
+    const declarationNode = childNode.childForFieldName("declaration");
+    const exportedSymbolNames = declarationNode
+      ? collectTypeScriptSymbolsFromDeclaration({
+          declarationNode,
+          rangeNode: childNode,
+          isExported: true,
+        }).map((symbol) => symbol.symbolName)
+      : parseTypeScriptExportedSymbolNames(childNode.text);
+
+    if (exportedSymbolNames.length === 0 && !sourceNode) {
+      continue;
+    }
+
+    const moduleSpecifier = sourceNode ? stripStringLiteralQuotes(sourceNode.text) : undefined;
+    exportDeclarations.push({
+      exportedSymbolNames: listUniqueStringsInEncounterOrder(exportedSymbolNames),
+      ...(moduleSpecifier ? { moduleSpecifier } : {}),
+      ...createSourceLineRange(childNode),
+    });
+  }
+
+  return exportDeclarations;
+}
+
+function collectPythonExportDeclarations(symbols: readonly CodebaseStructureSymbolRecord[]): readonly CodebaseExportDeclaration[] {
+  return symbols
+    .filter((symbol) => symbol.isExported)
+    .map((symbol) => ({
+      exportedSymbolNames: [symbol.symbolName],
+      startLineNumber: symbol.startLineNumber,
+      endLineNumber: symbol.endLineNumber,
+    }));
 }
 
 function collectTopLevelSymbols(input: {
@@ -205,6 +280,7 @@ function collectTypeScriptSymbolsFromDeclaration(input: {
       symbolName,
       symbolKind: directSymbolKind,
       rangeNode: input.rangeNode,
+      previewNode: input.rangeNode,
       isExported: input.isExported,
     })];
   }
@@ -222,6 +298,7 @@ function collectTypeScriptSymbolsFromDeclaration(input: {
           symbolName,
           symbolKind: classifyVariableDeclaratorSymbolKind(variableDeclaratorNode),
           rangeNode: input.rangeNode,
+          previewNode: input.rangeNode,
           isExported: input.isExported,
         })];
       });
@@ -252,6 +329,7 @@ function collectPythonSymbolsFromDeclaration(input: {
       symbolName,
       symbolKind: directSymbolKind,
       rangeNode: input.rangeNode,
+      previewNode: input.declarationNode,
       isExported: isPythonSymbolPublic(symbolName),
     })];
   }
@@ -266,6 +344,7 @@ function collectPythonSymbolsFromDeclaration(input: {
       symbolName,
       symbolKind: "type",
       rangeNode: input.rangeNode,
+      previewNode: input.declarationNode,
       isExported: isPythonSymbolPublic(symbolName),
     })];
   }
@@ -339,6 +418,7 @@ function collectPythonAssignmentSymbols(
     symbolName: assignedIdentifierName,
     symbolKind: "variable",
     rangeNode,
+    previewNode: expressionStatementNode,
     isExported: isPythonSymbolPublic(assignedIdentifierName),
   })];
 }
@@ -359,14 +439,17 @@ function createStructureSymbolRecord(input: {
   symbolName: string;
   symbolKind: CodebaseSymbolKind;
   rangeNode: Node;
+  previewNode: Node;
   isExported: boolean;
 }): CodebaseStructureSymbolRecord {
+  const declarationPreview = createSymbolDeclarationPreview(input.previewNode);
   return {
     symbolName: input.symbolName,
     symbolKind: input.symbolKind,
     startLineNumber: input.rangeNode.startPosition.row + 1,
     endLineNumber: input.rangeNode.endPosition.row + 1,
     isExported: input.isExported,
+    ...(declarationPreview ? { declarationPreview } : {}),
   };
 }
 
@@ -376,7 +459,9 @@ function buildKnowledgeRecordsForIndexedFile(input: {
   languageKind: TreeSitterCodebaseLanguageKind;
   contentHash: string;
   importedModuleSpecifiers: readonly string[];
+  importDeclarations: readonly CodebaseImportDeclaration[];
   exportedSymbolNames: readonly string[];
+  exportDeclarations: readonly CodebaseExportDeclaration[];
   symbols: readonly CodebaseStructureSymbolRecord[];
   indexedAtMs: number;
 }): readonly CodebaseKnowledgeRecord[] {
@@ -385,7 +470,6 @@ function buildKnowledgeRecordsForIndexedFile(input: {
     startLineNumber: 1,
     endLineNumber: countSourceLines(input.fileText),
     contentHash: input.contentHash,
-    sourceKind: "tree_sitter_structure",
   };
 
   const fileRecord: CodebaseFileKnowledgeRecord = {
@@ -399,12 +483,13 @@ function buildKnowledgeRecordsForIndexedFile(input: {
       ...input.importedModuleSpecifiers,
     ],
     evidenceRanges: [fileEvidenceRange],
-    freshness: "fresh",
     updatedAtMs: input.indexedAtMs,
     filePath: input.filePath,
     languageId: input.languageKind,
     importedModuleSpecifiers: input.importedModuleSpecifiers,
+    importDeclarations: input.importDeclarations,
     exportedSymbolNames: input.exportedSymbolNames,
+    exportDeclarations: input.exportDeclarations,
     symbolNames: input.symbols.map((symbol) => symbol.symbolName),
   };
 
@@ -423,7 +508,6 @@ function buildSymbolKnowledgeRecord(input: {
     startLineNumber: input.symbol.startLineNumber,
     endLineNumber: input.symbol.endLineNumber,
     contentHash: input.contentHash,
-    sourceKind: "tree_sitter_structure",
   };
 
   return {
@@ -442,7 +526,6 @@ function buildSymbolKnowledgeRecord(input: {
       describeSymbolVisibilityTag({ languageKind: input.languageKind, isExported: input.symbol.isExported }),
     ],
     evidenceRanges: [evidenceRange],
-    freshness: "fresh",
     updatedAtMs: input.indexedAtMs,
     filePath: input.filePath,
     symbolName: input.symbol.symbolName,
@@ -450,6 +533,7 @@ function buildSymbolKnowledgeRecord(input: {
     startLineNumber: input.symbol.startLineNumber,
     endLineNumber: input.symbol.endLineNumber,
     isExported: input.symbol.isExported,
+    ...(input.symbol.declarationPreview ? { declarationPreview: input.symbol.declarationPreview } : {}),
   };
 }
 
@@ -513,12 +597,204 @@ function describeSymbolVisibilityTag(input: {
   return input.isExported ? "exported" : "local";
 }
 
-function parsePythonImportStatementModuleSpecifiers(importStatementText: string): readonly string[] {
-  return importStatementText
-    .replace(/^import\s+/, "")
+const MAX_DECLARATION_PREVIEW_TEXT_LENGTH = 240;
+
+function parseTypeScriptImportedSymbolNames(importStatementText: string): readonly string[] {
+  const importClause = readTypeScriptImportClause(importStatementText);
+  if (!importClause) {
+    return [];
+  }
+
+  const importedSymbolNames = new Set<string>();
+  const namespaceImportMatch = /\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)/.exec(importClause);
+  if (namespaceImportMatch?.[1]) {
+    importedSymbolNames.add(namespaceImportMatch[1]);
+  }
+
+  const namedImportMatch = /\{([\s\S]*)\}/.exec(importClause);
+  if (namedImportMatch?.[1]) {
+    for (const importedSymbolName of parseTypeScriptNamedBindingSymbolNames(namedImportMatch[1])) {
+      importedSymbolNames.add(importedSymbolName);
+    }
+  }
+
+  const defaultImportClause = importClause
+    .replace(/\{[\s\S]*\}/g, "")
+    .replace(/\*\s+as\s+[A-Za-z_$][A-Za-z0-9_$]*/g, "")
     .split(",")
-    .map((importedModuleText) => importedModuleText.replace(/\s+as\s+.+$/, "").trim())
-    .filter((importedModuleText) => importedModuleText.length > 0);
+    .map((importClausePart) => importClausePart.trim().replace(/^type\s+/, ""))
+    .filter((importClausePart) => importClausePart.length > 0);
+  for (const importClausePart of defaultImportClause) {
+    addIdentifierName(importedSymbolNames, importClausePart);
+  }
+
+  return [...importedSymbolNames];
+}
+
+function readTypeScriptImportClause(importStatementText: string): string | undefined {
+  const importBody = importStatementText.replace(/^\s*import\s+/, "").trim();
+  if (importBody.startsWith("\"") || importBody.startsWith("'")) {
+    return undefined;
+  }
+
+  const fromMatch = /\s+from\s+["']/.exec(importBody);
+  if (!fromMatch) {
+    return undefined;
+  }
+
+  return importBody.slice(0, fromMatch.index).trim().replace(/^type\s+/, "");
+}
+
+function isTypeScriptImportDeclarationTypeOnly(importStatementText: string): boolean {
+  return /^\s*import\s+type\b/.test(importStatementText);
+}
+
+function parseTypeScriptExportedSymbolNames(exportStatementText: string): readonly string[] {
+  const namedExportMatch = /\{([\s\S]*)\}/.exec(exportStatementText);
+  return namedExportMatch?.[1] ? parseTypeScriptNamedBindingSymbolNames(namedExportMatch[1]) : [];
+}
+
+function parseTypeScriptNamedBindingSymbolNames(namedBindingsText: string): readonly string[] {
+  const symbolNames = new Set<string>();
+  for (const bindingText of namedBindingsText.split(",")) {
+    const cleanedBindingText = bindingText.trim().replace(/^type\s+/, "");
+    if (!cleanedBindingText) {
+      continue;
+    }
+    const [importedOrExportedName, localOrPublicName] = cleanedBindingText.split(/\s+as\s+/i).map((bindingPart) => bindingPart.trim());
+    if (importedOrExportedName) {
+      addIdentifierName(symbolNames, importedOrExportedName);
+    }
+    if (localOrPublicName) {
+      addIdentifierName(symbolNames, localOrPublicName);
+    }
+  }
+  return [...symbolNames];
+}
+
+function parsePythonImportStatementImportDeclarations(importStatementNode: Node): readonly CodebaseImportDeclaration[] {
+  const importedModuleTexts = importStatementNode.text.replace(/^import\s+/, "").split(",");
+  return importedModuleTexts.flatMap((importedModuleText) => {
+    const importedModule = parsePythonImportedNameAndAlias(importedModuleText);
+    if (!importedModule) {
+      return [];
+    }
+
+    return [{
+      moduleSpecifier: importedModule.importedName,
+      importedSymbolNames: listUniqueStringsInEncounterOrder([
+        importedModule.importedName,
+        ...(importedModule.aliasName ? [importedModule.aliasName] : []),
+      ]),
+      isTypeOnly: false,
+      ...createSourceLineRange(importStatementNode),
+    }];
+  });
+}
+
+function parsePythonImportFromDeclaration(importFromNode: Node): CodebaseImportDeclaration | undefined {
+  const importFromMatch = /^from\s+(.+?)\s+import\s+([\s\S]+)$/.exec(importFromNode.text.trim());
+  const moduleSpecifier = importFromMatch?.[1]?.trim();
+  const importedSymbolsText = importFromMatch?.[2]?.trim();
+  if (!moduleSpecifier || !importedSymbolsText) {
+    return undefined;
+  }
+
+  return {
+    moduleSpecifier,
+    importedSymbolNames: parsePythonImportedSymbolNames(importedSymbolsText),
+    isTypeOnly: false,
+    ...createSourceLineRange(importFromNode),
+  };
+}
+
+function parsePythonImportedSymbolNames(importedSymbolsText: string): readonly string[] {
+  const normalizedImportedSymbolsText = importedSymbolsText.replace(/^\(/, "").replace(/\)$/, "");
+  const importedSymbolNames = new Set<string>();
+  for (const importedSymbolText of normalizedImportedSymbolsText.split(",")) {
+    const importedSymbol = parsePythonImportedNameAndAlias(importedSymbolText);
+    if (!importedSymbol) {
+      continue;
+    }
+    importedSymbolNames.add(importedSymbol.importedName);
+    if (importedSymbol.aliasName) {
+      importedSymbolNames.add(importedSymbol.aliasName);
+    }
+  }
+  return [...importedSymbolNames];
+}
+
+function parsePythonImportedNameAndAlias(importedNameText: string): { importedName: string; aliasName?: string | undefined } | undefined {
+  const [importedName, aliasName] = importedNameText.split(/\s+as\s+/).map((namePart) => namePart.trim());
+  if (!importedName) {
+    return undefined;
+  }
+  return {
+    importedName,
+    ...(aliasName ? { aliasName } : {}),
+  };
+}
+
+function createSymbolDeclarationPreview(previewNode: Node): CodebaseSymbolDeclarationPreview | undefined {
+  const declarationPreviewText = truncateDeclarationPreviewText(formatDeclarationPreviewText(previewNode.text));
+  return declarationPreviewText ? { declarationPreviewText } : undefined;
+}
+
+function formatDeclarationPreviewText(declarationText: string): string {
+  const firstDeclarationLine = declarationText
+    .split(/\r\n|\r|\n/)
+    .map((declarationLine) => declarationLine.trim())
+    .find((declarationLine) => declarationLine.length > 0 && !declarationLine.startsWith("@"));
+  if (!firstDeclarationLine) {
+    return "";
+  }
+
+  const equalsIndex = firstDeclarationLine.indexOf(" = ");
+  if (equalsIndex >= 0) {
+    return `${firstDeclarationLine.slice(0, equalsIndex).trim()} = …`;
+  }
+
+  const openingBraceIndex = firstDeclarationLine.indexOf("{");
+  if (openingBraceIndex >= 0) {
+    return `${firstDeclarationLine.slice(0, openingBraceIndex).trim()} { … }`;
+  }
+
+  return firstDeclarationLine;
+}
+
+function truncateDeclarationPreviewText(declarationPreviewText: string): string {
+  if (declarationPreviewText.length <= MAX_DECLARATION_PREVIEW_TEXT_LENGTH) {
+    return declarationPreviewText;
+  }
+  return `${declarationPreviewText.slice(0, MAX_DECLARATION_PREVIEW_TEXT_LENGTH - 1).trimEnd()}…`;
+}
+
+function createSourceLineRange(node: Node): { startLineNumber: number; endLineNumber: number } {
+  return {
+    startLineNumber: node.startPosition.row + 1,
+    endLineNumber: node.endPosition.row + 1,
+  };
+}
+
+function addIdentifierName(identifierNames: Set<string>, candidateIdentifierName: string): void {
+  const identifierName = candidateIdentifierName.trim();
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(identifierName)) {
+    identifierNames.add(identifierName);
+  }
+}
+
+function listUniqueSortedStrings(values: readonly string[]): readonly string[] {
+  return [...listUniqueStringsInEncounterOrder(values)].sort((leftValue, rightValue) => leftValue.localeCompare(rightValue));
+}
+
+function listUniqueStringsInEncounterOrder(values: readonly string[]): readonly string[] {
+  const uniqueValues = new Set<string>();
+  for (const value of values) {
+    if (value.length > 0) {
+      uniqueValues.add(value);
+    }
+  }
+  return [...uniqueValues];
 }
 
 function isPythonSymbolPublic(symbolName: string): boolean {
@@ -533,6 +809,6 @@ function countSourceLines(fileText: string): number {
   return fileText.length === 0 ? 1 : fileText.split(/\r\n|\r|\n/).length;
 }
 
-function createContentHash(fileText: string): string {
+export function createCodebaseSourceContentHash(fileText: string): string {
   return createHash("sha256").update(fileText).digest("hex");
 }

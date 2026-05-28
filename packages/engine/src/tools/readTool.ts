@@ -3,6 +3,7 @@ import { open, readFile, readdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   createStartedToolCallDetailFromRequest,
+  MAX_READ_TOOL_LINE_COUNT,
   type ReadToolCallRequest,
   type ToolCallReadDetail,
   type ToolCallReadPreviewLine,
@@ -20,7 +21,7 @@ import type { ToolCallOutcome } from "./toolCallOutcome.ts";
 import { isLikelyBinaryFileSample, splitWorkspaceTextFileIntoLines } from "./workspaceTextFileContent.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 
-const DEFAULT_READ_LIMIT = 2_000;
+const DEFAULT_READ_LIMIT = MAX_READ_TOOL_LINE_COUNT;
 const MAX_READ_FILE_BYTE_COUNT = 1_000_000;
 const BINARY_SAMPLE_BYTE_COUNT = 4_096;
 
@@ -74,6 +75,11 @@ export async function runReadToolCall(input: {
     });
     const offsetLineNumber = input.readToolCallRequest.offsetLineNumber ?? 1;
     const maximumLineCount = input.readToolCallRequest.maximumLineCount ?? DEFAULT_READ_LIMIT;
+    if (maximumLineCount > MAX_READ_TOOL_LINE_COUNT) {
+      throw new Error(
+        `Read limit ${maximumLineCount} exceeds the ${MAX_READ_TOOL_LINE_COUNT}-line maximum. Request multiple smaller read windows with offsetLineNumber and maximumLineCount.`,
+      );
+    }
 
     if (resolvedReadPath.stats.isDirectory()) {
       const directoryEntries = await readdir(resolvedReadPath.absolutePath, { withFileTypes: true });

@@ -85,70 +85,61 @@ const conversationSessionEntries = [
   },
   {
     entryKind: "tool_call",
-    toolCallId: "call-read-many",
+    toolCallId: "call-read-missing",
     toolCallRequest: {
-      toolName: "read_many",
-      readTargets: [
-        { readTargetPath: "README.md", offsetLineNumber: 1, maximumLineCount: 2 },
-        { readTargetPath: "missing.txt" },
-      ],
+      toolName: "read",
+      readTargetPath: "missing.txt",
     },
   },
   {
-    entryKind: "completed_tool_result",
-    toolCallId: "call-read-many",
+    entryKind: "failed_tool_result",
+    toolCallId: "call-read-missing",
     toolCallDetail: {
-      toolName: "read_many",
-      requestedReadTargetPaths: ["README.md", "missing.txt"],
-      completedReadCount: 1,
-      failedReadCount: 1,
+      toolName: "read",
+      readFilePath: "missing.txt",
     },
-    toolResultText: "<summary>1 completed, 1 failed</summary>",
+    toolResultText: "",
+    failureExplanation: "File not found: missing.txt",
   },
   {
     entryKind: "tool_call",
-    toolCallId: "call-search-many",
+    toolCallId: "call-grep",
     toolCallRequest: {
-      toolName: "search_many",
-      searches: [
-        { searchKind: "glob", globPattern: "src/**/*.ts" },
-        { searchKind: "grep", regexPattern: "ToolCallRequest", searchPath: "packages", includeGlobPattern: "*.ts", contextLineCount: 2 },
-      ],
+      toolName: "grep",
+      regexPattern: "ToolCallRequest",
+      searchPath: "packages",
+      includeGlobPattern: "*.ts",
+      contextLineCount: 2,
     },
   },
   {
     entryKind: "completed_tool_result",
-    toolCallId: "call-search-many",
+    toolCallId: "call-grep",
     toolCallDetail: {
-      toolName: "search_many",
-      requestedSearches: [
-        { searchKind: "glob", globPattern: "src/**/*.ts" },
-        { searchKind: "grep", regexPattern: "ToolCallRequest", searchPath: "packages", includeGlobPattern: "*.ts", contextLineCount: 2 },
-      ],
-      completedSearchCount: 2,
-      failedSearchCount: 0,
+      toolName: "grep",
+      searchPattern: "ToolCallRequest",
+      totalMatchCount: 3,
+      contextLineCount: 2,
     },
-    toolResultText: "<summary>2 completed, 0 failed</summary>",
+    toolResultText: "Found 3 matches for ToolCallRequest",
   },
   {
     entryKind: "tool_call",
     toolCallId: "call-3",
     toolCallRequest: {
-      toolName: "query_codebase_knowledge",
-      codebaseProblemDescription: "Find runtime dispatch",
-      knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-      maximumKnowledgeResultCount: 3,
+      toolName: "locate_codebase_symbols",
+      symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+      maximumResultCount: 3,
     },
   },
   {
     entryKind: "completed_tool_result",
     toolCallId: "call-3",
     toolCallDetail: {
-      toolName: "query_codebase_knowledge",
-      codebaseProblemDescription: "Find runtime dispatch",
-      knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      toolName: "locate_codebase_symbols",
+      symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
       matchedKnowledgeCount: 2,
       recommendedReadCount: 3,
     },
@@ -341,17 +332,13 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("Tool call");
   expect(html).toContain("pwd");
   expect(html).toContain("README.md");
-  expect(html).toContain("2 paths");
   expect(html).toContain("missing.txt");
-  expect(html).toContain("1/2 read, 1 failed");
-  expect(html).toContain("SearchMany");
-  expect(html).toContain("2 searches");
-  expect(html).toContain("2 searched");
+  expect(html).toContain("File not found: missing.txt");
   expect(html).toContain("ToolCallRequest");
-  expect(html).toContain("context 2");
-  expect(html).toContain("CodebaseKnowledge");
-  expect(html).toContain("Find runtime dispatch");
-  expect(html).toContain("known files");
+  expect(html).toContain("<b>context</b> 2");
+  expect(html).toContain("3 matches");
+  expect(html).toContain("LocateCodebaseSymbols");
+  expect(html).toContain("files");
   expect(html).toContain("streamAssistantResponseEventsForRequestedToolCalls");
   expect(html).toContain("2 matches · 3 reads");
   expect(html).toContain("src/app.ts");

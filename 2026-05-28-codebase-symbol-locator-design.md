@@ -6,7 +6,7 @@ Status: Approved for planning
 ## Purpose
 
 Replace the broad `query_codebase_knowledge` tool with a sharp, name-driven
-locator. The agent's real need: after `search_many`/grep surfaces a symbol name
+locator. The agent's real need: after `grep` surfaces a symbol name
 or file path, resolve it to the **exact definition and line span** so the
 follow-up `read` lands precisely on the symbol body — no whole-file reads, no
 guessed offsets.
@@ -98,7 +98,7 @@ The rename strands the tool unless the prompt is updated. Two files:
 2. **System-prompt usage guidance** — `packages/engine/src/systemPrompt.ts`
    (~lines 235, 237, 238, 432, 434, 435, 446, 448, across both prompt variants).
    New guidance:
-   - After `search_many`/grep surfaces a symbol name, call
+   - After `grep` surfaces a symbol name, call
      `locate_codebase_symbols` to get its exact file + line span, then `read`
      that span.
    - Remove "flows or concepts" framing.

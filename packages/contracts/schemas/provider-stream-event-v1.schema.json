@@ -145,7 +145,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema7"
+            "$ref": "#/$defs/__schema6"
           }
         }
       },
@@ -211,7 +211,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema8"
+            "$ref": "#/$defs/__schema7"
           }
         }
       },
@@ -330,54 +330,15 @@
             "maximumLineCount": {
               "type": "integer",
               "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
+              "maximum": 600
+            },
+            "inspectionQuestion": {
+              "$ref": "#/$defs/__schema3"
             }
           },
           "required": [
             "toolName",
             "readTargetPath"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "toolName": {
-              "type": "string",
-              "const": "read_many"
-            },
-            "readTargets": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema3"
-              }
-            }
-          },
-          "required": [
-            "toolName",
-            "readTargets"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "toolName": {
-              "type": "string",
-              "const": "search_many"
-            },
-            "searches": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema4"
-              }
-            }
-          },
-          "required": [
-            "toolName",
-            "searches"
           ],
           "additionalProperties": false
         },
@@ -395,6 +356,9 @@
             },
             "searchDirectoryPath": {
               "$ref": "#/$defs/__schema2"
+            },
+            "inspectionQuestion": {
+              "$ref": "#/$defs/__schema3"
             }
           },
           "required": [
@@ -427,6 +391,9 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 5
+            },
+            "inspectionQuestion": {
+              "$ref": "#/$defs/__schema3"
             }
           },
           "required": [
@@ -475,7 +442,7 @@
               "maxItems": 100,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema5"
+                "$ref": "#/$defs/__schema4"
               }
             }
           },
@@ -604,36 +571,30 @@
           "properties": {
             "toolName": {
               "type": "string",
-              "const": "query_codebase_knowledge"
+              "const": "locate_codebase_symbols"
             },
-            "codebaseProblemDescription": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 20000
+            "symbolNames": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema5"
+              }
             },
-            "knownRelevantFilePaths": {
+            "filePaths": {
               "maxItems": 50,
               "type": "array",
               "items": {
                 "$ref": "#/$defs/__schema2"
               }
             },
-            "knownRelevantSymbolNames": {
-              "maxItems": 50,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema6"
-              }
-            },
-            "maximumKnowledgeResultCount": {
+            "maximumResultCount": {
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 20
             }
           },
           "required": [
-            "toolName",
-            "codebaseProblemDescription"
+            "toolName"
           ],
           "additionalProperties": false
         }
@@ -645,86 +606,11 @@
       "maxLength": 4096
     },
     "__schema3": {
-      "type": "object",
-      "properties": {
-        "readTargetPath": {
-          "$ref": "#/$defs/__schema2"
-        },
-        "offsetLineNumber": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
-        },
-        "maximumLineCount": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
-        }
-      },
-      "required": [
-        "readTargetPath"
-      ],
-      "additionalProperties": false
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
     },
     "__schema4": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "searchKind": {
-              "type": "string",
-              "const": "glob"
-            },
-            "globPattern": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096
-            },
-            "searchDirectoryPath": {
-              "$ref": "#/$defs/__schema2"
-            }
-          },
-          "required": [
-            "searchKind",
-            "globPattern"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "searchKind": {
-              "type": "string",
-              "const": "grep"
-            },
-            "regexPattern": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096
-            },
-            "searchPath": {
-              "$ref": "#/$defs/__schema2"
-            },
-            "includeGlobPattern": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096
-            },
-            "contextLineCount": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 5
-            }
-          },
-          "required": [
-            "searchKind",
-            "regexPattern"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "__schema5": {
       "type": "object",
       "properties": {
         "editTargetPath": {
@@ -750,12 +636,12 @@
       ],
       "additionalProperties": false
     },
-    "__schema6": {
+    "__schema5": {
       "type": "string",
       "minLength": 1,
       "maxLength": 512
     },
-    "__schema7": {
+    "__schema6": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -772,7 +658,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema8": {
+    "__schema7": {
       "type": "object",
       "properties": {
         "stepIndex": {

@@ -237,13 +237,13 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       fields: {
         conversationTurnId: "conversation-turn-1",
         entryKind: "completed_tool_result",
-        toolCallId: "tool-call-read-many-duplicate",
-        toolName: "read_many",
+        toolCallId: "tool-call-read-duplicate",
+        toolName: "read",
         toolResultTextLength: 64,
         duplicateToolResultTextPreviousCount: 1,
         duplicateToolResultTextSameToolNamePreviousCount: 1,
-        duplicateToolResultFirstToolCallId: "tool-call-read-many",
-        duplicateToolResultFirstToolName: "read_many",
+        duplicateToolResultFirstToolCallId: "tool-call-read",
+        duplicateToolResultFirstToolName: "read",
         conversationSessionEntryCount: 12,
       },
     }),
@@ -298,8 +298,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       eventName: "tool_call.requested",
       fields: {
         conversationTurnId: "conversation-turn-1",
-        toolCallId: "tool-call-read-many",
-        toolName: "read_many",
+        toolCallId: "tool-call-read",
+        toolName: "read",
       },
     }),
     JSON.stringify({
@@ -309,7 +309,7 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       eventName: "provider_turn.tool_result_submitted",
       fields: {
         conversationTurnId: "conversation-turn-1",
-        toolCallId: "tool-call-read-many",
+        toolCallId: "tool-call-read",
         toolResultKind: "completed",
         toolResultTextLength: 64,
       },
@@ -321,7 +321,7 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       eventName: "tool_result_submission.resolved_pending_wait",
       fields: {
         conversationTurnId: "conversation-turn-1",
-        toolCallId: "tool-call-read-many",
+        toolCallId: "tool-call-read",
         toolResultTextLength: 64,
         waitDurationMs: 7,
       },
@@ -333,8 +333,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       eventName: "tool_call.execution_finished",
       fields: {
         conversationTurnId: "conversation-turn-1",
-        toolCallId: "tool-call-read-many",
-        toolName: "read_many",
+        toolCallId: "tool-call-read",
+        toolName: "read",
         outcomeKind: "completed",
         durationMs: 11,
       },
@@ -513,7 +513,7 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("## OpenAI Replay Input Age");
   expect(reportMarkdown).toContain("Historical function-output text: 450 B");
   expect(reportMarkdown).toContain("## Tool Attribution");
-  expect(reportMarkdown).toContain("read_many");
+  expect(reportMarkdown).toContain("read");
   expect(reportMarkdown).toContain("Total approval wait: 13 ms");
   expect(reportMarkdown).toContain("## Tool Result Duplication");
   expect(reportMarkdown).toContain("Duplicate result entries: 1");

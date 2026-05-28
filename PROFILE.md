@@ -36,6 +36,7 @@ Important current deterministic summaries:
 - `profile-runs/current/openai-stream/summary.md`
 - `profile-runs/current/reducer/summary.md`
 - `profile-runs/current/sqlite/summary.md`
+- `profile-runs/current/codebase-knowledge/summary.md`
 
 `profile-runs/` is ignored by git. Treat these paths as local measurement state, not durable project history.
 
@@ -86,6 +87,7 @@ Measure these as timed spans because CPU sampling usually shows the process idle
 - Filesystem reads, recursive directory walks, and large-file windows.
 - Ripgrep subprocess execution and fallback JavaScript search.
 - SQLite transactions for appends, loads, switches, compaction, and hydration.
+- Codebase knowledge startup indexing, unchanged restart reuse, and changed-file refresh.
 - Prompt-context candidate scans and cache reuse.
 - TUI frame/render work after assistant response batches flush.
 
@@ -103,6 +105,7 @@ Use Bun CPU profiles and deterministic scenarios for:
 - Tool output formatting and summarization.
 - JSON stringify/parse for OpenAI requests, provider replay, diagnostics, and SQLite entries.
 - SQLite schema/query work.
+- Tree-sitter parsing and codebase knowledge index JSON merge/write work.
 
 ## Memory Boundaries
 
@@ -115,6 +118,7 @@ Use RSS samples and heap snapshots for:
 - Tool results and workspace patch summaries.
 - SQLite-loaded sessions and hydrated transcript data.
 - Prompt-context recursive snapshots.
+- Codebase knowledge records, indexed-file metadata, and workspace-local index JSON.
 
 ## Workloads
 
@@ -130,6 +134,18 @@ Steps:
 - Start with a small active session.
 - Start with a large persisted session.
 - Compare startup timings, RSS, and heap after first render.
+- Include a larger indexed workspace and compare full codebase knowledge indexing with unchanged restart reuse.
+
+Signals:
+
+- Full codebase knowledge startup index duration.
+- Unchanged restart duration and parsed-file count.
+- Single modified-file restart duration and parsed-file count.
+- Mtime-only restart duration and parsed-file count.
+- Snapshot read and workspace scan duration.
+- Records-load duration and records-loaded count.
+- Snapshot write duration and skipped-write count.
+- Codebase knowledge index size and heap delta.
 
 ### Long Streaming Answer
 

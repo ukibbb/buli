@@ -9,7 +9,7 @@ import { createTestSymbolKnowledgeRecord } from "./testCodebaseKnowledgeRecords.
 
 test("buildCodebaseKnowledgeToolResultText returns evidence and recommended reads without raw source", () => {
   const queryResult = queryCodebaseKnowledgeRecords({
-    query: { codebaseProblemDescription: "runtime <tool> dispatch" },
+    query: { filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"] },
     records: [
       createTestSymbolKnowledgeRecord({
         recordId: "symbol:runtime",
@@ -17,6 +17,9 @@ test("buildCodebaseKnowledgeToolResultText returns evidence and recommended read
         symbolName: "streamAssistantResponseEventsForRequestedToolCalls",
         summary: "Routes provider tool calls to runtime executors.",
         tags: ["runtime", "tool", "dispatch", "export function rawSourceShouldNotAppear"],
+        declarationPreview: {
+          declarationPreviewText: "export function streamAssistantResponseEventsForRequestedToolCalls() { … }",
+        },
       }),
     ],
   });
@@ -24,9 +27,13 @@ test("buildCodebaseKnowledgeToolResultText returns evidence and recommended read
   const resultText = buildCodebaseKnowledgeToolResultText(queryResult);
 
   expect(resultText).toContain("<codebase_knowledge_query>");
-  expect(resultText).toContain("runtime &lt;tool&gt; dispatch");
   expect(resultText).toContain('file="packages/engine/src/runtimeToolCallExecution.ts"');
   expect(resultText).toContain('offset_line="10"');
+  expect(resultText).toContain("<map_details>");
+  expect(resultText).toContain(
+    '<symbol name="streamAssistantResponseEventsForRequestedToolCalls" kind="function" exported="true" file="packages/engine/src/runtimeToolCallExecution.ts" lines="10-20" />',
+  );
+  expect(resultText).toContain("<declaration_preview>export function streamAssistantResponseEventsForRequestedToolCalls() { … }</declaration_preview>");
   expect(resultText).toContain("Read the exact current source ranges");
   expect(resultText).not.toContain("content_hash");
   expect(resultText).not.toContain("export function rawSourceShouldNotAppear() {");
@@ -34,7 +41,7 @@ test("buildCodebaseKnowledgeToolResultText returns evidence and recommended read
 
 test("buildCodebaseKnowledgeToolResultText caps large outputs with narrowing guidance", () => {
   const queryResult: CodebaseKnowledgeQueryResult = {
-    query: { codebaseProblemDescription: "large query" },
+    query: { symbolNames: ["symbol0"] },
     matches: Array.from({ length: 80 }, (_value, matchIndex) => ({
       score: 100 - matchIndex,
       matchReasons: [`matched symbol ${matchIndex}`],
@@ -59,6 +66,6 @@ test("buildCodebaseKnowledgeToolResultText caps large outputs with narrowing gui
 
   expect(resultText.length).toBeLessThanOrEqual(MAX_CODEBASE_KNOWLEDGE_TOOL_RESULT_TEXT_LENGTH);
   expect(resultText).toContain("<codebase_knowledge_truncation>");
-  expect(resultText).toContain("knownRelevantFilePaths");
+  expect(resultText).toContain("filePaths");
   expect(resultText).toContain("</codebase_knowledge_query>");
 });

@@ -1,4 +1,10 @@
-import type { CodebaseKnowledgeRecord, CodebaseSymbolKnowledgeRecord } from "../src/index.ts";
+import type {
+  CodebaseExportDeclaration,
+  CodebaseImportDeclaration,
+  CodebaseKnowledgeRecord,
+  CodebaseSymbolDeclarationPreview,
+  CodebaseSymbolKnowledgeRecord,
+} from "../src/index.ts";
 
 export function createTestSymbolKnowledgeRecord(input: {
   recordId: string;
@@ -7,7 +13,7 @@ export function createTestSymbolKnowledgeRecord(input: {
   title?: string | undefined;
   summary?: string | undefined;
   tags?: readonly string[] | undefined;
-  freshness?: "fresh" | "stale" | undefined;
+  declarationPreview?: CodebaseSymbolDeclarationPreview | undefined;
 }): CodebaseSymbolKnowledgeRecord {
   return {
     recordId: input.recordId,
@@ -21,10 +27,8 @@ export function createTestSymbolKnowledgeRecord(input: {
         startLineNumber: 10,
         endLineNumber: 20,
         contentHash: "hash-1",
-        sourceKind: "tree_sitter_structure",
       },
     ],
-    freshness: input.freshness ?? "fresh",
     updatedAtMs: 100,
     filePath: input.filePath,
     symbolName: input.symbolName,
@@ -32,6 +36,7 @@ export function createTestSymbolKnowledgeRecord(input: {
     startLineNumber: 10,
     endLineNumber: 20,
     isExported: true,
+    ...(input.declarationPreview ? { declarationPreview: input.declarationPreview } : {}),
   };
 }
 
@@ -39,6 +44,8 @@ export function createTestFileKnowledgeRecord(input: {
   recordId: string;
   filePath: string;
   symbolNames?: readonly string[] | undefined;
+  importDeclarations?: readonly CodebaseImportDeclaration[] | undefined;
+  exportDeclarations?: readonly CodebaseExportDeclaration[] | undefined;
 }): CodebaseKnowledgeRecord {
   return {
     recordId: input.recordId,
@@ -52,15 +59,15 @@ export function createTestFileKnowledgeRecord(input: {
         startLineNumber: 1,
         endLineNumber: 50,
         contentHash: "hash-file",
-        sourceKind: "tree_sitter_structure",
       },
     ],
-    freshness: "fresh",
     updatedAtMs: 100,
     filePath: input.filePath,
     languageId: "typescript",
     importedModuleSpecifiers: [],
     exportedSymbolNames: input.symbolNames ?? [],
     symbolNames: input.symbolNames ?? [],
+    ...(input.importDeclarations ? { importDeclarations: input.importDeclarations } : {}),
+    ...(input.exportDeclarations ? { exportDeclarations: input.exportDeclarations } : {}),
   };
 }

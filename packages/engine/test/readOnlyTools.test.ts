@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ProjectInstructionTracker, runGlobToolCall, runGrepToolCall, runReadToolCall, runSearchManyToolCall } from "../src/index.ts";
+import { MAX_READ_TOOL_LINE_COUNT } from "@buli/contracts";
+import { ProjectInstructionTracker, runGlobToolCall, runGrepToolCall, runReadToolCall } from "../src/index.ts";
 
 async function writeFakeRipgrepExecutable(workspaceRootPath: string, scriptBody: string): Promise<string> {
   const fakeRipgrepPath = join(workspaceRootPath, "fake-rg");
@@ -33,6 +34,24 @@ test("runReadToolCall reads a workspace file with line offsets", async () => {
     previewLines: [{ lineNumber: 2, lineText: "beta" }],
   });
   expect(readToolCallOutcome.toolResultText).toContain("2: beta");
+});
+
+test("runReadToolCall rejects oversized explicit line windows", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-large-window-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
+
+  const readToolCallOutcome = await runReadToolCall({
+    workspaceRootPath,
+    readToolCallRequest: {
+      toolName: "read",
+      readTargetPath: "notes.txt",
+      maximumLineCount: MAX_READ_TOOL_LINE_COUNT + 1,
+    },
+  });
+
+  expect(readToolCallOutcome.outcomeKind).toBe("failed");
+  expect(readToolCallOutcome.toolResultText).toContain(`${MAX_READ_TOOL_LINE_COUNT}-line maximum`);
+  expect(readToolCallOutcome.toolResultText).toContain("Request multiple smaller read windows");
 });
 
 test("runReadToolCall rejects paths outside the workspace", async () => {
@@ -578,54 +597,6 @@ test("runGrepToolCall returns requested context lines around matches", async () 
   expect(grepToolCallOutcome.toolResultText).toContain("> Line 2: const answer = 42;");
   expect(grepToolCallOutcome.toolResultText).toContain("Line 3: after");
   expect(grepToolCallOutcome.toolResultText).not.toContain("Line 4: tail");
-});
-
-test("runSearchManyToolCall returns requested grep context lines", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-search-many-tool-context-"));
-  await writeFile(join(workspaceRootPath, "notes.txt"), ["before", "needle", "after"].join("\n"), "utf8");
-
-  const searchManyToolCallOutcome = await runSearchManyToolCall({
-    workspaceRootPath,
-    readOnlyToolCallConcurrencyLimiter: {
-      run: async <SearchManyChildResult,>(operation: () => Promise<SearchManyChildResult>): Promise<SearchManyChildResult> =>
-        operation(),
-    },
-    searchManyToolCallRequest: {
-      toolName: "search_many",
-      searches: [
-        {
-          searchKind: "grep",
-          regexPattern: "needle",
-          contextLineCount: 1,
-        },
-      ],
-    },
-  });
-
-  expect(searchManyToolCallOutcome.outcomeKind).toBe("completed");
-  expect(searchManyToolCallOutcome.toolCallDetail).toMatchObject({
-    toolName: "search_many",
-    requestedSearches: [{ searchKind: "grep", regexPattern: "needle", contextLineCount: 1 }],
-    searchResults: [
-      {
-        searchStatus: "completed",
-        searchDetail: {
-          toolName: "grep",
-          contextLineCount: 1,
-          matchHits: [
-            {
-              matchFilePath: "notes.txt",
-              matchLineNumber: 2,
-              contextBeforeLines: [{ lineNumber: 1, lineText: "before" }],
-              contextAfterLines: [{ lineNumber: 3, lineText: "after" }],
-            },
-          ],
-        },
-      },
-    ],
-  });
-  expect(searchManyToolCallOutcome.toolResultText).toContain("<contextLineCount>1</contextLineCount>");
-  expect(searchManyToolCallOutcome.toolResultText).toContain("> Line 2: needle");
 });
 
 test("runGrepToolCall rejects shell-style multi-path search path", async () => {

@@ -1,9 +1,5 @@
 import { dirname, resolve, sep } from "node:path";
-import {
-  DEFAULT_BASH_TOOL_APPROVAL_MODE,
-  parseBashToolApprovalMode,
-  type BashToolApprovalMode,
-} from "@buli/engine";
+import { parseBashToolApprovalMode, type BashToolApprovalMode } from "@buli/engine";
 
 export const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 export const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
@@ -11,6 +7,8 @@ export const INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE = "Invalid BULI_READ_ONL
 export const INVALID_SUBAGENT_CONCURRENCY_MESSAGE = "Invalid BULI_SUBAGENT_CONCURRENCY. Use a positive integer.";
 export const INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE = "Invalid BULI_OPENAI_MAX_CONCURRENT_STREAMS. Use a positive integer.";
 export const OPENAI_PROVIDER_PROTOCOL_IPC_ENVIRONMENT_VALUE = "1";
+
+const DEFAULT_INTERACTIVE_CHAT_BASH_TOOL_APPROVAL_MODE: BashToolApprovalMode = "trusted";
 
 export type InteractiveChatEnvironment = Readonly<{
   [environmentVariableName: string]: string | undefined;
@@ -48,7 +46,7 @@ export function resolveInteractiveChatBashToolApprovalMode(input: {
 
   const environmentBashToolApprovalMode = input.environment.BULI_BASH_APPROVAL_MODE?.trim();
   if (!environmentBashToolApprovalMode) {
-    return DEFAULT_BASH_TOOL_APPROVAL_MODE;
+    return DEFAULT_INTERACTIVE_CHAT_BASH_TOOL_APPROVAL_MODE;
   }
 
   return parseBashToolApprovalMode(environmentBashToolApprovalMode);

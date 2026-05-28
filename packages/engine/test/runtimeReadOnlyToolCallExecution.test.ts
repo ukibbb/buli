@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CodebaseKnowledgeQuery, CodebaseKnowledgeQueryResult } from "@buli/codebase-knowledge";
 import type { AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
+import type { WorkspaceCodebaseKnowledgeIndex } from "../src/codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
 import { ProjectInstructionTracker, type ProjectInstructionFile } from "../src/projectInstructions.ts";
 import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../src/provider.ts";
@@ -14,12 +16,6 @@ import {
 } from "../src/runtimeReadOnlyToolCallExecution.ts";
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "../src/runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
-import { runReadManyToolCall } from "../src/tools/readManyTool.ts";
-import {
-  MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH,
-  runSearchManyToolCall,
-  type SearchManyToolCallConcurrencyLimiter,
-} from "../src/tools/searchManyTool.ts";
 
 class RecordingProviderConversationTurn implements ProviderConversationTurn {
   readonly submittedToolResults: ProviderToolResultSubmission[] = [];
@@ -99,6 +95,32 @@ class BlockingProjectInstructionTracker extends ProjectInstructionTracker {
   }
 }
 
+class CountingProjectInstructionTracker extends ProjectInstructionTracker {
+  discoveryCount = 0;
+
+  override async discoverNewProjectInstructionsForDirectory(): Promise<readonly ProjectInstructionFile[]> {
+    this.discoveryCount += 1;
+    return [];
+  }
+}
+
+class RecordingWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodebaseKnowledgeIndex {
+  queryCount = 0;
+
+  ensureWorkspaceIndexed(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  queryCodebaseKnowledge(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult> {
+    this.queryCount += 1;
+    return Promise.resolve({ query, matches: [] });
+  }
+
+  refreshChangedFilePaths(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 async function collectReadOnlyToolCallEvents(input: Parameters<
   typeof streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall
 >[0]): Promise<AssistantResponseEvent[]> {
@@ -121,19 +143,11 @@ async function collectReadOnlyToolCallBatchEvents(input: Parameters<
 
 test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", () => {
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "read", readTargetPath: "notes.txt" })).toBe(true);
-  expect(isAutoApprovedReadOnlyToolCallRequest({
-    toolName: "read_many",
-    readTargets: [{ readTargetPath: "notes.txt" }],
-  })).toBe(true);
-  expect(isAutoApprovedReadOnlyToolCallRequest({
-    toolName: "search_many",
-    searches: [{ searchKind: "glob", globPattern: "**/*.ts" }],
-  })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "glob", globPattern: "**/*.ts" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "grep", regexPattern: "TODO" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({
-    toolName: "query_codebase_knowledge",
-    codebaseProblemDescription: "Find runtime dispatch",
+    toolName: "locate_codebase_symbols",
+    symbolNames: ["Runtime"],
   })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({
     toolName: "bash",
@@ -165,27 +179,26 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
   })).toBe(false);
 });
 
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a compact reference for duplicate codebase knowledge queries", async () => {
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-executes duplicate codebase knowledge queries across turns", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-query-"));
   const providerConversationTurn = new RecordingProviderConversationTurn();
+  const workspaceCodebaseKnowledgeIndex = new RecordingWorkspaceCodebaseKnowledgeIndex();
   const conversationHistory = new InMemoryConversationHistory({
     initialConversationSessionEntries: [
       {
         entryKind: "tool_call",
         toolCallId: "call_query_1",
         toolCallRequest: {
-          toolName: "query_codebase_knowledge",
-          codebaseProblemDescription: "Find runtime dispatch",
-          knownRelevantSymbolNames: ["Runtime", "ToolCall"],
+          toolName: "locate_codebase_symbols",
+          symbolNames: ["Runtime", "ToolCall"],
         },
       },
       {
         entryKind: "completed_tool_result",
         toolCallId: "call_query_1",
         toolCallDetail: {
-          toolName: "query_codebase_knowledge",
-          codebaseProblemDescription: "Find runtime dispatch",
-          knownRelevantSymbolNames: ["Runtime", "ToolCall"],
+          toolName: "locate_codebase_symbols",
+          symbolNames: ["Runtime", "ToolCall"],
           matchedKnowledgeCount: 1,
           recommendedReadCount: 1,
         },
@@ -195,9 +208,8 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a com
         entryKind: "tool_call",
         toolCallId: "call_query_2",
         toolCallRequest: {
-          toolName: "query_codebase_knowledge",
-          codebaseProblemDescription: "find runtime dispatch",
-          knownRelevantSymbolNames: ["ToolCall", "Runtime"],
+          toolName: "locate_codebase_symbols",
+          symbolNames: ["ToolCall", "Runtime"],
         },
       },
     ],
@@ -210,29 +222,31 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a com
     providerConversationTurn,
     toolCallId: "call_query_2",
     toolCallRequest: {
-      toolName: "query_codebase_knowledge",
-      codebaseProblemDescription: "find runtime dispatch",
-      knownRelevantSymbolNames: ["ToolCall", "Runtime"],
+      toolName: "locate_codebase_symbols",
+      symbolNames: ["ToolCall", "Runtime"],
     },
     workspaceRootPath,
     conversationHistory,
+    workspaceCodebaseKnowledgeIndex,
     toolResultSessionRecorder,
     abortSignal: new AbortController().signal,
     throwIfConversationTurnInterrupted: () => {},
   });
 
+  expect(workspaceCodebaseKnowledgeIndex.queryCount).toBe(1);
   expect(providerConversationTurn.submittedToolResults).toEqual([
     {
       toolCallId: "call_query_2",
-      toolResultText: expect.stringContaining("<duplicate_read_only_tool_result>"),
+      toolResultText: expect.stringContaining("<codebase_knowledge_query>"),
     },
   ]);
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("call_query_1");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<duplicate_read_only_tool_result>");
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("raw previous query result");
 });
 
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a compact reference for duplicate reads", async () => {
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-reads duplicate reads across turns", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-read-"));
+  await writeFile(join(workspaceRootPath, "notes.txt"), "1: beta\n");
   const providerConversationTurn = new RecordingProviderConversationTurn();
   const conversationHistory = new InMemoryConversationHistory({
     initialConversationSessionEntries: [
@@ -289,124 +303,43 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a com
   expect(providerConversationTurn.submittedToolResults).toEqual([
     {
       toolCallId: "call_read_2",
-      toolResultText: expect.stringContaining("<duplicate_read_only_tool_result>"),
+      toolResultText: expect.stringContaining("beta"),
     },
   ]);
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("call_read_1");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<duplicate_read_only_tool_result>");
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("1: alpha");
   expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
     entryKind: "completed_tool_result",
     toolCallId: "call_read_2",
-    toolResultText: expect.stringContaining("<duplicate_read_only_tool_result>"),
+    toolResultText: expect.stringContaining("beta"),
   });
 });
 
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall deduplicates read_many children independently", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-read-many-"));
-  await writeFile(join(workspaceRootPath, "fresh.txt"), "new content\n", "utf8");
-  const providerConversationTurn = new RecordingProviderConversationTurn();
-  const conversationHistory = new InMemoryConversationHistory({
-    initialConversationSessionEntries: [
-      {
-        entryKind: "tool_call",
-        toolCallId: "call_read_1",
-        toolCallRequest: { toolName: "read", readTargetPath: "cached.txt" },
-      },
-      {
-        entryKind: "completed_tool_result",
-        toolCallId: "call_read_1",
-        toolCallDetail: {
-          toolName: "read",
-          readFilePath: "cached.txt",
-          returnedLineCount: 1,
-          previewLines: [{ lineNumber: 1, lineText: "cached content" }],
-        },
-        toolResultText: "1: cached content",
-      },
-      {
-        entryKind: "tool_call",
-        toolCallId: "call_read_many_2",
-        toolCallRequest: {
-          toolName: "read_many",
-          readTargets: [
-            { readTargetPath: "cached.txt" },
-            { readTargetPath: "fresh.txt" },
-          ],
-        },
-      },
-    ],
-  });
-  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
-
-  await collectReadOnlyToolCallEvents({
-    assistantResponseMessageId: "assistant-message-1",
-    conversationTurnId: "conversation-turn-1",
-    providerConversationTurn,
-    toolCallId: "call_read_many_2",
-    toolCallRequest: {
-      toolName: "read_many",
-      readTargets: [
-        { readTargetPath: "cached.txt" },
-        { readTargetPath: "fresh.txt" },
-      ],
-    },
-    workspaceRootPath,
-    conversationHistory,
-    toolResultSessionRecorder,
-    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
-      maximumConcurrentReadOnlyToolCalls: 2,
-    }),
-    abortSignal: new AbortController().signal,
-    throwIfConversationTurnInterrupted: () => {},
-  });
-
-  const submittedToolResultText = providerConversationTurn.submittedToolResults[0]?.toolResultText ?? "";
-  expect(submittedToolResultText).toContain("<summary>2 completed, 0 failed</summary>");
-  expect(submittedToolResultText).toContain("<duplicate_read_only_tool_result>");
-  expect(submittedToolResultText).toContain("call_read_1");
-  expect(submittedToolResultText).toContain("1: new content");
-  expect(submittedToolResultText).not.toContain("1: cached content");
-});
-
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records read_many partial failures as one completed batch", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-read-many-"));
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls coalesces same-step duplicate reads", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-same-step-duplicate-read-"));
   await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
   const providerConversationTurn = new RecordingProviderConversationTurn();
-  const conversationHistory = new InMemoryConversationHistory({
-    initialConversationSessionEntries: [
-      {
-        entryKind: "user_prompt",
-        promptText: "Read many notes",
-        modelFacingPromptText: "Read many notes",
-      },
-      {
-        entryKind: "tool_call",
-        toolCallId: "call_read_many_1",
-        toolCallRequest: {
-          toolName: "read_many",
-          readTargets: [
-            { readTargetPath: "notes.txt", offsetLineNumber: 2, maximumLineCount: 1 },
-            { readTargetPath: "missing.txt" },
-          ],
-        },
-      },
-    ],
-  });
+  const conversationHistory = new InMemoryConversationHistory();
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+  const projectInstructionTracker = new CountingProjectInstructionTracker({ workspaceRootPath });
 
-  const assistantResponseEvents = await collectReadOnlyToolCallEvents({
+  const assistantResponseEvents = await collectReadOnlyToolCallBatchEvents({
     assistantResponseMessageId: "assistant-message-1",
     conversationTurnId: "conversation-turn-1",
     providerConversationTurn,
-    toolCallId: "call_read_many_1",
-    toolCallRequest: {
-      toolName: "read_many",
-      readTargets: [
-        { readTargetPath: "notes.txt", offsetLineNumber: 2, maximumLineCount: 1 },
-        { readTargetPath: "missing.txt" },
-      ],
-    },
+    requestedToolCalls: [
+      {
+        toolCallId: "call_read_1",
+        toolCallRequest: { toolName: "read", readTargetPath: "notes.txt" },
+      },
+      {
+        toolCallId: "call_read_2",
+        toolCallRequest: { toolName: "read", readTargetPath: "notes.txt" },
+      },
+    ],
     workspaceRootPath,
+    conversationHistory,
+    projectInstructionTracker,
     toolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
       maximumConcurrentReadOnlyToolCalls: 2,
@@ -415,284 +348,29 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records read_
     throwIfConversationTurnInterrupted: () => {},
   });
 
-  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
-    "assistant_message_part_added",
-    "assistant_message_part_updated",
+  expect(projectInstructionTracker.discoveryCount).toBe(1);
+  expect(listToolCallPartStatuses(assistantResponseEvents)).toEqual([
+    "call_read_1:running",
+    "call_read_2:running",
+    "call_read_1:completed",
+    "call_read_2:completed",
   ]);
-  expect(assistantResponseEvents[0]).toMatchObject({
-    type: "assistant_message_part_added",
-    part: {
-      partKind: "assistant_tool_call",
-      toolCallStatus: "running",
-      toolCallDetail: {
-        toolName: "read_many",
-        requestedReadTargetPaths: ["notes.txt", "missing.txt"],
-      },
-    },
-  });
-  expect(assistantResponseEvents[1]).toMatchObject({
-    type: "assistant_message_part_updated",
-    part: {
-      partKind: "assistant_tool_call",
-      toolCallStatus: "completed",
-      toolCallDetail: {
-        toolName: "read_many",
-        completedReadCount: 1,
-        failedReadCount: 1,
-        readResults: [
-          {
-            readStatus: "completed",
-            readDetail: {
-              toolName: "read",
-              readFilePath: "notes.txt",
-              previewLines: [{ lineNumber: 2, lineText: "beta" }],
-            },
-          },
-          {
-            readStatus: "failed",
-            readDetail: {
-              toolName: "read",
-              readFilePath: "missing.txt",
-            },
-            failureExplanation: expect.stringContaining("File not found: missing.txt"),
-          },
-        ],
-      },
-    },
-  });
-  expect(providerConversationTurn.submittedToolResults).toEqual([
-    {
-      toolCallId: "call_read_many_1",
-      toolResultText: expect.stringContaining("<summary>1 completed, 1 failed</summary>"),
-    },
-  ]);
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("2: beta");
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Read failed: File not found: missing.txt");
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<read_many_truncation>");
-  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
-    entryKind: "completed_tool_result",
-    toolCallId: "call_read_many_1",
-    toolCallDetail: {
-      toolName: "read_many",
-      completedReadCount: 1,
-      failedReadCount: 1,
-    },
-    toolResultText: expect.stringContaining("<read_many>"),
-  });
-});
-
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records search_many partial failures as one completed batch", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-search-many-"));
-  await mkdir(join(workspaceRootPath, "src"), { recursive: true });
-  await writeFile(join(workspaceRootPath, "src", "app.ts"), "export const marker = 'search-many';\n", "utf8");
-  const providerConversationTurn = new RecordingProviderConversationTurn();
-  const conversationHistory = new InMemoryConversationHistory({
-    initialConversationSessionEntries: [
-      {
-        entryKind: "user_prompt",
-        promptText: "Search many files",
-        modelFacingPromptText: "Search many files",
-      },
-      {
-        entryKind: "tool_call",
-        toolCallId: "call_search_many_1",
-        toolCallRequest: {
-          toolName: "search_many",
-          searches: [
-            { searchKind: "glob", globPattern: "src/**/*.ts" },
-            { searchKind: "grep", regexPattern: "[" },
-          ],
-        },
-      },
-    ],
-  });
-  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
-
-  const assistantResponseEvents = await collectReadOnlyToolCallEvents({
-    assistantResponseMessageId: "assistant-message-1",
-    conversationTurnId: "conversation-turn-1",
-    providerConversationTurn,
-    toolCallId: "call_search_many_1",
-    toolCallRequest: {
-      toolName: "search_many",
-      searches: [
-        { searchKind: "glob", globPattern: "src/**/*.ts" },
-        { searchKind: "grep", regexPattern: "[" },
-      ],
-    },
-    workspaceRootPath,
-    toolResultSessionRecorder,
-    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
-      maximumConcurrentReadOnlyToolCalls: 2,
-    }),
-    abortSignal: new AbortController().signal,
-    throwIfConversationTurnInterrupted: () => {},
-  });
-
-  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
-    "assistant_message_part_added",
-    "assistant_message_part_updated",
-  ]);
-  expect(assistantResponseEvents[0]).toMatchObject({
-    type: "assistant_message_part_added",
-    part: {
-      partKind: "assistant_tool_call",
-      toolCallStatus: "running",
-      toolCallDetail: {
-        toolName: "search_many",
-        requestedSearches: [
-          { searchKind: "glob", globPattern: "src/**/*.ts" },
-          { searchKind: "grep", regexPattern: "[" },
-        ],
-      },
-    },
-  });
-  expect(assistantResponseEvents[1]).toMatchObject({
-    type: "assistant_message_part_updated",
-    part: {
-      partKind: "assistant_tool_call",
-      toolCallStatus: "completed",
-      toolCallDetail: {
-        toolName: "search_many",
-        completedSearchCount: 1,
-        failedSearchCount: 1,
-        searchResults: [
-          {
-            searchStatus: "completed",
-            searchDetail: {
-              toolName: "glob",
-              globPattern: "src/**/*.ts",
-              matchedPaths: ["src/app.ts"],
-            },
-          },
-          {
-            searchStatus: "failed",
-            searchDetail: {
-              toolName: "grep",
-              searchPattern: "[",
-            },
-            failureExplanation: expect.stringContaining("Invalid regular expression"),
-          },
-        ],
-      },
-    },
-  });
-  expect(providerConversationTurn.submittedToolResults).toEqual([
-    {
-      toolCallId: "call_search_many_1",
-      toolResultText: expect.stringContaining("<summary>1 completed, 1 failed</summary>"),
-    },
-  ]);
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("src/app.ts");
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("----- next search result -----");
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("Grep failed:");
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<search_many_truncation>");
-  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
-    entryKind: "completed_tool_result",
-    toolCallId: "call_search_many_1",
-    toolCallDetail: {
-      toolName: "search_many",
-      completedSearchCount: 1,
-      failedSearchCount: 1,
-    },
-    toolResultText: expect.stringContaining("<search_many>"),
-  });
-});
-
-test("runReadManyToolCall preserves large batch output", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-many-budget-"));
-  const largeFileText = Array.from({ length: 800 }, (_value, lineIndex) =>
-    `${lineIndex + 1}: ${"read-many-output ".repeat(8)}`
-  ).join("\n");
-  await writeFile(join(workspaceRootPath, "large.txt"), largeFileText, "utf8");
-
-  const toolCallOutcome = await runReadManyToolCall({
-    readManyToolCallRequest: {
-      toolName: "read_many",
-      readTargets: [{ readTargetPath: "large.txt", maximumLineCount: 800 }],
-    },
-    workspaceRootPath,
-    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
-      maximumConcurrentReadOnlyToolCalls: 2,
-    }),
-  });
-
-  expect(toolCallOutcome.outcomeKind).toBe("completed");
-  if (toolCallOutcome.outcomeKind !== "completed") {
-    throw new Error("Expected read_many to complete");
+  expect(providerConversationTurn.submittedToolResults).toHaveLength(2);
+  const canonicalReadToolResult = providerConversationTurn.submittedToolResults.find((submittedToolResult) =>
+    submittedToolResult.toolCallId === "call_read_1"
+  );
+  const duplicateReadToolResult = providerConversationTurn.submittedToolResults.find((submittedToolResult) =>
+    submittedToolResult.toolCallId === "call_read_2"
+  );
+  if (!canonicalReadToolResult || !duplicateReadToolResult) {
+    throw new Error("Expected canonical and duplicate read tool results to be submitted.");
   }
-  expect(toolCallOutcome.toolResultText).not.toContain("<read_many_truncation>");
-  expect(toolCallOutcome.toolResultText).toContain("1: 1: read-many-output");
-  expect(toolCallOutcome.toolResultText).toContain("800: 800: read-many-output");
-  expect(toolCallOutcome.toolResultText).toContain("</read_many>");
-});
-
-test("runSearchManyToolCall caps large batch output with continuation guidance", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-search-many-budget-"));
-  const largeSearchText = Array.from({ length: 600 }, (_value, lineIndex) =>
-    `marker-${lineIndex + 1} ${"search-many-output ".repeat(8)}`
-  ).join("\n");
-  await writeFile(join(workspaceRootPath, "matches.txt"), largeSearchText, "utf8");
-
-  const toolCallOutcome = await runSearchManyToolCall({
-    searchManyToolCallRequest: {
-      toolName: "search_many",
-      searches: [{ searchKind: "grep", regexPattern: "marker", searchPath: "matches.txt" }],
-    },
-    workspaceRootPath,
-    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
-      maximumConcurrentReadOnlyToolCalls: 2,
-    }),
-  });
-
-  expect(toolCallOutcome.outcomeKind).toBe("completed");
-  if (toolCallOutcome.outcomeKind !== "completed") {
-    throw new Error("Expected search_many to complete");
-  }
-  expect(toolCallOutcome.toolResultText.length).toBeLessThanOrEqual(MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH);
-  expect(toolCallOutcome.toolResultText).toContain("<search_many_truncation>");
-  expect(toolCallOutcome.toolResultText).toContain("Use a narrower grep, glob, or search_many path/pattern");
-  expect(toolCallOutcome.toolResultText).toContain("</search_many>");
-});
-
-test("runSearchManyToolCall deduplicates identical child searches inside one batch", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-search-many-duplicate-children-"));
-  await mkdir(join(workspaceRootPath, "src"), { recursive: true });
-  await writeFile(join(workspaceRootPath, "src", "app.ts"), "export const marker = 'dedupe';\n", "utf8");
-  let childSearchRunCount = 0;
-  const countingSearchManyConcurrencyLimiter = {
-    async run<SearchManyChildResult>(operation: () => Promise<SearchManyChildResult>): Promise<SearchManyChildResult> {
-      childSearchRunCount += 1;
-      return operation();
-    },
-  } satisfies SearchManyToolCallConcurrencyLimiter;
-
-  const toolCallOutcome = await runSearchManyToolCall({
-    searchManyToolCallRequest: {
-      toolName: "search_many",
-      searches: [
-        { searchKind: "glob", globPattern: "src/**/*.ts" },
-        { searchKind: "glob", globPattern: "src/**/*.ts" },
-        { searchKind: "grep", regexPattern: "marker", searchPath: "src/app.ts" },
-        { searchKind: "grep", regexPattern: "marker", searchPath: "src/app.ts" },
-      ],
-    },
-    workspaceRootPath,
-    readOnlyToolCallConcurrencyLimiter: countingSearchManyConcurrencyLimiter,
-  });
-
-  expect(toolCallOutcome.outcomeKind).toBe("completed");
-  if (toolCallOutcome.outcomeKind !== "completed") {
-    throw new Error("Expected search_many to complete");
-  }
-  expect(childSearchRunCount).toBe(2);
-  expect(toolCallOutcome.toolCallDetail).toMatchObject({
-    toolName: "search_many",
-    completedSearchCount: 4,
-    failedSearchCount: 0,
-  });
-  expect(toolCallOutcome.toolResultText).toContain("<index>2</index>");
-  expect(toolCallOutcome.toolResultText).toContain("<index>4</index>");
+  expect(canonicalReadToolResult.toolCallId).toBe("call_read_1");
+  expect(canonicalReadToolResult.toolResultText).toContain("1: alpha");
+  expect(duplicateReadToolResult.toolCallId).toBe("call_read_2");
+  expect(duplicateReadToolResult.toolResultText).toContain("<duplicate_read_only_tool_result>");
+  expect(duplicateReadToolResult.toolResultText).toContain("call_read_1");
+  expect(duplicateReadToolResult.toolResultText).not.toContain("1: alpha");
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and submits completed read results", async () => {
@@ -1166,128 +844,6 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls limits concu
   expect(toolCallPartStatuses.slice(requestedToolCalls.length).toSorted()).toEqual(
     requestedToolCalls.map((requestedToolCall) => `${requestedToolCall.toolCallId}:completed`).toSorted(),
   );
-});
-
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall limits read_many child reads", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-read-many-concurrency-"));
-  const requestedReadTargets = Array.from({ length: 5 }, (_, readTargetIndex) => ({
-    readTargetPath: `notes-${readTargetIndex + 1}.txt`,
-  }));
-  await Promise.all(requestedReadTargets.map((readTarget, readTargetIndex) =>
-    writeFile(join(workspaceRootPath, readTarget.readTargetPath), `note ${readTargetIndex + 1}\n`, "utf8")
-  ));
-  const providerConversationTurn = new RecordingProviderConversationTurn();
-  const projectInstructionTracker = new BlockingProjectInstructionTracker({
-    workspaceRootPath,
-    expectedActiveDiscoveryCount: 2,
-  });
-  const readOnlyToolCallConcurrencyLimiter = new RuntimeReadOnlyToolCallConcurrencyLimiter({
-    maximumConcurrentReadOnlyToolCalls: 2,
-  });
-  const conversationHistory = new InMemoryConversationHistory({
-    initialConversationSessionEntries: [
-      {
-        entryKind: "user_prompt",
-        promptText: "Read many notes",
-        modelFacingPromptText: "Read many notes",
-      },
-      {
-        entryKind: "tool_call",
-        toolCallId: "call_read_many_1",
-        toolCallRequest: {
-          toolName: "read_many",
-          readTargets: requestedReadTargets,
-        },
-      },
-    ],
-  });
-  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
-
-  const assistantResponseEventsPromise = collectReadOnlyToolCallEvents({
-    assistantResponseMessageId: "assistant-message-1",
-    conversationTurnId: "conversation-turn-1",
-    providerConversationTurn,
-    toolCallId: "call_read_many_1",
-    toolCallRequest: {
-      toolName: "read_many",
-      readTargets: requestedReadTargets,
-    },
-    workspaceRootPath,
-    projectInstructionTracker,
-    toolResultSessionRecorder,
-    readOnlyToolCallConcurrencyLimiter,
-    abortSignal: new AbortController().signal,
-    throwIfConversationTurnInterrupted: () => {},
-  });
-
-  await waitForPromiseWithTimeout({
-    promise: projectInstructionTracker.expectedActiveDiscoveriesReached.promise,
-    timeoutMilliseconds: 500,
-    createTimeoutError: () => new Error("read_many child reads did not reach the expected active concurrency."),
-  });
-  expect(projectInstructionTracker.startedDiscoveryCount).toBe(2);
-  expect(projectInstructionTracker.activeDiscoveryCount).toBe(2);
-
-  projectInstructionTracker.releaseDiscoveries.complete();
-  const assistantResponseEvents = await assistantResponseEventsPromise;
-
-  expect(projectInstructionTracker.startedDiscoveryCount).toBe(requestedReadTargets.length);
-  expect(projectInstructionTracker.maximumActiveDiscoveryCount).toBe(2);
-  expect(providerConversationTurn.submittedToolResults).toEqual([
-    {
-      toolCallId: "call_read_many_1",
-      toolResultText: expect.stringContaining("<summary>5 completed, 0 failed</summary>"),
-    },
-  ]);
-  expect(listToolCallPartStatuses(assistantResponseEvents)).toEqual([
-    "call_read_many_1:running",
-    "call_read_many_1:completed",
-  ]);
-});
-
-test("runReadManyToolCall coalesces identical child read targets and preserves every result index", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-many-tool-duplicate-targets-"));
-  await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
-  const projectInstructionTracker = new BlockingProjectInstructionTracker({
-    workspaceRootPath,
-    expectedActiveDiscoveryCount: 1,
-  });
-  const readManyToolCallOutcomePromise = runReadManyToolCall({
-    readManyToolCallRequest: {
-      toolName: "read_many",
-      readTargets: [
-        { readTargetPath: "notes.txt", offsetLineNumber: 1, maximumLineCount: 1 },
-        { readTargetPath: "notes.txt", offsetLineNumber: 1, maximumLineCount: 1 },
-      ],
-    },
-    workspaceRootPath,
-    projectInstructionTracker,
-    readOnlyToolCallConcurrencyLimiter: new RuntimeReadOnlyToolCallConcurrencyLimiter({
-      maximumConcurrentReadOnlyToolCalls: 2,
-    }),
-  });
-
-  await waitForPromiseWithTimeout({
-    promise: projectInstructionTracker.expectedActiveDiscoveriesReached.promise,
-    timeoutMilliseconds: 500,
-    createTimeoutError: () => new Error("Duplicate read_many targets did not start their shared read."),
-  });
-  projectInstructionTracker.releaseDiscoveries.complete();
-  const readManyToolCallOutcome = await readManyToolCallOutcomePromise;
-
-  expect(projectInstructionTracker.startedDiscoveryCount).toBe(1);
-  expect(readManyToolCallOutcome.outcomeKind).toBe("completed");
-  expect(readManyToolCallOutcome.toolCallDetail).toMatchObject({
-    toolName: "read_many",
-    completedReadCount: 2,
-    failedReadCount: 0,
-    readResults: [
-      { readStatus: "completed", readDetail: { toolName: "read", readFilePath: "notes.txt" } },
-      { readStatus: "completed", readDetail: { toolName: "read", readFilePath: "notes.txt" } },
-    ],
-  });
-  expect(readManyToolCallOutcome.toolResultText).toContain("<index>1</index>");
-  expect(readManyToolCallOutcome.toolResultText).toContain("<index>2</index>");
 });
 
 async function readNextAssistantResponseEvent(

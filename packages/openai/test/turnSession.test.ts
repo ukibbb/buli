@@ -472,6 +472,105 @@ test("OpenAiProviderConversationTurn captures replay items for a completed typed
   });
 });
 
+test("OpenAiProviderConversationTurn appends model-facing feedback to repeated exact tool call outputs", async () => {
+  type FunctionCallOutputRequestInputItem = {
+    readonly type?: string;
+    readonly call_id?: string;
+    readonly output?: string;
+  };
+
+  const requestBodies: string[] = [];
+  const repeatedReadArgumentsText = JSON.stringify({ filePath: "README.md", offset: null, limit: null });
+  const queuedResponses = [
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_1", call_id: "call_read_1", name: "read", arguments: "" },
+      }),
+      createOpenAiSseFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_1",
+        arguments: repeatedReadArgumentsText,
+      }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: {
+          output: [{ id: "fc_1", type: "function_call", call_id: "call_read_1", name: "read", arguments: repeatedReadArgumentsText }],
+          usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        },
+      }),
+    ]),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_2", call_id: "call_read_2", name: "read", arguments: "" },
+      }),
+      createOpenAiSseFrame({
+        type: "response.function_call_arguments.done",
+        item_id: "fc_2",
+        arguments: repeatedReadArgumentsText,
+      }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: {
+          output: [{ id: "fc_2", type: "function_call", call_id: "call_read_2", name: "read", arguments: repeatedReadArgumentsText }],
+          usage: { input_tokens: 20, output_tokens: 0, total_tokens: 20 },
+        },
+      }),
+    ]),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read README twice"),
+    repeatedToolCallDiagnosticWarningThreshold: 2,
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: `<path>README.md</path>\n${emittedEvent.toolCallId}: # buli`,
+      });
+    }
+  }
+
+  expect(requestBodies).toHaveLength(3);
+  const finalRequestBody = JSON.parse(requestBodies[2] ?? "{}") as {
+    readonly input?: readonly FunctionCallOutputRequestInputItem[];
+  };
+  const functionCallOutputInputItems = (finalRequestBody.input ?? []).filter((inputItem): inputItem is Required<FunctionCallOutputRequestInputItem> =>
+    inputItem.type === "function_call_output" && typeof inputItem.call_id === "string" && typeof inputItem.output === "string"
+  );
+  const firstReadOutputItem = functionCallOutputInputItems.find((inputItem) => inputItem.call_id === "call_read_1");
+  const repeatedReadOutputItem = functionCallOutputInputItems.find((inputItem) => inputItem.call_id === "call_read_2");
+  if (!firstReadOutputItem || !repeatedReadOutputItem) {
+    throw new Error("Expected both read tool outputs in the final continuation request.");
+  }
+
+  expect(functionCallOutputInputItems).toHaveLength(2);
+  expect(firstReadOutputItem.output).toContain("call_read_1: # buli");
+  expect(firstReadOutputItem.output).not.toContain("[Repeated tool-call reminder]");
+  expect(repeatedReadOutputItem.output).toContain("call_read_2: # buli");
+  expect(repeatedReadOutputItem.output).toContain("[Repeated tool-call reminder]");
+  expect(repeatedReadOutputItem.output).toContain(
+    "This exact read call has already been requested in this assistant turn. Reuse the previous result unless you need different evidence.",
+  );
+});
+
 test("OpenAiProviderConversationTurn yields executable tool calls before terminal response completion", async () => {
   const requestBodies: string[] = [];
   const controlledToolStep = createControlledOpenAiStepResponse();

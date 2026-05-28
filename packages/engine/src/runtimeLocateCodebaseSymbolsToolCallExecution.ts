@@ -6,20 +6,20 @@ import {
   createStartedToolCallDetailFromRequest,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
-  type QueryCodebaseKnowledgeToolCallRequest,
+  type LocateCodebaseSymbolsToolCallRequest,
 } from "@buli/contracts";
 import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
-import { runQueryCodebaseKnowledgeToolCall } from "./tools/queryCodebaseKnowledgeTool.ts";
+import { runLocateCodebaseSymbolsToolCall } from "./tools/locateCodebaseSymbolsTool.ts";
 
-export type StreamAssistantResponseEventsForQueryCodebaseKnowledgeToolCallInput = {
+export type StreamAssistantResponseEventsForLocateCodebaseSymbolsToolCallInput = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
   conversationTurnId: string;
   toolCallId: string;
-  queryCodebaseKnowledgeToolCallRequest: QueryCodebaseKnowledgeToolCallRequest;
+  locateCodebaseSymbolsToolCallRequest: LocateCodebaseSymbolsToolCallRequest;
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
@@ -27,10 +27,10 @@ export type StreamAssistantResponseEventsForQueryCodebaseKnowledgeToolCallInput 
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
-export async function* streamAssistantResponseEventsForQueryCodebaseKnowledgeToolCall(
-  input: StreamAssistantResponseEventsForQueryCodebaseKnowledgeToolCallInput,
+export async function* streamAssistantResponseEventsForLocateCodebaseSymbolsToolCall(
+  input: StreamAssistantResponseEventsForLocateCodebaseSymbolsToolCallInput,
 ): AsyncGenerator<AssistantResponseEvent> {
-  const startedToolCallDetail = createStartedToolCallDetailFromRequest(input.queryCodebaseKnowledgeToolCallRequest);
+  const startedToolCallDetail = createStartedToolCallDetailFromRequest(input.locateCodebaseSymbolsToolCallRequest);
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
 
@@ -48,8 +48,8 @@ export async function* streamAssistantResponseEventsForQueryCodebaseKnowledgeToo
   }));
 
   input.throwIfConversationTurnInterrupted();
-  const toolCallOutcome = await runQueryCodebaseKnowledgeToolCall({
-    queryCodebaseKnowledgeToolCallRequest: input.queryCodebaseKnowledgeToolCallRequest,
+  const toolCallOutcome = await runLocateCodebaseSymbolsToolCall({
+    locateCodebaseSymbolsToolCallRequest: input.locateCodebaseSymbolsToolCallRequest,
     workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     abortSignal: input.abortSignal,
   });

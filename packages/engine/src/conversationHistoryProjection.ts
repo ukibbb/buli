@@ -1,4 +1,7 @@
-import { listModelVisibleConversationSessionEntries } from "@buli/contracts";
+import {
+  listModelVisibleConversationSessionEntries,
+  projectHistoricalToolResultTextForModelContext,
+} from "@buli/contracts";
 import type { ConversationSessionEntry, ModelContextItem, UserPromptConversationSessionEntry } from "@buli/contracts";
 
 type ToolCallConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "tool_call" }>;
@@ -115,7 +118,6 @@ function projectConversationSessionTurnToModelContextItems(
 
   return [
     ...projectConversationSessionEntryToModelContextItems(conversationSessionTurn.userPromptEntry),
-    ...projectPairedToolEntriesToModelContextItems(conversationSessionTurn.entriesAfterUserPrompt.slice(0, -1)),
     ...projectConversationSessionEntryToModelContextItems(terminalAssistantMessageEntry),
   ];
 }
@@ -171,7 +173,9 @@ function projectToolResultConversationSessionEntryToModelContextItem(
   return {
     itemKind: "tool_result",
     toolCallId: conversationSessionEntry.toolCallId,
-    toolResultText: conversationSessionEntry.toolResultText,
+    toolResultText: projectHistoricalToolResultTextForModelContext({
+      text: conversationSessionEntry.toolResultText,
+    }),
   };
 }
 

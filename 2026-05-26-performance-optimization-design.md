@@ -157,7 +157,7 @@ Lives in the engine layer. Each provider maps its models to profiles. Default pr
 
 ### Conservative
 
-**C11. Bash output cap.** Add a configurable cap (default 32KB) matching read_many/search_many. Truncate with head/tail retention, omission marker, and continuation guidance.
+**C11. Bash output cap.** Add a configurable cap (default 32KB) matching grep. Truncate with head/tail retention, omission marker, and continuation guidance.
 
 **C12. Per-tool result size diagnostics.** Emit per-tool-name size histogram in turn summary to surface which tool type dominates context growth.
 
@@ -321,7 +321,7 @@ Beyond per-boundary optimizations, enforce an **Understand -> Plan -> Implementa
 ### Tool Availability Per Mode
 
 **Understand mode:**
-- Available tools: `read`, `read_many`, `search_many`, `grep`, `glob`, read-only `task`, and `skill`.
+- Available tools: `read`, `grep`, `glob`, read-only `task`, and `skill`.
 - Unavailable: `edit`, `edit_many`, `write`, `patch`, `patch_many`, and `bash`.
 - Purpose: understand the system, inspect relevant files, explain mechanics, and align on the intended outcome.
 
@@ -363,8 +363,8 @@ The ledger is derived from existing visible session entries. It is not canonical
 When a read-only tool call exactly repeats visible, still-valid evidence, the runtime returns a completed reference result instead of executing the tool again:
 
 - `read("src/foo.ts", 1, 80)` already visible and unchanged -> return a reference to the previous `toolCallId`.
-- `read_many` executes only targets that are new or stale; duplicate child reads become per-target reference results.
-- `glob`, `grep`, and `search_many` use exact request keys and are invalidated after any workspace mutation.
+- Duplicate `read` calls can be reused when the same result is already visible in conversation context.
+- `glob` and `grep` use exact request keys and are invalidated after any workspace mutation.
 - Failed, denied, or already-reference results are not used as reusable evidence.
 
 Mutation invalidation is conservative:

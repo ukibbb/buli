@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { ASSISTANT_TOOL_REQUEST_NAMES, ContextWindowOverflowError, MAX_BASH_TOOL_TIMEOUT_MILLISECONDS, type ToolCallRequest } from "@buli/contracts";
+import {
+  ASSISTANT_TOOL_REQUEST_NAMES,
+  ContextWindowOverflowError,
+  MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  MAX_READ_TOOL_LINE_COUNT,
+  type AssistantToolCallRequest,
+} from "@buli/contracts";
 import { OpenAiAuthStore } from "../src/auth/store.ts";
 import { OpenAiProvider } from "../src/provider/client.ts";
 import { parseOpenAiStream } from "../src/provider/stream.ts";
@@ -650,9 +656,9 @@ test("parseOpenAiStream accepts nullable bash function arguments", async () => {
 
 test("parseOpenAiStream parses typed coding tool calls", async () => {
   const toolCallCases: Array<{
-    toolName: ToolCallRequest["toolName"];
+    toolName: AssistantToolCallRequest["toolName"];
     argumentsText: string;
-    expectedToolCallRequest: ToolCallRequest;
+    expectedToolCallRequest: AssistantToolCallRequest;
   }> = [
     {
       toolName: "read",
@@ -662,44 +668,6 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
         readTargetPath: "README.md",
         offsetLineNumber: 2,
         maximumLineCount: 5,
-      },
-    },
-    {
-      toolName: "read_many",
-      argumentsText: '{"targets":[{"filePath":"README.md","offset":2,"limit":5},{"filePath":"packages/openai/src/provider/toolDefinitions.ts","offset":null,"limit":null}]}',
-      expectedToolCallRequest: {
-        toolName: "read_many",
-        readTargets: [
-          {
-            readTargetPath: "README.md",
-            offsetLineNumber: 2,
-            maximumLineCount: 5,
-          },
-          {
-            readTargetPath: "packages/openai/src/provider/toolDefinitions.ts",
-          },
-        ],
-      },
-    },
-    {
-      toolName: "search_many",
-      argumentsText: '{"searches":[{"searchKind":"glob","pattern":"**/*.ts","path":"packages","include":null,"contextLineCount":null},{"searchKind":"grep","pattern":"ToolCallRequest","path":"packages","include":"*.ts","contextLineCount":2}]}',
-      expectedToolCallRequest: {
-        toolName: "search_many",
-        searches: [
-          {
-            searchKind: "glob",
-            globPattern: "**/*.ts",
-            searchDirectoryPath: "packages",
-          },
-          {
-            searchKind: "grep",
-            regexPattern: "ToolCallRequest",
-            searchPath: "packages",
-            includeGlobPattern: "*.ts",
-            contextLineCount: 2,
-          },
-        ],
       },
     },
     {
@@ -723,19 +691,17 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
       },
     },
     {
-      toolName: "query_codebase_knowledge",
+      toolName: "locate_codebase_symbols",
       argumentsText: JSON.stringify({
-        codebaseProblemDescription: "Find runtime tool dispatch.",
-        knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-        knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-        maximumKnowledgeResultCount: 4,
+        symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+        filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+        maximumResultCount: 4,
       }),
       expectedToolCallRequest: {
-        toolName: "query_codebase_knowledge",
-        codebaseProblemDescription: "Find runtime tool dispatch.",
-        knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-        knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-        maximumKnowledgeResultCount: 4,
+        toolName: "locate_codebase_symbols",
+        symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+        filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+        maximumResultCount: 4,
       },
     },
     {
@@ -861,11 +827,9 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const openAiToolDefinitions = createOpenAiToolDefinitions();
   const bashToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "bash");
   const readToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "read");
-  const readManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "read_many");
-  const searchManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "search_many");
   const globToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "glob");
   const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
-  const queryCodebaseKnowledgeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "query_codebase_knowledge");
+  const locateCodebaseSymbolsToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "locate_codebase_symbols");
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const editManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit_many");
   const patchToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "patch");
@@ -875,38 +839,31 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const skillToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "skill");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
-  expect(readToolDefinition?.description).toContain("Use this only for exact paths already evidenced");
-  expect(readToolDefinition?.description).toContain("Do not read paths inferred from imports, symbols, filenames, likely extensions, or project conventions");
-  expect(readToolDefinition?.description).toContain("discover uncertain paths with search_many, glob, or grep first");
-  expect(readToolDefinition?.description).toContain("Prefer precise bounded reads");
-  expect(readToolDefinition?.description).toContain("set offset and limit around the relevant range");
-  expect(readToolDefinition?.description).toContain("Use null offset/limit only when the full default window is intentionally needed");
-  expect(readToolDefinition?.description).toContain("Do not guess offsets");
-  expect(readToolDefinition?.description).toContain("continue only from line counts returned by previous reads");
-  expect(readManyToolDefinition?.description).toContain("Read multiple files or directories");
-  expect(readManyToolDefinition?.description).toContain("several exact paths are already evidenced");
-  expect(readManyToolDefinition?.description).toContain("one larger independent read_many batch");
-  expect(readManyToolDefinition?.description).toContain("Keep each target precise");
-  expect(readManyToolDefinition?.description).toContain("set that target's offset and limit around the relevant range");
-  expect(readManyToolDefinition?.description).toContain("Use null offset/limit only when the full default window is intentionally needed for that target");
-  expect(readManyToolDefinition?.parameters.properties["targets"]?.minItems).toBe(1);
-  expect(searchManyToolDefinition?.description).toContain("Run multiple independent glob and grep searches");
-  expect(searchManyToolDefinition?.description).toContain("contextLineCount");
-  expect(searchManyToolDefinition?.description).toContain("one larger independent search_many batch");
-  expect(searchManyToolDefinition?.parameters.properties["searches"]?.minItems).toBe(1);
-  expect(globToolDefinition?.description).toContain("Use this instead of bash for file discovery");
+  expect(readToolDefinition?.description).toContain("Read an exact evidenced workspace file or directory window");
+  expect(readToolDefinition?.description).toContain("Do not infer paths");
+  expect(readToolDefinition?.description).toContain("discover uncertain paths with glob or grep first");
+  expect(readToolDefinition?.description).toContain("Prefer small bounded windows");
+  expect(readToolDefinition?.description).toContain(`default ${MAX_READ_TOOL_LINE_COUNT}-line window`);
+  expect(readToolDefinition?.description).toContain("Continue only from line counts returned by previous reads");
+  expect(readToolDefinition?.description).toContain("request separate read calls together instead of one broad read");
+  expect(globToolDefinition?.description).toContain("Find workspace files by filename glob");
+  expect(globToolDefinition?.description).toContain("Use instead of bash");
+  expect(globToolDefinition?.description).toContain("batch independent glob calls instead of one oversized lookup");
   expect(globToolDefinition?.parameters.properties["path"]?.description).toContain("Single directory");
   expect(globToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
-  expect(grepToolDefinition?.description).toContain("Use this instead of bash for text search");
+  expect(grepToolDefinition?.description).toContain("Search workspace text");
+  expect(grepToolDefinition?.description).toContain("Use instead of bash for text search");
   expect(grepToolDefinition?.description).toContain("contextLineCount");
+  expect(grepToolDefinition?.description).toContain("batch independent grep calls instead of one oversized search");
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Single file or directory");
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
   expect(grepToolDefinition?.parameters.properties["contextLineCount"]?.maximum).toBe(5);
-  expect(queryCodebaseKnowledgeToolDefinition?.description).toContain("recommended reads");
-  expect(queryCodebaseKnowledgeToolDefinition?.description).toContain("not raw source");
-  expect(queryCodebaseKnowledgeToolDefinition?.description).toContain("read the exact current source");
-  expect(queryCodebaseKnowledgeToolDefinition?.parameters.properties["knownRelevantFilePaths"]?.maxItems).toBe(50);
-  expect(queryCodebaseKnowledgeToolDefinition?.parameters.properties["maximumKnowledgeResultCount"]?.maximum).toBe(20);
+  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("start-end line span");
+  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("after grep");
+  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("Verify current source with read");
+  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("multiple concurrent locate_codebase_symbols calls instead of one large lookup");
+  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["filePaths"]?.maxItems).toBe(50);
+  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["maximumResultCount"]?.maximum).toBe(20);
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(editManyToolDefinition?.description).toContain("Prefer this over several edit calls");
   expect(editManyToolDefinition?.parameters.properties["edits"]?.minItems).toBe(1);
@@ -927,6 +884,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
   expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);
   expect(readToolDefinition?.parameters.properties["limit"]?.minimum).toBe(1);
+  expect(readToolDefinition?.parameters.properties["limit"]?.maximum).toBe(MAX_READ_TOOL_LINE_COUNT);
 });
 
 test("parseOpenAiStream reports typed tool calls that violate shared contracts as invalid function calls", async () => {
@@ -958,10 +916,10 @@ test("parseOpenAiStream reports typed tool calls that violate shared contracts a
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
   const explorerToolDefinitions = createOpenAiToolDefinitions({
-    availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"],
+    availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols"],
   });
 
-  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"]);
+  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
 });
 
 test("parseOpenAiStream reports malformed typed tool JSON arguments as invalid function calls", async () => {

@@ -59,34 +59,6 @@ export const ToolCallReadDetailSchema = z
   .strict();
 export type ToolCallReadDetail = z.infer<typeof ToolCallReadDetailSchema>;
 
-export const ToolCallReadManyResultSchema = z.discriminatedUnion("readStatus", [
-  z
-    .object({
-      readStatus: z.literal("completed"),
-      readDetail: ToolCallReadDetailSchema,
-    })
-    .strict(),
-  z
-    .object({
-      readStatus: z.literal("failed"),
-      readDetail: ToolCallReadDetailSchema,
-      failureExplanation: z.string().min(1),
-    })
-    .strict(),
-]);
-export type ToolCallReadManyResult = z.infer<typeof ToolCallReadManyResultSchema>;
-
-export const ToolCallReadManyDetailSchema = z
-  .object({
-    toolName: z.literal("read_many"),
-    requestedReadTargetPaths: z.array(z.string().min(1)).min(1),
-    completedReadCount: z.number().int().nonnegative().optional(),
-    failedReadCount: z.number().int().nonnegative().optional(),
-    readResults: z.array(ToolCallReadManyResultSchema).optional(),
-  })
-  .strict();
-export type ToolCallReadManyDetail = z.infer<typeof ToolCallReadManyDetailSchema>;
-
 export const ToolCallGrepMatchSchema = z
   .object({
     matchFilePath: z.string().min(1),
@@ -122,54 +94,6 @@ export const ToolCallGlobDetailSchema = z
   })
   .strict();
 export type ToolCallGlobDetail = z.infer<typeof ToolCallGlobDetailSchema>;
-
-export const ToolCallSearchManyRequestedSearchSchema = z.discriminatedUnion("searchKind", [
-  z
-    .object({
-      searchKind: z.literal("glob"),
-      globPattern: z.string().min(1),
-      searchDirectoryPath: z.string().min(1).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      searchKind: z.literal("grep"),
-      regexPattern: z.string().min(1),
-      searchPath: z.string().min(1).optional(),
-      includeGlobPattern: z.string().min(1).optional(),
-      contextLineCount: z.number().int().nonnegative().optional(),
-    })
-    .strict(),
-]);
-export type ToolCallSearchManyRequestedSearch = z.infer<typeof ToolCallSearchManyRequestedSearchSchema>;
-
-export const ToolCallSearchManyResultSchema = z.discriminatedUnion("searchStatus", [
-  z
-    .object({
-      searchStatus: z.literal("completed"),
-      searchDetail: z.discriminatedUnion("toolName", [ToolCallGlobDetailSchema, ToolCallGrepDetailSchema]),
-    })
-    .strict(),
-  z
-    .object({
-      searchStatus: z.literal("failed"),
-      searchDetail: z.discriminatedUnion("toolName", [ToolCallGlobDetailSchema, ToolCallGrepDetailSchema]),
-      failureExplanation: z.string().min(1),
-    })
-    .strict(),
-]);
-export type ToolCallSearchManyResult = z.infer<typeof ToolCallSearchManyResultSchema>;
-
-export const ToolCallSearchManyDetailSchema = z
-  .object({
-    toolName: z.literal("search_many"),
-    requestedSearches: z.array(ToolCallSearchManyRequestedSearchSchema).min(1),
-    completedSearchCount: z.number().int().nonnegative().optional(),
-    failedSearchCount: z.number().int().nonnegative().optional(),
-    searchResults: z.array(ToolCallSearchManyResultSchema).optional(),
-  })
-  .strict();
-export type ToolCallSearchManyDetail = z.infer<typeof ToolCallSearchManyDetailSchema>;
 
 export const UnifiedDiffTextSchema = z.string().min(1);
 export type UnifiedDiffText = z.infer<typeof UnifiedDiffTextSchema>;
@@ -289,17 +213,16 @@ export const ToolCallSkillDetailSchema = z
   .strict();
 export type ToolCallSkillDetail = z.infer<typeof ToolCallSkillDetailSchema>;
 
-export const ToolCallQueryCodebaseKnowledgeDetailSchema = z
+export const ToolCallLocateCodebaseSymbolsDetailSchema = z
   .object({
-    toolName: z.literal("query_codebase_knowledge"),
-    codebaseProblemDescription: z.string().min(1),
-    knownRelevantFilePaths: z.array(z.string().min(1)).optional(),
-    knownRelevantSymbolNames: z.array(z.string().min(1)).optional(),
+    toolName: z.literal("locate_codebase_symbols"),
+    symbolNames: z.array(z.string().min(1)).optional(),
+    filePaths: z.array(z.string().min(1)).optional(),
     matchedKnowledgeCount: z.number().int().nonnegative().optional(),
     recommendedReadCount: z.number().int().nonnegative().optional(),
   })
   .strict();
-export type ToolCallQueryCodebaseKnowledgeDetail = z.infer<typeof ToolCallQueryCodebaseKnowledgeDetailSchema>;
+export type ToolCallLocateCodebaseSymbolsDetail = z.infer<typeof ToolCallLocateCodebaseSymbolsDetailSchema>;
 
 export const SubagentChildTaskToolCallDetailSchema = z
   .object({
@@ -316,11 +239,9 @@ export type SubagentChildToolCallStatus = z.infer<typeof SubagentChildToolCallSt
 
 export const SubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
-  ToolCallReadManyDetailSchema,
-  ToolCallSearchManyDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
-  ToolCallQueryCodebaseKnowledgeDetailSchema,
+  ToolCallLocateCodebaseSymbolsDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallEditDetailSchema,
   ToolCallEditManyDetailSchema,
@@ -379,8 +300,6 @@ export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 
 export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
-  ToolCallReadManyDetailSchema,
-  ToolCallSearchManyDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallEditDetailSchema,
@@ -392,6 +311,6 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallTodoWriteDetailSchema,
   ToolCallTaskDetailSchema,
   ToolCallSkillDetailSchema,
-  ToolCallQueryCodebaseKnowledgeDetailSchema,
+  ToolCallLocateCodebaseSymbolsDetailSchema,
 ]);
 export type ToolCallDetail = z.infer<typeof ToolCallDetailSchema>;

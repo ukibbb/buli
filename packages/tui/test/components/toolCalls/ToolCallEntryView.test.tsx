@@ -21,48 +21,6 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("1-10:10");
   });
 
-  test("dispatches_read_many", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallEntryView
-        renderState="completed"
-        toolCallDetail={{
-          toolName: "read_many",
-          requestedReadTargetPaths: ["README.md", "package.json"],
-          completedReadCount: 2,
-          failedReadCount: 0,
-        }}
-      />,
-      { width: 80, height: 15 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("2 paths");
-    expect(frame).toContain("2 read");
-  });
-
-  test("dispatches_search_many", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallEntryView
-        renderState="completed"
-        toolCallDetail={{
-          toolName: "search_many",
-          requestedSearches: [
-            { searchKind: "glob", globPattern: "**/*.ts" },
-            { searchKind: "grep", regexPattern: "ToolCallRequest" },
-          ],
-          completedSearchCount: 2,
-          failedSearchCount: 0,
-        }}
-      />,
-      { width: 80, height: 15 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("SearchMany");
-    expect(frame).toContain("2 searches");
-    expect(frame).toContain("2 searched");
-  });
-
   test("dispatches_grep", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView
@@ -100,13 +58,14 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("2 paths");
   });
 
-  test("dispatches_query_codebase_knowledge", async () => {
+  test("dispatches_locate_codebase_symbols", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView
         renderState="completed"
         toolCallDetail={{
-          toolName: "query_codebase_knowledge",
-          codebaseProblemDescription: "Find runtime dispatch",
+          toolName: "locate_codebase_symbols",
+          symbolNames: ["runDispatch"],
+          filePaths: ["packages/engine/src/runtime.ts"],
           matchedKnowledgeCount: 1,
           recommendedReadCount: 2,
         }}
@@ -115,8 +74,8 @@ describe("ToolCallEntryView", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("Knowledge");
-    expect(frame).toContain("Find runtime dispatch");
+    expect(frame).toContain("LocateSymbols");
+    expect(frame).toContain("1 symbol");
     expect(frame).toContain("1 match");
   });
 

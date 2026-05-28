@@ -1,20 +1,22 @@
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
+  AssistantToolCallRequestSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
   MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT,
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_GREP_CONTEXT_LINE_COUNT,
+  MAX_INSPECTION_QUESTION_LENGTH,
   MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
+  MAX_READ_TOOL_LINE_COUNT,
   MAX_SKILL_NAME_LENGTH,
-  ToolCallRequestSchema,
   isAssistantSubagentName,
   isAssistantToolRequestName,
   SKILL_NAME_PATTERN_TEXT,
+  type AssistantToolCallRequest,
   type AssistantSubagentName,
   type AssistantToolRequestName,
   type ProviderAvailableToolName,
-  type ToolCallRequest,
   type ToolCallRequestByName,
 } from "@buli/contracts";
 import type { ZodIssue } from "zod";
@@ -61,7 +63,7 @@ type JsonObjectRecord = {
 export type OpenAiExecutableToolCallIntent = {
   readonly intentKind: "executable_tool";
   readonly functionCallId: string;
-  readonly toolCallRequest: ToolCallRequest;
+  readonly toolCallRequest: AssistantToolCallRequest;
 };
 
 export type OpenAiInvalidFunctionCallIntent = {
@@ -119,7 +121,7 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
   return {
     type: "function",
     name: "read",
-    description: "Read a file or directory inside the current workspace. Use this only for exact paths already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Do not read paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. For files, lines are returned with 1-indexed line numbers. Prefer precise bounded reads: when grep/search_many returns exact line numbers or symbols, set offset and limit around the relevant range instead of reading the whole/default window. Use null offset/limit only when the full default window is intentionally needed. Do not guess offsets; if output is truncated and the missing lines may affect the answer, continue only from line counts returned by previous reads.",
+    description: `Read an exact evidenced workspace file or directory window. Do not infer paths; discover uncertain paths with glob or grep first. Lines are 1-indexed. Prefer small bounded windows; use null offset/limit only for the default ${MAX_READ_TOOL_LINE_COUNT}-line window. Continue only from line counts returned by previous reads. When many independent windows are needed, request separate read calls together instead of one broad read.`,
     parameters: {
       type: "object",
       properties: {
@@ -135,105 +137,16 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
         limit: {
           type: ["integer", "null"],
           minimum: 1,
-          description: "Maximum number of lines or directory entries to return, or null for the default limit.",
+          maximum: MAX_READ_TOOL_LINE_COUNT,
+          description: `Maximum lines or directory entries to return, up to ${MAX_READ_TOOL_LINE_COUNT}; null uses the default window.`,
+        },
+        inspectionQuestion: {
+          type: "string",
+          maxLength: MAX_INSPECTION_QUESTION_LENGTH,
+          description: "Question this read should answer for the current task. This becomes a purpose-aware evidence note if useful later.",
         },
       },
-      required: ["filePath", "offset", "limit"],
-      additionalProperties: false,
-    },
-    strict: true,
-  };
-}
-
-export function createReadManyToolDefinition(): OpenAiToolDefinition<"read_many"> {
-  return {
-    type: "function",
-    name: "read_many",
-    description: "Read multiple files or directories inside the current workspace in one batched call. Use this when several exact paths are already evidenced by the user, search_many, glob, grep, a previous directory read, or a previous successful read. Prefer one larger independent read_many batch over many small sequential read calls because batch children run concurrently. Keep each target precise: when grep/search_many returns exact line numbers or symbols, set that target's offset and limit around the relevant range instead of reading whole/default windows. Use null offset/limit only when the full default window is intentionally needed for that target. Do not include paths inferred from imports, symbols, filenames, likely extensions, or project conventions; discover uncertain paths with search_many, glob, or grep first. Each target uses the same offset and limit semantics as read.",
-    parameters: {
-      type: "object",
-      properties: {
-        targets: {
-          type: "array",
-          minItems: 1,
-          description: "Files or directories to read. Use only exact evidenced paths.",
-          items: {
-            type: "object",
-            description: "One file or directory read target.",
-            properties: {
-              filePath: {
-                type: "string",
-                description: "Path to the file or directory to read. Relative paths are resolved from the workspace root.",
-              },
-              offset: {
-                type: ["integer", "null"],
-                minimum: 1,
-                description: "1-indexed first line to return for this target, or null to start at line 1.",
-              },
-              limit: {
-                type: ["integer", "null"],
-                minimum: 1,
-                description: "Maximum number of lines or directory entries to return for this target, or null for the default limit.",
-              },
-            },
-            required: ["filePath", "offset", "limit"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["targets"],
-      additionalProperties: false,
-    },
-    strict: true,
-  };
-}
-
-export function createSearchManyToolDefinition(): OpenAiToolDefinition<"search_many"> {
-  return {
-    type: "function",
-    name: "search_many",
-    description: "Run multiple independent glob and grep searches inside the current workspace in one batched call. Use this for broad file discovery or text-search mapping when query_codebase_knowledge does not cover the need or when the searches do not depend on its result. Prefer one larger independent search_many batch over many small sequential glob/grep calls because batch children run concurrently. Identical child searches are deduplicated by the runtime. For grep searches, set contextLineCount to a small number only when the surrounding lines are likely needed. Use read_many after search_many when several exact paths from the search results need inspection.",
-    parameters: {
-      type: "object",
-      properties: {
-        searches: {
-          type: "array",
-          minItems: 1,
-          description: "Independent searches to run. Put unrelated glob and grep mapping searches in the same call instead of separate function calls.",
-          items: {
-            type: "object",
-            description: "One glob or grep search.",
-            properties: {
-              searchKind: {
-                type: "string",
-                enum: ["glob", "grep"],
-                description: "Search type: glob finds file paths by filename pattern; grep searches file contents by regular expression.",
-              },
-              pattern: {
-                type: "string",
-                description: "Glob pattern for glob searches, or JavaScript regular expression pattern for grep searches.",
-              },
-              path: {
-                type: ["string", "null"],
-                description: "Single directory for glob, single file or directory for grep, or null to search from the workspace root. Do not pass multiple paths.",
-              },
-              include: {
-                type: ["string", "null"],
-                description: "Optional grep include glob, such as *.ts or **/*.{ts,tsx}; use null for glob searches.",
-              },
-              contextLineCount: {
-                type: ["integer", "null"],
-                minimum: 0,
-                maximum: MAX_GREP_CONTEXT_LINE_COUNT,
-                description: `For grep searches, number of context lines before and after each returned match, 0-${MAX_GREP_CONTEXT_LINE_COUNT}; use null for glob searches or broad mapping.`,
-              },
-            },
-            required: ["searchKind", "pattern", "path", "include", "contextLineCount"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["searches"],
+      required: ["filePath", "offset", "limit", "inspectionQuestion"],
       additionalProperties: false,
     },
     strict: true,
@@ -244,7 +157,7 @@ export function createGlobToolDefinition(): OpenAiToolDefinition<"glob"> {
   return {
     type: "function",
     name: "glob",
-    description: "Find files inside the current workspace by filename glob pattern. Use this instead of bash for file discovery. The path argument is one directory only; do not pass multiple directories, shell globs, or a trailing * there.",
+    description: "Find workspace files by filename glob. Use instead of bash for discovery. The path argument is one directory only. Split broad discovery by parent directory or pattern and batch independent glob calls instead of one oversized lookup.",
     parameters: {
       type: "object",
       properties: {
@@ -256,8 +169,13 @@ export function createGlobToolDefinition(): OpenAiToolDefinition<"glob"> {
           type: ["string", "null"],
           description: "Single directory to search in, or null to search from the workspace root. Do not pass multiple paths, spaces as separators, shell globs, or a trailing *; use pattern for matching or make separate glob calls.",
         },
+        inspectionQuestion: {
+          type: "string",
+          maxLength: MAX_INSPECTION_QUESTION_LENGTH,
+          description: "Question this discovery should answer for the current task. This becomes a purpose-aware evidence note if useful later.",
+        },
       },
-      required: ["pattern", "path"],
+      required: ["pattern", "path", "inspectionQuestion"],
       additionalProperties: false,
     },
     strict: true,
@@ -268,7 +186,7 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
   return {
     type: "function",
     name: "grep",
-    description: "Search text inside files in the current workspace using a JavaScript regular expression. Use this instead of bash for text search. The path argument is one file or directory only; do not pass multiple paths, shell globs, or a trailing * there. Set contextLineCount to a small number only when surrounding lines are likely needed; use null or 0 for broad discovery.",
+    description: "Search workspace text with a JavaScript regular expression. Use instead of bash for text search. The path argument is one file or directory; keep contextLineCount small or null for broad discovery. Split broad searches by path, include, or pattern and batch independent grep calls instead of one oversized search.",
     parameters: {
       type: "object",
       properties: {
@@ -290,52 +208,53 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
           maximum: MAX_GREP_CONTEXT_LINE_COUNT,
           description: `Number of context lines before and after each returned match, 0-${MAX_GREP_CONTEXT_LINE_COUNT}; use null or 0 for broad discovery.`,
         },
+        inspectionQuestion: {
+          type: "string",
+          maxLength: MAX_INSPECTION_QUESTION_LENGTH,
+          description: "Question this text search should answer for the current task. This becomes a purpose-aware evidence note if useful later.",
+        },
       },
-      required: ["pattern", "path", "include", "contextLineCount"],
+      required: ["pattern", "path", "include", "contextLineCount", "inspectionQuestion"],
       additionalProperties: false,
     },
     strict: true,
   };
 }
 
-export function createQueryCodebaseKnowledgeToolDefinition(): OpenAiToolDefinition<"query_codebase_knowledge"> {
+export function createLocateCodebaseSymbolsToolDefinition(): OpenAiToolDefinition<"locate_codebase_symbols"> {
   return {
     type: "function",
-    name: "query_codebase_knowledge",
-    description: "Query Buli's codebase knowledge index to locate relevant files, symbols, evidence, and recommended reads. Use this first for broad codebase orientation before broad search when the question is about where behavior, symbols, flows, or concepts live. Results are compact knowledge pointers, not raw source; read the exact current source ranges with read/read_many before relying on details. Reuse visible prior identical queries instead of repeating them, and narrow broad results with known file or symbol hints when available.",
+    name: "locate_codebase_symbols",
+    description: "Resolve a known symbol name or file path to its exact definition: file, kind, exported flag, and start-end line span, plus a precise read target. Use after grep surfaces a name, before reading. Verify current source with read. For many symbols or file paths, split symbolNames/filePaths into small batches and make multiple concurrent locate_codebase_symbols calls instead of one large lookup.",
     parameters: {
       type: "object",
       properties: {
-        codebaseProblemDescription: {
-          type: "string",
-          description: "Natural-language description of the codebase behavior, concept, symbol, bug, or change you need to locate.",
-        },
-        knownRelevantFilePaths: {
+        symbolNames: {
           type: ["array", "null"],
           maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
-          description: "Optional file paths already known to be relevant; use null when none are known.",
-          items: {
-            type: "string",
-            description: "Workspace-relative or absolute path hint.",
-          },
-        },
-        knownRelevantSymbolNames: {
-          type: ["array", "null"],
-          maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
-          description: "Optional symbol names already known to be relevant; use null when none are known.",
+          description: "Symbol names to locate, or null when none are provided.",
           items: {
             type: "string",
             description: "Known function, class, type, interface, enum, or variable name.",
           },
         },
-        maximumKnowledgeResultCount: {
+        filePaths: {
+          type: ["array", "null"],
+          maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
+          description: "File paths whose imports, exports, and symbol list to return, or null when none are provided.",
+          items: {
+            type: "string",
+            description: "Workspace-relative or absolute path hint.",
+          },
+        },
+        maximumResultCount: {
           type: ["integer", "null"],
           minimum: 1,
           maximum: MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT,
-          description: "Maximum number of knowledge matches to return, or null for the default.",
+          description: "Maximum number of matches to return, or null for the default.",
         },
       },
-      required: ["codebaseProblemDescription", "knownRelevantFilePaths", "knownRelevantSymbolNames", "maximumKnowledgeResultCount"],
+      required: ["symbolNames", "filePaths", "maximumResultCount"],
       additionalProperties: false,
     },
     strict: true,
@@ -543,16 +462,6 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     definition: createReadToolDefinition(),
     parseToolCallRequest: parseReadOpenAiToolCallRequest,
   },
-  read_many: {
-    toolName: "read_many",
-    definition: createReadManyToolDefinition(),
-    parseToolCallRequest: parseReadManyOpenAiToolCallRequest,
-  },
-  search_many: {
-    toolName: "search_many",
-    definition: createSearchManyToolDefinition(),
-    parseToolCallRequest: parseSearchManyOpenAiToolCallRequest,
-  },
   glob: {
     toolName: "glob",
     definition: createGlobToolDefinition(),
@@ -563,10 +472,10 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     definition: createGrepToolDefinition(),
     parseToolCallRequest: parseGrepOpenAiToolCallRequest,
   },
-  query_codebase_knowledge: {
-    toolName: "query_codebase_knowledge",
-    definition: createQueryCodebaseKnowledgeToolDefinition(),
-    parseToolCallRequest: parseQueryCodebaseKnowledgeOpenAiToolCallRequest,
+  locate_codebase_symbols: {
+    toolName: "locate_codebase_symbols",
+    definition: createLocateCodebaseSymbolsToolDefinition(),
+    parseToolCallRequest: parseLocateCodebaseSymbolsOpenAiToolCallRequest,
   },
   edit: {
     toolName: "edit",
@@ -660,7 +569,7 @@ function createValidOpenAiProviderFunctionCallIntent(input: {
 export function createOpenAiToolCallRequest(input: {
   toolName: string;
   argumentsText: string;
-}): ToolCallRequest {
+}): AssistantToolCallRequest {
   const parsedArguments = parseOpenAiFunctionArguments({
     functionName: input.toolName,
     argumentsText: input.argumentsText,
@@ -677,9 +586,9 @@ export function createOpenAiToolCallRequest(input: {
 
 function parseOpenAiToolCallRequestContract(input: {
   toolName: AssistantToolRequestName;
-  toolCallRequest: ToolCallRequest;
-}): ToolCallRequest {
-  const parsedToolCallRequest = ToolCallRequestSchema.safeParse(input.toolCallRequest);
+  toolCallRequest: AssistantToolCallRequest;
+}): AssistantToolCallRequest {
+  const parsedToolCallRequest = AssistantToolCallRequestSchema.safeParse(input.toolCallRequest);
   if (parsedToolCallRequest.success) {
     return parsedToolCallRequest.data;
   }
@@ -708,81 +617,24 @@ function parseBashOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
 function parseReadOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"read"> {
   const offsetLineNumber = readOptionalPositiveIntegerToolArgument(parsedArguments, "offset", "read");
   const maximumLineCount = readOptionalPositiveIntegerToolArgument(parsedArguments, "limit", "read");
+  const inspectionQuestion = readOptionalStringToolArgument(parsedArguments, "inspectionQuestion", "read");
   return {
     toolName: "read",
     readTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "read"),
     ...(offsetLineNumber !== undefined ? { offsetLineNumber } : {}),
     ...(maximumLineCount !== undefined ? { maximumLineCount } : {}),
+    ...(inspectionQuestion !== undefined ? { inspectionQuestion } : {}),
   };
-}
-
-function parseReadManyOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"read_many"> {
-  const readTargetArguments = readRequiredObjectArrayToolArgument(parsedArguments, "targets", "read_many");
-  return {
-    toolName: "read_many",
-    readTargets: readTargetArguments.map((targetArguments) => {
-      const offsetLineNumber = readOptionalPositiveIntegerToolArgument(targetArguments, "offset", "read_many");
-      const maximumLineCount = readOptionalPositiveIntegerToolArgument(targetArguments, "limit", "read_many");
-      return {
-        readTargetPath: readRequiredStringToolArgument(targetArguments, "filePath", "read_many"),
-        ...(offsetLineNumber !== undefined ? { offsetLineNumber } : {}),
-        ...(maximumLineCount !== undefined ? { maximumLineCount } : {}),
-      };
-    }),
-  };
-}
-
-function parseSearchManyOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"search_many"> {
-  const searchArguments = readRequiredObjectArrayToolArgument(parsedArguments, "searches", "search_many");
-  return {
-    toolName: "search_many",
-    searches: searchArguments.map(parseSearchManySearchOpenAiToolCallRequest),
-  };
-}
-
-function parseSearchManySearchOpenAiToolCallRequest(
-  searchArguments: JsonObjectRecord,
-): ToolCallRequestByName<"search_many">["searches"][number] {
-  const searchKind = readRequiredStringToolArgument(searchArguments, "searchKind", "search_many");
-  const pattern = readRequiredStringToolArgument(searchArguments, "pattern", "search_many");
-  const searchPath = readOptionalStringToolArgument(searchArguments, "path", "search_many");
-  const includeGlobPattern = readOptionalStringToolArgument(searchArguments, "include", "search_many");
-  const contextLineCount = readOptionalNonNegativeIntegerToolArgument(searchArguments, "contextLineCount", "search_many");
-
-  if (searchKind === "glob") {
-    if (includeGlobPattern !== undefined) {
-      throw new Error("OpenAI function call for search_many has invalid glob search include argument: include must be null");
-    }
-    if (contextLineCount !== undefined) {
-      throw new Error("OpenAI function call for search_many has invalid glob search contextLineCount argument: contextLineCount must be null");
-    }
-
-    return {
-      searchKind: "glob",
-      globPattern: pattern,
-      ...(searchPath !== undefined ? { searchDirectoryPath: searchPath } : {}),
-    };
-  }
-
-  if (searchKind === "grep") {
-    return {
-      searchKind: "grep",
-      regexPattern: pattern,
-      ...(searchPath !== undefined ? { searchPath } : {}),
-      ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
-      ...(contextLineCount !== undefined ? { contextLineCount } : {}),
-    };
-  }
-
-  throw new Error(`OpenAI function call for search_many has unsupported searchKind: ${searchKind}`);
 }
 
 function parseGlobOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"glob"> {
   const searchDirectoryPath = readOptionalStringToolArgument(parsedArguments, "path", "glob");
+  const inspectionQuestion = readOptionalStringToolArgument(parsedArguments, "inspectionQuestion", "glob");
   return {
     toolName: "glob",
     globPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "glob"),
     ...(searchDirectoryPath !== undefined ? { searchDirectoryPath } : {}),
+    ...(inspectionQuestion !== undefined ? { inspectionQuestion } : {}),
   };
 }
 
@@ -790,44 +642,49 @@ function parseGrepOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
   const searchPath = readOptionalStringToolArgument(parsedArguments, "path", "grep");
   const includeGlobPattern = readOptionalStringToolArgument(parsedArguments, "include", "grep");
   const contextLineCount = readOptionalNonNegativeIntegerToolArgument(parsedArguments, "contextLineCount", "grep");
+  const inspectionQuestion = readOptionalStringToolArgument(parsedArguments, "inspectionQuestion", "grep");
   return {
     toolName: "grep",
     regexPattern: readRequiredStringToolArgument(parsedArguments, "pattern", "grep"),
     ...(searchPath !== undefined ? { searchPath } : {}),
     ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
     ...(contextLineCount !== undefined ? { contextLineCount } : {}),
+    ...(inspectionQuestion !== undefined ? { inspectionQuestion } : {}),
   };
 }
 
-function parseQueryCodebaseKnowledgeOpenAiToolCallRequest(
+function parseLocateCodebaseSymbolsOpenAiToolCallRequest(
   parsedArguments: JsonObjectRecord,
-): ToolCallRequestByName<"query_codebase_knowledge"> {
-  const knownRelevantFilePaths = readOptionalStringArrayToolArgument(
+): ToolCallRequestByName<"locate_codebase_symbols"> {
+  const symbolNames = readOptionalStringArrayToolArgument(
     parsedArguments,
-    "knownRelevantFilePaths",
-    "query_codebase_knowledge",
+    "symbolNames",
+    "locate_codebase_symbols",
   );
-  const knownRelevantSymbolNames = readOptionalStringArrayToolArgument(
+  const filePaths = readOptionalStringArrayToolArgument(
     parsedArguments,
-    "knownRelevantSymbolNames",
-    "query_codebase_knowledge",
+    "filePaths",
+    "locate_codebase_symbols",
   );
-  const maximumKnowledgeResultCount = readOptionalPositiveIntegerToolArgument(
+  const maximumResultCount = readOptionalPositiveIntegerToolArgument(
     parsedArguments,
-    "maximumKnowledgeResultCount",
-    "query_codebase_knowledge",
+    "maximumResultCount",
+    "locate_codebase_symbols",
   );
 
+  // The discriminated-union schema cannot carry this cross-field rule, so the
+  // "at least one target" contract is enforced at parse time.
+  if ((symbolNames?.length ?? 0) === 0 && (filePaths?.length ?? 0) === 0) {
+    throw new Error(
+      "OpenAI function call for locate_codebase_symbols requires at least one symbolNames or filePaths entry",
+    );
+  }
+
   return {
-    toolName: "query_codebase_knowledge",
-    codebaseProblemDescription: readRequiredStringToolArgument(
-      parsedArguments,
-      "codebaseProblemDescription",
-      "query_codebase_knowledge",
-    ),
-    ...(knownRelevantFilePaths !== undefined ? { knownRelevantFilePaths } : {}),
-    ...(knownRelevantSymbolNames !== undefined ? { knownRelevantSymbolNames } : {}),
-    ...(maximumKnowledgeResultCount !== undefined ? { maximumKnowledgeResultCount } : {}),
+    toolName: "locate_codebase_symbols",
+    ...(symbolNames !== undefined ? { symbolNames } : {}),
+    ...(filePaths !== undefined ? { filePaths } : {}),
+    ...(maximumResultCount !== undefined ? { maximumResultCount } : {}),
   };
 }
 

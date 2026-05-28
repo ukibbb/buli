@@ -9,6 +9,7 @@ import {
   type DeniedToolResultConversationSessionEntry,
   type FailedToolResultConversationSessionEntry,
   isWorkspaceInspectionToolCallRequest,
+  MAX_READ_TOOL_LINE_COUNT,
   type AssistantResponseEvent,
   type AssistantToolCallConversationMessagePart,
   type BuliDiagnosticLogger,
@@ -43,11 +44,10 @@ import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { buildBuliExplorerSystemPrompt } from "./systemPrompt.ts";
 import { resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 
-const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, read_many, search_many, glob, grep, and query_codebase_knowledge instead.";
+const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, glob, grep, and locate_codebase_symbols instead.";
 const TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT = 192;
 const TASK_SUBAGENT_CHILD_TOOL_RESULT_TEXT_CHECKPOINT_LIMIT = 1_200_000;
 export const DEFAULT_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS = 120_000;
-const TASK_SUBAGENT_DEFAULT_READ_MAXIMUM_LINE_COUNT = 600;
 const MAX_FAILED_TASK_CHILD_TOOL_RESULT_TEXT_TOTAL_LENGTH = 20_000;
 const MAX_FAILED_TASK_CHILD_TOOL_RESULT_TEXT_LENGTH = 4_000;
 
@@ -858,7 +858,7 @@ function createEffectiveTaskSubagentRequestedToolCall(
     ...requestedToolCall,
     toolCallRequest: {
       ...requestedToolCall.toolCallRequest,
-      maximumLineCount: TASK_SUBAGENT_DEFAULT_READ_MAXIMUM_LINE_COUNT,
+      maximumLineCount: MAX_READ_TOOL_LINE_COUNT,
     },
   };
 }
@@ -991,11 +991,9 @@ function createSubagentChildToolCallDetailFromToolCallDetail(
 ): SubagentChildToolCallDetail | undefined {
   if (
     toolCallDetail.toolName === "read" ||
-    toolCallDetail.toolName === "read_many" ||
-    toolCallDetail.toolName === "search_many" ||
     toolCallDetail.toolName === "glob" ||
     toolCallDetail.toolName === "grep" ||
-    toolCallDetail.toolName === "query_codebase_knowledge" ||
+    toolCallDetail.toolName === "locate_codebase_symbols" ||
     toolCallDetail.toolName === "bash" ||
     toolCallDetail.toolName === "edit" ||
     toolCallDetail.toolName === "edit_many" ||
@@ -1276,16 +1274,12 @@ function formatSubagentChildToolCallDetail(subagentChildToolCallDetail: Subagent
   switch (subagentChildToolCallDetail.toolName) {
     case "read":
       return `read ${subagentChildToolCallDetail.readFilePath}`;
-    case "read_many":
-      return `read_many ${subagentChildToolCallDetail.requestedReadTargetPaths.length} paths`;
-    case "search_many":
-      return `search_many ${subagentChildToolCallDetail.requestedSearches.length} searches`;
     case "glob":
       return `glob ${subagentChildToolCallDetail.globPattern}`;
     case "grep":
       return `grep ${subagentChildToolCallDetail.searchPattern}`;
-    case "query_codebase_knowledge":
-      return `query_codebase_knowledge ${subagentChildToolCallDetail.codebaseProblemDescription}`;
+    case "locate_codebase_symbols":
+      return `locate_codebase_symbols ${[...(subagentChildToolCallDetail.symbolNames ?? []), ...(subagentChildToolCallDetail.filePaths ?? [])].join(", ")}`;
     case "bash":
       return `bash ${subagentChildToolCallDetail.commandLine}`;
     case "edit":
@@ -1368,5 +1362,5 @@ function buildSubagentDisallowedToolDenialText(toolCallRequest: ToolCallRequest)
     return NESTED_SUBAGENT_DENIAL_TEXT;
   }
 
-  return `Subagent is read-only and cannot use ${toolCallRequest.toolName}. Use read, read_many, search_many, glob, grep, or query_codebase_knowledge instead.`;
+  return `Subagent is read-only and cannot use ${toolCallRequest.toolName}. Use read, glob, grep, or locate_codebase_symbols instead.`;
 }

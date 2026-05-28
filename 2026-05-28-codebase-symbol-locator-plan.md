@@ -511,7 +511,7 @@ export function createLocateCodebaseSymbolsToolDefinition(): OpenAiToolDefinitio
     type: "function",
     name: "locate_codebase_symbols",
     description:
-      "Resolve a known symbol name or file path to its exact definition: file, kind, exported flag, and start-end line span, plus a precise read target. Use after grep/search_many surfaces a name, before reading. Verify current source with read.",
+      "Resolve a known symbol name or file path to its exact definition: file, kind, exported flag, and start-end line span, plus a precise read target. Use after grep surfaces a name, before reading. Verify current source with read.",
     parameters: {
       type: "object",
       properties: {
@@ -662,10 +662,10 @@ git commit -m "Render locate_codebase_symbols tool calls in CLI export"
 
 Lines 235, 237, 238, 432, 434, 435, 446, 448. Replace the orientation/flows/concepts framing with the locator workflow. Suggested replacements:
 
-- "- After grep or search_many surfaces a symbol name, call locate_codebase_symbols with that name to get its exact file and start-end line span, then read that exact range."
+- "- After grep surfaces a symbol name, call locate_codebase_symbols with that name to get its exact file and start-end line span, then read that exact range."
 - "- For file structure, call locate_codebase_symbols with filePaths to get a file's imports, exports, and symbol list before reading."
 - "- Always verify locate_codebase_symbols results with read before relying on implementation details."
-- For the concurrency line (446): "- Run locate_codebase_symbols concurrently with independent read or search_many calls when those inspections do not depend on its result."
+- For the concurrency line (446): "- Run locate_codebase_symbols concurrently with independent read or grep or glob calls when those inspections do not depend on its result."
 
 Remove every mention of "flows or concepts" and "broad orientation."
 

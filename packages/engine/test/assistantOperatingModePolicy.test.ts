@@ -10,16 +10,16 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"] });
+  ).toEqual({ availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
   expect(
     resolveAvailableToolNamesForAssistantOperatingMode({
       assistantOperatingMode: "plan",
-      requestedAvailableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "query_codebase_knowledge", "task"],
+      requestedAvailableToolNames: ["bash", "read", "write", "grep", "locate_codebase_symbols", "task"],
     }),
-  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "grep", "query_codebase_knowledge", "task"] });
+  ).toEqual({ availableToolNames: ["read", "grep", "locate_codebase_symbols", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode preserves requested tools in implementation mode", () => {
@@ -41,11 +41,9 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation 
     availableToolNames: [
       "bash",
       "read",
-      "read_many",
-      "search_many",
       "glob",
       "grep",
-      "query_codebase_knowledge",
+      "locate_codebase_symbols",
       "edit",
       "edit_many",
       "patch",
@@ -66,7 +64,7 @@ test("resolveAssistantOperatingModeToolAccess denies bash in plan mode", () => {
     }),
   ).toEqual({
     accessKind: "denied",
-    effectiveAvailableToolNames: ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"],
+    effectiveAvailableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"],
     denialText: "Plan Agent is read-only, so this bash command was not executed.",
   });
 });

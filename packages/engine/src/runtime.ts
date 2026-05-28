@@ -125,6 +125,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.workspaceSnapshotStore = input.workspaceSnapshotStore;
     this.workspaceCodebaseKnowledgeIndex = input.workspaceCodebaseKnowledgeIndex ?? createDefaultWorkspaceCodebaseKnowledgeIndex({
       workspaceRootPath: input.workspaceRootPath,
+      ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
     });
     this.conversationHistory = input.conversationHistory ?? new InMemoryConversationHistory();
     this.diagnosticLogger = input.diagnosticLogger;

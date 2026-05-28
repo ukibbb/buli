@@ -37,20 +37,6 @@ test("InMemoryConversationHistory derives model-context items from completed ses
 
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
     { itemKind: "user_message", messageText: "Run pwd" },
-    {
-      itemKind: "tool_call",
-      toolCallId: "call_1",
-      toolCallRequest: {
-        toolName: "bash",
-        shellCommand: "pwd",
-        commandDescription: "Print working directory",
-      },
-    },
-    {
-      itemKind: "tool_result",
-      toolCallId: "call_1",
-      toolResultText: "Working directory: /tmp/demo",
-    },
     { itemKind: "assistant_message", messageText: "Done." },
   ]);
 });

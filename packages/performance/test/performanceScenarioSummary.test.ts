@@ -92,4 +92,5 @@ test("formatPerformanceRunMarkdown renders aggregate metric table", () => {
 test("scenario registry exposes storage and context-growth profiling scenarios", () => {
   expect(listBuliPerformanceScenarioNames()).toContain("sqlite-session-large-history");
   expect(listBuliPerformanceScenarioNames()).toContain("tool-output-context-growth");
+  expect(listBuliPerformanceScenarioNames()).toContain("codebase-knowledge-startup-index");
 });

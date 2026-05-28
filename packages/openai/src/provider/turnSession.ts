@@ -342,6 +342,8 @@ export class OpenAiProviderConversationTurn {
     let maxToolResultTextLength = 0;
     const observedRequestedToolCallIds = new Set<string>();
     const toolCallPatternObservationCountByFingerprint = new Map<string, number>();
+    const exactToolCallObservationCountByFingerprint = new Map<string, number>();
+    const repeatedExactToolCallFeedbackByToolCallId = new Map<string, string>();
     const turnStartedAtMs = Date.now();
 
     const observeRequestedToolCallsForTurnLimitsAndDiagnostics = (input: {
@@ -366,6 +368,17 @@ export class OpenAiProviderConversationTurn {
       requestedToolCallCount = nextRequestedToolCallCount;
       for (const requestedToolCall of newlyObservedRequestedToolCalls) {
         observedRequestedToolCallIds.add(requestedToolCall.toolCallId);
+
+        const exactToolCallRequestFingerprint = createExactToolCallRequestFingerprint(requestedToolCall.toolCallRequest);
+        const exactToolCallObservationCount =
+          (exactToolCallObservationCountByFingerprint.get(exactToolCallRequestFingerprint) ?? 0) + 1;
+        exactToolCallObservationCountByFingerprint.set(exactToolCallRequestFingerprint, exactToolCallObservationCount);
+        if (exactToolCallObservationCount >= this.repeatedToolCallDiagnosticWarningThreshold) {
+          repeatedExactToolCallFeedbackByToolCallId.set(
+            requestedToolCall.toolCallId,
+            createRepeatedExactToolCallFeedbackText(requestedToolCall.toolCallRequest),
+          );
+        }
       }
       this.logProviderTurnSoftDiagnosticWarnings({
         responseStepIndex: input.responseStepIndex,
@@ -654,9 +667,16 @@ export class OpenAiProviderConversationTurn {
                 throw new Error(`OpenAI provider turn is missing a tool result for ${providerFunctionCallIntent.functionCallId}.`);
               }
 
+              const repeatedExactToolCallFeedbackText = repeatedExactToolCallFeedbackByToolCallId.get(
+                toolResultSubmission.toolCallId,
+              );
+
               return createFunctionCallOutputInputItem(
                 toolResultSubmission.toolCallId,
-                toolResultSubmission.toolResultText,
+                appendRepeatedExactToolCallFeedbackToToolResultText({
+                  toolResultText: toolResultSubmission.toolResultText,
+                  repeatedExactToolCallFeedbackText,
+                }),
               );
             }
             default:
@@ -1097,6 +1117,28 @@ function createToolCallPatternDiagnosticFingerprint(diagnosticFields: BuliDiagno
   );
 }
 
+function createExactToolCallRequestFingerprint(toolCallRequest: ToolCallRequest): string {
+  return JSON.stringify(toolCallRequest);
+}
+
+function createRepeatedExactToolCallFeedbackText(toolCallRequest: ToolCallRequest): string {
+  return [
+    "[Repeated tool-call reminder]",
+    `This exact ${toolCallRequest.toolName} call has already been requested in this assistant turn. Reuse the previous result unless you need different evidence.`,
+  ].join("\n");
+}
+
+function appendRepeatedExactToolCallFeedbackToToolResultText(input: Readonly<{
+  toolResultText: string;
+  repeatedExactToolCallFeedbackText: string | undefined;
+}>): string {
+  if (input.repeatedExactToolCallFeedbackText === undefined) {
+    return input.toolResultText;
+  }
+
+  return [input.toolResultText, input.repeatedExactToolCallFeedbackText].join("\n\n");
+}
+
 function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest): BuliDiagnosticLogFields {
   switch (toolCallRequest.toolName) {
     case "bash":
@@ -1107,26 +1149,6 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
         readTargetPathLength: toolCallRequest.readTargetPath.length,
         hasOffsetLineNumber: toolCallRequest.offsetLineNumber !== undefined,
         hasMaximumLineCount: toolCallRequest.maximumLineCount !== undefined,
-      };
-    case "read_many":
-      return {
-        toolName: toolCallRequest.toolName,
-        readTargetCount: toolCallRequest.readTargets.length,
-        readTargetPathLength: toolCallRequest.readTargets.reduce(
-          (totalPathLength, readTarget) => totalPathLength + readTarget.readTargetPath.length,
-          0,
-        ),
-        readTargetWithOffsetCount: toolCallRequest.readTargets.filter((readTarget) => readTarget.offsetLineNumber !== undefined).length,
-        readTargetWithMaximumLineCountCount: toolCallRequest.readTargets.filter((readTarget) =>
-          readTarget.maximumLineCount !== undefined
-        ).length,
-      };
-    case "search_many":
-      return {
-        toolName: toolCallRequest.toolName,
-        searchCount: toolCallRequest.searches.length,
-        globSearchCount: toolCallRequest.searches.filter((search) => search.searchKind === "glob").length,
-        grepSearchCount: toolCallRequest.searches.filter((search) => search.searchKind === "grep").length,
       };
     case "glob":
       return {
@@ -1141,13 +1163,12 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
         hasSearchPath: toolCallRequest.searchPath !== undefined,
         hasIncludeGlobPattern: toolCallRequest.includeGlobPattern !== undefined,
       };
-    case "query_codebase_knowledge":
+    case "locate_codebase_symbols":
       return {
         toolName: toolCallRequest.toolName,
-        codebaseProblemDescriptionLength: toolCallRequest.codebaseProblemDescription.length,
-        knownRelevantFilePathCount: toolCallRequest.knownRelevantFilePaths?.length ?? 0,
-        knownRelevantSymbolNameCount: toolCallRequest.knownRelevantSymbolNames?.length ?? 0,
-        hasMaximumKnowledgeResultCount: toolCallRequest.maximumKnowledgeResultCount !== undefined,
+        symbolNameCount: toolCallRequest.symbolNames?.length ?? 0,
+        filePathCount: toolCallRequest.filePaths?.length ?? 0,
+        hasMaximumResultCount: toolCallRequest.maximumResultCount !== undefined,
       };
     case "edit":
       return {

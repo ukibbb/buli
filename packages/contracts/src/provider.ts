@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { PlanStepSchema } from "./planProposal.ts";
 import type { AssistantToolRequestName } from "./toolCatalog.ts";
-import { ToolCallRequestSchema } from "./toolCallRequest.ts";
+import { AssistantToolCallRequestSchema } from "./toolCallRequest.ts";
 
 export const ReasoningEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]);
 export type ProviderAvailableToolName = AssistantToolRequestName;
@@ -83,14 +83,14 @@ export const ProviderToolCallRequestedEventSchema = z
   .object({
     type: z.literal("tool_call_requested"),
     toolCallId: z.string().min(1),
-    toolCallRequest: ToolCallRequestSchema,
+    toolCallRequest: AssistantToolCallRequestSchema,
   })
   .strict();
 
 export const ProviderRequestedToolCallSchema = z
   .object({
     toolCallId: z.string().min(1),
-    toolCallRequest: ToolCallRequestSchema,
+    toolCallRequest: AssistantToolCallRequestSchema,
   })
   .strict();
 

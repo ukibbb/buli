@@ -1,11 +1,11 @@
-import type { ProviderRequestedToolCall, TokenUsage, ToolCallRequest } from "@buli/contracts";
+import type { AssistantToolCallRequest, ProviderRequestedToolCall, TokenUsage } from "@buli/contracts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import type { OpenAiProviderFunctionCallIntent } from "./toolDefinitions.ts";
 
 export type OpenAiResponseStepToolCallRequestedState = {
   terminalKind: "tool_call_requested";
   toolCallId: string;
-  toolCallRequest: ToolCallRequest;
+  toolCallRequest: AssistantToolCallRequest;
   responseOutputItems: unknown[];
   usage: TokenUsage;
 };

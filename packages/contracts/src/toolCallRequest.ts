@@ -3,11 +3,13 @@ import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
 
 export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 300_000;
 export const MAX_TOOL_CALL_PATH_LENGTH = 4_096;
+export const MAX_READ_TOOL_LINE_COUNT = 600;
 export const MAX_BASH_TOOL_COMMAND_LENGTH = 20_000;
 export const MAX_BASH_TOOL_DESCRIPTION_LENGTH = 2_000;
 export const MAX_GLOB_TOOL_PATTERN_LENGTH = 4_096;
 export const MAX_GREP_TOOL_PATTERN_LENGTH = 4_096;
 export const MAX_GREP_CONTEXT_LINE_COUNT = 5;
+export const MAX_INSPECTION_QUESTION_LENGTH = 2_000;
 export const MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH = 1_000_000;
 export const MAX_EDIT_TOOL_REPLACEMENT_TEXT_LENGTH = 1_000_000;
 export const MAX_EDIT_MANY_TOOL_EDIT_COUNT = 100;
@@ -17,12 +19,12 @@ export const MAX_TASK_TOOL_DESCRIPTION_LENGTH = 2_000;
 export const MAX_TASK_TOOL_PROMPT_LENGTH = 100_000;
 export const MAX_SKILL_NAME_LENGTH = 64;
 export const SKILL_NAME_PATTERN_TEXT = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
-export const MAX_CODEBASE_KNOWLEDGE_PROBLEM_DESCRIPTION_LENGTH = 20_000;
 export const MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT = 50;
 export const MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH = 512;
 export const MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT = 20;
 
 const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
+const InspectionQuestionSchema = z.string().min(1).max(MAX_INSPECTION_QUESTION_LENGTH);
 const PATCH_FILE_SECTION_HEADER_PREFIXES = ["*** Add File:", "*** Update File:", "*** Delete File:"] as const;
 const PATCH_TEXT_WITH_EXACTLY_ONE_FILE_SECTION_PATTERN = /^\s*\*\*\* Begin Patch\n(?:[ \t]*\n)*(?:\*\*\* (?:Add File|Update File|Delete File): [^\n]+\n?)(?:(?!\n\*\*\* (?:Add File|Update File|Delete File):)[\s\S])*\n\*\*\* End Patch\s*$/;
 const PATCH_TEXT_WITH_ONE_OR_MORE_FILE_SECTIONS_PATTERN = /^\s*\*\*\* Begin Patch\n[\s\S]*\*\*\* (?:Add File|Update File|Delete File): [^\n]+[\s\S]*\n\*\*\* End Patch\s*$/;
@@ -78,52 +80,8 @@ export const ReadToolCallRequestSchema = z
     toolName: z.literal("read"),
     readTargetPath: WorkspacePathSchema,
     offsetLineNumber: z.number().int().positive().optional(),
-    maximumLineCount: z.number().int().positive().optional(),
-  })
-  .strict();
-
-export const ReadManyToolCallTargetSchema = z
-  .object({
-    readTargetPath: WorkspacePathSchema,
-    offsetLineNumber: z.number().int().positive().optional(),
-    maximumLineCount: z.number().int().positive().optional(),
-  })
-  .strict();
-
-export const ReadManyToolCallRequestSchema = z
-  .object({
-    toolName: z.literal("read_many"),
-    readTargets: z.array(ReadManyToolCallTargetSchema).min(1),
-  })
-  .strict();
-
-export const SearchManyGlobSearchSchema = z
-  .object({
-    searchKind: z.literal("glob"),
-    globPattern: z.string().min(1).max(MAX_GLOB_TOOL_PATTERN_LENGTH),
-    searchDirectoryPath: WorkspacePathSchema.optional(),
-  })
-  .strict();
-
-export const SearchManyGrepSearchSchema = z
-  .object({
-    searchKind: z.literal("grep"),
-    regexPattern: z.string().min(1).max(MAX_GREP_TOOL_PATTERN_LENGTH),
-    searchPath: WorkspacePathSchema.optional(),
-    includeGlobPattern: z.string().min(1).max(MAX_GLOB_TOOL_PATTERN_LENGTH).optional(),
-    contextLineCount: z.number().int().nonnegative().max(MAX_GREP_CONTEXT_LINE_COUNT).optional(),
-  })
-  .strict();
-
-export const SearchManyToolCallSearchSchema = z.discriminatedUnion("searchKind", [
-  SearchManyGlobSearchSchema,
-  SearchManyGrepSearchSchema,
-]);
-
-export const SearchManyToolCallRequestSchema = z
-  .object({
-    toolName: z.literal("search_many"),
-    searches: z.array(SearchManyToolCallSearchSchema).min(1),
+    maximumLineCount: z.number().int().positive().max(MAX_READ_TOOL_LINE_COUNT).optional(),
+    inspectionQuestion: InspectionQuestionSchema.optional(),
   })
   .strict();
 
@@ -132,6 +90,7 @@ export const GlobToolCallRequestSchema = z
     toolName: z.literal("glob"),
     globPattern: z.string().min(1).max(MAX_GLOB_TOOL_PATTERN_LENGTH),
     searchDirectoryPath: WorkspacePathSchema.optional(),
+    inspectionQuestion: InspectionQuestionSchema.optional(),
   })
   .strict();
 
@@ -142,6 +101,7 @@ export const GrepToolCallRequestSchema = z
     searchPath: WorkspacePathSchema.optional(),
     includeGlobPattern: z.string().min(1).max(MAX_GLOB_TOOL_PATTERN_LENGTH).optional(),
     contextLineCount: z.number().int().nonnegative().max(MAX_GREP_CONTEXT_LINE_COUNT).optional(),
+    inspectionQuestion: InspectionQuestionSchema.optional(),
   })
   .strict();
 
@@ -208,24 +168,24 @@ export const SkillToolCallRequestSchema = z
   })
   .strict();
 
-export const QueryCodebaseKnowledgeToolCallRequestSchema = z
+// The "at least one of symbolNames/filePaths" rule lives in toolCatalog's
+// parse path, not here: z.discriminatedUnion members must be raw ZodObjects,
+// and .refine() would produce a ZodEffects that cannot join the union.
+export const LocateCodebaseSymbolsToolCallRequestSchema = z
   .object({
-    toolName: z.literal("query_codebase_knowledge"),
-    codebaseProblemDescription: z.string().min(1).max(MAX_CODEBASE_KNOWLEDGE_PROBLEM_DESCRIPTION_LENGTH),
-    knownRelevantFilePaths: z.array(WorkspacePathSchema).max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT).optional(),
-    knownRelevantSymbolNames: z
+    toolName: z.literal("locate_codebase_symbols"),
+    symbolNames: z
       .array(z.string().min(1).max(MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH))
       .max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT)
       .optional(),
-    maximumKnowledgeResultCount: z.number().int().positive().max(MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT).optional(),
+    filePaths: z.array(WorkspacePathSchema).max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT).optional(),
+    maximumResultCount: z.number().int().positive().max(MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT).optional(),
   })
   .strict();
 
-export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
+export const AssistantToolCallRequestSchema = z.discriminatedUnion("toolName", [
   BashToolCallRequestSchema,
   ReadToolCallRequestSchema,
-  ReadManyToolCallRequestSchema,
-  SearchManyToolCallRequestSchema,
   GlobToolCallRequestSchema,
   GrepToolCallRequestSchema,
   EditToolCallRequestSchema,
@@ -235,17 +195,26 @@ export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   WriteToolCallRequestSchema,
   TaskToolCallRequestSchema,
   SkillToolCallRequestSchema,
-  QueryCodebaseKnowledgeToolCallRequestSchema,
+  LocateCodebaseSymbolsToolCallRequestSchema,
+]);
+
+export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
+  BashToolCallRequestSchema,
+  ReadToolCallRequestSchema,
+  GlobToolCallRequestSchema,
+  GrepToolCallRequestSchema,
+  EditToolCallRequestSchema,
+  EditManyToolCallRequestSchema,
+  PatchToolCallRequestSchema,
+  PatchManyToolCallRequestSchema,
+  WriteToolCallRequestSchema,
+  TaskToolCallRequestSchema,
+  SkillToolCallRequestSchema,
+  LocateCodebaseSymbolsToolCallRequestSchema,
 ]);
 
 export type BashToolCallRequest = z.infer<typeof BashToolCallRequestSchema>;
 export type ReadToolCallRequest = z.infer<typeof ReadToolCallRequestSchema>;
-export type ReadManyToolCallTarget = z.infer<typeof ReadManyToolCallTargetSchema>;
-export type ReadManyToolCallRequest = z.infer<typeof ReadManyToolCallRequestSchema>;
-export type SearchManyGlobSearch = z.infer<typeof SearchManyGlobSearchSchema>;
-export type SearchManyGrepSearch = z.infer<typeof SearchManyGrepSearchSchema>;
-export type SearchManyToolCallSearch = z.infer<typeof SearchManyToolCallSearchSchema>;
-export type SearchManyToolCallRequest = z.infer<typeof SearchManyToolCallRequestSchema>;
 export type GlobToolCallRequest = z.infer<typeof GlobToolCallRequestSchema>;
 export type GrepToolCallRequest = z.infer<typeof GrepToolCallRequestSchema>;
 export type EditToolCallRequest = z.infer<typeof EditToolCallRequestSchema>;
@@ -256,7 +225,8 @@ export type PatchManyToolCallRequest = z.infer<typeof PatchManyToolCallRequestSc
 export type WriteToolCallRequest = z.infer<typeof WriteToolCallRequestSchema>;
 export type TaskToolCallRequest = z.infer<typeof TaskToolCallRequestSchema>;
 export type SkillToolCallRequest = z.infer<typeof SkillToolCallRequestSchema>;
-export type QueryCodebaseKnowledgeToolCallRequest = z.infer<typeof QueryCodebaseKnowledgeToolCallRequestSchema>;
+export type LocateCodebaseSymbolsToolCallRequest = z.infer<typeof LocateCodebaseSymbolsToolCallRequestSchema>;
+export type AssistantToolCallRequest = z.infer<typeof AssistantToolCallRequestSchema>;
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
 function inspectPatchTextStructure(patchText: string): PatchTextStructure {

@@ -1,12 +1,16 @@
 import type {
-  AssistantMessageConversationSessionEntry,
   ConversationSessionEntry,
   OpenAiReasoningReplayItem,
-  OpenAiProviderTurnReplay,
   OpenAiProviderTurnReplayInputItem,
   UserPromptImageAttachment,
 } from "@buli/contracts";
-import { listModelVisibleConversationSessionEntries } from "@buli/contracts";
+import {
+  HISTORICAL_TOOL_RESULT_TEXT_PER_OUTPUT_MAX_CHARACTER_COUNT,
+  HISTORICAL_TOOL_TRANSCRIPT_TURN_MAX_CHARACTER_COUNT,
+  listModelVisibleConversationSessionEntries,
+  projectHistoricalToolResultTextForModelContext,
+  projectHistoricalToolTranscriptTextForModelContext,
+} from "@buli/contracts";
 import {
   isOpenAiOutputTextContentPart,
   isOpenAiResponseObject,
@@ -63,19 +67,15 @@ type ConversationCompactionSummaryConversationSessionEntry = Extract<
   { entryKind: "conversation_compaction_summary" }
 >;
 
-type HistoricalToolResultReplayMetadata = {
-  toolName: string;
-  toolResultEntryKind?: ToolResultConversationSessionEntry["entryKind"] | undefined;
-  bashExitCode?: number | undefined;
-};
-
 type ConversationSessionTurn = {
   userPromptEntry: UserPromptConversationSessionEntry;
   entriesAfterUserPrompt: ConversationSessionEntry[];
 };
 
-export const OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT = 8_192;
-export const OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT = 64 * 1024;
+export const OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT =
+  HISTORICAL_TOOL_RESULT_TEXT_PER_OUTPUT_MAX_CHARACTER_COUNT;
+export const OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT =
+  HISTORICAL_TOOL_TRANSCRIPT_TURN_MAX_CHARACTER_COUNT;
 export const OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_MAX_CHARACTER_COUNT =
   OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT;
 export const OPENAI_HISTORICAL_REPLAY_SUCCESSFUL_BASH_OUTPUT_MAX_CHARACTER_COUNT =
@@ -83,8 +83,9 @@ export const OPENAI_HISTORICAL_REPLAY_SUCCESSFUL_BASH_OUTPUT_MAX_CHARACTER_COUNT
 
 // This is the OpenAI model-context boundary. Session entries remain the
 // canonical history, but each request is rebuilt from the latest compaction
-// summary, its retained recent tail, and valid terminal turns after it. Replay
-// items stay paired with tool results so OpenAI can validate call_id values.
+// summary, its retained recent tail, and valid terminal turns after it.
+// Historical completed turns carry assistant conclusions, not old tool output;
+// current-turn tool continuation still uses exact provider replay in turnSession.
 export function createOpenAiResponsesInputItems(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): OpenAiConversationInputItem[] {
@@ -146,22 +147,6 @@ function appendOpenAiInputItemsForConversationSessionTurn(
   }
 
   openAiInputItems.push(createUserMessageInputItem(conversationSessionTurn.userPromptEntry));
-  if (isOpenAiProviderTurnReplay(terminalAssistantMessageEntry.providerTurnReplay)) {
-    openAiInputItems.push(...createHistoricalOpenAiProviderTurnReplayInputItems({
-      providerTurnReplay: terminalAssistantMessageEntry.providerTurnReplay,
-      historicalToolResultMetadataByToolCallId: createHistoricalToolResultReplayMetadataByToolCallId(
-        conversationSessionTurn.entriesAfterUserPrompt.slice(0, -1),
-      ),
-    }));
-  } else {
-    const legacyToolTranscriptSegments = createPairedLegacyToolTranscriptSegments(
-      conversationSessionTurn.entriesAfterUserPrompt.slice(0, -1),
-    );
-    if (legacyToolTranscriptSegments.length > 0) {
-      openAiInputItems.push(createMessageInputItem("assistant", legacyToolTranscriptSegments.join("\n\n")));
-    }
-  }
-
   openAiInputItems.push(createMessageInputItem("assistant", terminalAssistantMessageEntry.assistantMessageText));
 }
 
@@ -176,9 +161,13 @@ function appendOpenAiInputItemsForFailedOrInterruptedConversationSessionTurn(
     return;
   }
 
+  const legacyToolTranscriptText = projectHistoricalToolTranscriptTextForModelContext({
+    text: legacyToolTranscriptSegments.join("\n\n"),
+  });
+
   openAiInputItems.push(
     createUserMessageInputItem(conversationSessionTurn.userPromptEntry),
-    createMessageInputItem("assistant", legacyToolTranscriptSegments.join("\n\n")),
+    createMessageInputItem("assistant", legacyToolTranscriptText),
   );
 }
 
@@ -282,259 +271,6 @@ function createOpenAiInputImageContentPart(
     type: "input_image",
     image_url: imageAttachment.dataUrl,
   };
-}
-
-function createHistoricalOpenAiProviderTurnReplayInputItems(input: {
-  providerTurnReplay: OpenAiProviderTurnReplay;
-  historicalToolResultMetadataByToolCallId: ReadonlyMap<string, HistoricalToolResultReplayMetadata>;
-}): OpenAiProviderTurnReplayInputItem[] {
-  const replayToolNameByToolCallId = createReplayToolNameByToolCallId(input.providerTurnReplay.inputItems);
-  const historicalFunctionCallOutputReplayProjections = input.providerTurnReplay.inputItems.flatMap((providerTurnReplayInputItem) => {
-    if (providerTurnReplayInputItem.type !== "function_call_output") {
-      return [];
-    }
-
-    const historicalToolResultMetadata = input.historicalToolResultMetadataByToolCallId.get(providerTurnReplayInputItem.call_id);
-    const replayToolName = historicalToolResultMetadata?.toolName ?? replayToolNameByToolCallId.get(providerTurnReplayInputItem.call_id);
-    return [{
-      providerTurnReplayInputItem,
-      replayToolName,
-      historicalToolResultMetadata,
-      replayPriorityWeight: resolveHistoricalToolOutputReplayPriorityWeight({
-        replayToolName,
-        historicalToolResultMetadata,
-      }),
-    }];
-  });
-  const totalHistoricalFunctionCallOutputLength = historicalFunctionCallOutputReplayProjections.reduce(
-    (totalOutputLength, historicalFunctionCallOutputReplayProjection) =>
-      totalOutputLength + historicalFunctionCallOutputReplayProjection.providerTurnReplayInputItem.output.length,
-    0,
-  );
-  if (totalHistoricalFunctionCallOutputLength <= OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT) {
-    return [...input.providerTurnReplay.inputItems];
-  }
-
-  const projectedCharacterBudgetByFunctionCallOutputItem = createHistoricalFunctionCallOutputReplayBudgetByItem(
-    historicalFunctionCallOutputReplayProjections,
-  );
-  return input.providerTurnReplay.inputItems.map((providerTurnReplayInputItem) => {
-    if (providerTurnReplayInputItem.type !== "function_call_output") {
-      return providerTurnReplayInputItem;
-    }
-
-    const historicalToolResultMetadata = input.historicalToolResultMetadataByToolCallId.get(providerTurnReplayInputItem.call_id);
-    const replayToolName = historicalToolResultMetadata?.toolName ?? replayToolNameByToolCallId.get(providerTurnReplayInputItem.call_id);
-    const maximumCharacterCount = projectedCharacterBudgetByFunctionCallOutputItem.get(providerTurnReplayInputItem) ??
-      OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT;
-    const projectedFunctionCallOutput = createHistoricalFunctionCallOutputReplayText({
-      functionCallOutputText: providerTurnReplayInputItem.output,
-      sourceToolCallId: providerTurnReplayInputItem.call_id,
-      replayToolName,
-      historicalToolResultMetadata,
-      maximumCharacterCount,
-    });
-    if (projectedFunctionCallOutput === providerTurnReplayInputItem.output) {
-      return providerTurnReplayInputItem;
-    }
-
-    return {
-      ...providerTurnReplayInputItem,
-      output: projectedFunctionCallOutput,
-    };
-  });
-}
-
-type HistoricalFunctionCallOutputReplayProjection = {
-  providerTurnReplayInputItem: OpenAiFunctionCallOutputInputItem;
-  replayToolName: string | undefined;
-  historicalToolResultMetadata: HistoricalToolResultReplayMetadata | undefined;
-  replayPriorityWeight: number;
-};
-
-function createHistoricalFunctionCallOutputReplayBudgetByItem(
-  historicalFunctionCallOutputReplayProjections: readonly HistoricalFunctionCallOutputReplayProjection[],
-): ReadonlyMap<OpenAiFunctionCallOutputInputItem, number> {
-  const totalReplayPriorityWeight = historicalFunctionCallOutputReplayProjections.reduce(
-    (totalPriorityWeight, historicalFunctionCallOutputReplayProjection) =>
-      totalPriorityWeight + historicalFunctionCallOutputReplayProjection.replayPriorityWeight,
-    0,
-  );
-  const projectedCharacterBudgetByFunctionCallOutputItem = new Map<OpenAiFunctionCallOutputInputItem, number>();
-  for (const historicalFunctionCallOutputReplayProjection of historicalFunctionCallOutputReplayProjections) {
-    const weightedTurnBudget = totalReplayPriorityWeight > 0
-      ? Math.floor(
-        OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT *
-          historicalFunctionCallOutputReplayProjection.replayPriorityWeight /
-          totalReplayPriorityWeight,
-      )
-      : OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT;
-    projectedCharacterBudgetByFunctionCallOutputItem.set(
-      historicalFunctionCallOutputReplayProjection.providerTurnReplayInputItem,
-      Math.min(
-        historicalFunctionCallOutputReplayProjection.providerTurnReplayInputItem.output.length,
-        OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_PER_OUTPUT_MAX_CHARACTER_COUNT,
-        Math.max(512, weightedTurnBudget),
-      ),
-    );
-  }
-
-  return projectedCharacterBudgetByFunctionCallOutputItem;
-}
-
-function resolveHistoricalToolOutputReplayPriorityWeight(input: {
-  replayToolName: string | undefined;
-  historicalToolResultMetadata: HistoricalToolResultReplayMetadata | undefined;
-}): number {
-  const toolName = input.historicalToolResultMetadata?.toolName ?? input.replayToolName;
-  if (
-    toolName === "read" ||
-    toolName === "read_many" ||
-    toolName === "grep" ||
-    toolName === "glob" ||
-    toolName === "search_many" ||
-    toolName === "query_codebase_knowledge"
-  ) {
-    return 1;
-  }
-
-  if (toolName === "bash") {
-    if (
-      input.historicalToolResultMetadata?.toolResultEntryKind === "failed_tool_result" ||
-      (input.historicalToolResultMetadata?.bashExitCode !== undefined && input.historicalToolResultMetadata.bashExitCode !== 0)
-    ) {
-      return 4;
-    }
-
-    return 2;
-  }
-
-  if (
-    toolName === "edit" ||
-    toolName === "edit_many" ||
-    toolName === "write" ||
-    toolName === "patch" ||
-    toolName === "patch_many"
-  ) {
-    return 4;
-  }
-
-  return 3;
-}
-
-function createHistoricalToolResultReplayMetadataByToolCallId(
-  conversationSessionEntries: readonly ConversationSessionEntry[],
-): ReadonlyMap<string, HistoricalToolResultReplayMetadata> {
-  const historicalToolResultMetadataByToolCallId = new Map<string, HistoricalToolResultReplayMetadata>();
-  for (const conversationSessionEntry of conversationSessionEntries) {
-    if (conversationSessionEntry.entryKind === "tool_call") {
-      const existingMetadata = historicalToolResultMetadataByToolCallId.get(conversationSessionEntry.toolCallId);
-      historicalToolResultMetadataByToolCallId.set(conversationSessionEntry.toolCallId, {
-        ...existingMetadata,
-        toolName: conversationSessionEntry.toolCallRequest.toolName,
-      });
-      continue;
-    }
-
-    if (!isToolResultConversationSessionEntry(conversationSessionEntry)) {
-      continue;
-    }
-
-    const existingMetadata = historicalToolResultMetadataByToolCallId.get(conversationSessionEntry.toolCallId);
-    historicalToolResultMetadataByToolCallId.set(conversationSessionEntry.toolCallId, {
-      ...existingMetadata,
-      toolName: conversationSessionEntry.toolCallDetail.toolName,
-      toolResultEntryKind: conversationSessionEntry.entryKind,
-      ...(conversationSessionEntry.toolCallDetail.toolName === "bash" && conversationSessionEntry.toolCallDetail.exitCode !== undefined
-        ? { bashExitCode: conversationSessionEntry.toolCallDetail.exitCode }
-        : {}),
-    });
-  }
-
-  return historicalToolResultMetadataByToolCallId;
-}
-
-function createReplayToolNameByToolCallId(
-  providerTurnReplayInputItems: readonly OpenAiProviderTurnReplayInputItem[],
-): ReadonlyMap<string, string> {
-  const replayToolNameByToolCallId = new Map<string, string>();
-  for (const providerTurnReplayInputItem of providerTurnReplayInputItems) {
-    if (providerTurnReplayInputItem.type === "function_call") {
-      replayToolNameByToolCallId.set(providerTurnReplayInputItem.call_id, providerTurnReplayInputItem.name);
-    }
-  }
-
-  return replayToolNameByToolCallId;
-}
-
-function createHistoricalFunctionCallOutputReplayText(input: {
-  functionCallOutputText: string;
-  sourceToolCallId: string;
-  replayToolName: string | undefined;
-  historicalToolResultMetadata: HistoricalToolResultReplayMetadata | undefined;
-  maximumCharacterCount: number;
-}): string {
-  return createHeadTailBudgetedText({
-    sourceText: input.functionCallOutputText,
-    maximumCharacterCount: input.maximumCharacterCount,
-    createTruncationNotice: (omittedCharacterCount) =>
-      [
-        "",
-        "<historical_tool_output_replay_truncated>",
-        "Historical tool output was truncated only for this future request projection.",
-        "The full result was visible when the tool finished and remains stored in session history; omitted content is not currently visible in this request.",
-        `sourceToolCallId: ${input.sourceToolCallId}`,
-        `toolName: ${input.replayToolName ?? "unknown"}`,
-        `toolResultEntryKind: ${input.historicalToolResultMetadata?.toolResultEntryKind ?? "unknown"}`,
-        `originalCharacterCount: ${input.functionCallOutputText.length}`,
-        `projectedCharacterBudget: ${input.maximumCharacterCount}`,
-        `omittedCharacterCount: ${omittedCharacterCount}`,
-        "Do not rely on omitted content; request a narrower follow-up tool call if those details are needed.",
-        "</historical_tool_output_replay_truncated>",
-        "",
-      ].join("\n"),
-  });
-}
-
-function createHeadTailBudgetedText(input: {
-  sourceText: string;
-  maximumCharacterCount: number;
-  createTruncationNotice: (omittedCharacterCount: number) => string;
-}): string {
-  const maximumCharacterCount = Math.max(0, Math.floor(input.maximumCharacterCount));
-  if (input.sourceText.length <= maximumCharacterCount) {
-    return input.sourceText;
-  }
-
-  let truncationNotice = input.createTruncationNotice(input.sourceText.length);
-  for (let attemptIndex = 0; attemptIndex < 10; attemptIndex += 1) {
-    const retainedCharacterCount = maximumCharacterCount - truncationNotice.length;
-    if (retainedCharacterCount <= 0) {
-      return truncationNotice.slice(0, maximumCharacterCount);
-    }
-
-    const retainedHeadCharacterCount = Math.ceil(retainedCharacterCount / 2);
-    const retainedTailCharacterCount = Math.floor(retainedCharacterCount / 2);
-    const omittedCharacterCount = input.sourceText.length - retainedHeadCharacterCount - retainedTailCharacterCount;
-    const nextTruncationNotice = input.createTruncationNotice(omittedCharacterCount);
-    if (nextTruncationNotice.length === truncationNotice.length || attemptIndex === 9) {
-      return [
-        input.sourceText.slice(0, retainedHeadCharacterCount),
-        nextTruncationNotice,
-        retainedTailCharacterCount > 0 ? input.sourceText.slice(-retainedTailCharacterCount) : "",
-      ].join("");
-    }
-
-    truncationNotice = nextTruncationNotice;
-  }
-
-  return input.sourceText.slice(0, maximumCharacterCount);
-}
-
-function isOpenAiProviderTurnReplay(
-  providerTurnReplay: AssistantMessageConversationSessionEntry["providerTurnReplay"] | undefined,
-): providerTurnReplay is OpenAiProviderTurnReplay {
-  return providerTurnReplay?.provider === "openai";
 }
 
 function createReasoningReplayItem(responseOutputItem: OpenAiResponseObject): OpenAiReasoningReplayItem | undefined {
@@ -666,26 +402,6 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "read_many") {
-    return [
-      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
-      "Tool: read_many",
-      `Target count: ${conversationSessionEntry.toolCallRequest.readTargets.length}`,
-      ...conversationSessionEntry.toolCallRequest.readTargets.map((readTarget, readTargetIndex) =>
-        `Target ${readTargetIndex + 1}: ${readTarget.readTargetPath}`
-      ),
-    ].join("\n");
-  }
-
-  if (conversationSessionEntry.toolCallRequest.toolName === "search_many") {
-    return [
-      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
-      "Tool: search_many",
-      `Search count: ${conversationSessionEntry.toolCallRequest.searches.length}`,
-      ...conversationSessionEntry.toolCallRequest.searches.map((search, searchIndex) => formatSearchManyLegacyTranscriptLine(search, searchIndex)),
-    ].join("\n");
-  }
-
   if (conversationSessionEntry.toolCallRequest.toolName === "glob") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
@@ -711,19 +427,18 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "query_codebase_knowledge") {
+  if (conversationSessionEntry.toolCallRequest.toolName === "locate_codebase_symbols") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
-      "Tool: query_codebase_knowledge",
-      `Problem: ${conversationSessionEntry.toolCallRequest.codebaseProblemDescription}`,
-      ...(conversationSessionEntry.toolCallRequest.knownRelevantFilePaths !== undefined
-        ? [`Known files: ${conversationSessionEntry.toolCallRequest.knownRelevantFilePaths.join(", ")}`]
+      "Tool: locate_codebase_symbols",
+      ...(conversationSessionEntry.toolCallRequest.symbolNames !== undefined
+        ? [`Symbols: ${conversationSessionEntry.toolCallRequest.symbolNames.join(", ")}`]
         : []),
-      ...(conversationSessionEntry.toolCallRequest.knownRelevantSymbolNames !== undefined
-        ? [`Known symbols: ${conversationSessionEntry.toolCallRequest.knownRelevantSymbolNames.join(", ")}`]
+      ...(conversationSessionEntry.toolCallRequest.filePaths !== undefined
+        ? [`Files: ${conversationSessionEntry.toolCallRequest.filePaths.join(", ")}`]
         : []),
-      ...(conversationSessionEntry.toolCallRequest.maximumKnowledgeResultCount !== undefined
-        ? [`Maximum results: ${conversationSessionEntry.toolCallRequest.maximumKnowledgeResultCount}`]
+      ...(conversationSessionEntry.toolCallRequest.maximumResultCount !== undefined
+        ? [`Maximum results: ${conversationSessionEntry.toolCallRequest.maximumResultCount}`]
         : []),
     ].join("\n");
   }
@@ -795,26 +510,6 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
   return assertUnhandledToolCallRequest(conversationSessionEntry.toolCallRequest);
 }
 
-function formatSearchManyLegacyTranscriptLine(
-  search: Extract<ToolCallConversationSessionEntry["toolCallRequest"], { toolName: "search_many" }>["searches"][number],
-  searchIndex: number,
-): string {
-  if (search.searchKind === "glob") {
-    return [
-      `Search ${searchIndex + 1}: glob`,
-      `Pattern: ${search.globPattern}`,
-      ...(search.searchDirectoryPath !== undefined ? [`Directory: ${search.searchDirectoryPath}`] : []),
-    ].join(" | ");
-  }
-
-  return [
-    `Search ${searchIndex + 1}: grep`,
-    `Pattern: ${search.regexPattern}`,
-    ...(search.searchPath !== undefined ? [`Path: ${search.searchPath}`] : []),
-    ...(search.includeGlobPattern !== undefined ? [`Include: ${search.includeGlobPattern}`] : []),
-  ].join(" | ");
-}
-
 function assertUnhandledToolCallRequest(toolCallRequest: never): never {
   throw new Error(`Unhandled tool call request: ${JSON.stringify(toolCallRequest)}`);
 }
@@ -827,7 +522,11 @@ function createLegacyToolResultTranscriptSegment(conversationSessionEntry: ToolR
         ? "assistant tool failure"
         : "assistant tool denial";
 
-  return [`[${toolResultLabel} ${conversationSessionEntry.toolCallId}]`, conversationSessionEntry.toolResultText].join("\n");
+  const projectedToolResultText = projectHistoricalToolResultTextForModelContext({
+    text: conversationSessionEntry.toolResultText,
+  });
+
+  return [`[${toolResultLabel} ${conversationSessionEntry.toolCallId}]`, projectedToolResultText].join("\n");
 }
 
 function isToolResultConversationSessionEntry(

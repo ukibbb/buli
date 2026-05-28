@@ -107,11 +107,10 @@
       "commandDescription": "Print working directory"
     },
     {
-      "toolName": "query_codebase_knowledge",
-      "codebaseProblemDescription": "Find runtime tool dispatch",
-      "knownRelevantFilePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
-      "knownRelevantSymbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
-      "maximumKnowledgeResultCount": 3
+      "toolName": "locate_codebase_symbols",
+      "symbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
+      "filePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
+      "maximumResultCount": 3
     }
   ],
   "toolCallDetails": [
@@ -134,10 +133,9 @@
       ]
     },
     {
-      "toolName": "query_codebase_knowledge",
-      "codebaseProblemDescription": "Find runtime tool dispatch",
-      "knownRelevantFilePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
-      "knownRelevantSymbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
+      "toolName": "locate_codebase_symbols",
+      "symbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
+      "filePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
       "matchedKnowledgeCount": 2,
       "recommendedReadCount": 3
     }

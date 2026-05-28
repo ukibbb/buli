@@ -15,7 +15,8 @@ import {
   type ProviderAvailableToolName,
   type ProviderRequestedToolCall,
   type ReasoningEffort,
-  type ToolCallRequest,
+  type AssistantToolCallRequest,
+  type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
 import { resolveAssistantOperatingModeToolAccess } from "./assistantOperatingModePolicy.ts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
@@ -93,7 +94,7 @@ export type StreamAssistantResponseEventsForRequestedToolCallsInput = RuntimeToo
 
 type RuntimeRequestedToolCallExecutorInput = RuntimeToolCallExecutionContext & {
   toolCallId: string;
-  toolCallRequest: ToolCallRequest;
+  toolCallRequest: AssistantToolCallRequest;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
 };
 
@@ -108,11 +109,9 @@ type RuntimeRequestedToolCallExecutor = (
 
 const requestedToolCallExecutorByName = {
   read: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
-  read_many: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
-  search_many: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   glob: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   grep: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
-  query_codebase_knowledge: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
+  locate_codebase_symbols: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   task: streamAssistantResponseEventsForTaskRequestedToolCall,
   skill: streamAssistantResponseEventsForSkillRequestedToolCall,
   edit: streamAssistantResponseEventsForFileMutationRequestedToolCall,
@@ -239,6 +238,40 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
       return;
     }
 
+    const autoApprovedReadOnlyToolCalls = listAutoApprovedReadOnlyToolCalls(input.requestedToolCalls);
+    if (areAllRequestedToolCallsAllowedForRuntimeContext(input) && autoApprovedReadOnlyToolCalls.length > 0) {
+      yield* mergeAssistantResponseEventStreams({
+        assistantResponseEventStreams: [
+          streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
+            assistantResponseMessageId: input.assistantResponseMessageId,
+            providerConversationTurn: input.providerConversationTurn,
+            conversationTurnId: input.conversationTurnId,
+            requestedToolCalls: autoApprovedReadOnlyToolCalls,
+            workspaceRootPath: input.workspaceRootPath,
+            workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
+            projectInstructionTracker: input.projectInstructionTracker,
+            conversationHistory: input.conversationHistory,
+            toolResultSessionRecorder: input.toolResultSessionRecorder,
+            readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+            abortSignal: input.abortSignal,
+            throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+            diagnosticLogger: input.diagnosticLogger,
+          }),
+          ...input.requestedToolCalls
+            .filter((requestedToolCall) => !isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest))
+            .map((requestedToolCall) =>
+              streamAssistantResponseEventsForPolicyCheckedRequestedToolCall({
+                ...input,
+                toolCallId: requestedToolCall.toolCallId,
+                toolCallRequest: requestedToolCall.toolCallRequest,
+              })
+            ),
+        ],
+        throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+      });
+      return;
+    }
+
     yield* mergeAssistantResponseEventStreams({
       assistantResponseEventStreams: input.requestedToolCalls.map((requestedToolCall) =>
         streamAssistantResponseEventsForPolicyCheckedRequestedToolCall({
@@ -260,6 +293,24 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
       durationMs: Date.now() - concurrentGroupStartedAtMs,
     });
   }
+}
+
+function listAutoApprovedReadOnlyToolCalls(
+  requestedToolCalls: readonly AutoConcurrentRequestedToolCall[],
+): Array<{
+  toolCallId: string;
+  toolCallRequest: WorkspaceInspectionToolCallRequest;
+}> {
+  return requestedToolCalls.flatMap((requestedToolCall) => {
+    if (!isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest)) {
+      return [];
+    }
+
+    return [{
+      toolCallId: requestedToolCall.toolCallId,
+      toolCallRequest: requestedToolCall.toolCallRequest,
+    }];
+  });
 }
 
 function areAllRequestedToolCallsAllowedForRuntimeContext(input: {
@@ -496,6 +547,6 @@ async function* streamAssistantResponseEventsForBashRequestedToolCall(
   });
 }
 
-function resolveRequestedToolCallExecutor(toolCallRequest: ToolCallRequest): RuntimeRequestedToolCallExecutor {
+function resolveRequestedToolCallExecutor(toolCallRequest: AssistantToolCallRequest): RuntimeRequestedToolCallExecutor {
   return requestedToolCallExecutorByName[toolCallRequest.toolName];
 }

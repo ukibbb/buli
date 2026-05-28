@@ -85,6 +85,7 @@ bun run profile -- --scenario assistant-reducer-replay --output-dir profile-runs
 bun run profile -- --scenario task-subagent-runtime --output-dir profile-runs/current/task-subagent --implementation-label current --repeat 5 --warmups 1
 bun run profile -- --scenario sqlite-session-large-history --output-dir profile-runs/current/sqlite --implementation-label current --repeat 3 --warmups 1
 bun run profile -- --scenario tool-output-context-growth --output-dir profile-runs/current/tool-output --implementation-label current --repeat 5 --warmups 1
+bun run profile -- --scenario codebase-knowledge-startup-index --output-dir profile-runs/current/codebase-knowledge --implementation-label current --repeat 3 --warmups 1
 ```
 
 Every deterministic run writes:
@@ -103,6 +104,7 @@ Available deterministic scenarios:
 | `task-subagent-runtime` | deterministic task subagent execution, elapsed checkpointing, parent wait, group wall time, and result payload shape | `packages/engine/src/runtimeTaskToolCallExecution.ts`, `packages/engine/src/runtimeToolCallExecution.ts` |
 | `sqlite-session-large-history` | append, load, list, and switch costs for a large persisted SQLite session | `apps/cli/src/conversationSession/sqlite/*` |
 | `tool-output-context-growth` | model-context projection, compaction projection, provider replay pressure, and budgeted batch-tool output size | `packages/engine/src/conversationHistoryProjection.ts`, `packages/engine/src/conversationCompaction/*`, `packages/engine/src/tools/*` |
+| `codebase-knowledge-startup-index` | full startup indexing, unchanged restart reuse, single-file reindexing, mtime-only hash reuse, snapshot write skipping, index size, and heap delta | `packages/engine/src/codebaseKnowledge/*`, `packages/codebase-knowledge/src/*` |
 
 ## Before/After Comparisons
 
@@ -144,8 +146,19 @@ Use these metrics when judging rewrites:
 - `sqlite_session_large_history.switch_session.duration_ms`
 - `tool_output_context_growth.model_context_projection.duration_ms`
 - `tool_output_context_growth.compaction_projection.duration_ms`
-- `tool_output_context_growth.read_many_tool_result_text_bytes`
-- `tool_output_context_growth.budgeted_search_many_tool_result_text_bytes`
+- `tool_output_context_growth.read_tool_result_text_bytes`
+- `tool_output_context_growth.grep_tool_result_text_bytes`
+- `codebase_knowledge_startup_index.full.duration_ms`
+- `codebase_knowledge_startup_index.unchanged_restart.duration_ms`
+- `codebase_knowledge_startup_index.modified_file_restart.duration_ms`
+- `codebase_knowledge_startup_index.mtime_only_restart.duration_ms`
+- `codebase_knowledge_startup_index.*.parsed_file_count`
+- `codebase_knowledge_startup_index.*.snapshot_read.duration_ms`
+- `codebase_knowledge_startup_index.*.records_load.duration_ms`
+- `codebase_knowledge_startup_index.*.records_loaded_count`
+- `codebase_knowledge_startup_index.*.workspace_scan.duration_ms`
+- `codebase_knowledge_startup_index.*.snapshot_write.duration_ms`
+- `codebase_knowledge_startup_index.*.snapshot_write_skipped_count`
 - `*.heap_used_delta_bytes`
 
 ## Report Contents

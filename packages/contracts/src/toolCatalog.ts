@@ -7,23 +7,21 @@ import type {
   ToolCallGrepDetail,
   ToolCallPatchDetail,
   ToolCallPatchManyDetail,
-  ToolCallQueryCodebaseKnowledgeDetail,
-  ToolCallReadManyDetail,
+  ToolCallLocateCodebaseSymbolsDetail,
   ToolCallReadDetail,
-  ToolCallSearchManyDetail,
   ToolCallSkillDetail,
   ToolCallTaskDetail,
   ToolCallWriteDetail,
 } from "./toolCallDetail.ts";
-import type { ToolCallRequest } from "./toolCallRequest.ts";
+import type { AssistantToolCallRequest, ToolCallRequest } from "./toolCallRequest.ts";
 
-type CompleteAssistantToolRequestNameList<ToolNames extends readonly ToolCallRequest["toolName"][]> = ToolNames & (
-  Exclude<ToolCallRequest["toolName"], ToolNames[number]> extends never
+type CompleteAssistantToolRequestNameList<ToolNames extends readonly AssistantToolCallRequest["toolName"][]> = ToolNames & (
+  Exclude<AssistantToolCallRequest["toolName"], ToolNames[number]> extends never
     ? unknown
-    : readonly ["Missing assistant tool request names", Exclude<ToolCallRequest["toolName"], ToolNames[number]>]
+    : readonly ["Missing assistant tool request names", Exclude<AssistantToolCallRequest["toolName"], ToolNames[number]>]
 );
 
-function defineCompleteAssistantToolRequestNameList<const ToolNames extends readonly ToolCallRequest["toolName"][]>(
+function defineCompleteAssistantToolRequestNameList<const ToolNames extends readonly AssistantToolCallRequest["toolName"][]>(
   toolNames: CompleteAssistantToolRequestNameList<ToolNames>,
 ): ToolNames {
   return toolNames;
@@ -32,11 +30,9 @@ function defineCompleteAssistantToolRequestNameList<const ToolNames extends read
 export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNameList([
   "bash",
   "read",
-  "read_many",
-  "search_many",
   "glob",
   "grep",
-  "query_codebase_knowledge",
+  "locate_codebase_symbols",
   "edit",
   "edit_many",
   "patch",
@@ -45,14 +41,15 @@ export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNa
   "task",
   "skill",
 ] as const);
-export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"] as const satisfies readonly AssistantToolRequestName[];
+export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "locate_codebase_symbols"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "edit_many", "patch", "patch_many", "write"] as const satisfies readonly AssistantToolRequestName[];
-export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"] as const satisfies readonly AssistantToolRequestName[];
+export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"] as const satisfies readonly AssistantToolRequestName[];
 export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite"] as const satisfies readonly ToolCallDetailName[];
 
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
+export type ToolCallRequestName = ToolCallRequest["toolName"];
 export type ToolCallDetailName = ToolCallDetail["toolName"];
-export type ToolCallRequestByName<ToolName extends AssistantToolRequestName> = Extract<
+export type ToolCallRequestByName<ToolName extends ToolCallRequestName> = Extract<
   ToolCallRequest,
   { toolName: ToolName }
 >;
@@ -105,10 +102,10 @@ export function isSkillToolCallRequest(
   return toolCallRequest.toolName === "skill";
 }
 
-export function isQueryCodebaseKnowledgeToolCallRequest(
+export function isLocateCodebaseSymbolsToolCallRequest(
   toolCallRequest: ToolCallRequest,
-): toolCallRequest is ToolCallRequestByName<"query_codebase_knowledge"> {
-  return toolCallRequest.toolName === "query_codebase_knowledge";
+): toolCallRequest is ToolCallRequestByName<"locate_codebase_symbols"> {
+  return toolCallRequest.toolName === "locate_codebase_symbols";
 }
 
 export function isReadOnlyAssistantModeToolRequestName(
@@ -117,21 +114,15 @@ export function isReadOnlyAssistantModeToolRequestName(
   return READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAME_SET.has(toolName);
 }
 
-export function createStartedToolCallDetailFromRequest<ToolName extends AssistantToolRequestName>(
+export function createStartedToolCallDetailFromRequest<ToolName extends ToolCallRequestName>(
   toolCallRequest: ToolCallRequestByName<ToolName>,
-): StartedToolCallDetailByRequestName<ToolName>;
-export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): AssistantToolCallDetail {
+): ToolCallDetailByName<ToolName>;
+export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): ToolCallDetail {
   if (toolCallRequest.toolName === "bash") {
     return createStartedBashToolCallDetail(toolCallRequest);
   }
   if (toolCallRequest.toolName === "read") {
     return createStartedReadToolCallDetail(toolCallRequest);
-  }
-  if (toolCallRequest.toolName === "read_many") {
-    return createStartedReadManyToolCallDetail(toolCallRequest);
-  }
-  if (toolCallRequest.toolName === "search_many") {
-    return createStartedSearchManyToolCallDetail(toolCallRequest);
   }
   if (toolCallRequest.toolName === "glob") {
     return createStartedGlobToolCallDetail(toolCallRequest);
@@ -139,8 +130,8 @@ export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCall
   if (toolCallRequest.toolName === "grep") {
     return createStartedGrepToolCallDetail(toolCallRequest);
   }
-  if (toolCallRequest.toolName === "query_codebase_knowledge") {
-    return createStartedQueryCodebaseKnowledgeToolCallDetail(toolCallRequest);
+  if (toolCallRequest.toolName === "locate_codebase_symbols") {
+    return createStartedLocateCodebaseSymbolsToolCallDetail(toolCallRequest);
   }
   if (toolCallRequest.toolName === "edit") {
     return createStartedEditToolCallDetail(toolCallRequest);
@@ -183,20 +174,6 @@ function createStartedReadToolCallDetail(toolCallRequest: ToolCallRequestByName<
   };
 }
 
-function createStartedReadManyToolCallDetail(toolCallRequest: ToolCallRequestByName<"read_many">): ToolCallReadManyDetail {
-  return {
-    toolName: "read_many",
-    requestedReadTargetPaths: toolCallRequest.readTargets.map((readTarget) => readTarget.readTargetPath),
-  };
-}
-
-function createStartedSearchManyToolCallDetail(toolCallRequest: ToolCallRequestByName<"search_many">): ToolCallSearchManyDetail {
-  return {
-    toolName: "search_many",
-    requestedSearches: toolCallRequest.searches.map((search) => ({ ...search })),
-  };
-}
-
 function createStartedGlobToolCallDetail(toolCallRequest: ToolCallRequestByName<"glob">): ToolCallGlobDetail {
   return {
     toolName: "glob",
@@ -213,17 +190,16 @@ function createStartedGrepToolCallDetail(toolCallRequest: ToolCallRequestByName<
   };
 }
 
-function createStartedQueryCodebaseKnowledgeToolCallDetail(
-  toolCallRequest: ToolCallRequestByName<"query_codebase_knowledge">,
-): ToolCallQueryCodebaseKnowledgeDetail {
+function createStartedLocateCodebaseSymbolsToolCallDetail(
+  toolCallRequest: ToolCallRequestByName<"locate_codebase_symbols">,
+): ToolCallLocateCodebaseSymbolsDetail {
   return {
-    toolName: "query_codebase_knowledge",
-    codebaseProblemDescription: toolCallRequest.codebaseProblemDescription,
-    ...(toolCallRequest.knownRelevantFilePaths !== undefined
-      ? { knownRelevantFilePaths: [...toolCallRequest.knownRelevantFilePaths] }
+    toolName: "locate_codebase_symbols",
+    ...(toolCallRequest.symbolNames !== undefined
+      ? { symbolNames: [...toolCallRequest.symbolNames] }
       : {}),
-    ...(toolCallRequest.knownRelevantSymbolNames !== undefined
-      ? { knownRelevantSymbolNames: [...toolCallRequest.knownRelevantSymbolNames] }
+    ...(toolCallRequest.filePaths !== undefined
+      ? { filePaths: [...toolCallRequest.filePaths] }
       : {}),
   };
 }

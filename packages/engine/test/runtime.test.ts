@@ -12,7 +12,7 @@ import type {
   ConversationSessionEntry,
   ModelContextItem,
   ProviderStreamEvent,
-  QueryCodebaseKnowledgeToolCallRequest,
+  LocateCodebaseSymbolsToolCallRequest,
   TokenUsage,
   ProviderTurnReplay,
 } from "@buli/contracts";
@@ -803,7 +803,7 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
     "The output should be clean enough that Implementation mode can execute it without re-planning or broad rediscovery.",
   );
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
     entryKind: "user_prompt",
     assistantOperatingMode: "plan",
@@ -833,7 +833,7 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"]);
 });
 
 test("AssistantConversationRuntime rejects plan mode before understand when workflow enforcement is enabled", () => {
@@ -919,7 +919,7 @@ test("AssistantConversationRuntime filters explicit tool overrides in read-only 
     conversationTurnProvider: provider,
     workspaceRootPath: process.cwd(),
     promptContextBrowseRootPath: process.cwd(),
-    availableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "query_codebase_knowledge", "task"],
+    availableToolNames: ["bash", "read", "write", "grep", "locate_codebase_symbols", "task"],
   });
 
   await collectAssistantEvents(
@@ -929,23 +929,23 @@ test("AssistantConversationRuntime filters explicit tool overrides in read-only 
     }),
   );
 
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "grep", "query_codebase_knowledge", "task"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "grep", "locate_codebase_symbols", "task"]);
 });
 
-test("AssistantConversationRuntime executes query_codebase_knowledge without approval", async () => {
+test("AssistantConversationRuntime executes locate_codebase_symbols without approval", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-query-knowledge-"));
-  const queryRequest: QueryCodebaseKnowledgeToolCallRequest = {
-    toolName: "query_codebase_knowledge",
-    codebaseProblemDescription: "Find runtime tool dispatch.",
-    knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-    maximumKnowledgeResultCount: 2,
+  const queryRequest: LocateCodebaseSymbolsToolCallRequest = {
+    toolName: "locate_codebase_symbols",
+    symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+    filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+    maximumResultCount: 2,
   };
   const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
     queryResult: {
       query: {
-        codebaseProblemDescription: queryRequest.codebaseProblemDescription,
-        knownRelevantFilePaths: queryRequest.knownRelevantFilePaths,
-        maximumKnowledgeResultCount: queryRequest.maximumKnowledgeResultCount,
+        symbolNames: queryRequest.symbolNames,
+        filePaths: queryRequest.filePaths,
+        maximumResultCount: queryRequest.maximumResultCount,
       },
       matches: [
         {
@@ -971,10 +971,8 @@ test("AssistantConversationRuntime executes query_codebase_knowledge without app
                 startLineNumber: 107,
                 endLineNumber: 121,
                 contentHash: "hash-runtime-dispatch",
-                sourceKind: "tree_sitter_structure",
               },
             ],
-            freshness: "fresh",
             updatedAtMs: 1,
             filePath: "packages/engine/src/runtimeToolCallExecution.ts",
             symbolName: "streamAssistantResponseEventsForRequestedToolCalls",
@@ -991,7 +989,7 @@ test("AssistantConversationRuntime executes query_codebase_knowledge without app
     beforeToolResultEvents: [
       {
         type: "tool_call_requested",
-        toolCallId: "call_query_codebase_knowledge_1",
+        toolCallId: "call_locate_codebase_symbols_1",
         toolCallRequest: queryRequest,
       },
     ],
@@ -1020,19 +1018,19 @@ test("AssistantConversationRuntime executes query_codebase_knowledge without app
   );
   expect(workspaceCodebaseKnowledgeIndex.queriedCodebaseKnowledgeQueries).toEqual([
     {
-      codebaseProblemDescription: queryRequest.codebaseProblemDescription,
-      knownRelevantFilePaths: queryRequest.knownRelevantFilePaths,
-      maximumKnowledgeResultCount: queryRequest.maximumKnowledgeResultCount,
+      symbolNames: queryRequest.symbolNames,
+      filePaths: queryRequest.filePaths,
+      maximumResultCount: queryRequest.maximumResultCount,
     },
   ]);
   expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({
     type: "assistant_message_part_updated",
     part: expect.objectContaining({
       partKind: "assistant_tool_call",
-      toolCallId: "call_query_codebase_knowledge_1",
+      toolCallId: "call_locate_codebase_symbols_1",
       toolCallStatus: "completed",
       toolCallDetail: expect.objectContaining({
-        toolName: "query_codebase_knowledge",
+        toolName: "locate_codebase_symbols",
         matchedKnowledgeCount: 1,
         recommendedReadCount: 1,
       }),
@@ -1040,16 +1038,16 @@ test("AssistantConversationRuntime executes query_codebase_knowledge without app
   }));
   expect(providerTurn.submittedToolResults).toEqual([
     {
-      toolCallId: "call_query_codebase_knowledge_1",
+      toolCallId: "call_locate_codebase_symbols_1",
       toolResultText: expect.stringContaining("<codebase_knowledge_query>"),
     },
   ]);
   expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("runtimeToolCallExecution.ts");
   expect(runtime.conversationHistory.listConversationSessionEntries()).toContainEqual(expect.objectContaining({
     entryKind: "completed_tool_result",
-    toolCallId: "call_query_codebase_knowledge_1",
+    toolCallId: "call_locate_codebase_symbols_1",
     toolCallDetail: expect.objectContaining({
-      toolName: "query_codebase_knowledge",
+      toolName: "locate_codebase_symbols",
       matchedKnowledgeCount: 1,
       recommendedReadCount: 1,
     }),
@@ -1057,7 +1055,7 @@ test("AssistantConversationRuntime executes query_codebase_knowledge without app
   }));
 });
 
-test("AssistantConversationRuntime records failed query_codebase_knowledge results", async () => {
+test("AssistantConversationRuntime propagates locate_codebase_symbols index failures without submitting tool output", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-query-knowledge-failure-"));
   const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
     queryFailure: new Error("index file is unreadable"),
@@ -1066,16 +1064,12 @@ test("AssistantConversationRuntime records failed query_codebase_knowledge resul
     beforeToolResultEvents: [
       {
         type: "tool_call_requested",
-        toolCallId: "call_query_codebase_knowledge_failed",
+        toolCallId: "call_locate_codebase_symbols_failed",
         toolCallRequest: {
-          toolName: "query_codebase_knowledge",
-          codebaseProblemDescription: "Find runtime dispatch.",
+          toolName: "locate_codebase_symbols",
+          symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
         },
       },
-    ],
-    afterToolResultEvents: [
-      { type: "text_chunk", text: "Failure handled." },
-      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
     ],
   });
   const runtime = new AssistantConversationRuntime({
@@ -1093,25 +1087,13 @@ test("AssistantConversationRuntime records failed query_codebase_knowledge resul
   );
 
   expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({
-    type: "assistant_message_part_updated",
-    part: expect.objectContaining({
-      partKind: "assistant_tool_call",
-      toolCallId: "call_query_codebase_knowledge_failed",
-      toolCallStatus: "failed",
-      errorText: "index file is unreadable",
-      toolCallDetail: expect.objectContaining({ toolName: "query_codebase_knowledge" }),
-    }),
+    type: "assistant_message_failed",
+    errorText: "index file is unreadable",
   }));
-  expect(providerTurn.submittedToolResults).toEqual([
-    {
-      toolCallId: "call_query_codebase_knowledge_failed",
-      toolResultText: "Codebase knowledge query failed: index file is unreadable",
-    },
-  ]);
-  expect(runtime.conversationHistory.listConversationSessionEntries()).toContainEqual(expect.objectContaining({
+  expect(providerTurn.submittedToolResults).toEqual([]);
+  expect(runtime.conversationHistory.listConversationSessionEntries()).not.toContainEqual(expect.objectContaining({
     entryKind: "failed_tool_result",
-    toolCallId: "call_query_codebase_knowledge_failed",
-    failureExplanation: "index file is unreadable",
+    toolCallId: "call_locate_codebase_symbols_failed",
   }));
 });
 
@@ -3747,7 +3729,7 @@ test("AssistantConversationRuntime runs task as an isolated read-only child turn
   expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
   expect(provider.startedTurnRequests[1]?.parentTaskToolCallId).toBe("call_explore_1");
   expect(provider.startedTurnRequests[1]?.subagentName).toBe("explore");
-  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"]);
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer target");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain(
@@ -3887,7 +3869,7 @@ test("AssistantConversationRuntime runs task as a built-in Explorer subagent", a
   expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
   expect(provider.startedTurnRequests[1]?.parentTaskToolCallId).toBe("call_task_1");
   expect(provider.startedTurnRequests[1]?.subagentName).toBe("explore");
-  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"]);
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(taskSubagentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Task target");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<task_result>");
@@ -4910,7 +4892,7 @@ test("AssistantConversationRuntime starts workspace codebase knowledge indexing 
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-codebase-knowledge-startup-"));
   const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
     queryResult: {
-      query: { codebaseProblemDescription: "runtime" },
+      query: { symbolNames: ["runtime"] },
       matches: [],
     },
   });

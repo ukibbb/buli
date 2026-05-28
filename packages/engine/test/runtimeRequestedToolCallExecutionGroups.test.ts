@@ -12,33 +12,11 @@ const grepRequestedToolCall = {
   toolCallRequest: { toolName: "grep", regexPattern: "ToolCallRequest" },
 } as const satisfies ProviderRequestedToolCall;
 
-const queryCodebaseKnowledgeRequestedToolCall = {
-  toolCallId: "call_query_codebase_knowledge_1",
+const locateCodebaseSymbolsRequestedToolCall = {
+  toolCallId: "call_locate_codebase_symbols_1",
   toolCallRequest: {
-    toolName: "query_codebase_knowledge",
-    codebaseProblemDescription: "Find runtime tool dispatch.",
-  },
-} as const satisfies ProviderRequestedToolCall;
-
-const readManyRequestedToolCall = {
-  toolCallId: "call_read_many_1",
-  toolCallRequest: {
-    toolName: "read_many",
-    readTargets: [
-      { readTargetPath: "README.md" },
-      { readTargetPath: "package.json" },
-    ],
-  },
-} as const satisfies ProviderRequestedToolCall;
-
-const searchManyRequestedToolCall = {
-  toolCallId: "call_search_many_1",
-  toolCallRequest: {
-    toolName: "search_many",
-    searches: [
-      { searchKind: "glob", globPattern: "**/*.ts" },
-      { searchKind: "grep", regexPattern: "ToolCallRequest" },
-    ],
+    toolName: "locate_codebase_symbols",
+    symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
   },
 } as const satisfies ProviderRequestedToolCall;
 
@@ -82,10 +60,10 @@ const secondTaskRequestedToolCall = {
 } as const satisfies ProviderRequestedToolCall;
 
 test("groupRequestedToolCallsForExecution groups adjacent read-only calls", () => {
-  expect(groupRequestedToolCallsForExecution([readRequestedToolCall, readManyRequestedToolCall, searchManyRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall])).toEqual([
+  expect(groupRequestedToolCallsForExecution([readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall])).toEqual([
     {
       groupKind: "auto_concurrent",
-      requestedToolCalls: [readRequestedToolCall, readManyRequestedToolCall, searchManyRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall],
+      requestedToolCalls: [readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall],
     },
   ]);
 });
@@ -141,12 +119,12 @@ test("groupRequestedToolCallsForExecution keeps single auto-concurrent calls ser
 test("groupRequestedToolCallsForExecution groups codebase knowledge queries with read-only calls", () => {
   expect(groupRequestedToolCallsForExecution([
     readRequestedToolCall,
-    queryCodebaseKnowledgeRequestedToolCall,
+    locateCodebaseSymbolsRequestedToolCall,
     grepRequestedToolCall,
   ])).toEqual([
     {
       groupKind: "auto_concurrent",
-      requestedToolCalls: [readRequestedToolCall, queryCodebaseKnowledgeRequestedToolCall, grepRequestedToolCall],
+      requestedToolCalls: [readRequestedToolCall, locateCodebaseSymbolsRequestedToolCall, grepRequestedToolCall],
     },
   ]);
 });

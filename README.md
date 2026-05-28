@@ -133,7 +133,7 @@ buli --bash-approval risk_based
 buli --bash-approval trusted
 ```
 
-`risk_based` auto-runs clearly non-destructive inspection and local verification commands such as `bun --filter @buli/engine test`, `bun run typecheck`, and `tsc --noEmit -p tsconfig.json`. It still asks before package installs, build/dev scripts, file-system mutations, git/GitHub mutations, network side effects, and ambiguous shell syntax. `trusted` auto-runs every Bash command.
+Plain `buli` defaults to `trusted`. In `trusted`, Buli auto-runs every Bash command when the active operating mode allows Bash execution. Read-only operating modes still block Bash execution. Use `risk_based` when you want Buli to auto-run clearly non-destructive inspection and local verification commands such as `bun --filter @buli/engine test`, `bun run typecheck`, and `tsc --noEmit -p tsconfig.json`, while still asking before package installs, build/dev scripts, file-system mutations, git/GitHub mutations, network side effects, and ambiguous shell syntax.
 
 Show CLI help:
 
@@ -151,7 +151,7 @@ Defaults:
 
 - Model: `gpt-5.5`.
 - Reasoning effort: `medium`.
-- Bash approval mode: engine default, overridable with `--bash-approval` or `BULI_BASH_APPROVAL_MODE`.
+- Bash approval mode: `trusted` for the CLI, overridable with `--bash-approval` or `BULI_BASH_APPROVAL_MODE`.
 
 ## Repo-Only Development Start
 

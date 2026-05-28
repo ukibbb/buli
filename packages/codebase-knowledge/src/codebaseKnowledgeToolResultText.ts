@@ -1,15 +1,18 @@
-import type { CodebaseKnowledgeQueryResult } from "./codebaseKnowledgeTypes.ts";
+import type { CodebaseKnowledgeQueryResult, CodebaseKnowledgeRecord } from "./codebaseKnowledgeTypes.ts";
 
 export const MAX_CODEBASE_KNOWLEDGE_TOOL_RESULT_TEXT_LENGTH = 24_000;
 
 const MAX_CODEBASE_KNOWLEDGE_MATCH_SUMMARY_LENGTH = 900;
 const MAX_EVIDENCE_RANGES_PER_MATCH = 8;
 const MAX_RECOMMENDED_READS_PER_MATCH = 6;
+const MAX_IMPORT_DECLARATIONS_PER_MATCH = 8;
+const MAX_EXPORT_DECLARATIONS_PER_MATCH = 8;
 
 export function buildCodebaseKnowledgeToolResultText(queryResult: CodebaseKnowledgeQueryResult): string {
   const resultLines = [
     "<codebase_knowledge_query>",
-    `<problem>${escapeXmlText(queryResult.query.codebaseProblemDescription)}</problem>`,
+    `<symbol_names>${escapeXmlText((queryResult.query.symbolNames ?? []).join(", "))}</symbol_names>`,
+    `<file_paths>${escapeXmlText((queryResult.query.filePaths ?? []).join(", "))}</file_paths>`,
     `<match_count>${queryResult.matches.length}</match_count>`,
     "<matches>",
   ];
@@ -74,10 +77,10 @@ function formatCodebaseKnowledgeMatchLines(input: {
     `<record_kind>${input.match.record.recordKind}</record_kind>`,
     `<title>${escapeXmlText(input.match.record.title)}</title>`,
     `<summary>${escapeXmlText(truncateText(input.match.record.summary, MAX_CODEBASE_KNOWLEDGE_MATCH_SUMMARY_LENGTH))}</summary>`,
-    `<freshness>${input.match.record.freshness}</freshness>`,
+    ...formatCodebaseKnowledgeRecordMapDetailLines(input.match.record),
     "<evidence>",
     ...evidenceRanges.map((evidenceRange) =>
-      `<source file="${escapeXmlAttribute(evidenceRange.filePath)}" lines="${evidenceRange.startLineNumber}-${evidenceRange.endLineNumber}" source_kind="${evidenceRange.sourceKind}" />`
+      `<source file="${escapeXmlAttribute(evidenceRange.filePath)}" lines="${evidenceRange.startLineNumber}-${evidenceRange.endLineNumber}" />`
     ),
     ...(input.match.record.evidenceRanges.length > evidenceRanges.length
       ? [`<omitted_evidence_count>${input.match.record.evidenceRanges.length - evidenceRanges.length}</omitted_evidence_count>`]
@@ -95,17 +98,77 @@ function formatCodebaseKnowledgeMatchLines(input: {
   ];
 }
 
+function formatCodebaseKnowledgeRecordMapDetailLines(record: CodebaseKnowledgeRecord): string[] {
+  switch (record.recordKind) {
+    case "file":
+      return formatFileKnowledgeRecordMapDetailLines(record);
+    case "symbol":
+      return formatSymbolKnowledgeRecordMapDetailLines(record);
+  }
+}
+
+function formatFileKnowledgeRecordMapDetailLines(record: CodebaseKnowledgeRecord & { recordKind: "file" }): string[] {
+  const importDeclarations = (record.importDeclarations ?? []).slice(0, MAX_IMPORT_DECLARATIONS_PER_MATCH);
+  const exportDeclarations = (record.exportDeclarations ?? []).slice(0, MAX_EXPORT_DECLARATIONS_PER_MATCH);
+  if (importDeclarations.length === 0 && exportDeclarations.length === 0) {
+    return [];
+  }
+
+  return [
+    "<map_details>",
+    ...(importDeclarations.length > 0
+      ? [
+          "<imports>",
+          ...importDeclarations.map((importDeclaration) =>
+            `<import module="${escapeXmlAttribute(importDeclaration.moduleSpecifier)}" symbols="${escapeXmlAttribute(importDeclaration.importedSymbolNames.join(", "))}" type_only="${importDeclaration.isTypeOnly}" lines="${importDeclaration.startLineNumber}-${importDeclaration.endLineNumber}" />`
+          ),
+          ...(record.importDeclarations && record.importDeclarations.length > importDeclarations.length
+            ? [`<omitted_import_count>${record.importDeclarations.length - importDeclarations.length}</omitted_import_count>`]
+            : []),
+          "</imports>",
+        ]
+      : []),
+    ...(exportDeclarations.length > 0
+      ? [
+          "<exports>",
+          ...exportDeclarations.map((exportDeclaration) =>
+            `<export symbols="${escapeXmlAttribute(exportDeclaration.exportedSymbolNames.join(", "))}"${exportDeclaration.moduleSpecifier ? ` module="${escapeXmlAttribute(exportDeclaration.moduleSpecifier)}"` : ""} lines="${exportDeclaration.startLineNumber}-${exportDeclaration.endLineNumber}" />`
+          ),
+          ...(record.exportDeclarations && record.exportDeclarations.length > exportDeclarations.length
+            ? [`<omitted_export_count>${record.exportDeclarations.length - exportDeclarations.length}</omitted_export_count>`]
+            : []),
+          "</exports>",
+        ]
+      : []),
+    "</map_details>",
+  ];
+}
+
+function formatSymbolKnowledgeRecordMapDetailLines(record: CodebaseKnowledgeRecord & { recordKind: "symbol" }): string[] {
+  return [
+    "<map_details>",
+    `<symbol name="${escapeXmlAttribute(record.symbolName)}" kind="${record.symbolKind}" exported="${record.isExported}" file="${escapeXmlAttribute(record.filePath)}" lines="${record.startLineNumber}-${record.endLineNumber}" />`,
+    ...(record.declarationPreview
+      ? [`<declaration_preview>${escapeXmlText(record.declarationPreview.declarationPreviewText)}</declaration_preview>`]
+      : []),
+    ...(record.declarationPreview?.documentationCommentText
+      ? [`<documentation_comment>${escapeXmlText(record.declarationPreview.documentationCommentText)}</documentation_comment>`]
+      : []),
+    "</map_details>",
+  ];
+}
+
 function formatCodebaseKnowledgeToolResultTrailingLines(input: { omittedMatchCount: number }): string[] {
   return [
     ...(input.omittedMatchCount > 0
       ? [
           "<codebase_knowledge_truncation>",
           `<omitted_match_count>${input.omittedMatchCount}</omitted_match_count>`,
-          "<guidance>Use maximumKnowledgeResultCount, knownRelevantFilePaths, knownRelevantSymbolNames, or a more specific problem description to narrow results.</guidance>",
+          "<guidance>Use maximumResultCount, or narrow symbolNames and filePaths to fewer entries, to reduce results.</guidance>",
           "</codebase_knowledge_truncation>",
         ]
       : []),
-    "<verification_note>Read the exact current source ranges with read/read_many before relying on these summaries.</verification_note>",
+    "<verification_note>Read the exact current source ranges with read before relying on these summaries.</verification_note>",
     "</codebase_knowledge_query>",
   ];
 }

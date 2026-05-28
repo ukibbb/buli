@@ -4,8 +4,8 @@ import type { ConversationSessionEntry, ModelContextItem, OpenAiProviderTurnRepl
 import {
   prepareConversationEntriesForCompactionRequest,
   projectConversationSessionEntriesToModelContextItems,
-  runReadManyToolCall,
-  runSearchManyToolCall,
+  runGrepToolCall,
+  runReadToolCall,
 } from "@buli/engine";
 import {
   OPENAI_HISTORICAL_TOOL_OUTPUT_REPLAY_TURN_MAX_CHARACTER_COUNT,
@@ -41,21 +41,21 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
     const compactionProjection = await measureDurationMs(() =>
       prepareConversationEntriesForCompactionRequest({ conversationSessionEntries })
     );
-    const readManyToolCall = await measureDurationMs(() => runReadManyToolCall({
-      readManyToolCallRequest: {
-        toolName: "read_many",
-        readTargets: [{ readTargetPath: "large-read.txt", maximumLineCount: 800 }],
+    const readToolCall = await measureDurationMs(() => runReadToolCall({
+      readToolCallRequest: {
+        toolName: "read",
+        readTargetPath: "large-read.txt",
+        maximumLineCount: 800,
       },
       workspaceRootPath: batchToolOutputWorkspacePath,
-      readOnlyToolCallConcurrencyLimiter: immediateReadOnlyToolCallConcurrencyLimiter,
     }));
-    const budgetedSearchManyToolCall = await measureDurationMs(() => runSearchManyToolCall({
-      searchManyToolCallRequest: {
-        toolName: "search_many",
-        searches: [{ searchKind: "grep", regexPattern: "marker", searchPath: "large-search.txt" }],
+    const budgetedGrepToolCall = await measureDurationMs(() => runGrepToolCall({
+      grepToolCallRequest: {
+        toolName: "grep",
+        regexPattern: "marker",
+        searchPath: "large-search.txt",
       },
       workspaceRootPath: batchToolOutputWorkspacePath,
-      readOnlyToolCallConcurrencyLimiter: immediateReadOnlyToolCallConcurrencyLimiter,
     }));
     const heapUsedAfterScenario = process.memoryUsage().heapUsed;
 
@@ -78,13 +78,13 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
           budget: { warnAbove: 25, failAbove: 100 },
         }),
         createDurationMetric({
-          metricName: "tool_output_context_growth.read_many.duration_ms",
-          durationMs: readManyToolCall.durationMs,
+          metricName: "tool_output_context_growth.read.duration_ms",
+          durationMs: readToolCall.durationMs,
           budget: { warnAbove: 50, failAbove: 200 },
         }),
         createDurationMetric({
-          metricName: "tool_output_context_growth.budgeted_search_many.duration_ms",
-          durationMs: budgetedSearchManyToolCall.durationMs,
+          metricName: "tool_output_context_growth.grep.duration_ms",
+          durationMs: budgetedGrepToolCall.durationMs,
           budget: { warnAbove: 100, failAbove: 400 },
         }),
         createCountMetric({
@@ -118,12 +118,12 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
           },
         }),
         createBytesMetric({
-          metricName: "tool_output_context_growth.read_many_tool_result_text_bytes",
-          bytes: readManyToolCall.measuredValue.toolResultText.length,
+          metricName: "tool_output_context_growth.read_tool_result_text_bytes",
+          bytes: readToolCall.measuredValue.toolResultText.length,
         }),
         createBytesMetric({
-          metricName: "tool_output_context_growth.budgeted_search_many_tool_result_text_bytes",
-          bytes: budgetedSearchManyToolCall.measuredValue.toolResultText.length,
+          metricName: "tool_output_context_growth.grep_tool_result_text_bytes",
+          bytes: budgetedGrepToolCall.measuredValue.toolResultText.length,
           budget: { warnAbove: 32_000, failAbove: 34_000 },
         }),
         createBytesMetric({
@@ -148,12 +148,6 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
   },
 };
 
-const immediateReadOnlyToolCallConcurrencyLimiter = {
-  run<ReadOnlyToolCallResult>(runReadOnlyToolCall: () => Promise<ReadOnlyToolCallResult>): Promise<ReadOnlyToolCallResult> {
-    return runReadOnlyToolCall();
-  },
-};
-
 async function createBatchToolOutputWorkspace(input: {
   runOutputDirectoryPath: string;
   iterationIndex: number;
@@ -172,7 +166,7 @@ async function createBatchToolOutputWorkspace(input: {
   );
   await writeFile(
     join(workspacePath, "large-search.txt"),
-    Array.from({ length: 600 }, (_value, lineIndex) => `marker-${lineIndex + 1} ${"search-many-output ".repeat(8)}`).join("\n"),
+    Array.from({ length: 600 }, (_value, lineIndex) => `marker-${lineIndex + 1} ${"grep-output ".repeat(8)}`).join("\n"),
     "utf8",
   );
   return workspacePath;

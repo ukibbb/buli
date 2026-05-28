@@ -1,81 +1,46 @@
 import { expect, test } from "bun:test";
-import { queryCodebaseKnowledgeRecords } from "../src/index.ts";
-import { createTestSymbolKnowledgeRecord } from "./testCodebaseKnowledgeRecords.ts";
+import { queryCodebaseKnowledgeRecords } from "../src/queryCodebaseKnowledge.ts";
+import type { CodebaseSymbolKnowledgeRecord } from "../src/codebaseKnowledgeTypes.ts";
 
-test("queryCodebaseKnowledgeRecords ranks exact symbol hints above lexical matches", () => {
-  const queryResult = queryCodebaseKnowledgeRecords({
-    query: {
-      codebaseProblemDescription: "runtime tool dispatch",
-      knownRelevantSymbolNames: ["createOpenAiResponsesInputItems"],
-    },
-    records: [
-      createTestSymbolKnowledgeRecord({
-        recordId: "symbol:runtime",
-        filePath: "packages/engine/src/runtimeToolCallExecution.ts",
-        symbolName: "streamAssistantResponseEventsForRequestedToolCalls",
-        summary: "Routes provider tool calls to runtime executors.",
-        tags: ["runtime", "tool", "dispatch"],
-      }),
-      createTestSymbolKnowledgeRecord({
-        recordId: "symbol:request",
-        filePath: "packages/openai/src/provider/request.ts",
-        symbolName: "createOpenAiResponsesInputItems",
-        summary: "Builds OpenAI input items from conversation entries.",
-        tags: ["openai", "request"],
-      }),
-    ],
+function symbolRecord(overrides: Partial<CodebaseSymbolKnowledgeRecord>): CodebaseSymbolKnowledgeRecord {
+  return {
+    recordId: "r1",
+    recordKind: "symbol",
+    title: "someSymbol",
+    summary: "",
+    tags: [],
+    evidenceRanges: [],
+    updatedAtMs: 0,
+    filePath: "packages/x/src/a.ts",
+    symbolName: "someSymbol",
+    symbolKind: "function",
+    startLineNumber: 142,
+    endLineNumber: 187,
+    isExported: true,
+    ...overrides,
+  };
+}
+
+test("exact symbol-name match ranks above substring match", () => {
+  const exact = symbolRecord({ recordId: "exact", symbolName: "handleRequest" });
+  const substring = symbolRecord({ recordId: "sub", symbolName: "handleRequestRetry" });
+  const result = queryCodebaseKnowledgeRecords({
+    query: { symbolNames: ["handleRequest"] },
+    records: [substring, exact],
   });
-
-  expect(queryResult.matches[0]?.record.recordId).toBe("symbol:request");
-  expect(queryResult.matches[0]?.matchReasons).toContain("matched symbol createOpenAiResponsesInputItems");
+  expect(result.matches[0]?.record.recordId).toBe("exact");
 });
 
-test("queryCodebaseKnowledgeRecords penalizes stale records but keeps them discoverable", () => {
-  const queryResult = queryCodebaseKnowledgeRecords({
-    query: { codebaseProblemDescription: "runtime tool dispatch" },
-    records: [
-      createTestSymbolKnowledgeRecord({
-        recordId: "symbol:fresh-runtime",
-        filePath: "packages/engine/src/runtimeToolCallExecution.ts",
-        symbolName: "freshRuntimeDispatch",
-        summary: "Runtime tool dispatch.",
-        tags: ["runtime", "tool", "dispatch"],
-      }),
-      createTestSymbolKnowledgeRecord({
-        recordId: "symbol:stale-runtime",
-        filePath: "packages/engine/src/runtimeToolCallExecution.ts",
-        symbolName: "staleRuntimeDispatch",
-        summary: "Runtime tool dispatch.",
-        tags: ["runtime", "tool", "dispatch"],
-        freshness: "stale",
-      }),
-    ],
+test("file path match returns the file record", () => {
+  const symbol = symbolRecord({ recordId: "s", filePath: "packages/x/src/a.ts" });
+  const result = queryCodebaseKnowledgeRecords({
+    query: { filePaths: ["packages/x/src/a.ts"] },
+    records: [symbol],
   });
-
-  expect(queryResult.matches.map((match) => match.record.recordId)).toEqual(["symbol:fresh-runtime", "symbol:stale-runtime"]);
-  expect(queryResult.matches[1]?.matchReasons).toContain("record is stale; verify current source before relying on it");
+  expect(result.matches.map((m) => m.record.recordId)).toContain("s");
 });
 
-test("queryCodebaseKnowledgeRecords respects maximumKnowledgeResultCount", () => {
-  const queryResult = queryCodebaseKnowledgeRecords({
-    query: { codebaseProblemDescription: "runtime", maximumKnowledgeResultCount: 1 },
-    records: [
-      createTestSymbolKnowledgeRecord({
-        recordId: "symbol:runtime-a",
-        filePath: "a.ts",
-        symbolName: "runtimeA",
-        summary: "Runtime A.",
-        tags: ["runtime"],
-      }),
-      createTestSymbolKnowledgeRecord({
-        recordId: "symbol:runtime-b",
-        filePath: "b.ts",
-        symbolName: "runtimeB",
-        summary: "Runtime B.",
-        tags: ["runtime"],
-      }),
-    ],
-  });
-
-  expect(queryResult.matches).toHaveLength(1);
+test("no inputs returns no matches", () => {
+  const result = queryCodebaseKnowledgeRecords({ query: {}, records: [symbolRecord({})] });
+  expect(result.matches).toHaveLength(0);
 });
