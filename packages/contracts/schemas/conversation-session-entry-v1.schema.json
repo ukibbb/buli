@@ -605,6 +605,44 @@
                 "skillName"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "query_codebase_knowledge"
+                },
+                "codebaseProblemDescription": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20000
+                },
+                "knownRelevantFilePaths": {
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema12"
+                  }
+                },
+                "knownRelevantSymbolNames": {
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema17"
+                  }
+                },
+                "maximumKnowledgeResultCount": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 20
+                }
+              },
+              "required": [
+                "toolName",
+                "codebaseProblemDescription"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -658,13 +696,13 @@
       "type": "object",
       "properties": {
         "toolCallId": {
-          "$ref": "#/$defs/__schema17"
-        },
-        "toolCallDetail": {
           "$ref": "#/$defs/__schema18"
         },
+        "toolCallDetail": {
+          "$ref": "#/$defs/__schema19"
+        },
         "toolResultText": {
-          "$ref": "#/$defs/__schema36"
+          "$ref": "#/$defs/__schema38"
         },
         "entryKind": {
           "type": "string",
@@ -683,13 +721,13 @@
       "type": "object",
       "properties": {
         "toolCallId": {
-          "$ref": "#/$defs/__schema17"
-        },
-        "toolCallDetail": {
           "$ref": "#/$defs/__schema18"
         },
+        "toolCallDetail": {
+          "$ref": "#/$defs/__schema19"
+        },
         "toolResultText": {
-          "$ref": "#/$defs/__schema36"
+          "$ref": "#/$defs/__schema38"
         },
         "entryKind": {
           "type": "string",
@@ -713,13 +751,13 @@
       "type": "object",
       "properties": {
         "toolCallId": {
-          "$ref": "#/$defs/__schema17"
-        },
-        "toolCallDetail": {
           "$ref": "#/$defs/__schema18"
         },
+        "toolCallDetail": {
+          "$ref": "#/$defs/__schema19"
+        },
         "toolResultText": {
-          "$ref": "#/$defs/__schema36"
+          "$ref": "#/$defs/__schema38"
         },
         "entryKind": {
           "type": "string",
@@ -788,7 +826,7 @@
             "changedFiles": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema30"
+                "$ref": "#/$defs/__schema31"
               }
             }
           },
@@ -1162,33 +1200,35 @@
     },
     "__schema17": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 512
     },
     "__schema18": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema19": {
       "oneOf": [
-        {
-          "$ref": "#/$defs/__schema19"
-        },
         {
           "$ref": "#/$defs/__schema20"
         },
         {
-          "$ref": "#/$defs/__schema22"
+          "$ref": "#/$defs/__schema21"
+        },
+        {
+          "$ref": "#/$defs/__schema23"
+        },
+        {
+          "$ref": "#/$defs/__schema26"
         },
         {
           "$ref": "#/$defs/__schema25"
         },
         {
-          "$ref": "#/$defs/__schema24"
+          "$ref": "#/$defs/__schema28"
         },
         {
-          "$ref": "#/$defs/__schema27"
-        },
-        {
-          "$ref": "#/$defs/__schema29"
-        },
-        {
-          "$ref": "#/$defs/__schema31"
+          "$ref": "#/$defs/__schema30"
         },
         {
           "$ref": "#/$defs/__schema32"
@@ -1198,6 +1238,9 @@
         },
         {
           "$ref": "#/$defs/__schema34"
+        },
+        {
+          "$ref": "#/$defs/__schema35"
         },
         {
           "type": "object",
@@ -1282,31 +1325,31 @@
                   "subagentChildToolCallDetail": {
                     "oneOf": [
                       {
-                        "$ref": "#/$defs/__schema19"
-                      },
-                      {
                         "$ref": "#/$defs/__schema20"
                       },
                       {
-                        "$ref": "#/$defs/__schema22"
+                        "$ref": "#/$defs/__schema21"
                       },
                       {
-                        "$ref": "#/$defs/__schema24"
+                        "$ref": "#/$defs/__schema23"
                       },
                       {
                         "$ref": "#/$defs/__schema25"
                       },
                       {
-                        "$ref": "#/$defs/__schema34"
+                        "$ref": "#/$defs/__schema26"
                       },
                       {
-                        "$ref": "#/$defs/__schema27"
+                        "$ref": "#/$defs/__schema36"
                       },
                       {
-                        "$ref": "#/$defs/__schema29"
+                        "$ref": "#/$defs/__schema35"
                       },
                       {
-                        "$ref": "#/$defs/__schema31"
+                        "$ref": "#/$defs/__schema28"
+                      },
+                      {
+                        "$ref": "#/$defs/__schema30"
                       },
                       {
                         "$ref": "#/$defs/__schema32"
@@ -1315,7 +1358,10 @@
                         "$ref": "#/$defs/__schema33"
                       },
                       {
-                        "$ref": "#/$defs/__schema35"
+                        "$ref": "#/$defs/__schema34"
+                      },
+                      {
+                        "$ref": "#/$defs/__schema37"
                       },
                       {
                         "type": "object",
@@ -1424,11 +1470,14 @@
           "additionalProperties": false
         },
         {
-          "$ref": "#/$defs/__schema35"
+          "$ref": "#/$defs/__schema37"
+        },
+        {
+          "$ref": "#/$defs/__schema36"
         }
       ]
     },
-    "__schema19": {
+    "__schema20": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1516,7 +1565,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema20": {
+    "__schema21": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1527,7 +1576,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema21"
+            "$ref": "#/$defs/__schema22"
           }
         },
         "completedReadCount": {
@@ -1552,7 +1601,7 @@
                     "const": "completed"
                   },
                   "readDetail": {
-                    "$ref": "#/$defs/__schema19"
+                    "$ref": "#/$defs/__schema20"
                   }
                 },
                 "required": [
@@ -1569,7 +1618,7 @@
                     "const": "failed"
                   },
                   "readDetail": {
-                    "$ref": "#/$defs/__schema19"
+                    "$ref": "#/$defs/__schema20"
                   },
                   "failureExplanation": {
                     "type": "string",
@@ -1593,11 +1642,11 @@
       ],
       "additionalProperties": false
     },
-    "__schema21": {
+    "__schema22": {
       "type": "string",
       "minLength": 1
     },
-    "__schema22": {
+    "__schema23": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1608,7 +1657,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema23"
+            "$ref": "#/$defs/__schema24"
           }
         },
         "completedSearchCount": {
@@ -1635,10 +1684,10 @@
                   "searchDetail": {
                     "oneOf": [
                       {
-                        "$ref": "#/$defs/__schema24"
+                        "$ref": "#/$defs/__schema25"
                       },
                       {
-                        "$ref": "#/$defs/__schema25"
+                        "$ref": "#/$defs/__schema26"
                       }
                     ]
                   }
@@ -1659,10 +1708,10 @@
                   "searchDetail": {
                     "oneOf": [
                       {
-                        "$ref": "#/$defs/__schema24"
+                        "$ref": "#/$defs/__schema25"
                       },
                       {
-                        "$ref": "#/$defs/__schema25"
+                        "$ref": "#/$defs/__schema26"
                       }
                     ]
                   },
@@ -1688,7 +1737,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema23": {
+    "__schema24": {
       "oneOf": [
         {
           "type": "object",
@@ -1745,7 +1794,7 @@
         }
       ]
     },
-    "__schema24": {
+    "__schema25": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1784,7 +1833,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema25": {
+    "__schema26": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1834,13 +1883,13 @@
               "contextBeforeLines": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema26"
+                  "$ref": "#/$defs/__schema27"
                 }
               },
               "contextAfterLines": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema26"
+                  "$ref": "#/$defs/__schema27"
                 }
               }
             },
@@ -1859,7 +1908,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema26": {
+    "__schema27": {
       "type": "object",
       "properties": {
         "lineNumber": {
@@ -1877,7 +1926,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema27": {
+    "__schema28": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1899,7 +1948,7 @@
           "maximum": 9007199254740991
         },
         "unifiedDiffText": {
-          "$ref": "#/$defs/__schema28"
+          "$ref": "#/$defs/__schema29"
         }
       },
       "required": [
@@ -1908,11 +1957,11 @@
       ],
       "additionalProperties": false
     },
-    "__schema28": {
+    "__schema29": {
       "type": "string",
       "minLength": 1
     },
-    "__schema29": {
+    "__schema30": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1942,7 +1991,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema30"
+            "$ref": "#/$defs/__schema31"
           }
         }
       },
@@ -1952,7 +2001,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema30": {
+    "__schema31": {
       "type": "object",
       "properties": {
         "filePath": {
@@ -1989,7 +2038,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema31": {
+    "__schema32": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2018,7 +2067,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema30"
+            "$ref": "#/$defs/__schema31"
           }
         }
       },
@@ -2028,7 +2077,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema32": {
+    "__schema33": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2057,7 +2106,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema30"
+            "$ref": "#/$defs/__schema31"
           }
         }
       },
@@ -2067,7 +2116,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema33": {
+    "__schema34": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2089,7 +2138,7 @@
           "maximum": 9007199254740991
         },
         "unifiedDiffText": {
-          "$ref": "#/$defs/__schema28"
+          "$ref": "#/$defs/__schema29"
         }
       },
       "required": [
@@ -2098,7 +2147,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema34": {
+    "__schema35": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2158,7 +2207,49 @@
       ],
       "additionalProperties": false
     },
-    "__schema35": {
+    "__schema36": {
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "const": "query_codebase_knowledge"
+        },
+        "codebaseProblemDescription": {
+          "type": "string",
+          "minLength": 1
+        },
+        "knownRelevantFilePaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "knownRelevantSymbolNames": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "matchedKnowledgeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "recommendedReadCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "toolName",
+        "codebaseProblemDescription"
+      ],
+      "additionalProperties": false
+    },
+    "__schema37": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2193,7 +2284,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema36": {
+    "__schema38": {
       "type": "string"
     }
   },

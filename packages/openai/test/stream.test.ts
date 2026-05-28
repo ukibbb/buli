@@ -723,6 +723,22 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
       },
     },
     {
+      toolName: "query_codebase_knowledge",
+      argumentsText: JSON.stringify({
+        codebaseProblemDescription: "Find runtime tool dispatch.",
+        knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+        knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+        maximumKnowledgeResultCount: 4,
+      }),
+      expectedToolCallRequest: {
+        toolName: "query_codebase_knowledge",
+        codebaseProblemDescription: "Find runtime tool dispatch.",
+        knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+        knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+        maximumKnowledgeResultCount: 4,
+      },
+    },
+    {
       toolName: "edit",
       argumentsText: '{"filePath":"src/app.ts","oldString":"old","newString":""}',
       expectedToolCallRequest: {
@@ -849,6 +865,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const searchManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "search_many");
   const globToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "glob");
   const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
+  const queryCodebaseKnowledgeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "query_codebase_knowledge");
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const editManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit_many");
   const patchToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "patch");
@@ -885,6 +902,11 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Single file or directory");
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
   expect(grepToolDefinition?.parameters.properties["contextLineCount"]?.maximum).toBe(5);
+  expect(queryCodebaseKnowledgeToolDefinition?.description).toContain("recommended reads");
+  expect(queryCodebaseKnowledgeToolDefinition?.description).toContain("not raw source");
+  expect(queryCodebaseKnowledgeToolDefinition?.description).toContain("read the exact current source");
+  expect(queryCodebaseKnowledgeToolDefinition?.parameters.properties["knownRelevantFilePaths"]?.maxItems).toBe(50);
+  expect(queryCodebaseKnowledgeToolDefinition?.parameters.properties["maximumKnowledgeResultCount"]?.maximum).toBe(20);
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(editManyToolDefinition?.description).toContain("Prefer this over several edit calls");
   expect(editManyToolDefinition?.parameters.properties["edits"]?.minItems).toBe(1);
@@ -936,10 +958,10 @@ test("parseOpenAiStream reports typed tool calls that violate shared contracts a
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
   const explorerToolDefinitions = createOpenAiToolDefinitions({
-    availableToolNames: ["read", "read_many", "search_many", "glob", "grep"],
+    availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"],
   });
 
-  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
+  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"]);
 });
 
 test("parseOpenAiStream reports malformed typed tool JSON arguments as invalid function calls", async () => {

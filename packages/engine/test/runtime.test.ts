@@ -3,11 +3,16 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
+  CodebaseKnowledgeQuery,
+  CodebaseKnowledgeQueryResult,
+} from "@buli/codebase-knowledge";
+import type {
   AssistantToolCallConversationMessagePart,
   BuliDiagnosticLogEvent,
   ConversationSessionEntry,
   ModelContextItem,
   ProviderStreamEvent,
+  QueryCodebaseKnowledgeToolCallRequest,
   TokenUsage,
   ProviderTurnReplay,
 } from "@buli/contracts";
@@ -16,6 +21,7 @@ import type {
   ConversationTurnProvider,
   ProviderConversationTurn,
   ProviderConversationTurnRequest,
+  WorkspaceCodebaseKnowledgeIndex,
   WorkspaceShellCommandExecutor,
 } from "../src/index.ts";
 import { AssistantConversationRuntime, InMemoryConversationHistory } from "../src/index.ts";
@@ -103,6 +109,38 @@ class ThrowingProviderTurn implements ProviderConversationTurn {
   getProviderTurnReplay(): ProviderTurnReplay | undefined {
     return undefined;
   }
+}
+
+class StubWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodebaseKnowledgeIndex {
+  readonly queryResult: CodebaseKnowledgeQueryResult | undefined;
+  readonly queryFailure: Error | undefined;
+  ensureWorkspaceIndexedCallCount = 0;
+  readonly queriedCodebaseKnowledgeQueries: CodebaseKnowledgeQuery[] = [];
+
+  constructor(input: {
+    queryResult?: CodebaseKnowledgeQueryResult | undefined;
+    queryFailure?: Error | undefined;
+  }) {
+    this.queryResult = input.queryResult;
+    this.queryFailure = input.queryFailure;
+  }
+
+  async ensureWorkspaceIndexed(): Promise<void> {
+    this.ensureWorkspaceIndexedCallCount += 1;
+  }
+
+  async queryCodebaseKnowledge(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult> {
+    this.queriedCodebaseKnowledgeQueries.push(query);
+    if (this.queryFailure) {
+      throw this.queryFailure;
+    }
+    if (!this.queryResult) {
+      throw new Error("No codebase knowledge query result was configured.");
+    }
+    return this.queryResult;
+  }
+
+  async refreshChangedFilePaths(): Promise<void> {}
 }
 
 class RecordingConversationTurnProvider implements ConversationTurnProvider {
@@ -765,7 +803,7 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
     "The output should be clean enough that Implementation mode can execute it without re-planning or broad rediscovery.",
   );
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
     entryKind: "user_prompt",
     assistantOperatingMode: "plan",
@@ -795,7 +833,7 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"]);
 });
 
 test("AssistantConversationRuntime rejects plan mode before understand when workflow enforcement is enabled", () => {
@@ -881,7 +919,7 @@ test("AssistantConversationRuntime filters explicit tool overrides in read-only 
     conversationTurnProvider: provider,
     workspaceRootPath: process.cwd(),
     promptContextBrowseRootPath: process.cwd(),
-    availableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "task"],
+    availableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "query_codebase_knowledge", "task"],
   });
 
   await collectAssistantEvents(
@@ -891,7 +929,190 @@ test("AssistantConversationRuntime filters explicit tool overrides in read-only 
     }),
   );
 
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "grep", "task"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "read_many", "search_many", "grep", "query_codebase_knowledge", "task"]);
+});
+
+test("AssistantConversationRuntime executes query_codebase_knowledge without approval", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-query-knowledge-"));
+  const queryRequest: QueryCodebaseKnowledgeToolCallRequest = {
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find runtime tool dispatch.",
+    knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+    maximumKnowledgeResultCount: 2,
+  };
+  const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
+    queryResult: {
+      query: {
+        codebaseProblemDescription: queryRequest.codebaseProblemDescription,
+        knownRelevantFilePaths: queryRequest.knownRelevantFilePaths,
+        maximumKnowledgeResultCount: queryRequest.maximumKnowledgeResultCount,
+      },
+      matches: [
+        {
+          score: 103,
+          matchReasons: ["matched file path packages/engine/src/runtimeToolCallExecution.ts"],
+          recommendedReads: [
+            {
+              filePath: "packages/engine/src/runtimeToolCallExecution.ts",
+              startLineNumber: 107,
+              maximumLineCount: 20,
+              reason: "Verify runtime dispatch",
+            },
+          ],
+          record: {
+            recordId: "symbol:runtime-dispatch",
+            recordKind: "symbol",
+            title: "streamAssistantResponseEventsForRequestedToolCalls (function)",
+            summary: "Defines runtime tool-call dispatch.",
+            tags: ["runtime", "tool", "dispatch"],
+            evidenceRanges: [
+              {
+                filePath: "packages/engine/src/runtimeToolCallExecution.ts",
+                startLineNumber: 107,
+                endLineNumber: 121,
+                contentHash: "hash-runtime-dispatch",
+                sourceKind: "tree_sitter_structure",
+              },
+            ],
+            freshness: "fresh",
+            updatedAtMs: 1,
+            filePath: "packages/engine/src/runtimeToolCallExecution.ts",
+            symbolName: "streamAssistantResponseEventsForRequestedToolCalls",
+            symbolKind: "function",
+            startLineNumber: 107,
+            endLineNumber: 121,
+            isExported: true,
+          },
+        },
+      ],
+    },
+  });
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_query_codebase_knowledge_1",
+        toolCallRequest: queryRequest,
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Knowledge queried." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    workspaceCodebaseKnowledgeIndex,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Find runtime dispatch",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).not.toContain(
+    "assistant_pending_tool_approval_requested",
+  );
+  expect(workspaceCodebaseKnowledgeIndex.queriedCodebaseKnowledgeQueries).toEqual([
+    {
+      codebaseProblemDescription: queryRequest.codebaseProblemDescription,
+      knownRelevantFilePaths: queryRequest.knownRelevantFilePaths,
+      maximumKnowledgeResultCount: queryRequest.maximumKnowledgeResultCount,
+    },
+  ]);
+  expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({
+    type: "assistant_message_part_updated",
+    part: expect.objectContaining({
+      partKind: "assistant_tool_call",
+      toolCallId: "call_query_codebase_knowledge_1",
+      toolCallStatus: "completed",
+      toolCallDetail: expect.objectContaining({
+        toolName: "query_codebase_knowledge",
+        matchedKnowledgeCount: 1,
+        recommendedReadCount: 1,
+      }),
+    }),
+  }));
+  expect(providerTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_query_codebase_knowledge_1",
+      toolResultText: expect.stringContaining("<codebase_knowledge_query>"),
+    },
+  ]);
+  expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("runtimeToolCallExecution.ts");
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toContainEqual(expect.objectContaining({
+    entryKind: "completed_tool_result",
+    toolCallId: "call_query_codebase_knowledge_1",
+    toolCallDetail: expect.objectContaining({
+      toolName: "query_codebase_knowledge",
+      matchedKnowledgeCount: 1,
+      recommendedReadCount: 1,
+    }),
+    toolResultText: expect.stringContaining("<recommended_reads>"),
+  }));
+});
+
+test("AssistantConversationRuntime records failed query_codebase_knowledge results", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-query-knowledge-failure-"));
+  const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
+    queryFailure: new Error("index file is unreadable"),
+  });
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_query_codebase_knowledge_failed",
+        toolCallRequest: {
+          toolName: "query_codebase_knowledge",
+          codebaseProblemDescription: "Find runtime dispatch.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Failure handled." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new RecordingConversationTurnProvider([providerTurn]),
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    workspaceCodebaseKnowledgeIndex,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Find runtime dispatch",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({
+    type: "assistant_message_part_updated",
+    part: expect.objectContaining({
+      partKind: "assistant_tool_call",
+      toolCallId: "call_query_codebase_knowledge_failed",
+      toolCallStatus: "failed",
+      errorText: "index file is unreadable",
+      toolCallDetail: expect.objectContaining({ toolName: "query_codebase_knowledge" }),
+    }),
+  }));
+  expect(providerTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_query_codebase_knowledge_failed",
+      toolResultText: "Codebase knowledge query failed: index file is unreadable",
+    },
+  ]);
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toContainEqual(expect.objectContaining({
+    entryKind: "failed_tool_result",
+    toolCallId: "call_query_codebase_knowledge_failed",
+    failureExplanation: "index file is unreadable",
+  }));
 });
 
 test("AssistantConversationRuntime denies tool calls excluded by explicit implementation tool overrides", async () => {
@@ -3526,7 +3747,7 @@ test("AssistantConversationRuntime runs task as an isolated read-only child turn
   expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
   expect(provider.startedTurnRequests[1]?.parentTaskToolCallId).toBe("call_explore_1");
   expect(provider.startedTurnRequests[1]?.subagentName).toBe("explore");
-  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Explorer target");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain(
@@ -3666,7 +3887,7 @@ test("AssistantConversationRuntime runs task as a built-in Explorer subagent", a
   expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
   expect(provider.startedTurnRequests[1]?.parentTaskToolCallId).toBe("call_task_1");
   expect(provider.startedTurnRequests[1]?.subagentName).toBe("explore");
-  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"]);
   expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Buli Explorer");
   expect(taskSubagentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Task target");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<task_result>");
@@ -4683,4 +4904,25 @@ test("AssistantConversationRuntime denies write tool calls in plan mode", async 
     },
   ]);
   await expect(readFile(join(workspaceRootPath, "generated.txt"), "utf8")).rejects.toThrow();
+});
+
+test("AssistantConversationRuntime starts workspace codebase knowledge indexing in background", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-codebase-knowledge-startup-"));
+  const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
+    queryResult: {
+      query: { codebaseProblemDescription: "runtime" },
+      matches: [],
+    },
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new RecordingConversationTurnProvider([]),
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    workspaceCodebaseKnowledgeIndex,
+  });
+
+  runtime.startWorkspaceCodebaseKnowledgeIndexing();
+  runtime.startWorkspaceCodebaseKnowledgeIndexing();
+
+  expect(workspaceCodebaseKnowledgeIndex.ensureWorkspaceIndexedCallCount).toBe(1);
 });

@@ -7,6 +7,7 @@ import type {
   ToolCallGrepDetail,
   ToolCallPatchDetail,
   ToolCallPatchManyDetail,
+  ToolCallQueryCodebaseKnowledgeDetail,
   ToolCallReadManyDetail,
   ToolCallReadDetail,
   ToolCallSearchManyDetail,
@@ -35,6 +36,7 @@ export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNa
   "search_many",
   "glob",
   "grep",
+  "query_codebase_knowledge",
   "edit",
   "edit_many",
   "patch",
@@ -43,9 +45,9 @@ export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNa
   "task",
   "skill",
 ] as const);
-export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep"] as const satisfies readonly AssistantToolRequestName[];
+export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "edit_many", "patch", "patch_many", "write"] as const satisfies readonly AssistantToolRequestName[];
-export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep", "task", "skill"] as const satisfies readonly AssistantToolRequestName[];
+export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"] as const satisfies readonly AssistantToolRequestName[];
 export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite"] as const satisfies readonly ToolCallDetailName[];
 
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
@@ -103,6 +105,12 @@ export function isSkillToolCallRequest(
   return toolCallRequest.toolName === "skill";
 }
 
+export function isQueryCodebaseKnowledgeToolCallRequest(
+  toolCallRequest: ToolCallRequest,
+): toolCallRequest is ToolCallRequestByName<"query_codebase_knowledge"> {
+  return toolCallRequest.toolName === "query_codebase_knowledge";
+}
+
 export function isReadOnlyAssistantModeToolRequestName(
   toolName: AssistantToolRequestName,
 ): toolName is ReadOnlyAssistantModeToolRequestName {
@@ -130,6 +138,9 @@ export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCall
   }
   if (toolCallRequest.toolName === "grep") {
     return createStartedGrepToolCallDetail(toolCallRequest);
+  }
+  if (toolCallRequest.toolName === "query_codebase_knowledge") {
+    return createStartedQueryCodebaseKnowledgeToolCallDetail(toolCallRequest);
   }
   if (toolCallRequest.toolName === "edit") {
     return createStartedEditToolCallDetail(toolCallRequest);
@@ -199,6 +210,21 @@ function createStartedGrepToolCallDetail(toolCallRequest: ToolCallRequestByName<
     toolName: "grep",
     searchPattern: toolCallRequest.regexPattern,
     ...(toolCallRequest.contextLineCount !== undefined ? { contextLineCount: toolCallRequest.contextLineCount } : {}),
+  };
+}
+
+function createStartedQueryCodebaseKnowledgeToolCallDetail(
+  toolCallRequest: ToolCallRequestByName<"query_codebase_knowledge">,
+): ToolCallQueryCodebaseKnowledgeDetail {
+  return {
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: toolCallRequest.codebaseProblemDescription,
+    ...(toolCallRequest.knownRelevantFilePaths !== undefined
+      ? { knownRelevantFilePaths: [...toolCallRequest.knownRelevantFilePaths] }
+      : {}),
+    ...(toolCallRequest.knownRelevantSymbolNames !== undefined
+      ? { knownRelevantSymbolNames: [...toolCallRequest.knownRelevantSymbolNames] }
+      : {}),
   };
 }
 

@@ -140,10 +140,10 @@
           "minLength": 1
         },
         "usage": {
-          "$ref": "#/$defs/__schema25"
+          "$ref": "#/$defs/__schema26"
         },
         "contextWindowUsage": {
-          "$ref": "#/$defs/__schema25"
+          "$ref": "#/$defs/__schema26"
         }
       },
       "required": [
@@ -169,10 +169,10 @@
           "minLength": 1
         },
         "usage": {
-          "$ref": "#/$defs/__schema25"
+          "$ref": "#/$defs/__schema26"
         },
         "contextWindowUsage": {
-          "$ref": "#/$defs/__schema25"
+          "$ref": "#/$defs/__schema26"
         }
       },
       "required": [
@@ -689,7 +689,7 @@
               "minItems": 1,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema24"
+                "$ref": "#/$defs/__schema25"
               }
             }
           },
@@ -843,7 +843,7 @@
               ]
             },
             "usage": {
-              "$ref": "#/$defs/__schema25"
+              "$ref": "#/$defs/__schema26"
             }
           },
           "required": [
@@ -1032,6 +1032,9 @@
                         "$ref": "#/$defs/__schema12"
                       },
                       {
+                        "$ref": "#/$defs/__schema23"
+                      },
+                      {
                         "$ref": "#/$defs/__schema21"
                       },
                       {
@@ -1050,7 +1053,7 @@
                         "$ref": "#/$defs/__schema20"
                       },
                       {
-                        "$ref": "#/$defs/__schema23"
+                        "$ref": "#/$defs/__schema24"
                       },
                       {
                         "type": "object",
@@ -1157,6 +1160,9 @@
             "subagentDescription"
           ],
           "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/__schema24"
         },
         {
           "$ref": "#/$defs/__schema23"
@@ -1904,6 +1910,48 @@
       "properties": {
         "toolName": {
           "type": "string",
+          "const": "query_codebase_knowledge"
+        },
+        "codebaseProblemDescription": {
+          "type": "string",
+          "minLength": 1
+        },
+        "knownRelevantFilePaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "knownRelevantSymbolNames": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "matchedKnowledgeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "recommendedReadCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "toolName",
+        "codebaseProblemDescription"
+      ],
+      "additionalProperties": false
+    },
+    "__schema24": {
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
           "const": "skill"
         },
         "skillName": {
@@ -1934,7 +1982,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema24": {
+    "__schema25": {
       "type": "object",
       "properties": {
         "stepIndex": {
@@ -1965,7 +2013,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema25": {
+    "__schema26": {
       "type": "object",
       "properties": {
         "total": {

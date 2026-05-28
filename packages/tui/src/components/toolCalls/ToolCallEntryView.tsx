@@ -7,6 +7,7 @@ import { EditToolCallCard } from "./EditToolCallCard.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
 import { GrepToolCallCard } from "./GrepToolCallCard.tsx";
 import { PatchToolCallCard } from "./PatchToolCallCard.tsx";
+import { QueryCodebaseKnowledgeToolCallCard } from "./QueryCodebaseKnowledgeToolCallCard.tsx";
 import { ReadManyToolCallCard } from "./ReadManyToolCallCard.tsx";
 import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import { SearchManyToolCallCard } from "./SearchManyToolCallCard.tsx";
@@ -76,6 +77,7 @@ const toolCallEntryRendererByName: {
   search_many: renderSearchManyToolCallEntry,
   grep: renderGrepToolCallEntry,
   glob: renderGlobToolCallEntry,
+  query_codebase_knowledge: renderQueryCodebaseKnowledgeToolCallEntry,
   edit: renderEditToolCallEntry,
   edit_many: renderEditManyToolCallEntry,
   patch: renderPatchToolCallEntry,
@@ -144,6 +146,10 @@ function renderGrepToolCallEntry(props: ToolCallEntryRendererProps<"grep">): Rea
 
 function renderGlobToolCallEntry(props: ToolCallEntryRendererProps<"glob">): ReactNode {
   return <GlobToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderQueryCodebaseKnowledgeToolCallEntry(props: ToolCallEntryRendererProps<"query_codebase_knowledge">): ReactNode {
+  return <QueryCodebaseKnowledgeToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
 }
 
 function renderEditToolCallEntry(props: ToolCallEntryRendererProps<"edit">): ReactNode {

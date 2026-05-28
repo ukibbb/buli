@@ -16,6 +16,7 @@ import {
   FILE_MUTATION_TOOL_REQUEST_NAMES,
   MAX_BASH_TOOL_COMMAND_LENGTH,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  MAX_CODEBASE_KNOWLEDGE_PROBLEM_DESCRIPTION_LENGTH,
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH,
   MAX_GREP_TOOL_PATTERN_LENGTH,
@@ -39,6 +40,7 @@ import {
   isAssistantToolRequestName,
   isAssistantSubagentName,
   isFileMutationToolCallRequest,
+  isQueryCodebaseKnowledgeToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
   isSkillToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
@@ -75,8 +77,8 @@ test("contract compatibility fixture parses with all public interoperability sch
   expect(ConversationSessionModelSelectionSchema.parse(fixture.modelSelection)).toMatchObject({
     selectedModelId: "gpt-5.5",
   });
-  expect(ToolCallRequestSchema.array().parse(fixture.toolCallRequests)).toHaveLength(2);
-  expect(ToolCallDetailSchema.array().parse(fixture.toolCallDetails)).toHaveLength(2);
+  expect(ToolCallRequestSchema.array().parse(fixture.toolCallRequests)).toHaveLength(3);
+  expect(ToolCallDetailSchema.array().parse(fixture.toolCallDetails)).toHaveLength(3);
   expect(WorkspacePatchSchema.parse(fixture.workspacePatch)).toMatchObject({
     workspacePatchId: "patch-1",
   });
@@ -362,6 +364,12 @@ test("ToolCallRequestSchema rejects oversized tool request payloads", () => {
       subagentName: "explore",
       subagentDescription: "map files",
       subagentPrompt: "x".repeat(MAX_TASK_TOOL_PROMPT_LENGTH + 1),
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "query_codebase_knowledge",
+      codebaseProblemDescription: "x".repeat(MAX_CODEBASE_KNOWLEDGE_PROBLEM_DESCRIPTION_LENGTH + 1),
     })
   ).toThrow();
 });
@@ -964,6 +972,21 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
   });
   expect(
     ToolCallRequestSchema.parse({
+      toolName: "query_codebase_knowledge",
+      codebaseProblemDescription: "Find runtime tool dispatch and knowledge result formatting.",
+      knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+      knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      maximumKnowledgeResultCount: 4,
+    }),
+  ).toEqual({
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find runtime tool dispatch and knowledge result formatting.",
+    knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+    knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+    maximumKnowledgeResultCount: 4,
+  });
+  expect(
+    ToolCallRequestSchema.parse({
       toolName: "edit",
       editTargetPath: "packages/contracts/src/index.ts",
       oldString: "old",
@@ -1077,6 +1100,7 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
     "search_many",
     "glob",
     "grep",
+    "query_codebase_knowledge",
     "edit",
     "edit_many",
     "patch",
@@ -1085,9 +1109,9 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
     "task",
     "skill",
   ]);
-  expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep"]);
+  expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "edit_many", "patch", "patch_many", "write"]);
-  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep", "task", "skill"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"]);
   expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite"]);
 });
 
@@ -1097,12 +1121,14 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("search_many")).toBe(true);
   expect(isAssistantToolRequestName("task")).toBe(true);
   expect(isAssistantToolRequestName("skill")).toBe(true);
+  expect(isAssistantToolRequestName("query_codebase_knowledge")).toBe(true);
   expect(isAssistantToolRequestName("explore")).toBe(false);
   expect(isAssistantToolRequestName("general")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read_many", readTargets: [{ readTargetPath: "README.md" }] })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "search_many", searches: [{ searchKind: "glob", globPattern: "**/*.ts" }] })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toBe(true);
+  expect(isWorkspaceInspectionToolCallRequest({ toolName: "query_codebase_knowledge", codebaseProblemDescription: "Find runtime dispatch" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toBe(false);
   expect(isFileMutationToolCallRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toBe(true);
   expect(isFileMutationToolCallRequest({ toolName: "edit_many", edits: [{ editTargetPath: "README.md", oldString: "old", newString: "new" }] })).toBe(true);
@@ -1112,11 +1138,14 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isReadOnlyAssistantModeToolRequestName("read")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("read_many")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("search_many")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("query_codebase_knowledge")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("task")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("skill")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
   expect(isSkillToolCallRequest({ toolName: "skill", skillName: "code-review" })).toBe(true);
   expect(isSkillToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
+  expect(isQueryCodebaseKnowledgeToolCallRequest({ toolName: "query_codebase_knowledge", codebaseProblemDescription: "Find runtime dispatch" })).toBe(true);
+  expect(isQueryCodebaseKnowledgeToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
 });
 
 test("createStartedToolCallDetailFromRequest maps requests to render details", () => {
@@ -1169,6 +1198,17 @@ test("createStartedToolCallDetailFromRequest maps requests to render details", (
     toolName: "grep",
     searchPattern: "ToolCallRequest",
     contextLineCount: 2,
+  });
+  expect(createStartedToolCallDetailFromRequest({
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find runtime dispatch",
+    knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+    knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+  })).toEqual({
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find runtime dispatch",
+    knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+    knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
   });
   expect(createStartedToolCallDetailFromRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toEqual({
     toolName: "edit",

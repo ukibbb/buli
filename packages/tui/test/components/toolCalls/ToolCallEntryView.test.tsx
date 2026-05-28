@@ -100,6 +100,26 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("2 paths");
   });
 
+  test("dispatches_query_codebase_knowledge", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "query_codebase_knowledge",
+          codebaseProblemDescription: "Find runtime dispatch",
+          matchedKnowledgeCount: 1,
+          recommendedReadCount: 2,
+        }}
+      />,
+      { width: 90, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Knowledge");
+    expect(frame).toContain("Find runtime dispatch");
+    expect(frame).toContain("1 match");
+  });
+
   test("dispatches_edit", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView

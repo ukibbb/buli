@@ -287,6 +287,7 @@ export async function runInteractiveChat(input: {
       ...(maximumConcurrentReadOnlyToolCalls !== undefined ? { maximumConcurrentReadOnlyToolCalls } : {}),
       ...(maximumConcurrentSubagentConversations !== undefined ? { maximumConcurrentSubagentConversations } : {}),
     });
+    assistantConversationRunner.startWorkspaceCodebaseKnowledgeIndexing();
     const conversationSessionBindings = createInteractiveChatConversationSessionBindings({
       conversationSessionStore,
       conversationHistory,

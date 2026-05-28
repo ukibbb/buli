@@ -47,6 +47,7 @@ import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionReco
 import type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 import type { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
+import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export type {
@@ -69,6 +70,7 @@ export type RuntimeToolCallExecutionContext = {
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
+  workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   skillCatalog: WorkspaceSkillCatalog;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
@@ -110,6 +112,7 @@ const requestedToolCallExecutorByName = {
   search_many: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   glob: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   grep: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
+  query_codebase_knowledge: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   task: streamAssistantResponseEventsForTaskRequestedToolCall,
   skill: streamAssistantResponseEventsForSkillRequestedToolCall,
   edit: streamAssistantResponseEventsForFileMutationRequestedToolCall,
@@ -224,6 +227,7 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
         conversationTurnId: input.conversationTurnId,
         requestedToolCalls: input.requestedToolCalls,
         workspaceRootPath: input.workspaceRootPath,
+        workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
         projectInstructionTracker: input.projectInstructionTracker,
         conversationHistory: input.conversationHistory,
         toolResultSessionRecorder: input.toolResultSessionRecorder,
@@ -379,6 +383,7 @@ async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(
     toolCallId: input.toolCallId,
     toolCallRequest: input.toolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
+    workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,
     conversationHistory: input.conversationHistory,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
@@ -406,6 +411,7 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     selectedModelId: input.selectedModelId,
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
     workspaceRootPath: input.workspaceRootPath,
+    workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
@@ -456,6 +462,7 @@ async function* streamAssistantResponseEventsForFileMutationRequestedToolCall(
     assistantOperatingMode: input.assistantOperatingMode,
     workspaceRootPath: input.workspaceRootPath,
     workspaceSnapshotStore: input.workspaceSnapshotStore,
+    workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,

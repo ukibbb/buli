@@ -105,6 +105,13 @@
       "toolName": "bash",
       "shellCommand": "pwd",
       "commandDescription": "Print working directory"
+    },
+    {
+      "toolName": "query_codebase_knowledge",
+      "codebaseProblemDescription": "Find runtime tool dispatch",
+      "knownRelevantFilePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
+      "knownRelevantSymbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
+      "maximumKnowledgeResultCount": 3
     }
   ],
   "toolCallDetails": [
@@ -125,6 +132,14 @@
           "lineText": "/workspace"
         }
       ]
+    },
+    {
+      "toolName": "query_codebase_knowledge",
+      "codebaseProblemDescription": "Find runtime tool dispatch",
+      "knownRelevantFilePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
+      "knownRelevantSymbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
+      "matchedKnowledgeCount": 2,
+      "recommendedReadCount": 3
     }
   ],
   "workspacePatch": {

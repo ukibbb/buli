@@ -10,16 +10,16 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task", "skill"] });
+  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
   expect(
     resolveAvailableToolNamesForAssistantOperatingMode({
       assistantOperatingMode: "plan",
-      requestedAvailableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "task"],
+      requestedAvailableToolNames: ["bash", "read", "read_many", "search_many", "write", "grep", "query_codebase_knowledge", "task"],
     }),
-  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "grep", "task"] });
+  ).toEqual({ availableToolNames: ["read", "read_many", "search_many", "grep", "query_codebase_knowledge", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode preserves requested tools in implementation mode", () => {
@@ -45,6 +45,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation 
       "search_many",
       "glob",
       "grep",
+      "query_codebase_knowledge",
       "edit",
       "edit_many",
       "patch",
@@ -65,7 +66,7 @@ test("resolveAssistantOperatingModeToolAccess denies bash in plan mode", () => {
     }),
   ).toEqual({
     accessKind: "denied",
-    effectiveAvailableToolNames: ["read", "read_many", "search_many", "glob", "grep", "task", "skill"],
+    effectiveAvailableToolNames: ["read", "read_many", "search_many", "glob", "grep", "query_codebase_knowledge", "task", "skill"],
     denialText: "Plan Agent is read-only, so this bash command was not executed.",
   });
 });

@@ -60,10 +60,16 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "Use read_many when you already have several exact evidenced paths to inspect; do not use separate read calls for independent known paths unless only one path is needed.",
   );
   expect(systemPromptText).toContain(
+    "Use query_codebase_knowledge first for broad orientation when you need to locate where behavior, symbols, flows, or concepts live; treat results as compact pointers, not source truth.",
+  );
+  expect(systemPromptText).toContain(
     "Use search_many when you have several independent glob and grep searches to map files or text before reading; do not issue separate glob/grep calls when they can run as one batch.",
   );
   expect(systemPromptText).toContain(
-    "For broad codebase research, start with one search_many containing several independent glob and grep searches, then follow with one read_many for the exact relevant paths found.",
+    "For broad codebase research, start with query_codebase_knowledge when orientation is useful, use search_many for missing file/text discovery, then follow with one read_many for the exact relevant paths found.",
+  );
+  expect(systemPromptText).toContain(
+    "Always verify query_codebase_knowledge recommendations with read/read_many before relying on implementation details.",
   );
   expect(systemPromptText).toContain(
     "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
@@ -538,10 +544,16 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "Use read_many when you already have several exact evidenced paths to inspect; batch those known paths in one call instead of issuing separate read calls.",
   );
   expect(systemPromptText).toContain(
+    "Use query_codebase_knowledge first for broad orientation when you need to locate where behavior, symbols, flows, or concepts live; treat results as compact pointers, not source truth.",
+  );
+  expect(systemPromptText).toContain(
     "Use search_many when you have several independent glob and grep searches to map files or text before reading; batch those searches in one call instead of issuing separate glob/grep calls.",
   );
   expect(systemPromptText).toContain(
-    "For broad exploration, start with one search_many containing several independent glob and grep searches, then follow with one read_many for the exact relevant paths found.",
+    "For broad exploration, start with query_codebase_knowledge when orientation is useful, use search_many for missing file/text discovery, then follow with one read_many for the exact relevant paths found.",
+  );
+  expect(systemPromptText).toContain(
+    "Always verify query_codebase_knowledge recommendations with read/read_many before relying on implementation details.",
   );
   expect(systemPromptText).toContain(
     "For grep and search_many grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
@@ -575,7 +587,10 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "Batch independent glob and grep work with search_many aggressively, and use read_many for independent known paths, instead of waiting for one result when the inspections do not depend on each other.",
   );
   expect(systemPromptText).toContain(
-    "For broad prompts, start with search_many for several independent mapping searches at once, then read the most relevant results in concurrent batches.",
+    "Run query_codebase_knowledge concurrently with independent read_many or search_many calls when those inspections do not depend on the query result.",
+  );
+  expect(systemPromptText).toContain(
+    "For broad prompts, start with query_codebase_knowledge for orientation when useful, search_many for independent mapping searches, then read the most relevant results in concurrent batches.",
   );
   expect(systemPromptText).toContain("Do not modify files, run commands");
   expect(systemPromptText).toContain("Return a concise report for the parent assistant.");

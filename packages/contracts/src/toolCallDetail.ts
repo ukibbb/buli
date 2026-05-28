@@ -289,6 +289,18 @@ export const ToolCallSkillDetailSchema = z
   .strict();
 export type ToolCallSkillDetail = z.infer<typeof ToolCallSkillDetailSchema>;
 
+export const ToolCallQueryCodebaseKnowledgeDetailSchema = z
+  .object({
+    toolName: z.literal("query_codebase_knowledge"),
+    codebaseProblemDescription: z.string().min(1),
+    knownRelevantFilePaths: z.array(z.string().min(1)).optional(),
+    knownRelevantSymbolNames: z.array(z.string().min(1)).optional(),
+    matchedKnowledgeCount: z.number().int().nonnegative().optional(),
+    recommendedReadCount: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export type ToolCallQueryCodebaseKnowledgeDetail = z.infer<typeof ToolCallQueryCodebaseKnowledgeDetailSchema>;
+
 export const SubagentChildTaskToolCallDetailSchema = z
   .object({
     toolName: z.literal("task"),
@@ -308,6 +320,7 @@ export const SubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName"
   ToolCallSearchManyDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
+  ToolCallQueryCodebaseKnowledgeDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallEditDetailSchema,
   ToolCallEditManyDetailSchema,
@@ -379,5 +392,6 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallTodoWriteDetailSchema,
   ToolCallTaskDetailSchema,
   ToolCallSkillDetailSchema,
+  ToolCallQueryCodebaseKnowledgeDetailSchema,
 ]);
 export type ToolCallDetail = z.infer<typeof ToolCallDetailSchema>;

@@ -1141,6 +1141,14 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
         hasSearchPath: toolCallRequest.searchPath !== undefined,
         hasIncludeGlobPattern: toolCallRequest.includeGlobPattern !== undefined,
       };
+    case "query_codebase_knowledge":
+      return {
+        toolName: toolCallRequest.toolName,
+        codebaseProblemDescriptionLength: toolCallRequest.codebaseProblemDescription.length,
+        knownRelevantFilePathCount: toolCallRequest.knownRelevantFilePaths?.length ?? 0,
+        knownRelevantSymbolNameCount: toolCallRequest.knownRelevantSymbolNames?.length ?? 0,
+        hasMaximumKnowledgeResultCount: toolCallRequest.maximumKnowledgeResultCount !== undefined,
+      };
     case "edit":
       return {
         toolName: toolCallRequest.toolName,

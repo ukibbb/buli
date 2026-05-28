@@ -9,8 +9,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "tree-sitter-python": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2",
-    "web-tree-sitter": "^0.26.9"
+    "web-tree-sitter": "^0.26.9",
+    "zod": "^4.4.3"
   },
   "scripts": {
     "test": "bun test",

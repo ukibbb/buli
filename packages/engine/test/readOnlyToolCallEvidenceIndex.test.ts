@@ -159,6 +159,57 @@ test("buildReadOnlyToolCallEvidenceIndex indexes completed read_many and search_
   })?.priorToolCallId).toBe("call_search_many_1");
 });
 
+test("buildReadOnlyToolCallEvidenceIndex reuses normalized codebase knowledge queries", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_query_1",
+      toolCallRequest: {
+        toolName: "query_codebase_knowledge",
+        codebaseProblemDescription: "  Find   Runtime Dispatch ",
+        knownRelevantFilePaths: ["packages/engine/src/runtime.ts", "packages/contracts/src/toolCatalog.ts"],
+        knownRelevantSymbolNames: ["ToolCallRequest", "AssistantConversationRuntime"],
+        maximumKnowledgeResultCount: 5,
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_query_1",
+      toolCallDetail: {
+        toolName: "query_codebase_knowledge",
+        codebaseProblemDescription: "Find Runtime Dispatch",
+        knownRelevantFilePaths: ["packages/engine/src/runtime.ts", "packages/contracts/src/toolCatalog.ts"],
+        knownRelevantSymbolNames: ["ToolCallRequest", "AssistantConversationRuntime"],
+        matchedKnowledgeCount: 2,
+        recommendedReadCount: 3,
+      },
+      toolResultText: "<codebase_knowledge_query>previous result</codebase_knowledge_query>",
+    },
+  ];
+
+  const evidenceIndex = buildReadOnlyToolCallEvidenceIndex({ conversationSessionEntries });
+  const reusableEvidence = evidenceIndex.findReusableQueryCodebaseKnowledgeToolCallEvidence({
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "find runtime dispatch",
+    knownRelevantFilePaths: ["packages/contracts/src/toolCatalog.ts", "packages/engine/src/runtime.ts"],
+    knownRelevantSymbolNames: ["AssistantConversationRuntime", "ToolCallRequest"],
+    maximumKnowledgeResultCount: 5,
+  });
+
+  expect(reusableEvidence?.priorToolCallId).toBe("call_query_1");
+  expect(reusableEvidence?.toolCallDetail).toMatchObject({
+    toolName: "query_codebase_knowledge",
+    matchedKnowledgeCount: 2,
+    recommendedReadCount: 3,
+  });
+  expect(reusableEvidence ? createDuplicateReadOnlyToolResultText(reusableEvidence) : "").toContain(
+    "<duplicate_read_only_tool_result>",
+  );
+  expect(buildReadOnlyToolEvidenceLedgerText({ conversationSessionEntries })).toContain(
+    "query_codebase_knowledge \"find runtime dispatch\"",
+  );
+});
+
 test("buildReadOnlyToolCallEvidenceIndex invalidates stale read and search evidence after workspace patches", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {
@@ -195,6 +246,17 @@ test("buildReadOnlyToolCallEvidenceIndex invalidates stale read and search evide
       toolResultText: "src/app.ts:1:old",
     },
     {
+      entryKind: "tool_call",
+      toolCallId: "call_query_1",
+      toolCallRequest: { toolName: "query_codebase_knowledge", codebaseProblemDescription: "Find old app flow" },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_query_1",
+      toolCallDetail: { toolName: "query_codebase_knowledge", codebaseProblemDescription: "Find old app flow" },
+      toolResultText: "<codebase_knowledge_query>old app flow</codebase_knowledge_query>",
+    },
+    {
       entryKind: "workspace_patch",
       workspacePatch: {
         workspacePatchId: "patch-1",
@@ -223,6 +285,10 @@ test("buildReadOnlyToolCallEvidenceIndex invalidates stale read and search evide
   expect(evidenceIndex.findReusableReadToolCallEvidence({ toolName: "read", readTargetPath: "src/other.ts" })?.priorToolCallId)
     .toBe("call_read_other");
   expect(evidenceIndex.findReusableGrepToolCallEvidence({ toolName: "grep", regexPattern: "old", searchPath: "src" })).toBeUndefined();
+  expect(evidenceIndex.findReusableQueryCodebaseKnowledgeToolCallEvidence({
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find old app flow",
+  })).toBeUndefined();
 });
 
 test("buildReadOnlyToolCallEvidenceIndex invalidates stale evidence from mutation tool details without workspace patches", () => {
@@ -250,6 +316,17 @@ test("buildReadOnlyToolCallEvidenceIndex invalidates stale evidence from mutatio
       toolResultText: "src/app.ts:1:old",
     },
     {
+      entryKind: "tool_call",
+      toolCallId: "call_query_1",
+      toolCallRequest: { toolName: "query_codebase_knowledge", codebaseProblemDescription: "Find old app flow" },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_query_1",
+      toolCallDetail: { toolName: "query_codebase_knowledge", codebaseProblemDescription: "Find old app flow" },
+      toolResultText: "<codebase_knowledge_query>old app flow</codebase_knowledge_query>",
+    },
+    {
       entryKind: "completed_tool_result",
       toolCallId: "call_edit_1",
       toolCallDetail: {
@@ -266,4 +343,8 @@ test("buildReadOnlyToolCallEvidenceIndex invalidates stale evidence from mutatio
 
   expect(evidenceIndex.findReusableReadToolCallEvidence({ toolName: "read", readTargetPath: "src/app.ts" })).toBeUndefined();
   expect(evidenceIndex.findReusableGrepToolCallEvidence({ toolName: "grep", regexPattern: "old", searchPath: "src" })).toBeUndefined();
+  expect(evidenceIndex.findReusableQueryCodebaseKnowledgeToolCallEvidence({
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find old app flow",
+  })).toBeUndefined();
 });

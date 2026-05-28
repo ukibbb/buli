@@ -4,6 +4,7 @@ coverage/
 dist/
 *.tsbuildinfo
 .env
+.buli/
 buli-console.log
 profile-runs/
 *.cpuprofile

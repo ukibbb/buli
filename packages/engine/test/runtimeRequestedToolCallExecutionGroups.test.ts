@@ -12,6 +12,14 @@ const grepRequestedToolCall = {
   toolCallRequest: { toolName: "grep", regexPattern: "ToolCallRequest" },
 } as const satisfies ProviderRequestedToolCall;
 
+const queryCodebaseKnowledgeRequestedToolCall = {
+  toolCallId: "call_query_codebase_knowledge_1",
+  toolCallRequest: {
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find runtime tool dispatch.",
+  },
+} as const satisfies ProviderRequestedToolCall;
+
 const readManyRequestedToolCall = {
   toolCallId: "call_read_many_1",
   toolCallRequest: {
@@ -127,6 +135,19 @@ test("groupRequestedToolCallsForExecution keeps single auto-concurrent calls ser
   ]);
   expect(groupRequestedToolCallsForExecution([taskRequestedToolCall])).toEqual([
     { groupKind: "serial", requestedToolCall: taskRequestedToolCall },
+  ]);
+});
+
+test("groupRequestedToolCallsForExecution groups codebase knowledge queries with read-only calls", () => {
+  expect(groupRequestedToolCallsForExecution([
+    readRequestedToolCall,
+    queryCodebaseKnowledgeRequestedToolCall,
+    grepRequestedToolCall,
+  ])).toEqual([
+    {
+      groupKind: "auto_concurrent",
+      requestedToolCalls: [readRequestedToolCall, queryCodebaseKnowledgeRequestedToolCall, grepRequestedToolCall],
+    },
   ]);
 });
 

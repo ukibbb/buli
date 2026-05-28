@@ -15,7 +15,11 @@ import {
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "../src/runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
 import { runReadManyToolCall } from "../src/tools/readManyTool.ts";
-import { MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH, runSearchManyToolCall } from "../src/tools/searchManyTool.ts";
+import {
+  MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH,
+  runSearchManyToolCall,
+  type SearchManyToolCallConcurrencyLimiter,
+} from "../src/tools/searchManyTool.ts";
 
 class RecordingProviderConversationTurn implements ProviderConversationTurn {
   readonly submittedToolResults: ProviderToolResultSubmission[] = [];
@@ -128,6 +132,10 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "glob", globPattern: "**/*.ts" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "grep", regexPattern: "TODO" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: "Find runtime dispatch",
+  })).toBe(true);
+  expect(isAutoApprovedReadOnlyToolCallRequest({
     toolName: "bash",
     shellCommand: "pwd",
     commandDescription: "Show working directory",
@@ -155,6 +163,72 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
     writeTargetPath: "notes.txt",
     fileContent: "new\n",
   })).toBe(false);
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a compact reference for duplicate codebase knowledge queries", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-query-"));
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_query_1",
+        toolCallRequest: {
+          toolName: "query_codebase_knowledge",
+          codebaseProblemDescription: "Find runtime dispatch",
+          knownRelevantSymbolNames: ["Runtime", "ToolCall"],
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_query_1",
+        toolCallDetail: {
+          toolName: "query_codebase_knowledge",
+          codebaseProblemDescription: "Find runtime dispatch",
+          knownRelevantSymbolNames: ["Runtime", "ToolCall"],
+          matchedKnowledgeCount: 1,
+          recommendedReadCount: 1,
+        },
+        toolResultText: "<codebase_knowledge_query>raw previous query result</codebase_knowledge_query>",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_query_2",
+        toolCallRequest: {
+          toolName: "query_codebase_knowledge",
+          codebaseProblemDescription: "find runtime dispatch",
+          knownRelevantSymbolNames: ["ToolCall", "Runtime"],
+        },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_query_2",
+    toolCallRequest: {
+      toolName: "query_codebase_knowledge",
+      codebaseProblemDescription: "find runtime dispatch",
+      knownRelevantSymbolNames: ["ToolCall", "Runtime"],
+    },
+    workspaceRootPath,
+    conversationHistory,
+    toolResultSessionRecorder,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_query_2",
+      toolResultText: expect.stringContaining("<duplicate_read_only_tool_result>"),
+    },
+  ]);
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("call_query_1");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("raw previous query result");
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall returns a compact reference for duplicate reads", async () => {
@@ -579,6 +653,46 @@ test("runSearchManyToolCall caps large batch output with continuation guidance",
   expect(toolCallOutcome.toolResultText).toContain("<search_many_truncation>");
   expect(toolCallOutcome.toolResultText).toContain("Use a narrower grep, glob, or search_many path/pattern");
   expect(toolCallOutcome.toolResultText).toContain("</search_many>");
+});
+
+test("runSearchManyToolCall deduplicates identical child searches inside one batch", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-search-many-duplicate-children-"));
+  await mkdir(join(workspaceRootPath, "src"), { recursive: true });
+  await writeFile(join(workspaceRootPath, "src", "app.ts"), "export const marker = 'dedupe';\n", "utf8");
+  let childSearchRunCount = 0;
+  const countingSearchManyConcurrencyLimiter = {
+    async run<SearchManyChildResult>(operation: () => Promise<SearchManyChildResult>): Promise<SearchManyChildResult> {
+      childSearchRunCount += 1;
+      return operation();
+    },
+  } satisfies SearchManyToolCallConcurrencyLimiter;
+
+  const toolCallOutcome = await runSearchManyToolCall({
+    searchManyToolCallRequest: {
+      toolName: "search_many",
+      searches: [
+        { searchKind: "glob", globPattern: "src/**/*.ts" },
+        { searchKind: "glob", globPattern: "src/**/*.ts" },
+        { searchKind: "grep", regexPattern: "marker", searchPath: "src/app.ts" },
+        { searchKind: "grep", regexPattern: "marker", searchPath: "src/app.ts" },
+      ],
+    },
+    workspaceRootPath,
+    readOnlyToolCallConcurrencyLimiter: countingSearchManyConcurrencyLimiter,
+  });
+
+  expect(toolCallOutcome.outcomeKind).toBe("completed");
+  if (toolCallOutcome.outcomeKind !== "completed") {
+    throw new Error("Expected search_many to complete");
+  }
+  expect(childSearchRunCount).toBe(2);
+  expect(toolCallOutcome.toolCallDetail).toMatchObject({
+    toolName: "search_many",
+    completedSearchCount: 4,
+    failedSearchCount: 0,
+  });
+  expect(toolCallOutcome.toolResultText).toContain("<index>2</index>");
+  expect(toolCallOutcome.toolResultText).toContain("<index>4</index>");
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and submits completed read results", async () => {

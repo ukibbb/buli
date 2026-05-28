@@ -134,6 +134,30 @@ const conversationSessionEntries = [
     entryKind: "tool_call",
     toolCallId: "call-3",
     toolCallRequest: {
+      toolName: "query_codebase_knowledge",
+      codebaseProblemDescription: "Find runtime dispatch",
+      knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+      knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      maximumKnowledgeResultCount: 3,
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-3",
+    toolCallDetail: {
+      toolName: "query_codebase_knowledge",
+      codebaseProblemDescription: "Find runtime dispatch",
+      knownRelevantFilePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+      knownRelevantSymbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      matchedKnowledgeCount: 2,
+      recommendedReadCount: 3,
+    },
+    toolResultText: "<codebase_knowledge_query>2 matches</codebase_knowledge_query>",
+  },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-4",
+    toolCallRequest: {
       toolName: "edit",
       editTargetPath: "src/app.ts",
       oldString: "const title = \"old\";",
@@ -142,7 +166,7 @@ const conversationSessionEntries = [
   },
   {
     entryKind: "completed_tool_result",
-    toolCallId: "call-3",
+    toolCallId: "call-4",
     toolCallDetail: {
       toolName: "edit",
       editedFilePath: "src/app.ts",
@@ -172,7 +196,7 @@ const conversationSessionEntries = [
   },
   {
     entryKind: "tool_call",
-    toolCallId: "call-4",
+    toolCallId: "call-7",
     toolCallRequest: {
       toolName: "write",
       writeTargetPath: "notes/new-file.txt",
@@ -181,7 +205,7 @@ const conversationSessionEntries = [
   },
   {
     entryKind: "completed_tool_result",
-    toolCallId: "call-4",
+    toolCallId: "call-7",
     toolCallDetail: {
       toolName: "write",
       writtenFilePath: "notes/new-file.txt",
@@ -194,7 +218,7 @@ const conversationSessionEntries = [
     entryKind: "workspace_patch",
     workspacePatch: {
       workspacePatchId: "patch-1",
-      toolCallId: "call-4",
+      toolCallId: "call-7",
       capturedAtMs: 100,
       baselineSnapshotHash: "before-tree",
       resultingSnapshotHash: "after-tree",
@@ -325,6 +349,11 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("2 searched");
   expect(html).toContain("ToolCallRequest");
   expect(html).toContain("context 2");
+  expect(html).toContain("CodebaseKnowledge");
+  expect(html).toContain("Find runtime dispatch");
+  expect(html).toContain("known files");
+  expect(html).toContain("streamAssistantResponseEventsForRequestedToolCalls");
+  expect(html).toContain("2 matches · 3 reads");
   expect(html).toContain("src/app.ts");
   expect(html).toContain("const title = &quot;old&quot;;");
   expect(html).toContain("EditMany");

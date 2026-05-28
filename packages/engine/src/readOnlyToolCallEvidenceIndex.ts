@@ -3,12 +3,14 @@ import {
   type ConversationSessionEntry,
   type GlobToolCallRequest,
   type GrepToolCallRequest,
+  type QueryCodebaseKnowledgeToolCallRequest,
   type ReadManyToolCallTarget,
   type ReadToolCallRequest,
   type SearchManyToolCallSearch,
   type ToolCallDetail,
   type ToolCallGlobDetail,
   type ToolCallGrepDetail,
+  type ToolCallQueryCodebaseKnowledgeDetail,
   type ToolCallReadDetail,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
@@ -54,18 +56,32 @@ export type ReusableSearchToolEvidence = {
   readonly evidenceDescription: string;
 };
 
-export type ReusableReadOnlyToolEvidence = ReusableReadToolEvidence | ReusableSearchToolEvidence;
+export type ReusableCodebaseKnowledgeQueryEvidence = {
+  readonly evidenceKind: "codebase_knowledge_query";
+  readonly evidenceKey: string;
+  readonly priorToolCallId: string;
+  readonly toolCallDetail: ToolCallQueryCodebaseKnowledgeDetail;
+  readonly evidenceDescription: string;
+};
+
+export type ReusableReadOnlyToolEvidence =
+  | ReusableReadToolEvidence
+  | ReusableSearchToolEvidence
+  | ReusableCodebaseKnowledgeQueryEvidence;
 
 export class ReadOnlyToolCallEvidenceIndex {
   private readonly readEvidenceByKey: ReadonlyMap<string, ReusableReadToolEvidence>;
   private readonly searchEvidenceByKey: ReadonlyMap<string, ReusableSearchToolEvidence>;
+  private readonly codebaseKnowledgeQueryEvidenceByKey: ReadonlyMap<string, ReusableCodebaseKnowledgeQueryEvidence>;
 
   constructor(input?: {
     readEvidenceByKey?: ReadonlyMap<string, ReusableReadToolEvidence> | undefined;
     searchEvidenceByKey?: ReadonlyMap<string, ReusableSearchToolEvidence> | undefined;
+    codebaseKnowledgeQueryEvidenceByKey?: ReadonlyMap<string, ReusableCodebaseKnowledgeQueryEvidence> | undefined;
   }) {
     this.readEvidenceByKey = input?.readEvidenceByKey ?? new Map();
     this.searchEvidenceByKey = input?.searchEvidenceByKey ?? new Map();
+    this.codebaseKnowledgeQueryEvidenceByKey = input?.codebaseKnowledgeQueryEvidenceByKey ?? new Map();
   }
 
   findReusableToolCallEvidence(
@@ -81,6 +97,10 @@ export class ReadOnlyToolCallEvidenceIndex {
 
     if (toolCallRequest.toolName === "grep") {
       return this.findReusableGrepToolCallEvidence(toolCallRequest);
+    }
+
+    if (toolCallRequest.toolName === "query_codebase_knowledge") {
+      return this.findReusableQueryCodebaseKnowledgeToolCallEvidence(toolCallRequest);
     }
 
     return undefined;
@@ -106,6 +126,14 @@ export class ReadOnlyToolCallEvidenceIndex {
     return this.searchEvidenceByKey.get(createSearchManySearchEvidenceKey(searchManyToolCallSearch));
   }
 
+  findReusableQueryCodebaseKnowledgeToolCallEvidence(
+    queryCodebaseKnowledgeToolCallRequest: QueryCodebaseKnowledgeToolCallRequest,
+  ): ReusableCodebaseKnowledgeQueryEvidence | undefined {
+    return this.codebaseKnowledgeQueryEvidenceByKey.get(
+      createQueryCodebaseKnowledgeToolCallEvidenceKey(queryCodebaseKnowledgeToolCallRequest),
+    );
+  }
+
   listEvidenceLedgerLines(maximumLineCount = DEFAULT_EVIDENCE_LEDGER_LINE_LIMIT): string[] {
     const evidenceLedgerLines: string[] = [];
     for (const reusableReadToolEvidence of this.readEvidenceByKey.values()) {
@@ -122,11 +150,21 @@ export class ReadOnlyToolCallEvidenceIndex {
       }
     }
 
+    for (const reusableCodebaseKnowledgeQueryEvidence of this.codebaseKnowledgeQueryEvidenceByKey.values()) {
+      evidenceLedgerLines.push(
+        `- ${reusableCodebaseKnowledgeQueryEvidence.evidenceDescription} via ${reusableCodebaseKnowledgeQueryEvidence.priorToolCallId}`,
+      );
+      if (evidenceLedgerLines.length >= maximumLineCount) {
+        return evidenceLedgerLines;
+      }
+    }
+
     return evidenceLedgerLines;
   }
 
   hasEvidence(): boolean {
-    return this.readEvidenceByKey.size > 0 || this.searchEvidenceByKey.size > 0;
+    return this.readEvidenceByKey.size > 0 || this.searchEvidenceByKey.size > 0 ||
+      this.codebaseKnowledgeQueryEvidenceByKey.size > 0;
   }
 }
 
@@ -137,6 +175,7 @@ export function buildReadOnlyToolCallEvidenceIndex(input: {
   const toolCallEntryByToolCallId = new Map<string, ToolCallConversationSessionEntry>();
   const readEvidenceByKey = new Map<string, ReusableReadToolEvidence>();
   const searchEvidenceByKey = new Map<string, ReusableSearchToolEvidence>();
+  const codebaseKnowledgeQueryEvidenceByKey = new Map<string, ReusableCodebaseKnowledgeQueryEvidence>();
 
   for (const conversationSessionEntry of visibleConversationSessionEntries) {
     if (conversationSessionEntry.entryKind === "tool_call") {
@@ -149,6 +188,7 @@ export function buildReadOnlyToolCallEvidenceIndex(input: {
         workspacePatchEntry: conversationSessionEntry,
         readEvidenceByKey,
         searchEvidenceByKey,
+        codebaseKnowledgeQueryEvidenceByKey,
       });
       continue;
     }
@@ -158,6 +198,7 @@ export function buildReadOnlyToolCallEvidenceIndex(input: {
         toolResultEntry: conversationSessionEntry,
         readEvidenceByKey,
         searchEvidenceByKey,
+        codebaseKnowledgeQueryEvidenceByKey,
       });
     }
 
@@ -179,10 +220,11 @@ export function buildReadOnlyToolCallEvidenceIndex(input: {
       toolResultEntry: conversationSessionEntry,
       readEvidenceByKey,
       searchEvidenceByKey,
+      codebaseKnowledgeQueryEvidenceByKey,
     });
   }
 
-  return new ReadOnlyToolCallEvidenceIndex({ readEvidenceByKey, searchEvidenceByKey });
+  return new ReadOnlyToolCallEvidenceIndex({ readEvidenceByKey, searchEvidenceByKey, codebaseKnowledgeQueryEvidenceByKey });
 }
 
 function isToolResultConversationSessionEntry(
@@ -290,11 +332,24 @@ export function createSearchManySearchEvidenceKey(searchManyToolCallSearch: Sear
   });
 }
 
+export function createQueryCodebaseKnowledgeToolCallEvidenceKey(
+  queryCodebaseKnowledgeToolCallRequest: QueryCodebaseKnowledgeToolCallRequest,
+): string {
+  return JSON.stringify([
+    "query_codebase_knowledge",
+    normalizeCodebaseKnowledgeQueryText(queryCodebaseKnowledgeToolCallRequest.codebaseProblemDescription),
+    normalizeCodebaseKnowledgeQueryHints(queryCodebaseKnowledgeToolCallRequest.knownRelevantFilePaths),
+    normalizeCodebaseKnowledgeQueryHints(queryCodebaseKnowledgeToolCallRequest.knownRelevantSymbolNames),
+    queryCodebaseKnowledgeToolCallRequest.maximumKnowledgeResultCount ?? null,
+  ]);
+}
+
 function recordCompletedReadOnlyToolEvidence(input: {
   toolCallEntry: ToolCallConversationSessionEntry;
   toolResultEntry: CompletedToolResultConversationSessionEntry;
   readEvidenceByKey: Map<string, ReusableReadToolEvidence>;
   searchEvidenceByKey: Map<string, ReusableSearchToolEvidence>;
+  codebaseKnowledgeQueryEvidenceByKey: Map<string, ReusableCodebaseKnowledgeQueryEvidence>;
 }): void {
   const toolCallRequest = input.toolCallEntry.toolCallRequest;
   const toolCallDetail = input.toolResultEntry.toolCallDetail;
@@ -353,6 +408,20 @@ function recordCompletedReadOnlyToolEvidence(input: {
       toolCallDetail,
       searchEvidenceByKey: input.searchEvidenceByKey,
     });
+    return;
+  }
+
+  if (toolCallRequest.toolName === "query_codebase_knowledge" && toolCallDetail.toolName === "query_codebase_knowledge") {
+    const evidenceKey = createQueryCodebaseKnowledgeToolCallEvidenceKey(toolCallRequest);
+    input.codebaseKnowledgeQueryEvidenceByKey.set(
+      evidenceKey,
+      createReusableCodebaseKnowledgeQueryEvidence({
+        evidenceKey,
+        priorToolCallId: input.toolCallEntry.toolCallId,
+        toolCallRequest,
+        toolCallDetail,
+      }),
+    );
   }
 }
 
@@ -435,10 +504,26 @@ function createReusableSearchToolEvidence(input: {
   };
 }
 
+function createReusableCodebaseKnowledgeQueryEvidence(input: {
+  evidenceKey: string;
+  priorToolCallId: string;
+  toolCallRequest: QueryCodebaseKnowledgeToolCallRequest;
+  toolCallDetail: ToolCallQueryCodebaseKnowledgeDetail;
+}): ReusableCodebaseKnowledgeQueryEvidence {
+  return {
+    evidenceKind: "codebase_knowledge_query",
+    evidenceKey: input.evidenceKey,
+    priorToolCallId: input.priorToolCallId,
+    toolCallDetail: input.toolCallDetail,
+    evidenceDescription: describeCodebaseKnowledgeQueryEvidence(input.toolCallRequest),
+  };
+}
+
 function invalidateEvidenceAfterWorkspacePatch(input: {
   workspacePatchEntry: WorkspacePatchConversationSessionEntry;
   readEvidenceByKey: Map<string, ReusableReadToolEvidence>;
   searchEvidenceByKey: Map<string, ReusableSearchToolEvidence>;
+  codebaseKnowledgeQueryEvidenceByKey: Map<string, ReusableCodebaseKnowledgeQueryEvidence>;
 }): void {
   if (input.workspacePatchEntry.workspacePatch.changedFiles.length === 0) {
     return;
@@ -451,12 +536,14 @@ function invalidateEvidenceAfterWorkspacePatch(input: {
   }
 
   input.searchEvidenceByKey.clear();
+  input.codebaseKnowledgeQueryEvidenceByKey.clear();
 }
 
 function invalidateEvidenceAfterMutatingToolResult(input: {
   toolResultEntry: ToolResultConversationSessionEntry;
   readEvidenceByKey: Map<string, ReusableReadToolEvidence>;
   searchEvidenceByKey: Map<string, ReusableSearchToolEvidence>;
+  codebaseKnowledgeQueryEvidenceByKey: Map<string, ReusableCodebaseKnowledgeQueryEvidence>;
 }): void {
   if (input.toolResultEntry.entryKind === "denied_tool_result") {
     return;
@@ -470,6 +557,7 @@ function invalidateEvidenceAfterMutatingToolResult(input: {
   if (mutationEvidence.mutationKind === "unknown_paths") {
     input.readEvidenceByKey.clear();
     input.searchEvidenceByKey.clear();
+    input.codebaseKnowledgeQueryEvidenceByKey.clear();
     return;
   }
 
@@ -491,6 +579,7 @@ function invalidateEvidenceAfterMutatingToolResult(input: {
   }
 
   input.searchEvidenceByKey.clear();
+  input.codebaseKnowledgeQueryEvidenceByKey.clear();
 }
 
 function describeToolResultMutationEvidence(toolCallDetail: ToolCallDetail): ToolResultMutationEvidence {
@@ -592,4 +681,41 @@ function describeSearchManySearchEvidence(searchManyToolCallSearch: SearchManyTo
       ? { contextLineCount: searchManyToolCallSearch.contextLineCount }
       : {}),
   });
+}
+
+function describeCodebaseKnowledgeQueryEvidence(
+  queryCodebaseKnowledgeToolCallRequest: QueryCodebaseKnowledgeToolCallRequest,
+): string {
+  return [
+    `query_codebase_knowledge ${quoteEvidenceText(normalizeCodebaseKnowledgeQueryText(queryCodebaseKnowledgeToolCallRequest.codebaseProblemDescription))}`,
+    ...describeCodebaseKnowledgeQueryHintEvidence("files", queryCodebaseKnowledgeToolCallRequest.knownRelevantFilePaths),
+    ...describeCodebaseKnowledgeQueryHintEvidence("symbols", queryCodebaseKnowledgeToolCallRequest.knownRelevantSymbolNames),
+    ...(queryCodebaseKnowledgeToolCallRequest.maximumKnowledgeResultCount !== undefined
+      ? [`max ${queryCodebaseKnowledgeToolCallRequest.maximumKnowledgeResultCount}`]
+      : []),
+  ].join(" ");
+}
+
+function describeCodebaseKnowledgeQueryHintEvidence(
+  hintKindLabel: string,
+  hintValues: readonly string[] | undefined,
+): string[] {
+  const normalizedHintValues = normalizeCodebaseKnowledgeQueryHints(hintValues);
+  return normalizedHintValues.length > 0 ? [`${hintKindLabel} ${normalizedHintValues.join(",")}`] : [];
+}
+
+function normalizeCodebaseKnowledgeQueryText(queryText: string): string {
+  return queryText.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeCodebaseKnowledgeQueryHints(hintValues: readonly string[] | undefined): string[] {
+  if (!hintValues || hintValues.length === 0) {
+    return [];
+  }
+
+  return [...new Set(hintValues.map((hintValue) => hintValue.trim()).filter((hintValue) => hintValue.length > 0))].sort();
+}
+
+function quoteEvidenceText(evidenceText: string): string {
+  return JSON.stringify(evidenceText);
 }

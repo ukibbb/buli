@@ -12,8 +12,10 @@ import {
   type ToolCallDetail,
   type ToolCallRequest,
 } from "@buli/contracts";
+import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
+import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import {
@@ -89,6 +91,7 @@ export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   assistantOperatingMode: AssistantOperatingMode;
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
+  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
@@ -202,6 +205,12 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
   input.throwIfConversationTurnInterrupted();
 
   if (toolCallOutcome.outcomeKind === "completed") {
+    await refreshCodebaseKnowledgeForCompletedFileMutation({
+      workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
+      toolCallDetail: toolCallOutcome.toolCallDetail,
+      abortSignal: input.abortSignal,
+      diagnosticLogger: input.diagnosticLogger,
+    });
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: toolCallOutcome.toolCallDetail,
@@ -296,6 +305,49 @@ function resolveFileMutationToolCallPreparer<ToolName extends FileMutationToolNa
   fileMutationToolCallRequest: FileMutationToolCallRequestByName<ToolName>,
 ): FileMutationToolCallPreparer<ToolName> {
   return fileMutationToolCallPreparerByName[fileMutationToolCallRequest.toolName] as FileMutationToolCallPreparer<ToolName>;
+}
+
+async function refreshCodebaseKnowledgeForCompletedFileMutation(input: {
+  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
+  toolCallDetail: ToolCallDetail;
+  abortSignal: AbortSignal;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
+}): Promise<void> {
+  const changedFilePaths = listChangedFilePathsFromFileMutationToolCallDetail(input.toolCallDetail);
+  if (!input.workspaceCodebaseKnowledgeIndex || changedFilePaths.length === 0) {
+    return;
+  }
+
+  try {
+    await input.workspaceCodebaseKnowledgeIndex.refreshChangedFilePaths({
+      changedFilePaths,
+      abortSignal: input.abortSignal,
+    });
+  } catch (error) {
+    if (input.abortSignal.aborted) {
+      throw error;
+    }
+    logEngineDiagnosticEvent(input.diagnosticLogger, "codebase_knowledge.refresh_failed", {
+      changedFileCount: changedFilePaths.length,
+      failureExplanation: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function listChangedFilePathsFromFileMutationToolCallDetail(toolCallDetail: ToolCallDetail): readonly string[] {
+  switch (toolCallDetail.toolName) {
+    case "edit":
+      return [toolCallDetail.editedFilePath];
+    case "edit_many":
+      return toolCallDetail.changedFiles?.map((changedFile) => changedFile.filePath) ?? [];
+    case "patch":
+    case "patch_many":
+      return toolCallDetail.changedFiles?.map((changedFile) => changedFile.filePath) ?? [];
+    case "write":
+      return [toolCallDetail.writtenFilePath];
+    default:
+      return [];
+  }
 }
 
 async function prepareEditFileMutationToolCall(

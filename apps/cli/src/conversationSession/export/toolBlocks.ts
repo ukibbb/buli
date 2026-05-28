@@ -106,6 +106,7 @@ const toolCallRequestExportRendererByName: {
   search_many: { renderPurpose: renderSearchManyToolCallRequestPurpose, renderBody: renderSearchManyToolCallRequestBody },
   glob: { renderPurpose: renderGlobToolCallRequestPurpose, renderBody: renderGlobToolCallRequestBody },
   grep: { renderPurpose: renderGrepToolCallRequestPurpose, renderBody: renderGrepToolCallRequestBody },
+  query_codebase_knowledge: { renderPurpose: renderQueryCodebaseKnowledgeToolCallRequestPurpose, renderBody: renderQueryCodebaseKnowledgeToolCallRequestBody },
   edit: { renderPurpose: renderEditToolCallRequestPurpose, renderBody: renderEditToolCallRequestBody },
   edit_many: { renderPurpose: renderEditManyToolCallRequestPurpose, renderBody: renderEditManyToolCallRequestBody },
   patch: { renderPurpose: renderPatchToolCallRequestPurpose, renderBody: renderPatchToolCallRequestBody },
@@ -201,6 +202,23 @@ function renderGrepToolCallRequestBody(toolCallRequest: ToolCallRequestByName<"g
   return `${pathArg}${includeArg}${contextArg}<div class="arg"><b>pattern</b> ${escapeHtml(toolCallRequest.regexPattern)}</div>`;
 }
 
+function renderQueryCodebaseKnowledgeToolCallRequestPurpose(_toolCallRequest: ToolCallRequestByName<"query_codebase_knowledge">): string {
+  return `<span class="panel-purpose">codebase knowledge</span>`;
+}
+
+function renderQueryCodebaseKnowledgeToolCallRequestBody(toolCallRequest: ToolCallRequestByName<"query_codebase_knowledge">): string {
+  const knownFilesHtml = toolCallRequest.knownRelevantFilePaths && toolCallRequest.knownRelevantFilePaths.length > 0
+    ? `<div class="arg"><b>known files</b> ${escapeHtml(toolCallRequest.knownRelevantFilePaths.join(", "))}</div>`
+    : "";
+  const knownSymbolsHtml = toolCallRequest.knownRelevantSymbolNames && toolCallRequest.knownRelevantSymbolNames.length > 0
+    ? `<div class="arg"><b>known symbols</b> ${escapeHtml(toolCallRequest.knownRelevantSymbolNames.join(", "))}</div>`
+    : "";
+  const maximumResultsHtml = toolCallRequest.maximumKnowledgeResultCount === undefined
+    ? ""
+    : `<div class="arg"><b>maximum results</b> ${toolCallRequest.maximumKnowledgeResultCount}</div>`;
+  return `<div class="arg"><b>problem</b> ${escapeHtml(toolCallRequest.codebaseProblemDescription)}</div>${knownFilesHtml}${knownSymbolsHtml}${maximumResultsHtml}`;
+}
+
 function renderEditToolCallRequestPurpose(toolCallRequest: ToolCallRequestByName<"edit">): string {
   return `<span class="panel-purpose">${escapeHtml(toolCallRequest.editTargetPath)}</span>`;
 }
@@ -269,6 +287,7 @@ const toolCallDetailExportRendererByName: {
   search_many: { renderPurpose: renderSearchManyToolResultPurpose },
   glob: { renderPurpose: renderGlobToolResultPurpose },
   grep: { renderPurpose: renderGrepToolResultPurpose },
+  query_codebase_knowledge: { renderPurpose: renderQueryCodebaseKnowledgeToolResultPurpose },
   edit: { renderPurpose: renderEditToolResultPurpose },
   edit_many: { renderPurpose: renderEditManyToolResultPurpose },
   patch: { renderPurpose: renderPatchToolResultPurpose },
@@ -335,6 +354,20 @@ function renderGrepToolResultPurpose(toolCallDetail: ToolCallDetailByName<"grep"
     : `<span class="panel-purpose">${toolCallDetail.totalMatchCount} matches</span>`;
 }
 
+function renderQueryCodebaseKnowledgeToolResultPurpose(toolCallDetail: ToolCallDetailByName<"query_codebase_knowledge">): string {
+  const matchedKnowledgeCount = toolCallDetail.matchedKnowledgeCount;
+  if (matchedKnowledgeCount === undefined) {
+    return `<span class="panel-purpose">codebase knowledge</span>`;
+  }
+
+  const matchLabel = `${matchedKnowledgeCount} ${matchedKnowledgeCount === 1 ? "match" : "matches"}`;
+  const recommendedReadCount = toolCallDetail.recommendedReadCount;
+  const readLabel = recommendedReadCount === undefined
+    ? ""
+    : ` · ${recommendedReadCount} ${recommendedReadCount === 1 ? "read" : "reads"}`;
+  return `<span class="panel-purpose">${escapeHtml(`${matchLabel}${readLabel}`)}</span>`;
+}
+
 function renderEditToolResultPurpose(toolCallDetail: ToolCallDetailByName<"edit">): string {
   const lineChange = renderLineChangeSummary(toolCallDetail.addedLineCount, toolCallDetail.removedLineCount);
   return `<span class="panel-purpose">${escapeHtml(toolCallDetail.editedFilePath)}${lineChange}</span>`;
@@ -391,6 +424,9 @@ function formatToolDisplayName(toolName: string): string {
   }
   if (toolName === "patch_many") {
     return "PatchMany";
+  }
+  if (toolName === "query_codebase_knowledge") {
+    return "CodebaseKnowledge";
   }
   if (toolName === "skill") {
     return "Skill";
@@ -493,6 +529,7 @@ const subagentChildToolCallDetailSummaryRendererByName: {
   search_many: renderSearchManySubagentChildToolCallDetailSummary,
   glob: renderGlobSubagentChildToolCallDetailSummary,
   grep: renderGrepSubagentChildToolCallDetailSummary,
+  query_codebase_knowledge: renderQueryCodebaseKnowledgeSubagentChildToolCallDetailSummary,
   bash: renderBashSubagentChildToolCallDetailSummary,
   edit: renderEditSubagentChildToolCallDetailSummary,
   edit_many: renderEditManySubagentChildToolCallDetailSummary,
@@ -544,6 +581,13 @@ function renderGrepSubagentChildToolCallDetailSummary(
   const countHtml = subagentChildToolCallDetail.totalMatchCount === undefined ? "" : ` · ${subagentChildToolCallDetail.totalMatchCount} matches`;
   const contextHtml = subagentChildToolCallDetail.contextLineCount === undefined ? "" : ` · context ${subagentChildToolCallDetail.contextLineCount}`;
   return `<div class="arg"><b>grep</b> ${escapeHtml(subagentChildToolCallDetail.searchPattern)}${escapeHtml(`${countHtml}${contextHtml}`)}</div>`;
+}
+
+function renderQueryCodebaseKnowledgeSubagentChildToolCallDetailSummary(
+  subagentChildToolCallDetail: SubagentChildToolCallDetailByName<"query_codebase_knowledge">,
+): string {
+  const countHtml = subagentChildToolCallDetail.matchedKnowledgeCount === undefined ? "" : ` · ${subagentChildToolCallDetail.matchedKnowledgeCount} matches`;
+  return `<div class="arg"><b>query_codebase_knowledge</b> ${escapeHtml(subagentChildToolCallDetail.codebaseProblemDescription)}${escapeHtml(countHtml)}</div>`;
 }
 
 function renderBashSubagentChildToolCallDetailSummary(

@@ -17,6 +17,10 @@ export const MAX_TASK_TOOL_DESCRIPTION_LENGTH = 2_000;
 export const MAX_TASK_TOOL_PROMPT_LENGTH = 100_000;
 export const MAX_SKILL_NAME_LENGTH = 64;
 export const SKILL_NAME_PATTERN_TEXT = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+export const MAX_CODEBASE_KNOWLEDGE_PROBLEM_DESCRIPTION_LENGTH = 20_000;
+export const MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT = 50;
+export const MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH = 512;
+export const MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT = 20;
 
 const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
 const PATCH_FILE_SECTION_HEADER_PREFIXES = ["*** Add File:", "*** Update File:", "*** Delete File:"] as const;
@@ -204,6 +208,19 @@ export const SkillToolCallRequestSchema = z
   })
   .strict();
 
+export const QueryCodebaseKnowledgeToolCallRequestSchema = z
+  .object({
+    toolName: z.literal("query_codebase_knowledge"),
+    codebaseProblemDescription: z.string().min(1).max(MAX_CODEBASE_KNOWLEDGE_PROBLEM_DESCRIPTION_LENGTH),
+    knownRelevantFilePaths: z.array(WorkspacePathSchema).max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT).optional(),
+    knownRelevantSymbolNames: z
+      .array(z.string().min(1).max(MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH))
+      .max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT)
+      .optional(),
+    maximumKnowledgeResultCount: z.number().int().positive().max(MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT).optional(),
+  })
+  .strict();
+
 export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   BashToolCallRequestSchema,
   ReadToolCallRequestSchema,
@@ -218,6 +235,7 @@ export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   WriteToolCallRequestSchema,
   TaskToolCallRequestSchema,
   SkillToolCallRequestSchema,
+  QueryCodebaseKnowledgeToolCallRequestSchema,
 ]);
 
 export type BashToolCallRequest = z.infer<typeof BashToolCallRequestSchema>;
@@ -238,6 +256,7 @@ export type PatchManyToolCallRequest = z.infer<typeof PatchManyToolCallRequestSc
 export type WriteToolCallRequest = z.infer<typeof WriteToolCallRequestSchema>;
 export type TaskToolCallRequest = z.infer<typeof TaskToolCallRequestSchema>;
 export type SkillToolCallRequest = z.infer<typeof SkillToolCallRequestSchema>;
+export type QueryCodebaseKnowledgeToolCallRequest = z.infer<typeof QueryCodebaseKnowledgeToolCallRequestSchema>;
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
 function inspectPatchTextStructure(patchText: string): PatchTextStructure {

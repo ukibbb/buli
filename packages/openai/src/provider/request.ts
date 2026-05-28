@@ -392,7 +392,8 @@ function resolveHistoricalToolOutputReplayPriorityWeight(input: {
     toolName === "read_many" ||
     toolName === "grep" ||
     toolName === "glob" ||
-    toolName === "search_many"
+    toolName === "search_many" ||
+    toolName === "query_codebase_knowledge"
   ) {
     return 1;
   }
@@ -707,6 +708,23 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
       ...(conversationSessionEntry.toolCallRequest.includeGlobPattern !== undefined
         ? [`Include: ${conversationSessionEntry.toolCallRequest.includeGlobPattern}`]
       : []),
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "query_codebase_knowledge") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: query_codebase_knowledge",
+      `Problem: ${conversationSessionEntry.toolCallRequest.codebaseProblemDescription}`,
+      ...(conversationSessionEntry.toolCallRequest.knownRelevantFilePaths !== undefined
+        ? [`Known files: ${conversationSessionEntry.toolCallRequest.knownRelevantFilePaths.join(", ")}`]
+        : []),
+      ...(conversationSessionEntry.toolCallRequest.knownRelevantSymbolNames !== undefined
+        ? [`Known symbols: ${conversationSessionEntry.toolCallRequest.knownRelevantSymbolNames.join(", ")}`]
+        : []),
+      ...(conversationSessionEntry.toolCallRequest.maximumKnowledgeResultCount !== undefined
+        ? [`Maximum results: ${conversationSessionEntry.toolCallRequest.maximumKnowledgeResultCount}`]
+        : []),
     ].join("\n");
   }
 

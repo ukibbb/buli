@@ -12,6 +12,7 @@ import {
   type WorkspaceInspectionToolRequestName,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
+import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import {
@@ -25,6 +26,7 @@ import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnosti
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { runGlobToolCall } from "./tools/globTool.ts";
 import { runGrepToolCall } from "./tools/grepTool.ts";
+import { runQueryCodebaseKnowledgeToolCall } from "./tools/queryCodebaseKnowledgeTool.ts";
 import { runReadManyToolCall } from "./tools/readManyTool.ts";
 import { runReadToolCall } from "./tools/readTool.ts";
 import { runSearchManyToolCall } from "./tools/searchManyTool.ts";
@@ -46,6 +48,7 @@ type AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName extends AutoApprovedR
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
+  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   abortSignal: AbortSignal;
 };
 
@@ -71,6 +74,9 @@ const autoApprovedReadOnlyToolCallExecutorByName: {
   grep: {
     runToolCall: runGrepAutoApprovedReadOnlyToolCall,
   },
+  query_codebase_knowledge: {
+    runToolCall: runQueryCodebaseKnowledgeAutoApprovedReadOnlyToolCall,
+  },
 };
 
 export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = {
@@ -82,6 +88,7 @@ export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = 
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   conversationHistory?: InMemoryConversationHistory | undefined;
+  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   readOnlyToolCallConcurrencyLimiter?: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
@@ -207,6 +214,7 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
         pendingToolCallExecution,
         readOnlyToolCallConcurrencyLimiter,
         readOnlyToolCallEvidenceIndex,
+        workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
         workspaceRootPath: input.workspaceRootPath,
         ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
         abortSignal: input.abortSignal,
@@ -304,6 +312,7 @@ async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
   pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
+  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
@@ -317,6 +326,7 @@ async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
         toolCallId: input.pendingToolCallExecution.toolCallId,
         readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
         ...(input.readOnlyToolCallEvidenceIndex ? { readOnlyToolCallEvidenceIndex: input.readOnlyToolCallEvidenceIndex } : {}),
+        ...(input.workspaceCodebaseKnowledgeIndex ? { workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex } : {}),
         workspaceRootPath: input.workspaceRootPath,
         ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
         abortSignal: input.abortSignal,
@@ -406,6 +416,7 @@ function runAutoApprovedReadOnlyToolCall(input: {
   toolCallId: string;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   readOnlyToolCallEvidenceIndex?: ReadOnlyToolCallEvidenceIndex | undefined;
+  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
@@ -508,6 +519,23 @@ function runGrepAutoApprovedReadOnlyToolCall(
     runGrepToolCall({
       grepToolCallRequest: input.toolCallRequest,
       workspaceRootPath: input.workspaceRootPath,
+      abortSignal: input.abortSignal,
+    })
+  );
+}
+
+function runQueryCodebaseKnowledgeAutoApprovedReadOnlyToolCall(
+  input: AutoApprovedReadOnlyToolCallExecutorRunInput<"query_codebase_knowledge">,
+): Promise<ToolCallOutcome> {
+  if (!input.workspaceCodebaseKnowledgeIndex) {
+    throw new Error("Codebase knowledge index is not available for query_codebase_knowledge.");
+  }
+  const workspaceCodebaseKnowledgeIndex = input.workspaceCodebaseKnowledgeIndex;
+
+  return runSingleAutoApprovedReadOnlyToolCall(input, "query_codebase_knowledge", () =>
+    runQueryCodebaseKnowledgeToolCall({
+      queryCodebaseKnowledgeToolCallRequest: input.toolCallRequest,
+      workspaceCodebaseKnowledgeIndex,
       abortSignal: input.abortSignal,
     })
   );

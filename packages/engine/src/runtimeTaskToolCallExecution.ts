@@ -25,6 +25,7 @@ import {
   type ToolCallTaskDetail,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
+import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
@@ -42,7 +43,7 @@ import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { buildBuliExplorerSystemPrompt } from "./systemPrompt.ts";
 import { resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 
-const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, read_many, search_many, glob, and grep instead.";
+const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, read_many, search_many, glob, grep, and query_codebase_knowledge instead.";
 const TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT = 192;
 const TASK_SUBAGENT_CHILD_TOOL_RESULT_TEXT_CHECKPOINT_LIMIT = 1_200_000;
 export const DEFAULT_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS = 120_000;
@@ -92,6 +93,7 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   workspaceRootPath: string;
+  workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
@@ -170,6 +172,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
           selectedModelId: input.selectedModelId,
           ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
           workspaceRootPath: input.workspaceRootPath,
+          workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
           projectInstructionTracker: input.projectInstructionTracker,
           readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
           ...(input.taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
@@ -312,6 +315,7 @@ async function* streamTaskSubagentConversationProgress(input: {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   workspaceRootPath: string;
+  workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
@@ -459,6 +463,7 @@ async function* streamTaskSubagentConversationProgress(input: {
           subagentConversationHistory,
           subagentToolResultSessionRecorder,
           workspaceRootPath: input.workspaceRootPath,
+          workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
           projectInstructionTracker: input.projectInstructionTracker,
           readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
           abortSignal: input.abortSignal,
@@ -744,6 +749,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
   subagentConversationHistory: InMemoryConversationHistory;
   subagentToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   workspaceRootPath: string;
+  workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
@@ -771,6 +777,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
       conversationTurnId: input.conversationTurnId,
       requestedToolCalls: effectiveRequestedToolCalls,
       workspaceRootPath: input.workspaceRootPath,
+      workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
       projectInstructionTracker: input.projectInstructionTracker,
       toolResultSessionRecorder: input.subagentToolResultSessionRecorder,
       readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
@@ -798,6 +805,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
         conversationTurnId: input.conversationTurnId,
         subagentToolResultSessionRecorder: input.subagentToolResultSessionRecorder,
         workspaceRootPath: input.workspaceRootPath,
+        workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
         projectInstructionTracker: input.projectInstructionTracker,
         readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
         abortSignal: input.abortSignal,
@@ -861,6 +869,7 @@ async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
   conversationTurnId: string;
   subagentToolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   workspaceRootPath: string;
+  workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
@@ -874,6 +883,7 @@ async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
     toolCallId: input.requestedToolCall.toolCallId,
     toolCallRequest: input.requestedToolCall.toolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
+    workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.subagentToolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
@@ -985,6 +995,7 @@ function createSubagentChildToolCallDetailFromToolCallDetail(
     toolCallDetail.toolName === "search_many" ||
     toolCallDetail.toolName === "glob" ||
     toolCallDetail.toolName === "grep" ||
+    toolCallDetail.toolName === "query_codebase_knowledge" ||
     toolCallDetail.toolName === "bash" ||
     toolCallDetail.toolName === "edit" ||
     toolCallDetail.toolName === "edit_many" ||
@@ -1273,6 +1284,8 @@ function formatSubagentChildToolCallDetail(subagentChildToolCallDetail: Subagent
       return `glob ${subagentChildToolCallDetail.globPattern}`;
     case "grep":
       return `grep ${subagentChildToolCallDetail.searchPattern}`;
+    case "query_codebase_knowledge":
+      return `query_codebase_knowledge ${subagentChildToolCallDetail.codebaseProblemDescription}`;
     case "bash":
       return `bash ${subagentChildToolCallDetail.commandLine}`;
     case "edit":
@@ -1355,5 +1368,5 @@ function buildSubagentDisallowedToolDenialText(toolCallRequest: ToolCallRequest)
     return NESTED_SUBAGENT_DENIAL_TEXT;
   }
 
-  return `Subagent is read-only and cannot use ${toolCallRequest.toolName}. Use read, read_many, search_many, glob, or grep instead.`;
+  return `Subagent is read-only and cannot use ${toolCallRequest.toolName}. Use read, read_many, search_many, glob, grep, or query_codebase_knowledge instead.`;
 }

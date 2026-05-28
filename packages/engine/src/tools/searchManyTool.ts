@@ -32,6 +32,11 @@ type SearchManyChildToolCallOutcome = {
   searchToolCallOutcome: ToolCallOutcome;
 };
 
+type UniqueSearchManyChildToolCall = {
+  firstSearchIndex: number;
+  search: SearchManyToolCallSearch;
+};
+
 const SEARCH_MANY_RESULT_SEPARATOR = "----- next search result -----";
 export const MAX_SEARCH_MANY_TOOL_RESULT_TEXT_LENGTH = 32_000;
 
@@ -53,12 +58,15 @@ export async function runSearchManyToolCall(input: {
   const startedToolCallDetail = createStartedSearchManyToolCallDetail(input.searchManyToolCallRequest);
 
   try {
-    const childToolCallOutcomes = await Promise.all(
-      input.searchManyToolCallRequest.searches.map((search, searchIndex) => {
-        const reusableSearchEvidence = input.readOnlyToolCallEvidenceIndex?.findReusableSearchManySearchEvidence(search);
+    const uniqueSearchManyChildToolCalls = listUniqueSearchManyChildToolCalls(input.searchManyToolCallRequest.searches);
+    const uniqueChildToolCallOutcomes = await Promise.all(
+      uniqueSearchManyChildToolCalls.map((uniqueSearchManyChildToolCall) => {
+        const reusableSearchEvidence = input.readOnlyToolCallEvidenceIndex?.findReusableSearchManySearchEvidence(
+          uniqueSearchManyChildToolCall.search,
+        );
         if (reusableSearchEvidence) {
           return Promise.resolve(createDuplicateSearchManyChildToolCallOutcome({
-            searchIndex,
+            searchIndex: uniqueSearchManyChildToolCall.firstSearchIndex,
             reusableSearchEvidence,
           }));
         }
@@ -66,20 +74,24 @@ export async function runSearchManyToolCall(input: {
         return input.readOnlyToolCallConcurrencyLimiter.run(
           () =>
             runSearchManyChildToolCall({
-              search,
-              searchIndex,
+              search: uniqueSearchManyChildToolCall.search,
+              searchIndex: uniqueSearchManyChildToolCall.firstSearchIndex,
               workspaceRootPath: input.workspaceRootPath,
               ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
             }),
           {
             ...(input.parentToolCallId !== undefined ? { parentToolCallId: input.parentToolCallId } : {}),
             parentToolName: "search_many",
-            toolName: search.searchKind,
-            childIndex: searchIndex,
+            toolName: uniqueSearchManyChildToolCall.search.searchKind,
+            childIndex: uniqueSearchManyChildToolCall.firstSearchIndex,
           },
         );
       }),
     );
+    const childToolCallOutcomes = createSearchManyChildOutcomesForRequestedSearches({
+      searches: input.searchManyToolCallRequest.searches,
+      uniqueChildToolCallOutcomes,
+    });
     const searchResults = childToolCallOutcomes.map(createSearchManyResultFromChildOutcome);
     const completedSearchCount = searchResults.filter((searchResult) => searchResult.searchStatus === "completed").length;
     const failedSearchCount = searchResults.length - completedSearchCount;
@@ -115,6 +127,70 @@ export async function runSearchManyToolCall(input: {
       durationMilliseconds: Date.now() - startedAtMilliseconds,
     };
   }
+}
+
+function listUniqueSearchManyChildToolCalls(
+  searches: readonly SearchManyToolCallSearch[],
+): UniqueSearchManyChildToolCall[] {
+  const uniqueSearchManyChildToolCallBySearchKey = new Map<string, UniqueSearchManyChildToolCall>();
+  for (const [searchIndex, search] of searches.entries()) {
+    const searchKey = createSearchManySearchKey(search);
+    if (uniqueSearchManyChildToolCallBySearchKey.has(searchKey)) {
+      continue;
+    }
+
+    uniqueSearchManyChildToolCallBySearchKey.set(searchKey, {
+      firstSearchIndex: searchIndex,
+      search,
+    });
+  }
+
+  return [...uniqueSearchManyChildToolCallBySearchKey.values()];
+}
+
+function createSearchManyChildOutcomesForRequestedSearches(input: {
+  searches: readonly SearchManyToolCallSearch[];
+  uniqueChildToolCallOutcomes: readonly SearchManyChildToolCallOutcome[];
+}): SearchManyChildToolCallOutcome[] {
+  const uniqueChildToolCallOutcomeBySearchKey = new Map<string, SearchManyChildToolCallOutcome>();
+  for (const uniqueChildToolCallOutcome of input.uniqueChildToolCallOutcomes) {
+    const search = input.searches[uniqueChildToolCallOutcome.searchIndex];
+    if (!search) {
+      throw new Error(`Search many child returned an out-of-range index: ${uniqueChildToolCallOutcome.searchIndex}`);
+    }
+
+    uniqueChildToolCallOutcomeBySearchKey.set(createSearchManySearchKey(search), uniqueChildToolCallOutcome);
+  }
+
+  return input.searches.map((search, searchIndex) => {
+    const uniqueChildToolCallOutcome = uniqueChildToolCallOutcomeBySearchKey.get(createSearchManySearchKey(search));
+    if (!uniqueChildToolCallOutcome) {
+      throw new Error(`Search many child outcome is missing for search ${searchIndex + 1}`);
+    }
+
+    return {
+      searchIndex,
+      searchToolCallOutcome: uniqueChildToolCallOutcome.searchToolCallOutcome,
+    };
+  });
+}
+
+function createSearchManySearchKey(search: SearchManyToolCallSearch): string {
+  if (search.searchKind === "glob") {
+    return JSON.stringify([
+      "glob",
+      search.globPattern,
+      search.searchDirectoryPath ?? null,
+    ]);
+  }
+
+  return JSON.stringify([
+    "grep",
+    search.regexPattern,
+    search.searchPath ?? null,
+    search.includeGlobPattern ?? null,
+    search.contextLineCount ?? null,
+  ]);
 }
 
 function createDuplicateSearchManyChildToolCallOutcome(input: {

@@ -145,7 +145,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema6"
+            "$ref": "#/$defs/__schema7"
           }
         }
       },
@@ -211,7 +211,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema7"
+            "$ref": "#/$defs/__schema8"
           }
         }
       },
@@ -598,6 +598,44 @@
             "skillName"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "query_codebase_knowledge"
+            },
+            "codebaseProblemDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000
+            },
+            "knownRelevantFilePaths": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema2"
+              }
+            },
+            "knownRelevantSymbolNames": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema6"
+              }
+            },
+            "maximumKnowledgeResultCount": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "toolName",
+            "codebaseProblemDescription"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -713,6 +751,11 @@
       "additionalProperties": false
     },
     "__schema6": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema7": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -729,7 +772,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema7": {
+    "__schema8": {
       "type": "object",
       "properties": {
         "stepIndex": {

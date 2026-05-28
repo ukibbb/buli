@@ -23,6 +23,12 @@ export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./p
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
 export {
+  createDefaultWorkspaceCodebaseKnowledgeIndex,
+  defaultWorkspaceCodebaseKnowledgeIndexFilePath,
+  TreeSitterWorkspaceCodebaseKnowledgeIndex,
+} from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
+export type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
+export {
   ProviderProtocolConversationTurnProvider,
   ProviderProtocolRemoteProviderError,
 } from "./providerProtocolClient.ts";
@@ -102,6 +108,7 @@ export type {
 } from "./tools/fileMutationDiff.ts";
 export { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
 export { createStartedGrepToolCallDetail, runGrepToolCall } from "./tools/grepTool.ts";
+export { createStartedQueryCodebaseKnowledgeToolCallDetail, runQueryCodebaseKnowledgeToolCall } from "./tools/queryCodebaseKnowledgeTool.ts";
 export {
   createStartedReadToolCallDetail,
   runReadToolCall,

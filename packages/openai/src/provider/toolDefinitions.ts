@@ -1,6 +1,8 @@
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+  MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
+  MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT,
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_GREP_CONTEXT_LINE_COUNT,
   MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
@@ -190,7 +192,7 @@ export function createSearchManyToolDefinition(): OpenAiToolDefinition<"search_m
   return {
     type: "function",
     name: "search_many",
-    description: "Run multiple independent glob and grep searches inside the current workspace in one batched call. Use this first for broad file discovery or text-search mapping when the searches do not depend on each other. Prefer one larger independent search_many batch over many small sequential glob/grep calls because batch children run concurrently. For grep searches, set contextLineCount to a small number only when the surrounding lines are likely needed. Use read_many after search_many when several exact paths from the search results need inspection.",
+    description: "Run multiple independent glob and grep searches inside the current workspace in one batched call. Use this for broad file discovery or text-search mapping when query_codebase_knowledge does not cover the need or when the searches do not depend on its result. Prefer one larger independent search_many batch over many small sequential glob/grep calls because batch children run concurrently. Identical child searches are deduplicated by the runtime. For grep searches, set contextLineCount to a small number only when the surrounding lines are likely needed. Use read_many after search_many when several exact paths from the search results need inspection.",
     parameters: {
       type: "object",
       properties: {
@@ -290,6 +292,50 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
         },
       },
       required: ["pattern", "path", "include", "contextLineCount"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+export function createQueryCodebaseKnowledgeToolDefinition(): OpenAiToolDefinition<"query_codebase_knowledge"> {
+  return {
+    type: "function",
+    name: "query_codebase_knowledge",
+    description: "Query Buli's codebase knowledge index to locate relevant files, symbols, evidence, and recommended reads. Use this first for broad codebase orientation before broad search when the question is about where behavior, symbols, flows, or concepts live. Results are compact knowledge pointers, not raw source; read the exact current source ranges with read/read_many before relying on details. Reuse visible prior identical queries instead of repeating them, and narrow broad results with known file or symbol hints when available.",
+    parameters: {
+      type: "object",
+      properties: {
+        codebaseProblemDescription: {
+          type: "string",
+          description: "Natural-language description of the codebase behavior, concept, symbol, bug, or change you need to locate.",
+        },
+        knownRelevantFilePaths: {
+          type: ["array", "null"],
+          maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
+          description: "Optional file paths already known to be relevant; use null when none are known.",
+          items: {
+            type: "string",
+            description: "Workspace-relative or absolute path hint.",
+          },
+        },
+        knownRelevantSymbolNames: {
+          type: ["array", "null"],
+          maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
+          description: "Optional symbol names already known to be relevant; use null when none are known.",
+          items: {
+            type: "string",
+            description: "Known function, class, type, interface, enum, or variable name.",
+          },
+        },
+        maximumKnowledgeResultCount: {
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT,
+          description: "Maximum number of knowledge matches to return, or null for the default.",
+        },
+      },
+      required: ["codebaseProblemDescription", "knownRelevantFilePaths", "knownRelevantSymbolNames", "maximumKnowledgeResultCount"],
       additionalProperties: false,
     },
     strict: true,
@@ -516,6 +562,11 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     toolName: "grep",
     definition: createGrepToolDefinition(),
     parseToolCallRequest: parseGrepOpenAiToolCallRequest,
+  },
+  query_codebase_knowledge: {
+    toolName: "query_codebase_knowledge",
+    definition: createQueryCodebaseKnowledgeToolDefinition(),
+    parseToolCallRequest: parseQueryCodebaseKnowledgeOpenAiToolCallRequest,
   },
   edit: {
     toolName: "edit",
@@ -748,6 +799,38 @@ function parseGrepOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
   };
 }
 
+function parseQueryCodebaseKnowledgeOpenAiToolCallRequest(
+  parsedArguments: JsonObjectRecord,
+): ToolCallRequestByName<"query_codebase_knowledge"> {
+  const knownRelevantFilePaths = readOptionalStringArrayToolArgument(
+    parsedArguments,
+    "knownRelevantFilePaths",
+    "query_codebase_knowledge",
+  );
+  const knownRelevantSymbolNames = readOptionalStringArrayToolArgument(
+    parsedArguments,
+    "knownRelevantSymbolNames",
+    "query_codebase_knowledge",
+  );
+  const maximumKnowledgeResultCount = readOptionalPositiveIntegerToolArgument(
+    parsedArguments,
+    "maximumKnowledgeResultCount",
+    "query_codebase_knowledge",
+  );
+
+  return {
+    toolName: "query_codebase_knowledge",
+    codebaseProblemDescription: readRequiredStringToolArgument(
+      parsedArguments,
+      "codebaseProblemDescription",
+      "query_codebase_knowledge",
+    ),
+    ...(knownRelevantFilePaths !== undefined ? { knownRelevantFilePaths } : {}),
+    ...(knownRelevantSymbolNames !== undefined ? { knownRelevantSymbolNames } : {}),
+    ...(maximumKnowledgeResultCount !== undefined ? { maximumKnowledgeResultCount } : {}),
+  };
+}
+
 function parseEditOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"edit"> {
   return {
     toolName: "edit",
@@ -914,6 +997,30 @@ function readRequiredObjectArrayToolArgument(
 
     throw new Error(
       `OpenAI function call for ${toolName} has invalid object array item: ${argumentName}[${arrayItemIndex}]`,
+    );
+  });
+}
+
+function readOptionalStringArrayToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): string[] | undefined {
+  const argumentValue = parsedArguments[argumentName];
+  if (argumentValue === undefined || argumentValue === null) {
+    return undefined;
+  }
+  if (!Array.isArray(argumentValue)) {
+    throw new Error(`OpenAI function call for ${toolName} has invalid string array argument: ${argumentName}`);
+  }
+
+  return argumentValue.map((arrayItemValue, arrayItemIndex) => {
+    if (typeof arrayItemValue === "string" && arrayItemValue.length > 0) {
+      return arrayItemValue;
+    }
+
+    throw new Error(
+      `OpenAI function call for ${toolName} has invalid string array item: ${argumentName}[${arrayItemIndex}]`,
     );
   });
 }

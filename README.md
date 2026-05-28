@@ -52,6 +52,7 @@ Buli's default workflow is:
 - `Tab` cycles the active operating mode in the prompt.
 - Streaming assistant responses with reasoning-summary display.
 - Local workspace tools for `read`, `glob`, `grep`, `edit`, `write`, and `bash`.
+- Tree-sitter-backed codebase knowledge queries for indexed TypeScript, TSX, and Python files.
 - Approval flow for bash commands and file mutations.
 - Local persisted conversation sessions per workspace.
 - Session switching and deletion with `/sessions`.
@@ -223,6 +224,19 @@ Buli has three primary modes. They are workflow posture, not separate products.
 
 Use `Tab` in the prompt to cycle modes.
 
+## Codebase Knowledge Indexing
+
+Buli builds a workspace-local codebase knowledge index to make broad structural questions cheaper than repeatedly scanning files from scratch.
+
+- Indexing starts in the background when the fullscreen chat app starts. Startup does not wait for the index to finish.
+- The first `query_codebase_knowledge` call waits for the in-flight startup index if it is still running.
+- The index is persisted at `./.buli/index/codebase-knowledge.json` inside the current workspace.
+- The index stores Tree-sitter-derived summaries, symbols, imports, evidence ranges, freshness, and content hashes. It does not store raw source text.
+- Supported languages are TypeScript (`.ts`, `.mts`, `.cts`), TSX (`.tsx`), and Python (`.py`, `.pyi`, `.pyw`).
+- Buli uses `web-tree-sitter` with WASM grammars from `tree-sitter-typescript` and `tree-sitter-python`.
+- Workspace indexing includes `./.buli/**`, but skips generated index files under `./.buli/index/`.
+- File changes made through Buli mutation tools refresh the changed files in the index. File changes made outside Buli are picked up by the next startup scan.
+
 ## Local Data
 
 Buli stores local state under `~/.buli`.
@@ -230,6 +244,10 @@ Buli stores local state under `~/.buli`.
 - Auth: `~/.buli/auth.json`.
 - Conversation sessions: `~/.buli/conversation-sessions`.
 - HTML exports: `~/.buli/session-exports`.
+
+Buli also stores workspace-local codebase knowledge under the current project:
+
+- Codebase knowledge index: `./.buli/index/codebase-knowledge.json`.
 
 Auth files, session directories, exports, and diagnostic logs are written with private file permissions where Buli creates them.
 
@@ -266,6 +284,7 @@ Buli is a Bun workspace monorepo with typed package boundaries.
 Current packages:
 
 - `apps/cli`: CLI entrypoints, command composition, auth/session wiring, and HTML session export.
+- `packages/codebase-knowledge`: Tree-sitter-backed codebase structure indexing, local knowledge persistence, ranking, and query result formatting.
 - `packages/contracts`: shared schemas and types for assistant events, messages, sessions, tools, providers, models, token usage, and plans.
 - `packages/engine`: UI-agnostic assistant runtime, conversation history, tool execution, approvals, prompt context expansion, compaction, and system prompts.
 - `packages/openai`: browser OAuth, auth storage, token refresh, Responses API transport, model discovery, streaming parsing, and tool-call continuation.
