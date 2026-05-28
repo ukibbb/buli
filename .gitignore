@@ -17,7 +17,8 @@ docs/*
 !docs/openai-conversation-logic.md
 !docs/native-boundaries.md
 examples/
-skills/
+/skills/
+/.agents/skills/
 tui-examples/
 .claude/
 caveman/
