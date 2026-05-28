@@ -1,16 +1,31 @@
-export type CodebaseKnowledgeFreshness = "fresh" | "stale";
-
-export type CodebaseEvidenceSourceKind = "tree_sitter_structure" | "agent_verified_summary" | "tool_observation";
-
 export type CodebaseEvidenceSourceRange = {
   filePath: string;
   startLineNumber: number;
   endLineNumber: number;
   contentHash: string;
-  sourceKind: CodebaseEvidenceSourceKind;
 };
 
-export type CodebaseKnowledgeRecordKind = "file" | "symbol" | "flow" | "concept";
+export type CodebaseImportDeclaration = {
+  moduleSpecifier: string;
+  importedSymbolNames: readonly string[];
+  isTypeOnly: boolean;
+  startLineNumber: number;
+  endLineNumber: number;
+};
+
+export type CodebaseExportDeclaration = {
+  exportedSymbolNames: readonly string[];
+  moduleSpecifier?: string | undefined;
+  startLineNumber: number;
+  endLineNumber: number;
+};
+
+export type CodebaseSymbolDeclarationPreview = {
+  declarationPreviewText: string;
+  documentationCommentText?: string | undefined;
+};
+
+export type CodebaseKnowledgeRecordKind = "file" | "symbol";
 
 export type CodebaseSymbolKind = "function" | "class" | "interface" | "type" | "enum" | "variable";
 
@@ -21,7 +36,6 @@ type CodebaseKnowledgeRecordBase = {
   summary: string;
   tags: readonly string[];
   evidenceRanges: readonly CodebaseEvidenceSourceRange[];
-  freshness: CodebaseKnowledgeFreshness;
   updatedAtMs: number;
 };
 
@@ -30,7 +44,9 @@ export type CodebaseFileKnowledgeRecord = CodebaseKnowledgeRecordBase & {
   filePath: string;
   languageId: string;
   importedModuleSpecifiers: readonly string[];
+  importDeclarations?: readonly CodebaseImportDeclaration[] | undefined;
   exportedSymbolNames: readonly string[];
+  exportDeclarations?: readonly CodebaseExportDeclaration[] | undefined;
   symbolNames: readonly string[];
 };
 
@@ -42,33 +58,17 @@ export type CodebaseSymbolKnowledgeRecord = CodebaseKnowledgeRecordBase & {
   startLineNumber: number;
   endLineNumber: number;
   isExported: boolean;
-};
-
-export type CodebaseFlowKnowledgeRecord = CodebaseKnowledgeRecordBase & {
-  recordKind: "flow";
-  flowName: string;
-  involvedFilePaths: readonly string[];
-  involvedSymbolNames: readonly string[];
-};
-
-export type CodebaseConceptKnowledgeRecord = CodebaseKnowledgeRecordBase & {
-  recordKind: "concept";
-  conceptName: string;
-  relatedFilePaths: readonly string[];
-  relatedSymbolNames: readonly string[];
+  declarationPreview?: CodebaseSymbolDeclarationPreview | undefined;
 };
 
 export type CodebaseKnowledgeRecord =
   | CodebaseFileKnowledgeRecord
-  | CodebaseSymbolKnowledgeRecord
-  | CodebaseFlowKnowledgeRecord
-  | CodebaseConceptKnowledgeRecord;
+  | CodebaseSymbolKnowledgeRecord;
 
 export type CodebaseKnowledgeQuery = {
-  codebaseProblemDescription: string;
-  knownRelevantFilePaths?: readonly string[] | undefined;
-  knownRelevantSymbolNames?: readonly string[] | undefined;
-  maximumKnowledgeResultCount?: number | undefined;
+  symbolNames?: readonly string[] | undefined;
+  filePaths?: readonly string[] | undefined;
+  maximumResultCount?: number | undefined;
 };
 
 export type CodebaseKnowledgeRecommendedRead = {
@@ -90,11 +90,39 @@ export type CodebaseKnowledgeQueryResult = {
   matches: readonly CodebaseKnowledgeQueryMatch[];
 };
 
+export type CodebaseIndexedFileMetadata = {
+  filePath: string;
+  languageId: string;
+  sourceFileSizeBytes: number;
+  sourceFileModifiedAtMs: number;
+  contentHash: string;
+  indexedAtMs: number;
+  recordIds: readonly string[];
+  structureMapVersion?: number | undefined;
+};
+
+export type CodebaseKnowledgeRepositorySnapshot = {
+  records: readonly CodebaseKnowledgeRecord[];
+  indexedFiles: readonly CodebaseIndexedFileMetadata[];
+};
+
+export type CodebaseKnowledgeRepositoryStartupMetadata = {
+  indexedFiles: readonly CodebaseIndexedFileMetadata[];
+};
+
 export type CodebaseKnowledgeRepository = {
   upsertRecords(records: readonly CodebaseKnowledgeRecord[]): Promise<void>;
   replaceAllRecords(records: readonly CodebaseKnowledgeRecord[]): Promise<void>;
-  replaceFileRecords(input: { filePath: string; records: readonly CodebaseKnowledgeRecord[] }): Promise<void>;
-  markFilePathStale(filePath: string): Promise<void>;
+  replaceFileRecords(input: {
+    filePath: string;
+    records: readonly CodebaseKnowledgeRecord[];
+    indexedFileMetadata?: CodebaseIndexedFileMetadata | undefined;
+  }): Promise<void>;
+  removeFileRecords(filePath: string): Promise<void>;
+  readStartupMetadata(): Promise<CodebaseKnowledgeRepositoryStartupMetadata>;
+  replaceStartupMetadata(startupMetadata: CodebaseKnowledgeRepositoryStartupMetadata): Promise<void>;
+  readSnapshot(): Promise<CodebaseKnowledgeRepositorySnapshot>;
+  replaceSnapshot(snapshot: CodebaseKnowledgeRepositorySnapshot): Promise<void>;
   queryRecords(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult>;
   listRecords(): Promise<readonly CodebaseKnowledgeRecord[]>;
 };
@@ -105,6 +133,7 @@ export type CodebaseStructureSymbolRecord = {
   startLineNumber: number;
   endLineNumber: number;
   isExported: boolean;
+  declarationPreview?: CodebaseSymbolDeclarationPreview | undefined;
 };
 
 export type CodebaseStructureFileRecord = {
@@ -113,7 +142,9 @@ export type CodebaseStructureFileRecord = {
   contentHash: string;
   hasSyntaxError: boolean;
   importedModuleSpecifiers: readonly string[];
+  importDeclarations: readonly CodebaseImportDeclaration[];
   exportedSymbolNames: readonly string[];
+  exportDeclarations: readonly CodebaseExportDeclaration[];
   symbols: readonly CodebaseStructureSymbolRecord[];
   knowledgeRecords: readonly CodebaseKnowledgeRecord[];
 };
