@@ -18,6 +18,7 @@ import { UserImageAttachmentBlock } from "./UserImageAttachmentBlock.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
 import { AssistantTurnSummaryPartView } from "./messageParts/AssistantTurnSummaryPartView.tsx";
+import { BuliStickyNotesPartView } from "./messageParts/BuliStickyNotesPartView.tsx";
 import { CompactionSeparatorPartView } from "./messageParts/CompactionSeparatorPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
@@ -56,6 +57,7 @@ const conversationMessagePartRendererByKind: {
   user_image_attachment: renderUserImageAttachmentConversationMessagePart,
   assistant_text: renderAssistantTextConversationMessagePart,
   assistant_reasoning: renderAssistantReasoningConversationMessagePart,
+  assistant_buli_sticky_notes: renderAssistantBuliStickyNotesConversationMessagePart,
   assistant_tool_call: renderAssistantToolCallConversationMessagePart,
   assistant_workspace_patch: renderAssistantWorkspacePatchConversationMessagePart,
   assistant_plan_proposal: renderAssistantPlanProposalConversationMessagePart,
@@ -125,6 +127,12 @@ function renderAssistantReasoningConversationMessagePart(
       reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
     />
   );
+}
+
+function renderAssistantBuliStickyNotesConversationMessagePart(
+  props: ConversationMessagePartRendererProps<"assistant_buli_sticky_notes">,
+): ReactNode {
+  return <BuliStickyNotesPartView assistantBuliStickyNotesConversationMessagePart={props.conversationMessagePart} />;
 }
 
 function renderAssistantToolCallConversationMessagePart(

@@ -13,7 +13,7 @@ import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import { buildBuliSystemPrompt } from "./systemPrompt.ts";
 import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
-import { buildRelevantReadOnlyToolEvidenceLedgerText } from "./readOnlyToolEvidenceNotebook.ts";
+import { buildRelevantBuliStickyNotesContextText } from "./readOnlyToolEvidenceNotebook.ts";
 import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 import { buildAssistantWorkflowHandoffPromptBlock } from "./assistantWorkflowHandoffContext.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
@@ -24,6 +24,7 @@ export type StartedRuntimeConversationTurn = {
   providerConversationTurn: ProviderConversationTurn;
   modelFacingPromptTextForAcceptedTurn: string;
   projectInstructionSnapshotsForAcceptedTurn: readonly ProjectInstructionSnapshot[];
+  buliStickyNotesContextTextForAcceptedTurn?: string | undefined;
 };
 
 export async function startAcceptedRuntimeConversationTurn(input: {
@@ -77,7 +78,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     modelFacingPromptTextForAcceptedTurn,
     projectInstructionSnapshotsForAcceptedTurn,
   );
-  const readOnlyToolEvidenceLedgerText = buildRelevantReadOnlyToolEvidenceLedgerText({
+  const buliStickyNotesContextText = buildRelevantBuliStickyNotesContextText({
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     currentUserPromptText: input.conversationTurnInput.userPromptText,
   });
@@ -104,7 +105,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       assistantOperatingMode: input.assistantOperatingMode,
       projectInstructionSnapshots: projectInstructionSnapshotsForAcceptedTurn,
       availableSkills: availableSkillsForAcceptedTurn,
-      ...(readOnlyToolEvidenceLedgerText ? { readOnlyToolEvidenceLedgerText } : {}),
+      ...(buliStickyNotesContextText ? { buliStickyNotesContextText } : {}),
       workflowHandoffContextText,
     }),
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
@@ -125,6 +126,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     providerConversationTurn,
     modelFacingPromptTextForAcceptedTurn,
     projectInstructionSnapshotsForAcceptedTurn,
+    ...(buliStickyNotesContextText ? { buliStickyNotesContextTextForAcceptedTurn: buliStickyNotesContextText } : {}),
   };
 }
 

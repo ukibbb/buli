@@ -374,6 +374,17 @@ function renderConversationSessionTranscriptEntry(
     });
   }
 
+  if (conversationSessionEntry.entryKind === "buli_sticky_notes") {
+    return buildRenderedEntry({
+      entryAnchorId,
+      indexNumberLabel,
+      roleKind: "assistant",
+      roleLabel: "Buli Sticky Notes",
+      bodyHtml: renderBuliStickyNotesBlock(conversationSessionEntry),
+      traceLabel: "Buli Sticky Notes loaded into model context",
+    });
+  }
+
   if (conversationSessionEntry.entryKind === "tool_call") {
     return buildRenderedEntry({
       entryAnchorId,
@@ -542,6 +553,22 @@ function renderConversationCompactionSummaryBlock(
     description: `Context compacted from ${conversationSessionEntry.compactedEntryCount} entries.`,
   })}
 ${summaryHtml}`;
+}
+
+function renderBuliStickyNotesBlock(
+  conversationSessionEntry: Extract<ConversationSessionEntry, { entryKind: "buli_sticky_notes" }>,
+): string {
+  return `<div class="panel">
+  <div class="panel-head">
+    <span class="panel-tool">Buli Sticky Notes</span>
+    <span class="panel-purpose">Loaded into model context</span>
+  </div>
+  ${renderCodeWrap({
+    codeText: conversationSessionEntry.buliStickyNotesContextText,
+    filePathLabel: "Model-visible context text",
+    languageLabel: "text",
+  })}
+</div>`;
 }
 
 function renderWorkspacePatchBlock(

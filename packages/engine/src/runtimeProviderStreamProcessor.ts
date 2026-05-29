@@ -35,6 +35,7 @@ type RuntimeProviderStreamProcessorInput = {
   conversationTurnSessionRecorder: RuntimeConversationTurnSessionRecorder;
   createRequestedToolCallsExecutionContext: () => RuntimeToolCallExecutionContext;
   readRecordedWorkflowHandoff?: (() => WorkflowHandoff | undefined) | undefined;
+  createAssistantResponseEventsBeforeFirstProviderEvent?: (() => readonly AssistantResponseEvent[]) | undefined;
   throwIfConversationTurnInterrupted: () => void;
   logAssistantResponseEventEmitted: (assistantResponseEvent: AssistantResponseEvent) => AssistantResponseEvent;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -69,6 +70,7 @@ export async function* streamAssistantResponseEventsFromProviderStream(
     providerStreamEventIterator: input.providerConversationTurn.streamProviderEvents()[Symbol.asyncIterator](),
   };
   let didReachProviderStreamEnd = false;
+  let didCreateAssistantResponseEventsBeforeFirstProviderEvent = false;
 
   try {
     while (true) {
@@ -79,6 +81,13 @@ export async function* streamAssistantResponseEventsFromProviderStream(
       if (!translatedProviderStreamEvent) {
         didReachProviderStreamEnd = true;
         return { outcomeKind: "provider_stream_ended" };
+      }
+
+      if (!didCreateAssistantResponseEventsBeforeFirstProviderEvent) {
+        didCreateAssistantResponseEventsBeforeFirstProviderEvent = true;
+        for (const assistantResponseEvent of input.createAssistantResponseEventsBeforeFirstProviderEvent?.() ?? []) {
+          yield input.logAssistantResponseEventEmitted(assistantResponseEvent);
+        }
       }
 
       let providerStreamEventTranslation = translatedProviderStreamEvent.providerStreamEventTranslation;

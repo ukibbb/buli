@@ -2,6 +2,7 @@ import type {
   AssistantOperatingMode,
   AssistantMessageConversationSessionEntry,
   AssistantSegmentConversationSessionEntry,
+  BuliStickyNotesConversationSessionEntry,
   BuliDiagnosticLogger,
   ProjectInstructionSnapshot,
   UserPromptImageAttachment,
@@ -19,6 +20,7 @@ export class RuntimeConversationTurnSessionRecorder {
   readonly userPromptImageAttachments: readonly UserPromptImageAttachment[];
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   private hasRecordedAcceptedUserPromptSessionEntry = false;
+  private hasRecordedBuliStickyNotesSessionEntry = false;
   private hasRecordedTerminalAssistantMessageSessionEntry = false;
 
   constructor(input: {
@@ -41,6 +43,10 @@ export class RuntimeConversationTurnSessionRecorder {
 
   hasAppendedAcceptedUserPromptSessionEntry(): boolean {
     return this.hasRecordedAcceptedUserPromptSessionEntry;
+  }
+
+  hasAppendedBuliStickyNotesSessionEntry(): boolean {
+    return this.hasRecordedBuliStickyNotesSessionEntry;
   }
 
   hasAppendedTerminalAssistantMessageSessionEntry(): boolean {
@@ -81,14 +87,40 @@ export class RuntimeConversationTurnSessionRecorder {
       return;
     }
 
-    this.conversationHistory.appendConversationSessionEntry(assistantMessageConversationSessionEntry);
+    const modeAwareAssistantMessageConversationSessionEntry = {
+      ...assistantMessageConversationSessionEntry,
+      ...(assistantMessageConversationSessionEntry.assistantOperatingMode === undefined
+        ? { assistantOperatingMode: this.assistantOperatingMode }
+        : {}),
+    } satisfies AssistantMessageConversationSessionEntry;
+
+    this.conversationHistory.appendConversationSessionEntry(modeAwareAssistantMessageConversationSessionEntry);
     this.hasRecordedTerminalAssistantMessageSessionEntry = true;
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
       conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "assistant_message",
-      assistantMessageStatus: assistantMessageConversationSessionEntry.assistantMessageStatus,
-      assistantMessageTextLength: assistantMessageConversationSessionEntry.assistantMessageText.length,
-      providerTurnReplayInputItemCount: assistantMessageConversationSessionEntry.providerTurnReplay?.inputItems.length ?? 0,
+      assistantMessageStatus: modeAwareAssistantMessageConversationSessionEntry.assistantMessageStatus,
+      assistantMessageTextLength: modeAwareAssistantMessageConversationSessionEntry.assistantMessageText.length,
+      providerTurnReplayInputItemCount: modeAwareAssistantMessageConversationSessionEntry.providerTurnReplay?.inputItems.length ?? 0,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
+    });
+  }
+
+  appendBuliStickyNotesSessionEntry(buliStickyNotesContextText: string): void {
+    if (this.hasRecordedBuliStickyNotesSessionEntry || buliStickyNotesContextText.length === 0) {
+      return;
+    }
+
+    const buliStickyNotesSessionEntry = {
+      entryKind: "buli_sticky_notes",
+      buliStickyNotesContextText,
+    } satisfies BuliStickyNotesConversationSessionEntry;
+    this.conversationHistory.appendConversationSessionEntry(buliStickyNotesSessionEntry);
+    this.hasRecordedBuliStickyNotesSessionEntry = true;
+    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
+      entryKind: "buli_sticky_notes",
+      buliStickyNotesContextTextLength: buliStickyNotesContextText.length,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }

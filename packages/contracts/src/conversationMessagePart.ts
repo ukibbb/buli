@@ -54,6 +54,14 @@ export const AssistantReasoningConversationMessagePartSchema = z
   })
   .strict();
 
+export const AssistantBuliStickyNotesConversationMessagePartSchema = z
+  .object({
+    id: z.string().min(1),
+    partKind: z.literal("assistant_buli_sticky_notes"),
+    buliStickyNotesContextText: z.string().min(1),
+  })
+  .strict();
+
 const AssistantToolCallConversationMessagePartBaseSchema = z.object({
   id: z.string().min(1),
   partKind: z.literal("assistant_tool_call"),
@@ -190,6 +198,7 @@ export const ConversationMessagePartSchema = z.union([
   UserImageAttachmentConversationMessagePartSchema,
   AssistantTextConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
+  AssistantBuliStickyNotesConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
   AssistantWorkspacePatchConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
@@ -204,6 +213,7 @@ export const ConversationMessagePartSchema = z.union([
 export const AssistantConversationMessagePartSchema = z.union([
   AssistantTextConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
+  AssistantBuliStickyNotesConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
   AssistantWorkspacePatchConversationMessagePartSchema,
   AssistantPlanProposalConversationMessagePartSchema,
@@ -221,6 +231,9 @@ export type AssistantToolCallPartStatus = z.infer<typeof AssistantToolCallPartSt
 export type UserTextConversationMessagePart = z.infer<typeof UserTextConversationMessagePartSchema>;
 export type AssistantTextConversationMessagePart = z.infer<typeof AssistantTextConversationMessagePartSchema>;
 export type AssistantReasoningConversationMessagePart = z.infer<typeof AssistantReasoningConversationMessagePartSchema>;
+export type AssistantBuliStickyNotesConversationMessagePart = z.infer<
+  typeof AssistantBuliStickyNotesConversationMessagePartSchema
+>;
 export type AssistantToolCallConversationMessagePart = z.infer<typeof AssistantToolCallConversationMessagePartSchema>;
 export type AssistantWorkspacePatchConversationMessagePart = z.infer<
   typeof AssistantWorkspacePatchConversationMessagePartSchema

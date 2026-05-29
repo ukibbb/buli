@@ -116,7 +116,7 @@ export function listReadOnlyToolEvidenceNotes(input: {
   return evidenceNotes;
 }
 
-export function buildRelevantReadOnlyToolEvidenceLedgerText(input: {
+export function buildRelevantBuliStickyNotesContextText(input: {
   conversationSessionEntries: readonly ConversationSessionEntry[];
   currentUserPromptText: string;
   maximumNoteCount?: number | undefined;
@@ -135,8 +135,9 @@ export function buildRelevantReadOnlyToolEvidenceLedgerText(input: {
   }
 
   return [
+    "BuliStickyNotes:",
     "Purpose-aware evidence notes from prior turns:",
-    ...relevantEvidenceNotes.map(formatEvidenceNoteLedgerLine),
+    ...relevantEvidenceNotes.map(formatBuliStickyNotesEvidenceLine),
     "Use these as source pointers, not active memory. Re-read sources before relying on details; ignore notes that do not fit the current task.",
   ].join("\n");
 }
@@ -256,7 +257,7 @@ function createReadOnlyToolEvidenceNote(input: {
   return undefined;
 }
 
-function formatEvidenceNoteLedgerLine(evidenceNote: ReadOnlyToolEvidenceNote): string {
+function formatBuliStickyNotesEvidenceLine(evidenceNote: ReadOnlyToolEvidenceNote): string {
   return [
     `- Prior task: ${quoteNoteText(evidenceNote.originUserPromptText)};`,
     `question: ${quoteNoteText(evidenceNote.inspectionQuestion)};`,

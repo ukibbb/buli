@@ -13,9 +13,20 @@ type TerminalAssistantResponseEvent = Extract<AssistantResponseEvent, {
   type: "assistant_message_completed" | "assistant_message_incomplete" | "assistant_message_failed" | "assistant_message_interrupted";
 }>;
 
-test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not retry the original prompt after overflow compaction", () => {
+test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn retries the original prompt after overflow compaction in the same mode", () => {
+  const submittedPromptImageAttachments = [{
+    attachmentId: "diagram-1",
+    mimeType: "image/png",
+    dataUrl: "data:image/png;base64,abc123",
+    fileName: "diagram.png",
+  }] as const;
   const followUpPrompt = resolveAutoCompactionFollowUpPromptAfterAssistantTurn({
-    activeSubmittedPrompt: createSubmittedPrompt(),
+    activeSubmittedPrompt: createSubmittedPrompt({
+      submittedPromptText: "Apply the approved plan",
+      submittedPromptImageAttachments,
+      submittedAssistantOperatingMode: "implementation",
+      submittedUserSelectedSkillName: "test-driven-change",
+    }),
     terminalAssistantResponseEvent: {
       type: "assistant_message_failed",
       messageId: "assistant-1",
@@ -28,7 +39,14 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not retry the o
     }),
   });
 
-  expect(followUpPrompt).toBeUndefined();
+  expect(followUpPrompt).toEqual({
+    submittedPromptText: "Apply the approved plan",
+    submittedPromptImageAttachments,
+    submittedAssistantOperatingMode: "implementation",
+    submittedUserSelectedSkillName: "test-driven-change",
+    submittedPromptSource: "auto_compaction_retry",
+    autoCompactionOriginalUserPromptText: "Apply the approved plan",
+  });
 });
 
 test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn does not continue an overflow retry again", () => {
@@ -198,14 +216,20 @@ test("resolveAutoCompactionRequestAfterAssistantTurn keeps regular compaction re
 
 function createSubmittedPrompt(input: {
   submittedPromptText?: string | undefined;
+  submittedPromptImageAttachments?: SubmittedChatAppPrompt["submittedPromptImageAttachments"] | undefined;
+  submittedAssistantOperatingMode?: SubmittedChatAppPrompt["submittedAssistantOperatingMode"] | undefined;
+  submittedUserSelectedSkillName?: string | undefined;
   submittedPromptSource?: SubmittedChatAppPrompt["submittedPromptSource"] | undefined;
   autoCompactionContinuationDepth?: number | undefined;
   autoCompactionOriginalUserPromptText?: string | undefined;
 } = {}): SubmittedChatAppPrompt {
   return {
     submittedPromptText: input.submittedPromptText ?? "Explain the failing build",
-    submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "plan",
+    submittedPromptImageAttachments: input.submittedPromptImageAttachments ?? [],
+    submittedAssistantOperatingMode: input.submittedAssistantOperatingMode ?? "plan",
+    ...(input.submittedUserSelectedSkillName !== undefined
+      ? { submittedUserSelectedSkillName: input.submittedUserSelectedSkillName }
+      : {}),
     ...(input.submittedPromptSource ? { submittedPromptSource: input.submittedPromptSource } : {}),
     ...(input.autoCompactionContinuationDepth !== undefined
       ? { autoCompactionContinuationDepth: input.autoCompactionContinuationDepth }

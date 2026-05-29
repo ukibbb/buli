@@ -85,6 +85,7 @@ test("RuntimeConversationTurnSessionRecorder records a terminal assistant messag
       entryKind: "assistant_message",
       assistantMessageStatus: "completed",
       assistantMessageText: "Summary complete.",
+      assistantOperatingMode: "understand",
       providerTurnReplay: {
         provider: "openai",
         inputItems: [
@@ -107,6 +108,71 @@ test("RuntimeConversationTurnSessionRecorder records a terminal assistant messag
         assistantMessageStatus: "completed",
         assistantMessageTextLength: 17,
         providerTurnReplayInputItemCount: 1,
+        conversationSessionEntryCount: 1,
+      },
+    },
+  ]);
+});
+
+test("RuntimeConversationTurnSessionRecorder preserves an explicit terminal assistant operating mode", () => {
+  const conversationHistory = new InMemoryConversationHistory();
+  const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
+    conversationHistory,
+    userPromptText: "Execute the plan",
+    assistantOperatingMode: "implementation",
+  });
+
+  conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Plan recorded.",
+    assistantOperatingMode: "plan",
+  });
+
+  expect(conversationHistory.listConversationSessionEntries()).toEqual<ConversationSessionEntry[]>([
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Plan recorded.",
+      assistantOperatingMode: "plan",
+    },
+  ]);
+});
+
+test("RuntimeConversationTurnSessionRecorder records BuliStickyNotes context once", () => {
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const conversationHistory = new InMemoryConversationHistory();
+  const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
+    conversationTurnId: "conversation-turn-1",
+    conversationHistory,
+    userPromptText: "Continue",
+    assistantOperatingMode: "implementation",
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+  const buliStickyNotesContextText = [
+    "BuliStickyNotes:",
+    "Purpose-aware evidence notes from prior turns:",
+    "Use these as source pointers, not active memory.",
+  ].join("\n");
+
+  conversationTurnSessionRecorder.appendBuliStickyNotesSessionEntry(buliStickyNotesContextText);
+  conversationTurnSessionRecorder.appendBuliStickyNotesSessionEntry("Ignored duplicate sticky notes.");
+
+  expect(conversationTurnSessionRecorder.hasAppendedBuliStickyNotesSessionEntry()).toBe(true);
+  expect(conversationHistory.listConversationSessionEntries()).toEqual<ConversationSessionEntry[]>([
+    {
+      entryKind: "buli_sticky_notes",
+      buliStickyNotesContextText,
+    },
+  ]);
+  expect(diagnosticEvents).toEqual<BuliDiagnosticLogEvent[]>([
+    {
+      subsystem: "engine",
+      eventName: "conversation_history.entry_appended",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        entryKind: "buli_sticky_notes",
+        buliStickyNotesContextTextLength: buliStickyNotesContextText.length,
         conversationSessionEntryCount: 1,
       },
     },

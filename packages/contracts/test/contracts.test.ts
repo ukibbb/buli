@@ -9,7 +9,9 @@ import {
   ConversationSessionEntrySchema,
   ConversationSessionSnapshotSchema,
   ConversationSessionModelSelectionSchema,
+  AssistantBuliStickyNotesConversationMessagePartSchema,
   AssistantToolCallConversationMessagePartSchema,
+  BuliStickyNotesConversationSessionEntrySchema,
   ConversationMessagePartSchema,
   ConversationMessageSchema,
   ConversationTurnStatusSchema,
@@ -47,10 +49,16 @@ import {
   isRecordWorkflowHandoffToolCallRequest,
   isSkillToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
+  findLatestVisibleWorkflowHandoffCheckpoint,
+  findLatestVisibleCompletedAssistantOperatingMode,
   listModelVisibleConversationSessionEntries,
   UserPromptImageAttachmentSchema,
   WorkflowHandoffSchema,
   WorkspacePatchSchema,
+  type ConversationSessionEntry,
+  type ImplementationWorkflowHandoff,
+  type PlanWorkflowHandoff,
+  type UnderstandingWorkflowHandoff,
 } from "../src/index.ts";
 
 type ContractCompatibilityFixture = {
@@ -70,6 +78,60 @@ async function readContractCompatibilityFixture(): Promise<ContractCompatibility
   );
 
   return JSON.parse(fixtureText) as ContractCompatibilityFixture;
+}
+
+function createContractsTestPlanWorkflowHandoff(agreedGoal: string): PlanWorkflowHandoff {
+  return {
+    handoffKind: "plan",
+    agreedGoal,
+    currentStateSummary: "The current session needs a durable checkpoint.",
+    chosenApproach: "Store the latest typed handoff of each kind on compaction summaries.",
+    targetFiles: [
+      {
+        filePath: "packages/contracts/src/conversationSessionEntry.ts",
+        operationKind: "update",
+        reason: "Persist the workflow handoff checkpoint on compaction summaries.",
+      },
+    ],
+    implementationSteps: ["Add contract fields", "Use summary fallback during lookup"],
+    verificationCommands: [
+      { command: "bun test packages/contracts/test/contracts.test.ts", reason: "Verify handoff checkpoint contracts." },
+    ],
+    risks: [],
+    isReadyForImplementation: true,
+    requiredPreApplyReads: [],
+  };
+}
+
+function createContractsTestUnderstandingWorkflowHandoff(currentUnderstanding: string): UnderstandingWorkflowHandoff {
+  return {
+    handoffKind: "understanding",
+    userGoal: "Understand workflow continuity across compaction.",
+    currentUnderstanding,
+    importantFindings: ["Compaction hides older completed assistant messages from model-visible history."],
+    evidenceReferences: [],
+    constraints: ["Keep the checkpoint bounded to one latest handoff of each kind."],
+    openQuestions: [],
+    recommendedNextStep: "Create an implementation plan.",
+  };
+}
+
+function createContractsTestImplementationWorkflowHandoff(implementedOutcome: string): ImplementationWorkflowHandoff {
+  return {
+    handoffKind: "implementation",
+    implementedOutcome,
+    changedFiles: [
+      {
+        filePath: "packages/contracts/src/conversationCompactionProjection.ts",
+        changeSummary: "Resolved latest handoffs from visible history and summary checkpoint fallback.",
+      },
+    ],
+    verificationResults: [
+      { command: "bun test packages/contracts/test/contracts.test.ts", outcomeKind: "passed", summary: "Contract tests passed." },
+    ],
+    remainingIssues: [],
+    recommendedNextStep: "Use the persisted checkpoint in engine workflow context.",
+  };
 }
 
 test("contract compatibility fixture parses with all public interoperability schemas", async () => {
@@ -240,6 +302,27 @@ test("ConversationMessagePartSchema parses an assistant text part with an open s
     partKind: "assistant_text",
     partStatus: "streaming",
   });
+});
+
+test("ConversationMessagePartSchema parses an assistant BuliStickyNotes audit part", () => {
+  const buliStickyNotesContextText = [
+    "BuliStickyNotes:",
+    "Purpose-aware evidence notes from prior turns:",
+    "- Prior task: \"Inspect prompts\"; question: \"Where is context inserted?\"; source: read src/systemPrompt.ts via call_read_1; observed: returned 20 lines; freshness: fresh.",
+  ].join("\n");
+
+  const parsedPart = AssistantBuliStickyNotesConversationMessagePartSchema.parse({
+    id: "sticky-notes-part-1",
+    partKind: "assistant_buli_sticky_notes",
+    buliStickyNotesContextText,
+  });
+
+  expect(parsedPart).toEqual({
+    id: "sticky-notes-part-1",
+    partKind: "assistant_buli_sticky_notes",
+    buliStickyNotesContextText,
+  });
+  expect(ConversationMessagePartSchema.parse(parsedPart).partKind).toBe("assistant_buli_sticky_notes");
 });
 
 test("ConversationMessagePartSchema parses a compaction separator part", () => {
@@ -1370,6 +1453,25 @@ test("ConversationSessionEntrySchema parses assistant text segment history entri
   });
 });
 
+test("ConversationSessionEntrySchema parses BuliStickyNotes history entries", () => {
+  const buliStickyNotesContextText = [
+    "BuliStickyNotes:",
+    "Purpose-aware evidence notes from prior turns:",
+    "Use these as source pointers, not active memory.",
+  ].join("\n");
+
+  const parsedEntry = BuliStickyNotesConversationSessionEntrySchema.parse({
+    entryKind: "buli_sticky_notes",
+    buliStickyNotesContextText,
+  });
+
+  expect(parsedEntry).toEqual({
+    entryKind: "buli_sticky_notes",
+    buliStickyNotesContextText,
+  });
+  expect(ConversationSessionEntrySchema.parse(parsedEntry).entryKind).toBe("buli_sticky_notes");
+});
+
 test("ConversationSessionEntrySchema parses a user prompt with image attachments", () => {
   expect(
     ConversationSessionEntrySchema.parse({
@@ -1449,12 +1551,36 @@ test("ConversationSessionEntrySchema parses a conversation compaction summary wi
       summaryText: "Goal: continue the implementation.",
       compactedEntryCount: 12,
       retainedRecentConversationSessionEntryCount: 4,
+      latestCompletedAssistantOperatingMode: "plan",
     }),
   ).toEqual({
     entryKind: "conversation_compaction_summary",
     summaryText: "Goal: continue the implementation.",
     compactedEntryCount: 12,
     retainedRecentConversationSessionEntryCount: 4,
+    latestCompletedAssistantOperatingMode: "plan",
+  });
+});
+
+test("ConversationSessionEntrySchema parses a conversation compaction summary with workflow handoff checkpoints", () => {
+  const latestPlanWorkflowHandoff = createContractsTestPlanWorkflowHandoff("Carry the compacted plan forward.");
+
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: execute the compacted plan.",
+      compactedEntryCount: 12,
+      retainedRecentConversationSessionEntryCount: 0,
+      latestCompletedAssistantOperatingMode: "plan",
+      latestPlanWorkflowHandoff,
+    }),
+  ).toEqual({
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: execute the compacted plan.",
+    compactedEntryCount: 12,
+    retainedRecentConversationSessionEntryCount: 0,
+    latestCompletedAssistantOperatingMode: "plan",
+    latestPlanWorkflowHandoff,
   });
 });
 
@@ -1489,15 +1615,147 @@ test("listModelVisibleConversationSessionEntries keeps only latest summary and n
   ).toEqual([compactionSummary, nextPrompt]);
 });
 
+test("findLatestVisibleCompletedAssistantOperatingMode prefers newer completed turns after compaction summaries", () => {
+  const conversationSessionEntries = [
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Old understanding.",
+      assistantOperatingMode: "understand",
+    },
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue from compacted context.",
+      compactedEntryCount: 1,
+      retainedRecentConversationSessionEntryCount: 0,
+      latestCompletedAssistantOperatingMode: "plan",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Implementation completed.",
+      assistantOperatingMode: "implementation",
+    },
+  ] as const;
+
+  expect(findLatestVisibleCompletedAssistantOperatingMode(conversationSessionEntries)).toBe("implementation");
+});
+
+test("findLatestVisibleCompletedAssistantOperatingMode falls back to compaction summary metadata", () => {
+  const conversationSessionEntries = [
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Old plan.",
+      assistantOperatingMode: "plan",
+    },
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue from compacted plan.",
+      compactedEntryCount: 1,
+      retainedRecentConversationSessionEntryCount: 0,
+      latestCompletedAssistantOperatingMode: "plan",
+    },
+    {
+      entryKind: "user_prompt",
+      promptText: "Execute the plan.",
+      modelFacingPromptText: "Execute the plan.",
+      assistantOperatingMode: "implementation",
+    },
+  ] as const;
+
+  expect(findLatestVisibleCompletedAssistantOperatingMode(conversationSessionEntries)).toBe("plan");
+});
+
+test("findLatestVisibleWorkflowHandoffCheckpoint uses summary checkpoints and newer completed-message handoffs per kind", () => {
+  const compactedUnderstandingWorkflowHandoff = createContractsTestUnderstandingWorkflowHandoff(
+    "Compacted understanding remains relevant.",
+  );
+  const compactedPlanWorkflowHandoff = createContractsTestPlanWorkflowHandoff("Compacted plan.");
+  const compactedImplementationWorkflowHandoff = createContractsTestImplementationWorkflowHandoff(
+    "Compacted implementation result.",
+  );
+  const newerPlanWorkflowHandoff = createContractsTestPlanWorkflowHandoff("New visible plan.");
+  const newerImplementationWorkflowHandoff = createContractsTestImplementationWorkflowHandoff(
+    "New visible implementation result.",
+  );
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Hidden old plan.",
+      assistantOperatingMode: "plan",
+      workflowHandoff: createContractsTestPlanWorkflowHandoff("Hidden old plan."),
+    },
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue from compacted context.",
+      compactedEntryCount: 1,
+      retainedRecentConversationSessionEntryCount: 0,
+      latestUnderstandingWorkflowHandoff: compactedUnderstandingWorkflowHandoff,
+      latestPlanWorkflowHandoff: compactedPlanWorkflowHandoff,
+      latestImplementationWorkflowHandoff: compactedImplementationWorkflowHandoff,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Implementation completed after compaction.",
+      assistantOperatingMode: "implementation",
+      workflowHandoff: newerImplementationWorkflowHandoff,
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "New plan after compaction.",
+      assistantOperatingMode: "plan",
+      workflowHandoff: newerPlanWorkflowHandoff,
+    },
+  ];
+
+  expect(findLatestVisibleWorkflowHandoffCheckpoint(conversationSessionEntries)).toEqual({
+    latestUnderstandingWorkflowHandoff: compactedUnderstandingWorkflowHandoff,
+    latestPlanWorkflowHandoff: newerPlanWorkflowHandoff,
+    latestImplementationWorkflowHandoff: newerImplementationWorkflowHandoff,
+  });
+});
+
 test("ModelContextItemSchema parses a compaction summary", () => {
   expect(
     ModelContextItemSchema.parse({
       itemKind: "compaction_summary",
       summaryText: "Goal: continue the implementation.",
+      latestCompletedAssistantOperatingMode: "plan",
     }),
   ).toEqual({
     itemKind: "compaction_summary",
     summaryText: "Goal: continue the implementation.",
+    latestCompletedAssistantOperatingMode: "plan",
+  });
+});
+
+test("ModelContextItemSchema parses assistant operating mode on user and assistant messages", () => {
+  expect(
+    ModelContextItemSchema.parse({
+      itemKind: "user_message",
+      messageText: "Research compaction.",
+      assistantOperatingMode: "understand",
+    }),
+  ).toEqual({
+    itemKind: "user_message",
+    messageText: "Research compaction.",
+    assistantOperatingMode: "understand",
+  });
+
+  expect(
+    ModelContextItemSchema.parse({
+      itemKind: "assistant_message",
+      messageText: "Compaction starts at the latest summary.",
+      assistantOperatingMode: "understand",
+    }),
+  ).toEqual({
+    itemKind: "assistant_message",
+    messageText: "Compaction starts at the latest summary.",
+    assistantOperatingMode: "understand",
   });
 });
 

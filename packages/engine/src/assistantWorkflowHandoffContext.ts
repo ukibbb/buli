@@ -1,12 +1,12 @@
 import {
-  listModelVisibleConversationSessionEntries,
+  findLatestVisibleCompletedAssistantOperatingMode,
+  findLatestVisibleWorkflowHandoffCheckpoint,
   type AssistantOperatingMode,
   type ConversationSessionEntry,
   type ImplementationWorkflowHandoff,
   type PlanWorkflowHandoff,
   type UnderstandingWorkflowHandoff,
   type WorkflowHandoff,
-  type WorkflowHandoffKind,
 } from "@buli/contracts";
 import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 
@@ -18,31 +18,18 @@ export type AssistantWorkflowHandoffContext = {
   latestImplementationWorkflowHandoff?: ImplementationWorkflowHandoff | undefined;
 };
 
-type CompletedAssistantMessageConversationSessionEntry = Extract<
-  ConversationSessionEntry,
-  { entryKind: "assistant_message"; assistantMessageStatus: "completed" }
->;
-
 export function buildAssistantWorkflowHandoffContext(input: {
   currentAssistantOperatingMode: AssistantOperatingMode;
   conversationSessionEntries: readonly ConversationSessionEntry[];
 }): AssistantWorkflowHandoffContext {
-  const visibleConversationSessionEntries = listModelVisibleConversationSessionEntries(input.conversationSessionEntries);
-  const completedAssistantMessageEntries = visibleConversationSessionEntries.filter(isCompletedAssistantMessageConversationSessionEntry);
+  const latestCompletedAssistantOperatingMode = findLatestVisibleCompletedAssistantOperatingMode(input.conversationSessionEntries);
+  const latestVisibleWorkflowHandoffCheckpoint = findLatestVisibleWorkflowHandoffCheckpoint(input.conversationSessionEntries);
   return {
     currentAssistantOperatingMode: input.currentAssistantOperatingMode,
-    ...(findLatestCompletedAssistantOperatingMode(completedAssistantMessageEntries) !== undefined
-      ? { latestCompletedAssistantOperatingMode: findLatestCompletedAssistantOperatingMode(completedAssistantMessageEntries) }
+    ...(latestCompletedAssistantOperatingMode !== undefined
+      ? { latestCompletedAssistantOperatingMode }
       : {}),
-    ...(findLatestWorkflowHandoffByKind(completedAssistantMessageEntries, "understanding") !== undefined
-      ? { latestUnderstandingWorkflowHandoff: findLatestWorkflowHandoffByKind(completedAssistantMessageEntries, "understanding") }
-      : {}),
-    ...(findLatestWorkflowHandoffByKind(completedAssistantMessageEntries, "plan") !== undefined
-      ? { latestPlanWorkflowHandoff: findLatestWorkflowHandoffByKind(completedAssistantMessageEntries, "plan") }
-      : {}),
-    ...(findLatestWorkflowHandoffByKind(completedAssistantMessageEntries, "implementation") !== undefined
-      ? { latestImplementationWorkflowHandoff: findLatestWorkflowHandoffByKind(completedAssistantMessageEntries, "implementation") }
-      : {}),
+    ...latestVisibleWorkflowHandoffCheckpoint,
   };
 }
 
@@ -76,40 +63,6 @@ export function formatAssistantWorkflowHandoffContextPromptBlock(
     ...formatWorkflowHandoffSectionLines("latest_implementation_handoff", workflowHandoffContext.latestImplementationWorkflowHandoff),
     "</workflow_handoff_context>",
   ].join("\n");
-}
-
-function findLatestCompletedAssistantOperatingMode(
-  completedAssistantMessageEntries: readonly CompletedAssistantMessageConversationSessionEntry[],
-): AssistantOperatingMode | undefined {
-  for (let entryIndex = completedAssistantMessageEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
-    const assistantOperatingMode = completedAssistantMessageEntries[entryIndex]?.assistantOperatingMode;
-    if (assistantOperatingMode !== undefined) {
-      return assistantOperatingMode;
-    }
-  }
-
-  return undefined;
-}
-
-function findLatestWorkflowHandoffByKind<Kind extends WorkflowHandoffKind>(
-  completedAssistantMessageEntries: readonly CompletedAssistantMessageConversationSessionEntry[],
-  handoffKind: Kind,
-): Extract<WorkflowHandoff, { handoffKind: Kind }> | undefined {
-  for (let entryIndex = completedAssistantMessageEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
-    const workflowHandoff = completedAssistantMessageEntries[entryIndex]?.workflowHandoff;
-    if (workflowHandoff?.handoffKind === handoffKind) {
-      return workflowHandoff as Extract<WorkflowHandoff, { handoffKind: Kind }>;
-    }
-  }
-
-  return undefined;
-}
-
-function isCompletedAssistantMessageConversationSessionEntry(
-  conversationSessionEntry: ConversationSessionEntry,
-): conversationSessionEntry is CompletedAssistantMessageConversationSessionEntry {
-  return conversationSessionEntry.entryKind === "assistant_message" &&
-    conversationSessionEntry.assistantMessageStatus === "completed";
 }
 
 function formatExpectedHandoffGuidanceLines(workflowHandoffContext: AssistantWorkflowHandoffContext): string[] {
