@@ -139,6 +139,12 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         requestFunctionCallOutputTextLength: 90,
         requestHistoricalFunctionCallOutputTextLength: 30,
         requestCurrentTurnFunctionCallOutputTextLength: 60,
+        requestStableSerializedByteLength: 180,
+        requestInputSerializedByteLength: 120,
+        requestLargestContributorKinds: ["request_tools", "input_function_call_output"],
+        requestLargestContributorInputItemIndexes: [-1, 1],
+        requestLargestContributorSerializedByteLengths: [100, 80],
+        requestLargestContributorTextLengths: [0, 60],
         toolResultTextLength: 120,
         inputTokens: 40,
         cacheReadTokens: 1,
@@ -170,6 +176,12 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         requestFunctionCallOutputTextLength: 420,
         requestHistoricalFunctionCallOutputTextLength: 420,
         requestCurrentTurnFunctionCallOutputTextLength: 0,
+        requestStableSerializedByteLength: 220,
+        requestInputSerializedByteLength: 680,
+        requestLargestContributorKinds: ["input_function_call_output", "request_instructions"],
+        requestLargestContributorInputItemIndexes: [4, -1],
+        requestLargestContributorSerializedByteLengths: [512, 128],
+        requestLargestContributorTextLengths: [420, 100],
         toolResultTextLength: 300,
         inputTokens: 140,
         cacheReadTokens: 2,
@@ -510,6 +522,9 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("Transport retry error names: TimeoutError (1)");
   expect(reportMarkdown).toContain("## OpenAI Request Construction");
   expect(reportMarkdown).toContain("Total request construction: 7 ms");
+  expect(reportMarkdown).toContain("## OpenAI Request Size Contributors");
+  expect(reportMarkdown).toContain("input_function_call_output");
+  expect(reportMarkdown).toContain("512 B");
   expect(reportMarkdown).toContain("## OpenAI Replay Input Age");
   expect(reportMarkdown).toContain("Historical function-output text: 450 B");
   expect(reportMarkdown).toContain("## Tool Attribution");

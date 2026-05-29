@@ -5,7 +5,7 @@ import { createClickableControlMouseDownHandler } from "../primitives/clickableC
 import { InlineSnakeAnimationIndicator, SnakeAnimationIndicator } from "../SnakeAnimationIndicator.tsx";
 
 export type ToolCallCompactDisclosureState =
-  | { isContentExpandable: false }
+  | { isContentExpandable: false; staticDisclosureMarker?: "plus" | "hidden" }
   | {
       isContentExpandable: true;
       isContentExpanded: boolean;
@@ -25,9 +25,14 @@ export type ToolCallCompactHeaderProps = {
 };
 
 export function ToolCallCompactHeader(props: ToolCallCompactHeaderProps): ReactNode {
-  const disclosureText = props.disclosureState.isContentExpandable && props.disclosureState.isContentExpanded
-    ? "[-]"
-    : "[+]";
+  const disclosureText = props.disclosureState.isContentExpandable
+    ? props.disclosureState.isContentExpanded
+      ? "[-]"
+      : "[+]"
+    : props.disclosureState.staticDisclosureMarker === "hidden"
+      ? undefined
+      : "[+]";
+  const shouldSeparateToolNameFromPrefix = props.statusKind === "pending" || disclosureText !== undefined;
   const toggleProps = props.disclosureState.isContentExpandable
     ? { onMouseDown: createClickableControlMouseDownHandler(props.disclosureState.onContentExpansionToggle) }
     : {};
@@ -52,12 +57,12 @@ export function ToolCallCompactHeader(props: ToolCallCompactHeaderProps): ReactN
           {props.statusKind === "pending" ? (
             <>
               <InlineSnakeAnimationIndicator variant={props.pendingSnakeVariant ?? "eatingApple"} />
-              <span fg={props.accentColor}>{` ${disclosureText}`}</span>
+              {disclosureText !== undefined ? <span fg={props.accentColor}>{` ${disclosureText}`}</span> : null}
             </>
           ) : (
-            <span fg={props.accentColor}>{disclosureText}</span>
+            disclosureText !== undefined ? <span fg={props.accentColor}>{disclosureText}</span> : null
           )}
-          <span fg={chatScreenTheme.textPrimary}>{` ${props.toolNameLabel}`}</span>
+          <span fg={chatScreenTheme.textPrimary}>{`${shouldSeparateToolNameFromPrefix ? " " : ""}${props.toolNameLabel}`}</span>
           {props.toolTargetText ? (
             <>
               <span fg={props.accentColor}>{" ["}</span>

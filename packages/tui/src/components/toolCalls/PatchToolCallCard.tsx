@@ -6,7 +6,7 @@ import {
   formatWorkspacePatchCompactSummary,
   WorkspacePatchChangedFilesView,
 } from "../workspacePatch/WorkspacePatchChangedFilesView.tsx";
-import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+import { AlwaysVisibleToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type PatchToolCallCardProps = {
   toolCallDetail: ToolCallPatchDetail | ToolCallPatchManyDetail;
@@ -25,13 +25,13 @@ export function PatchToolCallCard(props: PatchToolCallCardProps): ReactNode {
   const hasPatchDiffContent = Boolean(props.workspacePatch) ||
     (props.renderState !== "failed" && Boolean(props.toolCallDetail.changedFiles?.length));
   return (
-    <ExpandableToolCallCard
+    <AlwaysVisibleToolCallCard
       accentColor={accentColor}
       {...(props.approvalDecisionControl !== undefined
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
-      hasExpandableContent={hasPatchDiffContent}
-      renderExpandedContent={() => buildPatchBodyContent(props)}
+      hasVisibleContent={hasPatchDiffContent}
+      renderVisibleContent={() => buildPatchBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}
       statusLabel={buildPatchStatusLabel(props)}
       toolNameLabel={props.toolCallDetail.toolName === "patch" ? "Patch" : "PatchMany"}

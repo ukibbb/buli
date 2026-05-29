@@ -2,22 +2,17 @@
 
 This is the command-oriented guide for profiling Buli, comparing performance-sensitive rewrites, and interpreting reports. `PROFILE.md` explains what to measure and which workloads matter.
 
-## Latest Measurements
+## Measurement State
 
-Latest real profile:
-
-```text
-profile-runs/measurements/manual-after-task-elapsed-checkpoint/profile.jsonl
-profile-runs/measurements/manual-after-task-elapsed-checkpoint/profile-report.md
-```
-
-Latest deterministic profile root:
+Fresh baseline targets:
 
 ```text
+profile-runs/measurements/manual-working-set-baseline/profile.jsonl
+profile-runs/measurements/manual-working-set-baseline/profile-report.md
 profile-runs/current/
 ```
 
-Current deterministic summaries:
+Current deterministic summaries after a fresh run:
 
 ```text
 profile-runs/current/prompt-context/summary.md
@@ -27,16 +22,17 @@ profile-runs/current/reducer/summary.md
 profile-runs/current/task-subagent/summary.md
 profile-runs/current/sqlite/summary.md
 profile-runs/current/tool-output/summary.md
+profile-runs/current/codebase-knowledge/summary.md
 ```
 
-`profile-runs/` is local ignored output. Keep only current runs unless an older run is needed for an active before/after comparison.
+`profile-runs/` is local ignored output. Keep only current runs unless an older run is needed for an active before/after comparison. If these files are missing, rerun the commands below before making optimization claims.
 
 ## Real-Usage Profiling
 
 Run from the repository root in a real terminal TTY:
 
 ```bash
-bun run profile:manual -- --output-dir profile-runs/manual --sample-ms 250
+bun run profile:manual -- --output-dir profile-runs/measurements/manual-working-set-baseline --sample-ms 250
 ```
 
 Use a run-specific output directory under `profile-runs/measurements/` when comparing changes:
@@ -173,6 +169,7 @@ Use these metrics when judging rewrites:
 - OpenAI provider-turn and response-step summaries
 - OpenAI retry, timeout, and rate-limit summaries
 - OpenAI context-guard summaries
+- OpenAI request size contributors
 - tool attribution by payload, wait, execution, and bash approval wait
 - task subagent attribution by per-call duration, parent wait, concurrent-group wall time, and subagent slot wait
 - request/context growth summaries
@@ -190,8 +187,8 @@ Use report sections as a decision tree:
 | High elapsed turn time with low CPU deltas | `OpenAI Response Steps`, retry/rate-limit events, `provider_turn.summary` | OpenAI/model/network waiting |
 | Many `TimeoutError` transport retries | `OpenAI Retries And Timeouts`, `response_step.transport_retry_scheduled`, `response_step.summary.requestAttemptCount` | OpenAI first-byte wait or network stall |
 | High `task` execution total with high `task` wait | `Task Subagent Attribution`, `Tool Attribution`, task-only `tool_call.concurrent_group_finished` | subagent runtime |
-| Many response steps and huge request bodies | `response_step.summary.requestBodyTextLength`, `provider_turn.summary.maxRequestBodyTextLength` | context growth or tool-result replay growth |
-| Large `toolResultTextLength` or `maxToolResultTextLength` | `response_step.summary`, `conversation_turn.summary` | tool output volume |
+| Many response steps and huge request bodies | `response_step.summary.requestBodyTextLength`, `provider_turn.summary.maxRequestBodyTextLength`, `OpenAI Request Size Contributors` | context growth, large tool schemas, tool-result replay growth, or current-turn evidence volume |
+| Large `toolResultTextLength` or `maxToolResultTextLength` | `response_step.summary`, `conversation_turn.summary`, `OpenAI Request Size Contributors` | tool output volume |
 | Individual tool results are capped but totals keep growing | `conversation_turn.summary.totalToolResultTextLength`, `Request And Context Growth` | aggregate tool-output accumulation |
 | Context usage reaches the soft budget | `OpenAI Context Guard`, `response_step.continuation_context_guard_triggered`, `conversation_compaction.completed` | guard-triggered continuation and compaction |
 | High event-loop delay with moderate CPU | `process_sample.eventLoopDelayMaxMs`, top diagnostic durations | synchronous local work or heavy rendering/storage |
@@ -242,6 +239,7 @@ sample <pid> 1 1
 - Heap attribution requires a Bun heap artifact; JSONL records process-level memory samples only.
 - Per-call task execution and wait totals can overcount elapsed time when task calls run in parallel.
 - Aggregate tool-result and provider replay growth can still accumulate across many calls.
+- Request size contributor diagnostics are emitted only when response-step diagnostics are enabled; they intentionally report sizes and item kinds, not raw content.
 
 ## Profiling Rules
 

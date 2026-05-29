@@ -9,6 +9,7 @@ import {
   type ProjectInstructionSnapshot,
   isContextWindowOverflowError,
   redactSensitiveText,
+  type WorkflowHandoff,
 } from "@buli/contracts";
 import { ConversationSessionCompactor } from "./conversationCompaction/ConversationSessionCompactor.ts";
 import {
@@ -34,10 +35,6 @@ import {
   DEFAULT_BASH_TOOL_APPROVAL_MODE,
   type BashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
-import {
-  formatAssistantWorkflowModeTransitionDenialText,
-  resolveAssistantWorkflowModeTransition,
-} from "./assistantWorkflowModeTransitionPolicy.ts";
 import { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 import {
   logEngineDiagnosticEvent,
@@ -85,7 +82,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
-  readonly enforceAssistantWorkflowModeTransitions: boolean;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly skillCatalog: WorkspaceSkillCatalog;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
@@ -109,7 +105,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
     taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
-    enforceAssistantWorkflowModeTransitions?: boolean | undefined;
     projectInstructionTracker?: ProjectInstructionTracker;
     skillCatalog?: WorkspaceSkillCatalog;
     skillHomeDirectoryPath?: string | undefined;
@@ -138,7 +133,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.taskSubagentSoftElapsedTimeCheckpointMilliseconds = validateTaskSubagentSoftElapsedTimeCheckpointMilliseconds(
       input.taskSubagentSoftElapsedTimeCheckpointMilliseconds,
     );
-    this.enforceAssistantWorkflowModeTransitions = input.enforceAssistantWorkflowModeTransitions ?? false;
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
     });
@@ -206,27 +200,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
         userPromptImageAttachmentCount: conversationTurnInput.userPromptImageAttachments?.length ?? 0,
       });
       throw new Error("A conversation turn is already running");
-    }
-
-    if (this.enforceAssistantWorkflowModeTransitions) {
-      const assistantWorkflowModeTransitionDecision = resolveAssistantWorkflowModeTransition({
-        requestedAssistantOperatingMode: assistantOperatingMode,
-        conversationSessionEntries: this.conversationHistory.listConversationSessionEntries(),
-        ...(conversationTurnInput.promptSource ? { promptSource: conversationTurnInput.promptSource } : {}),
-      });
-      if (assistantWorkflowModeTransitionDecision.transitionKind === "denied") {
-        const denialText = formatAssistantWorkflowModeTransitionDenialText({
-          requestedAssistantOperatingMode: assistantOperatingMode,
-          denialText: assistantWorkflowModeTransitionDecision.denialText,
-        });
-        logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.rejected", {
-          reason: "assistant_workflow_mode_transition_denied",
-          conversationTurnId: conversationTurnInput.conversationTurnId ?? null,
-          selectedModelId: conversationTurnInput.selectedModelId,
-          assistantOperatingMode,
-        });
-        throw new Error(denialText);
-      }
     }
 
     logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.accepted", {
@@ -336,6 +309,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly conversationTurnLifecycle: RuntimeConversationTurnLifecycle;
   readonly readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   readonly subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
+  private recordedWorkflowHandoff: WorkflowHandoff | undefined;
 
   constructor(input: {
     conversationTurnInput: ConversationTurnRequest;
@@ -526,6 +500,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
               assistantResponseMessageId,
               providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
             }),
+            readRecordedWorkflowHandoff: () => this.recordedWorkflowHandoff,
             throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
             logAssistantResponseEventEmitted,
             diagnosticLogger: this.diagnosticLogger,
@@ -684,6 +659,9 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds: this.taskSubagentSoftElapsedTimeCheckpointMilliseconds }
         : {}),
       canSpawnSubagent: this.canSpawnSubagent,
+      recordWorkflowHandoff: (workflowHandoff) => {
+        this.recordedWorkflowHandoff = workflowHandoff;
+      },
       createPendingToolApproval: (pendingToolApprovalInput) => this.createPendingToolApproval(pendingToolApprovalInput),
       throwIfConversationTurnInterrupted: () => {
         this.throwIfConversationTurnInterrupted();

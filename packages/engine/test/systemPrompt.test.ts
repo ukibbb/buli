@@ -43,6 +43,26 @@ test("includes the read-only evidence ledger when provided", () => {
   expect(systemPromptText).toContain("Do not request the same read-only evidence again");
 });
 
+test("includes workflow handoff context when provided", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "implementation",
+    workflowHandoffContextText: [
+      "Workflow handoff system:",
+      "<workflow_handoff_context>",
+      "  <latest_plan_handoff kind=\"plan\">",
+      "    <agreed_goal>Implement typed handoffs.</agreed_goal>",
+      "  </latest_plan_handoff>",
+      "</workflow_handoff_context>",
+    ].join("\n"),
+  });
+
+  expect(systemPromptText).toContain("Implementation Agent - System Reminder");
+  expect(systemPromptText).toContain("Workflow handoff system:");
+  expect(systemPromptText).toContain("<latest_plan_handoff kind=\"plan\">");
+  expect(systemPromptText).toContain("Implement typed handoffs.");
+});
+
 test("uses file-by-file apply plans for non-trivial work", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
@@ -244,9 +264,11 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("You may ONLY observe, research, explain, compare options, and clarify understanding.");
   expect(systemPromptText).toContain("teach Lukasz the current situation before planning or applying code");
   expect(systemPromptText).toContain("Act like a patient teacher: explain the system in simple words first");
-  expect(systemPromptText).toContain("smart but green student");
+  expect(systemPromptText).toContain("learning the topic from zero");
+  expect(systemPromptText).toContain("baby-simple version");
+  expect(systemPromptText).toContain('If Lukasz says "simpler", "example", "draw it", "line by line", or "why"');
   expect(systemPromptText).toContain("explain the flow in execution order");
-  expect(systemPromptText).toContain("Use concrete example data");
+  expect(systemPromptText).toContain("Use tiny concrete example data");
   expect(systemPromptText).toContain("Cover every behavior-changing branch");
   expect(systemPromptText).toContain("Remove timing ambiguity");
   expect(systemPromptText).toContain("concurrent, parallel, interleaved, streamed, scheduled later, or callback-driven");
@@ -312,7 +334,7 @@ test("understand mode uses source-explained markdown for code behavior", () => {
   expect(systemPromptText).toContain("A good comment should not create a new question");
   expect(systemPromptText).toContain("Use this direct Markdown shape, not a rich card");
   expect(systemPromptText).toContain("Explanations may be long when the code needs it.");
-  expect(systemPromptText).toContain("simple enough for a tired reader");
+  expect(systemPromptText).toContain("simple enough for a curious beginner learning from zero");
   expect(systemPromptText).toContain("If you cannot confidently explain a language, runtime, framework, library, or tool mechanism");
   expect(systemPromptText).toContain("Do not invent runtime values or code snippets.");
 });
@@ -397,8 +419,12 @@ test("requires simple detailed explanations and strong challenge of risks", () =
     "Be concise by removing filler, repeated caveats, and long setup, not by cutting reasoning, tradeoffs, constraints, or risks.",
   );
   expect(systemPromptText).toContain(
-    "Explain like the user is smart but tired: simple language, clear structure, enough depth to understand what is happening and why it matters.",
+    "Explain like Lukasz is a curious beginner learning from zero: simple words first, clear structure, and enough depth to understand what is happening and why it matters.",
   );
+  expect(systemPromptText).toContain(
+    "Use baby-simple versions, boxes and arrows, tiny concrete examples, and step-by-step execution order when they make the idea easier to see.",
+  );
+  expect(systemPromptText).toContain("Explain hard words immediately in everyday language before relying on them.");
   expect(systemPromptText).toContain(
     "Expand when complexity, architecture, debugging, safety, ambiguity, or user confusion requires more detail.",
   );

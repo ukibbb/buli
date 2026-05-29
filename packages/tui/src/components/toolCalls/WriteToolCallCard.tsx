@@ -6,7 +6,7 @@ import {
   formatWorkspacePatchCompactSummary,
   WorkspacePatchChangedFilesView,
 } from "../workspacePatch/WorkspacePatchChangedFilesView.tsx";
-import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+import { AlwaysVisibleToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type WriteToolCallCardProps = {
   toolCallDetail: ToolCallWriteDetail;
@@ -25,13 +25,13 @@ export function WriteToolCallCard(props: WriteToolCallCardProps): ReactNode {
   const hasWriteDiffContent = Boolean(props.workspacePatch) ||
     (props.renderState !== "failed" && Boolean(props.toolCallDetail.unifiedDiffText));
   return (
-    <ExpandableToolCallCard
+    <AlwaysVisibleToolCallCard
       accentColor={accentColor}
       {...(props.approvalDecisionControl !== undefined
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
-      hasExpandableContent={hasWriteDiffContent}
-      renderExpandedContent={() => buildWriteBodyContent(props)}
+      hasVisibleContent={hasWriteDiffContent}
+      renderVisibleContent={() => buildWriteBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}
       statusLabel={buildWriteStatusLabel(props)}
       toolNameLabel="Write"

@@ -10,7 +10,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"] });
+  ).toEqual({ availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
@@ -51,6 +51,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation 
       "write",
       "task",
       "skill",
+      "record_workflow_handoff",
     ],
   });
 });
@@ -64,7 +65,7 @@ test("resolveAssistantOperatingModeToolAccess denies bash in plan mode", () => {
     }),
   ).toEqual({
     accessKind: "denied",
-    effectiveAvailableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"],
+    effectiveAvailableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"],
     denialText: "Plan Agent is read-only, so this bash command was not executed.",
   });
 });

@@ -112,6 +112,7 @@ const toolCallRequestExportRendererByName: {
   write: { renderPurpose: renderWriteToolCallRequestPurpose, renderBody: renderWriteToolCallRequestBody },
   task: { renderPurpose: renderTaskToolCallRequestPurpose, renderBody: renderTaskToolCallRequestBody },
   skill: { renderPurpose: renderSkillToolCallRequestPurpose, renderBody: renderSkillToolCallRequestBody },
+  record_workflow_handoff: { renderPurpose: renderRecordWorkflowHandoffToolCallRequestPurpose, renderBody: renderRecordWorkflowHandoffToolCallRequestBody },
 };
 
 function resolveToolCallRequestExportRenderer<ToolName extends ToolCallRequestName>(
@@ -245,6 +246,18 @@ function renderSkillToolCallRequestBody(toolCallRequest: ToolCallRequestByName<"
   return `<div class="arg"><b>skill</b> ${escapeHtml(toolCallRequest.skillName)}</div>`;
 }
 
+function renderRecordWorkflowHandoffToolCallRequestPurpose(
+  toolCallRequest: ToolCallRequestByName<"record_workflow_handoff">,
+): string {
+  return `<span class="panel-purpose">${escapeHtml(toolCallRequest.workflowHandoff.handoffKind)}</span>`;
+}
+
+function renderRecordWorkflowHandoffToolCallRequestBody(
+  toolCallRequest: ToolCallRequestByName<"record_workflow_handoff">,
+): string {
+  return `<div class="panel-section"><div class="panel-section-label">Workflow handoff</div><pre class="output">${escapeHtml(JSON.stringify(toolCallRequest.workflowHandoff, null, 2))}</pre></div>`;
+}
+
 type ToolCallDetailName = ToolCallDetail["toolName"];
 type ToolCallDetailByName<ToolName extends ToolCallDetailName> = Extract<ToolCallDetail, { toolName: ToolName }>;
 
@@ -267,6 +280,7 @@ const toolCallDetailExportRendererByName: {
   write: { renderPurpose: renderWriteToolResultPurpose },
   task: { renderPurpose: renderTaskToolResultPurpose },
   skill: { renderPurpose: renderSkillToolResultPurpose },
+  record_workflow_handoff: { renderPurpose: renderRecordWorkflowHandoffToolResultPurpose },
   todowrite: { renderPurpose: renderTodoWriteToolResultPurpose },
 };
 
@@ -345,6 +359,12 @@ function renderSkillToolResultPurpose(toolCallDetail: ToolCallDetailByName<"skil
   return `<span class="panel-purpose">${escapeHtml(`${toolCallDetail.skillName}${skillDescriptionText}`)}</span>`;
 }
 
+function renderRecordWorkflowHandoffToolResultPurpose(
+  toolCallDetail: ToolCallDetailByName<"record_workflow_handoff">,
+): string {
+  return `<span class="panel-purpose">${escapeHtml(`${toolCallDetail.handoffKind}: ${toolCallDetail.handoffSummary}`)}</span>`;
+}
+
 function renderTodoWriteToolResultPurpose(toolCallDetail: ToolCallDetailByName<"todowrite">): string {
   return `<span class="panel-purpose">${toolCallDetail.todoItems.length} items</span>`;
 }
@@ -364,6 +384,9 @@ function formatToolDisplayName(toolName: string): string {
   }
   if (toolName === "skill") {
     return "Skill";
+  }
+  if (toolName === "record_workflow_handoff") {
+    return "WorkflowHandoff";
   }
   return toolName;
 }

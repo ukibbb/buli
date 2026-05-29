@@ -15,6 +15,7 @@ import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-
 import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
 import { buildRelevantReadOnlyToolEvidenceLedgerText } from "./readOnlyToolEvidenceNotebook.ts";
 import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
+import { buildAssistantWorkflowHandoffPromptBlock } from "./assistantWorkflowHandoffContext.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { formatUserSelectedSkillPromptForModel, type WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
@@ -80,6 +81,10 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     currentUserPromptText: input.conversationTurnInput.userPromptText,
   });
+  const workflowHandoffContextText = buildAssistantWorkflowHandoffPromptBlock({
+    currentAssistantOperatingMode: input.assistantOperatingMode,
+    conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
+  });
 
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.start_requested", {
     conversationTurnId: input.conversationTurnInput.conversationTurnId ?? null,
@@ -100,6 +105,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       projectInstructionSnapshots: projectInstructionSnapshotsForAcceptedTurn,
       availableSkills: availableSkillsForAcceptedTurn,
       ...(readOnlyToolEvidenceLedgerText ? { readOnlyToolEvidenceLedgerText } : {}),
+      workflowHandoffContextText,
     }),
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     selectedModelId: input.conversationTurnInput.selectedModelId,
@@ -129,6 +135,10 @@ async function buildModelFacingPromptTextForAcceptedTurn(input: {
   skillCatalog: WorkspaceSkillCatalog;
   abortSignal: AbortSignal;
 }): Promise<string> {
+  if (input.conversationTurnInput.modelFacingUserPromptText !== undefined) {
+    return input.conversationTurnInput.modelFacingUserPromptText;
+  }
+
   if (input.conversationTurnInput.userSelectedSkillName !== undefined) {
     const userSelectedSkill = await input.skillCatalog.loadSkillByName(input.conversationTurnInput.userSelectedSkillName);
     if (!userSelectedSkill) {

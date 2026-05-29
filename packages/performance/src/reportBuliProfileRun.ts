@@ -55,6 +55,16 @@ type ProviderTurnKindAttribution = {
   maxRequestBodyTextLength: number;
 };
 
+type OpenAiRequestSizeContributorReportRow = Readonly<{
+  conversationTurnId: string | undefined;
+  providerTurnKind: string;
+  responseStepIndex: number;
+  contributorKind: string;
+  inputItemIndex: number;
+  serializedByteLength: number;
+  textLength: number;
+}>;
+
 export async function writeBuliProfileRunReport(input: BuliProfileReportCliOptions): Promise<string> {
   const profileEvents = await readBuliProfileJsonl(input.profileFilePath);
   const reportMarkdown = formatBuliProfileRunReportMarkdown({
@@ -107,6 +117,7 @@ export function formatBuliProfileRunReportMarkdown(input: {
     ...formatOpenAiResponseStepSection(diagnosticEvents),
     ...formatOpenAiRetrySection(diagnosticEvents),
     ...formatOpenAiRequestConstructionSection(diagnosticEvents),
+    ...formatOpenAiRequestSizeContributorSection(diagnosticEvents),
     ...formatOpenAiReplayInputAgeSection(diagnosticEvents),
     ...formatToolAttributionSection(diagnosticEvents),
     ...formatToolResultDuplicationSection(diagnosticEvents),
@@ -468,6 +479,44 @@ function formatOpenAiRequestConstructionSection(diagnosticEvents: readonly Profi
       const fields = event.fields;
       return `| ${formatShortField(fields, "conversationTurnId")} | ${readProviderTurnKind(fields)} | ${formatNumberField(fields, "responseStepIndex")} | ${formatMilliseconds(readNumberField(fields, "requestConstructionDurationMs"))} | ${formatMilliseconds(readNumberField(fields, "requestObjectBuildDurationMs"))} | ${formatMilliseconds(readNumberField(fields, "requestSerializationDurationMs"))} | ${formatBytes(readNumberField(fields, "requestBodyTextLength"))} | ${formatNumberField(fields, "requestInputItemCount")} |`;
     }),
+    "",
+  ];
+}
+
+function formatOpenAiRequestSizeContributorSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
+  const responseStepSummaries = listDiagnosticEvents(diagnosticEvents, "openai", "response_step.summary");
+  const responseStepsWithContributorDiagnostics = responseStepSummaries.filter((event) =>
+    readStringArrayField(event.fields, "requestLargestContributorKinds") !== undefined
+  );
+  if (responseStepsWithContributorDiagnostics.length === 0) {
+    return ["## OpenAI Request Size Contributors", "", "No request size contributor fields were recorded.", ""];
+  }
+
+  const contributorRows = [...listOpenAiRequestSizeContributorReportRows(responseStepsWithContributorDiagnostics)]
+    .sort((leftRow, rightRow) =>
+      rightRow.serializedByteLength - leftRow.serializedByteLength ||
+      leftRow.contributorKind.localeCompare(rightRow.contributorKind)
+    )
+    .slice(0, 20);
+  const maxStableRequestBytes = maxNumber(responseStepsWithContributorDiagnostics.map((event) =>
+    readNumberField(event.fields, "requestStableSerializedByteLength")
+  )) ?? 0;
+  const maxInputBytes = maxNumber(responseStepsWithContributorDiagnostics.map((event) =>
+    readNumberField(event.fields, "requestInputSerializedByteLength")
+  )) ?? 0;
+
+  return [
+    "## OpenAI Request Size Contributors",
+    "",
+    `- Response steps with contributor diagnostics: ${formatInteger(responseStepsWithContributorDiagnostics.length)}`,
+    `- Max stable request bytes: ${formatBytes(maxStableRequestBytes)}`,
+    `- Max input bytes: ${formatBytes(maxInputBytes)}`,
+    "",
+    "| Turn | Kind | Step | Contributor | Input Item | Serialized | Text |",
+    "| --- | --- | ---: | --- | ---: | ---: | ---: |",
+    ...contributorRows.map((row) =>
+      `| ${formatShortText(row.conversationTurnId)} | ${row.providerTurnKind} | ${formatInteger(row.responseStepIndex)} | ${row.contributorKind} | ${formatInputItemIndex(row.inputItemIndex)} | ${formatBytes(row.serializedByteLength)} | ${formatBytes(row.textLength)} |`
+    ),
     "",
   ];
 }
@@ -1098,6 +1147,26 @@ function aggregateNumericField(
   );
 }
 
+function listOpenAiRequestSizeContributorReportRows(
+  responseStepSummaries: readonly ProfileDiagnosticEvent[],
+): readonly OpenAiRequestSizeContributorReportRow[] {
+  return responseStepSummaries.flatMap((event) => {
+    const contributorKinds = readStringArrayField(event.fields, "requestLargestContributorKinds") ?? [];
+    const inputItemIndexes = readNumberArrayField(event.fields, "requestLargestContributorInputItemIndexes") ?? [];
+    const serializedByteLengths = readNumberArrayField(event.fields, "requestLargestContributorSerializedByteLengths") ?? [];
+    const textLengths = readNumberArrayField(event.fields, "requestLargestContributorTextLengths") ?? [];
+    return contributorKinds.map((contributorKind, contributorIndex) => ({
+      conversationTurnId: readStringField(event.fields, "conversationTurnId"),
+      providerTurnKind: readProviderTurnKind(event.fields),
+      responseStepIndex: readNumberField(event.fields, "responseStepIndex"),
+      contributorKind,
+      inputItemIndex: inputItemIndexes[contributorIndex] ?? -1,
+      serializedByteLength: serializedByteLengths[contributorIndex] ?? 0,
+      textLength: textLengths[contributorIndex] ?? 0,
+    }));
+  });
+}
+
 function calculateNumericFieldGrowth(
   diagnosticEvents: readonly ProfileDiagnosticEvent[],
   fieldName: string,
@@ -1174,6 +1243,11 @@ function readStringArrayField(fields: ProfileDiagnosticEvent["fields"] | undefin
   return Array.isArray(fieldValue) && fieldValue.every((fieldItem) => typeof fieldItem === "string") ? fieldValue : undefined;
 }
 
+function readNumberArrayField(fields: ProfileDiagnosticEvent["fields"] | undefined, fieldName: string): readonly number[] | undefined {
+  const fieldValue = fields?.[fieldName];
+  return Array.isArray(fieldValue) && fieldValue.every((fieldItem) => typeof fieldItem === "number") ? fieldValue : undefined;
+}
+
 function readFieldValueText(fields: ProfileDiagnosticEvent["fields"] | undefined, fieldName: string): string | undefined {
   const fieldValue = fields?.[fieldName];
   if (typeof fieldValue === "string") {
@@ -1215,6 +1289,10 @@ function formatNumberFieldWithUnit(
 ): string {
   const fieldValue = fields?.[fieldName];
   return typeof fieldValue === "number" ? `${formatNumber(fieldValue)} ${unit}` : "n/a";
+}
+
+function formatInputItemIndex(inputItemIndex: number): string {
+  return inputItemIndex < 0 ? "n/a" : formatInteger(inputItemIndex);
 }
 
 function parseBuliProfileReportCliOptions(args: readonly string[]): BuliProfileReportCliParseResult {

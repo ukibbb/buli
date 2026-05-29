@@ -280,7 +280,6 @@ export async function runInteractiveChat(input: {
       conversationHistory,
       workspaceSnapshotStore,
       bashToolApprovalMode,
-      enforceAssistantWorkflowModeTransitions: true,
       ...(conversationSessionStore.promptCacheKey ? { promptCacheKey: conversationSessionStore.promptCacheKey } : {}),
       diagnosticLogger,
       ...(autoCompactionThresholdRatio !== undefined ? { autoCompactionThresholdRatio } : {}),

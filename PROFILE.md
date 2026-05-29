@@ -16,29 +16,25 @@ Every profile should separate:
 
 CPU profiles alone are not enough. Use timed spans, process samples, event-loop delay, RSS/heap snapshots, and optional Bun CPU/heap artifacts.
 
-## Latest Measurements
+## Measurement State
 
-Latest real profile:
+Fresh baseline targets:
 
-- `profile-runs/measurements/manual-after-task-elapsed-checkpoint/profile.jsonl`
-- `profile-runs/measurements/manual-after-task-elapsed-checkpoint/profile-report.md`
+- Real interactive profile: `profile-runs/measurements/manual-working-set-baseline/`
+- Deterministic profile root: `profile-runs/current/`
 
-Latest deterministic profile root:
+Important deterministic summaries after a fresh run:
 
-- `profile-runs/current/`
-
-Important current deterministic summaries:
-
-- `profile-runs/current/task-subagent/summary.md`
-- `profile-runs/current/tool-output/summary.md`
 - `profile-runs/current/prompt-context/summary.md`
 - `profile-runs/current/transcript/summary.md`
 - `profile-runs/current/openai-stream/summary.md`
 - `profile-runs/current/reducer/summary.md`
+- `profile-runs/current/task-subagent/summary.md`
 - `profile-runs/current/sqlite/summary.md`
+- `profile-runs/current/tool-output/summary.md`
 - `profile-runs/current/codebase-knowledge/summary.md`
 
-`profile-runs/` is ignored by git. Treat these paths as local measurement state, not durable project history.
+`profile-runs/` is ignored by git. Treat these paths as local measurement state, not durable project history. If the files are missing, rerun the commands in `PROFILING.md` before making optimization claims.
 
 ## Runtime Path
 
@@ -169,7 +165,7 @@ Signals:
 
 ### Tool-Heavy Turn
 
-Purpose: measure read/search/bash/tool-result waits and provider continuation overhead.
+Purpose: measure read/search/bash/tool-result waits, provider continuation overhead, and request-size contributor diagnostics.
 
 Prompt shape:
 
@@ -186,6 +182,7 @@ Signals:
 - Provider tool-result wait duration.
 - OpenAI continuation step count.
 - Tool-result and request body growth.
+- Largest OpenAI request size contributors by serialized byte length.
 
 ### Task Subagents
 
@@ -273,6 +270,7 @@ Profiling is useful when it can answer:
 - Which code paths account for most CPU time while active.
 - Which objects or components account for meaningful memory growth.
 - Whether the TUI is blocked by local CPU work or mostly waiting on external systems.
+- Which request parts and model-visible items dominate OpenAI request size.
 - Which improvement should be implemented first and why.
 
 The final answer must be based on measured evidence, not assumptions.

@@ -10,9 +10,14 @@ import {
   MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
   MAX_READ_TOOL_LINE_COUNT,
   MAX_SKILL_NAME_LENGTH,
+  MAX_WORKFLOW_HANDOFF_FILE_COUNT,
+  MAX_WORKFLOW_HANDOFF_LIST_ITEM_COUNT,
+  MAX_WORKFLOW_HANDOFF_TEXT_LENGTH,
+  MAX_WORKFLOW_HANDOFF_VERIFICATION_COMMAND_COUNT,
   isAssistantSubagentName,
   isAssistantToolRequestName,
   SKILL_NAME_PATTERN_TEXT,
+  WorkflowHandoffSchema,
   type AssistantToolCallRequest,
   type AssistantSubagentName,
   type AssistantToolRequestName,
@@ -26,7 +31,7 @@ type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boo
 type OpenAiProviderFunctionName = AssistantToolRequestName;
 
 type OpenAiToolParameterProperty = {
-  readonly type: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
+  readonly type?: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
   readonly description: string;
   readonly minimum?: number;
   readonly maximum?: number;
@@ -39,6 +44,7 @@ type OpenAiToolParameterProperty = {
   readonly properties?: Record<string, OpenAiToolParameterProperty>;
   readonly required?: readonly string[];
   readonly additionalProperties?: false;
+  readonly anyOf?: readonly OpenAiToolParameterProperty[];
 };
 
 type OpenAiToolParameters = {
@@ -451,6 +457,251 @@ export function createSkillToolDefinition(): OpenAiToolDefinition<"skill"> {
   };
 }
 
+function createWorkflowHandoffToolParameterProperty(): OpenAiToolParameterProperty {
+  return {
+    description: "Typed workflow handoff payload. Use handoffKind understanding in Understand mode, plan in Plan mode, and implementation in Implementation mode.",
+    anyOf: [
+      createUnderstandingWorkflowHandoffToolParameterProperty(),
+      createPlanWorkflowHandoffToolParameterProperty(),
+      createImplementationWorkflowHandoffToolParameterProperty(),
+    ],
+  };
+}
+
+function createUnderstandingWorkflowHandoffToolParameterProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "object",
+    description: "Understand-mode handoff describing what is known, unknown, evidenced, and worth doing next.",
+    properties: {
+      handoffKind: createWorkflowHandoffLiteralProperty("understanding", "Marks this as an Understand-mode handoff."),
+      userGoal: createWorkflowHandoffTextProperty("The user's goal or learning question this understanding supports."),
+      currentUnderstanding: createWorkflowHandoffTextProperty("The current concise understanding of the system, decision, or issue."),
+      importantFindings: createWorkflowHandoffTextListProperty("Important findings that later modes should preserve."),
+      evidenceReferences: createWorkflowHandoffEvidenceReferencesProperty(),
+      constraints: createWorkflowHandoffTextListProperty("Constraints, preferences, safety boundaries, or project rules that shaped the understanding."),
+      openQuestions: createWorkflowHandoffTextListProperty("Questions or uncertainties that remain open."),
+      recommendedNextStep: createWorkflowHandoffTextProperty("The recommended next step after this understanding turn."),
+    },
+    required: [
+      "handoffKind",
+      "userGoal",
+      "currentUnderstanding",
+      "importantFindings",
+      "evidenceReferences",
+      "constraints",
+      "openQuestions",
+      "recommendedNextStep",
+    ],
+    additionalProperties: false,
+  };
+}
+
+function createPlanWorkflowHandoffToolParameterProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "object",
+    description: "Plan-mode handoff describing the agreed goal, selected approach, exact target files, steps, verification, and readiness.",
+    properties: {
+      handoffKind: createWorkflowHandoffLiteralProperty("plan", "Marks this as a Plan-mode handoff."),
+      agreedGoal: createWorkflowHandoffTextProperty("The goal that was agreed or selected for implementation."),
+      currentStateSummary: createWorkflowHandoffTextProperty("A concise summary of the current code/system state the plan is based on."),
+      chosenApproach: createWorkflowHandoffTextProperty("The selected implementation approach and why it was chosen."),
+      targetFiles: createWorkflowHandoffFileOperationsProperty(),
+      implementationSteps: createWorkflowHandoffTextListProperty("Ordered implementation steps that the Implementation mode should apply."),
+      verificationCommands: createWorkflowHandoffVerificationCommandsProperty(),
+      risks: createWorkflowHandoffTextListProperty("Risks, edge cases, or plan caveats that Implementation should keep in mind."),
+      isReadyForImplementation: {
+        type: "boolean",
+        description: "Whether Implementation can safely start from this handoff without more product decisions.",
+      },
+      requiredPreApplyReads: createWorkflowHandoffTextListProperty("Exact bounded files or ranges Implementation should read before mutating, if any."),
+    },
+    required: [
+      "handoffKind",
+      "agreedGoal",
+      "currentStateSummary",
+      "chosenApproach",
+      "targetFiles",
+      "implementationSteps",
+      "verificationCommands",
+      "risks",
+      "isReadyForImplementation",
+      "requiredPreApplyReads",
+    ],
+    additionalProperties: false,
+  };
+}
+
+function createImplementationWorkflowHandoffToolParameterProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "object",
+    description: "Implementation-mode handoff describing what changed, what verification ran, and what remains next.",
+    properties: {
+      handoffKind: createWorkflowHandoffLiteralProperty("implementation", "Marks this as an Implementation-mode handoff."),
+      implementedOutcome: createWorkflowHandoffTextProperty("The concrete outcome implemented in this turn."),
+      changedFiles: createWorkflowHandoffFileChangesProperty(),
+      verificationResults: createWorkflowHandoffVerificationResultsProperty(),
+      remainingIssues: createWorkflowHandoffTextListProperty("Known remaining issues after this implementation turn, or an empty list when none remain."),
+      recommendedNextStep: createWorkflowHandoffTextProperty("The recommended next step after this implementation turn."),
+    },
+    required: [
+      "handoffKind",
+      "implementedOutcome",
+      "changedFiles",
+      "verificationResults",
+      "remainingIssues",
+      "recommendedNextStep",
+    ],
+    additionalProperties: false,
+  };
+}
+
+function createWorkflowHandoffLiteralProperty(literalValue: string, description: string): OpenAiToolParameterProperty {
+  return {
+    type: "string",
+    enum: [literalValue],
+    description,
+  };
+}
+
+function createWorkflowHandoffTextProperty(description: string): OpenAiToolParameterProperty {
+  return {
+    type: "string",
+    maxLength: MAX_WORKFLOW_HANDOFF_TEXT_LENGTH,
+    description,
+  };
+}
+
+function createWorkflowHandoffTextListProperty(description: string): OpenAiToolParameterProperty {
+  return {
+    type: "array",
+    maxItems: MAX_WORKFLOW_HANDOFF_LIST_ITEM_COUNT,
+    description,
+    items: createWorkflowHandoffTextProperty("One handoff list item."),
+  };
+}
+
+function createWorkflowHandoffEvidenceReferencesProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "array",
+    maxItems: MAX_WORKFLOW_HANDOFF_LIST_ITEM_COUNT,
+    description: "Evidence references supporting the understanding handoff.",
+    items: {
+      type: "object",
+      description: "One source, test, documentation, runtime, tool, or user-decision reference.",
+      properties: {
+        evidenceKind: {
+          type: "string",
+          enum: ["source_code", "test", "documentation", "runtime_output", "tool_result", "user_decision"],
+          description: "The kind of evidence this reference points to.",
+        },
+        referenceText: createWorkflowHandoffTextProperty("The concrete file, command, message, or artifact reference."),
+        summary: createWorkflowHandoffTextProperty("What this evidence proves or contributes."),
+      },
+      required: ["evidenceKind", "referenceText", "summary"],
+      additionalProperties: false,
+    },
+  };
+}
+
+function createWorkflowHandoffFileOperationsProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "array",
+    maxItems: MAX_WORKFLOW_HANDOFF_FILE_COUNT,
+    description: "Files the implementation plan expects to inspect or mutate.",
+    items: {
+      type: "object",
+      description: "One planned file operation.",
+      properties: {
+        filePath: createWorkflowHandoffTextProperty("Workspace-relative file path."),
+        operationKind: {
+          type: "string",
+          enum: ["add", "update", "delete", "rename", "inspect"],
+          description: "The planned operation for this file.",
+        },
+        reason: createWorkflowHandoffTextProperty("Why this file is part of the plan."),
+      },
+      required: ["filePath", "operationKind", "reason"],
+      additionalProperties: false,
+    },
+  };
+}
+
+function createWorkflowHandoffVerificationCommandsProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "array",
+    maxItems: MAX_WORKFLOW_HANDOFF_VERIFICATION_COMMAND_COUNT,
+    description: "Commands Implementation should run to verify the plan.",
+    items: {
+      type: "object",
+      description: "One verification command and why it matters.",
+      properties: {
+        command: createWorkflowHandoffTextProperty("Command line to run."),
+        reason: createWorkflowHandoffTextProperty("Why this command verifies the planned change."),
+      },
+      required: ["command", "reason"],
+      additionalProperties: false,
+    },
+  };
+}
+
+function createWorkflowHandoffFileChangesProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "array",
+    maxItems: MAX_WORKFLOW_HANDOFF_FILE_COUNT,
+    description: "Files changed by the implementation turn.",
+    items: {
+      type: "object",
+      description: "One changed file summary.",
+      properties: {
+        filePath: createWorkflowHandoffTextProperty("Workspace-relative changed file path."),
+        changeSummary: createWorkflowHandoffTextProperty("What changed in this file."),
+      },
+      required: ["filePath", "changeSummary"],
+      additionalProperties: false,
+    },
+  };
+}
+
+function createWorkflowHandoffVerificationResultsProperty(): OpenAiToolParameterProperty {
+  return {
+    type: "array",
+    maxItems: MAX_WORKFLOW_HANDOFF_VERIFICATION_COMMAND_COUNT,
+    description: "Verification results from the implementation turn.",
+    items: {
+      type: "object",
+      description: "One verification result.",
+      properties: {
+        command: createWorkflowHandoffTextProperty("Command line that was run or intentionally not run."),
+        outcomeKind: {
+          type: "string",
+          enum: ["passed", "failed", "not_run"],
+          description: "Whether the verification passed, failed, or was not run.",
+        },
+        summary: createWorkflowHandoffTextProperty("Short result summary."),
+      },
+      required: ["command", "outcomeKind", "summary"],
+      additionalProperties: false,
+    },
+  };
+}
+
+export function createRecordWorkflowHandoffToolDefinition(): OpenAiToolDefinition<"record_workflow_handoff"> {
+  return {
+    type: "function",
+    name: "record_workflow_handoff",
+    description: "Record the current assistant mode's typed workflow handoff so later Understand, Plan, or Implementation turns can reuse the useful context without enforcing a strict pipeline.",
+    parameters: {
+      type: "object",
+      properties: {
+        workflowHandoff: createWorkflowHandoffToolParameterProperty(),
+      },
+      required: ["workflowHandoff"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
 const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]: OpenAiToolAdapter<ToolName> } = {
   bash: {
     toolName: "bash",
@@ -511,6 +762,11 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     toolName: "skill",
     definition: createSkillToolDefinition(),
     parseToolCallRequest: parseSkillOpenAiToolCallRequest,
+  },
+  record_workflow_handoff: {
+    toolName: "record_workflow_handoff",
+    definition: createRecordWorkflowHandoffToolDefinition(),
+    parseToolCallRequest: parseRecordWorkflowHandoffOpenAiToolCallRequest,
   },
 };
 
@@ -751,6 +1007,28 @@ function parseSkillOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Too
   };
 }
 
+function parseRecordWorkflowHandoffOpenAiToolCallRequest(
+  parsedArguments: JsonObjectRecord,
+): ToolCallRequestByName<"record_workflow_handoff"> {
+  const workflowHandoffArgument = readRequiredObjectToolArgument(
+    parsedArguments,
+    "workflowHandoff",
+    "record_workflow_handoff",
+  );
+  const parsedWorkflowHandoff = WorkflowHandoffSchema.safeParse(workflowHandoffArgument);
+  if (!parsedWorkflowHandoff.success) {
+    const contractViolationText = parsedWorkflowHandoff.error.issues.map(formatToolCallContractViolation).join("; ");
+    throw new Error(
+      `OpenAI function call for record_workflow_handoff violates Buli workflow handoff contract: ${contractViolationText}`,
+    );
+  }
+
+  return {
+    toolName: "record_workflow_handoff",
+    workflowHandoff: parsedWorkflowHandoff.data,
+  };
+}
+
 function parseOpenAiFunctionArguments(input: { functionName: string; argumentsText: string }): JsonObjectRecord {
   let parsedArguments: unknown;
   try {
@@ -856,6 +1134,19 @@ function readRequiredObjectArrayToolArgument(
       `OpenAI function call for ${toolName} has invalid object array item: ${argumentName}[${arrayItemIndex}]`,
     );
   });
+}
+
+function readRequiredObjectToolArgument(
+  parsedArguments: JsonObjectRecord,
+  argumentName: string,
+  toolName: string,
+): JsonObjectRecord {
+  const argumentValue = parsedArguments[argumentName];
+  if (typeof argumentValue === "object" && argumentValue !== null && !Array.isArray(argumentValue)) {
+    return argumentValue as JsonObjectRecord;
+  }
+
+  throw new Error(`OpenAI function call for ${toolName} is missing required object argument: ${argumentName}`);
 }
 
 function readOptionalStringArrayToolArgument(

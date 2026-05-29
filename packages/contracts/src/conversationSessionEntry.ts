@@ -6,6 +6,7 @@ import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
 import { ContextWindowOverflowFailureKindSchema } from "./contextWindowOverflow.ts";
+import { WorkflowHandoffSchema } from "./workflowHandoff.ts";
 import { WorkspacePatchSchema } from "./workspacePatch.ts";
 
 export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
@@ -52,6 +53,7 @@ const AssistantMessageConversationSessionEntryBaseSchema = z
 
 export const CompletedAssistantMessageConversationSessionEntrySchema = AssistantMessageConversationSessionEntryBaseSchema.extend({
   assistantMessageStatus: z.literal("completed"),
+  workflowHandoff: WorkflowHandoffSchema.optional(),
 });
 
 export const IncompleteAssistantMessageConversationSessionEntrySchema = AssistantMessageConversationSessionEntryBaseSchema.extend({

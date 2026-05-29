@@ -10,6 +10,7 @@ import {
   listModelVisibleConversationSessionEntries,
   projectHistoricalToolResultTextForModelContext,
   projectHistoricalToolTranscriptTextForModelContext,
+  summarizeWorkflowHandoff,
 } from "@buli/contracts";
 import {
   isOpenAiOutputTextContentPart,
@@ -504,6 +505,15 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: skill",
       `Skill: ${conversationSessionEntry.toolCallRequest.skillName}`,
+    ].join("\n");
+  }
+
+  if (conversationSessionEntry.toolCallRequest.toolName === "record_workflow_handoff") {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      "Tool: record_workflow_handoff",
+      `Handoff kind: ${conversationSessionEntry.toolCallRequest.workflowHandoff.handoffKind}`,
+      `Handoff summary: ${summarizeWorkflowHandoff(conversationSessionEntry.toolCallRequest.workflowHandoff)}`,
     ].join("\n");
   }
 

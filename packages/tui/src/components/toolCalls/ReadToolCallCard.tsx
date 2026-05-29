@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { ToolCallReadDetail } from "@buli/contracts";
-import { ReadFilePreviewBlock } from "../primitives/ReadFilePreviewBlock.tsx";
-import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+import { AlwaysVisibleToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type ReadToolCallCardProps = {
   toolCallDetail: ToolCallReadDetail;
@@ -13,15 +12,14 @@ export type ReadToolCallCardProps = {
 
 export function ReadToolCallCard(props: ReadToolCallCardProps): ReactNode {
   const toolCallPresentation = resolveDefaultToolCallRenderStatePresentation(props.renderState);
-  const hasReadPreviewContent = props.renderState !== "failed" && (props.toolCallDetail.previewLines?.length ?? 0) > 0;
   return (
-    <ExpandableToolCallCard
+    <AlwaysVisibleToolCallCard
       accentColor={toolCallPresentation.accentColor}
       {...(props.approvalDecisionControl !== undefined
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
-      hasExpandableContent={hasReadPreviewContent}
-      renderExpandedContent={() => buildReadBodyContent(props)}
+      hasVisibleContent={false}
+      renderVisibleContent={() => null}
       statusKind={toolCallPresentation.statusKind}
       statusLabel={buildReadStatusLabel(props)}
       toolNameLabel="Read"
@@ -49,28 +47,4 @@ function buildReadStatusLabel(props: ReadToolCallCardProps): string {
     return `${firstVisibleLineNumber}-${lastVisibleLineNumber}:${lineCount ?? "?"}`;
   }
   return "read";
-}
-
-function buildReadBodyContent(props: ReadToolCallCardProps): ReactNode {
-  const previewLines = props.toolCallDetail.previewLines;
-  if (!previewLines || previewLines.length === 0) {
-    return undefined;
-  }
-  return (
-    <box width="100%">
-      <ReadFilePreviewBlock
-        previewLines={previewLines}
-        readFilePath={props.toolCallDetail.readFilePath}
-        {...(props.toolCallDetail.readLineCount !== undefined
-          ? { readLineCount: props.toolCallDetail.readLineCount }
-          : {})}
-        {...(props.toolCallDetail.returnedLineCount !== undefined
-          ? { returnedLineCount: props.toolCallDetail.returnedLineCount }
-          : {})}
-        {...(props.toolCallDetail.wasLineCountTruncated !== undefined
-          ? { wasLineCountTruncated: props.toolCallDetail.wasLineCountTruncated }
-          : {})}
-      />
-    </box>
-  );
 }

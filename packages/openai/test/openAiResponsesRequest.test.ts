@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   createOpenAiResponsesHttpRequestBody,
+  summarizeOpenAiRequestSizeContributorsForDiagnostics,
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "../src/provider/openAiResponsesRequest.ts";
 
@@ -76,6 +77,7 @@ test("createOpenAiResponsesHttpRequestBody omits tool fields when no tools are a
 test("summarizeOpenAiResponsesRequestForDiagnostics reports counts without raw content", () => {
   const requestBody = createOpenAiResponsesHttpRequestBody({
     selectedModelId: "gpt-5.4",
+    availableToolNames: [],
     systemPromptText: "You are buli.",
     openAiInputItems: [
       { role: "user", content: "Inspect README" },
@@ -106,4 +108,36 @@ test("summarizeOpenAiResponsesRequestForDiagnostics reports counts without raw c
     functionCallOutputInputItemCount: 1,
     functionCallOutputLength: "README contents".length,
   });
+});
+
+test("summarizeOpenAiRequestSizeContributorsForDiagnostics reports largest visible contributors without raw content", () => {
+  const rawSecretToolText = "SECRET_TOOL_OUTPUT_".repeat(20);
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.4",
+    availableToolNames: [],
+    systemPromptText: "You are buli.",
+    openAiInputItems: [
+      { role: "user", content: "Inspect README" },
+      {
+        type: "function_call_output",
+        call_id: "call_1",
+        output: rawSecretToolText,
+      },
+    ],
+  });
+
+  const diagnostics = summarizeOpenAiRequestSizeContributorsForDiagnostics({
+    requestBody,
+    largestContributorCount: 1,
+  });
+
+  expect(diagnostics).toMatchObject({
+    requestStableSerializedByteLength: expect.any(Number),
+    requestInputSerializedByteLength: expect.any(Number),
+    requestLargestContributorKinds: ["input_function_call_output"],
+    requestLargestContributorInputItemIndexes: [1],
+    requestLargestContributorSerializedByteLengths: [expect.any(Number)],
+    requestLargestContributorTextLengths: [rawSecretToolText.length],
+  });
+  expect(JSON.stringify(diagnostics)).not.toContain(rawSecretToolText);
 });

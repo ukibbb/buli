@@ -44,10 +44,12 @@ import {
   isFileMutationToolCallRequest,
   isLocateCodebaseSymbolsToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
+  isRecordWorkflowHandoffToolCallRequest,
   isSkillToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
   listModelVisibleConversationSessionEntries,
   UserPromptImageAttachmentSchema,
+  WorkflowHandoffSchema,
   WorkspacePatchSchema,
 } from "../src/index.ts";
 
@@ -158,6 +160,34 @@ test("AssistantOperatingModeSchema parses understand, plan, and implementation m
   expect(AssistantSubagentNameSchema.options).toEqual(["explore"]);
   expect(isAssistantSubagentName("explore")).toBe(true);
   expect(isAssistantSubagentName("general")).toBe(false);
+});
+
+test("WorkflowHandoffSchema parses typed workflow handoff artifacts", () => {
+  expect(
+    WorkflowHandoffSchema.parse({
+      handoffKind: "plan",
+      agreedGoal: "Record typed workflow handoffs.",
+      currentStateSummary: "Strict mode transitions currently reject flexible starts.",
+      chosenApproach: "Use a typed record_workflow_handoff tool.",
+      targetFiles: [
+        {
+          filePath: "packages/contracts/src/workflowHandoff.ts",
+          operationKind: "add",
+          reason: "Define durable handoff contracts.",
+        },
+      ],
+      implementationSteps: ["Add contracts", "Store completed handoffs", "Inject latest handoff context"],
+      verificationCommands: [
+        { command: "bun test packages/contracts/test/contracts.test.ts", reason: "Verify public contracts." },
+      ],
+      risks: ["The model may forget to call the handoff tool."],
+      isReadyForImplementation: true,
+      requiredPreApplyReads: [],
+    }),
+  ).toMatchObject({
+    handoffKind: "plan",
+    isReadyForImplementation: true,
+  });
 });
 
 test("ConversationMessageSchema parses a completed user message", () => {
@@ -1033,6 +1063,24 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
     toolName: "skill",
     skillName: "code-review",
   });
+  expect(
+    ToolCallRequestSchema.parse({
+      toolName: "record_workflow_handoff",
+      workflowHandoff: {
+        handoffKind: "understanding",
+        userGoal: "Understand workflow mode continuity.",
+        currentUnderstanding: "Previous mode context should be carried by a typed artifact.",
+        importantFindings: ["Assistant messages already store operating mode."],
+        evidenceReferences: [],
+        constraints: ["Read-only modes must stay read-only."],
+        openQuestions: [],
+        recommendedNextStep: "Create a concrete plan.",
+      },
+    }),
+  ).toMatchObject({
+    toolName: "record_workflow_handoff",
+    workflowHandoff: { handoffKind: "understanding" },
+  });
 });
 
 test("tool catalog lists assistant request tools by execution boundary", () => {
@@ -1049,10 +1097,11 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
     "write",
     "task",
     "skill",
+    "record_workflow_handoff",
   ]);
   expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "edit_many", "patch", "patch_many", "write"]);
-  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"]);
   expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite"]);
 });
 
@@ -1077,11 +1126,23 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isReadOnlyAssistantModeToolRequestName("locate_codebase_symbols")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("task")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("skill")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("record_workflow_handoff")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
   expect(isSkillToolCallRequest({ toolName: "skill", skillName: "code-review" })).toBe(true);
   expect(isSkillToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
   expect(isLocateCodebaseSymbolsToolCallRequest({ toolName: "locate_codebase_symbols", symbolNames: ["runDispatch"] })).toBe(true);
   expect(isLocateCodebaseSymbolsToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
+  expect(isRecordWorkflowHandoffToolCallRequest({
+    toolName: "record_workflow_handoff",
+    workflowHandoff: {
+      handoffKind: "implementation",
+      implementedOutcome: "Added handoff recording.",
+      changedFiles: [],
+      verificationResults: [],
+      remainingIssues: [],
+      recommendedNextStep: "Run full tests.",
+    },
+  })).toBe(true);
 });
 
 test("createStartedToolCallDetailFromRequest maps requests to render details", () => {
@@ -1155,6 +1216,25 @@ test("createStartedToolCallDetailFromRequest maps requests to render details", (
   expect(createStartedToolCallDetailFromRequest({ toolName: "skill", skillName: "code-review" })).toEqual({
     toolName: "skill",
     skillName: "code-review",
+  });
+  expect(createStartedToolCallDetailFromRequest({
+    toolName: "record_workflow_handoff",
+    workflowHandoff: {
+      handoffKind: "plan",
+      agreedGoal: "Add typed handoffs.",
+      currentStateSummary: "Current runtime has strict mode gates.",
+      chosenApproach: "Record durable plan artifacts.",
+      targetFiles: [],
+      implementationSteps: [],
+      verificationCommands: [],
+      risks: [],
+      isReadyForImplementation: true,
+      requiredPreApplyReads: [],
+    },
+  })).toEqual({
+    toolName: "record_workflow_handoff",
+    handoffKind: "plan",
+    handoffSummary: "Add typed handoffs.",
   });
 });
 
@@ -1250,6 +1330,14 @@ test("ConversationSessionEntrySchema parses completed assistant history entries"
       assistantOperatingMode: "implementation",
       turnDurationMs: 1200,
       usage: { total: 10, input: 4, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
+      workflowHandoff: {
+        handoffKind: "implementation",
+        implementedOutcome: "Stored workflow handoff on the completed assistant message.",
+        changedFiles: [{ filePath: "packages/contracts/src/conversationSessionEntry.ts", changeSummary: "Added workflowHandoff." }],
+        verificationResults: [{ command: "bun test", outcomeKind: "passed", summary: "Contracts passed." }],
+        remainingIssues: [],
+        recommendedNextStep: "Use the handoff in the next turn.",
+      },
     }),
   ).toEqual({
     entryKind: "assistant_message",
@@ -1259,6 +1347,14 @@ test("ConversationSessionEntrySchema parses completed assistant history entries"
     assistantOperatingMode: "implementation",
     turnDurationMs: 1200,
     usage: { total: 10, input: 4, output: 5, reasoning: 1, cache: { read: 0, write: 0 } },
+    workflowHandoff: {
+      handoffKind: "implementation",
+      implementedOutcome: "Stored workflow handoff on the completed assistant message.",
+      changedFiles: [{ filePath: "packages/contracts/src/conversationSessionEntry.ts", changeSummary: "Added workflowHandoff." }],
+      verificationResults: [{ command: "bun test", outcomeKind: "passed", summary: "Contracts passed." }],
+      remainingIssues: [],
+      recommendedNextStep: "Use the handoff in the next turn.",
+    },
   });
 });
 

@@ -293,13 +293,174 @@
       "properties": {
         "toolName": {
           "type": "string",
+          "const": "record_workflow_handoff"
+        },
+        "workflowHandoff": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "handoffKind": {
+                  "type": "string",
+                  "const": "understanding"
+                },
+                "userGoal": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "currentUnderstanding": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "importantFindings": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "evidenceReferences": {
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema5"
+                  }
+                },
+                "constraints": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "openQuestions": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "recommendedNextStep": {
+                  "$ref": "#/$defs/__schema3"
+                }
+              },
+              "required": [
+                "handoffKind",
+                "userGoal",
+                "currentUnderstanding",
+                "importantFindings",
+                "evidenceReferences",
+                "constraints",
+                "openQuestions",
+                "recommendedNextStep"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "handoffKind": {
+                  "type": "string",
+                  "const": "plan"
+                },
+                "agreedGoal": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "currentStateSummary": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "chosenApproach": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "targetFiles": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema6"
+                  }
+                },
+                "implementationSteps": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "verificationCommands": {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema7"
+                  }
+                },
+                "risks": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "isReadyForImplementation": {
+                  "type": "boolean"
+                },
+                "requiredPreApplyReads": {
+                  "$ref": "#/$defs/__schema4"
+                }
+              },
+              "required": [
+                "handoffKind",
+                "agreedGoal",
+                "currentStateSummary",
+                "chosenApproach",
+                "targetFiles",
+                "implementationSteps",
+                "verificationCommands",
+                "risks",
+                "isReadyForImplementation",
+                "requiredPreApplyReads"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "handoffKind": {
+                  "type": "string",
+                  "const": "implementation"
+                },
+                "implementedOutcome": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "changedFiles": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema8"
+                  }
+                },
+                "verificationResults": {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema9"
+                  }
+                },
+                "remainingIssues": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "recommendedNextStep": {
+                  "$ref": "#/$defs/__schema3"
+                }
+              },
+              "required": [
+                "handoffKind",
+                "implementedOutcome",
+                "changedFiles",
+                "verificationResults",
+                "remainingIssues",
+                "recommendedNextStep"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "toolName",
+        "workflowHandoff"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
           "const": "locate_codebase_symbols"
         },
         "symbolNames": {
           "maxItems": 50,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema3"
+            "$ref": "#/$defs/__schema10"
           }
         },
         "filePaths": {
@@ -359,6 +520,130 @@
       "additionalProperties": false
     },
     "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "__schema4": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema3"
+      }
+    },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "evidenceKind": {
+          "type": "string",
+          "enum": [
+            "source_code",
+            "test",
+            "documentation",
+            "runtime_output",
+            "tool_result",
+            "user_decision"
+          ]
+        },
+        "referenceText": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "summary": {
+          "$ref": "#/$defs/__schema3"
+        }
+      },
+      "required": [
+        "evidenceKind",
+        "referenceText",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "operationKind": {
+          "type": "string",
+          "enum": [
+            "add",
+            "update",
+            "delete",
+            "rename",
+            "inspect"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/__schema3"
+        }
+      },
+      "required": [
+        "filePath",
+        "operationKind",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema7": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "reason": {
+          "$ref": "#/$defs/__schema3"
+        }
+      },
+      "required": [
+        "command",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema8": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "changeSummary": {
+          "$ref": "#/$defs/__schema3"
+        }
+      },
+      "required": [
+        "filePath",
+        "changeSummary"
+      ],
+      "additionalProperties": false
+    },
+    "__schema9": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "outcomeKind": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "not_run"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/__schema3"
+        }
+      },
+      "required": [
+        "command",
+        "outcomeKind",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "__schema10": {
       "type": "string",
       "minLength": 1,
       "maxLength": 512

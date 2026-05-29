@@ -43,6 +43,27 @@ describe("ToolCallCardHeaderSlots (opentui)", () => {
     expect(frame).toContain("✓");
   });
 
+  test("ToolCallCompactHeader can hide the static disclosure marker", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallCompactHeader
+        accentColor={chatScreenTheme.accentAmber}
+        disclosureState={{ isContentExpandable: false, staticDisclosureMarker: "hidden" }}
+        statusColor={chatScreenTheme.accentGreen}
+        statusKind="success"
+        statusLabel="+1 −1"
+        toolNameLabel="Edit"
+        toolTargetText="/src/utils.ts"
+      />,
+      { width: 80, height: 3 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
+    expect(frame).toContain("Edit");
+    expect(frame).toContain("[/src/utils.ts]");
+  });
+
   test("ToolCallCompactHeader wraps long targets instead of clipping them", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallCompactHeader

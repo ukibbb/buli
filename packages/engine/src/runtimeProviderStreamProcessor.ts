@@ -1,9 +1,11 @@
 import type {
+  AssistantMessageConversationSessionEntry,
   AssistantSegmentConversationSessionEntry,
   AssistantResponseEvent,
   BuliDiagnosticLogger,
   ProviderRequestedToolCall,
   ProviderStreamEvent,
+  WorkflowHandoff,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import {
@@ -32,6 +34,7 @@ type RuntimeProviderStreamProcessorInput = {
   providerStreamEventTranslator: RuntimeProviderStreamEventTranslator;
   conversationTurnSessionRecorder: RuntimeConversationTurnSessionRecorder;
   createRequestedToolCallsExecutionContext: () => RuntimeToolCallExecutionContext;
+  readRecordedWorkflowHandoff?: (() => WorkflowHandoff | undefined) | undefined;
   throwIfConversationTurnInterrupted: () => void;
   logAssistantResponseEventEmitted: (assistantResponseEvent: AssistantResponseEvent) => AssistantResponseEvent;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -131,7 +134,10 @@ export async function* streamAssistantResponseEventsFromProviderStream(
           input.conversationTurnSessionRecorder.appendAssistantSegmentSessionEntry(assistantSegmentSessionEntry);
         }
         input.conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry(
-          providerStreamEventTranslation.terminalAssistantMessageSessionEntry,
+          attachRecordedWorkflowHandoffToTerminalAssistantMessageSessionEntry({
+            terminalAssistantMessageSessionEntry: providerStreamEventTranslation.terminalAssistantMessageSessionEntry,
+            workflowHandoff: input.readRecordedWorkflowHandoff?.(),
+          }),
         );
         yield input.logAssistantResponseEventEmitted(providerStreamEventTranslation.terminalAssistantResponseEvent);
         return { outcomeKind: "terminal_assistant_response" };
@@ -142,6 +148,20 @@ export async function* streamAssistantResponseEventsFromProviderStream(
       closeProviderStreamEventIterator(providerStreamEventReadState);
     }
   }
+}
+
+function attachRecordedWorkflowHandoffToTerminalAssistantMessageSessionEntry(input: {
+  terminalAssistantMessageSessionEntry: AssistantMessageConversationSessionEntry;
+  workflowHandoff?: WorkflowHandoff | undefined;
+}): AssistantMessageConversationSessionEntry {
+  if (!input.workflowHandoff || input.terminalAssistantMessageSessionEntry.assistantMessageStatus !== "completed") {
+    return input.terminalAssistantMessageSessionEntry;
+  }
+
+  return {
+    ...input.terminalAssistantMessageSessionEntry,
+    workflowHandoff: input.workflowHandoff,
+  };
 }
 
 function closeProviderStreamEventIterator(providerStreamEventReadState: ProviderStreamEventReadState): void {

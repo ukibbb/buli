@@ -5,6 +5,7 @@
 // rendering affordances the design depends on.
 import { z } from "zod";
 import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
+import { WorkflowHandoffKindSchema } from "./workflowHandoff.ts";
 import { WorkspacePatchFileDiffSchema } from "./workspacePatch.ts";
 
 export const SyntaxHighlightSpanStyleSchema = z.enum([
@@ -213,6 +214,15 @@ export const ToolCallSkillDetailSchema = z
   .strict();
 export type ToolCallSkillDetail = z.infer<typeof ToolCallSkillDetailSchema>;
 
+export const ToolCallRecordWorkflowHandoffDetailSchema = z
+  .object({
+    toolName: z.literal("record_workflow_handoff"),
+    handoffKind: WorkflowHandoffKindSchema,
+    handoffSummary: z.string().min(1),
+  })
+  .strict();
+export type ToolCallRecordWorkflowHandoffDetail = z.infer<typeof ToolCallRecordWorkflowHandoffDetailSchema>;
+
 export const ToolCallLocateCodebaseSymbolsDetailSchema = z
   .object({
     toolName: z.literal("locate_codebase_symbols"),
@@ -311,6 +321,7 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallTodoWriteDetailSchema,
   ToolCallTaskDetailSchema,
   ToolCallSkillDetailSchema,
+  ToolCallRecordWorkflowHandoffDetailSchema,
   ToolCallLocateCodebaseSymbolsDetailSchema,
 ]);
 export type ToolCallDetail = z.infer<typeof ToolCallDetailSchema>;

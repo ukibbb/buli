@@ -6,7 +6,7 @@ import {
   formatWorkspacePatchCompactSummary,
   WorkspacePatchChangedFilesView,
 } from "../workspacePatch/WorkspacePatchChangedFilesView.tsx";
-import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+import { AlwaysVisibleToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type EditToolCallCardProps = {
   toolCallDetail: ToolCallEditDetail;
@@ -25,13 +25,13 @@ export function EditToolCallCard(props: EditToolCallCardProps): ReactNode {
   const hasEditDiffContent = Boolean(props.workspacePatch) ||
     (props.renderState !== "failed" && Boolean(props.toolCallDetail.unifiedDiffText));
   return (
-    <ExpandableToolCallCard
+    <AlwaysVisibleToolCallCard
       accentColor={accentColor}
       {...(props.approvalDecisionControl !== undefined
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
-      hasExpandableContent={hasEditDiffContent}
-      renderExpandedContent={() => buildEditBodyContent(props)}
+      hasVisibleContent={hasEditDiffContent}
+      renderVisibleContent={() => buildEditBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}
       statusLabel={buildEditStatusLabel(props)}
       toolNameLabel="Edit"

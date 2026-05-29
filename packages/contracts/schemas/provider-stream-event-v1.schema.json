@@ -145,7 +145,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema6"
+            "$ref": "#/$defs/__schema13"
           }
         }
       },
@@ -211,7 +211,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema7"
+            "$ref": "#/$defs/__schema14"
           }
         }
       },
@@ -571,13 +571,174 @@
           "properties": {
             "toolName": {
               "type": "string",
+              "const": "record_workflow_handoff"
+            },
+            "workflowHandoff": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "handoffKind": {
+                      "type": "string",
+                      "const": "understanding"
+                    },
+                    "userGoal": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "currentUnderstanding": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "importantFindings": {
+                      "$ref": "#/$defs/__schema6"
+                    },
+                    "evidenceReferences": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema7"
+                      }
+                    },
+                    "constraints": {
+                      "$ref": "#/$defs/__schema6"
+                    },
+                    "openQuestions": {
+                      "$ref": "#/$defs/__schema6"
+                    },
+                    "recommendedNextStep": {
+                      "$ref": "#/$defs/__schema5"
+                    }
+                  },
+                  "required": [
+                    "handoffKind",
+                    "userGoal",
+                    "currentUnderstanding",
+                    "importantFindings",
+                    "evidenceReferences",
+                    "constraints",
+                    "openQuestions",
+                    "recommendedNextStep"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "handoffKind": {
+                      "type": "string",
+                      "const": "plan"
+                    },
+                    "agreedGoal": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "currentStateSummary": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "chosenApproach": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "targetFiles": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema8"
+                      }
+                    },
+                    "implementationSteps": {
+                      "$ref": "#/$defs/__schema6"
+                    },
+                    "verificationCommands": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema9"
+                      }
+                    },
+                    "risks": {
+                      "$ref": "#/$defs/__schema6"
+                    },
+                    "isReadyForImplementation": {
+                      "type": "boolean"
+                    },
+                    "requiredPreApplyReads": {
+                      "$ref": "#/$defs/__schema6"
+                    }
+                  },
+                  "required": [
+                    "handoffKind",
+                    "agreedGoal",
+                    "currentStateSummary",
+                    "chosenApproach",
+                    "targetFiles",
+                    "implementationSteps",
+                    "verificationCommands",
+                    "risks",
+                    "isReadyForImplementation",
+                    "requiredPreApplyReads"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "handoffKind": {
+                      "type": "string",
+                      "const": "implementation"
+                    },
+                    "implementedOutcome": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "changedFiles": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema10"
+                      }
+                    },
+                    "verificationResults": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema11"
+                      }
+                    },
+                    "remainingIssues": {
+                      "$ref": "#/$defs/__schema6"
+                    },
+                    "recommendedNextStep": {
+                      "$ref": "#/$defs/__schema5"
+                    }
+                  },
+                  "required": [
+                    "handoffKind",
+                    "implementedOutcome",
+                    "changedFiles",
+                    "verificationResults",
+                    "remainingIssues",
+                    "recommendedNextStep"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "toolName",
+            "workflowHandoff"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
               "const": "locate_codebase_symbols"
             },
             "symbolNames": {
               "maxItems": 50,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema5"
+                "$ref": "#/$defs/__schema12"
               }
             },
             "filePaths": {
@@ -639,9 +800,133 @@
     "__schema5": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 512
+      "maxLength": 4000
     },
     "__schema6": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema5"
+      }
+    },
+    "__schema7": {
+      "type": "object",
+      "properties": {
+        "evidenceKind": {
+          "type": "string",
+          "enum": [
+            "source_code",
+            "test",
+            "documentation",
+            "runtime_output",
+            "tool_result",
+            "user_decision"
+          ]
+        },
+        "referenceText": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "summary": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "evidenceKind",
+        "referenceText",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "__schema8": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "operationKind": {
+          "type": "string",
+          "enum": [
+            "add",
+            "update",
+            "delete",
+            "rename",
+            "inspect"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "filePath",
+        "operationKind",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema9": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "reason": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "command",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema10": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "changeSummary": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "filePath",
+        "changeSummary"
+      ],
+      "additionalProperties": false
+    },
+    "__schema11": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "outcomeKind": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "not_run"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "command",
+        "outcomeKind",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "__schema12": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "__schema13": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -658,7 +943,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema7": {
+    "__schema14": {
       "type": "object",
       "properties": {
         "stepIndex": {

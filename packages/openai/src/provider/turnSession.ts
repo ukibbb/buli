@@ -14,6 +14,7 @@ import type {
 import {
   calculateContextTokensUsedFromTokenUsage,
   lookupModelContextWindowTokenLimitsForModel,
+  summarizeWorkflowHandoff,
 } from "@buli/contracts";
 import {
   createFunctionCallOutputInputItem,
@@ -38,6 +39,7 @@ import { requestOpenAiHttpResponseWithRetries, type OpenAiHttpRetryPolicy } from
 import {
   createOpenAiResponsesHttpRequestBodyFromTemplate,
   createOpenAiResponsesHttpRequestTemplate,
+  summarizeOpenAiRequestSizeContributorsForDiagnostics,
   type OpenAiResponsesHttpRequestBody,
   type OpenAiResponsesHttpRequestTemplate,
   summarizeOpenAiResponsesRequestForDiagnostics,
@@ -422,6 +424,9 @@ export class OpenAiProviderConversationTurn {
         openAiInputItems: requestBody.input,
         currentTurnFirstInputItemIndex: this.initialOpenAiConversationInputItemCount,
       });
+      const requestSizeContributorDiagnostics = this.diagnosticLogger
+        ? summarizeOpenAiRequestSizeContributorsForDiagnostics({ requestBody })
+        : {};
       totalRequestBodyTextLength += responseStepRequestBodyTextLength;
       maxRequestBodyTextLength = Math.max(maxRequestBodyTextLength, responseStepRequestBodyTextLength);
       maxRequestInputItemCount = Math.max(maxRequestInputItemCount, responseStepRequestInputItemCount);
@@ -719,6 +724,7 @@ export class OpenAiProviderConversationTurn {
           requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
           requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
           requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
+          ...requestSizeContributorDiagnostics,
           responseOutputItemCount: terminalState.responseOutputItems.length,
           toolCallCount: requestedToolCalls.length,
           invalidFunctionCallCount: invalidFunctionCallIntents.length,
@@ -779,6 +785,7 @@ export class OpenAiProviderConversationTurn {
           requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
           requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
           requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
+          ...requestSizeContributorDiagnostics,
           responseOutputItemCount: 0,
           toolCallCount: 0,
           invalidFunctionCallCount: 0,
@@ -847,6 +854,7 @@ export class OpenAiProviderConversationTurn {
         requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
         requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
         requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
+        ...requestSizeContributorDiagnostics,
         responseOutputItemCount: 0,
         toolCallCount: 0,
         invalidFunctionCallCount: 0,
@@ -1205,6 +1213,12 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
       return {
         toolName: toolCallRequest.toolName,
         skillName: toolCallRequest.skillName,
+      };
+    case "record_workflow_handoff":
+      return {
+        toolName: toolCallRequest.toolName,
+        handoffKind: toolCallRequest.workflowHandoff.handoffKind,
+        handoffSummaryLength: summarizeWorkflowHandoff(toolCallRequest.workflowHandoff).length,
       };
     default:
       return assertUnhandledToolCallPatternSummary(toolCallRequest);

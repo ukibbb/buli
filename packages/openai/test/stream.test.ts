@@ -772,6 +772,38 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
         skillName: "code-review",
       },
     },
+    {
+      toolName: "record_workflow_handoff",
+      argumentsText: JSON.stringify({
+        workflowHandoff: {
+          handoffKind: "plan",
+          agreedGoal: "Carry Plan into Implementation.",
+          currentStateSummary: "Runtime has typed tools and session entries.",
+          chosenApproach: "Record a durable plan handoff.",
+          targetFiles: [],
+          implementationSteps: ["Record the plan handoff", "Inject it into the next turn"],
+          verificationCommands: [],
+          risks: [],
+          isReadyForImplementation: true,
+          requiredPreApplyReads: [],
+        },
+      }),
+      expectedToolCallRequest: {
+        toolName: "record_workflow_handoff",
+        workflowHandoff: {
+          handoffKind: "plan",
+          agreedGoal: "Carry Plan into Implementation.",
+          currentStateSummary: "Runtime has typed tools and session entries.",
+          chosenApproach: "Record a durable plan handoff.",
+          targetFiles: [],
+          implementationSteps: ["Record the plan handoff", "Inject it into the next turn"],
+          verificationCommands: [],
+          risks: [],
+          isReadyForImplementation: true,
+          requiredPreApplyReads: [],
+        },
+      },
+    },
   ];
 
   for (const toolCallCase of toolCallCases) {
@@ -837,6 +869,7 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const writeToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "write");
   const taskToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "task");
   const skillToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "skill");
+  const workflowHandoffToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "record_workflow_handoff");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
   expect(readToolDefinition?.description).toContain("Read an exact evidenced workspace file or directory window");
@@ -880,6 +913,12 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(taskToolDefinition?.description).toContain("Currently available subagent: explore");
   expect(skillToolDefinition?.description).toContain("lazy-load the full markdown instructions");
   expect(skillToolDefinition?.parameters.properties["skillName"]?.pattern).toBe("^[a-z0-9]+(?:-[a-z0-9]+)*$");
+  expect(workflowHandoffToolDefinition?.description).toContain("typed workflow handoff");
+  expect(workflowHandoffToolDefinition?.parameters.required).toEqual(["workflowHandoff"]);
+  expect(workflowHandoffToolDefinition?.parameters.properties["workflowHandoff"]?.anyOf?.map((handoffSchema) =>
+    handoffSchema.properties?.["handoffKind"]?.enum?.[0]
+  )).toEqual(["understanding", "plan", "implementation"]);
+  expect(workflowHandoffToolDefinition?.parameters.properties["workflowHandoff"]?.anyOf?.[1]?.additionalProperties).toBe(false);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.minimum).toBe(1);
   expect(bashToolDefinition?.parameters.properties["timeout"]?.maximum).toBe(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS);
   expect(readToolDefinition?.parameters.properties["offset"]?.minimum).toBe(1);
@@ -909,6 +948,37 @@ test("parseOpenAiStream reports typed tool calls that violate shared contracts a
         invalidCallExplanation: expect.stringContaining(
           "OpenAI function call for bash violates Buli tool contract: timeoutMilliseconds",
         ),
+      },
+    ],
+  });
+});
+
+test("parseOpenAiStream reports invalid workflow handoff payloads as invalid function calls", async () => {
+  const invalidWorkflowHandoffArgumentsText = JSON.stringify({
+    workflowHandoff: {
+      handoffKind: "plan",
+      agreedGoal: "Missing required plan fields.",
+    },
+  });
+  const response = new Response(
+    [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"record_workflow_handoff","arguments":""}}\n\n',
+      `data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":${JSON.stringify(invalidWorkflowHandoffArgumentsText)}}\n\n`,
+      `data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"record_workflow_handoff","arguments":${JSON.stringify(invalidWorkflowHandoffArgumentsText)}}],"usage":{"input_tokens":10,"output_tokens":0,"total_tokens":10}}}\n\n`,
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  const { terminalState } = await collectParsedEventsAndTerminalState(response);
+
+  expect(terminalState).toMatchObject({
+    terminalKind: "provider_function_calls_requested",
+    providerFunctionCallIntents: [
+      {
+        intentKind: "invalid_function_call",
+        functionCallId: "call_1",
+        functionName: "record_workflow_handoff",
+        invalidCallExplanation: expect.stringContaining("workflow handoff contract"),
       },
     ],
   });

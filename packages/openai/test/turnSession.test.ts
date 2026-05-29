@@ -327,7 +327,7 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
 test("OpenAiProviderConversationTurn emits turn metadata, request timing, and replay-age diagnostics", async () => {
   const requestBodies: string[] = [];
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
-  const toolResultText = "Command: pwd\nWorking directory: /tmp\nExit code: 0";
+  const toolResultText = `Command: pwd\nWorking directory: /tmp\nExit code: 0\n${"large output line\n".repeat(1_000)}`;
   const queuedResponses = [
     createOpenAiStepResponse([
       'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":""}}\n\n',
@@ -378,6 +378,12 @@ test("OpenAiProviderConversationTurn emits turn metadata, request timing, and re
     requestFunctionCallOutputTextLength: 0,
     requestHistoricalFunctionCallOutputTextLength: 0,
     requestCurrentTurnFunctionCallOutputTextLength: 0,
+    requestStableSerializedByteLength: expect.any(Number),
+    requestInputSerializedByteLength: expect.any(Number),
+    requestLargestContributorKinds: expect.any(Array),
+    requestLargestContributorInputItemIndexes: expect.any(Array),
+    requestLargestContributorSerializedByteLengths: expect.any(Array),
+    requestLargestContributorTextLengths: expect.any(Array),
   });
   expect(responseStepSummaries[1]?.fields).toMatchObject({
     providerTurnKind: "task_subagent",
@@ -385,6 +391,12 @@ test("OpenAiProviderConversationTurn emits turn metadata, request timing, and re
     requestFunctionCallOutputTextLength: toolResultText.length,
     requestHistoricalFunctionCallOutputTextLength: 0,
     requestCurrentTurnFunctionCallOutputTextLength: toolResultText.length,
+    requestStableSerializedByteLength: expect.any(Number),
+    requestInputSerializedByteLength: expect.any(Number),
+    requestLargestContributorKinds: expect.any(Array),
+    requestLargestContributorInputItemIndexes: expect.any(Array),
+    requestLargestContributorSerializedByteLengths: expect.any(Array),
+    requestLargestContributorTextLengths: expect.any(Array),
   });
   expect(diagnosticEvents.find((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.summary")?.fields).toMatchObject({
     conversationTurnId: "conversation-turn-1",

@@ -9,11 +9,13 @@ import type {
   ToolCallPatchManyDetail,
   ToolCallLocateCodebaseSymbolsDetail,
   ToolCallReadDetail,
+  ToolCallRecordWorkflowHandoffDetail,
   ToolCallSkillDetail,
   ToolCallTaskDetail,
   ToolCallWriteDetail,
 } from "./toolCallDetail.ts";
 import type { AssistantToolCallRequest, ToolCallRequest } from "./toolCallRequest.ts";
+import { summarizeWorkflowHandoff } from "./workflowHandoff.ts";
 
 type CompleteAssistantToolRequestNameList<ToolNames extends readonly AssistantToolCallRequest["toolName"][]> = ToolNames & (
   Exclude<AssistantToolCallRequest["toolName"], ToolNames[number]> extends never
@@ -40,10 +42,11 @@ export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNa
   "write",
   "task",
   "skill",
+  "record_workflow_handoff",
 ] as const);
 export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "locate_codebase_symbols"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "edit_many", "patch", "patch_many", "write"] as const satisfies readonly AssistantToolRequestName[];
-export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"] as const satisfies readonly AssistantToolRequestName[];
+export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"] as const satisfies readonly AssistantToolRequestName[];
 export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite"] as const satisfies readonly ToolCallDetailName[];
 
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
@@ -108,6 +111,12 @@ export function isLocateCodebaseSymbolsToolCallRequest(
   return toolCallRequest.toolName === "locate_codebase_symbols";
 }
 
+export function isRecordWorkflowHandoffToolCallRequest(
+  toolCallRequest: ToolCallRequest,
+): toolCallRequest is ToolCallRequestByName<"record_workflow_handoff"> {
+  return toolCallRequest.toolName === "record_workflow_handoff";
+}
+
 export function isReadOnlyAssistantModeToolRequestName(
   toolName: AssistantToolRequestName,
 ): toolName is ReadOnlyAssistantModeToolRequestName {
@@ -153,6 +162,9 @@ export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCall
   }
   if (toolCallRequest.toolName === "skill") {
     return createStartedSkillToolCallDetail(toolCallRequest);
+  }
+  if (toolCallRequest.toolName === "record_workflow_handoff") {
+    return createStartedRecordWorkflowHandoffToolCallDetail(toolCallRequest);
   }
   return assertUnhandledToolCallRequest(toolCallRequest);
 }
@@ -252,6 +264,16 @@ function createStartedSkillToolCallDetail(toolCallRequest: ToolCallRequestByName
   return {
     toolName: "skill",
     skillName: toolCallRequest.skillName,
+  };
+}
+
+function createStartedRecordWorkflowHandoffToolCallDetail(
+  toolCallRequest: ToolCallRequestByName<"record_workflow_handoff">,
+): ToolCallRecordWorkflowHandoffDetail {
+  return {
+    toolName: "record_workflow_handoff",
+    handoffKind: toolCallRequest.workflowHandoff.handoffKind,
+    handoffSummary: summarizeWorkflowHandoff(toolCallRequest.workflowHandoff),
   };
 }
 

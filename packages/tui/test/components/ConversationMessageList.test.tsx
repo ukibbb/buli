@@ -633,8 +633,8 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("+2");
     expect(frame).toContain("-1");
     expect(frame).not.toContain("workspace patch");
-    expect(frame).not.toContain("M src/utils.ts");
-    expect(frame).not.toContain("newName");
+    expect(frame).toContain("M src/utils.ts");
+    expect(frame).toContain("newName");
   });
 
   test("renders_pending_edit_approval_buttons_on_the_tool_call_row", async () => {

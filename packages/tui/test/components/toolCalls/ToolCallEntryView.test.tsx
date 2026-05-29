@@ -217,4 +217,23 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("Analysis complete.");
   });
 
+  test("dispatches_workflow_handoff", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "record_workflow_handoff",
+          handoffKind: "plan",
+          handoffSummary: "Implement typed workflow handoffs.",
+        }}
+      />,
+      { width: 90, height: 15 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("WorkflowHandoff");
+    expect(frame).toContain("plan");
+    expect(frame).toContain("recorded");
+  });
+
 });

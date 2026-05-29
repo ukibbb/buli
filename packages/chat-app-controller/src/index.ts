@@ -43,6 +43,9 @@ export {
   type UseChatAppActiveTurnInterruptResult,
 } from "./useChatAppActiveTurnInterrupt.ts";
 export {
+  AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
+  MAX_AUTO_COMPACTION_CONTINUATION_DEPTH,
+  buildAutoCompactionContinuationPromptText,
   useChatAppAssistantTurnActions,
   type PendingToolApprovalDecisionSubmission,
   type QueuedChatAppPrompt,

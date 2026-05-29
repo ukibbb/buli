@@ -1153,6 +1153,33 @@
           "$ref": "#/$defs/__schema20"
         },
         {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "record_workflow_handoff"
+            },
+            "handoffKind": {
+              "type": "string",
+              "enum": [
+                "understanding",
+                "plan",
+                "implementation"
+              ]
+            },
+            "handoffSummary": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "toolName",
+            "handoffKind",
+            "handoffSummary"
+          ],
+          "additionalProperties": false
+        },
+        {
           "$ref": "#/$defs/__schema19"
         }
       ]

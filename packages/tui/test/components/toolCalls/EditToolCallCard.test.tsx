@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { EditToolCallCard } from "../../../src/components/toolCalls/EditToolCallCard.tsx";
 import { ApprovalDecisionControl } from "../../../src/components/primitives/ApprovalDecisionControl.tsx";
@@ -13,8 +12,8 @@ function findRenderedLineContaining(frame: string, targetText: string): string {
 }
 
 describe("EditToolCallCard", () => {
-  test("completed_shows_file_path_and_diff", async () => {
-    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+  test("completed_shows_file_path_and_diff_without_disclosure", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
       <EditToolCallCard
         renderState="completed"
         toolCallDetail={{
@@ -36,26 +35,18 @@ describe("EditToolCallCard", () => {
       { width: 80, height: 20 },
     );
     await renderOnce();
-    const collapsedFrame = captureCharFrame();
-    expect(collapsedFrame).toContain("[+]");
-    expect(collapsedFrame).toContain("Edit");
-    expect(collapsedFrame).toContain("[/src/utils.ts]");
-    expect(collapsedFrame).toContain("+3");
-    expect(collapsedFrame).toContain("−1");
-    expect(collapsedFrame).not.toContain("const newer");
-
-    await act(async () => {
-      await mockMouse.click(3, 0);
-    });
-    await renderOnce();
-
-    const expandedFrame = captureCharFrame();
-    expect(expandedFrame).toContain("[-]");
-    expect(expandedFrame).toContain("const newer");
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
+    expect(frame).toContain("Edit");
+    expect(frame).toContain("[/src/utils.ts]");
+    expect(frame).toContain("+3");
+    expect(frame).toContain("−1");
+    expect(frame).toContain("const newer");
   });
 
   test("completed_prefers_actual_workspace_patch_over_prepared_diff", async () => {
-    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+    const { captureCharFrame, renderOnce } = await testRender(
       <EditToolCallCard
         renderState="completed"
         toolCallDetail={{
@@ -105,27 +96,19 @@ describe("EditToolCallCard", () => {
     );
 
     await renderOnce();
-    const collapsedFrame = captureCharFrame();
-    expect(collapsedFrame).toContain("[+]");
-    expect(collapsedFrame).toContain("+1");
-    expect(collapsedFrame).toContain("-1");
-    expect(collapsedFrame).not.toContain("+99");
-    expect(collapsedFrame).not.toContain("−88");
-    expect(collapsedFrame).not.toContain("actualNew");
-
-    await act(async () => {
-      await mockMouse.click(3, 0);
-    });
-    await renderOnce();
-
-    const expandedFrame = captureCharFrame();
-    expect(expandedFrame).toContain("[-]");
-    expect(expandedFrame).toContain("M /src/utils.ts (+1 -1)");
-    expect(expandedFrame).toContain("actualNew");
-    expect(expandedFrame).not.toContain("fallbackNew");
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
+    expect(frame).toContain("+1");
+    expect(frame).toContain("-1");
+    expect(frame).not.toContain("+99");
+    expect(frame).not.toContain("−88");
+    expect(frame).toContain("M /src/utils.ts (+1 -1)");
+    expect(frame).toContain("actualNew");
+    expect(frame).not.toContain("fallbackNew");
   });
 
-  test("streaming_shows_amber_state", async () => {
+  test("streaming_shows_amber_state_without_disclosure", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <EditToolCallCard
         renderState="streaming"
@@ -138,7 +121,8 @@ describe("EditToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("[+]");
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
     expect(frame).toContain("Edit");
     expect(frame).toContain("[/src/foo.ts]");
     expect(frame).toContain("◆");
@@ -161,6 +145,8 @@ describe("EditToolCallCard", () => {
     await renderOnce();
     const frame = captureCharFrame();
     const editHeaderLine = findRenderedLineContaining(frame, "Edit");
+    expect(editHeaderLine).not.toContain("[+]");
+    expect(editHeaderLine).not.toContain("[-]");
     expect(editHeaderLine).toContain("packages/engine/test/systemPrompt.test.ts");
     expect(editHeaderLine).toContain("Yes");
     expect(editHeaderLine).toContain("No");
@@ -168,7 +154,7 @@ describe("EditToolCallCard", () => {
     expect(frame).not.toContain("Review");
   });
 
-  test("failed_shows_error_state", async () => {
+  test("failed_shows_error_state_without_disclosure", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <EditToolCallCard
         renderState="failed"
@@ -182,7 +168,8 @@ describe("EditToolCallCard", () => {
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("[+]");
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
     expect(frame).toContain("[/src/locked.ts]");
     expect(frame).toContain("permission denied");
   });

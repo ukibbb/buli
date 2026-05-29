@@ -15,6 +15,7 @@ import type {
   PromptContextCandidate,
 } from "@buli/engine";
 import type { ChatSlashCommandSkill } from "@buli/chat-session-state";
+import { buildAutoCompactionContinuationPromptText } from "@buli/chat-app-controller";
 import { act } from "react";
 import { ChatScreen } from "../src/ChatScreen.tsx";
 import { testRender } from "./testRenderWithCleanup.ts";
@@ -572,21 +573,28 @@ test("ChatScreen auto-compacts and continues after a terminal assistant turn", a
   )).toBe(true);
   expect(conversationTurnRequests.map((conversationTurnRequest) => ({
     userPromptText: conversationTurnRequest.userPromptText,
+    modelFacingUserPromptText: conversationTurnRequest.modelFacingUserPromptText,
     promptSource: conversationTurnRequest.promptSource,
   }))).toEqual([
     {
       userPromptText: "Trigger auto compaction",
+      modelFacingUserPromptText: undefined,
       promptSource: undefined,
     },
     {
-      userPromptText: "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+      userPromptText: buildAutoCompactionContinuationPromptText({
+        originalUserPromptText: "Trigger auto compaction",
+      }),
+      modelFacingUserPromptText: buildAutoCompactionContinuationPromptText({
+        originalUserPromptText: "Trigger auto compaction",
+      }),
       promptSource: "auto_compaction_continue",
     },
   ]);
   expect(compactedFrame).toContain("Auto Compaction");
   expect(compactedFrame).toContain("continue after automatic compaction");
   expect(compactedFrame).toContain("Continued after compaction.");
-  expect(compactedFrame).not.toContain("Continue if you have next steps, or stop and ask for clarification");
+  expect(compactedFrame).not.toContain("Continue the active task from the compacted conversation summary");
 });
 
 test("ChatScreen requests overflow compaction without auto-retrying context-window overflow failures in the UI", async () => {

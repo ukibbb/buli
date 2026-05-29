@@ -4,6 +4,7 @@ import {
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
   isFileMutationToolCallRequest,
+  isRecordWorkflowHandoffToolCallRequest,
   isSkillToolCallRequest,
   isTaskToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
@@ -16,6 +17,7 @@ import {
   type ProviderRequestedToolCall,
   type ReasoningEffort,
   type AssistantToolCallRequest,
+  type WorkflowHandoff,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
 import { resolveAssistantOperatingModeToolAccess } from "./assistantOperatingModePolicy.ts";
@@ -33,6 +35,7 @@ import { streamAssistantResponseEventsForBashToolCall } from "./runtimeBashToolC
 import { streamAssistantResponseEventsForSkillToolCall } from "./runtimeSkillToolCallExecution.ts";
 import { streamAssistantResponseEventsForTaskToolCall } from "./runtimeTaskToolCallExecution.ts";
 import { streamAssistantResponseEventsForFileMutationToolCall } from "./runtimeFileMutationToolCallExecution.ts";
+import { streamAssistantResponseEventsForWorkflowHandoffToolCall } from "./runtimeWorkflowHandoffToolCallExecution.ts";
 import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
@@ -83,6 +86,7 @@ export type RuntimeToolCallExecutionContext = {
   canSpawnSubagent: boolean;
   subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
   taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
+  recordWorkflowHandoff: (workflowHandoff: WorkflowHandoff) => void;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -114,6 +118,7 @@ const requestedToolCallExecutorByName = {
   locate_codebase_symbols: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   task: streamAssistantResponseEventsForTaskRequestedToolCall,
   skill: streamAssistantResponseEventsForSkillRequestedToolCall,
+  record_workflow_handoff: streamAssistantResponseEventsForWorkflowHandoffRequestedToolCall,
   edit: streamAssistantResponseEventsForFileMutationRequestedToolCall,
   edit_many: streamAssistantResponseEventsForFileMutationRequestedToolCall,
   patch: streamAssistantResponseEventsForFileMutationRequestedToolCall,
@@ -491,6 +496,27 @@ async function* streamAssistantResponseEventsForSkillRequestedToolCall(
     toolCallId: input.toolCallId,
     skillToolCallRequest: input.toolCallRequest,
     skillCatalog: input.skillCatalog,
+    toolResultSessionRecorder: input.toolResultSessionRecorder,
+    throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+    diagnosticLogger: input.diagnosticLogger,
+  });
+}
+
+async function* streamAssistantResponseEventsForWorkflowHandoffRequestedToolCall(
+  input: RuntimeRequestedToolCallExecutorInput,
+): AsyncGenerator<AssistantResponseEvent> {
+  if (!isRecordWorkflowHandoffToolCallRequest(input.toolCallRequest)) {
+    throw new Error(`Workflow handoff tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
+  }
+
+  yield* streamAssistantResponseEventsForWorkflowHandoffToolCall({
+    assistantResponseMessageId: input.assistantResponseMessageId,
+    providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.toolCallId,
+    recordWorkflowHandoffToolCallRequest: input.toolCallRequest,
+    assistantOperatingMode: input.assistantOperatingMode,
+    recordWorkflowHandoff: input.recordWorkflowHandoff,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,

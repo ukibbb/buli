@@ -39,6 +39,12 @@ export type {
 export { resolveBuiltInPrimaryAssistantAgent, resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 export type { BuiltInPrimaryAssistantAgent, BuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 export {
+  buildAssistantWorkflowHandoffContext,
+  buildAssistantWorkflowHandoffPromptBlock,
+  formatAssistantWorkflowHandoffContextPromptBlock,
+} from "./assistantWorkflowHandoffContext.ts";
+export type { AssistantWorkflowHandoffContext } from "./assistantWorkflowHandoffContext.ts";
+export {
   defaultPrivateGitWorkspaceSnapshotDirectoryPath,
   PrivateGitWorkspaceSnapshotStore,
   WorkspacePatchRevertConflictError,

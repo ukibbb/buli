@@ -33,10 +33,31 @@ type TerminalAssistantResponseEvent = Extract<AssistantResponseEvent, {
   type: "assistant_message_completed" | "assistant_message_incomplete" | "assistant_message_failed" | "assistant_message_interrupted";
 }>;
 
-const AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT =
-  "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.";
+export const AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT = [
+  "Continue the active task from the compacted conversation summary now visible in context.",
+  "",
+  "Use the summary as the source of truth for the original user goal, constraints and preferences, verified progress, current in-progress step, blockers, key decisions, relevant files, next steps, and stop condition.",
+  "",
+  "If the original goal is not fulfilled and the next step is safe in the current workflow mode, continue without asking the user to continue.",
+  "",
+  "Stop only when the goal is fulfilled, you are blocked, you need user approval, or the summary is insufficient to continue safely.",
+  "",
+  "Do not repeat completed work. Do not mention compaction. Start at the next unfinished step.",
+].join("\n");
+
+export function buildAutoCompactionContinuationPromptText(input: { originalUserPromptText: string }): string {
+  return [
+    "Original user prompt before automatic compaction:",
+    "",
+    input.originalUserPromptText,
+    "",
+    AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
+  ].join("\n");
+}
+
 const AUTO_COMPACTION_INCOMPLETE_CONTINUATION_PROMPT_TEXT =
   "Continue the previous response from where it stopped. Do not repeat completed content.";
+export const MAX_AUTO_COMPACTION_CONTINUATION_DEPTH = 8;
 
 export type UseChatAppAssistantTurnActionsInput = {
   chatSessionState: ChatSessionState;
@@ -68,6 +89,8 @@ export type SubmittedChatAppPrompt = {
   submittedAssistantOperatingMode: AssistantOperatingMode;
   submittedUserSelectedSkillName?: string | undefined;
   submittedPromptSource?: UserPromptSource | undefined;
+  autoCompactionContinuationDepth?: number | undefined;
+  autoCompactionOriginalUserPromptText?: string | undefined;
 };
 
 export type QueuedChatAppPrompt = {
@@ -109,27 +132,55 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
     didStopBecauseMaxOutputTokens &&
     input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_continue"
   ) {
+    const originalUserPromptText = resolveAutoCompactionOriginalUserPromptText(input.activeSubmittedPrompt);
     return {
       submittedPromptText: AUTO_COMPACTION_INCOMPLETE_CONTINUATION_PROMPT_TEXT,
       submittedPromptImageAttachments: [],
       submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
       submittedPromptSource: "auto_compaction_continue",
+      autoCompactionContinuationDepth: resolveNextAutoCompactionContinuationDepth(input.activeSubmittedPrompt),
+      autoCompactionOriginalUserPromptText: originalUserPromptText,
     };
+  }
+  if (didStopBecauseMaxOutputTokens) {
+    return undefined;
+  }
+
+  if (input.activeSubmittedPrompt.submittedPromptSource === "auto_compaction_retry") {
+    return undefined;
+  }
+
+  const nextAutoCompactionContinuationDepth = resolveNextAutoCompactionContinuationDepth(input.activeSubmittedPrompt);
+  if (nextAutoCompactionContinuationDepth > MAX_AUTO_COMPACTION_CONTINUATION_DEPTH) {
+    return undefined;
   }
 
   if (
-    input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_continue" &&
-    input.activeSubmittedPrompt.submittedPromptSource !== "auto_compaction_retry"
+    input.activeSubmittedPrompt.submittedPromptSource === undefined ||
+    input.activeSubmittedPrompt.submittedPromptSource === "auto_compaction_continue"
   ) {
+    const originalUserPromptText = resolveAutoCompactionOriginalUserPromptText(input.activeSubmittedPrompt);
     return {
-      submittedPromptText: AUTO_COMPACTION_CONTINUATION_PROMPT_TEXT,
+      submittedPromptText: buildAutoCompactionContinuationPromptText({ originalUserPromptText }),
       submittedPromptImageAttachments: [],
       submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
       submittedPromptSource: "auto_compaction_continue",
+      autoCompactionContinuationDepth: nextAutoCompactionContinuationDepth,
+      autoCompactionOriginalUserPromptText: originalUserPromptText,
     };
   }
 
   return undefined;
+}
+
+function resolveNextAutoCompactionContinuationDepth(activeSubmittedPrompt: SubmittedChatAppPrompt): number {
+  const currentContinuationDepth = activeSubmittedPrompt.autoCompactionContinuationDepth ??
+    (activeSubmittedPrompt.submittedPromptSource === "auto_compaction_continue" ? 1 : 0);
+  return currentContinuationDepth + 1;
+}
+
+function resolveAutoCompactionOriginalUserPromptText(activeSubmittedPrompt: SubmittedChatAppPrompt): string {
+  return activeSubmittedPrompt.autoCompactionOriginalUserPromptText ?? activeSubmittedPrompt.submittedPromptText;
 }
 
 export function resolveAutoCompactionRequestAfterAssistantTurn(input: {
@@ -217,6 +268,9 @@ export function useChatAppAssistantTurnActions(
             ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }
             : {}),
           ...(activeSubmittedPrompt.submittedPromptSource ? { promptSource: activeSubmittedPrompt.submittedPromptSource } : {}),
+          ...(activeSubmittedPrompt.submittedPromptSource === "auto_compaction_continue"
+            ? { modelFacingUserPromptText: activeSubmittedPrompt.submittedPromptText }
+            : {}),
         };
 
         const assistantResponseRelayPromise = relayAssistantResponseRunnerEvents({

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
+import { WorkflowHandoffSchema } from "./workflowHandoff.ts";
 
 export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 300_000;
 export const MAX_TOOL_CALL_PATH_LENGTH = 4_096;
@@ -168,6 +169,13 @@ export const SkillToolCallRequestSchema = z
   })
   .strict();
 
+export const RecordWorkflowHandoffToolCallRequestSchema = z
+  .object({
+    toolName: z.literal("record_workflow_handoff"),
+    workflowHandoff: WorkflowHandoffSchema,
+  })
+  .strict();
+
 // The "at least one of symbolNames/filePaths" rule lives in toolCatalog's
 // parse path, not here: z.discriminatedUnion members must be raw ZodObjects,
 // and .refine() would produce a ZodEffects that cannot join the union.
@@ -195,6 +203,7 @@ export const AssistantToolCallRequestSchema = z.discriminatedUnion("toolName", [
   WriteToolCallRequestSchema,
   TaskToolCallRequestSchema,
   SkillToolCallRequestSchema,
+  RecordWorkflowHandoffToolCallRequestSchema,
   LocateCodebaseSymbolsToolCallRequestSchema,
 ]);
 
@@ -210,6 +219,7 @@ export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
   WriteToolCallRequestSchema,
   TaskToolCallRequestSchema,
   SkillToolCallRequestSchema,
+  RecordWorkflowHandoffToolCallRequestSchema,
   LocateCodebaseSymbolsToolCallRequestSchema,
 ]);
 
@@ -225,6 +235,7 @@ export type PatchManyToolCallRequest = z.infer<typeof PatchManyToolCallRequestSc
 export type WriteToolCallRequest = z.infer<typeof WriteToolCallRequestSchema>;
 export type TaskToolCallRequest = z.infer<typeof TaskToolCallRequestSchema>;
 export type SkillToolCallRequest = z.infer<typeof SkillToolCallRequestSchema>;
+export type RecordWorkflowHandoffToolCallRequest = z.infer<typeof RecordWorkflowHandoffToolCallRequestSchema>;
 export type LocateCodebaseSymbolsToolCallRequest = z.infer<typeof LocateCodebaseSymbolsToolCallRequestSchema>;
 export type AssistantToolCallRequest = z.infer<typeof AssistantToolCallRequestSchema>;
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;

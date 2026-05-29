@@ -6,7 +6,7 @@ import {
   formatWorkspacePatchCompactSummary,
   WorkspacePatchChangedFilesView,
 } from "../workspacePatch/WorkspacePatchChangedFilesView.tsx";
-import { ExpandableToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
+import { AlwaysVisibleToolCallCard, resolveDefaultToolCallRenderStatePresentation } from "./ExpandableToolCallCard.tsx";
 
 export type EditManyToolCallCardProps = {
   toolCallDetail: ToolCallEditManyDetail;
@@ -25,13 +25,13 @@ export function EditManyToolCallCard(props: EditManyToolCallCardProps): ReactNod
   const hasEditManyDiffContent = Boolean(props.workspacePatch) ||
     (props.renderState !== "failed" && Boolean(props.toolCallDetail.changedFiles?.length));
   return (
-    <ExpandableToolCallCard
+    <AlwaysVisibleToolCallCard
       accentColor={accentColor}
       {...(props.approvalDecisionControl !== undefined
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
-      hasExpandableContent={hasEditManyDiffContent}
-      renderExpandedContent={() => buildEditManyBodyContent(props)}
+      hasVisibleContent={hasEditManyDiffContent}
+      renderVisibleContent={() => buildEditManyBodyContent(props)}
       statusKind={toolCallPresentation.statusKind}
       statusLabel={buildEditManyStatusLabel(props)}
       toolNameLabel="EditMany"

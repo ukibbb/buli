@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { WriteToolCallCard } from "../../../src/components/toolCalls/WriteToolCallCard.tsx";
 
 describe("WriteToolCallCard", () => {
-  test("completed_shows_file_path_and_diff", async () => {
-    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+  test("completed_shows_file_path_and_diff_without_disclosure", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
       <WriteToolCallCard
         renderState="completed"
         toolCallDetail={{
@@ -27,26 +26,18 @@ describe("WriteToolCallCard", () => {
       { width: 80, height: 20 },
     );
     await renderOnce();
-    const collapsedFrame = captureCharFrame();
+    const frame = captureCharFrame();
 
-    expect(collapsedFrame).toContain("[+]");
-    expect(collapsedFrame).toContain("Write");
-    expect(collapsedFrame).toContain("[/src/generated.ts]");
-    expect(collapsedFrame).toContain("+2");
-    expect(collapsedFrame).not.toContain("export const first");
-
-    await act(async () => {
-      await mockMouse.click(3, 0);
-    });
-    await renderOnce();
-
-    const expandedFrame = captureCharFrame();
-    expect(expandedFrame).toContain("[-]");
-    expect(expandedFrame).toContain("export const first");
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
+    expect(frame).toContain("Write");
+    expect(frame).toContain("[/src/generated.ts]");
+    expect(frame).toContain("+2");
+    expect(frame).toContain("export const first");
   });
 
   test("completed_prefers_actual_workspace_patch_over_prepared_diff", async () => {
-    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+    const { captureCharFrame, renderOnce } = await testRender(
       <WriteToolCallCard
         renderState="completed"
         toolCallDetail={{
@@ -95,22 +86,14 @@ describe("WriteToolCallCard", () => {
     );
 
     await renderOnce();
-    const collapsedFrame = captureCharFrame();
-    expect(collapsedFrame).toContain("[+]");
-    expect(collapsedFrame).toContain("+2");
-    expect(collapsedFrame).toContain("-0");
-    expect(collapsedFrame).not.toContain("+99");
-    expect(collapsedFrame).not.toContain("actual");
-
-    await act(async () => {
-      await mockMouse.click(3, 0);
-    });
-    await renderOnce();
-
-    const expandedFrame = captureCharFrame();
-    expect(expandedFrame).toContain("[-]");
-    expect(expandedFrame).toContain("A /src/generated.ts (+2 -0)");
-    expect(expandedFrame).toContain("actual");
-    expect(expandedFrame).not.toContain("fallback");
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
+    expect(frame).toContain("+2");
+    expect(frame).toContain("-0");
+    expect(frame).not.toContain("+99");
+    expect(frame).toContain("A /src/generated.ts (+2 -0)");
+    expect(frame).toContain("actual");
+    expect(frame).not.toContain("fallback");
   });
 });

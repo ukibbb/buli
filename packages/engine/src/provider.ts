@@ -13,6 +13,7 @@ import type {
 export type ConversationTurnRequest = {
   conversationTurnId?: string;
   userPromptText: string;
+  modelFacingUserPromptText?: string;
   userPromptImageAttachments?: readonly UserPromptImageAttachment[];
   userSelectedSkillName?: string;
   assistantOperatingMode?: AssistantOperatingMode;

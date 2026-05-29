@@ -803,7 +803,7 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
     "The output should be clean enough that Implementation mode can execute it without re-planning or broad rediscovery.",
   );
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
     entryKind: "user_prompt",
     assistantOperatingMode: "plan",
@@ -833,59 +833,111 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"]);
 });
 
-test("AssistantConversationRuntime rejects plan mode before understand when workflow enforcement is enabled", () => {
-  const provider = new RecordingConversationTurnProvider([]);
-  const runtime = new AssistantConversationRuntime({
-    conversationTurnProvider: provider,
-    workspaceRootPath: process.cwd(),
-    promptContextBrowseRootPath: process.cwd(),
-    enforceAssistantWorkflowModeTransitions: true,
-  });
-
-  expect(() =>
-    runtime.startConversationTurn({
-      userPromptText: "Create a plan",
-      assistantOperatingMode: "plan",
-      selectedModelId: "gpt-5.4",
-    })
-  ).toThrow("Plan Agent cannot start yet");
-  expect(provider.startedTurnRequests).toHaveLength(0);
-});
-
-test("AssistantConversationRuntime allows enforced understand to plan to implementation sequence", async () => {
+test("AssistantConversationRuntime allows plan mode without a completed understand turn", async () => {
   const provider = new RecordingConversationTurnProvider([
     new ScriptedProviderTurn({
       beforeToolResultEvents: [
-        { type: "text_chunk", text: "Plan." },
-        { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
-      ],
-    }),
-    new ScriptedProviderTurn({
-      beforeToolResultEvents: [
-        { type: "text_chunk", text: "Implemented." },
+        { type: "text_chunk", text: "Plan can start flexibly." },
         { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
       ],
     }),
   ]);
-  const conversationHistory = new InMemoryConversationHistory({
-    initialConversationSessionEntries: [
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(runtime.startConversationTurn({
+    userPromptText: "Create a plan",
+    assistantOperatingMode: "plan",
+    selectedModelId: "gpt-5.4",
+  }));
+
+  expect(provider.startedTurnRequests).toHaveLength(1);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("No understanding handoff is available");
+});
+
+test("AssistantConversationRuntime allows implementation mode without a completed plan turn", async () => {
+  const provider = new RecordingConversationTurnProvider([
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Implementation can start flexibly." },
+        { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    }),
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(runtime.startConversationTurn({
+    userPromptText: "execute",
+    assistantOperatingMode: "implementation",
+    selectedModelId: "gpt-5.4",
+  }));
+
+  expect(provider.startedTurnRequests).toHaveLength(1);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("No plan handoff is available");
+});
+
+test("AssistantConversationRuntime stores recorded plan handoff and injects it into implementation", async () => {
+  const planWorkflowHandoff = {
+    handoffKind: "plan" as const,
+    agreedGoal: "Replace strict workflow enforcement with typed handoffs.",
+    currentStateSummary: "Runtime no longer needs to reject flexible mode starts.",
+    chosenApproach: "Record handoffs through a typed tool and attach them to completed assistant messages.",
+    targetFiles: [
       {
-        entryKind: "assistant_message",
-        assistantMessageStatus: "completed",
-        assistantMessageText: "Understanding complete.",
-        assistantOperatingMode: "understand",
+        filePath: "packages/engine/src/runtime.ts",
+        operationKind: "update" as const,
+        reason: "Store the latest recorded handoff for the current turn.",
       },
     ],
+    implementationSteps: ["Record the plan handoff", "Inject the latest plan handoff into Implementation mode"],
+    verificationCommands: [
+      { command: "bun test packages/engine/test/runtime.test.ts", reason: "Verify runtime handoff flow." },
+    ],
+    risks: [],
+    isReadyForImplementation: true,
+    requiredPreApplyReads: [],
+  };
+  const planProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_record_plan_handoff",
+        toolCallRequest: {
+          toolName: "record_workflow_handoff",
+          workflowHandoff: planWorkflowHandoff,
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Plan ready." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
   });
+  const provider = new RecordingConversationTurnProvider([
+    planProviderTurn,
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Implementation will use the handoff." },
+        { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    }),
+  ]);
+  const conversationHistory = new InMemoryConversationHistory();
   const runtime = new AssistantConversationRuntime({
     conversationTurnProvider: provider,
     workspaceRootPath: process.cwd(),
     promptContextBrowseRootPath: process.cwd(),
     conversationHistory,
-    enforceAssistantWorkflowModeTransitions: true,
   });
 
   await collectAssistantEvents(runtime.startConversationTurn({
@@ -899,12 +951,19 @@ test("AssistantConversationRuntime allows enforced understand to plan to impleme
     selectedModelId: "gpt-5.4",
   }));
 
-  expect(provider.startedTurnRequests.map((startedTurnRequest) =>
-    startedTurnRequest.conversationSessionEntries.at(-1)
-  )).toMatchObject([
-    { entryKind: "user_prompt", assistantOperatingMode: "plan" },
-    { entryKind: "user_prompt", assistantOperatingMode: "implementation" },
+  const completedPlanAssistantMessage = conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "assistant_message"; assistantMessageStatus: "completed" }> =>
+      conversationSessionEntry.entryKind === "assistant_message" &&
+      conversationSessionEntry.assistantMessageStatus === "completed" &&
+      conversationSessionEntry.assistantOperatingMode === "plan",
+  );
+  expect(planProviderTurn.submittedToolResults).toEqual([
+    { toolCallId: "call_record_plan_handoff", toolResultText: "Recorded plan workflow handoff." },
   ]);
+  expect(completedPlanAssistantMessage?.workflowHandoff).toEqual(planWorkflowHandoff);
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("latest_plan_handoff");
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Replace strict workflow enforcement with typed handoffs.");
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Use the latest plan handoff as the implementation contract");
 });
 
 test("AssistantConversationRuntime filters explicit tool overrides in read-only modes", async () => {
@@ -1671,6 +1730,44 @@ test("AssistantConversationRuntime persists prompt when prompt-context expansion
       entryKind: "assistant_message",
       assistantMessageStatus: "failed",
       assistantMessageText: "",
+    },
+  ]);
+});
+
+test("AssistantConversationRuntime uses explicit model-facing prompt text without prompt-context expansion", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-model-facing-prompt-override-"));
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: join(workspaceRootPath, "missing-prompt-context-root"),
+  });
+
+  const modelFacingUserPromptText = "Continue from the summary. Original prompt text: Read @README.md";
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Read @README.md",
+      modelFacingUserPromptText,
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_turn_started",
+    "assistant_message_part_added",
+    "assistant_message_completed",
+  ]);
+  expect(provider.startedTurnRequests).toHaveLength(1);
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toMatchObject([
+    {
+      entryKind: "user_prompt",
+      promptText: "Read @README.md",
+      modelFacingPromptText: modelFacingUserPromptText,
     },
   ]);
 });

@@ -12,6 +12,7 @@ import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import { SkillToolCallCard } from "./SkillToolCallCard.tsx";
 import { TaskToolCallCard } from "./TaskToolCallCard.tsx";
 import { TodoWriteToolCallCard } from "./TodoWriteToolCallCard.tsx";
+import { WorkflowHandoffToolCallCard } from "./WorkflowHandoffToolCallCard.tsx";
 import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
 
 // ToolCallEntryView dispatches an assistant tool-call part's ToolCallDetail to
@@ -83,6 +84,7 @@ const toolCallEntryRendererByName: {
   todowrite: renderTodoWriteToolCallEntry,
   task: renderTaskToolCallEntry,
   skill: renderSkillToolCallEntry,
+  record_workflow_handoff: renderWorkflowHandoffToolCallEntry,
 };
 
 export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
@@ -179,4 +181,8 @@ function renderTaskToolCallEntry(props: ToolCallEntryRendererProps<"task">): Rea
 
 function renderSkillToolCallEntry(props: ToolCallEntryRendererProps<"skill">): ReactNode {
   return <SkillToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderWorkflowHandoffToolCallEntry(props: ToolCallEntryRendererProps<"record_workflow_handoff">): ReactNode {
+  return <WorkflowHandoffToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
 }
