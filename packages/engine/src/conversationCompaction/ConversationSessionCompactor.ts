@@ -1,4 +1,5 @@
 import {
+  findLatestVisibleWorkflowHandoffCheckpoint,
   redactSensitiveText,
   type BuliDiagnosticLogger,
 } from "@buli/contracts";
@@ -16,6 +17,7 @@ import {
   type ConversationAutoCompactionResult,
 } from "./conversationAutoCompactionPolicy.ts";
 import {
+  buildConversationCompactionWorkflowModeContext,
   buildConversationCompactionSystemPrompt,
   createConversationCompactionPromptSessionEntry,
 } from "./conversationCompactionPrompt.ts";
@@ -114,7 +116,13 @@ export class ConversationSessionCompactor {
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
     });
     try {
-      const compactionPromptEntry = createConversationCompactionPromptSessionEntry();
+      const workflowModeContext = buildConversationCompactionWorkflowModeContext({
+        conversationSessionEntries: selectedConversationEntriesForCompaction.compactionSourceConversationSessionEntries,
+      });
+      const latestVisibleWorkflowHandoffCheckpoint = findLatestVisibleWorkflowHandoffCheckpoint(
+        selectedConversationEntriesForCompaction.compactionSourceConversationSessionEntries,
+      );
+      const compactionPromptEntry = createConversationCompactionPromptSessionEntry({ workflowModeContext });
       const compactionSource = input.compactionSource ?? "manual";
       const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
         providerTurnKind: "conversation_compaction",
@@ -146,6 +154,10 @@ export class ConversationSessionCompactor {
         retainedRecentConversationSessionEntryCount:
           selectedConversationEntriesForCompaction.retainedRecentConversationSessionEntryCount,
         compactionSource,
+        ...(workflowModeContext.latestCompletedAssistantOperatingMode !== undefined
+          ? { latestCompletedAssistantOperatingMode: workflowModeContext.latestCompletedAssistantOperatingMode }
+          : {}),
+        ...latestVisibleWorkflowHandoffCheckpoint,
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_compaction.completed", {
         compactedEntryCount: compactionResult.compactedEntryCount,

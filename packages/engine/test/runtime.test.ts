@@ -572,6 +572,49 @@ async function collectAssistantEvents(activeConversationTurn: ReturnType<Assista
   return emittedAssistantEvents;
 }
 
+function createPriorReadOnlyEvidenceConversationSessionEntries(): ConversationSessionEntry[] {
+  return [
+    {
+      entryKind: "user_prompt",
+      promptText: "Investigate providerTurnReplay request projection",
+      modelFacingPromptText: "Investigate providerTurnReplay request projection",
+    },
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_read_request_projection",
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "packages/openai/src/provider/request.ts",
+        offsetLineNumber: 80,
+        maximumLineCount: 40,
+        inspectionQuestion: "Where is providerTurnReplay projected into requests?",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_read_request_projection",
+      toolCallDetail: {
+        toolName: "read",
+        readFilePath: "packages/openai/src/provider/request.ts",
+        returnedLineCount: 2,
+        previewLines: [
+          { lineNumber: 90, lineText: "export function createOpenAiResponsesInputItems(...)" },
+          { lineNumber: 116, lineText: "pendingConversationSessionTurn.entriesAfterUserPrompt.push(conversationSessionEntry);" },
+        ],
+      },
+      toolResultText: [
+        "90: export function createOpenAiResponsesInputItems(...)",
+        "116: pendingConversationSessionTurn.entriesAfterUserPrompt.push(conversationSessionEntry);",
+      ].join("\n"),
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "OpenAI request projection was inspected.",
+    },
+  ];
+}
+
 test("AssistantConversationRuntime exposes idle turn status before work starts", () => {
   const runtime = new AssistantConversationRuntime({
     conversationTurnProvider: new RecordingConversationTurnProvider([]),
@@ -765,6 +808,68 @@ test("AssistantConversationRuntime emits a message-part turn for streamed text",
     "assistant_message_part_updated",
     "assistant_message_completed",
   ]);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).not.toContain("BuliStickyNotes:");
+  expect(runtime.conversationHistory.listConversationSessionEntries()).not.toContainEqual(
+    expect.objectContaining({ entryKind: "buli_sticky_notes" }),
+  );
+});
+
+test("AssistantConversationRuntime emits and persists the exact BuliStickyNotes context text loaded into the provider prompt", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Continuing with request projection." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: createPriorReadOnlyEvidenceConversationSessionEntries(),
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    conversationHistory,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Continue providerTurnReplay request projection work",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  const stickyNotesPartEvent = emittedAssistantEvents.find(
+    (assistantResponseEvent) => assistantResponseEvent.type === "assistant_message_part_added" &&
+      assistantResponseEvent.part.partKind === "assistant_buli_sticky_notes",
+  );
+  if (!stickyNotesPartEvent || stickyNotesPartEvent.type !== "assistant_message_part_added" ||
+    stickyNotesPartEvent.part.partKind !== "assistant_buli_sticky_notes") {
+    throw new Error("Expected a BuliStickyNotes assistant message part event.");
+  }
+  const emittedBuliStickyNotesContextText = stickyNotesPartEvent.part.buliStickyNotesContextText;
+  const persistedBuliStickyNotesEntry = runtime.conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry) => conversationSessionEntry.entryKind === "buli_sticky_notes",
+  );
+  if (!persistedBuliStickyNotesEntry || persistedBuliStickyNotesEntry.entryKind !== "buli_sticky_notes") {
+    throw new Error("Expected a persisted BuliStickyNotes session entry.");
+  }
+
+  expect(emittedBuliStickyNotesContextText).toContain("BuliStickyNotes:\nPurpose-aware evidence notes from prior turns:");
+  expect(emittedBuliStickyNotesContextText).toContain("Where is providerTurnReplay projected into requests?");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(emittedBuliStickyNotesContextText);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).not.toContain("Context evidence ledger:");
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).not.toContainEqual(
+    expect.objectContaining({ entryKind: "buli_sticky_notes" }),
+  );
+  expect(persistedBuliStickyNotesEntry.buliStickyNotesContextText).toBe(emittedBuliStickyNotesContextText);
+
+  const stickyNotesPartEventIndex = emittedAssistantEvents.indexOf(stickyNotesPartEvent);
+  expect(stickyNotesPartEventIndex).toBe(1);
+  expect(emittedAssistantEvents[stickyNotesPartEventIndex + 1]).toMatchObject({
+    type: "assistant_message_part_added",
+    part: { partKind: "assistant_text" },
+  });
 });
 
 test("AssistantConversationRuntime injects the plan mode system reminder", async () => {
@@ -1497,6 +1602,7 @@ test("AssistantConversationRuntime marks context-window overflow failures", asyn
     entryKind: "assistant_message",
     assistantMessageStatus: "failed",
     assistantMessageText: "",
+    assistantOperatingMode: "understand",
     failureKind: "context_window_overflow",
     failureExplanation: "Your input exceeds the context window of this model. | code=context_length_exceeded",
   });
@@ -1588,6 +1694,51 @@ test("AssistantConversationRuntime compacts prior history and replays the curren
     (conversationSessionEntry) =>
       conversationSessionEntry.entryKind === "assistant_message" && conversationSessionEntry.assistantMessageStatus === "failed",
   )).toBe(false);
+});
+
+test("AssistantConversationRuntime does not emit stale BuliStickyNotes when recoverable overflow happens before the first provider event", async () => {
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: createPriorReadOnlyEvidenceConversationSessionEntries(),
+  });
+  const provider = new RecordingConversationTurnProvider([
+    new ThrowingProviderTurn(new ContextWindowOverflowError("context length exceeded before streaming")),
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Goal: continue from compacted prior context." },
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Recovered after compaction." },
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    conversationHistory,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Continue providerTurnReplay request projection work",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(provider.startedTurnRequests).toHaveLength(3);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("BuliStickyNotes:");
+  expect(provider.startedTurnRequests[2]?.systemPromptText).not.toContain("BuliStickyNotes:");
+  expect(emittedAssistantEvents.filter(
+    (assistantResponseEvent) => assistantResponseEvent.type === "assistant_message_part_added" &&
+      assistantResponseEvent.part.partKind === "assistant_buli_sticky_notes",
+  )).toEqual([]);
+  expect(runtime.conversationHistory.listConversationSessionEntries().filter(
+    (conversationSessionEntry) => conversationSessionEntry.entryKind === "buli_sticky_notes",
+  )).toEqual([]);
 });
 
 test("AssistantConversationRuntime emits one failed assistant message when overflow recovery overflows again", async () => {
@@ -3343,16 +3494,29 @@ test("AssistantConversationRuntime reuses prior user and assistant messages on t
 });
 
 test("AssistantConversationRuntime compacts the current session into an append-only summary", async () => {
+  const understandingWorkflowHandoff = {
+    handoffKind: "understanding" as const,
+    userGoal: "Understand runtime compaction.",
+    currentUnderstanding: "Runtime compaction appends a compact summary entry.",
+    importantFindings: ["The latest understanding handoff should survive compaction."],
+    evidenceReferences: [],
+    constraints: [],
+    openQuestions: [],
+    recommendedNextStep: "Plan the checkpoint persistence change.",
+  };
   const initialConversationSessionEntries: ConversationSessionEntry[] = [
     {
       entryKind: "user_prompt",
       promptText: "First prompt",
       modelFacingPromptText: "First prompt",
+      assistantOperatingMode: "understand",
     },
     {
       entryKind: "assistant_message",
       assistantMessageStatus: "completed",
       assistantMessageText: "First answer",
+      assistantOperatingMode: "understand",
+      workflowHandoff: understandingWorkflowHandoff,
     },
   ];
   const providerTurn = new ScriptedProviderTurn({
@@ -3392,6 +3556,12 @@ test("AssistantConversationRuntime compacts the current session into an append-o
       modelFacingPromptText: expect.stringContaining("Create a compact continuation summary"),
     },
   ]);
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries.at(-1)).toMatchObject({
+    entryKind: "user_prompt",
+    modelFacingPromptText: expect.stringContaining(
+      "<latest_completed_assistant_mode>understand</latest_completed_assistant_mode>",
+    ),
+  });
   expect(conversationHistory.listConversationSessionEntries()).toEqual<ConversationSessionEntry[]>([
     ...initialConversationSessionEntries,
     {
@@ -3400,12 +3570,15 @@ test("AssistantConversationRuntime compacts the current session into an append-o
       compactedEntryCount: 2,
       retainedRecentConversationSessionEntryCount: 0,
       compactionSource: "manual",
+      latestCompletedAssistantOperatingMode: "understand",
+      latestUnderstandingWorkflowHandoff: understandingWorkflowHandoff,
     },
   ]);
   expect(conversationHistory.listModelContextItems()).toEqual<ModelContextItem[]>([
     {
       itemKind: "compaction_summary",
       summaryText: "Goal: continue the runtime compaction implementation.",
+      latestCompletedAssistantOperatingMode: "understand",
     },
   ]);
 });

@@ -32,6 +32,10 @@ test("projectConversationSessionEntryToModelContextItems maps each session entry
       assistantTextSegmentText: "Stored ",
     },
     {
+      entryKind: "buli_sticky_notes",
+      buliStickyNotesContextText: "BuliStickyNotes:\nPurpose-aware evidence notes from prior turns.",
+    },
+    {
       entryKind: "assistant_message",
       assistantMessageStatus: "incomplete",
       assistantMessageText: "Partial answer",
@@ -160,6 +164,56 @@ test("projectConversationSessionEntriesToModelContextItems projects completed an
   ]);
 });
 
+test("projectConversationSessionEntryToModelContextItems preserves workflow mode metadata", () => {
+  const imageAttachment = {
+    attachmentId: "image-1",
+    mimeType: "image/png" as const,
+    dataUrl: "data:image/png;base64,aGVsbG8=",
+  };
+
+  expect(projectConversationSessionEntryToModelContextItems({
+    entryKind: "user_prompt",
+    promptText: "Inspect compaction",
+    modelFacingPromptText: "Inspect compaction",
+    assistantOperatingMode: "understand",
+    imageAttachments: [imageAttachment],
+  })).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "user_message",
+      messageText: "Inspect compaction",
+      assistantOperatingMode: "understand",
+      imageAttachments: [imageAttachment],
+    },
+  ]);
+
+  expect(projectConversationSessionEntryToModelContextItems({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "Compaction starts at the latest summary.",
+    assistantOperatingMode: "understand",
+  })).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "assistant_message",
+      messageText: "Compaction starts at the latest summary.",
+      assistantOperatingMode: "understand",
+    },
+  ]);
+
+  expect(projectConversationSessionEntryToModelContextItems({
+    entryKind: "conversation_compaction_summary",
+    summaryText: "Goal: execute the plan.",
+    compactedEntryCount: 8,
+    retainedRecentConversationSessionEntryCount: 0,
+    latestCompletedAssistantOperatingMode: "plan",
+  })).toEqual<ModelContextItem[]>([
+    {
+      itemKind: "compaction_summary",
+      summaryText: "Goal: execute the plan.",
+      latestCompletedAssistantOperatingMode: "plan",
+    },
+  ]);
+});
+
 test("projectConversationSessionEntriesToModelContextItems keeps completed tool outputs out of future active context", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     {
@@ -232,6 +286,34 @@ test("projectConversationSessionEntriesToModelContextItems keeps completed tool 
   expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
     { itemKind: "user_message", messageText: "Inspect files" },
     { itemKind: "assistant_message", messageText: "Inspection complete." },
+  ]);
+});
+
+test("projectConversationSessionEntriesToModelContextItems keeps BuliStickyNotes audit entries out of future active context", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Continue from context",
+      modelFacingPromptText: "Continue from context",
+    },
+    {
+      entryKind: "buli_sticky_notes",
+      buliStickyNotesContextText: [
+        "BuliStickyNotes:",
+        "Purpose-aware evidence notes from prior turns:",
+        "- Prior task: \"Inspect request projection\"; question: \"Where is replay built?\"; source: read request.ts via call_read; observed: found projection; freshness: fresh.",
+      ].join("\n"),
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Continued without replaying sticky notes.",
+    },
+  ];
+
+  expect(projectConversationSessionEntriesToModelContextItems(conversationSessionEntries)).toEqual<ModelContextItem[]>([
+    { itemKind: "user_message", messageText: "Continue from context" },
+    { itemKind: "assistant_message", messageText: "Continued without replaying sticky notes." },
   ]);
 });
 

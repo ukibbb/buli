@@ -755,6 +755,54 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant text se
   ]);
 });
 
+test("hydrateConversationTranscriptFromSessionEntries restores persisted BuliStickyNotes audit parts before assistant text", () => {
+  const buliStickyNotesContextText = [
+    "BuliStickyNotes:",
+    "Purpose-aware evidence notes from prior turns:",
+    "Use these as source pointers, not active memory.",
+  ].join("\n");
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Continue",
+        modelFacingPromptText: "Continue",
+      },
+      {
+        entryKind: "buli_sticky_notes",
+        buliStickyNotesContextText,
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "Continuing with loaded context.",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Continuing with loaded context.",
+      },
+    ],
+  );
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState).find(
+    (conversationMessage) => conversationMessage.role === "assistant",
+  );
+  if (!assistantConversationMessage) {
+    throw new Error("expected assistant message");
+  }
+
+  const assistantConversationMessageParts = listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id);
+  expect(assistantConversationMessageParts.map((conversationMessagePart) => conversationMessagePart.partKind)).toEqual([
+    "assistant_buli_sticky_notes",
+    "assistant_text",
+  ]);
+  expect(assistantConversationMessageParts).toMatchObject([
+    { partKind: "assistant_buli_sticky_notes", buliStickyNotesContextText },
+    { partKind: "assistant_text", rawMarkdownText: "Continuing with loaded context." },
+  ]);
+});
+
 test("hydrateConversationTranscriptFromSessionEntries preserves task subagent child activity", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

@@ -1,4 +1,5 @@
 import type {
+  AssistantOperatingMode,
   ConversationSessionEntry,
   OpenAiReasoningReplayItem,
   OpenAiProviderTurnReplayInputItem,
@@ -148,7 +149,10 @@ function appendOpenAiInputItemsForConversationSessionTurn(
   }
 
   openAiInputItems.push(createUserMessageInputItem(conversationSessionTurn.userPromptEntry));
-  openAiInputItems.push(createMessageInputItem("assistant", terminalAssistantMessageEntry.assistantMessageText));
+  openAiInputItems.push(createAssistantMessageInputItem(
+    terminalAssistantMessageEntry.assistantMessageText,
+    terminalAssistantMessageEntry.assistantOperatingMode,
+  ));
 }
 
 function appendOpenAiInputItemsForFailedOrInterruptedConversationSessionTurn(
@@ -165,10 +169,14 @@ function appendOpenAiInputItemsForFailedOrInterruptedConversationSessionTurn(
   const legacyToolTranscriptText = projectHistoricalToolTranscriptTextForModelContext({
     text: legacyToolTranscriptSegments.join("\n\n"),
   });
+  const terminalAssistantMessageEntry = conversationSessionTurn.entriesAfterUserPrompt.at(-1);
+  const historicalTranscriptAssistantOperatingMode = terminalAssistantMessageEntry?.entryKind === "assistant_message"
+    ? terminalAssistantMessageEntry.assistantOperatingMode ?? conversationSessionTurn.userPromptEntry.assistantOperatingMode
+    : conversationSessionTurn.userPromptEntry.assistantOperatingMode;
 
   openAiInputItems.push(
     createUserMessageInputItem(conversationSessionTurn.userPromptEntry),
-    createMessageInputItem("assistant", legacyToolTranscriptText),
+    createAssistantMessageInputItem(legacyToolTranscriptText, historicalTranscriptAssistantOperatingMode),
   );
 }
 
@@ -218,13 +226,17 @@ export function createOpenAiResponseReplayItems(responseOutputItems: readonly un
   };
 }
 
-function createMessageInputItem(
-  role: "assistant",
+function createAssistantMessageInputItem(
   messageText: string,
+  assistantOperatingMode?: AssistantOperatingMode | undefined,
 ): OpenAiAssistantConversationMessageInputItem {
   return {
-    role,
-    content: messageText,
+    role: "assistant",
+    content: formatModeScopedConversationMessageText({
+      messageText,
+      speaker: "assistant",
+      assistantOperatingMode,
+    }),
   };
 }
 
@@ -235,7 +247,11 @@ function createUserMessageInputItem(
   if (imageAttachments.length === 0) {
     return {
       role: "user",
-      content: userPromptEntry.modelFacingPromptText,
+      content: formatModeScopedConversationMessageText({
+        messageText: userPromptEntry.modelFacingPromptText,
+        speaker: "user",
+        assistantOperatingMode: userPromptEntry.assistantOperatingMode,
+      }),
     };
   }
 
@@ -243,11 +259,35 @@ function createUserMessageInputItem(
     role: "user",
     content: [
       ...(userPromptEntry.modelFacingPromptText.length > 0
-        ? [{ type: "input_text" as const, text: userPromptEntry.modelFacingPromptText }]
+        ? [{
+            type: "input_text" as const,
+            text: formatModeScopedConversationMessageText({
+              messageText: userPromptEntry.modelFacingPromptText,
+              speaker: "user",
+              assistantOperatingMode: userPromptEntry.assistantOperatingMode,
+            }),
+          }]
         : []),
       ...imageAttachments.map(createOpenAiInputImageContentPart),
     ],
   };
+}
+
+function formatModeScopedConversationMessageText(input: {
+  messageText: string;
+  speaker: "user" | "assistant";
+  assistantOperatingMode?: AssistantOperatingMode | undefined;
+}): string {
+  if (input.assistantOperatingMode === undefined) {
+    return input.messageText;
+  }
+
+  const modeScopeTagName = `${input.assistantOperatingMode}_mode`;
+  return [
+    `<${modeScopeTagName} speaker="${input.speaker}">`,
+    input.messageText,
+    `</${modeScopeTagName}>`,
+  ].join("\n");
 }
 
 function createCompactionSummaryInputItem(
@@ -258,6 +298,11 @@ function createCompactionSummaryInputItem(
     content: [
       "<conversation_compaction_summary>",
       "The earlier conversation was compacted. Continue from this summary:",
+      ...(compactionSummaryEntry.latestCompletedAssistantOperatingMode
+        ? [
+            `<latest_completed_assistant_mode>${compactionSummaryEntry.latestCompletedAssistantOperatingMode}</latest_completed_assistant_mode>`,
+          ]
+        : []),
       "",
       compactionSummaryEntry.summaryText,
       "</conversation_compaction_summary>",
@@ -316,7 +361,7 @@ function createAssistantMessageInputItemFromResponseOutputItem(
     return undefined;
   }
 
-  return createMessageInputItem("assistant", assistantMessageText);
+  return createAssistantMessageInputItem(assistantMessageText);
 }
 
 function createFunctionCallInputItemFromResponseOutputItem(

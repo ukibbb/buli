@@ -6,7 +6,12 @@ import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
 import { ContextWindowOverflowFailureKindSchema } from "./contextWindowOverflow.ts";
-import { WorkflowHandoffSchema } from "./workflowHandoff.ts";
+import {
+  ImplementationWorkflowHandoffSchema,
+  PlanWorkflowHandoffSchema,
+  UnderstandingWorkflowHandoffSchema,
+  WorkflowHandoffSchema,
+} from "./workflowHandoff.ts";
 import { WorkspacePatchSchema } from "./workspacePatch.ts";
 
 export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
@@ -86,6 +91,13 @@ export const AssistantTextSegmentConversationSessionEntrySchema = z
   })
   .strict();
 
+export const BuliStickyNotesConversationSessionEntrySchema = z
+  .object({
+    entryKind: z.literal("buli_sticky_notes"),
+    buliStickyNotesContextText: z.string().min(1),
+  })
+  .strict();
+
 export const ToolCallConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("tool_call"),
@@ -101,6 +113,10 @@ export const ConversationCompactionSummaryConversationSessionEntrySchema = z
     compactedEntryCount: z.number().int().nonnegative(),
     retainedRecentConversationSessionEntryCount: z.number().int().nonnegative().default(0),
     compactionSource: z.enum(["manual", "auto"]).optional(),
+    latestCompletedAssistantOperatingMode: AssistantOperatingModeSchema.optional(),
+    latestUnderstandingWorkflowHandoff: UnderstandingWorkflowHandoffSchema.optional(),
+    latestPlanWorkflowHandoff: PlanWorkflowHandoffSchema.optional(),
+    latestImplementationWorkflowHandoff: ImplementationWorkflowHandoffSchema.optional(),
   })
   .strict();
 
@@ -136,6 +152,7 @@ export const WorkspacePatchConversationSessionEntrySchema = z
 export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
   AssistantTextSegmentConversationSessionEntrySchema,
+  BuliStickyNotesConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
   ConversationCompactionSummaryConversationSessionEntrySchema,
@@ -170,6 +187,7 @@ export type InterruptedAssistantMessageConversationSessionEntry = z.infer<
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
 export type AssistantTextSegmentConversationSessionEntry = z.infer<typeof AssistantTextSegmentConversationSessionEntrySchema>;
 export type AssistantSegmentConversationSessionEntry = AssistantTextSegmentConversationSessionEntry;
+export type BuliStickyNotesConversationSessionEntry = z.infer<typeof BuliStickyNotesConversationSessionEntrySchema>;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;
 export type ConversationCompactionSummaryConversationSessionEntry = z.infer<
   typeof ConversationCompactionSummaryConversationSessionEntrySchema

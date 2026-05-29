@@ -407,6 +407,16 @@ function buildHydratedConversationTranscript(
       return;
     }
 
+    if (conversationSessionEntry.entryKind === "buli_sticky_notes") {
+      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      appendConversationMessagePart(assistantMessageId, {
+        id: `persisted-entry-${entryIndex}-buli-sticky-notes`,
+        partKind: "assistant_buli_sticky_notes",
+        buliStickyNotesContextText: conversationSessionEntry.buliStickyNotesContextText,
+      });
+      return;
+    }
+
     if (conversationSessionEntry.entryKind === "assistant_text_segment") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       appendConversationMessagePart(assistantMessageId, {

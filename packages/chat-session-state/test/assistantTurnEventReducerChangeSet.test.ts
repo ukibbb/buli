@@ -85,6 +85,45 @@ test("assistant response change set reports only the row touched by part updates
   });
 });
 
+test("assistant response reducer stores streamed BuliStickyNotes audit parts", () => {
+  const buliStickyNotesContextText = [
+    "BuliStickyNotes:",
+    "Purpose-aware evidence notes from prior turns:",
+    "Use these as source pointers, not active memory.",
+  ].join("\n");
+  const application = applyAssistantResponseEventsToChatSessionStateWithChangeSet(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      { type: "assistant_turn_started", messageId: "assistant-1", startedAtMs: 1 },
+      {
+        type: "assistant_message_part_added",
+        messageId: "assistant-1",
+        part: {
+          id: "sticky-part-1",
+          partKind: "assistant_buli_sticky_notes",
+          buliStickyNotesContextText,
+        },
+      },
+    ] satisfies readonly AssistantResponseEvent[],
+  );
+
+  expect(application.nextChatSessionState.conversationMessagesById["assistant-1"]?.partIds).toEqual([
+    "sticky-part-1",
+  ]);
+  expect(application.nextChatSessionState.conversationMessagePartsById["sticky-part-1"]).toEqual({
+    id: "sticky-part-1",
+    partKind: "assistant_buli_sticky_notes",
+    buliStickyNotesContextText,
+  });
+  expect(application.changeSet).toEqual({
+    changedConversationMessageIds: ["assistant-1"],
+    didConversationMessageOrderChange: true,
+    didTranscriptGlobalStateChange: true,
+    didPromptComposerStateChange: true,
+    didInteractionStatusStateChange: true,
+  });
+});
+
 test("assistant response change set separates pending approval status from transcript rows", () => {
   const application = applyAssistantResponseEventsToChatSessionStateWithChangeSet(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

@@ -318,6 +318,29 @@
           "additionalProperties": false
         },
         {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "partKind": {
+              "type": "string",
+              "const": "assistant_buli_sticky_notes"
+            },
+            "buliStickyNotesContextText": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "id",
+            "partKind",
+            "buliStickyNotesContextText"
+          ],
+          "additionalProperties": false
+        },
+        {
           "oneOf": [
             {
               "type": "object",

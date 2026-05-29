@@ -122,7 +122,21 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
     input.terminalAssistantResponseEvent?.type === "assistant_message_failed" &&
     input.terminalAssistantResponseEvent.failureKind === "context_window_overflow";
   if (didFailBecauseContextWindowOverflow) {
-    return undefined;
+    if (input.activeSubmittedPrompt.submittedPromptSource === "auto_compaction_retry") {
+      return undefined;
+    }
+
+    const originalUserPromptText = resolveAutoCompactionOriginalUserPromptText(input.activeSubmittedPrompt);
+    return {
+      submittedPromptText: input.activeSubmittedPrompt.submittedPromptText,
+      submittedPromptImageAttachments: input.activeSubmittedPrompt.submittedPromptImageAttachments,
+      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
+      ...(input.activeSubmittedPrompt.submittedUserSelectedSkillName !== undefined
+        ? { submittedUserSelectedSkillName: input.activeSubmittedPrompt.submittedUserSelectedSkillName }
+        : {}),
+      submittedPromptSource: "auto_compaction_retry",
+      autoCompactionOriginalUserPromptText: originalUserPromptText,
+    };
   }
 
   const didStopBecauseMaxOutputTokens =

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ASSISTANT_OPERATING_MODE,
+  AssistantMessagePartAddedEventSchema,
   AssistantTurnStartedEventSchema,
   type AssistantOperatingMode,
   type AssistantResponseEvent,
@@ -407,6 +408,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     const conversationTurnStartedAtMilliseconds = Date.now();
     const assistantResponseMessageId = randomUUID();
     const assistantTextPartId = randomUUID();
+    const assistantBuliStickyNotesPartId = randomUUID();
     const createConversationTurnSessionRecorder = (): RuntimeConversationTurnSessionRecorder =>
       new RuntimeConversationTurnSessionRecorder({
         conversationTurnId: this.conversationTurnId,
@@ -490,6 +492,27 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           });
           modelFacingPromptTextForAcceptedTurn = startedRuntimeConversationTurn.modelFacingPromptTextForAcceptedTurn;
           projectInstructionSnapshotsForAcceptedTurn = startedRuntimeConversationTurn.projectInstructionSnapshotsForAcceptedTurn;
+          const buliStickyNotesContextTextForAcceptedTurn =
+            startedRuntimeConversationTurn.buliStickyNotesContextTextForAcceptedTurn;
+          const conversationTurnSessionRecorderForAcceptedAttempt = conversationTurnSessionRecorder;
+          const createBuliStickyNotesAssistantResponseEventsBeforeFirstProviderEvent = buliStickyNotesContextTextForAcceptedTurn
+            ? () => {
+                conversationTurnSessionRecorderForAcceptedAttempt.appendBuliStickyNotesSessionEntry(
+                  buliStickyNotesContextTextForAcceptedTurn,
+                );
+                return [
+                  AssistantMessagePartAddedEventSchema.parse({
+                    type: "assistant_message_part_added",
+                    messageId: assistantResponseMessageId,
+                    part: {
+                      id: assistantBuliStickyNotesPartId,
+                      partKind: "assistant_buli_sticky_notes",
+                      buliStickyNotesContextText: buliStickyNotesContextTextForAcceptedTurn,
+                    },
+                  }),
+                ];
+              }
+            : undefined;
 
           const providerStreamProcessingOutcome = yield* streamAssistantResponseEventsFromProviderStream({
             conversationTurnId: this.conversationTurnId,
@@ -501,6 +524,12 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
               providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
             }),
             readRecordedWorkflowHandoff: () => this.recordedWorkflowHandoff,
+            ...(createBuliStickyNotesAssistantResponseEventsBeforeFirstProviderEvent !== undefined
+              ? {
+                  createAssistantResponseEventsBeforeFirstProviderEvent:
+                    createBuliStickyNotesAssistantResponseEventsBeforeFirstProviderEvent,
+                }
+              : {}),
             throwIfConversationTurnInterrupted: () => this.throwIfConversationTurnInterrupted(),
             logAssistantResponseEventEmitted,
             diagnosticLogger: this.diagnosticLogger,

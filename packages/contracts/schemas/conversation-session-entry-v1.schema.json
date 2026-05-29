@@ -110,6 +110,24 @@
       "additionalProperties": false
     },
     {
+      "type": "object",
+      "properties": {
+        "entryKind": {
+          "type": "string",
+          "const": "buli_sticky_notes"
+        },
+        "buliStickyNotesContextText": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "entryKind",
+        "buliStickyNotesContextText"
+      ],
+      "additionalProperties": false
+    },
+    {
       "oneOf": [
         {
           "type": "object",
@@ -310,7 +328,7 @@
                   "maxLength": 2000
                 },
                 "workingDirectoryPath": {
-                  "$ref": "#/$defs/__schema20"
+                  "$ref": "#/$defs/__schema23"
                 },
                 "timeoutMilliseconds": {
                   "type": "integer",
@@ -333,7 +351,7 @@
                   "const": "read"
                 },
                 "readTargetPath": {
-                  "$ref": "#/$defs/__schema20"
+                  "$ref": "#/$defs/__schema23"
                 },
                 "offsetLineNumber": {
                   "type": "integer",
@@ -346,7 +364,7 @@
                   "maximum": 600
                 },
                 "inspectionQuestion": {
-                  "$ref": "#/$defs/__schema21"
+                  "$ref": "#/$defs/__schema24"
                 }
               },
               "required": [
@@ -368,10 +386,10 @@
                   "maxLength": 4096
                 },
                 "searchDirectoryPath": {
-                  "$ref": "#/$defs/__schema20"
+                  "$ref": "#/$defs/__schema23"
                 },
                 "inspectionQuestion": {
-                  "$ref": "#/$defs/__schema21"
+                  "$ref": "#/$defs/__schema24"
                 }
               },
               "required": [
@@ -393,7 +411,7 @@
                   "maxLength": 4096
                 },
                 "searchPath": {
-                  "$ref": "#/$defs/__schema20"
+                  "$ref": "#/$defs/__schema23"
                 },
                 "includeGlobPattern": {
                   "type": "string",
@@ -406,7 +424,7 @@
                   "maximum": 5
                 },
                 "inspectionQuestion": {
-                  "$ref": "#/$defs/__schema21"
+                  "$ref": "#/$defs/__schema24"
                 }
               },
               "required": [
@@ -423,7 +441,7 @@
                   "const": "edit"
                 },
                 "editTargetPath": {
-                  "$ref": "#/$defs/__schema20"
+                  "$ref": "#/$defs/__schema23"
                 },
                 "oldString": {
                   "type": "string",
@@ -455,7 +473,7 @@
                   "maxItems": 100,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema22"
+                    "$ref": "#/$defs/__schema25"
                   }
                 }
               },
@@ -513,7 +531,7 @@
                   "const": "write"
                 },
                 "writeTargetPath": {
-                  "$ref": "#/$defs/__schema20"
+                  "$ref": "#/$defs/__schema23"
                 },
                 "fileContent": {
                   "type": "string",
@@ -535,7 +553,7 @@
                   "const": "task"
                 },
                 "subagentName": {
-                  "$ref": "#/$defs/__schema23"
+                  "$ref": "#/$defs/__schema26"
                 },
                 "subagentDescription": {
                   "type": "string",
@@ -604,14 +622,14 @@
                   "maxItems": 50,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema24"
+                    "$ref": "#/$defs/__schema27"
                   }
                 },
                 "filePaths": {
                   "maxItems": 50,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema20"
+                    "$ref": "#/$defs/__schema23"
                   }
                 },
                 "maximumResultCount": {
@@ -663,6 +681,18 @@
             "manual",
             "auto"
           ]
+        },
+        "latestCompletedAssistantOperatingMode": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "latestUnderstandingWorkflowHandoff": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "latestPlanWorkflowHandoff": {
+          "$ref": "#/$defs/__schema17"
+        },
+        "latestImplementationWorkflowHandoff": {
+          "$ref": "#/$defs/__schema20"
         }
       },
       "required": [
@@ -677,13 +707,13 @@
       "type": "object",
       "properties": {
         "toolCallId": {
-          "$ref": "#/$defs/__schema25"
+          "$ref": "#/$defs/__schema28"
         },
         "toolCallDetail": {
-          "$ref": "#/$defs/__schema26"
+          "$ref": "#/$defs/__schema29"
         },
         "toolResultText": {
-          "$ref": "#/$defs/__schema41"
+          "$ref": "#/$defs/__schema44"
         },
         "entryKind": {
           "type": "string",
@@ -702,13 +732,13 @@
       "type": "object",
       "properties": {
         "toolCallId": {
-          "$ref": "#/$defs/__schema25"
+          "$ref": "#/$defs/__schema28"
         },
         "toolCallDetail": {
-          "$ref": "#/$defs/__schema26"
+          "$ref": "#/$defs/__schema29"
         },
         "toolResultText": {
-          "$ref": "#/$defs/__schema41"
+          "$ref": "#/$defs/__schema44"
         },
         "entryKind": {
           "type": "string",
@@ -732,13 +762,13 @@
       "type": "object",
       "properties": {
         "toolCallId": {
-          "$ref": "#/$defs/__schema25"
+          "$ref": "#/$defs/__schema28"
         },
         "toolCallDetail": {
-          "$ref": "#/$defs/__schema26"
+          "$ref": "#/$defs/__schema29"
         },
         "toolResultText": {
-          "$ref": "#/$defs/__schema41"
+          "$ref": "#/$defs/__schema44"
         },
         "entryKind": {
           "type": "string",
@@ -807,7 +837,7 @@
             "changedFiles": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema34"
+                "$ref": "#/$defs/__schema37"
               }
             }
           },
@@ -1065,163 +1095,74 @@
     "__schema12": {
       "oneOf": [
         {
-          "type": "object",
-          "properties": {
-            "handoffKind": {
-              "type": "string",
-              "const": "understanding"
-            },
-            "userGoal": {
-              "$ref": "#/$defs/__schema13"
-            },
-            "currentUnderstanding": {
-              "$ref": "#/$defs/__schema13"
-            },
-            "importantFindings": {
-              "$ref": "#/$defs/__schema14"
-            },
-            "evidenceReferences": {
-              "maxItems": 50,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema15"
-              }
-            },
-            "constraints": {
-              "$ref": "#/$defs/__schema14"
-            },
-            "openQuestions": {
-              "$ref": "#/$defs/__schema14"
-            },
-            "recommendedNextStep": {
-              "$ref": "#/$defs/__schema13"
-            }
-          },
-          "required": [
-            "handoffKind",
-            "userGoal",
-            "currentUnderstanding",
-            "importantFindings",
-            "evidenceReferences",
-            "constraints",
-            "openQuestions",
-            "recommendedNextStep"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/__schema13"
         },
         {
-          "type": "object",
-          "properties": {
-            "handoffKind": {
-              "type": "string",
-              "const": "plan"
-            },
-            "agreedGoal": {
-              "$ref": "#/$defs/__schema13"
-            },
-            "currentStateSummary": {
-              "$ref": "#/$defs/__schema13"
-            },
-            "chosenApproach": {
-              "$ref": "#/$defs/__schema13"
-            },
-            "targetFiles": {
-              "maxItems": 100,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema16"
-              }
-            },
-            "implementationSteps": {
-              "$ref": "#/$defs/__schema14"
-            },
-            "verificationCommands": {
-              "maxItems": 20,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema17"
-              }
-            },
-            "risks": {
-              "$ref": "#/$defs/__schema14"
-            },
-            "isReadyForImplementation": {
-              "type": "boolean"
-            },
-            "requiredPreApplyReads": {
-              "$ref": "#/$defs/__schema14"
-            }
-          },
-          "required": [
-            "handoffKind",
-            "agreedGoal",
-            "currentStateSummary",
-            "chosenApproach",
-            "targetFiles",
-            "implementationSteps",
-            "verificationCommands",
-            "risks",
-            "isReadyForImplementation",
-            "requiredPreApplyReads"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/__schema17"
         },
         {
-          "type": "object",
-          "properties": {
-            "handoffKind": {
-              "type": "string",
-              "const": "implementation"
-            },
-            "implementedOutcome": {
-              "$ref": "#/$defs/__schema13"
-            },
-            "changedFiles": {
-              "maxItems": 100,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema18"
-              }
-            },
-            "verificationResults": {
-              "maxItems": 20,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema19"
-              }
-            },
-            "remainingIssues": {
-              "$ref": "#/$defs/__schema14"
-            },
-            "recommendedNextStep": {
-              "$ref": "#/$defs/__schema13"
-            }
-          },
-          "required": [
-            "handoffKind",
-            "implementedOutcome",
-            "changedFiles",
-            "verificationResults",
-            "remainingIssues",
-            "recommendedNextStep"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/__schema20"
         }
       ]
     },
     "__schema13": {
+      "type": "object",
+      "properties": {
+        "handoffKind": {
+          "type": "string",
+          "const": "understanding"
+        },
+        "userGoal": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "currentUnderstanding": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "importantFindings": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "evidenceReferences": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema16"
+          }
+        },
+        "constraints": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "openQuestions": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "recommendedNextStep": {
+          "$ref": "#/$defs/__schema14"
+        }
+      },
+      "required": [
+        "handoffKind",
+        "userGoal",
+        "currentUnderstanding",
+        "importantFindings",
+        "evidenceReferences",
+        "constraints",
+        "openQuestions",
+        "recommendedNextStep"
+      ],
+      "additionalProperties": false
+    },
+    "__schema14": {
       "type": "string",
       "minLength": 1,
       "maxLength": 4000
     },
-    "__schema14": {
+    "__schema15": {
       "maxItems": 50,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema13"
+        "$ref": "#/$defs/__schema14"
       }
     },
-    "__schema15": {
+    "__schema16": {
       "type": "object",
       "properties": {
         "evidenceKind": {
@@ -1236,10 +1177,10 @@
           ]
         },
         "referenceText": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         },
         "summary": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         }
       },
       "required": [
@@ -1249,11 +1190,68 @@
       ],
       "additionalProperties": false
     },
-    "__schema16": {
+    "__schema17": {
+      "type": "object",
+      "properties": {
+        "handoffKind": {
+          "type": "string",
+          "const": "plan"
+        },
+        "agreedGoal": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "currentStateSummary": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "chosenApproach": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "targetFiles": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema18"
+          }
+        },
+        "implementationSteps": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "verificationCommands": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema19"
+          }
+        },
+        "risks": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "isReadyForImplementation": {
+          "type": "boolean"
+        },
+        "requiredPreApplyReads": {
+          "$ref": "#/$defs/__schema15"
+        }
+      },
+      "required": [
+        "handoffKind",
+        "agreedGoal",
+        "currentStateSummary",
+        "chosenApproach",
+        "targetFiles",
+        "implementationSteps",
+        "verificationCommands",
+        "risks",
+        "isReadyForImplementation",
+        "requiredPreApplyReads"
+      ],
+      "additionalProperties": false
+    },
+    "__schema18": {
       "type": "object",
       "properties": {
         "filePath": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         },
         "operationKind": {
           "type": "string",
@@ -1266,7 +1264,7 @@
           ]
         },
         "reason": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         }
       },
       "required": [
@@ -1276,14 +1274,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema17": {
+    "__schema19": {
       "type": "object",
       "properties": {
         "command": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         },
         "reason": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         }
       },
       "required": [
@@ -1292,14 +1290,55 @@
       ],
       "additionalProperties": false
     },
-    "__schema18": {
+    "__schema20": {
+      "type": "object",
+      "properties": {
+        "handoffKind": {
+          "type": "string",
+          "const": "implementation"
+        },
+        "implementedOutcome": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "changedFiles": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema21"
+          }
+        },
+        "verificationResults": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema22"
+          }
+        },
+        "remainingIssues": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "recommendedNextStep": {
+          "$ref": "#/$defs/__schema14"
+        }
+      },
+      "required": [
+        "handoffKind",
+        "implementedOutcome",
+        "changedFiles",
+        "verificationResults",
+        "remainingIssues",
+        "recommendedNextStep"
+      ],
+      "additionalProperties": false
+    },
+    "__schema21": {
       "type": "object",
       "properties": {
         "filePath": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         },
         "changeSummary": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         }
       },
       "required": [
@@ -1308,11 +1347,11 @@
       ],
       "additionalProperties": false
     },
-    "__schema19": {
+    "__schema22": {
       "type": "object",
       "properties": {
         "command": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         },
         "outcomeKind": {
           "type": "string",
@@ -1323,7 +1362,7 @@
           ]
         },
         "summary": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema14"
         }
       },
       "required": [
@@ -1333,21 +1372,21 @@
       ],
       "additionalProperties": false
     },
-    "__schema20": {
+    "__schema23": {
       "type": "string",
       "minLength": 1,
       "maxLength": 4096
     },
-    "__schema21": {
+    "__schema24": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2000
     },
-    "__schema22": {
+    "__schema25": {
       "type": "object",
       "properties": {
         "editTargetPath": {
-          "$ref": "#/$defs/__schema20"
+          "$ref": "#/$defs/__schema23"
         },
         "oldString": {
           "type": "string",
@@ -1369,29 +1408,23 @@
       ],
       "additionalProperties": false
     },
-    "__schema23": {
+    "__schema26": {
       "type": "string",
       "enum": [
         "explore"
       ]
     },
-    "__schema24": {
+    "__schema27": {
       "type": "string",
       "minLength": 1,
       "maxLength": 512
     },
-    "__schema25": {
+    "__schema28": {
       "type": "string",
       "minLength": 1
     },
-    "__schema26": {
+    "__schema29": {
       "oneOf": [
-        {
-          "$ref": "#/$defs/__schema27"
-        },
-        {
-          "$ref": "#/$defs/__schema28"
-        },
         {
           "$ref": "#/$defs/__schema30"
         },
@@ -1402,16 +1435,22 @@
           "$ref": "#/$defs/__schema33"
         },
         {
-          "$ref": "#/$defs/__schema35"
+          "$ref": "#/$defs/__schema34"
         },
         {
           "$ref": "#/$defs/__schema36"
         },
         {
-          "$ref": "#/$defs/__schema37"
+          "$ref": "#/$defs/__schema38"
         },
         {
-          "$ref": "#/$defs/__schema38"
+          "$ref": "#/$defs/__schema39"
+        },
+        {
+          "$ref": "#/$defs/__schema40"
+        },
+        {
+          "$ref": "#/$defs/__schema41"
         },
         {
           "type": "object",
@@ -1460,7 +1499,7 @@
               "const": "task"
             },
             "subagentName": {
-              "$ref": "#/$defs/__schema23"
+              "$ref": "#/$defs/__schema26"
             },
             "subagentDescription": {
               "type": "string",
@@ -1496,37 +1535,37 @@
                   "subagentChildToolCallDetail": {
                     "oneOf": [
                       {
-                        "$ref": "#/$defs/__schema27"
-                      },
-                      {
                         "$ref": "#/$defs/__schema30"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema28"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema39"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema38"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema31"
                       },
                       {
                         "$ref": "#/$defs/__schema33"
                       },
                       {
-                        "$ref": "#/$defs/__schema35"
+                        "$ref": "#/$defs/__schema31"
+                      },
+                      {
+                        "$ref": "#/$defs/__schema42"
+                      },
+                      {
+                        "$ref": "#/$defs/__schema41"
+                      },
+                      {
+                        "$ref": "#/$defs/__schema34"
                       },
                       {
                         "$ref": "#/$defs/__schema36"
                       },
                       {
-                        "$ref": "#/$defs/__schema37"
+                        "$ref": "#/$defs/__schema38"
+                      },
+                      {
+                        "$ref": "#/$defs/__schema39"
                       },
                       {
                         "$ref": "#/$defs/__schema40"
+                      },
+                      {
+                        "$ref": "#/$defs/__schema43"
                       },
                       {
                         "type": "object",
@@ -1536,7 +1575,7 @@
                             "const": "task"
                           },
                           "subagentName": {
-                            "$ref": "#/$defs/__schema23"
+                            "$ref": "#/$defs/__schema26"
                           },
                           "subagentDescription": {
                             "type": "string",
@@ -1635,7 +1674,7 @@
           "additionalProperties": false
         },
         {
-          "$ref": "#/$defs/__schema40"
+          "$ref": "#/$defs/__schema43"
         },
         {
           "type": "object",
@@ -1665,11 +1704,11 @@
           "additionalProperties": false
         },
         {
-          "$ref": "#/$defs/__schema39"
+          "$ref": "#/$defs/__schema42"
         }
       ]
     },
-    "__schema27": {
+    "__schema30": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1757,7 +1796,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema28": {
+    "__schema31": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1807,13 +1846,13 @@
               "contextBeforeLines": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema29"
+                  "$ref": "#/$defs/__schema32"
                 }
               },
               "contextAfterLines": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema29"
+                  "$ref": "#/$defs/__schema32"
                 }
               }
             },
@@ -1832,7 +1871,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema29": {
+    "__schema32": {
       "type": "object",
       "properties": {
         "lineNumber": {
@@ -1850,7 +1889,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema30": {
+    "__schema33": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1889,7 +1928,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema31": {
+    "__schema34": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1911,7 +1950,7 @@
           "maximum": 9007199254740991
         },
         "unifiedDiffText": {
-          "$ref": "#/$defs/__schema32"
+          "$ref": "#/$defs/__schema35"
         }
       },
       "required": [
@@ -1920,11 +1959,11 @@
       ],
       "additionalProperties": false
     },
-    "__schema32": {
+    "__schema35": {
       "type": "string",
       "minLength": 1
     },
-    "__schema33": {
+    "__schema36": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1954,7 +1993,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema34"
+            "$ref": "#/$defs/__schema37"
           }
         }
       },
@@ -1964,7 +2003,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema34": {
+    "__schema37": {
       "type": "object",
       "properties": {
         "filePath": {
@@ -2001,7 +2040,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema35": {
+    "__schema38": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2030,7 +2069,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema34"
+            "$ref": "#/$defs/__schema37"
           }
         }
       },
@@ -2040,7 +2079,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema36": {
+    "__schema39": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2069,7 +2108,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema34"
+            "$ref": "#/$defs/__schema37"
           }
         }
       },
@@ -2079,7 +2118,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema37": {
+    "__schema40": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2101,7 +2140,7 @@
           "maximum": 9007199254740991
         },
         "unifiedDiffText": {
-          "$ref": "#/$defs/__schema32"
+          "$ref": "#/$defs/__schema35"
         }
       },
       "required": [
@@ -2110,7 +2149,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema38": {
+    "__schema41": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2170,7 +2209,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema39": {
+    "__schema42": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2207,7 +2246,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema40": {
+    "__schema43": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2242,7 +2281,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema41": {
+    "__schema44": {
       "type": "string"
     }
   },

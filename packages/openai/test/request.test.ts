@@ -33,6 +33,132 @@ test("createOpenAiResponsesInputItems serializes replayed conversation messages 
   ]);
 });
 
+test("createOpenAiResponsesInputItems wraps mode-bearing conversation messages chronologically", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Understand compaction",
+        modelFacingPromptText: "Understand compaction",
+        assistantOperatingMode: "understand",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Compaction appends a summary.",
+        assistantOperatingMode: "understand",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Plan the change",
+        modelFacingPromptText: "Plan the change",
+        assistantOperatingMode: "plan",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Plan agreed.",
+        assistantOperatingMode: "plan",
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Back to understand",
+        modelFacingPromptText: "Back to understand",
+        assistantOperatingMode: "understand",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Clarification done.",
+        assistantOperatingMode: "understand",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: [
+        '<understand_mode speaker="user">',
+        "Understand compaction",
+        "</understand_mode>",
+      ].join("\n"),
+    },
+    {
+      role: "assistant",
+      content: [
+        '<understand_mode speaker="assistant">',
+        "Compaction appends a summary.",
+        "</understand_mode>",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: [
+        '<plan_mode speaker="user">',
+        "Plan the change",
+        "</plan_mode>",
+      ].join("\n"),
+    },
+    {
+      role: "assistant",
+      content: [
+        '<plan_mode speaker="assistant">',
+        "Plan agreed.",
+        "</plan_mode>",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: [
+        '<understand_mode speaker="user">',
+        "Back to understand",
+        "</understand_mode>",
+      ].join("\n"),
+    },
+    {
+      role: "assistant",
+      content: [
+        '<understand_mode speaker="assistant">',
+        "Clarification done.",
+        "</understand_mode>",
+      ].join("\n"),
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems keeps BuliStickyNotes audit entries out of replayed model messages", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Continue from sticky context",
+        modelFacingPromptText: "Continue from sticky context",
+      },
+      {
+        entryKind: "buli_sticky_notes",
+        buliStickyNotesContextText: [
+          "BuliStickyNotes:",
+          "Purpose-aware evidence notes from prior turns:",
+          "Use these as source pointers, not active memory.",
+        ].join("\n"),
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Sticky notes were loaded only into that turn's system prompt.",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: "Continue from sticky context",
+    },
+    {
+      role: "assistant",
+      content: "Sticky notes were loaded only into that turn's system prompt.",
+    },
+  ]);
+});
+
 test("createOpenAiResponsesInputItems serializes user prompt image attachments as Responses image input", () => {
   expect(
     createOpenAiResponsesInputItems([
@@ -54,6 +180,41 @@ test("createOpenAiResponsesInputItems serializes user prompt image attachments a
       role: "user",
       content: [
         { type: "input_text", text: "What is in this image?" },
+        { type: "input_image", image_url: "data:image/png;base64,aGVsbG8=" },
+      ],
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems wraps mode-bearing image prompt text without changing image parts", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "What is in this image?",
+        modelFacingPromptText: "What is in this image?",
+        assistantOperatingMode: "plan",
+        imageAttachments: [
+          {
+            attachmentId: "image-1",
+            mimeType: "image/png",
+            dataUrl: "data:image/png;base64,aGVsbG8=",
+          },
+        ],
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: [
+            '<plan_mode speaker="user">',
+            "What is in this image?",
+            "</plan_mode>",
+          ].join("\n"),
+        },
         { type: "input_image", image_url: "data:image/png;base64,aGVsbG8=" },
       ],
     },
@@ -205,6 +366,63 @@ test("createOpenAiResponsesInputItems keeps paired tool side effects from failed
     {
       role: "user",
       content: "Next prompt",
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems wraps failed-turn tool transcripts with terminal or prompt mode", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "user_prompt",
+        promptText: "Write generated file",
+        modelFacingPromptText: "Write generated file",
+        assistantOperatingMode: "implementation",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_write",
+        toolCallRequest: {
+          toolName: "write",
+          writeTargetPath: "generated.txt",
+          fileContent: "created\n",
+        },
+      },
+      {
+        entryKind: "completed_tool_result",
+        toolCallId: "call_write",
+        toolCallDetail: {
+          toolName: "write",
+          writtenFilePath: "generated.txt",
+        },
+        toolResultText: "Wrote generated.txt",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "failed",
+        assistantMessageText: "Unsafe partial assistant text",
+        failureExplanation: "Provider failed mid-turn",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: [
+        '<implementation_mode speaker="user">',
+        "Write generated file",
+        "</implementation_mode>",
+      ].join("\n"),
+    },
+    {
+      role: "assistant",
+      content: [
+        '<implementation_mode speaker="assistant">',
+        [
+          "[assistant tool call call_write]\nTool: write\nPath: generated.txt\nContent length: 8",
+          "[assistant tool result call_write]\nWrote generated.txt",
+        ].join("\n\n"),
+        "</implementation_mode>",
+      ].join("\n"),
     },
   ]);
 });
@@ -406,6 +624,68 @@ test("createOpenAiResponsesInputItems starts at the latest compaction summary", 
       content: "Next prompt",
     },
   ]);
+});
+
+test("createOpenAiResponsesInputItems includes latest completed mode in compaction summary context", () => {
+  expect(
+    createOpenAiResponsesInputItems([
+      {
+        entryKind: "conversation_compaction_summary",
+        summaryText: "Goal: execute the agreed plan.",
+        compactedEntryCount: 10,
+        retainedRecentConversationSessionEntryCount: 0,
+        latestCompletedAssistantOperatingMode: "plan",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "user",
+      content: [
+        "<conversation_compaction_summary>",
+        "The earlier conversation was compacted. Continue from this summary:",
+        "<latest_completed_assistant_mode>plan</latest_completed_assistant_mode>",
+        "",
+        "Goal: execute the agreed plan.",
+        "</conversation_compaction_summary>",
+      ].join("\n"),
+    },
+  ]);
+});
+
+test("createOpenAiResponsesInputItems does not duplicate workflow handoff checkpoints from compaction summaries", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: execute the agreed plan.",
+      compactedEntryCount: 10,
+      retainedRecentConversationSessionEntryCount: 0,
+      latestCompletedAssistantOperatingMode: "plan",
+      latestPlanWorkflowHandoff: {
+        handoffKind: "plan",
+        agreedGoal: "Avoid duplicate handoff tokens in provider history.",
+        currentStateSummary: "The workflow handoff prompt already renders the latest handoff.",
+        chosenApproach: "Keep handoff checkpoints stored, but do not render them in the compaction summary input item.",
+        targetFiles: [],
+        implementationSteps: [],
+        verificationCommands: [],
+        risks: [],
+        isReadyForImplementation: true,
+        requiredPreApplyReads: [],
+      },
+    },
+  ];
+
+  const inputItems = createOpenAiResponsesInputItems(conversationSessionEntries);
+  const compactionSummaryInputItem = inputItems[0];
+  if (!compactionSummaryInputItem || "type" in compactionSummaryInputItem || typeof compactionSummaryInputItem.content !== "string") {
+    throw new Error("Expected a string compaction summary input item.");
+  }
+  const compactionSummaryContent = compactionSummaryInputItem.content;
+
+  expect(compactionSummaryContent).toContain("<latest_completed_assistant_mode>plan</latest_completed_assistant_mode>");
+  expect(compactionSummaryContent).toContain("Goal: execute the agreed plan.");
+  expect(compactionSummaryContent).not.toContain("latestPlanWorkflowHandoff");
+  expect(compactionSummaryContent).not.toContain("Avoid duplicate handoff tokens in provider history.");
 });
 
 test("createOpenAiResponsesInputItems ignores retained recent entries after compaction summary", () => {

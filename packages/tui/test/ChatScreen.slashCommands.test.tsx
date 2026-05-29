@@ -87,6 +87,7 @@ type OpenTuiChatScreenHarness = {
   pressDelete(): Promise<string>;
   pressEnter(): Promise<string>;
   pressEscape(): Promise<string>;
+  pressTab(): Promise<string>;
   clickMouse(column: number, row: number): Promise<string>;
   typeText(text: string): Promise<string>;
   waitForAssistantEvents(): Promise<string>;
@@ -182,6 +183,12 @@ async function renderChatScreen(input: {
       await act(async () => {
         renderedChatScreen.mockInput.pressEscape();
         await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+      return captureFrame();
+    },
+    async pressTab(): Promise<string> {
+      await act(async () => {
+        renderedChatScreen.mockInput.pressKey("TAB");
       });
       return captureFrame();
     },
@@ -597,7 +604,7 @@ test("ChatScreen auto-compacts and continues after a terminal assistant turn", a
   expect(compactedFrame).not.toContain("Continue the active task from the compacted conversation summary");
 });
 
-test("ChatScreen requests overflow compaction without auto-retrying context-window overflow failures in the UI", async () => {
+test("ChatScreen requests overflow compaction without auto-retrying when overflow compaction is skipped", async () => {
   const conversationTurnRequests: ConversationTurnRequest[] = [];
   const assistantConversationRunner: AssistantConversationRunner = {
     startConversationTurn(conversationTurnRequest) {
@@ -666,6 +673,169 @@ test("ChatScreen requests overflow compaction without auto-retrying context-wind
       promptSource: undefined,
     },
   ]);
+});
+
+test("ChatScreen auto-retries successful overflow compaction in implementation mode", async () => {
+  const conversationTurnRequests: ConversationTurnRequest[] = [];
+  const assistantConversationRunner: AssistantConversationRunner = {
+    startConversationTurn(conversationTurnRequest) {
+      conversationTurnRequests.push(conversationTurnRequest);
+      const conversationTurnRequestIndex = conversationTurnRequests.length;
+      return {
+        async *streamAssistantResponseEvents() {
+          if (conversationTurnRequestIndex === 2) {
+            yield {
+              type: "assistant_turn_started",
+              messageId: "assistant-overflow-retry-1",
+              startedAtMs: 2,
+            };
+            yield {
+              type: "assistant_message_part_added",
+              messageId: "assistant-overflow-retry-1",
+              part: {
+                id: "assistant-overflow-retry-text-1",
+                partKind: "assistant_text",
+                partStatus: "completed",
+                rawMarkdownText: "Retried after overflow compaction.",
+              },
+            };
+            yield {
+              type: "assistant_message_completed",
+              messageId: "assistant-overflow-retry-1",
+              usage: {
+                total: 12,
+                input: 10,
+                output: 2,
+                reasoning: 0,
+                cache: { read: 0, write: 0 },
+              },
+            };
+            return;
+          }
+
+          yield {
+            type: "assistant_turn_started",
+            messageId: "assistant-overflow-1",
+            startedAtMs: 1,
+          };
+          yield {
+            type: "assistant_message_failed",
+            messageId: "assistant-overflow-1",
+            errorText: "Your input exceeds the context window of this model. | code=context_length_exceeded",
+            failureKind: "context_window_overflow",
+          };
+        },
+        async approvePendingToolCall() {},
+        async denyPendingToolCall() {},
+        interrupt() {},
+      };
+    },
+  };
+  const autoCompactionRequests: ConversationAutoCompactionRequest[] = [];
+  const overflowAutoCompactionDecision = {
+    shouldCompact: true,
+    reason: "context_window_overflow",
+    selectedModelId: "gpt-5.4",
+    thresholdRatio: 0.8,
+    contextTokensUsed: 0,
+    contextUsageRatio: undefined,
+    contextWindowTokenCapacity: undefined,
+    contextCompactionTriggerTokenCount: undefined,
+    reservedTokenCount: undefined,
+    sessionEntryCountAfterLatestCompactionSummary: 2,
+    triggerKind: "context_window_overflow",
+  } satisfies ConversationAutoCompactionDecision;
+  const skippedAutoCompactionDecision = {
+    shouldCompact: false,
+    reason: "unknown_context_window",
+    selectedModelId: "gpt-5.4",
+    thresholdRatio: 0.8,
+    contextTokensUsed: 0,
+    contextUsageRatio: undefined,
+    contextWindowTokenCapacity: undefined,
+    contextCompactionTriggerTokenCount: undefined,
+    reservedTokenCount: undefined,
+    sessionEntryCountAfterLatestCompactionSummary: 2,
+    triggerKind: undefined,
+  } satisfies ConversationAutoCompactionDecision;
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner,
+    autoCompactCurrentConversationSession: (autoCompactionRequest) => {
+      autoCompactionRequests.push(autoCompactionRequest);
+      if (autoCompactionRequests.length > 1) {
+        return {
+          didCompact: false,
+          decision: skippedAutoCompactionDecision,
+        };
+      }
+
+      return {
+        didCompact: true,
+        decision: overflowAutoCompactionDecision,
+        conversationSessionEntries: [
+          {
+            entryKind: "user_prompt",
+            promptText: "Apply huge task",
+            modelFacingPromptText: "Apply huge task",
+          },
+          {
+            entryKind: "assistant_message",
+            assistantMessageStatus: "failed",
+            assistantMessageText: "Your input exceeds the context window of this model. | code=context_length_exceeded",
+            failureKind: "context_window_overflow",
+            failureExplanation: "Your input exceeds the context window of this model. | code=context_length_exceeded",
+          },
+          {
+            entryKind: "conversation_compaction_summary",
+            summaryText: "Goal: retry after overflow compaction.",
+            compactedEntryCount: 2,
+            retainedRecentConversationSessionEntryCount: 0,
+            compactionSource: "auto",
+          },
+        ],
+      };
+    },
+  });
+
+  await renderedChatScreen.pressTab();
+  await renderedChatScreen.pressTab();
+  await renderedChatScreen.typeText("Apply huge task");
+  await renderedChatScreen.pressEnter();
+  await renderedChatScreen.waitForAssistantEvents();
+  const retriedFrame = await renderedChatScreen.waitForAssistantEvents();
+
+  expect(autoCompactionRequests.map((autoCompactionRequest) => ({
+    selectedModelId: autoCompactionRequest.selectedModelId,
+    requestTriggerKind: autoCompactionRequest.requestTriggerKind,
+  }))).toEqual([
+    {
+      selectedModelId: "gpt-5.4",
+      requestTriggerKind: "context_window_overflow",
+    },
+    {
+      selectedModelId: "gpt-5.4",
+      requestTriggerKind: undefined,
+    },
+  ]);
+  expect(conversationTurnRequests.map((conversationTurnRequest) => ({
+    userPromptText: conversationTurnRequest.userPromptText,
+    assistantOperatingMode: conversationTurnRequest.assistantOperatingMode,
+    promptSource: conversationTurnRequest.promptSource,
+  }))).toEqual([
+    {
+      userPromptText: "Apply huge task",
+      assistantOperatingMode: "implementation",
+      promptSource: undefined,
+    },
+    {
+      userPromptText: "Apply huge task",
+      assistantOperatingMode: "implementation",
+      promptSource: "auto_compaction_retry",
+    },
+  ]);
+  expect(retriedFrame).toContain("Auto Compaction");
+  expect(retriedFrame).toContain("retry after overflow compaction");
+  expect(retriedFrame).toContain("Retried after overflow compaction.");
 });
 
 test("ChatScreen hydrates the initial session and switches sessions through slash command", async () => {

@@ -208,15 +208,13 @@ export function buildBuliSystemPrompt(input: {
   assistantOperatingMode?: AssistantOperatingMode;
   projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
   availableSkills?: readonly AvailableSkill[];
-  readOnlyToolEvidenceLedgerText?: string | undefined;
+  buliStickyNotesContextText?: string | undefined;
   workflowHandoffContextText?: string | undefined;
 }): string {
   const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
   const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
   const availableSkillsPromptBlock = buildAvailableSkillsPromptBlock(input.availableSkills);
-  const readOnlyToolEvidenceLedgerPromptBlock = buildReadOnlyToolEvidenceLedgerPromptBlock(
-    input.readOnlyToolEvidenceLedgerText,
-  );
+  const buliStickyNotesContextPromptBlock = buildBuliStickyNotesContextPromptBlock(input.buliStickyNotesContextText);
   return [
     [
       "Identity:",
@@ -376,19 +374,16 @@ export function buildBuliSystemPrompt(input: {
       "- Do not ask for permission solely because an available capability is needed.",
       "- Do not read files outside the workspace unless the user explicitly asks and the tool policy allows it.",
     ].join("\n"),
-    ...(readOnlyToolEvidenceLedgerPromptBlock ? [readOnlyToolEvidenceLedgerPromptBlock] : []),
+    ...(buliStickyNotesContextPromptBlock ? [buliStickyNotesContextPromptBlock] : []),
   ].join("\n\n");
 }
 
-function buildReadOnlyToolEvidenceLedgerPromptBlock(readOnlyToolEvidenceLedgerText: string | undefined): string | undefined {
-  if (!readOnlyToolEvidenceLedgerText) {
+function buildBuliStickyNotesContextPromptBlock(buliStickyNotesContextText: string | undefined): string | undefined {
+  if (!buliStickyNotesContextText) {
     return undefined;
   }
 
-  return [
-    "Context evidence ledger:",
-    readOnlyToolEvidenceLedgerText,
-  ].join("\n");
+  return buliStickyNotesContextText;
 }
 
 function buildAvailableSkillsPromptBlock(availableSkills: readonly AvailableSkill[] | undefined): string | undefined {

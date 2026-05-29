@@ -27,6 +27,7 @@ export type {
   ConversationMessageStatus,
 } from "./conversationMessage.ts";
 export {
+  AssistantBuliStickyNotesConversationMessagePartSchema,
   AssistantErrorNoticeConversationMessagePartSchema,
   AssistantIncompleteNoticeConversationMessagePartSchema,
   AssistantInterruptedNoticeConversationMessagePartSchema,
@@ -47,6 +48,7 @@ export {
   UserTextConversationMessagePartSchema,
 } from "./conversationMessagePart.ts";
 export type {
+  AssistantBuliStickyNotesConversationMessagePart,
   AssistantErrorNoticeConversationMessagePart,
   AssistantIncompleteNoticeConversationMessagePart,
   AssistantInterruptedNoticeConversationMessagePart,
@@ -103,6 +105,7 @@ export {
   AssistantMessageConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntryStatusSchema,
   AssistantTextSegmentConversationSessionEntrySchema,
+  BuliStickyNotesConversationSessionEntrySchema,
   CompletedAssistantMessageConversationSessionEntrySchema,
   CompletedToolResultConversationSessionEntrySchema,
   ConversationCompactionSummaryConversationSessionEntrySchema,
@@ -137,6 +140,7 @@ export type {
   AssistantSegmentConversationSessionEntry,
   AssistantMessageConversationSessionEntryStatus,
   AssistantTextSegmentConversationSessionEntry,
+  BuliStickyNotesConversationSessionEntry,
   CompletedAssistantMessageConversationSessionEntry,
   CompletedToolResultConversationSessionEntry,
   ConversationCompactionSummaryConversationSessionEntry,
@@ -169,9 +173,14 @@ export type {
 } from "./conversationSessionRecord.ts";
 export {
   findLatestConversationCompactionBoundary,
+  findLatestVisibleCompletedAssistantOperatingMode,
+  findLatestVisibleWorkflowHandoffCheckpoint,
   listModelVisibleConversationSessionEntries,
 } from "./conversationCompactionProjection.ts";
-export type { LatestConversationCompactionBoundary } from "./conversationCompactionProjection.ts";
+export type {
+  LatestConversationCompactionBoundary,
+  LatestVisibleWorkflowHandoffCheckpoint,
+} from "./conversationCompactionProjection.ts";
 export {
   HISTORICAL_TOOL_RESULT_TEXT_PER_OUTPUT_MAX_CHARACTER_COUNT,
   HISTORICAL_TOOL_TRANSCRIPT_TURN_MAX_CHARACTER_COUNT,

@@ -23,6 +23,9 @@ export function projectConversationSessionEntryToModelContextItems(
       {
         itemKind: "user_message",
         messageText: conversationSessionEntry.modelFacingPromptText,
+        ...(conversationSessionEntry.assistantOperatingMode !== undefined
+          ? { assistantOperatingMode: conversationSessionEntry.assistantOperatingMode }
+          : {}),
         ...(conversationSessionEntry.imageAttachments?.length
           ? { imageAttachments: [...conversationSessionEntry.imageAttachments] }
           : {}),
@@ -39,6 +42,9 @@ export function projectConversationSessionEntryToModelContextItems(
       {
         itemKind: "assistant_message",
         messageText: conversationSessionEntry.assistantMessageText,
+        ...(conversationSessionEntry.assistantOperatingMode !== undefined
+          ? { assistantOperatingMode: conversationSessionEntry.assistantOperatingMode }
+          : {}),
       },
     ];
   }
@@ -48,6 +54,9 @@ export function projectConversationSessionEntryToModelContextItems(
       {
         itemKind: "compaction_summary",
         summaryText: conversationSessionEntry.summaryText,
+        ...(conversationSessionEntry.latestCompletedAssistantOperatingMode !== undefined
+          ? { latestCompletedAssistantOperatingMode: conversationSessionEntry.latestCompletedAssistantOperatingMode }
+          : {}),
       },
     ];
   }

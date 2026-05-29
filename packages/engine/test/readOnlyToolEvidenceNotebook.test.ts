@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ConversationSessionEntry } from "@buli/contracts";
 import {
-  buildRelevantReadOnlyToolEvidenceLedgerText,
+  buildRelevantBuliStickyNotesContextText,
   listReadOnlyToolEvidenceNotes,
 } from "../src/readOnlyToolEvidenceNotebook.ts";
 
@@ -49,7 +49,7 @@ test("listReadOnlyToolEvidenceNotes records task purpose question source and com
   expect(evidenceNotes[0]?.observedSummary).toContain("preview 148:");
 });
 
-test("buildRelevantReadOnlyToolEvidenceLedgerText includes matching notes and omits unrelated notes", () => {
+test("buildRelevantBuliStickyNotesContextText includes matching notes and omits unrelated notes", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     ...createCompletedReadTurn({
       promptText: "Investigate OpenAI replay growth",
@@ -69,18 +69,18 @@ test("buildRelevantReadOnlyToolEvidenceLedgerText includes matching notes and om
     }),
   ];
 
-  const ledgerText = buildRelevantReadOnlyToolEvidenceLedgerText({
+  const buliStickyNotesContextText = buildRelevantBuliStickyNotesContextText({
     conversationSessionEntries,
     currentUserPromptText: "Can we optimize providerTurnReplay request growth?",
   });
 
-  expect(ledgerText).toContain("Purpose-aware evidence notes from prior turns:");
-  expect(ledgerText).toContain("Where is providerTurnReplay projected into requests?");
-  expect(ledgerText).toContain("packages/openai/src/provider/request.ts");
-  expect(ledgerText).not.toContain("Where are transcript rows rendered?");
+  expect(buliStickyNotesContextText).toContain("BuliStickyNotes:\nPurpose-aware evidence notes from prior turns:");
+  expect(buliStickyNotesContextText).toContain("Where is providerTurnReplay projected into requests?");
+  expect(buliStickyNotesContextText).toContain("packages/openai/src/provider/request.ts");
+  expect(buliStickyNotesContextText).not.toContain("Where are transcript rows rendered?");
 });
 
-test("buildRelevantReadOnlyToolEvidenceLedgerText carries previous task notes for short continuation prompts", () => {
+test("buildRelevantBuliStickyNotesContextText carries previous task notes for short continuation prompts", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     ...createCompletedReadTurn({
       promptText: "Investigate OpenAI replay growth",
@@ -92,13 +92,14 @@ test("buildRelevantReadOnlyToolEvidenceLedgerText carries previous task notes fo
     }),
   ];
 
-  const ledgerText = buildRelevantReadOnlyToolEvidenceLedgerText({
+  const buliStickyNotesContextText = buildRelevantBuliStickyNotesContextText({
     conversationSessionEntries,
     currentUserPromptText: "plan it",
   });
 
-  expect(ledgerText).toContain("Where is providerTurnReplay projected into requests?");
-  expect(ledgerText).toContain("Use these as source pointers, not active memory");
+  expect(buliStickyNotesContextText).toContain("BuliStickyNotes:");
+  expect(buliStickyNotesContextText).toContain("Where is providerTurnReplay projected into requests?");
+  expect(buliStickyNotesContextText).toContain("Use these as source pointers, not active memory");
 });
 
 test("listReadOnlyToolEvidenceNotes removes stale notes after a changed file patch", () => {

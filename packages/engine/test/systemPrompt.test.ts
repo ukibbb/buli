@@ -28,19 +28,22 @@ test("separates read-only planning from implementation execution", () => {
   );
 });
 
-test("includes the read-only evidence ledger when provided", () => {
+test("includes BuliStickyNotes context text verbatim when provided", () => {
+  const buliStickyNotesContextText = [
+    "BuliStickyNotes:",
+    "Purpose-aware evidence notes from prior turns:",
+    "- read src/app.ts lines 1-20 via call_read_1",
+    "Use these as source pointers, not active memory.",
+  ].join("\n");
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
-    readOnlyToolEvidenceLedgerText: [
-      "Read-only evidence already visible in this conversation:",
-      "- read src/app.ts lines 1-20 via call_read_1",
-      "Do not request the same read-only evidence again unless it is stale.",
-    ].join("\n"),
+    buliStickyNotesContextText,
   });
 
-  expect(systemPromptText).toContain("Context evidence ledger:");
+  expect(systemPromptText).toContain(buliStickyNotesContextText);
+  expect(systemPromptText).not.toContain("Context evidence ledger:");
+  expect(systemPromptText).not.toContain("read-only evidence ledger");
   expect(systemPromptText).toContain("read src/app.ts lines 1-20 via call_read_1");
-  expect(systemPromptText).toContain("Do not request the same read-only evidence again");
 });
 
 test("includes workflow handoff context when provided", () => {

@@ -49,6 +49,7 @@ test("finalizeFailedConversationTurn records accepted prompt, flushes text, and 
       entryKind: "assistant_message",
       assistantMessageStatus: "failed",
       assistantMessageText: "Partial answer",
+      assistantOperatingMode: "implementation",
       failureExplanation: "provider failed",
     },
   ]);
