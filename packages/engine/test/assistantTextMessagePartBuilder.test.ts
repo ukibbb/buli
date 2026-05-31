@@ -28,6 +28,31 @@ test("assistant text builder normalizes CRLF and CR deltas before appending", ()
   expect(buildStreamingAssistantTextConversationMessagePart(builderState).rawMarkdownText).toBe("first\nsecond\nthird");
 });
 
+test("assistant text builder removes internal mode tags split across streamed deltas", () => {
+  let builderState = createInitialAssistantTextMessagePartBuilder("assistant-text-1");
+  for (const assistantTextDelta of [
+    "<under",
+    'stand_mode speaker="assistant">\nVisible',
+    " answer.",
+    "\n</under",
+    "stand_mode>",
+  ]) {
+    builderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(builderState, assistantTextDelta);
+  }
+
+  expect(buildCompletedAssistantTextConversationMessagePart(builderState).rawMarkdownText).toBe("Visible answer.");
+});
+
+test("assistant text builder preserves tag-like text once it is not a possible internal tag", () => {
+  let builderState = createInitialAssistantTextMessagePartBuilder("assistant-text-1");
+  builderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(builderState, "<plan");
+  builderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(builderState, " is text, not a wrapper.");
+
+  expect(buildCompletedAssistantTextConversationMessagePart(builderState).rawMarkdownText).toBe(
+    "<plan is text, not a wrapper.",
+  );
+});
+
 test("assistant text builder emits a completed assistant text part on finalize", () => {
   const builderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
     createInitialAssistantTextMessagePartBuilder("assistant-text-1"),

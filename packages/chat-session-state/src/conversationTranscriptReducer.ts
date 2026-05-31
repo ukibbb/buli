@@ -1,6 +1,7 @@
 import {
   createStartedToolCallDetailFromRequest,
   findLatestConversationCompactionBoundary,
+  removeInternalModeScopeTagsFromAssistantTranscriptText,
   type AssistantMessageConversationSessionEntry,
   type AssistantToolCallConversationMessagePart,
   type AssistantTextPartStatus,
@@ -418,12 +419,19 @@ function buildHydratedConversationTranscript(
     }
 
     if (conversationSessionEntry.entryKind === "assistant_text_segment") {
+      const visibleAssistantTextSegmentText = removeInternalModeScopeTagsFromAssistantTranscriptText(
+        conversationSessionEntry.assistantTextSegmentText,
+      );
+      if (visibleAssistantTextSegmentText.length === 0) {
+        return;
+      }
+
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       appendConversationMessagePart(assistantMessageId, {
         id: `persisted-entry-${entryIndex}-assistant-text-segment`,
         partKind: "assistant_text",
         partStatus: "completed",
-        rawMarkdownText: conversationSessionEntry.assistantTextSegmentText,
+        rawMarkdownText: visibleAssistantTextSegmentText,
       });
       return;
     }
@@ -476,12 +484,15 @@ function buildHydratedConversationTranscript(
         };
       }
 
-      if (conversationSessionEntry.assistantMessageText.length > 0 && !hasAssistantRenderedContentPart(assistantMessageId)) {
+      const visibleAssistantMessageText = removeInternalModeScopeTagsFromAssistantTranscriptText(
+        conversationSessionEntry.assistantMessageText,
+      );
+      if (visibleAssistantMessageText.length > 0 && !hasAssistantRenderedContentPart(assistantMessageId)) {
         appendConversationMessagePart(assistantMessageId, {
           id: `persisted-entry-${entryIndex}-assistant-text`,
           partKind: "assistant_text",
           partStatus: conversationSessionEntry.assistantMessageStatus satisfies AssistantTextPartStatus,
-          rawMarkdownText: conversationSessionEntry.assistantMessageText,
+          rawMarkdownText: visibleAssistantMessageText,
         });
       }
       updateAssistantTextPartStatuses(
