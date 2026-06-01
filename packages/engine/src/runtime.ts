@@ -60,6 +60,13 @@ import { streamAssistantResponseEventsFromProviderStream } from "./runtimeProvid
 import { summarizeConversationHistoryResourceUsageForDiagnostics } from "./runtimeConversationResourceDiagnostics.ts";
 import { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
 import {
+  DEFAULT_ASSISTANT_PROVIDER_NAME,
+  resolveDefaultAssistantProviderModelPromptProfile,
+  type AssistantProviderModelPromptProfile,
+  type AssistantProviderModelPromptProfileResolver,
+  type AssistantProviderName,
+} from "./assistantProviderModelPromptProfile.ts";
+import {
   finalizeFailedConversationTurn,
   finalizeInterruptedConversationTurn,
   finalizeProviderStreamEndedBeforeCompletion,
@@ -68,6 +75,8 @@ import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapsh
 
 export class AssistantConversationRuntime implements AssistantConversationRunner {
   readonly conversationTurnProvider: ConversationTurnProvider;
+  readonly assistantProviderName: AssistantProviderName;
+  readonly assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
   readonly workspaceRootPath: string;
   readonly promptContextBrowseRootPath: string;
   readonly promptContextStartingDirectoryPath: string;
@@ -91,6 +100,8 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
 
   constructor(input: {
     conversationTurnProvider: ConversationTurnProvider;
+    assistantProviderName?: AssistantProviderName | undefined;
+    assistantProviderModelPromptProfileResolver?: AssistantProviderModelPromptProfileResolver | undefined;
     workspaceRootPath: string;
     promptContextBrowseRootPath: string;
     promptContextStartingDirectoryPath?: string;
@@ -113,6 +124,9 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     autoCompactionReservedTokenCount?: number | undefined;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
+    this.assistantProviderName = input.assistantProviderName ?? DEFAULT_ASSISTANT_PROVIDER_NAME;
+    this.assistantProviderModelPromptProfileResolver = input.assistantProviderModelPromptProfileResolver ??
+      resolveDefaultAssistantProviderModelPromptProfile;
     this.workspaceRootPath = input.workspaceRootPath;
     this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
     this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath ?? input.promptContextBrowseRootPath;
@@ -143,6 +157,8 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     });
     this.conversationSessionCompactor = new ConversationSessionCompactor({
       conversationTurnProvider: this.conversationTurnProvider,
+      assistantProviderName: this.assistantProviderName,
+      assistantProviderModelPromptProfileResolver: this.assistantProviderModelPromptProfileResolver,
       conversationHistory: this.conversationHistory,
       workspaceRootPath: this.workspaceRootPath,
       ...(this.diagnosticLogger ? { diagnosticLogger: this.diagnosticLogger } : {}),
@@ -219,6 +235,8 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       conversationTurnInput,
       assistantOperatingMode,
       conversationTurnProvider: this.conversationTurnProvider,
+      assistantProviderName: this.assistantProviderName,
+      assistantProviderModelPromptProfileResolver: this.assistantProviderModelPromptProfileResolver,
       conversationSessionCompactor: this.conversationSessionCompactor,
       conversationHistory: this.conversationHistory,
       workspaceRootPath: this.workspaceRootPath,
@@ -287,6 +305,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly conversationTurnInput: ConversationTurnRequest;
   readonly assistantOperatingMode: AssistantOperatingMode;
   readonly conversationTurnProvider: ConversationTurnProvider;
+  readonly assistantProviderName: AssistantProviderName;
+  readonly assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly workspaceRootPath: string;
@@ -316,6 +336,8 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     conversationTurnInput: ConversationTurnRequest;
     assistantOperatingMode: AssistantOperatingMode;
     conversationTurnProvider: ConversationTurnProvider;
+    assistantProviderName: AssistantProviderName;
+    assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
     conversationSessionCompactor: ConversationSessionCompactor;
     conversationHistory: InMemoryConversationHistory;
     workspaceRootPath: string;
@@ -340,6 +362,11 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.conversationTurnId = input.conversationTurnInput.conversationTurnId ?? randomUUID();
     this.assistantOperatingMode = input.assistantOperatingMode;
     this.conversationTurnProvider = input.conversationTurnProvider;
+    this.assistantProviderName = input.assistantProviderName;
+    this.assistantProviderModelPromptProfile = input.assistantProviderModelPromptProfileResolver({
+      providerName: input.assistantProviderName,
+      selectedModelId: input.conversationTurnInput.selectedModelId,
+    });
     this.conversationSessionCompactor = input.conversationSessionCompactor;
     this.conversationHistory = input.conversationHistory;
     this.workspaceRootPath = input.workspaceRootPath;
@@ -477,6 +504,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
             conversationTurnInput: this.conversationTurnInput,
             assistantOperatingMode: this.assistantOperatingMode,
             conversationTurnProvider: this.conversationTurnProvider,
+            assistantProviderModelPromptProfile: this.assistantProviderModelPromptProfile,
             conversationHistory: this.conversationHistory,
             workspaceRootPath: this.workspaceRootPath,
             promptContextBrowseRootPath: this.promptContextBrowseRootPath,
@@ -669,6 +697,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       ...(this.conversationTurnInput.selectedReasoningEffort
         ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
         : {}),
+      assistantProviderModelPromptProfile: this.assistantProviderModelPromptProfile,
       assistantOperatingMode: this.assistantOperatingMode,
       ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
       bashToolApprovalMode: this.bashToolApprovalMode,

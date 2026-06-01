@@ -253,3 +253,34 @@ test("buildAssistantWorkflowHandoffPromptBlock formats implementation guidance a
   expect(promptBlock).toContain("&lt;typed&gt;");
   expect(promptBlock).toContain("latest_plan_handoff");
 });
+
+test("buildAssistantWorkflowHandoffPromptBlock can compact list items and long text for smaller prompt profiles", () => {
+  const promptBlock = buildAssistantWorkflowHandoffPromptBlock({
+    currentAssistantOperatingMode: "implementation",
+    conversationSessionEntries: [
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "Current plan.",
+        assistantOperatingMode: "plan",
+        workflowHandoff: {
+          ...planWorkflowHandoff,
+          currentStateSummary: "This state summary is intentionally long enough to need compact workflow handoff truncation.",
+          implementationSteps: [
+            "Store handoff with a long explanation that should be shortened.",
+            "Inject handoff into next turn.",
+          ],
+        },
+      },
+    ],
+    renderingProfile: {
+      renderingDetail: "compact",
+      maximumListItemCount: 1,
+      maximumTextCharacterCount: 36,
+    },
+  });
+
+  expect(promptBlock).toContain("This state summary is intentionally…");
+  expect(promptBlock).toContain("Store handoff with a long explanati…");
+  expect(promptBlock).not.toContain("Inject handoff into next turn.");
+});

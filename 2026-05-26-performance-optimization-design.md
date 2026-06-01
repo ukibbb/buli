@@ -281,13 +281,22 @@ Template:
 
 Keep ideas here when source verification shows they are already done or based on an outdated assumption.
 
-Known examples to verify before re-proposing:
+Source-verified completed or mostly completed items:
 
-- Bash output capping.
-- Read-only bash patch skipping.
-- SSE chunk accumulation changes.
-- SQLite prepared statement caching.
-- Historical provider replay projection behavior.
+- Request-size contributor diagnostics and OpenAI request-size report sections.
+- Per-tool result-size diagnostics and conversation resource summaries.
+- Deterministic `tool-output-context-growth` profile coverage and profile-report working-set sections.
+- Bash output capping before provider submission.
+- Read-only bash patch-capture skipping for auto-run read-only commands.
+- SSE frame buffering and response text/function-call chunk accumulation without repeated string concatenation.
+- SQLite prepared statement fields on the session gateway hot path.
+- Historical completed-turn provider replay projection to user prompt plus final assistant answer.
+- Dynamic tool-set filtering by operating mode.
+- Workspace-stable prompt cache key behavior.
+- Same-step duplicate read-only tool-call coalescing.
+- Task subagent context scoping through fresh child conversation history.
+
+Partial caveat: historical failed/interrupted turns and current-turn continuations can still need bounded recovery evidence or compact replay. Task subagent context is scoped, but the parent-visible task result still needs an explicit bounded contract.
 
 ### Needs source verification
 
@@ -295,20 +304,9 @@ Use this bucket when an idea sounds plausible but the current source has not bee
 
 Examples:
 
-- Dynamic tool-set reduction by mode or phase.
-- Prompt cache prefix stability.
-- Subagent context scoping.
-- Skill catalog memoization and lazy parsing.
 - Startup phase parallelization.
 - TUI streaming render isolation.
 - Git diff batching after mutations.
-
-### Needs measurement
-
-Use this bucket when the source behavior exists but impact is unknown.
-
-Examples:
-
 - HTTP connection reuse or HTTP/2 behavior.
 - Request body streaming.
 - Input item interning.
@@ -316,18 +314,30 @@ Examples:
 - Tree-sitter parser bundling/warm pool.
 - SQLite write batching.
 
+### Needs measurement
+
+Use this bucket when source behavior has been checked but the current product impact is unknown.
+
+Examples:
+
+- Current-turn provider replay growth from exact `function_call_output` continuation items.
+- Aggregate tool-output accumulation across many read/grep/bash calls after individual caps apply.
+- Skill catalog disk parsing and memoization impact.
+- Existing subagent scoping, checkpointing, and remaining parent-visible task-result size.
+- Prompt-context lookup, TUI render, SQLite hydration, and codebase-knowledge startup costs after fresh deterministic and manual profiles exist.
+
 ## Prioritized Working-Set Roadmap
 
 ### Conservative: measure and make visibility explainable
 
 These should preserve model-visible meaning and usually do not require task-completion evals:
 
-1. Request-size contributor diagnostics.
-2. Per-tool result-size diagnostics.
-3. Visibility reasons for provider-request items.
-4. Evidence IDs and metadata while preserving full visible text.
-5. Duplicate references only for unchanged evidence already visible in the current working set.
-6. Deterministic profile/report sections for working-set growth.
+1. Visibility reasons for provider-request items.
+2. Evidence IDs and metadata while preserving full visible text.
+3. Cross-step duplicate references only for unchanged evidence already visible in the current working set.
+4. Fresh profile annotations that tie each proposed optimization to a `profile-runs/` path and stable metric.
+
+Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, and deterministic/report sections for working-set growth.
 
 ### Moderate: compact repeated or stale evidence
 
@@ -338,7 +348,8 @@ These need task-completion evals because they alter model-visible content:
 3. Adaptive per-tool budgets based on remaining context.
 4. Structured, bounded subagent result contract.
 5. Failed/interrupted-turn evidence cards instead of raw transcript blocks.
-6. Subagent context scoping.
+
+Subagent context scoping itself is already implemented; the remaining risk is the bounded shape and size of the parent-visible result.
 
 ### Aggressive: semantic compression and prediction
 

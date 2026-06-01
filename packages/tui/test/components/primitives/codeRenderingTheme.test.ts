@@ -24,7 +24,20 @@ interface MeasuredColorContrastSample extends ColorContrastSample {
   readonly contrastRatio: number;
 }
 
+interface ColorSeparationPair {
+  readonly firstColorSample: ColorContrastSample;
+  readonly secondColorSample: ColorContrastSample;
+}
+
+interface InsufficientlySeparatedColorPair {
+  readonly comparedColorRoleNames: string;
+  readonly firstHexColor: string;
+  readonly secondHexColor: string;
+  readonly rgbDistance: number;
+}
+
 const highContrastMinimumRatio = 7;
+const minimumVisuallyDistinctRgbDistance = 60;
 
 function parseHexColor(hexColor: string): RgbColor {
   const hexColorMatch = /^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/.exec(hexColor);
@@ -65,6 +78,16 @@ function createRgbaColorContrastSample(colorRoleName: string, foregroundRgbaColo
   };
 }
 
+function createCodeBlockSyntaxStyleForegroundSample(captureName: string): ColorContrastSample {
+  const styleDefinition = codeBlockSyntaxStyle.getAllStyles().get(captureName);
+
+  if (styleDefinition?.fg === undefined) {
+    throw new Error(`Expected codeBlockSyntaxStyle.${captureName} to define a foreground color`);
+  }
+
+  return createRgbaColorContrastSample(`codeBlockSyntaxStyle.${captureName}`, styleDefinition.fg);
+}
+
 function formatRgbColorAsHex(rgbColor: RgbColor): string {
   return `#${formatRgbChannelAsHex(rgbColor.red)}${formatRgbChannelAsHex(rgbColor.green)}${formatRgbChannelAsHex(
     rgbColor.blue,
@@ -82,6 +105,14 @@ function calculateContrastRatio(firstColor: RgbColor, secondColor: RgbColor): nu
   const darkerLuminance = Math.min(firstLuminance, secondLuminance);
 
   return (lighterLuminance + 0.05) / (darkerLuminance + 0.05);
+}
+
+function calculateRgbDistance(firstColor: RgbColor, secondColor: RgbColor): number {
+  const redDifference = firstColor.red - secondColor.red;
+  const greenDifference = firstColor.green - secondColor.green;
+  const blueDifference = firstColor.blue - secondColor.blue;
+
+  return Math.sqrt(redDifference ** 2 + greenDifference ** 2 + blueDifference ** 2);
 }
 
 function calculateRelativeLuminance(rgbColor: RgbColor): number {
@@ -114,7 +145,57 @@ function measureLowContrastSamples(
     .filter((foregroundSample) => foregroundSample.contrastRatio < highContrastMinimumRatio);
 }
 
+function measureInsufficientlySeparatedColorPairs(
+  colorSeparationPairs: readonly ColorSeparationPair[],
+): InsufficientlySeparatedColorPair[] {
+  return colorSeparationPairs
+    .map(({ firstColorSample, secondColorSample }) => ({
+      comparedColorRoleNames: `${firstColorSample.colorRoleName} vs ${secondColorSample.colorRoleName}`,
+      firstHexColor: firstColorSample.foregroundHexColor,
+      secondHexColor: secondColorSample.foregroundHexColor,
+      rgbDistance: Number(
+        calculateRgbDistance(firstColorSample.foregroundColor, secondColorSample.foregroundColor).toFixed(2),
+      ),
+    }))
+    .filter((colorSeparationPair) => colorSeparationPair.rgbDistance < minimumVisuallyDistinctRgbDistance);
+}
+
 describe("codeRenderingTheme", () => {
+  test("keeps_confusable_live_tui_syntax_roles_visually_distinct", () => {
+    const confusableSyntaxRolePairs: ColorSeparationPair[] = [
+      {
+        firstColorSample: createCodeBlockSyntaxStyleForegroundSample("string"),
+        secondColorSample: createCodeBlockSyntaxStyleForegroundSample("property"),
+      },
+      {
+        firstColorSample: createCodeBlockSyntaxStyleForegroundSample("string"),
+        secondColorSample: createCodeBlockSyntaxStyleForegroundSample("module"),
+      },
+      {
+        firstColorSample: createCodeBlockSyntaxStyleForegroundSample("type"),
+        secondColorSample: createCodeBlockSyntaxStyleForegroundSample("type.builtin"),
+      },
+      {
+        firstColorSample: createCodeBlockSyntaxStyleForegroundSample("type"),
+        secondColorSample: createCodeBlockSyntaxStyleForegroundSample("boolean"),
+      },
+      {
+        firstColorSample: createHexColorContrastSample(
+          "syntaxHighlightSpanForegroundColors.string",
+          syntaxHighlightSpanForegroundColors.string,
+        ),
+        secondColorSample: createHexColorContrastSample(
+          "syntaxHighlightSpanForegroundColors.module",
+          syntaxHighlightSpanForegroundColors.module,
+        ),
+      },
+    ];
+
+    const insufficientlySeparatedColorPairs = measureInsufficientlySeparatedColorPairs(confusableSyntaxRolePairs);
+
+    expect(insufficientlySeparatedColorPairs).toEqual([]);
+  });
+
   test("keeps_live_tui_code_foregrounds_high_contrast_against_the_code_canvas", () => {
     const codeCanvasBackgroundColor = parseHexColor(githubLikeTerminalCodeColors.canvas);
     const syntaxStyleForegroundSamples = Array.from(codeBlockSyntaxStyle.getAllStyles().entries()).flatMap(

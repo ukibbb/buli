@@ -12,9 +12,9 @@ import {
 } from "@buli/contracts";
 import { isDuplicateReadOnlyToolResultText } from "./readOnlyToolCallCoalescing.ts";
 
-const DEFAULT_RELEVANT_EVIDENCE_NOTE_LIMIT = 8;
-const MAX_PROMPT_NOTE_TEXT_LENGTH = 220;
-const MAX_OBSERVATION_TEXT_LENGTH = 260;
+export const DEFAULT_RELEVANT_EVIDENCE_NOTE_LIMIT = 8;
+export const DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT = 220;
+export const DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT = 260;
 
 type ToolCallConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "tool_call" }>;
 type UserPromptConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>;
@@ -120,6 +120,8 @@ export function buildRelevantBuliStickyNotesContextText(input: {
   conversationSessionEntries: readonly ConversationSessionEntry[];
   currentUserPromptText: string;
   maximumNoteCount?: number | undefined;
+  maximumPromptNoteTextCharacterCount?: number | undefined;
+  maximumObservationTextCharacterCount?: number | undefined;
 }): string | undefined {
   const evidenceNotes = listReadOnlyToolEvidenceNotes({
     conversationSessionEntries: input.conversationSessionEntries,
@@ -137,7 +139,14 @@ export function buildRelevantBuliStickyNotesContextText(input: {
   return [
     "BuliStickyNotes:",
     "Purpose-aware evidence notes from prior turns:",
-    ...relevantEvidenceNotes.map(formatBuliStickyNotesEvidenceLine),
+    ...relevantEvidenceNotes.map((evidenceNote) =>
+      formatBuliStickyNotesEvidenceLine(evidenceNote, {
+        maximumPromptNoteTextCharacterCount: input.maximumPromptNoteTextCharacterCount ??
+          DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
+        maximumObservationTextCharacterCount: input.maximumObservationTextCharacterCount ??
+          DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT,
+      })
+    ),
     "Use these as source pointers, not active memory. Re-read sources before relying on details; ignore notes that do not fit the current task.",
   ].join("\n");
 }
@@ -257,12 +266,18 @@ function createReadOnlyToolEvidenceNote(input: {
   return undefined;
 }
 
-function formatBuliStickyNotesEvidenceLine(evidenceNote: ReadOnlyToolEvidenceNote): string {
+function formatBuliStickyNotesEvidenceLine(
+  evidenceNote: ReadOnlyToolEvidenceNote,
+  renderingLimits: {
+    maximumPromptNoteTextCharacterCount: number;
+    maximumObservationTextCharacterCount: number;
+  },
+): string {
   return [
-    `- Prior task: ${quoteNoteText(evidenceNote.originUserPromptText)};`,
-    `question: ${quoteNoteText(evidenceNote.inspectionQuestion)};`,
-    `source: ${truncateOneLine(evidenceNote.sourceDescription, MAX_PROMPT_NOTE_TEXT_LENGTH)} via ${evidenceNote.priorToolCallId};`,
-    `observed: ${truncateOneLine(evidenceNote.observedSummary, MAX_OBSERVATION_TEXT_LENGTH)};`,
+    `- Prior task: ${quoteNoteText(evidenceNote.originUserPromptText, renderingLimits.maximumPromptNoteTextCharacterCount)};`,
+    `question: ${quoteNoteText(evidenceNote.inspectionQuestion, renderingLimits.maximumPromptNoteTextCharacterCount)};`,
+    `source: ${truncateOneLine(evidenceNote.sourceDescription, renderingLimits.maximumPromptNoteTextCharacterCount)} via ${evidenceNote.priorToolCallId};`,
+    `observed: ${truncateOneLine(evidenceNote.observedSummary, renderingLimits.maximumObservationTextCharacterCount)};`,
     `freshness: ${evidenceNote.freshness}.`,
   ].join(" ");
 }
@@ -326,7 +341,9 @@ function summarizeCodebaseKnowledgeObservation(toolCallDetail: ToolCallLocateCod
 
 function compactSentenceParts(parts: readonly (string | undefined)[]): string {
   const compactedParts = parts.filter((part): part is string => part !== undefined && part.trim().length > 0);
-  return compactedParts.length > 0 ? truncateOneLine(compactedParts.join("; "), MAX_OBSERVATION_TEXT_LENGTH) : "completed inspection";
+  return compactedParts.length > 0
+    ? truncateOneLine(compactedParts.join("; "), DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT)
+    : "completed inspection";
 }
 
 function describeReadSource(toolCallDetail: ToolCallReadDetail): string {
@@ -343,7 +360,10 @@ function describeGrepSource(toolCallDetail: ToolCallGrepDetail): string {
 }
 
 function describeCodebaseKnowledgeSource(toolCallRequest: LocateCodebaseSymbolsToolCallRequest): string {
-  return `locate_codebase_symbols ${quoteNoteText([...(toolCallRequest.symbolNames ?? []), ...(toolCallRequest.filePaths ?? [])].join(", "))}`;
+  return `locate_codebase_symbols ${quoteNoteText(
+    [...(toolCallRequest.symbolNames ?? []), ...(toolCallRequest.filePaths ?? [])].join(", "),
+    DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
+  )}`;
 }
 
 function formatReturnedReadLineRange(toolCallDetail: ToolCallReadDetail): string | undefined {
@@ -479,8 +499,8 @@ function extractSearchTokens(text: string): Set<string> {
   return tokens;
 }
 
-function quoteNoteText(noteText: string): string {
-  return JSON.stringify(truncateOneLine(noteText, MAX_PROMPT_NOTE_TEXT_LENGTH));
+function quoteNoteText(noteText: string, maximumPromptNoteTextCharacterCount: number): string {
+  return JSON.stringify(truncateOneLine(noteText, maximumPromptNoteTextCharacterCount));
 }
 
 function truncateOneLine(text: string, maximumLength: number): string {

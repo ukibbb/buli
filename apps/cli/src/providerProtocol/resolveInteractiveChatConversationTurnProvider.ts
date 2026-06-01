@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { AvailableAssistantModel, BuliDiagnosticLogger } from "@buli/contracts";
 import {
   ProviderProtocolConversationTurnProvider,
+  type AssistantProviderName,
   type ConversationTurnProvider,
   type ProviderProtocolClientTransport,
 } from "@buli/engine";
@@ -27,6 +28,7 @@ export type DisposableProviderProtocolClientTransport = ProviderProtocolClientTr
 export type InteractiveChatConversationTurnProviderResolution = Readonly<{
   conversationTurnProvider: ConversationTurnProvider;
   providerConnectionKind: InteractiveChatProviderConnectionKind;
+  assistantProviderName: AssistantProviderName;
   listAvailableAssistantModels: () => Promise<readonly AvailableAssistantModel[]>;
   dispose: () => Promise<void>;
 }>;
@@ -64,6 +66,7 @@ export function resolveInteractiveChatConversationTurnProvider(
     return {
       conversationTurnProvider: openAiProvider,
       providerConnectionKind: "direct_openai",
+      assistantProviderName: "openai",
       listAvailableAssistantModels: () => openAiProvider.listAvailableAssistantModels(),
       dispose: async () => {},
     };
@@ -76,6 +79,7 @@ export function resolveInteractiveChatConversationTurnProvider(
   return {
     conversationTurnProvider: providerProtocolConversationTurnProvider,
     providerConnectionKind: providerHostKind === "external" ? "external_provider_protocol_ipc" : "openai_provider_protocol_ipc",
+    assistantProviderName: providerHostKind === "external" ? "external_provider_protocol" : "openai",
     listAvailableAssistantModels: () => providerProtocolConversationTurnProvider.listAvailableAssistantModels(),
     dispose: async () => {
       await providerProtocolTransport.dispose?.();

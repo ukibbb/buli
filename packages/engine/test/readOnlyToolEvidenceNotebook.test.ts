@@ -102,6 +102,44 @@ test("buildRelevantBuliStickyNotesContextText carries previous task notes for sh
   expect(buliStickyNotesContextText).toContain("Use these as source pointers, not active memory");
 });
 
+test("buildRelevantBuliStickyNotesContextText honors profile-style note count and truncation limits", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    ...createCompletedReadTurn({
+      promptText: "Investigate provider request projection first",
+      toolCallId: "call_projection_first",
+      filePath: "packages/openai/src/provider/request.ts",
+      inspectionQuestion: "Where is provider request projection assembled before the first provider turn starts?",
+      lineText: "provider request projection first note has a deliberately long observation preview for truncation",
+      assistantMessageText: "First projection note.",
+    }),
+    ...createCompletedReadTurn({
+      promptText: "Investigate provider request projection second",
+      toolCallId: "call_projection_second",
+      filePath: "packages/openai/src/provider/request.ts",
+      inspectionQuestion: "Where is provider request projection assembled before the second provider turn starts?",
+      lineText: "provider request projection second note has a deliberately long observation preview for truncation",
+      assistantMessageText: "Second projection note.",
+    }),
+  ];
+
+  const buliStickyNotesContextText = buildRelevantBuliStickyNotesContextText({
+    conversationSessionEntries,
+    currentUserPromptText: "Continue provider request projection work",
+    maximumNoteCount: 1,
+    maximumPromptNoteTextCharacterCount: 48,
+    maximumObservationTextCharacterCount: 54,
+  });
+
+  const stickyNoteLines = buliStickyNotesContextText?.split("\n").filter((line) => line.startsWith("- Prior task:")) ?? [];
+  expect(stickyNoteLines).toHaveLength(1);
+  expect(buliStickyNotesContextText).toContain("via call_projection_second");
+  expect(buliStickyNotesContextText).not.toContain("via call_projection_first");
+  expect(buliStickyNotesContextText).toContain("…");
+  expect(buliStickyNotesContextText).not.toContain(
+    "Where is provider request projection assembled before the second provider turn starts?",
+  );
+});
+
 test("listReadOnlyToolEvidenceNotes removes stale notes after a changed file patch", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     ...createCompletedReadTurn({

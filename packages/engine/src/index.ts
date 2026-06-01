@@ -23,6 +23,28 @@ export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./p
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
 export {
+  CURRENT_DEFAULT_STICKY_NOTES_PROMPT_RENDERING_PROFILE,
+  CURRENT_DEFAULT_WORKFLOW_HANDOFF_PROMPT_RENDERING_PROFILE,
+  DEFAULT_ASSISTANT_PROVIDER_NAME,
+  EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
+  EXTERNAL_PROVIDER_PROTOCOL_CURRENT_PROMPT_PROFILE_ID,
+  OPENAI_DEFAULT_CURRENT_PROMPT_PROFILE_ID,
+  OPENAI_GPT_5_5_CURRENT_PROMPT_PROFILE_ID,
+  formatAssistantProviderModelPromptProfileFragmentBlock,
+  resolveDefaultAssistantProviderModelPromptProfile,
+} from "./assistantProviderModelPromptProfile.ts";
+export type {
+  AssistantProviderModelPromptFragmentTarget,
+  AssistantProviderModelPromptFragments,
+  AssistantProviderModelPromptProfile,
+  AssistantProviderModelPromptProfileResolver,
+  AssistantProviderName,
+  AssistantStickyNotesPromptRenderingProfile,
+  AssistantWorkflowHandoffPromptRenderingDetail,
+  AssistantWorkflowHandoffPromptRenderingProfile,
+  ResolveAssistantProviderModelPromptProfileInput,
+} from "./assistantProviderModelPromptProfile.ts";
+export {
   createDefaultWorkspaceCodebaseKnowledgeIndex,
   defaultWorkspaceCodebaseKnowledgeIndexFilePath,
   TreeSitterWorkspaceCodebaseKnowledgeIndex,

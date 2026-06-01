@@ -16,6 +16,7 @@ import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./proj
 import { buildRelevantBuliStickyNotesContextText } from "./readOnlyToolEvidenceNotebook.ts";
 import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
 import { buildAssistantWorkflowHandoffPromptBlock } from "./assistantWorkflowHandoffContext.ts";
+import type { AssistantProviderModelPromptProfile } from "./assistantProviderModelPromptProfile.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { formatUserSelectedSkillPromptForModel, type WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
@@ -31,6 +32,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
   conversationTurnInput: ConversationTurnRequest;
   assistantOperatingMode: AssistantOperatingMode;
   conversationTurnProvider: ConversationTurnProvider;
+  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   conversationHistory: InMemoryConversationHistory;
   workspaceRootPath: string;
   promptContextBrowseRootPath: string;
@@ -81,10 +83,16 @@ export async function startAcceptedRuntimeConversationTurn(input: {
   const buliStickyNotesContextText = buildRelevantBuliStickyNotesContextText({
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     currentUserPromptText: input.conversationTurnInput.userPromptText,
+    maximumNoteCount: input.assistantProviderModelPromptProfile.stickyNotes.maximumRelevantEvidenceNoteCount,
+    maximumPromptNoteTextCharacterCount:
+      input.assistantProviderModelPromptProfile.stickyNotes.maximumPromptNoteTextCharacterCount,
+    maximumObservationTextCharacterCount:
+      input.assistantProviderModelPromptProfile.stickyNotes.maximumObservationTextCharacterCount,
   });
   const workflowHandoffContextText = buildAssistantWorkflowHandoffPromptBlock({
     currentAssistantOperatingMode: input.assistantOperatingMode,
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
+    renderingProfile: input.assistantProviderModelPromptProfile.workflowHandoff,
   });
 
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.start_requested", {
@@ -107,6 +115,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       availableSkills: availableSkillsForAcceptedTurn,
       ...(buliStickyNotesContextText ? { buliStickyNotesContextText } : {}),
       workflowHandoffContextText,
+      assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
     }),
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     selectedModelId: input.conversationTurnInput.selectedModelId,

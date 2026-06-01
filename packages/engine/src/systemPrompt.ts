@@ -1,5 +1,9 @@
 import { pathToFileURL } from "node:url";
 import { DEFAULT_ASSISTANT_OPERATING_MODE, type AssistantOperatingMode, type ProjectInstructionSnapshot } from "@buli/contracts";
+import {
+  formatAssistantProviderModelPromptProfileFragmentBlock,
+  type AssistantProviderModelPromptProfile,
+} from "./assistantProviderModelPromptProfile.ts";
 import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 import { buildProjectInstructionPromptBlock } from "./projectInstructions.ts";
 import type { AvailableSkill } from "./skills/skillCatalog.ts";
@@ -210,11 +214,18 @@ export function buildBuliSystemPrompt(input: {
   availableSkills?: readonly AvailableSkill[];
   buliStickyNotesContextText?: string | undefined;
   workflowHandoffContextText?: string | undefined;
+  assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
 }): string {
   const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
   const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
   const availableSkillsPromptBlock = buildAvailableSkillsPromptBlock(input.availableSkills);
   const buliStickyNotesContextPromptBlock = buildBuliStickyNotesContextPromptBlock(input.buliStickyNotesContextText);
+  const providerModelPromptProfileBlock = input.assistantProviderModelPromptProfile
+    ? formatAssistantProviderModelPromptProfileFragmentBlock({
+      assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+      fragmentTarget: "primaryAssistantSystemPrompt",
+    })
+    : undefined;
   return [
     [
       "Identity:",
@@ -225,6 +236,7 @@ export function buildBuliSystemPrompt(input: {
     ...(assistantOperatingMode === "understand" ? [UNDERSTAND_MODE_SYSTEM_REMINDER] : []),
     ...(assistantOperatingMode === "plan" ? [PLAN_MODE_SYSTEM_REMINDER] : []),
     ...(assistantOperatingMode === "implementation" ? [IMPLEMENTATION_MODE_SYSTEM_REMINDER] : []),
+    ...(providerModelPromptProfileBlock ? [providerModelPromptProfileBlock] : []),
     ...(input.workflowHandoffContextText ? [input.workflowHandoffContextText] : []),
     ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
     ...(availableSkillsPromptBlock ? [availableSkillsPromptBlock] : []),
@@ -417,14 +429,22 @@ function formatAvailableSkillLocationLines(availableSkill: AvailableSkill): stri
 export function buildBuliExplorerSystemPrompt(input: {
   workspaceRootPath: string;
   projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
+  assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
 }): string {
   const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
+  const providerModelPromptProfileBlock = input.assistantProviderModelPromptProfile
+    ? formatAssistantProviderModelPromptProfileFragmentBlock({
+      assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+      fragmentTarget: "explorerSystemPrompt",
+    })
+    : undefined;
   return [
     [
       "Identity:",
       "You are Buli Explorer, a read-only codebase exploration subagent working for the parent assistant.",
       `Current workspace root: ${input.workspaceRootPath}`,
     ].join("\n"),
+    ...(providerModelPromptProfileBlock ? [providerModelPromptProfileBlock] : []),
     ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
     [
       "Scope:",

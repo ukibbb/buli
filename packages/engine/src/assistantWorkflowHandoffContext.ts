@@ -9,6 +9,11 @@ import {
   type WorkflowHandoff,
 } from "@buli/contracts";
 import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
+import type { AssistantWorkflowHandoffPromptRenderingProfile } from "./assistantProviderModelPromptProfile.ts";
+
+const DEFAULT_ASSISTANT_WORKFLOW_HANDOFF_PROMPT_RENDERING_PROFILE = {
+  renderingDetail: "full",
+} as const satisfies AssistantWorkflowHandoffPromptRenderingProfile;
 
 export type AssistantWorkflowHandoffContext = {
   currentAssistantOperatingMode: AssistantOperatingMode;
@@ -36,14 +41,18 @@ export function buildAssistantWorkflowHandoffContext(input: {
 export function buildAssistantWorkflowHandoffPromptBlock(input: {
   currentAssistantOperatingMode: AssistantOperatingMode;
   conversationSessionEntries: readonly ConversationSessionEntry[];
+  renderingProfile?: AssistantWorkflowHandoffPromptRenderingProfile | undefined;
 }): string {
   return formatAssistantWorkflowHandoffContextPromptBlock(
     buildAssistantWorkflowHandoffContext(input),
+    input.renderingProfile,
   );
 }
 
 export function formatAssistantWorkflowHandoffContextPromptBlock(
   workflowHandoffContext: AssistantWorkflowHandoffContext,
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile =
+    DEFAULT_ASSISTANT_WORKFLOW_HANDOFF_PROMPT_RENDERING_PROFILE,
 ): string {
   return [
     "Workflow handoff system:",
@@ -58,9 +67,17 @@ export function formatAssistantWorkflowHandoffContextPromptBlock(
       ? `  <latest_completed_assistant_mode>${workflowHandoffContext.latestCompletedAssistantOperatingMode}</latest_completed_assistant_mode>`
       : "  <latest_completed_assistant_mode>none</latest_completed_assistant_mode>",
     ...formatExpectedHandoffGuidanceLines(workflowHandoffContext),
-    ...formatWorkflowHandoffSectionLines("latest_understanding_handoff", workflowHandoffContext.latestUnderstandingWorkflowHandoff),
-    ...formatWorkflowHandoffSectionLines("latest_plan_handoff", workflowHandoffContext.latestPlanWorkflowHandoff),
-    ...formatWorkflowHandoffSectionLines("latest_implementation_handoff", workflowHandoffContext.latestImplementationWorkflowHandoff),
+    ...formatWorkflowHandoffSectionLines(
+      "latest_understanding_handoff",
+      workflowHandoffContext.latestUnderstandingWorkflowHandoff,
+      renderingProfile,
+    ),
+    ...formatWorkflowHandoffSectionLines("latest_plan_handoff", workflowHandoffContext.latestPlanWorkflowHandoff, renderingProfile),
+    ...formatWorkflowHandoffSectionLines(
+      "latest_implementation_handoff",
+      workflowHandoffContext.latestImplementationWorkflowHandoff,
+      renderingProfile,
+    ),
     "</workflow_handoff_context>",
   ].join("\n");
 }
@@ -82,116 +99,187 @@ function formatExpectedHandoffGuidanceLines(workflowHandoffContext: AssistantWor
     : "  <current_mode_guidance>No plan handoff is available. For non-trivial changes, produce or request the minimal plan/approval needed before mutating files.</current_mode_guidance>"];
 }
 
-function formatWorkflowHandoffSectionLines(sectionName: string, workflowHandoff: WorkflowHandoff | undefined): string[] {
+function formatWorkflowHandoffSectionLines(
+  sectionName: string,
+  workflowHandoff: WorkflowHandoff | undefined,
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string[] {
   if (!workflowHandoff) {
     return [`  <${sectionName}>missing</${sectionName}>`];
   }
 
   return [
     `  <${sectionName} kind="${workflowHandoff.handoffKind}">`,
-    ...formatWorkflowHandoffSummaryLines(workflowHandoff).map((summaryLine) => `    ${summaryLine}`),
+    ...formatWorkflowHandoffSummaryLines(workflowHandoff, renderingProfile).map((summaryLine) => `    ${summaryLine}`),
     `  </${sectionName}>`,
   ];
 }
 
-function formatWorkflowHandoffSummaryLines(workflowHandoff: WorkflowHandoff): string[] {
+function formatWorkflowHandoffSummaryLines(
+  workflowHandoff: WorkflowHandoff,
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string[] {
   if (workflowHandoff.handoffKind === "understanding") {
     return [
-      `<user_goal>${escapeModelFacingXmlText(workflowHandoff.userGoal)}</user_goal>`,
-      `<current_understanding>${escapeModelFacingXmlText(workflowHandoff.currentUnderstanding)}</current_understanding>`,
-      ...formatTextListLines("important_findings", workflowHandoff.importantFindings),
-      ...formatTextListLines("constraints", workflowHandoff.constraints),
-      ...formatTextListLines("open_questions", workflowHandoff.openQuestions),
-      `<recommended_next_step>${escapeModelFacingXmlText(workflowHandoff.recommendedNextStep)}</recommended_next_step>`,
+      `<user_goal>${formatWorkflowHandoffText(workflowHandoff.userGoal, renderingProfile)}</user_goal>`,
+      `<current_understanding>${formatWorkflowHandoffText(workflowHandoff.currentUnderstanding, renderingProfile)}</current_understanding>`,
+      ...formatTextListLines("important_findings", workflowHandoff.importantFindings, renderingProfile),
+      ...formatTextListLines("constraints", workflowHandoff.constraints, renderingProfile),
+      ...formatTextListLines("open_questions", workflowHandoff.openQuestions, renderingProfile),
+      `<recommended_next_step>${formatWorkflowHandoffText(workflowHandoff.recommendedNextStep, renderingProfile)}</recommended_next_step>`,
     ];
   }
   if (workflowHandoff.handoffKind === "plan") {
     return [
-      `<agreed_goal>${escapeModelFacingXmlText(workflowHandoff.agreedGoal)}</agreed_goal>`,
-      `<current_state_summary>${escapeModelFacingXmlText(workflowHandoff.currentStateSummary)}</current_state_summary>`,
-      `<chosen_approach>${escapeModelFacingXmlText(workflowHandoff.chosenApproach)}</chosen_approach>`,
+      `<agreed_goal>${formatWorkflowHandoffText(workflowHandoff.agreedGoal, renderingProfile)}</agreed_goal>`,
+      `<current_state_summary>${formatWorkflowHandoffText(workflowHandoff.currentStateSummary, renderingProfile)}</current_state_summary>`,
+      `<chosen_approach>${formatWorkflowHandoffText(workflowHandoff.chosenApproach, renderingProfile)}</chosen_approach>`,
       `<ready_for_implementation>${workflowHandoff.isReadyForImplementation}</ready_for_implementation>`,
-      ...formatFileOperationLines(workflowHandoff.targetFiles),
-      ...formatTextListLines("implementation_steps", workflowHandoff.implementationSteps),
-      ...formatVerificationCommandLines(workflowHandoff.verificationCommands),
-      ...formatTextListLines("risks", workflowHandoff.risks),
-      ...formatTextListLines("required_pre_apply_reads", workflowHandoff.requiredPreApplyReads),
+      ...formatFileOperationLines(workflowHandoff.targetFiles, renderingProfile),
+      ...formatTextListLines("implementation_steps", workflowHandoff.implementationSteps, renderingProfile),
+      ...formatVerificationCommandLines(workflowHandoff.verificationCommands, renderingProfile),
+      ...formatTextListLines("risks", workflowHandoff.risks, renderingProfile),
+      ...formatTextListLines("required_pre_apply_reads", workflowHandoff.requiredPreApplyReads, renderingProfile),
     ];
   }
 
   return [
-    `<implemented_outcome>${escapeModelFacingXmlText(workflowHandoff.implementedOutcome)}</implemented_outcome>`,
-    ...formatFileChangeLines(workflowHandoff.changedFiles),
-    ...formatVerificationResultLines(workflowHandoff.verificationResults),
-    ...formatTextListLines("remaining_issues", workflowHandoff.remainingIssues),
-    `<recommended_next_step>${escapeModelFacingXmlText(workflowHandoff.recommendedNextStep)}</recommended_next_step>`,
+    `<implemented_outcome>${formatWorkflowHandoffText(workflowHandoff.implementedOutcome, renderingProfile)}</implemented_outcome>`,
+    ...formatFileChangeLines(workflowHandoff.changedFiles, renderingProfile),
+    ...formatVerificationResultLines(workflowHandoff.verificationResults, renderingProfile),
+    ...formatTextListLines("remaining_issues", workflowHandoff.remainingIssues, renderingProfile),
+    `<recommended_next_step>${formatWorkflowHandoffText(workflowHandoff.recommendedNextStep, renderingProfile)}</recommended_next_step>`,
   ];
 }
 
-function formatTextListLines(listName: string, listItems: readonly string[]): string[] {
+function formatTextListLines(
+  listName: string,
+  listItems: readonly string[],
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string[] {
   if (listItems.length === 0) {
     return [`<${listName}></${listName}>`];
   }
 
+  const visibleListItems = limitWorkflowHandoffListItems(listItems, renderingProfile);
+
   return [
     `<${listName}>`,
-    ...listItems.map((listItem) => `  <item>${escapeModelFacingXmlText(listItem)}</item>`),
+    ...visibleListItems.map((listItem) => `  <item>${formatWorkflowHandoffText(listItem, renderingProfile)}</item>`),
     `</${listName}>`,
   ];
 }
 
-function formatFileOperationLines(fileOperations: readonly PlanWorkflowHandoff["targetFiles"][number][]): string[] {
+function formatFileOperationLines(
+  fileOperations: readonly PlanWorkflowHandoff["targetFiles"][number][],
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string[] {
   if (fileOperations.length === 0) {
     return ["<target_files></target_files>"];
   }
 
+  const visibleFileOperations = limitWorkflowHandoffListItems(fileOperations, renderingProfile);
+
   return [
     "<target_files>",
-    ...fileOperations.map((fileOperation) =>
-      `  <file operation="${fileOperation.operationKind}" path="${escapeModelFacingXmlAttributeValue(fileOperation.filePath)}">${escapeModelFacingXmlText(fileOperation.reason)}</file>`
+    ...visibleFileOperations.map((fileOperation) =>
+      `  <file operation="${fileOperation.operationKind}" path="${escapeModelFacingXmlAttributeValue(fileOperation.filePath)}">${formatWorkflowHandoffText(fileOperation.reason, renderingProfile)}</file>`
     ),
     "</target_files>",
   ];
 }
 
-function formatVerificationCommandLines(verificationCommands: readonly PlanWorkflowHandoff["verificationCommands"][number][]): string[] {
+function formatVerificationCommandLines(
+  verificationCommands: readonly PlanWorkflowHandoff["verificationCommands"][number][],
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string[] {
   if (verificationCommands.length === 0) {
     return ["<verification_commands></verification_commands>"];
   }
 
+  const visibleVerificationCommands = limitWorkflowHandoffListItems(verificationCommands, renderingProfile);
+
   return [
     "<verification_commands>",
-    ...verificationCommands.map((verificationCommand) =>
-      `  <command reason="${escapeModelFacingXmlAttributeValue(verificationCommand.reason)}">${escapeModelFacingXmlText(verificationCommand.command)}</command>`
+    ...visibleVerificationCommands.map((verificationCommand) =>
+      `  <command reason="${escapeModelFacingXmlAttributeValue(formatWorkflowHandoffRawText(verificationCommand.reason, renderingProfile))}">${formatWorkflowHandoffText(verificationCommand.command, renderingProfile)}</command>`
     ),
     "</verification_commands>",
   ];
 }
 
-function formatFileChangeLines(fileChanges: readonly ImplementationWorkflowHandoff["changedFiles"][number][]): string[] {
+function formatFileChangeLines(
+  fileChanges: readonly ImplementationWorkflowHandoff["changedFiles"][number][],
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string[] {
   if (fileChanges.length === 0) {
     return ["<changed_files></changed_files>"];
   }
 
+  const visibleFileChanges = limitWorkflowHandoffListItems(fileChanges, renderingProfile);
+
   return [
     "<changed_files>",
-    ...fileChanges.map((fileChange) =>
-      `  <file path="${escapeModelFacingXmlAttributeValue(fileChange.filePath)}">${escapeModelFacingXmlText(fileChange.changeSummary)}</file>`
+    ...visibleFileChanges.map((fileChange) =>
+      `  <file path="${escapeModelFacingXmlAttributeValue(fileChange.filePath)}">${formatWorkflowHandoffText(fileChange.changeSummary, renderingProfile)}</file>`
     ),
     "</changed_files>",
   ];
 }
 
-function formatVerificationResultLines(verificationResults: readonly ImplementationWorkflowHandoff["verificationResults"][number][]): string[] {
+function formatVerificationResultLines(
+  verificationResults: readonly ImplementationWorkflowHandoff["verificationResults"][number][],
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string[] {
   if (verificationResults.length === 0) {
     return ["<verification_results></verification_results>"];
   }
 
+  const visibleVerificationResults = limitWorkflowHandoffListItems(verificationResults, renderingProfile);
+
   return [
     "<verification_results>",
-    ...verificationResults.map((verificationResult) =>
-      `  <result outcome="${verificationResult.outcomeKind}" command="${escapeModelFacingXmlAttributeValue(verificationResult.command)}">${escapeModelFacingXmlText(verificationResult.summary)}</result>`
+    ...visibleVerificationResults.map((verificationResult) =>
+      `  <result outcome="${verificationResult.outcomeKind}" command="${escapeModelFacingXmlAttributeValue(formatWorkflowHandoffRawText(verificationResult.command, renderingProfile))}">${formatWorkflowHandoffText(verificationResult.summary, renderingProfile)}</result>`
     ),
     "</verification_results>",
   ];
+}
+
+function limitWorkflowHandoffListItems<ListItem>(
+  listItems: readonly ListItem[],
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): readonly ListItem[] {
+  if (renderingProfile.renderingDetail !== "compact" || renderingProfile.maximumListItemCount === undefined) {
+    return listItems;
+  }
+
+  return listItems.slice(0, Math.max(0, renderingProfile.maximumListItemCount));
+}
+
+function formatWorkflowHandoffText(
+  text: string,
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string {
+  return escapeModelFacingXmlText(formatWorkflowHandoffRawText(text, renderingProfile));
+}
+
+function formatWorkflowHandoffRawText(
+  text: string,
+  renderingProfile: AssistantWorkflowHandoffPromptRenderingProfile,
+): string {
+  if (renderingProfile.renderingDetail !== "compact" || renderingProfile.maximumTextCharacterCount === undefined) {
+    return text;
+  }
+
+  return truncateOneLine(text, renderingProfile.maximumTextCharacterCount);
+}
+
+function truncateOneLine(text: string, maximumLength: number): string {
+  const oneLineText = text.trim().replace(/\s+/g, " ");
+  if (oneLineText.length <= maximumLength) {
+    return oneLineText;
+  }
+
+  return `${oneLineText.slice(0, Math.max(0, maximumLength - 1))}…`;
 }

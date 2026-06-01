@@ -25,9 +25,15 @@ import {
   selectConversationEntriesForCompaction,
 } from "./selectConversationEntriesForCompaction.ts";
 import { prepareConversationEntriesForCompactionRequest } from "./prepareConversationEntriesForCompactionRequest.ts";
+import type {
+  AssistantProviderModelPromptProfileResolver,
+  AssistantProviderName,
+} from "../assistantProviderModelPromptProfile.ts";
 
 export class ConversationSessionCompactor {
   readonly conversationTurnProvider: ConversationTurnProvider;
+  readonly assistantProviderName: AssistantProviderName;
+  readonly assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly workspaceRootPath: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
@@ -39,6 +45,8 @@ export class ConversationSessionCompactor {
 
   constructor(input: {
     conversationTurnProvider: ConversationTurnProvider;
+    assistantProviderName: AssistantProviderName;
+    assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
     conversationHistory: InMemoryConversationHistory;
     workspaceRootPath: string;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -48,6 +56,8 @@ export class ConversationSessionCompactor {
     autoCompactionReservedTokenCount?: number | undefined;
   }) {
     this.conversationTurnProvider = input.conversationTurnProvider;
+    this.assistantProviderName = input.assistantProviderName;
+    this.assistantProviderModelPromptProfileResolver = input.assistantProviderModelPromptProfileResolver;
     this.conversationHistory = input.conversationHistory;
     this.workspaceRootPath = input.workspaceRootPath;
     this.diagnosticLogger = input.diagnosticLogger;
@@ -122,12 +132,22 @@ export class ConversationSessionCompactor {
       const latestVisibleWorkflowHandoffCheckpoint = findLatestVisibleWorkflowHandoffCheckpoint(
         selectedConversationEntriesForCompaction.compactionSourceConversationSessionEntries,
       );
-      const compactionPromptEntry = createConversationCompactionPromptSessionEntry({ workflowModeContext });
+      const assistantProviderModelPromptProfile = this.assistantProviderModelPromptProfileResolver({
+        providerName: this.assistantProviderName,
+        selectedModelId: input.selectedModelId,
+      });
+      const compactionPromptEntry = createConversationCompactionPromptSessionEntry({
+        workflowModeContext,
+        assistantProviderModelPromptProfile,
+      });
       const compactionSource = input.compactionSource ?? "manual";
       const providerConversationTurn = this.conversationTurnProvider.startConversationTurn({
         providerTurnKind: "conversation_compaction",
         compactionSource,
-        systemPromptText: buildConversationCompactionSystemPrompt({ workspaceRootPath: this.workspaceRootPath }),
+        systemPromptText: buildConversationCompactionSystemPrompt({
+          workspaceRootPath: this.workspaceRootPath,
+          assistantProviderModelPromptProfile,
+        }),
         conversationSessionEntries: [
           ...compactionRequestProjection.conversationSessionEntries,
           compactionPromptEntry,

@@ -21,10 +21,17 @@ import type {
   ConversationTurnProvider,
   ProviderConversationTurn,
   ProviderConversationTurnRequest,
+  AssistantProviderModelPromptFragments,
+  AssistantProviderModelPromptProfile,
+  ResolveAssistantProviderModelPromptProfileInput,
   WorkspaceCodebaseKnowledgeIndex,
   WorkspaceShellCommandExecutor,
 } from "../src/index.ts";
-import { AssistantConversationRuntime, InMemoryConversationHistory } from "../src/index.ts";
+import {
+  AssistantConversationRuntime,
+  InMemoryConversationHistory,
+  resolveDefaultAssistantProviderModelPromptProfile,
+} from "../src/index.ts";
 
 const completedUsage: TokenUsage = {
   total: 12,
@@ -572,6 +579,50 @@ async function collectAssistantEvents(activeConversationTurn: ReturnType<Assista
   return emittedAssistantEvents;
 }
 
+type RuntimeTestPromptProfileResolverConfiguration = Readonly<{
+  promptFragments?: Partial<AssistantProviderModelPromptFragments> | undefined;
+  stickyNotes?: Partial<AssistantProviderModelPromptProfile["stickyNotes"]> | undefined;
+  workflowHandoff?: Partial<AssistantProviderModelPromptProfile["workflowHandoff"]> | undefined;
+}>;
+
+type RecordingRuntimeTestPromptProfileResolver = Readonly<{
+  profileResolutionInputs: ResolveAssistantProviderModelPromptProfileInput[];
+  assistantProviderModelPromptProfileResolver: (
+    profileResolutionInput: ResolveAssistantProviderModelPromptProfileInput,
+  ) => AssistantProviderModelPromptProfile;
+}>;
+
+function createRecordingRuntimeTestPromptProfileResolver(
+  configuration: RuntimeTestPromptProfileResolverConfiguration = {},
+): RecordingRuntimeTestPromptProfileResolver {
+  const profileResolutionInputs: ResolveAssistantProviderModelPromptProfileInput[] = [];
+
+  return {
+    profileResolutionInputs,
+    assistantProviderModelPromptProfileResolver: (profileResolutionInput) => {
+      profileResolutionInputs.push(profileResolutionInput);
+      const baselinePromptProfile = resolveDefaultAssistantProviderModelPromptProfile(profileResolutionInput);
+
+      return {
+        ...baselinePromptProfile,
+        profileId: `test:${profileResolutionInput.providerName}:${profileResolutionInput.selectedModelId}`,
+        promptFragments: {
+          ...baselinePromptProfile.promptFragments,
+          ...configuration.promptFragments,
+        },
+        stickyNotes: {
+          ...baselinePromptProfile.stickyNotes,
+          ...configuration.stickyNotes,
+        },
+        workflowHandoff: {
+          ...baselinePromptProfile.workflowHandoff,
+          ...configuration.workflowHandoff,
+        },
+      };
+    },
+  };
+}
+
 function createPriorReadOnlyEvidenceConversationSessionEntries(): ConversationSessionEntry[] {
   return [
     {
@@ -870,6 +921,64 @@ test("AssistantConversationRuntime emits and persists the exact BuliStickyNotes 
     type: "assistant_message_part_added",
     part: { partKind: "assistant_text" },
   });
+});
+
+test("AssistantConversationRuntime applies the provider/model prompt profile to the assistant prompt and Sticky Notes", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Continuing with the compact profile." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: createPriorReadOnlyEvidenceConversationSessionEntries(),
+  });
+  const promptProfileResolver = createRecordingRuntimeTestPromptProfileResolver({
+    promptFragments: {
+      primaryAssistantSystemPrompt: ["Primary assistant runtime profile fragment."],
+    },
+    stickyNotes: {
+      maximumRelevantEvidenceNoteCount: 1,
+      maximumPromptNoteTextCharacterCount: 36,
+      maximumObservationTextCharacterCount: 42,
+    },
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    assistantProviderName: "external_provider_protocol",
+    assistantProviderModelPromptProfileResolver: promptProfileResolver.assistantProviderModelPromptProfileResolver,
+    conversationHistory,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Continue providerTurnReplay request projection work",
+      selectedModelId: "compact-assistant-model",
+    }),
+  );
+
+  const stickyNotesPartEvent = emittedAssistantEvents.find(
+    (assistantResponseEvent) => assistantResponseEvent.type === "assistant_message_part_added" &&
+      assistantResponseEvent.part.partKind === "assistant_buli_sticky_notes",
+  );
+  if (!stickyNotesPartEvent || stickyNotesPartEvent.type !== "assistant_message_part_added" ||
+    stickyNotesPartEvent.part.partKind !== "assistant_buli_sticky_notes") {
+    throw new Error("Expected a BuliStickyNotes assistant message part event.");
+  }
+
+  expect(promptProfileResolver.profileResolutionInputs).toEqual([
+    { providerName: "external_provider_protocol", selectedModelId: "compact-assistant-model" },
+  ]);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Primary assistant runtime profile fragment.");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(stickyNotesPartEvent.part.buliStickyNotesContextText);
+  expect(stickyNotesPartEvent.part.buliStickyNotesContextText).toContain("BuliStickyNotes:");
+  expect(stickyNotesPartEvent.part.buliStickyNotesContextText).toContain("…");
+  expect(stickyNotesPartEvent.part.buliStickyNotesContextText).not.toContain(
+    "Where is providerTurnReplay projected into requests?",
+  );
 });
 
 test("AssistantConversationRuntime injects the plan mode system reminder", async () => {
@@ -3527,8 +3636,16 @@ test("AssistantConversationRuntime compacts the current session into an append-o
   });
   const provider = new RecordingConversationTurnProvider([providerTurn]);
   const conversationHistory = new InMemoryConversationHistory({ initialConversationSessionEntries });
+  const promptProfileResolver = createRecordingRuntimeTestPromptProfileResolver({
+    promptFragments: {
+      conversationCompactionSystemPrompt: ["Compaction system runtime profile fragment."],
+      conversationCompactionPrompt: ["Compaction prompt runtime profile fragment."],
+    },
+  });
   const runtime = new AssistantConversationRuntime({
     conversationTurnProvider: provider,
+    assistantProviderName: "external_provider_protocol",
+    assistantProviderModelPromptProfileResolver: promptProfileResolver.assistantProviderModelPromptProfileResolver,
     workspaceRootPath: process.cwd(),
     promptContextBrowseRootPath: process.cwd(),
     conversationHistory,
@@ -3547,21 +3664,22 @@ test("AssistantConversationRuntime compacts the current session into an append-o
   expect(compactionSummaryProgressTexts).toEqual(["Goal: continue the runtime compaction implementation."]);
 
   expect(provider.startedTurnRequests).toHaveLength(1);
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual([]);
-  expect(provider.startedTurnRequests[0]?.conversationSessionEntries).toEqual([
-    ...initialConversationSessionEntries,
-    {
-      entryKind: "user_prompt",
-      promptText: expect.stringContaining("Create a compact continuation summary"),
-      modelFacingPromptText: expect.stringContaining("Create a compact continuation summary"),
-    },
+  expect(promptProfileResolver.profileResolutionInputs).toEqual([
+    { providerName: "external_provider_protocol", selectedModelId: "gpt-5.4" },
   ]);
-  expect(provider.startedTurnRequests[0]?.conversationSessionEntries.at(-1)).toMatchObject({
-    entryKind: "user_prompt",
-    modelFacingPromptText: expect.stringContaining(
-      "<latest_completed_assistant_mode>understand</latest_completed_assistant_mode>",
-    ),
-  });
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual([]);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Compaction system runtime profile fragment.");
+  const compactionPromptEntry = provider.startedTurnRequests[0]?.conversationSessionEntries.at(-1);
+  if (!compactionPromptEntry || compactionPromptEntry.entryKind !== "user_prompt") {
+    throw new Error("Expected the compaction request to end with the compaction prompt entry.");
+  }
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries.slice(0, -1)).toEqual(initialConversationSessionEntries);
+  expect(compactionPromptEntry.promptText).toContain("Create a compact continuation summary");
+  expect(compactionPromptEntry.modelFacingPromptText).toContain("Create a compact continuation summary");
+  expect(compactionPromptEntry.modelFacingPromptText).toContain("Compaction prompt runtime profile fragment.");
+  expect(compactionPromptEntry.modelFacingPromptText).toContain(
+    "<latest_completed_assistant_mode>understand</latest_completed_assistant_mode>",
+  );
   expect(conversationHistory.listConversationSessionEntries()).toEqual<ConversationSessionEntry[]>([
     ...initialConversationSessionEntries,
     {
@@ -4182,6 +4300,64 @@ test("AssistantConversationRuntime runs task as a built-in Explorer subagent", a
   expect(runtime.conversationHistory.listConversationSessionEntries()).not.toContainEqual(
     expect.objectContaining({ toolCallId: "call_read_1" }),
   );
+});
+
+test("AssistantConversationRuntime applies the provider/model prompt profile to Explorer subagent prompts", async () => {
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_task_profile",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs with profile",
+          subagentPrompt: "Summarize README.md with profile-aware prompt behavior.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Profiled Explorer result acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const taskSubagentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Profiled Explorer summary." },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, taskSubagentProviderTurn]);
+  const promptProfileResolver = createRecordingRuntimeTestPromptProfileResolver({
+    promptFragments: {
+      explorerSystemPrompt: ["Explorer runtime profile fragment."],
+      taskSubagentPrompt: ["Task subagent runtime profile fragment."],
+    },
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    assistantProviderModelPromptProfileResolver: promptProfileResolver.assistantProviderModelPromptProfileResolver,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Run a profiled Explorer task",
+      selectedModelId: "compact-task-model",
+    }),
+  );
+
+  expect(promptProfileResolver.profileResolutionInputs).toEqual([
+    { providerName: "openai", selectedModelId: "compact-task-model" },
+  ]);
+  expect(provider.startedTurnRequests).toHaveLength(2);
+  expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain("Explorer runtime profile fragment.");
+  expect(provider.startedTurnRequests[1]?.conversationSessionEntries[0]).toMatchObject({
+    entryKind: "user_prompt",
+    modelFacingPromptText: expect.stringContaining("Task subagent runtime profile fragment."),
+  });
 });
 
 test("AssistantConversationRuntime shows batched task subagent read-only tool calls", async () => {

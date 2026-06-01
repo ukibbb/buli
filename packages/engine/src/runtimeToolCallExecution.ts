@@ -53,6 +53,7 @@ import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellComman
 import type { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
 import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
+import type { AssistantProviderModelPromptProfile } from "./assistantProviderModelPromptProfile.ts";
 
 export type {
   RuntimePendingToolApproval,
@@ -69,6 +70,7 @@ export type RuntimeToolCallExecutionContext = {
   conversationTurnProvider: ConversationTurnProvider;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   assistantOperatingMode: AssistantOperatingMode;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
   bashToolApprovalMode: BashToolApprovalMode;
@@ -466,6 +468,7 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     taskToolCallRequest: input.toolCallRequest,
     selectedModelId: input.selectedModelId,
     ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+    assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
     workspaceRootPath: input.workspaceRootPath,
     workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,

@@ -1,4 +1,9 @@
 import { expect, test } from "bun:test";
+import {
+  resolveDefaultAssistantProviderModelPromptProfile,
+  type AssistantProviderModelPromptProfile,
+  type AssistantProviderModelPromptFragments,
+} from "../src/assistantProviderModelPromptProfile.ts";
 import { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "../src/systemPrompt.ts";
 
 test("describes buli as Lukasz Bulinski's learning-first software engineering partner", () => {
@@ -64,6 +69,25 @@ test("includes workflow handoff context when provided", () => {
   expect(systemPromptText).toContain("Workflow handoff system:");
   expect(systemPromptText).toContain("<latest_plan_handoff kind=\"plan\">");
   expect(systemPromptText).toContain("Implement typed handoffs.");
+});
+
+test("includes additive provider/model prompt fragments without weakening core mode rules", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "implementation",
+    assistantProviderModelPromptProfile: createTestPromptProfile({
+      primaryAssistantSystemPrompt: ["Use the compact future-model response shape for this turn."],
+    }),
+  });
+
+  expect(systemPromptText).toContain("Implementation Agent - System Reminder");
+  expect(systemPromptText).toContain("This mode is for applying changes, not re-litigating the approach.");
+  expect(systemPromptText).toContain("Provider/model prompt profile:");
+  expect(systemPromptText).toContain("Use the compact future-model response shape for this turn.");
+  expect(systemPromptText).toContain("They do not replace Buli's core identity, mode reminders, safety rules");
+  expect(systemPromptText.indexOf("Implementation Agent - System Reminder")).toBeLessThan(
+    systemPromptText.indexOf("Provider/model prompt profile:"),
+  );
 });
 
 test("uses file-by-file apply plans for non-trivial work", () => {
@@ -659,3 +683,35 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   );
   expect(systemPromptText).toContain("If relevant context was not found, state what was searched instead of guessing.");
 });
+
+test("buildBuliExplorerSystemPrompt includes additive provider/model Explorer prompt fragments", () => {
+  const systemPromptText = buildBuliExplorerSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantProviderModelPromptProfile: createTestPromptProfile({
+      explorerSystemPrompt: ["Keep Explorer summaries short for the compact provider profile."],
+    }),
+  });
+
+  expect(systemPromptText).toContain("Buli Explorer");
+  expect(systemPromptText).toContain("Use only read-only inspection capabilities.");
+  expect(systemPromptText).toContain("Provider/model prompt profile:");
+  expect(systemPromptText).toContain("Keep Explorer summaries short for the compact provider profile.");
+});
+
+function createTestPromptProfile(
+  promptFragments: Partial<AssistantProviderModelPromptFragments>,
+): AssistantProviderModelPromptProfile {
+  const baselinePromptProfile = resolveDefaultAssistantProviderModelPromptProfile({
+    providerName: "openai",
+    selectedModelId: "future-model",
+  });
+
+  return {
+    ...baselinePromptProfile,
+    profileId: "test:prompt-profile",
+    promptFragments: {
+      ...baselinePromptProfile.promptFragments,
+      ...promptFragments,
+    },
+  };
+}
