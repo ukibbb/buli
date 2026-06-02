@@ -527,9 +527,9 @@ test("runGlobToolCall caps returned matched paths while keeping the total count"
     expect(globToolCallOutcome.toolCallDetail.matchedPaths).toHaveLength(1_000);
   }
   expect(globToolCallOutcome.toolResultText).toContain("Found 1005 files");
-  expect(globToolCallOutcome.toolResultText).toContain("Results truncated: showing first 1000 of 1005 files");
+  expect(globToolCallOutcome.toolResultText).toContain("Results too broad/incomplete: showing first 1000 of 1005 files");
   expect(globToolCallOutcome.toolResultText).toContain(
-    "This search result is incomplete; narrow the directory or glob pattern before making conclusions about absence.",
+    "This search result cannot support absence or completeness claims; narrow the directory or glob pattern, or run batched follow-up glob calls, before making conclusions about absence or coverage.",
   );
 });
 
@@ -917,9 +917,9 @@ test("runGrepToolCall caps returned match hits while keeping the total count", a
     expect(grepToolCallOutcome.toolCallDetail.matchHits).toHaveLength(1_000);
   }
   expect(grepToolCallOutcome.toolResultText).toContain("Found 1005 matches in 1 files");
-  expect(grepToolCallOutcome.toolResultText).toContain("Results truncated: showing first 1000 of 1005 matches");
+  expect(grepToolCallOutcome.toolResultText).toContain("Results too broad/incomplete: showing first 1000 of 1005 matches");
   expect(grepToolCallOutcome.toolResultText).toContain(
-    "This search result is incomplete; narrow the path or regex before making conclusions about absence.",
+    "This search result cannot support absence or completeness claims; narrow the path, regex, include glob, or context before making conclusions about absence or coverage.",
   );
   expect(grepToolCallOutcome.toolResultText).toContain("Line 1000: match 999");
   expect(grepToolCallOutcome.toolResultText).not.toContain("Line 1005: match 1004");

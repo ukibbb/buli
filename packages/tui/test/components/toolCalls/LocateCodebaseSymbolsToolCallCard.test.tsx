@@ -32,15 +32,15 @@ describe("LocateCodebaseSymbolsToolCallCard", () => {
           toolName: "locate_codebase_symbols",
           filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
           symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-          matchedKnowledgeCount: 2,
-          recommendedReadCount: 3,
+          locatedSymbolCount: 2,
+          verificationReadCount: 3,
         }}
       />,
       { width: 120, height: 16 },
     );
     await renderOnce();
 
-    expect(captureCharFrame()).toContain("2 matches");
+    expect(captureCharFrame()).toContain("2 definitions");
     expect(captureCharFrame()).toContain("3 reads");
     expect(captureCharFrame()).not.toContain("file packages");
 

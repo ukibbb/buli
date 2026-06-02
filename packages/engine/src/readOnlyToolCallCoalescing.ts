@@ -80,13 +80,12 @@ function createLocateCodebaseSymbolsToolCallExecutionKey(
 ): string {
   return JSON.stringify([
     "locate_codebase_symbols",
-    normalizeCodebaseKnowledgeQueryHints(locateCodebaseSymbolsToolCallRequest.symbolNames),
-    normalizeCodebaseKnowledgeQueryHints(locateCodebaseSymbolsToolCallRequest.filePaths),
-    locateCodebaseSymbolsToolCallRequest.maximumResultCount ?? null,
+    normalizeExactSymbolLocatorHints(locateCodebaseSymbolsToolCallRequest.symbolNames),
+    normalizeExactSymbolLocatorHints(locateCodebaseSymbolsToolCallRequest.filePaths),
   ]);
 }
 
-function normalizeCodebaseKnowledgeQueryHints(hintValues: readonly string[] | undefined): string[] {
+function normalizeExactSymbolLocatorHints(hintValues: readonly string[] | undefined): string[] {
   if (!hintValues || hintValues.length === 0) {
     return [];
   }

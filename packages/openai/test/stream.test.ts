@@ -695,13 +695,11 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
       argumentsText: JSON.stringify({
         symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
         filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-        maximumResultCount: 4,
       }),
       expectedToolCallRequest: {
         toolName: "locate_codebase_symbols",
         symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
         filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-        maximumResultCount: 4,
       },
     },
     {
@@ -892,11 +890,13 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
   expect(grepToolDefinition?.parameters.properties["contextLineCount"]?.maximum).toBe(5);
   expect(locateCodebaseSymbolsToolDefinition?.description).toContain("start-end line span");
-  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("after grep");
-  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("Verify current source with read");
+  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("grep/glob for discovery");
+  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("read to verify current source");
+  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("filePaths are optional filters only");
   expect(locateCodebaseSymbolsToolDefinition?.description).toContain("multiple concurrent locate_codebase_symbols calls instead of one large lookup");
+  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["symbolNames"]?.minItems).toBe(1);
   expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["filePaths"]?.maxItems).toBe(50);
-  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["maximumResultCount"]?.maximum).toBe(20);
+  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["maximumResultCount"]).toBeUndefined();
   expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
   expect(editManyToolDefinition?.description).toContain("Prefer this over several edit calls");
   expect(editManyToolDefinition?.parameters.properties["edits"]?.minItems).toBe(1);

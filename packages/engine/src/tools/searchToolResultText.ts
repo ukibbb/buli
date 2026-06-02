@@ -20,7 +20,7 @@ export function buildGlobToolResultText(input: {
     `Found ${input.totalMatchedPathCount} files`,
     ...(input.matchedPaths.length < input.totalMatchedPathCount
       ? [
-          `Results truncated: showing first ${input.matchedPaths.length} of ${input.totalMatchedPathCount} files. This search result is incomplete; narrow the directory or glob pattern before making conclusions about absence.`,
+          `Results too broad/incomplete: showing first ${input.matchedPaths.length} of ${input.totalMatchedPathCount} files. This search result cannot support absence or completeness claims; narrow the directory or glob pattern, or run batched follow-up glob calls, before making conclusions about absence or coverage.`,
         ]
       : []),
     ...input.matchedPaths,
@@ -52,7 +52,7 @@ export function buildGrepToolResultText(input: {
     `Found ${input.totalMatchCount} matches in ${input.matchedFileCount} files`,
     ...(input.matchHits.length < input.totalMatchCount
       ? [
-          `Results truncated: showing first ${input.matchHits.length} of ${input.totalMatchCount} matches. This search result is incomplete; narrow the path or regex before making conclusions about absence.`,
+          `Results too broad/incomplete: showing first ${input.matchHits.length} of ${input.totalMatchCount} matches. This search result cannot support absence or completeness claims; narrow the path, regex, include glob, or context before making conclusions about absence or coverage.`,
         ]
       : []),
   ];

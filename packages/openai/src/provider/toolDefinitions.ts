@@ -3,7 +3,6 @@ import {
   AssistantToolCallRequestSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
-  MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT,
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_GREP_CONTEXT_LINE_COUNT,
   MAX_INSPECTION_QUESTION_LENGTH,
@@ -231,36 +230,31 @@ export function createLocateCodebaseSymbolsToolDefinition(): OpenAiToolDefinitio
   return {
     type: "function",
     name: "locate_codebase_symbols",
-    description: "Resolve a known symbol name or file path to its exact definition: file, kind, exported flag, and start-end line span, plus a precise read target. Use after grep surfaces a name, before reading. Verify current source with read. For many symbols or file paths, split symbolNames/filePaths into small batches and make multiple concurrent locate_codebase_symbols calls instead of one large lookup.",
+    description: "Resolve known exact symbol names to definition locations: file, kind, exported flag, start-end line span, and a precise read target. Use grep/glob for discovery first, then locate_codebase_symbols for exact definitions, then read to verify current source. filePaths are optional filters only, not file overview queries. For many names, split symbolNames into small batches and make multiple concurrent locate_codebase_symbols calls instead of one large lookup.",
     parameters: {
       type: "object",
       properties: {
         symbolNames: {
-          type: ["array", "null"],
+          type: "array",
+          minItems: 1,
           maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
-          description: "Symbol names to locate, or null when none are provided.",
+          description: "Exact function, class, type, interface, enum, or variable names to locate. Required and non-empty.",
           items: {
             type: "string",
-            description: "Known function, class, type, interface, enum, or variable name.",
+            description: "Known exact symbol name. Use grep or glob first when unsure of the spelling or case.",
           },
         },
         filePaths: {
           type: ["array", "null"],
           maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
-          description: "File paths whose imports, exports, and symbol list to return, or null when none are provided.",
+          description: "Optional workspace file paths used only to filter/disambiguate symbol definitions, or null for no file filter.",
           items: {
             type: "string",
-            description: "Workspace-relative or absolute path hint.",
+            description: "Workspace-relative file path filter.",
           },
         },
-        maximumResultCount: {
-          type: ["integer", "null"],
-          minimum: 1,
-          maximum: MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT,
-          description: "Maximum number of matches to return, or null for the default.",
-        },
       },
-      required: ["symbolNames", "filePaths", "maximumResultCount"],
+      required: ["symbolNames", "filePaths"],
       additionalProperties: false,
     },
     strict: true,
@@ -922,25 +916,17 @@ function parseLocateCodebaseSymbolsOpenAiToolCallRequest(
     "filePaths",
     "locate_codebase_symbols",
   );
-  const maximumResultCount = readOptionalPositiveIntegerToolArgument(
-    parsedArguments,
-    "maximumResultCount",
-    "locate_codebase_symbols",
-  );
 
-  // The discriminated-union schema cannot carry this cross-field rule, so the
-  // "at least one target" contract is enforced at parse time.
-  if ((symbolNames?.length ?? 0) === 0 && (filePaths?.length ?? 0) === 0) {
+  if (!symbolNames || symbolNames.length === 0) {
     throw new Error(
-      "OpenAI function call for locate_codebase_symbols requires at least one symbolNames or filePaths entry",
+      "OpenAI function call for locate_codebase_symbols requires a non-empty symbolNames array",
     );
   }
 
   return {
     toolName: "locate_codebase_symbols",
-    ...(symbolNames !== undefined ? { symbolNames } : {}),
+    symbolNames,
     ...(filePaths !== undefined ? { filePaths } : {}),
-    ...(maximumResultCount !== undefined ? { maximumResultCount } : {}),
   };
 }
 

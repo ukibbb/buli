@@ -32,6 +32,7 @@ import type { ConversationTurnProvider, ProviderConversationTurn } from "./provi
 import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 import { toProjectInstructionSnapshots, type ProjectInstructionTracker } from "./projectInstructions.ts";
 import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+import { SameTurnReadCoverageTracker } from "./readOnlyToolCallReadCoverage.ts";
 import type { RuntimeSubagentConversationConcurrencyLimiter } from "./runtimeSubagentConversationConcurrencyLimiter.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import {
@@ -357,6 +358,7 @@ async function* streamTaskSubagentConversationProgress(input: {
   let nextResearchBudgetScanEntryIndex = 0;
   const subagentChildToolCallsById = new Map<string, SubagentChildToolCall>();
   const orderedSubagentChildToolCallIds: string[] = [];
+  const sameTurnReadCoverageTracker = new SameTurnReadCoverageTracker();
 
   try {
     subagentConversationSessionRecorder.appendAcceptedUserPromptSessionEntry(subagentPromptText);
@@ -477,6 +479,7 @@ async function* streamTaskSubagentConversationProgress(input: {
           workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
           projectInstructionTracker: input.projectInstructionTracker,
           readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+          sameTurnReadCoverageTracker,
           abortSignal: input.abortSignal,
           throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
           diagnosticLogger: input.diagnosticLogger,
@@ -763,6 +766,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+  sameTurnReadCoverageTracker: SameTurnReadCoverageTracker;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -792,6 +796,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
       projectInstructionTracker: input.projectInstructionTracker,
       toolResultSessionRecorder: input.subagentToolResultSessionRecorder,
       readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+      sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
       abortSignal: input.abortSignal,
       throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
       diagnosticLogger: input.diagnosticLogger,
@@ -819,6 +824,7 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
         workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
         projectInstructionTracker: input.projectInstructionTracker,
         readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+        sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
         abortSignal: input.abortSignal,
         throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
         diagnosticLogger: input.diagnosticLogger,
@@ -883,6 +889,7 @@ async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+  sameTurnReadCoverageTracker: SameTurnReadCoverageTracker;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -898,6 +905,7 @@ async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.subagentToolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+    sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,

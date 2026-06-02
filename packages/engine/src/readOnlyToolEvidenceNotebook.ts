@@ -18,7 +18,6 @@ export const DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT = 340;
 const MAX_DIRECT_PREVIEW_LINE_COUNT = 3;
 const MAX_GLOB_EXAMPLE_PATH_COUNT = 4;
 const MAX_GREP_EXAMPLE_MATCH_COUNT = 3;
-const MAX_CODEBASE_KNOWLEDGE_SUMMARY_TEXT_LENGTH = 72;
 
 type ToolCallConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "tool_call" }>;
 type UserPromptConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>;
@@ -37,22 +36,17 @@ type BuliStickyNotesEvidenceRenderingLimits = {
   readonly maximumObservationTextCharacterCount: number;
 };
 
-type CodebaseKnowledgeSourceRangeExcerpt = {
+type CodebaseSymbolLocationExcerpt = {
+  readonly symbolName: string;
   readonly filePath: string;
   readonly lineRangeText: string;
+  readonly verificationRead?: CodebaseSymbolVerificationReadExcerpt | undefined;
 };
 
-type CodebaseKnowledgeRecommendedReadExcerpt = {
+type CodebaseSymbolVerificationReadExcerpt = {
   readonly filePath: string;
   readonly offsetLineText?: string | undefined;
   readonly lineCountText?: string | undefined;
-};
-
-type CodebaseKnowledgeTopMatchExcerpt = {
-  readonly titleText: string;
-  readonly summaryText?: string | undefined;
-  readonly sourceRange?: CodebaseKnowledgeSourceRangeExcerpt | undefined;
-  readonly recommendedRead?: CodebaseKnowledgeRecommendedReadExcerpt | undefined;
 };
 
 type ToolResultMutationEvidence =
@@ -391,15 +385,21 @@ function summarizeCodebaseKnowledgeObservation(
   toolCallDetail: ToolCallLocateCodebaseSymbolsDetail,
   toolResultText: string,
 ): string {
-  const topMatchExcerpt = extractCodebaseKnowledgeTopMatchExcerpt(toolResultText);
+  const firstLocationExcerpt = extractCodebaseSymbolFirstLocationExcerpt(toolResultText);
   return compactSentenceParts([
-    toolCallDetail.matchedKnowledgeCount !== undefined
-      ? formatCountedNoun(toolCallDetail.matchedKnowledgeCount, "knowledge match", "knowledge matches")
+    toolCallDetail.locatedSymbolCount !== undefined
+      ? formatCountedNoun(toolCallDetail.locatedSymbolCount, "located symbol definition", "located symbol definitions")
       : undefined,
-    toolCallDetail.recommendedReadCount !== undefined
-      ? formatCountedNoun(toolCallDetail.recommendedReadCount, "recommended read", "recommended reads")
+    toolCallDetail.notFoundSymbolCount !== undefined
+      ? formatCountedNoun(toolCallDetail.notFoundSymbolCount, "not-found symbol name", "not-found symbol names")
       : undefined,
-    topMatchExcerpt ? formatCodebaseKnowledgeTopMatchExcerpt(topMatchExcerpt) : undefined,
+    toolCallDetail.ambiguousSymbolNameCount !== undefined
+      ? formatCountedNoun(toolCallDetail.ambiguousSymbolNameCount, "ambiguous symbol name", "ambiguous symbol names")
+      : undefined,
+    toolCallDetail.verificationReadCount !== undefined
+      ? formatCountedNoun(toolCallDetail.verificationReadCount, "verification read", "verification reads")
+      : undefined,
+    firstLocationExcerpt ? formatCodebaseSymbolLocationExcerpt(firstLocationExcerpt) : undefined,
   ]);
 }
 
@@ -438,105 +438,83 @@ function describeGrepSource(
 
 function describeCodebaseKnowledgeSource(toolCallRequest: LocateCodebaseSymbolsToolCallRequest): string {
   const targetDescriptionText = joinDescriptionParts([
-    toolCallRequest.symbolNames && toolCallRequest.symbolNames.length > 0
-      ? `symbols ${quoteNoteText(toolCallRequest.symbolNames.join(", "))}`
-      : undefined,
+    `symbols ${quoteNoteText(toolCallRequest.symbolNames.join(", "))}`,
     toolCallRequest.filePaths && toolCallRequest.filePaths.length > 0
       ? `files ${quoteNoteText(toolCallRequest.filePaths.join(", "))}`
       : undefined,
-    toolCallRequest.maximumResultCount !== undefined ? `maximum ${toolCallRequest.maximumResultCount} results` : undefined,
   ], "; ");
 
-  return targetDescriptionText.length > 0
-    ? `locate_codebase_symbols ${targetDescriptionText}`
-    : "locate_codebase_symbols targets unspecified";
+  return `locate_codebase_symbols ${targetDescriptionText}`;
 }
 
 function joinDescriptionParts(parts: readonly (string | undefined)[], separator = " "): string {
   return parts.filter((part): part is string => part !== undefined && part.trim().length > 0).join(separator);
 }
 
-function extractCodebaseKnowledgeTopMatchExcerpt(toolResultText: string): CodebaseKnowledgeTopMatchExcerpt | undefined {
-  const firstMatchBlockText = toolResultText.match(/<match\b[^>]*>([\s\S]*?)<\/match>/)?.[1];
-  if (!firstMatchBlockText) {
+function extractCodebaseSymbolFirstLocationExcerpt(toolResultText: string): CodebaseSymbolLocationExcerpt | undefined {
+  const firstLocationMatch = toolResultText.match(/<location\b([^>]*)>([\s\S]*?)<\/location>/);
+  const locationAttributeText = firstLocationMatch?.[1];
+  const locationBlockText = firstLocationMatch?.[2];
+  if (!locationAttributeText || !locationBlockText) {
     return undefined;
   }
 
-  const titleText = extractXmlElementText(firstMatchBlockText, "title");
-  if (!titleText) {
+  const symbolName = extractXmlAttributeText(locationAttributeText, "name");
+  const filePath = extractXmlAttributeText(locationAttributeText, "file");
+  const lineRangeText = extractXmlAttributeText(locationAttributeText, "lines");
+  if (!symbolName || !filePath || !lineRangeText) {
     return undefined;
   }
 
   return {
-    titleText,
-    summaryText: extractXmlElementText(firstMatchBlockText, "summary"),
-    sourceRange: extractCodebaseKnowledgeSourceRange(firstMatchBlockText),
-    recommendedRead: extractCodebaseKnowledgeRecommendedRead(firstMatchBlockText),
+    symbolName,
+    filePath,
+    lineRangeText,
+    verificationRead: extractCodebaseSymbolVerificationRead(locationBlockText),
   };
 }
 
-function formatCodebaseKnowledgeTopMatchExcerpt(topMatchExcerpt: CodebaseKnowledgeTopMatchExcerpt): string {
+function formatCodebaseSymbolLocationExcerpt(locationExcerpt: CodebaseSymbolLocationExcerpt): string {
   return compactSentenceParts([
-    `top match ${truncateOneLine(topMatchExcerpt.titleText, 90)}`,
-    topMatchExcerpt.summaryText
-      ? `summary ${truncateOneLine(topMatchExcerpt.summaryText, MAX_CODEBASE_KNOWLEDGE_SUMMARY_TEXT_LENGTH)}`
-      : undefined,
-    topMatchExcerpt.sourceRange
-      ? `source ${topMatchExcerpt.sourceRange.filePath} lines ${topMatchExcerpt.sourceRange.lineRangeText}`
-      : undefined,
-    topMatchExcerpt.recommendedRead
-      ? formatCodebaseKnowledgeRecommendedReadExcerpt(topMatchExcerpt.recommendedRead, topMatchExcerpt.sourceRange)
+    `first location ${truncateOneLine(locationExcerpt.symbolName, 90)}`,
+    `source ${locationExcerpt.filePath} lines ${locationExcerpt.lineRangeText}`,
+    locationExcerpt.verificationRead
+      ? formatCodebaseSymbolVerificationReadExcerpt(locationExcerpt.verificationRead, locationExcerpt)
       : undefined,
   ]);
 }
 
-function formatCodebaseKnowledgeRecommendedReadExcerpt(
-  recommendedReadExcerpt: CodebaseKnowledgeRecommendedReadExcerpt,
-  sourceRangeExcerpt: CodebaseKnowledgeSourceRangeExcerpt | undefined,
+function formatCodebaseSymbolVerificationReadExcerpt(
+  verificationReadExcerpt: CodebaseSymbolVerificationReadExcerpt,
+  locationExcerpt: CodebaseSymbolLocationExcerpt,
 ): string {
-  const recommendedReadLocationText = sourceRangeExcerpt?.filePath === recommendedReadExcerpt.filePath
+  const verificationReadLocationText = locationExcerpt.filePath === verificationReadExcerpt.filePath
     ? "same file"
-    : recommendedReadExcerpt.filePath;
+    : verificationReadExcerpt.filePath;
 
   return joinDescriptionParts([
-    `recommended read ${recommendedReadLocationText}`,
-    recommendedReadExcerpt.offsetLineText !== undefined ? `offset ${recommendedReadExcerpt.offsetLineText}` : undefined,
-    recommendedReadExcerpt.lineCountText !== undefined ? `count ${recommendedReadExcerpt.lineCountText}` : undefined,
+    `verification read ${verificationReadLocationText}`,
+    verificationReadExcerpt.offsetLineText !== undefined ? `offset ${verificationReadExcerpt.offsetLineText}` : undefined,
+    verificationReadExcerpt.lineCountText !== undefined ? `count ${verificationReadExcerpt.lineCountText}` : undefined,
   ]);
 }
 
-function extractCodebaseKnowledgeSourceRange(matchBlockText: string): CodebaseKnowledgeSourceRangeExcerpt | undefined {
-  const sourceAttributeText = matchBlockText.match(/<source\b([^>]*)\/>/)?.[1];
-  if (!sourceAttributeText) {
+function extractCodebaseSymbolVerificationRead(locationBlockText: string): CodebaseSymbolVerificationReadExcerpt | undefined {
+  const verificationReadAttributeText = locationBlockText.match(/<verification_read\b([^>]*)\/>/)?.[1];
+  if (!verificationReadAttributeText) {
     return undefined;
   }
 
-  const filePath = extractXmlAttributeText(sourceAttributeText, "file");
-  const lineRangeText = extractXmlAttributeText(sourceAttributeText, "lines");
-  return filePath && lineRangeText ? { filePath, lineRangeText } : undefined;
-}
-
-function extractCodebaseKnowledgeRecommendedRead(matchBlockText: string): CodebaseKnowledgeRecommendedReadExcerpt | undefined {
-  const recommendedReadAttributeText = matchBlockText.match(/<read\b([^>]*)\/>/)?.[1];
-  if (!recommendedReadAttributeText) {
-    return undefined;
-  }
-
-  const filePath = extractXmlAttributeText(recommendedReadAttributeText, "file");
+  const filePath = extractXmlAttributeText(verificationReadAttributeText, "file");
   if (!filePath) {
     return undefined;
   }
 
   return {
     filePath,
-    offsetLineText: extractXmlAttributeText(recommendedReadAttributeText, "offset_line"),
-    lineCountText: extractXmlAttributeText(recommendedReadAttributeText, "line_count"),
+    offsetLineText: extractXmlAttributeText(verificationReadAttributeText, "offset_line"),
+    lineCountText: extractXmlAttributeText(verificationReadAttributeText, "line_count"),
   };
-}
-
-function extractXmlElementText(sourceText: string, elementName: string): string | undefined {
-  const elementText = sourceText.match(new RegExp(`<${elementName}>\\s*([\\s\\S]*?)\\s*<\\/${elementName}>`))?.[1];
-  return elementText ? decodeXmlText(elementText.trim()) : undefined;
 }
 
 function extractXmlAttributeText(attributeText: string, attributeName: string): string | undefined {

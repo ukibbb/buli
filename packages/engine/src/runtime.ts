@@ -54,6 +54,7 @@ import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTur
 import { RuntimeProviderStreamEventTranslator } from "./runtimeProviderStreamEventTranslator.ts";
 import { ProjectInstructionTracker } from "./projectInstructions.ts";
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+import { SameTurnReadCoverageTracker } from "./readOnlyToolCallReadCoverage.ts";
 import { RuntimeSubagentConversationConcurrencyLimiter } from "./runtimeSubagentConversationConcurrencyLimiter.ts";
 import { startAcceptedRuntimeConversationTurn } from "./runtimeConversationTurnStart.ts";
 import { streamAssistantResponseEventsFromProviderStream } from "./runtimeProviderStreamProcessor.ts";
@@ -523,6 +524,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           const buliStickyNotesContextTextForAcceptedTurn =
             startedRuntimeConversationTurn.buliStickyNotesContextTextForAcceptedTurn;
           const conversationTurnSessionRecorderForAcceptedAttempt = conversationTurnSessionRecorder;
+          const sameTurnReadCoverageTracker = new SameTurnReadCoverageTracker();
           const createBuliStickyNotesAssistantResponseEventsBeforeFirstProviderEvent = buliStickyNotesContextTextForAcceptedTurn
             ? () => {
                 conversationTurnSessionRecorderForAcceptedAttempt.appendBuliStickyNotesSessionEntry(
@@ -550,6 +552,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
             createRequestedToolCallsExecutionContext: () => this.createRequestedToolCallsExecutionContext({
               assistantResponseMessageId,
               providerConversationTurn: startedRuntimeConversationTurn.providerConversationTurn,
+              sameTurnReadCoverageTracker,
             }),
             readRecordedWorkflowHandoff: () => this.recordedWorkflowHandoff,
             ...(createBuliStickyNotesAssistantResponseEventsBeforeFirstProviderEvent !== undefined
@@ -687,6 +690,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   private createRequestedToolCallsExecutionContext(input: {
     assistantResponseMessageId: string;
     providerConversationTurn: ProviderConversationTurn;
+    sameTurnReadCoverageTracker: SameTurnReadCoverageTracker;
   }): RuntimeToolCallExecutionContext {
     return {
       assistantResponseMessageId: input.assistantResponseMessageId,
@@ -712,6 +716,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       conversationHistory: this.conversationHistory,
       abortSignal: this.conversationTurnLifecycle.abortSignal,
       readOnlyToolCallConcurrencyLimiter: this.readOnlyToolCallConcurrencyLimiter,
+      sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
       subagentConversationConcurrencyLimiter: this.subagentConversationConcurrencyLimiter,
       ...(this.taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
         ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds: this.taskSubagentSoftElapsedTimeCheckpointMilliseconds }

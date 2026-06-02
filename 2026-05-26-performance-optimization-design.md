@@ -36,9 +36,9 @@ That means:
 
 - Raw session history remains the source of truth for transcript, recovery, export, diagnostics, and future audited projection.
 - Provider requests should contain current user intent, active instructions, recent relevant evidence, failure-recovery context, and compact summaries.
-- Large or repeated tool outputs should become evidence cards with stable IDs, metadata, hashes when available, visible excerpts, and explicit omission notices.
+- Historical large or repeated tool outputs should become evidence cards with stable IDs, metadata, hashes when available, visible excerpts, and explicit omission notices.
 - Full raw evidence remains stored even when the model-visible projection is compact.
-- Current-turn evidence may be shown fully once, then compacted or referenced in later continuation steps when unchanged and no longer central to the active decision.
+- Current-turn evidence stays exact throughout one assistant/tool-calling loop; compact evidence notes are for later user turns, not for hiding evidence the model just read while it is still answering.
 
 The target shape is:
 
@@ -141,17 +141,19 @@ final assistant answer
 
 Do not replay old raw tool output by default. Include capped evidence only for recovery, explicit user reference, or unresolved work.
 
-### 4. Fresh evidence gets full fidelity before compact replay
+### 4. Fresh evidence stays exact during the current assistant turn
 
 For current-turn tool results:
 
 ```text
-first submission -> full or budgeted result visible
-next continuation -> evidence card + important excerpt
-later continuations -> reference only, unless recently used or explicitly needed
+first submission -> exact result visible
+next continuation -> same exact result remains visible
+later same-turn continuations -> exact result remains visible until the assistant answer completes
 ```
 
-### 5. Tool output should become evidence cards
+After a later user message, Buli should rely on bounded evidence memory such as BuliStickyNotes by default: what was read, why it was read, what was found, and when fresh source should be reread. Raw historical evidence remains stored for audit/recovery, but it is not replayed forever as full text unless the next task needs fresh exact evidence.
+
+### 5. Historical tool output should become evidence cards
 
 A model-visible evidence card should include:
 
@@ -177,7 +179,7 @@ Even when content is omitted, preserve metadata such as path, line range, query,
 
 ### 7. Duplicate evidence becomes a reference when valid
 
-If the model already saw equivalent evidence and the source is unchanged, return a compact reference instead of repeating content.
+Across later turns, if the model already saw equivalent evidence and the source is unchanged, return a compact reference instead of repeating content.
 
 Allowed candidates:
 
@@ -195,14 +197,14 @@ Keep fully visible longer:
 
 - current user prompt,
 - latest results from the active response step,
-- evidence the assistant just referenced,
+- current-turn evidence the assistant may still need to reason from exactly,
 - failed tool results that explain a blocked path,
 - user-selected or explicitly mentioned files/symbols.
 
 Compact sooner:
 
 - large grep listings,
-- repeated file reads,
+- historical repeated file reads,
 - old successful bash output,
 - subagent details after the parent receives a summary,
 - provider reasoning/replay older than the active decision point.

@@ -1,6 +1,7 @@
 import {
-  buildCodebaseKnowledgeToolResultText,
-  type CodebaseKnowledgeQuery,
+  buildCodebaseSymbolDefinitionToolResultText,
+  type CodebaseSymbolDefinitionLocatorQuery,
+  type CodebaseSymbolDefinitionLocatorResult,
 } from "@buli/codebase-knowledge";
 import {
   createStartedToolCallDetailFromRequest,
@@ -25,42 +26,57 @@ export async function runLocateCodebaseSymbolsToolCall(input: {
   const startedToolCallDetail = createStartedLocateCodebaseSymbolsToolCallDetail(input.locateCodebaseSymbolsToolCallRequest);
 
   throwIfLocateCodebaseSymbolsToolAborted(input.abortSignal);
-  const queryResult = await input.workspaceCodebaseKnowledgeIndex.queryCodebaseKnowledge(
-    createCodebaseKnowledgeQuery(input.locateCodebaseSymbolsToolCallRequest),
+  const locatorResult = await input.workspaceCodebaseKnowledgeIndex.locateSymbolDefinitions(
+    createSymbolDefinitionLocatorQuery(input.locateCodebaseSymbolsToolCallRequest),
     { abortSignal: input.abortSignal },
   );
   throwIfLocateCodebaseSymbolsToolAborted(input.abortSignal);
   const completedToolCallDetail: ToolCallLocateCodebaseSymbolsDetail = {
     ...startedToolCallDetail,
-    matchedKnowledgeCount: queryResult.matches.length,
-    recommendedReadCount: queryResult.matches.reduce(
-      (recommendedReadCount, match) => recommendedReadCount + match.recommendedReads.length,
-      0,
-    ),
+    locatedSymbolCount: countLocatedSymbolDefinitions(locatorResult),
+    notFoundSymbolCount: countSymbolLookupsByStatus(locatorResult, "not_found"),
+    ambiguousSymbolNameCount: countSymbolLookupsByStatus(locatorResult, "ambiguous"),
+    verificationReadCount: countVerificationReadTargets(locatorResult),
   };
 
   return {
     outcomeKind: "completed",
     toolCallDetail: completedToolCallDetail,
-    toolResultText: buildCodebaseKnowledgeToolResultText(queryResult),
+    toolResultText: buildCodebaseSymbolDefinitionToolResultText(locatorResult),
     durationMilliseconds: Date.now() - startedAtMilliseconds,
   };
 }
 
-function createCodebaseKnowledgeQuery(
+function createSymbolDefinitionLocatorQuery(
   locateCodebaseSymbolsToolCallRequest: LocateCodebaseSymbolsToolCallRequest,
-): CodebaseKnowledgeQuery {
+): CodebaseSymbolDefinitionLocatorQuery {
   return {
-    ...(locateCodebaseSymbolsToolCallRequest.symbolNames !== undefined
-      ? { symbolNames: locateCodebaseSymbolsToolCallRequest.symbolNames }
-      : {}),
+    symbolNames: locateCodebaseSymbolsToolCallRequest.symbolNames,
     ...(locateCodebaseSymbolsToolCallRequest.filePaths !== undefined
       ? { filePaths: locateCodebaseSymbolsToolCallRequest.filePaths }
       : {}),
-    ...(locateCodebaseSymbolsToolCallRequest.maximumResultCount !== undefined
-      ? { maximumResultCount: locateCodebaseSymbolsToolCallRequest.maximumResultCount }
-      : {}),
   };
+}
+
+function countLocatedSymbolDefinitions(locatorResult: CodebaseSymbolDefinitionLocatorResult): number {
+  return locatorResult.symbolLookups.reduce(
+    (locatedDefinitionCount, symbolLookup) => locatedDefinitionCount + symbolLookup.locations.length,
+    0,
+  );
+}
+
+function countSymbolLookupsByStatus(
+  locatorResult: CodebaseSymbolDefinitionLocatorResult,
+  lookupStatus: "not_found" | "ambiguous",
+): number {
+  return locatorResult.symbolLookups.filter((symbolLookup) => symbolLookup.lookupStatus === lookupStatus).length;
+}
+
+function countVerificationReadTargets(locatorResult: CodebaseSymbolDefinitionLocatorResult): number {
+  return locatorResult.symbolLookups.reduce(
+    (verificationReadCount, symbolLookup) => verificationReadCount + symbolLookup.locations.length,
+    0,
+  );
 }
 
 function throwIfLocateCodebaseSymbolsToolAborted(abortSignal: AbortSignal | undefined): void {

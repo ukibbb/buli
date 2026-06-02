@@ -4,6 +4,7 @@ export type CompletedToolCallOutcome = {
   outcomeKind: "completed";
   toolCallDetail: ToolCallDetail;
   toolResultText: string;
+  providerVisibleToolResultText?: string;
   durationMilliseconds: number;
 };
 
@@ -11,6 +12,7 @@ export type FailedToolCallOutcome = {
   outcomeKind: "failed";
   toolCallDetail: ToolCallDetail;
   toolResultText: string;
+  providerVisibleToolResultText?: string;
   failureExplanation: string;
   durationMilliseconds: number;
 };

@@ -130,7 +130,6 @@ const conversationSessionEntries = [
       toolName: "locate_codebase_symbols",
       symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
       filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      maximumResultCount: 3,
     },
   },
   {
@@ -140,10 +139,12 @@ const conversationSessionEntries = [
       toolName: "locate_codebase_symbols",
       symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
       filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      matchedKnowledgeCount: 2,
-      recommendedReadCount: 3,
+      locatedSymbolCount: 2,
+      notFoundSymbolCount: 0,
+      ambiguousSymbolNameCount: 0,
+      verificationReadCount: 3,
     },
-    toolResultText: "<codebase_knowledge_query>2 matches</codebase_knowledge_query>",
+    toolResultText: "<codebase_symbol_locations>2 definitions</codebase_symbol_locations>",
   },
   {
     entryKind: "tool_call",
@@ -340,7 +341,7 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("LocateCodebaseSymbols");
   expect(html).toContain("files");
   expect(html).toContain("streamAssistantResponseEventsForRequestedToolCalls");
-  expect(html).toContain("2 matches · 3 reads");
+  expect(html).toContain("2 definitions · 3 reads");
   expect(html).toContain("src/app.ts");
   expect(html).toContain("const title = &quot;old&quot;;");
   expect(html).toContain("EditMany");

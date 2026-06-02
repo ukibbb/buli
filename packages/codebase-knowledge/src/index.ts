@@ -4,12 +4,8 @@ export type {
   CodebaseFileKnowledgeRecord,
   CodebaseIndexedFileMetadata,
   CodebaseImportDeclaration,
-  CodebaseKnowledgeQuery,
-  CodebaseKnowledgeQueryMatch,
-  CodebaseKnowledgeQueryResult,
   CodebaseKnowledgeRecord,
   CodebaseKnowledgeRecordKind,
-  CodebaseKnowledgeRecommendedRead,
   CodebaseKnowledgeRepository,
   CodebaseKnowledgeRepositorySnapshot,
   CodebaseKnowledgeRepositoryStartupMetadata,
@@ -17,10 +13,16 @@ export type {
   CodebaseStructureIndexer,
   CodebaseStructureSymbolRecord,
   CodebaseSymbolDeclarationPreview,
+  CodebaseSymbolDefinitionLocation,
+  CodebaseSymbolDefinitionLocatorQuery,
+  CodebaseSymbolDefinitionLocatorResult,
+  CodebaseSymbolDefinitionLookup,
+  CodebaseSymbolDefinitionLookupStatus,
+  CodebaseSymbolDefinitionVerificationRead,
   CodebaseSymbolKind,
   CodebaseSymbolKnowledgeRecord,
 } from "./codebaseKnowledgeTypes.ts";
-export { buildCodebaseKnowledgeToolResultText, MAX_CODEBASE_KNOWLEDGE_TOOL_RESULT_TEXT_LENGTH } from "./codebaseKnowledgeToolResultText.ts";
+export { buildCodebaseSymbolDefinitionToolResultText, MAX_CODEBASE_SYMBOL_DEFINITION_TOOL_RESULT_TEXT_LENGTH } from "./codebaseSymbolDefinitionToolResultText.ts";
 export { CURRENT_CODEBASE_STRUCTURE_MAP_VERSION } from "./codebaseStructureMapVersion.ts";
 export { InMemoryCodebaseKnowledgeRepository } from "./inMemoryCodebaseKnowledgeRepository.ts";
 export {
@@ -28,7 +30,7 @@ export {
   type CodebaseKnowledgeJsonIndexFile,
   type CodebaseKnowledgeRecordsJsonFile,
 } from "./jsonFileCodebaseKnowledgeRepository.ts";
-export { queryCodebaseKnowledgeRecords } from "./queryCodebaseKnowledge.ts";
+export { locateCodebaseSymbolDefinitions } from "./locateCodebaseSymbolDefinitions.ts";
 export {
   createTreeSitterCodebaseStructureIndexer,
   createTreeSitterTypeScriptCodebaseStructureIndexer,

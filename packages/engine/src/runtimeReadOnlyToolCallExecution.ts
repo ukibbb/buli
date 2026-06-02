@@ -7,6 +7,7 @@ import {
   isWorkspaceInspectionToolCallRequest,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
+  type ToolCallDetail,
   type ToolCallRequest,
   type WorkspaceInspectionToolCallRequest,
   type WorkspaceInspectionToolRequestName,
@@ -18,7 +19,10 @@ import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import {
   createReadOnlyToolCallExecutionKey,
   createSameStepDuplicateReadOnlyToolResultText,
+  isDuplicateReadOnlyToolResultText,
 } from "./readOnlyToolCallCoalescing.ts";
+import type { SameTurnReadCoverageTracker } from "./readOnlyToolCallReadCoverage.ts";
+import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import {
   RuntimeReadOnlyToolCallConcurrencyLimiter,
   type RuntimeReadOnlyToolCallConcurrencyCategory,
@@ -30,8 +34,11 @@ import { runGrepToolCall } from "./tools/grepTool.ts";
 import { runLocateCodebaseSymbolsToolCall } from "./tools/locateCodebaseSymbolsTool.ts";
 import { runReadToolCall } from "./tools/readTool.ts";
 import type { ToolCallOutcome } from "./tools/toolCallOutcome.ts";
+import { buildProviderVisibleToolResultBudgetGateText } from "./tools/toolResultTextBudget.ts";
 
 export type AutoApprovedReadOnlyToolCallRequest = WorkspaceInspectionToolCallRequest;
+
+export const READ_ONLY_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT = 32 * 1024;
 
 type AutoApprovedReadOnlyToolName = WorkspaceInspectionToolRequestName;
 type SingleReadOnlyToolName = AutoApprovedReadOnlyToolName;
@@ -86,6 +93,7 @@ export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = 
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  sameTurnReadCoverageTracker?: SameTurnReadCoverageTracker | undefined;
 };
 
 export type AutoApprovedReadOnlyRequestedToolCall = {
@@ -250,11 +258,13 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
         pendingToolCallExecutionGroup,
       })) {
         const recordedToolCallOutcome = recordAutoApprovedReadOnlyToolCallOutcome({
+          conversationTurnId: input.conversationTurnId,
           assistantResponseMessageId: input.assistantResponseMessageId,
           pendingToolCallExecution,
           toolCallOutcome,
           toolResultSessionRecorder: input.toolResultSessionRecorder,
           diagnosticLogger: input.diagnosticLogger,
+          sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
         });
         yield recordedToolCallOutcome.assistantResponseEvent;
         pendingProviderToolResultSubmissions.push(startProviderToolResultSubmission({
@@ -424,13 +434,27 @@ async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
 }
 
 function recordAutoApprovedReadOnlyToolCallOutcome(input: {
+  conversationTurnId: string;
   assistantResponseMessageId: string;
   pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
   toolCallOutcome: ToolCallOutcome;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  sameTurnReadCoverageTracker?: SameTurnReadCoverageTracker | undefined;
 }): RecordedAutoApprovedReadOnlyToolCallOutcome {
   if (input.toolCallOutcome.outcomeKind === "completed") {
+    const providerVisibleBaseToolResultText = createProviderVisibleReadOnlyToolResultText({
+      pendingToolCallExecution: input.pendingToolCallExecution,
+      toolCallOutcome: input.toolCallOutcome,
+    });
+    const providerVisibleToolResultText = appendSameTurnReadOverlapAdvisoryForProviderVisibleReadEvidence({
+      conversationTurnId: input.conversationTurnId,
+      pendingToolCallExecution: input.pendingToolCallExecution,
+      toolCallOutcome: input.toolCallOutcome,
+      providerVisibleBaseToolResultText,
+      diagnosticLogger: input.diagnosticLogger,
+      sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
+    });
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
       toolCallId: input.pendingToolCallExecution.toolCallId,
       toolCallDetail: input.toolCallOutcome.toolCallDetail,
@@ -452,12 +476,16 @@ function recordAutoApprovedReadOnlyToolCallOutcome(input: {
       })),
       providerToolResult: {
         toolCallId: input.pendingToolCallExecution.toolCallId,
-        toolResultText: input.toolCallOutcome.toolResultText,
+        toolResultText: providerVisibleToolResultText,
         toolResultKind: "completed",
       },
     };
   }
 
+  const providerVisibleToolResultText = createProviderVisibleReadOnlyToolResultText({
+    pendingToolCallExecution: input.pendingToolCallExecution,
+    toolCallOutcome: input.toolCallOutcome,
+  });
   input.toolResultSessionRecorder.appendFailedToolResultSessionEntry({
     toolCallId: input.pendingToolCallExecution.toolCallId,
     toolCallDetail: input.toolCallOutcome.toolCallDetail,
@@ -481,10 +509,190 @@ function recordAutoApprovedReadOnlyToolCallOutcome(input: {
     })),
     providerToolResult: {
       toolCallId: input.pendingToolCallExecution.toolCallId,
-      toolResultText: input.toolCallOutcome.toolResultText,
+      toolResultText: providerVisibleToolResultText,
       toolResultKind: "failed",
     },
   };
+}
+
+function createProviderVisibleReadOnlyToolResultText(input: {
+  pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  toolCallOutcome: ToolCallOutcome;
+}): string {
+  return input.toolCallOutcome.providerVisibleToolResultText ?? buildProviderVisibleToolResultBudgetGateText({
+    toolName: input.pendingToolCallExecution.toolCallRequest.toolName,
+    sourceText: input.toolCallOutcome.toolResultText,
+    maximumCharacterCount: READ_ONLY_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT,
+    metadataLines: [
+      `tool_call_id: ${input.pendingToolCallExecution.toolCallId}`,
+      `outcome_kind: ${input.toolCallOutcome.outcomeKind}`,
+      `duration_ms: ${input.toolCallOutcome.durationMilliseconds}`,
+      ...formatReadOnlyToolRequestMetadataLines(input.pendingToolCallExecution.toolCallRequest),
+      ...formatReadOnlyToolDetailMetadataLines(input.toolCallOutcome.toolCallDetail),
+      ...(input.toolCallOutcome.outcomeKind === "failed"
+        ? [`failure_explanation_length: ${input.toolCallOutcome.failureExplanation.length}`]
+        : []),
+    ],
+    guidanceLines: formatReadOnlyProviderBudgetGateGuidanceLines(input.pendingToolCallExecution.toolCallRequest.toolName),
+    rawEvidenceStorage: "canonical_tool_result_text_stored",
+  });
+}
+
+function appendSameTurnReadOverlapAdvisoryForProviderVisibleReadEvidence(input: {
+  conversationTurnId: string;
+  pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
+  toolCallOutcome: ToolCallOutcome;
+  providerVisibleBaseToolResultText: string;
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  sameTurnReadCoverageTracker?: SameTurnReadCoverageTracker | undefined;
+}): string {
+  if (
+    !input.sameTurnReadCoverageTracker ||
+    input.toolCallOutcome.outcomeKind !== "completed" ||
+    input.toolCallOutcome.toolCallDetail.toolName !== "read" ||
+    input.providerVisibleBaseToolResultText !== input.toolCallOutcome.toolResultText ||
+    isDuplicateReadOnlyToolResultText(input.toolCallOutcome.toolResultText)
+  ) {
+    return input.providerVisibleBaseToolResultText;
+  }
+
+  const readOverlapAdvisory = input.sameTurnReadCoverageTracker.createReadOverlapAdvisory({
+    toolCallId: input.pendingToolCallExecution.toolCallId,
+    toolCallDetail: input.toolCallOutcome.toolCallDetail,
+  });
+  input.sameTurnReadCoverageTracker.recordProviderVisibleReadCoverage({
+    toolCallId: input.pendingToolCallExecution.toolCallId,
+    toolCallDetail: input.toolCallOutcome.toolCallDetail,
+  });
+
+  if (!readOverlapAdvisory) {
+    return input.providerVisibleBaseToolResultText;
+  }
+
+  const providerVisibleToolResultTextWithAdvisory = [
+    input.providerVisibleBaseToolResultText,
+    readOverlapAdvisory.advisoryText,
+  ].join("\n\n");
+  logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.read_overlap_advisory_appended", {
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.pendingToolCallExecution.toolCallId,
+    readFilePath: readOverlapAdvisory.currentReadLineRange.readFilePath,
+    currentStartLineNumber: readOverlapAdvisory.currentReadLineRange.startLineNumber,
+    currentEndLineNumber: readOverlapAdvisory.currentReadLineRange.endLineNumber,
+    overlappedLineCount: readOverlapAdvisory.overlappedLineCount,
+    returnedLineCount: readOverlapAdvisory.returnedLineCount,
+    overlapRatio: readOverlapAdvisory.overlapRatio,
+    previousReadRangeCount: readOverlapAdvisory.previousReadLineRanges.length,
+    missingReadRangeCount: readOverlapAdvisory.missingLineRanges.length,
+    providerVisibleToolResultTextLength: providerVisibleToolResultTextWithAdvisory.length,
+  });
+
+  return providerVisibleToolResultTextWithAdvisory;
+}
+
+function formatReadOnlyToolRequestMetadataLines(toolCallRequest: AutoApprovedReadOnlyToolCallRequest): string[] {
+  switch (toolCallRequest.toolName) {
+    case "read":
+      return [
+        `read_target_path: ${toolCallRequest.readTargetPath}`,
+        `requested_offset_line_number: ${toolCallRequest.offsetLineNumber ?? "default"}`,
+        `requested_maximum_line_count: ${toolCallRequest.maximumLineCount ?? "default"}`,
+        ...(toolCallRequest.inspectionQuestion
+          ? [`inspection_question_length: ${toolCallRequest.inspectionQuestion.length}`]
+          : []),
+      ];
+    case "glob":
+      return [
+        `glob_pattern: ${toolCallRequest.globPattern}`,
+        `search_directory_path: ${toolCallRequest.searchDirectoryPath ?? "."}`,
+        ...(toolCallRequest.inspectionQuestion
+          ? [`inspection_question_length: ${toolCallRequest.inspectionQuestion.length}`]
+          : []),
+      ];
+    case "grep":
+      return [
+        `regex_pattern: ${toolCallRequest.regexPattern}`,
+        `search_path: ${toolCallRequest.searchPath ?? "."}`,
+        `include_glob_pattern: ${toolCallRequest.includeGlobPattern ?? "<none>"}`,
+        `context_line_count: ${toolCallRequest.contextLineCount ?? "default"}`,
+        ...(toolCallRequest.inspectionQuestion
+          ? [`inspection_question_length: ${toolCallRequest.inspectionQuestion.length}`]
+          : []),
+      ];
+    case "locate_codebase_symbols":
+      return [
+        `symbol_names: ${formatShortList(toolCallRequest.symbolNames)}`,
+        `file_paths: ${formatShortList(toolCallRequest.filePaths)}`,
+      ];
+  }
+}
+
+function formatReadOnlyToolDetailMetadataLines(toolCallDetail: ToolCallDetail): string[] {
+  switch (toolCallDetail.toolName) {
+    case "read":
+      return [
+        `resolved_read_path: ${toolCallDetail.readFilePath}`,
+        `read_line_count: ${toolCallDetail.readLineCount ?? "unknown"}`,
+        `returned_line_count: ${toolCallDetail.returnedLineCount ?? "unknown"}`,
+        `read_byte_count: ${toolCallDetail.readByteCount ?? "unknown"}`,
+        `was_line_count_truncated: ${toolCallDetail.wasLineCountTruncated ?? false}`,
+      ];
+    case "glob":
+      return [
+        `matched_path_count: ${toolCallDetail.matchedPathCount ?? "unknown"}`,
+        `returned_path_count: ${toolCallDetail.returnedPathCount ?? "unknown"}`,
+      ];
+    case "grep":
+      return [
+        `matched_file_count: ${toolCallDetail.matchedFileCount ?? "unknown"}`,
+        `total_match_count: ${toolCallDetail.totalMatchCount ?? "unknown"}`,
+        `returned_match_hit_count: ${toolCallDetail.returnedMatchHitCount ?? "unknown"}`,
+        `context_line_count: ${toolCallDetail.contextLineCount ?? "default"}`,
+      ];
+    case "locate_codebase_symbols":
+      return [
+        `located_symbol_count: ${toolCallDetail.locatedSymbolCount ?? "unknown"}`,
+        `not_found_symbol_count: ${toolCallDetail.notFoundSymbolCount ?? "unknown"}`,
+        `ambiguous_symbol_name_count: ${toolCallDetail.ambiguousSymbolNameCount ?? "unknown"}`,
+        `verification_read_count: ${toolCallDetail.verificationReadCount ?? "unknown"}`,
+      ];
+    default:
+      return [`tool_name: ${toolCallDetail.toolName}`];
+  }
+}
+
+function formatReadOnlyProviderBudgetGateGuidanceLines(toolName: AutoApprovedReadOnlyToolName): string[] {
+  switch (toolName) {
+    case "read":
+      return [
+        "Retry with smaller offsetLineNumber/maximumLineCount windows.",
+        "Batch independent read calls when multiple windows are needed.",
+      ];
+    case "glob":
+      return [
+        "Narrow searchDirectoryPath or globPattern before retrying.",
+        "Split broad directory or pattern coverage into batched glob calls.",
+      ];
+    case "grep":
+      return [
+        "Narrow searchPath, regexPattern, includeGlobPattern, or contextLineCount before retrying.",
+        "Split broad searches into batched grep calls before making absence or coverage claims.",
+      ];
+    case "locate_codebase_symbols":
+      return [
+        "Use fewer exact symbolNames or narrower filePaths before retrying.",
+        "After locating definitions, read exact source ranges before relying on indexed locations.",
+      ];
+  }
+}
+
+function formatShortList(values: readonly string[] | undefined): string {
+  if (!values || values.length === 0) {
+    return "<none>";
+  }
+
+  const visibleValues = values.slice(0, 5).join(", ");
+  return values.length > 5 ? `${visibleValues}, ... (${values.length} total)` : visibleValues;
 }
 
 export function isAutoApprovedReadOnlyToolCallRequest(

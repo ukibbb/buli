@@ -35,12 +35,19 @@ test("JsonFileCodebaseKnowledgeRepository persists and reloads records", async (
   expect(persistedRecordsFile.records).toEqual([runtimeRecord]);
 
   const reloadedRepository = new JsonFileCodebaseKnowledgeRepository({ indexFilePath });
-  const queryResult = await reloadedRepository.queryRecords({
+  const locatorResult = await reloadedRepository.locateSymbolDefinitions({
     symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
   });
 
-  expect(queryResult.matches[0]?.record.recordId).toBe("symbol:runtime");
-  expect(queryResult.matches[0]?.record).toEqual(runtimeRecord);
+  expect(locatorResult.symbolLookups[0]?.lookupStatus).toBe("resolved");
+  expect(locatorResult.symbolLookups[0]?.locations[0]).toMatchObject({
+    filePath: runtimeRecord.filePath,
+    symbolName: runtimeRecord.symbolName,
+    symbolKind: runtimeRecord.symbolKind,
+    startLineNumber: runtimeRecord.startLineNumber,
+    endLineNumber: runtimeRecord.endLineNumber,
+    isExported: runtimeRecord.isExported,
+  });
 });
 
 test("JsonFileCodebaseKnowledgeRepository reads startup metadata without loading split records", async () => {

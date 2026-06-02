@@ -52,7 +52,7 @@ Buli's default workflow is:
 - `Tab` cycles the active operating mode in the prompt.
 - Streaming assistant responses with reasoning-summary display.
 - Local workspace tools for `read`, `glob`, `grep`, `edit`, `write`, and `bash`.
-- Tree-sitter-backed codebase knowledge queries for indexed TypeScript, TSX, and Python files.
+- Tree-sitter-backed exact symbol-definition lookup for indexed TypeScript, TSX, and Python files.
 - Approval flow for bash commands and file mutations.
 - Local persisted conversation sessions per workspace.
 - Session switching and deletion with `/sessions`.
@@ -226,12 +226,13 @@ Use `Tab` in the prompt to cycle modes.
 
 ## Codebase Knowledge Indexing
 
-Buli builds a workspace-local codebase knowledge index to make broad structural questions cheaper than repeatedly scanning files from scratch.
+Buli builds a workspace-local codebase knowledge index so `locate_codebase_symbols` can resolve known exact symbol names to definition files and start/end line ranges without repeatedly scanning files from scratch.
 
 - Indexing starts in the background when the fullscreen chat app starts. Startup does not wait for the index to finish.
-- The first `query_codebase_knowledge` call waits for the in-flight startup index if it is still running.
+- The first `locate_codebase_symbols` call waits for the in-flight startup index if it is still running.
 - The index is persisted at `./.buli/index/codebase-knowledge.json` inside the current workspace.
-- The index stores Tree-sitter-derived summaries, symbols, imports, evidence ranges, freshness, and content hashes. It does not store raw source text.
+- The index stores Tree-sitter-derived file structure, symbol definitions, imports, exports, evidence ranges, freshness, and content hashes. It does not store raw source text.
+- `locate_codebase_symbols` is an exact symbol-definition locator, not a ranked search/RAG query. Use grep/glob to discover candidate names, then locate exact definitions, then read the returned source ranges to verify current code.
 - Supported languages are TypeScript (`.ts`, `.mts`, `.cts`), TSX (`.tsx`), and Python (`.py`, `.pyi`, `.pyw`).
 - Buli uses `web-tree-sitter` with WASM grammars from `tree-sitter-typescript` and `tree-sitter-python`.
 - Workspace indexing includes `./.buli/**`, but skips generated index files under `./.buli/index/`.
@@ -284,7 +285,7 @@ Buli is a Bun workspace monorepo with typed package boundaries.
 Current packages:
 
 - `apps/cli`: CLI entrypoints, command composition, auth/session wiring, and HTML session export.
-- `packages/codebase-knowledge`: Tree-sitter-backed codebase structure indexing, local knowledge persistence, ranking, and query result formatting.
+- `packages/codebase-knowledge`: Tree-sitter-backed codebase structure indexing, local knowledge persistence, exact symbol-definition lookup, and locator result formatting.
 - `packages/contracts`: shared schemas and types for assistant events, messages, sessions, tools, providers, models, token usage, and plans.
 - `packages/engine`: UI-agnostic assistant runtime, conversation history, tool execution, approvals, prompt context expansion, compaction, and system prompts.
 - `packages/openai`: browser OAuth, auth storage, token refresh, Responses API transport, model discovery, streaming parsing, and tool-call continuation.

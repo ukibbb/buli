@@ -109,8 +109,7 @@
     {
       "toolName": "locate_codebase_symbols",
       "symbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
-      "filePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
-      "maximumResultCount": 3
+      "filePaths": ["packages/engine/src/runtimeToolCallExecution.ts"]
     }
   ],
   "toolCallDetails": [
@@ -136,8 +135,10 @@
       "toolName": "locate_codebase_symbols",
       "symbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
       "filePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
-      "matchedKnowledgeCount": 2,
-      "recommendedReadCount": 3
+      "locatedSymbolCount": 2,
+      "notFoundSymbolCount": 0,
+      "ambiguousSymbolNameCount": 1,
+      "verificationReadCount": 2
     }
   ],
   "workspacePatch": {

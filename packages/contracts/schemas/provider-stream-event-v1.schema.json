@@ -735,6 +735,7 @@
               "const": "locate_codebase_symbols"
             },
             "symbolNames": {
+              "minItems": 1,
               "maxItems": 50,
               "type": "array",
               "items": {
@@ -747,15 +748,11 @@
               "items": {
                 "$ref": "#/$defs/__schema2"
               }
-            },
-            "maximumResultCount": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 20
             }
           },
           "required": [
-            "toolName"
+            "toolName",
+            "symbolNames"
           ],
           "additionalProperties": false
         }

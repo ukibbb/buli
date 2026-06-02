@@ -4,6 +4,8 @@ import type { ConversationSessionEntry, ModelContextItem, OpenAiProviderTurnRepl
 import {
   prepareConversationEntriesForCompactionRequest,
   projectConversationSessionEntriesToModelContextItems,
+  buildProviderVisibleToolResultBudgetGateText,
+  READ_ONLY_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT,
   runGrepToolCall,
   runReadToolCall,
 } from "@buli/engine";
@@ -45,7 +47,7 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
       readToolCallRequest: {
         toolName: "read",
         readTargetPath: "large-read.txt",
-        maximumLineCount: 800,
+        maximumLineCount: 600,
       },
       workspaceRootPath: batchToolOutputWorkspacePath,
     }));
@@ -57,6 +59,16 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
       },
       workspaceRootPath: batchToolOutputWorkspacePath,
     }));
+    const providerVisibleReadToolResultText = createProviderVisiblePerformanceToolResultText({
+      toolName: "read",
+      toolResultText: readToolCall.measuredValue.toolResultText,
+      guidanceLines: ["Retry with smaller offsetLineNumber/maximumLineCount windows."],
+    });
+    const providerVisibleGrepToolResultText = createProviderVisiblePerformanceToolResultText({
+      toolName: "grep",
+      toolResultText: budgetedGrepToolCall.measuredValue.toolResultText,
+      guidanceLines: ["Narrow searchPath, regexPattern, includeGlobPattern, or contextLineCount before retrying."],
+    });
     const heapUsedAfterScenario = process.memoryUsage().heapUsed;
 
     return {
@@ -122,8 +134,17 @@ export const toolOutputContextGrowthScenario: PerformanceScenario = {
           bytes: readToolCall.measuredValue.toolResultText.length,
         }),
         createBytesMetric({
+          metricName: "tool_output_context_growth.provider_visible_read_tool_result_text_bytes",
+          bytes: providerVisibleReadToolResultText.length,
+          budget: { warnAbove: 32_000, failAbove: 34_000 },
+        }),
+        createBytesMetric({
           metricName: "tool_output_context_growth.grep_tool_result_text_bytes",
           bytes: budgetedGrepToolCall.measuredValue.toolResultText.length,
+        }),
+        createBytesMetric({
+          metricName: "tool_output_context_growth.provider_visible_grep_tool_result_text_bytes",
+          bytes: providerVisibleGrepToolResultText.length,
           budget: { warnAbove: 32_000, failAbove: 34_000 },
         }),
         createBytesMetric({
@@ -251,6 +272,24 @@ function createToolOutputHeavyConversationSessionEntries(): readonly Conversatio
 function createSyntheticToolResultText(toolCallIndex: number): string {
   const lineText = `tool ${toolCallIndex.toString().padStart(2, "0")} result ${"x".repeat(120)}\n`;
   return lineText.repeat(Math.ceil(syntheticToolResultTextLength / lineText.length)).slice(0, syntheticToolResultTextLength);
+}
+
+function createProviderVisiblePerformanceToolResultText(input: {
+  toolName: "read" | "grep";
+  toolResultText: string;
+  guidanceLines: readonly string[];
+}): string {
+  return buildProviderVisibleToolResultBudgetGateText({
+    toolName: input.toolName,
+    sourceText: input.toolResultText,
+    maximumCharacterCount: READ_ONLY_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT,
+    metadataLines: [
+      "scenario: tool-output-context-growth",
+      `canonical_tool_result_character_count: ${input.toolResultText.length}`,
+    ],
+    guidanceLines: input.guidanceLines,
+    rawEvidenceStorage: "canonical_tool_result_text_stored",
+  });
 }
 
 function sumToolResultTextLength(conversationSessionEntries: readonly ConversationSessionEntry[]): number {

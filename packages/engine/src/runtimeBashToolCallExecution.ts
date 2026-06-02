@@ -9,6 +9,7 @@ import {
   type AssistantResponseEvent,
   type BashToolCallRequest,
   type BuliDiagnosticLogger,
+  type WorkspacePatch,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
@@ -25,9 +26,12 @@ import {
   classifyBashToolApprovalRequirement,
   type BashToolApprovalMode,
 } from "./tools/bashToolApprovalPolicy.ts";
-import { buildHeadTailBudgetedText } from "./tools/toolResultTextBudget.ts";
+import { buildProviderVisibleToolResultBudgetGateText } from "./tools/toolResultTextBudget.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
-import { appendWorkspacePatchSummaryToToolResultText } from "./workspaceSnapshot/workspacePatchSummary.ts";
+import {
+  appendWorkspacePatchSummaryToToolResultText,
+  formatWorkspacePatchSummaryForToolResult,
+} from "./workspaceSnapshot/workspacePatchSummary.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 
 export const BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT = 32 * 1024;
@@ -239,13 +243,16 @@ export async function* streamAssistantResponseEventsForBashToolCall(
       toolResultText: bashToolCallOutcome.toolResultText,
       workspacePatch,
     });
-    const completedToolResultText = bashToolCallOutcome.toolCallDetail.exitCode === 0
-      ? createBudgetedBashProviderToolResultText(completedToolResultTextWithWorkspacePatchSummary)
-      : completedToolResultTextWithWorkspacePatchSummary;
+    const providerVisibleCompletedToolResultText = createProviderVisibleBashToolResultText({
+      toolCallId: input.toolCallId,
+      bashToolCallOutcome,
+      canonicalToolResultText: completedToolResultTextWithWorkspacePatchSummary,
+      workspacePatch,
+    });
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: bashToolCallOutcome.toolCallDetail,
-      toolResultText: completedToolResultText,
+      toolResultText: completedToolResultTextWithWorkspacePatchSummary,
     });
     yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
       type: "assistant_message_part_updated",
@@ -272,7 +279,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
       providerConversationTurn: input.providerConversationTurn,
       conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
-      toolResultText: completedToolResultText,
+      toolResultText: providerVisibleCompletedToolResultText,
       toolResultKind: "completed",
       diagnosticLogger: input.diagnosticLogger,
     });
@@ -281,6 +288,12 @@ export async function* streamAssistantResponseEventsForBashToolCall(
 
   const failedToolResultText = appendWorkspacePatchSummaryToToolResultText({
     toolResultText: bashToolCallOutcome.toolResultText,
+    workspacePatch,
+  });
+  const providerVisibleFailedToolResultText = createProviderVisibleBashToolResultText({
+    toolCallId: input.toolCallId,
+    bashToolCallOutcome,
+    canonicalToolResultText: failedToolResultText,
     workspacePatch,
   });
   input.toolResultSessionRecorder.appendFailedToolResultSessionEntry({
@@ -315,17 +328,62 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     providerConversationTurn: input.providerConversationTurn,
     conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
-    toolResultText: failedToolResultText,
+    toolResultText: providerVisibleFailedToolResultText,
     toolResultKind: "failed",
     diagnosticLogger: input.diagnosticLogger,
   });
 }
 
-function createBudgetedBashProviderToolResultText(toolResultText: string): string {
-  return buildHeadTailBudgetedText({
-    sourceText: toolResultText,
+function createProviderVisibleBashToolResultText(input: {
+  toolCallId: string;
+  bashToolCallOutcome: Awaited<ReturnType<typeof runApprovedBashToolCall>>;
+  canonicalToolResultText: string;
+  workspacePatch: WorkspacePatch | undefined;
+}): string {
+  const hasCapturedOutputTruncation = input.bashToolCallOutcome.toolCallDetail.outputLines?.some((outputLine) =>
+    outputLine.lineText.startsWith("stdout truncated;") || outputLine.lineText.startsWith("stderr truncated;")
+  ) ?? false;
+
+  return buildProviderVisibleToolResultBudgetGateText({
+    toolName: "bash",
+    sourceText: input.canonicalToolResultText,
     maximumCharacterCount: BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT,
-    createTruncationNotice: (omittedCharacterCount) =>
-      `\n[bash result truncated to stay within ${BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT} characters; omitted ${omittedCharacterCount} characters]\n`,
+    metadataLines: [
+      `tool_call_id: ${input.toolCallId}`,
+      `outcome_kind: ${input.bashToolCallOutcome.outcomeKind}`,
+      `command_line: ${formatBashBudgetGateMetadataValue(input.bashToolCallOutcome.toolCallDetail.commandLine)}`,
+      `working_directory_path: ${input.bashToolCallOutcome.toolCallDetail.workingDirectoryPath ?? "unknown"}`,
+      `exit_code: ${input.bashToolCallOutcome.toolCallDetail.exitCode ?? "not_completed"}`,
+      `duration_ms: ${input.bashToolCallOutcome.durationMilliseconds}`,
+      `captured_output_was_truncated: ${hasCapturedOutputTruncation}`,
+      ...formatWorkspacePatchBudgetGateMetadataLines(input.workspacePatch),
+      ...(input.bashToolCallOutcome.outcomeKind === "failed"
+        ? [`failure_explanation_length: ${input.bashToolCallOutcome.failureExplanation.length}`]
+        : []),
+    ],
+    guidanceLines: [
+      "Rerun a narrower command, write large output to a file and read bounded windows, or pipe the command to a smaller targeted query.",
+      "If the command already changed files, use the retained workspace change metadata and inspect exact files with read before concluding.",
+    ],
+    rawEvidenceStorage: hasCapturedOutputTruncation
+      ? "external_output_capture_may_be_truncated"
+      : "canonical_tool_result_text_stored",
   });
+}
+
+function formatWorkspacePatchBudgetGateMetadataLines(workspacePatch: WorkspacePatch | undefined): string[] {
+  if (!workspacePatch) {
+    return ["Workspace changes: none"];
+  }
+
+  return formatWorkspacePatchSummaryForToolResult(workspacePatch).split("\n");
+}
+
+function formatBashBudgetGateMetadataValue(metadataValue: string): string {
+  const maximumMetadataValueLength = 500;
+  if (metadataValue.length <= maximumMetadataValueLength) {
+    return metadataValue;
+  }
+
+  return `${metadataValue.slice(0, maximumMetadataValueLength)}... (${metadataValue.length} characters)`;
 }

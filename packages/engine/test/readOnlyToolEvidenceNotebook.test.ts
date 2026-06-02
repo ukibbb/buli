@@ -205,7 +205,7 @@ test("listReadOnlyToolEvidenceNotes records grep source scope and first direct m
   expect(evidenceNotes[0]?.observedSummary).toContain("first matches packages/openai/src/provider/request.ts:90: providerTurnReplay.inputItems");
 });
 
-test("listReadOnlyToolEvidenceNotes summarizes locate_codebase_symbols top match from direct result text", () => {
+test("listReadOnlyToolEvidenceNotes summarizes locate_codebase_symbols first exact location from direct result text", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     createUserPromptEntry("Investigate sticky note notebook symbols"),
     {
@@ -215,7 +215,6 @@ test("listReadOnlyToolEvidenceNotes summarizes locate_codebase_symbols top match
         toolName: "locate_codebase_symbols",
         symbolNames: ["buildRelevantBuliStickyNotesContextText"],
         filePaths: ["packages/engine/src/readOnlyToolEvidenceNotebook.ts"],
-        maximumResultCount: 5,
       },
     },
     {
@@ -225,24 +224,21 @@ test("listReadOnlyToolEvidenceNotes summarizes locate_codebase_symbols top match
         toolName: "locate_codebase_symbols",
         symbolNames: ["buildRelevantBuliStickyNotesContextText"],
         filePaths: ["packages/engine/src/readOnlyToolEvidenceNotebook.ts"],
-        matchedKnowledgeCount: 1,
-        recommendedReadCount: 1,
+        locatedSymbolCount: 1,
+        notFoundSymbolCount: 0,
+        ambiguousSymbolNameCount: 0,
+        verificationReadCount: 1,
       },
       toolResultText: [
-        "<codebase_knowledge_query>",
-        "<matches>",
-        "<match rank=\"1\" score=\"190\">",
-        "<title>buildRelevantBuliStickyNotesContextText (function)</title>",
-        "<summary>Defines exported function buildRelevantBuliStickyNotesContextText in packages/engine/src/readOnlyToolEvidenceNotebook.ts lines 119-143.</summary>",
-        "<evidence>",
-        "<source file=\"packages/engine/src/readOnlyToolEvidenceNotebook.ts\" lines=\"119-143\" />",
-        "</evidence>",
-        "<recommended_reads>",
-        "<read file=\"packages/engine/src/readOnlyToolEvidenceNotebook.ts\" offset_line=\"119\" line_count=\"25\" reason=\"Verify buildRelevantBuliStickyNotesContextText\" />",
-        "</recommended_reads>",
-        "</match>",
-        "</matches>",
-        "</codebase_knowledge_query>",
+        "<codebase_symbol_locations>",
+        "<symbol_results>",
+        "<symbol_result name=\"buildRelevantBuliStickyNotesContextText\" status=\"resolved\" location_count=\"1\">",
+        "<location file=\"packages/engine/src/readOnlyToolEvidenceNotebook.ts\" name=\"buildRelevantBuliStickyNotesContextText\" kind=\"function\" exported=\"true\" lines=\"119-143\">",
+        "<verification_read file=\"packages/engine/src/readOnlyToolEvidenceNotebook.ts\" offset_line=\"119\" line_count=\"25\" reason=\"Verify exact definition of buildRelevantBuliStickyNotesContextText\" />",
+        "</location>",
+        "</symbol_result>",
+        "</symbol_results>",
+        "</codebase_symbol_locations>",
       ].join("\n"),
     },
     createCompletedAssistantMessageEntry("The notebook builder is the primary symbol."),
@@ -252,14 +248,13 @@ test("listReadOnlyToolEvidenceNotes summarizes locate_codebase_symbols top match
 
   expect(evidenceNotes).toHaveLength(1);
   expect(evidenceNotes[0]?.sourceDescription).toBe(
-    "locate_codebase_symbols symbols \"buildRelevantBuliStickyNotesContextText\"; files \"packages/engine/src/readOnlyToolEvidenceNotebook.ts\"; maximum 5 results",
+    "locate_codebase_symbols symbols \"buildRelevantBuliStickyNotesContextText\"; files \"packages/engine/src/readOnlyToolEvidenceNotebook.ts\"",
   );
-  expect(evidenceNotes[0]?.observedSummary).toContain("1 knowledge match");
-  expect(evidenceNotes[0]?.observedSummary).toContain("1 recommended read");
-  expect(evidenceNotes[0]?.observedSummary).toContain("top match buildRelevantBuliStickyNotesContextText (function)");
-  expect(evidenceNotes[0]?.observedSummary).toContain("summary Defines exported function buildRelevantBuliStickyNotesContextText");
+  expect(evidenceNotes[0]?.observedSummary).toContain("1 located symbol definition");
+  expect(evidenceNotes[0]?.observedSummary).toContain("1 verification read");
+  expect(evidenceNotes[0]?.observedSummary).toContain("first location buildRelevantBuliStickyNotesContextText");
   expect(evidenceNotes[0]?.observedSummary).toContain("source packages/engine/src/readOnlyToolEvidenceNotebook.ts lines 119-143");
-  expect(evidenceNotes[0]?.observedSummary).toContain("recommended read same file offset 119 count 25");
+  expect(evidenceNotes[0]?.observedSummary).toContain("verification read same file offset 119 count 25");
 });
 
 test("listReadOnlyToolEvidenceNotes keeps locate_codebase_symbols count summary when result text has no parseable match", () => {
@@ -279,10 +274,12 @@ test("listReadOnlyToolEvidenceNotes keeps locate_codebase_symbols count summary 
       toolCallDetail: {
         toolName: "locate_codebase_symbols",
         symbolNames: ["MissingSymbol"],
-        matchedKnowledgeCount: 0,
-        recommendedReadCount: 0,
+        locatedSymbolCount: 0,
+        notFoundSymbolCount: 1,
+        ambiguousSymbolNameCount: 0,
+        verificationReadCount: 0,
       },
-      toolResultText: "<codebase_knowledge_query><match_count>0</match_count></codebase_knowledge_query>",
+      toolResultText: "<codebase_symbol_locations><symbol_result name=\"MissingSymbol\" status=\"not_found\" location_count=\"0\" /></codebase_symbol_locations>",
     },
     createCompletedAssistantMessageEntry("No symbol was found."),
   ];
@@ -290,7 +287,7 @@ test("listReadOnlyToolEvidenceNotes keeps locate_codebase_symbols count summary 
   const evidenceNotes = listReadOnlyToolEvidenceNotes({ conversationSessionEntries });
 
   expect(evidenceNotes).toHaveLength(1);
-  expect(evidenceNotes[0]?.observedSummary).toBe("0 knowledge matches; 0 recommended reads");
+  expect(evidenceNotes[0]?.observedSummary).toBe("0 located symbol definitions; 1 not-found symbol name; 0 ambiguous symbol names; 0 verification reads");
 });
 
 test("listReadOnlyToolEvidenceNotes removes stale notes after a changed file patch", () => {

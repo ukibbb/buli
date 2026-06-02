@@ -1033,14 +1033,31 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
       toolName: "locate_codebase_symbols",
       symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
       filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      maximumResultCount: 4,
     }),
   ).toEqual({
     toolName: "locate_codebase_symbols",
     symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
     filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-    maximumResultCount: 4,
   });
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "locate_codebase_symbols",
+      filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "locate_codebase_symbols",
+      symbolNames: [],
+    })
+  ).toThrow();
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "locate_codebase_symbols",
+      symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
+      maximumResultCount: 4,
+    })
+  ).toThrow();
   expect(
     ToolCallRequestSchema.parse({
       toolName: "edit",

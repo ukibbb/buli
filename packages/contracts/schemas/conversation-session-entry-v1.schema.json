@@ -619,6 +619,7 @@
                   "const": "locate_codebase_symbols"
                 },
                 "symbolNames": {
+                  "minItems": 1,
                   "maxItems": 50,
                   "type": "array",
                   "items": {
@@ -631,15 +632,11 @@
                   "items": {
                     "$ref": "#/$defs/__schema23"
                   }
-                },
-                "maximumResultCount": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 20
                 }
               },
               "required": [
-                "toolName"
+                "toolName",
+                "symbolNames"
               ],
               "additionalProperties": false
             }
@@ -2230,12 +2227,22 @@
             "minLength": 1
           }
         },
-        "matchedKnowledgeCount": {
+        "locatedSymbolCount": {
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
         },
-        "recommendedReadCount": {
+        "notFoundSymbolCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ambiguousSymbolNameCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "verificationReadCount": {
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991

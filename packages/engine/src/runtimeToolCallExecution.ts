@@ -41,6 +41,7 @@ import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
 } from "./runtimeReadOnlyToolCallExecution.ts";
 import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+import type { SameTurnReadCoverageTracker } from "./readOnlyToolCallReadCoverage.ts";
 import type { RuntimeSubagentConversationConcurrencyLimiter } from "./runtimeSubagentConversationConcurrencyLimiter.ts";
 import type {
   RuntimePendingToolApproval,
@@ -80,6 +81,7 @@ export type RuntimeToolCallExecutionContext = {
   projectInstructionTracker: ProjectInstructionTracker;
   skillCatalog: WorkspaceSkillCatalog;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
+  sameTurnReadCoverageTracker?: SameTurnReadCoverageTracker | undefined;
   promptContextBrowseRootPath: string;
   promptContextStartingDirectoryPath: string;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
@@ -238,6 +240,7 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
         conversationHistory: input.conversationHistory,
         toolResultSessionRecorder: input.toolResultSessionRecorder,
         readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+        sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
         abortSignal: input.abortSignal,
         throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
         diagnosticLogger: input.diagnosticLogger,
@@ -260,6 +263,7 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
             conversationHistory: input.conversationHistory,
             toolResultSessionRecorder: input.toolResultSessionRecorder,
             readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+            sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
             abortSignal: input.abortSignal,
             throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
             diagnosticLogger: input.diagnosticLogger,
@@ -355,6 +359,7 @@ async function* streamAssistantResponseEventsForPolicyCheckedRequestedToolCall(
       return;
     }
 
+    clearSameTurnReadCoverageBeforeWorkspaceChangingToolCall(input);
     yield* resolveRequestedToolCallExecutor(input.toolCallRequest)(input);
   } catch (error) {
     toolCallExecutionOutcomeKind = "failed";
@@ -446,6 +451,7 @@ async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(
     conversationHistory: input.conversationHistory,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
+    sameTurnReadCoverageTracker: input.sameTurnReadCoverageTracker,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
     diagnosticLogger: input.diagnosticLogger,
@@ -578,4 +584,21 @@ async function* streamAssistantResponseEventsForBashRequestedToolCall(
 
 function resolveRequestedToolCallExecutor(toolCallRequest: AssistantToolCallRequest): RuntimeRequestedToolCallExecutor {
   return requestedToolCallExecutorByName[toolCallRequest.toolName];
+}
+
+function clearSameTurnReadCoverageBeforeWorkspaceChangingToolCall(input: RuntimeRequestedToolCallExecutorInput): void {
+  if (!input.sameTurnReadCoverageTracker) {
+    return;
+  }
+
+  if (input.toolCallRequest.toolName !== "bash" && !isFileMutationToolCallRequest(input.toolCallRequest)) {
+    return;
+  }
+
+  input.sameTurnReadCoverageTracker.clear();
+  logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.read_coverage_cleared_before_workspace_change", {
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.toolCallId,
+    toolName: input.toolCallRequest.toolName,
+  });
 }

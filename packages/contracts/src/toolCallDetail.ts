@@ -228,8 +228,10 @@ export const ToolCallLocateCodebaseSymbolsDetailSchema = z
     toolName: z.literal("locate_codebase_symbols"),
     symbolNames: z.array(z.string().min(1)).optional(),
     filePaths: z.array(z.string().min(1)).optional(),
-    matchedKnowledgeCount: z.number().int().nonnegative().optional(),
-    recommendedReadCount: z.number().int().nonnegative().optional(),
+    locatedSymbolCount: z.number().int().nonnegative().optional(),
+    notFoundSymbolCount: z.number().int().nonnegative().optional(),
+    ambiguousSymbolNameCount: z.number().int().nonnegative().optional(),
+    verificationReadCount: z.number().int().nonnegative().optional(),
   })
   .strict();
 export type ToolCallLocateCodebaseSymbolsDetail = z.infer<typeof ToolCallLocateCodebaseSymbolsDetailSchema>;

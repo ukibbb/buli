@@ -66,8 +66,8 @@ describe("ToolCallEntryView", () => {
           toolName: "locate_codebase_symbols",
           symbolNames: ["runDispatch"],
           filePaths: ["packages/engine/src/runtime.ts"],
-          matchedKnowledgeCount: 1,
-          recommendedReadCount: 2,
+          locatedSymbolCount: 1,
+          verificationReadCount: 2,
         }}
       />,
       { width: 90, height: 15 },
@@ -76,7 +76,7 @@ describe("ToolCallEntryView", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("LocateSymbols");
     expect(frame).toContain("1 symbol");
-    expect(frame).toContain("1 match");
+    expect(frame).toContain("1 definition");
   });
 
   test("dispatches_edit", async () => {

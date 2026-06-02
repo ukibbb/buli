@@ -1,13 +1,13 @@
 import type {
   CodebaseIndexedFileMetadata,
-  CodebaseKnowledgeQuery,
-  CodebaseKnowledgeQueryResult,
   CodebaseKnowledgeRecord,
   CodebaseKnowledgeRepository,
   CodebaseKnowledgeRepositorySnapshot,
   CodebaseKnowledgeRepositoryStartupMetadata,
+  CodebaseSymbolDefinitionLocatorQuery,
+  CodebaseSymbolDefinitionLocatorResult,
 } from "./codebaseKnowledgeTypes.ts";
-import { queryCodebaseKnowledgeRecords } from "./queryCodebaseKnowledge.ts";
+import { locateCodebaseSymbolDefinitions } from "./locateCodebaseSymbolDefinitions.ts";
 
 export class InMemoryCodebaseKnowledgeRepository implements CodebaseKnowledgeRepository {
   readonly #recordById = new Map<string, CodebaseKnowledgeRecord>();
@@ -81,8 +81,8 @@ export class InMemoryCodebaseKnowledgeRepository implements CodebaseKnowledgeRep
     }
   }
 
-  async queryRecords(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult> {
-    return queryCodebaseKnowledgeRecords({ query, records: await this.listRecords() });
+  async locateSymbolDefinitions(query: CodebaseSymbolDefinitionLocatorQuery): Promise<CodebaseSymbolDefinitionLocatorResult> {
+    return locateCodebaseSymbolDefinitions({ query, records: await this.listRecords() });
   }
 
   async listRecords(): Promise<readonly CodebaseKnowledgeRecord[]> {

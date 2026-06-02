@@ -13,6 +13,15 @@ type HeadTailBudgetedTextInput = Readonly<{
   createTruncationNotice: (omittedCharacterCount: number) => string;
 }>;
 
+export type ProviderVisibleToolResultBudgetGateInput = Readonly<{
+  toolName: string;
+  sourceText: string;
+  maximumCharacterCount: number;
+  metadataLines: readonly string[];
+  guidanceLines: readonly string[];
+  rawEvidenceStorage: "canonical_tool_result_text_stored" | "external_output_capture_may_be_truncated";
+}>;
+
 export function buildBudgetedTaggedToolResultText(input: BudgetedTaggedToolResultTextInput): string {
   const completeToolResultText = [input.openingTag, ...input.contentLines, input.closingTag].join("\n");
   if (completeToolResultText.length <= input.maximumCharacterCount) {
@@ -100,4 +109,68 @@ export function buildHeadTailBudgetedText(input: HeadTailBudgetedTextInput): str
   }
 
   return input.sourceText.slice(0, maximumCharacterCount);
+}
+
+export function buildProviderVisibleToolResultBudgetGateText(
+  input: ProviderVisibleToolResultBudgetGateInput,
+): string {
+  const maximumCharacterCount = Math.max(0, Math.floor(input.maximumCharacterCount));
+  if (input.sourceText.length <= maximumCharacterCount) {
+    return input.sourceText;
+  }
+
+  const budgetGateText = [
+    `<tool_result_budget_gate tool="${escapeXmlAttribute(input.toolName)}">`,
+    "<status>too_broad_incomplete</status>",
+    `<original_character_count>${input.sourceText.length}</original_character_count>`,
+    `<provider_visible_character_limit>${maximumCharacterCount}</provider_visible_character_limit>`,
+    `<raw_evidence_storage>${input.rawEvidenceStorage}</raw_evidence_storage>`,
+    "<reason>The requested tool output is too large to send as first-time provider-visible evidence without risking misleading partial evidence.</reason>",
+    "<safe_reasoning_rule>Do not make absence, completeness, or coverage claims from this gated result. The raw output text is intentionally not included here.</safe_reasoning_rule>",
+    "<metadata>",
+    ...input.metadataLines.map((metadataLine) => `- ${metadataLine}`),
+    "</metadata>",
+    "<required_next_actions>",
+    "- Treat this as incomplete evidence, not as a truncated sample.",
+    ...input.guidanceLines.map((guidanceLine) => `- ${guidanceLine}`),
+    "</required_next_actions>",
+    "</tool_result_budget_gate>",
+  ].join("\n");
+
+  if (budgetGateText.length <= maximumCharacterCount) {
+    return budgetGateText;
+  }
+
+  return buildMinimalProviderVisibleToolResultBudgetGateText({
+    ...input,
+    maximumCharacterCount,
+  });
+}
+
+function buildMinimalProviderVisibleToolResultBudgetGateText(
+  input: ProviderVisibleToolResultBudgetGateInput,
+): string {
+  const minimalBudgetGateText = [
+    `<tool_result_budget_gate tool="${escapeXmlAttribute(input.toolName)}">`,
+    "<status>too_broad_incomplete</status>",
+    `<original_character_count>${input.sourceText.length}</original_character_count>`,
+    `<provider_visible_character_limit>${input.maximumCharacterCount}</provider_visible_character_limit>`,
+    `<raw_evidence_storage>${input.rawEvidenceStorage}</raw_evidence_storage>`,
+    "<safe_reasoning_rule>Do not use this gated result for absence or completeness claims. Request narrower or batched follow-up tool calls.</safe_reasoning_rule>",
+    "</tool_result_budget_gate>",
+  ].join("\n");
+
+  if (minimalBudgetGateText.length <= input.maximumCharacterCount) {
+    return minimalBudgetGateText;
+  }
+
+  return minimalBudgetGateText.slice(0, input.maximumCharacterCount);
+}
+
+function escapeXmlAttribute(attributeText: string): string {
+  return attributeText
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }

@@ -371,7 +371,7 @@ test("streamAssistantResponseEventsForBashToolCall records workspace patches fro
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("added generated.txt");
 });
 
-test("streamAssistantResponseEventsForBashToolCall caps stored bash results after workspace patch summaries", async () => {
+test("streamAssistantResponseEventsForBashToolCall gates oversized provider bash results while storing canonical output", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-bash-result-budget-"));
   const privateGitDirectoryPath = await mkdtemp(join(tmpdir(), "buli-bash-result-budget-git-"));
   const workspaceSnapshotStore = new PrivateGitWorkspaceSnapshotStore({
@@ -410,13 +410,17 @@ test("streamAssistantResponseEventsForBashToolCall caps stored bash results afte
   );
 
   expect(submittedToolResultText.length).toBeLessThanOrEqual(BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT);
-  expect(submittedToolResultText).toContain("bash result truncated");
+  expect(submittedToolResultText).toContain("<tool_result_budget_gate tool=\"bash\">");
+  expect(submittedToolResultText).toContain("<status>too_broad_incomplete</status>");
+  expect(submittedToolResultText).toContain("Do not make absence, completeness, or coverage claims");
   expect(submittedToolResultText).toContain("Workspace changes:");
   expect(submittedToolResultText).toContain("added generated.txt");
-  expect(storedToolResultEntry).toMatchObject({
-    entryKind: "completed_tool_result",
-    toolResultText: submittedToolResultText,
-  });
+  expect(submittedToolResultText).not.toContain(longStdoutText.trimEnd());
+  if (storedToolResultEntry?.entryKind !== "completed_tool_result") {
+    throw new Error("Expected completed bash tool result to be stored.");
+  }
+  expect(storedToolResultEntry.toolResultText).toContain(longStdoutText.trimEnd());
+  expect(storedToolResultEntry.toolResultText).toContain("Workspace changes:");
   if (completedToolCallEvent?.type !== "assistant_message_part_updated") {
     throw new Error("Expected completed bash tool call event");
   }
@@ -429,7 +433,7 @@ test("streamAssistantResponseEventsForBashToolCall caps stored bash results afte
   });
 });
 
-test("streamAssistantResponseEventsForBashToolCall preserves non-zero bash output", async () => {
+test("streamAssistantResponseEventsForBashToolCall gates oversized non-zero bash output while storing canonical output", async () => {
   const longStdoutText = `${"non-zero-output".repeat(5_000)}\n`;
 
   const { providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
@@ -439,17 +443,18 @@ test("streamAssistantResponseEventsForBashToolCall preserves non-zero bash outpu
 
   const submittedToolResultText = providerConversationTurn.submittedToolResults[0]?.toolResultText ?? "";
 
-  expect(submittedToolResultText.length).toBeGreaterThan(BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT);
-  expect(submittedToolResultText).not.toContain("bash result truncated");
-  expect(submittedToolResultText).toContain("Exit code: 1");
-  expect(submittedToolResultText).toContain(longStdoutText.trimEnd());
+  expect(submittedToolResultText.length).toBeLessThanOrEqual(BASH_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT);
+  expect(submittedToolResultText).toContain("<tool_result_budget_gate tool=\"bash\">");
+  expect(submittedToolResultText).toContain("<status>too_broad_incomplete</status>");
+  expect(submittedToolResultText).toContain("exit_code: 1");
+  expect(submittedToolResultText).not.toContain(longStdoutText.trimEnd());
   expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
     entryKind: "completed_tool_result",
     toolCallDetail: {
       toolName: "bash",
       exitCode: 1,
     },
-    toolResultText: submittedToolResultText,
+    toolResultText: expect.stringContaining(longStdoutText.trimEnd()),
   });
 });
 

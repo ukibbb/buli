@@ -20,6 +20,7 @@ import {
   createFunctionCallOutputInputItem,
   createOpenAiResponseReplayItems,
   createOpenAiResponsesInputItems,
+  type OpenAiFunctionCallOutputInputItem,
   type OpenAiConversationInputItem,
 } from "./request.ts";
 import { isOpenAiDebugLoggingEnabled, writeOpenAiDebugLog } from "./debugLog.ts";
@@ -56,6 +57,15 @@ type OpenAiProviderToolResultSubmission = {
   toolCallId: string;
   toolResultText: string;
 };
+
+type CurrentTurnFunctionCallOutputReplayDiagnostics = Readonly<{
+  requestCurrentTurnFunctionCallOutputOriginalTextLength: number;
+  requestCurrentTurnFunctionCallOutputProjectedTextLength: number;
+  requestCurrentTurnFunctionCallOutputSavedCharacterCount: number;
+  requestCurrentTurnCompactedFunctionCallOutputCount: number;
+  requestCurrentTurnExactWorkingSetFunctionCallOutputCount: number;
+  requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: number;
+}>;
 
 type PendingOpenAiToolResultSubmissionWait = {
   waitStartedAtMs: number;
@@ -409,9 +419,14 @@ export class OpenAiProviderConversationTurn {
       const responseStepStartedAtMs = Date.now();
       const responseStepRequestConstructionStartedAtMs = Date.now();
       const responseStepRequestObjectBuildStartedAtMs = Date.now();
+      const exactOpenAiConversationInputItemsForRequest = [...this.openAiConversationInputItems];
+      const currentTurnFunctionCallOutputReplayDiagnostics = summarizeExactCurrentTurnFunctionCallOutputReplayForDiagnostics({
+        openAiInputItems: exactOpenAiConversationInputItemsForRequest,
+        currentTurnFirstInputItemIndex: this.initialOpenAiConversationInputItemCount,
+      });
       const requestBody = createOpenAiResponsesHttpRequestBodyFromTemplate({
         requestTemplate: this.openAiResponsesRequestTemplate,
-        openAiInputItems: this.openAiConversationInputItems,
+        openAiInputItems: exactOpenAiConversationInputItemsForRequest,
       });
       const responseStepRequestObjectBuildDurationMs = Date.now() - responseStepRequestObjectBuildStartedAtMs;
       const responseStepRequestSerializationStartedAtMs = Date.now();
@@ -430,7 +445,11 @@ export class OpenAiProviderConversationTurn {
       totalRequestBodyTextLength += responseStepRequestBodyTextLength;
       maxRequestBodyTextLength = Math.max(maxRequestBodyTextLength, responseStepRequestBodyTextLength);
       maxRequestInputItemCount = Math.max(maxRequestInputItemCount, responseStepRequestInputItemCount);
-      await this.writeRequestPreparedDiagnostics({ requestBody, responseStepIndex });
+      await this.writeRequestPreparedDiagnostics({
+        requestBody,
+        responseStepIndex,
+        currentTurnFunctionCallOutputReplayDiagnostics,
+      });
 
       let terminalState: OpenAiResponseStepTerminalState | undefined;
       let terminalUsageProviderEvent: OpenAiTerminalUsageProviderEvent | undefined;
@@ -724,6 +743,7 @@ export class OpenAiProviderConversationTurn {
           requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
           requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
           requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
+          ...currentTurnFunctionCallOutputReplayDiagnostics,
           ...requestSizeContributorDiagnostics,
           responseOutputItemCount: terminalState.responseOutputItems.length,
           toolCallCount: requestedToolCalls.length,
@@ -785,6 +805,7 @@ export class OpenAiProviderConversationTurn {
           requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
           requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
           requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
+          ...currentTurnFunctionCallOutputReplayDiagnostics,
           ...requestSizeContributorDiagnostics,
           responseOutputItemCount: 0,
           toolCallCount: 0,
@@ -854,6 +875,7 @@ export class OpenAiProviderConversationTurn {
         requestFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.totalTextLength,
         requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
         requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
+        ...currentTurnFunctionCallOutputReplayDiagnostics,
         ...requestSizeContributorDiagnostics,
         responseOutputItemCount: 0,
         toolCallCount: 0,
@@ -963,6 +985,7 @@ export class OpenAiProviderConversationTurn {
   private async writeRequestPreparedDiagnostics(input: {
     requestBody: OpenAiResponsesHttpRequestBody;
     responseStepIndex: number;
+    currentTurnFunctionCallOutputReplayDiagnostics: CurrentTurnFunctionCallOutputReplayDiagnostics;
   }): Promise<void> {
     if (!this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
       return;
@@ -972,6 +995,7 @@ export class OpenAiProviderConversationTurn {
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "response_step.request_prepared", {
       conversationTurnId: this.conversationTurnId ?? null,
       ...this.createProviderTurnDiagnosticFields(),
+      ...input.currentTurnFunctionCallOutputReplayDiagnostics,
       ...requestDebugSummary,
     });
     await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
@@ -1174,9 +1198,8 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
     case "locate_codebase_symbols":
       return {
         toolName: toolCallRequest.toolName,
-        symbolNameCount: toolCallRequest.symbolNames?.length ?? 0,
+        symbolNameCount: toolCallRequest.symbolNames.length,
         filePathCount: toolCallRequest.filePaths?.length ?? 0,
-        hasMaximumResultCount: toolCallRequest.maximumResultCount !== undefined,
       };
     case "edit":
       return {
@@ -1361,6 +1384,43 @@ function sumFunctionCallOutputTextLength(
 
     return totalTextLength + openAiInputItem.output.length;
   }, 0);
+}
+
+function summarizeExactCurrentTurnFunctionCallOutputReplayForDiagnostics(input: {
+  openAiInputItems: readonly OpenAiConversationInputItem[];
+  currentTurnFirstInputItemIndex: number;
+}): CurrentTurnFunctionCallOutputReplayDiagnostics {
+  let currentTurnFunctionCallOutputTextLength = 0;
+  let currentTurnFunctionCallOutputCount = 0;
+
+  for (
+    let inputItemIndex = input.currentTurnFirstInputItemIndex;
+    inputItemIndex < input.openAiInputItems.length;
+    inputItemIndex += 1
+  ) {
+    const openAiInputItem = input.openAiInputItems[inputItemIndex];
+    if (!openAiInputItem || !isOpenAiFunctionCallOutputInputItem(openAiInputItem)) {
+      continue;
+    }
+
+    currentTurnFunctionCallOutputTextLength += openAiInputItem.output.length;
+    currentTurnFunctionCallOutputCount += 1;
+  }
+
+  return {
+    requestCurrentTurnFunctionCallOutputOriginalTextLength: currentTurnFunctionCallOutputTextLength,
+    requestCurrentTurnFunctionCallOutputProjectedTextLength: currentTurnFunctionCallOutputTextLength,
+    requestCurrentTurnFunctionCallOutputSavedCharacterCount: 0,
+    requestCurrentTurnCompactedFunctionCallOutputCount: 0,
+    requestCurrentTurnExactWorkingSetFunctionCallOutputCount: currentTurnFunctionCallOutputCount,
+    requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: currentTurnFunctionCallOutputTextLength,
+  };
+}
+
+function isOpenAiFunctionCallOutputInputItem(
+  openAiInputItem: OpenAiConversationInputItem,
+): openAiInputItem is OpenAiFunctionCallOutputInputItem {
+  return "type" in openAiInputItem && openAiInputItem.type === "function_call_output";
 }
 
 function summarizeFunctionCallOutputTextLengthByReplayAge(input: {

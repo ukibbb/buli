@@ -43,19 +43,17 @@ test("createReadOnlyToolCallExecutionKey keeps different read ranges separate", 
   expect(secondReadExecutionKey).not.toBe(firstReadExecutionKey);
 });
 
-test("createReadOnlyToolCallExecutionKey normalizes codebase knowledge query text and hints", () => {
+test("createReadOnlyToolCallExecutionKey normalizes exact symbol names and file filters", () => {
   const firstQueryExecutionKey = createReadOnlyToolCallExecutionKey({
     toolName: "locate_codebase_symbols",
     filePaths: ["src/runtime.ts", "src/provider.ts", "src/runtime.ts"],
     symbolNames: ["dispatchRuntime", "ProviderTurn", "dispatchRuntime"],
-    maximumResultCount: 5,
   });
 
   const secondQueryExecutionKey = createReadOnlyToolCallExecutionKey({
     toolName: "locate_codebase_symbols",
     filePaths: ["src/provider.ts", "src/runtime.ts"],
     symbolNames: ["ProviderTurn", "dispatchRuntime"],
-    maximumResultCount: 5,
   });
 
   expect(secondQueryExecutionKey).toBe(firstQueryExecutionKey);

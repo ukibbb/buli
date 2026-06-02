@@ -4,14 +4,14 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import type {
   CodebaseIndexedFileMetadata,
-  CodebaseKnowledgeQuery,
-  CodebaseKnowledgeQueryResult,
   CodebaseKnowledgeRecord,
   CodebaseKnowledgeRepository,
   CodebaseKnowledgeRepositorySnapshot,
   CodebaseKnowledgeRepositoryStartupMetadata,
+  CodebaseSymbolDefinitionLocatorQuery,
+  CodebaseSymbolDefinitionLocatorResult,
 } from "./codebaseKnowledgeTypes.ts";
-import { queryCodebaseKnowledgeRecords } from "./queryCodebaseKnowledge.ts";
+import { locateCodebaseSymbolDefinitions } from "./locateCodebaseSymbolDefinitions.ts";
 
 const CODEBASE_KNOWLEDGE_JSON_INDEX_SCHEMA_VERSION = 4;
 const CODEBASE_KNOWLEDGE_RECORDS_FILE_NAME = "codebase-knowledge.records.json";
@@ -240,8 +240,8 @@ export class JsonFileCodebaseKnowledgeRepository implements CodebaseKnowledgeRep
     await this.#writeSplitIndexFiles();
   }
 
-  async queryRecords(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult> {
-    return queryCodebaseKnowledgeRecords({ query, records: await this.listRecords() });
+  async locateSymbolDefinitions(query: CodebaseSymbolDefinitionLocatorQuery): Promise<CodebaseSymbolDefinitionLocatorResult> {
+    return locateCodebaseSymbolDefinitions({ query, records: await this.listRecords() });
   }
 
   async listRecords(): Promise<readonly CodebaseKnowledgeRecord[]> {

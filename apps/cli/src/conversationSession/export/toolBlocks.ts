@@ -188,10 +188,7 @@ function renderLocateCodebaseSymbolsToolCallRequestBody(toolCallRequest: ToolCal
   const filePathsHtml = toolCallRequest.filePaths && toolCallRequest.filePaths.length > 0
     ? `<div class="arg"><b>files</b> ${escapeHtml(toolCallRequest.filePaths.join(", "))}</div>`
     : "";
-  const maximumResultsHtml = toolCallRequest.maximumResultCount === undefined
-    ? ""
-    : `<div class="arg"><b>maximum results</b> ${toolCallRequest.maximumResultCount}</div>`;
-  return `${symbolNamesHtml}${filePathsHtml}${maximumResultsHtml}`;
+  return `${symbolNamesHtml}${filePathsHtml}`;
 }
 
 function renderEditToolCallRequestPurpose(toolCallRequest: ToolCallRequestByName<"edit">): string {
@@ -317,17 +314,24 @@ function renderGrepToolResultPurpose(toolCallDetail: ToolCallDetailByName<"grep"
 }
 
 function renderLocateCodebaseSymbolsToolResultPurpose(toolCallDetail: ToolCallDetailByName<"locate_codebase_symbols">): string {
-  const matchedKnowledgeCount = toolCallDetail.matchedKnowledgeCount;
-  if (matchedKnowledgeCount === undefined) {
+  const locatedSymbolCount = toolCallDetail.locatedSymbolCount;
+  if (locatedSymbolCount === undefined) {
     return `<span class="panel-purpose">codebase symbols</span>`;
   }
 
-  const matchLabel = `${matchedKnowledgeCount} ${matchedKnowledgeCount === 1 ? "match" : "matches"}`;
-  const recommendedReadCount = toolCallDetail.recommendedReadCount;
-  const readLabel = recommendedReadCount === undefined
-    ? ""
-    : ` · ${recommendedReadCount} ${recommendedReadCount === 1 ? "read" : "reads"}`;
-  return `<span class="panel-purpose">${escapeHtml(`${matchLabel}${readLabel}`)}</span>`;
+  const purposeParts = [
+    `${locatedSymbolCount} ${locatedSymbolCount === 1 ? "definition" : "definitions"}`,
+    toolCallDetail.notFoundSymbolCount !== undefined && toolCallDetail.notFoundSymbolCount > 0
+      ? `${toolCallDetail.notFoundSymbolCount} ${toolCallDetail.notFoundSymbolCount === 1 ? "missing name" : "missing names"}`
+      : undefined,
+    toolCallDetail.ambiguousSymbolNameCount !== undefined && toolCallDetail.ambiguousSymbolNameCount > 0
+      ? `${toolCallDetail.ambiguousSymbolNameCount} ${toolCallDetail.ambiguousSymbolNameCount === 1 ? "ambiguous name" : "ambiguous names"}`
+      : undefined,
+    toolCallDetail.verificationReadCount === undefined
+      ? undefined
+      : `${toolCallDetail.verificationReadCount} ${toolCallDetail.verificationReadCount === 1 ? "read" : "reads"}`,
+  ].filter((purposePart): purposePart is string => purposePart !== undefined);
+  return `<span class="panel-purpose">${escapeHtml(purposeParts.join(" · "))}</span>`;
 }
 
 function renderEditToolResultPurpose(toolCallDetail: ToolCallDetailByName<"edit">): string {
@@ -506,7 +510,9 @@ function renderGrepSubagentChildToolCallDetailSummary(
 function renderLocateCodebaseSymbolsSubagentChildToolCallDetailSummary(
   subagentChildToolCallDetail: SubagentChildToolCallDetailByName<"locate_codebase_symbols">,
 ): string {
-  const countHtml = subagentChildToolCallDetail.matchedKnowledgeCount === undefined ? "" : ` · ${subagentChildToolCallDetail.matchedKnowledgeCount} matches`;
+  const countHtml = subagentChildToolCallDetail.locatedSymbolCount === undefined
+    ? ""
+    : ` · ${subagentChildToolCallDetail.locatedSymbolCount} ${subagentChildToolCallDetail.locatedSymbolCount === 1 ? "definition" : "definitions"}`;
   const targetText = [...(subagentChildToolCallDetail.symbolNames ?? []), ...(subagentChildToolCallDetail.filePaths ?? [])].join(", ");
   return `<div class="arg"><b>locate_codebase_symbols</b> ${escapeHtml(targetText)}${escapeHtml(countHtml)}</div>`;
 }

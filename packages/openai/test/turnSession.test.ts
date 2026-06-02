@@ -122,6 +122,19 @@ function createFetchImpl(queuedResponses: Response[], requestBodies: string[]): 
   return fetchImpl;
 }
 
+type FunctionCallOutputRequestInputItem = {
+  readonly type?: string;
+  readonly call_id?: string;
+  readonly output?: string;
+};
+
+function listFunctionCallOutputRequestInputItems(requestBodyText: string): Required<FunctionCallOutputRequestInputItem>[] {
+  const requestBody = JSON.parse(requestBodyText) as { readonly input?: readonly FunctionCallOutputRequestInputItem[] };
+  return (requestBody.input ?? []).filter((inputItem): inputItem is Required<FunctionCallOutputRequestInputItem> =>
+    inputItem.type === "function_call_output" && typeof inputItem.call_id === "string" && typeof inputItem.output === "string"
+  );
+}
+
 type QueuedFetchOutcome =
   | { outcomeKind: "response"; response: Response }
   | { outcomeKind: "rejection"; error: unknown };
@@ -581,6 +594,189 @@ test("OpenAiProviderConversationTurn appends model-facing feedback to repeated e
   expect(repeatedReadOutputItem.output).toContain(
     "This exact read call has already been requested in this assistant turn. Reuse the previous result unless you need different evidence.",
   );
+});
+
+test("OpenAiProviderConversationTurn keeps large current-turn tool output replay exact across continuation requests", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const firstLargeToolResultText = `<path>large-1.txt</path>\n${"large first evidence line\n".repeat(2_000)}`;
+  const secondLargeToolResultText = `<path>large-2.txt</path>\n${"large second evidence line\n".repeat(2_000)}`;
+  const queuedResponses = [
+    createOpenAiReadToolStepResponse(1),
+    createOpenAiReadToolStepResponse(2),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read two large files"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: emittedEvent.toolCallId === "call_1" ? firstLargeToolResultText : secondLargeToolResultText,
+      });
+    }
+  }
+
+  expect(requestBodies).toHaveLength(3);
+  const firstContinuationFunctionOutputItems = listFunctionCallOutputRequestInputItems(requestBodies[1] ?? "{}");
+  const secondContinuationFunctionOutputItems = listFunctionCallOutputRequestInputItems(requestBodies[2] ?? "{}");
+  const firstToolOutputInFirstContinuation = firstContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_1");
+  const firstToolOutputInSecondContinuation = secondContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_1");
+  const secondToolOutputInSecondContinuation = secondContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_2");
+
+  expect(firstToolOutputInFirstContinuation?.output).toBe(firstLargeToolResultText);
+  expect(firstToolOutputInSecondContinuation?.output).toBe(firstLargeToolResultText);
+  expect(firstToolOutputInSecondContinuation?.output).not.toContain("[Current-turn tool result replay compacted]");
+  expect(secondToolOutputInSecondContinuation?.output).toBe(secondLargeToolResultText);
+  const requestPreparedDiagnostics = diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.request_prepared");
+  expect(requestPreparedDiagnostics).toHaveLength(3);
+  expect(requestPreparedDiagnostics[2]?.fields).toMatchObject({
+    requestCurrentTurnFunctionCallOutputOriginalTextLength: firstLargeToolResultText.length + secondLargeToolResultText.length,
+    requestCurrentTurnFunctionCallOutputProjectedTextLength: firstLargeToolResultText.length + secondLargeToolResultText.length,
+    requestCurrentTurnFunctionCallOutputSavedCharacterCount: 0,
+    requestCurrentTurnCompactedFunctionCallOutputCount: 0,
+    requestCurrentTurnExactWorkingSetFunctionCallOutputCount: 2,
+    requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: firstLargeToolResultText.length + secondLargeToolResultText.length,
+  });
+  expect(providerTurn.getProviderTurnReplay()).toMatchObject({
+    provider: "openai",
+    inputItems: expect.arrayContaining([
+      expect.objectContaining({
+        type: "function_call_output",
+        call_id: "call_1",
+        output: firstLargeToolResultText,
+      }),
+      expect.objectContaining({
+        type: "function_call_output",
+        call_id: "call_2",
+        output: secondLargeToolResultText,
+      }),
+    ]),
+  });
+});
+
+test("OpenAiProviderConversationTurn keeps recent small current-turn tool output replay exact after first visibility", async () => {
+  const requestBodies: string[] = [];
+  const firstSourceWindowToolResultText = `<path>small-source-1.ts</path>\n${"first source evidence line\n".repeat(400)}`;
+  const secondSourceWindowToolResultText = `<path>small-source-2.ts</path>\n${"second source evidence line\n".repeat(400)}`;
+  const queuedResponses = [
+    createOpenAiReadToolStepResponse(1),
+    createOpenAiReadToolStepResponse(2),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read two source windows"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: emittedEvent.toolCallId === "call_1" ? firstSourceWindowToolResultText : secondSourceWindowToolResultText,
+      });
+    }
+  }
+
+  expect(requestBodies).toHaveLength(3);
+  const secondContinuationFunctionOutputItems = listFunctionCallOutputRequestInputItems(requestBodies[2] ?? "{}");
+  const firstToolOutputInSecondContinuation = secondContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_1");
+  const secondToolOutputInSecondContinuation = secondContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_2");
+
+  expect(firstToolOutputInSecondContinuation?.output).toBe(firstSourceWindowToolResultText);
+  expect(firstToolOutputInSecondContinuation?.output).not.toContain("[Current-turn tool result replay compacted]");
+  expect(secondToolOutputInSecondContinuation?.output).toBe(secondSourceWindowToolResultText);
+  expect(providerTurn.getProviderTurnReplay()).toMatchObject({
+    provider: "openai",
+    inputItems: expect.arrayContaining([
+      expect.objectContaining({
+        type: "function_call_output",
+        call_id: "call_1",
+        output: firstSourceWindowToolResultText,
+      }),
+    ]),
+  });
+});
+
+test("OpenAiProviderConversationTurn keeps all small current-turn tool output replay exact instead of bounding to a recent working set", async () => {
+  const requestBodies: string[] = [];
+  const toolStepCount = 6;
+  const sourceWindowCharacterCount = 30 * 1024;
+  const toolResultTextByCallId = new Map<string, string>(
+    Array.from({ length: toolStepCount }, (_value, index) => {
+      const callId = `call_${index + 1}`;
+      const headerText = `<path>${callId}.ts</path>\n`;
+      return [callId, `${headerText}${"x".repeat(sourceWindowCharacterCount - headerText.length)}`];
+    }),
+  );
+  const queuedResponses = [
+    ...Array.from({ length: toolStepCount }, (_value, index) => createOpenAiReadToolStepResponse(index + 1)),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 80, output_tokens: 4, total_tokens: 84 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read several source windows"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+  });
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    if (emittedEvent.type === "tool_call_requested") {
+      const toolResultText = toolResultTextByCallId.get(emittedEvent.toolCallId);
+      if (!toolResultText) {
+        throw new Error(`Missing test tool result for ${emittedEvent.toolCallId}`);
+      }
+
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText,
+      });
+    }
+  }
+
+  expect(requestBodies).toHaveLength(toolStepCount + 1);
+  const finalContinuationFunctionOutputItems = listFunctionCallOutputRequestInputItems(requestBodies[toolStepCount] ?? "{}");
+  expect(finalContinuationFunctionOutputItems).toHaveLength(toolStepCount);
+  for (const [toolCallId, toolResultText] of toolResultTextByCallId) {
+    const toolOutputInFinalContinuation = finalContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === toolCallId);
+    expect(toolOutputInFinalContinuation?.output).toBe(toolResultText);
+    expect(toolOutputInFinalContinuation?.output).not.toContain("[Current-turn tool result replay compacted]");
+  }
 });
 
 test("OpenAiProviderConversationTurn yields executable tool calls before terminal response completion", async () => {

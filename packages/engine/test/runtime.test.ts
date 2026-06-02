@@ -3,8 +3,8 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
-  CodebaseKnowledgeQuery,
-  CodebaseKnowledgeQueryResult,
+  CodebaseSymbolDefinitionLocatorQuery,
+  CodebaseSymbolDefinitionLocatorResult,
 } from "@buli/codebase-knowledge";
 import type {
   AssistantToolCallConversationMessagePart,
@@ -119,32 +119,32 @@ class ThrowingProviderTurn implements ProviderConversationTurn {
 }
 
 class StubWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodebaseKnowledgeIndex {
-  readonly queryResult: CodebaseKnowledgeQueryResult | undefined;
-  readonly queryFailure: Error | undefined;
+  readonly locatorResult: CodebaseSymbolDefinitionLocatorResult | undefined;
+  readonly locateFailure: Error | undefined;
   ensureWorkspaceIndexedCallCount = 0;
-  readonly queriedCodebaseKnowledgeQueries: CodebaseKnowledgeQuery[] = [];
+  readonly requestedSymbolDefinitionQueries: CodebaseSymbolDefinitionLocatorQuery[] = [];
 
   constructor(input: {
-    queryResult?: CodebaseKnowledgeQueryResult | undefined;
-    queryFailure?: Error | undefined;
+    locatorResult?: CodebaseSymbolDefinitionLocatorResult | undefined;
+    locateFailure?: Error | undefined;
   }) {
-    this.queryResult = input.queryResult;
-    this.queryFailure = input.queryFailure;
+    this.locatorResult = input.locatorResult;
+    this.locateFailure = input.locateFailure;
   }
 
   async ensureWorkspaceIndexed(): Promise<void> {
     this.ensureWorkspaceIndexedCallCount += 1;
   }
 
-  async queryCodebaseKnowledge(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult> {
-    this.queriedCodebaseKnowledgeQueries.push(query);
-    if (this.queryFailure) {
-      throw this.queryFailure;
+  async locateSymbolDefinitions(query: CodebaseSymbolDefinitionLocatorQuery): Promise<CodebaseSymbolDefinitionLocatorResult> {
+    this.requestedSymbolDefinitionQueries.push(query);
+    if (this.locateFailure) {
+      throw this.locateFailure;
     }
-    if (!this.queryResult) {
-      throw new Error("No codebase knowledge query result was configured.");
+    if (!this.locatorResult) {
+      throw new Error("No codebase symbol definition locator result was configured.");
     }
-    return this.queryResult;
+    return this.locatorResult;
   }
 
   async refreshChangedFilePaths(): Promise<void> {}
@@ -1215,49 +1215,33 @@ test("AssistantConversationRuntime executes locate_codebase_symbols without appr
     toolName: "locate_codebase_symbols",
     symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
     filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-    maximumResultCount: 2,
   };
   const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
-    queryResult: {
+    locatorResult: {
       query: {
         symbolNames: queryRequest.symbolNames,
         filePaths: queryRequest.filePaths,
-        maximumResultCount: queryRequest.maximumResultCount,
       },
-      matches: [
+      symbolLookups: [
         {
-          score: 103,
-          matchReasons: ["matched file path packages/engine/src/runtimeToolCallExecution.ts"],
-          recommendedReads: [
+          requestedSymbolName: "streamAssistantResponseEventsForRequestedToolCalls",
+          lookupStatus: "resolved",
+          locations: [
             {
               filePath: "packages/engine/src/runtimeToolCallExecution.ts",
+              symbolName: "streamAssistantResponseEventsForRequestedToolCalls",
+              symbolKind: "function",
               startLineNumber: 107,
-              maximumLineCount: 20,
-              reason: "Verify runtime dispatch",
-            },
-          ],
-          record: {
-            recordId: "symbol:runtime-dispatch",
-            recordKind: "symbol",
-            title: "streamAssistantResponseEventsForRequestedToolCalls (function)",
-            summary: "Defines runtime tool-call dispatch.",
-            tags: ["runtime", "tool", "dispatch"],
-            evidenceRanges: [
-              {
+              endLineNumber: 121,
+              isExported: true,
+              verificationRead: {
                 filePath: "packages/engine/src/runtimeToolCallExecution.ts",
                 startLineNumber: 107,
-                endLineNumber: 121,
-                contentHash: "hash-runtime-dispatch",
+                maximumLineCount: 15,
+                reason: "Verify exact definition of streamAssistantResponseEventsForRequestedToolCalls",
               },
-            ],
-            updatedAtMs: 1,
-            filePath: "packages/engine/src/runtimeToolCallExecution.ts",
-            symbolName: "streamAssistantResponseEventsForRequestedToolCalls",
-            symbolKind: "function",
-            startLineNumber: 107,
-            endLineNumber: 121,
-            isExported: true,
-          },
+            },
+          ],
         },
       ],
     },
@@ -1293,11 +1277,10 @@ test("AssistantConversationRuntime executes locate_codebase_symbols without appr
   expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).not.toContain(
     "assistant_pending_tool_approval_requested",
   );
-  expect(workspaceCodebaseKnowledgeIndex.queriedCodebaseKnowledgeQueries).toEqual([
+  expect(workspaceCodebaseKnowledgeIndex.requestedSymbolDefinitionQueries).toEqual([
     {
       symbolNames: queryRequest.symbolNames,
       filePaths: queryRequest.filePaths,
-      maximumResultCount: queryRequest.maximumResultCount,
     },
   ]);
   expect(emittedAssistantEvents).toContainEqual(expect.objectContaining({
@@ -1308,15 +1291,17 @@ test("AssistantConversationRuntime executes locate_codebase_symbols without appr
       toolCallStatus: "completed",
       toolCallDetail: expect.objectContaining({
         toolName: "locate_codebase_symbols",
-        matchedKnowledgeCount: 1,
-        recommendedReadCount: 1,
+        locatedSymbolCount: 1,
+        notFoundSymbolCount: 0,
+        ambiguousSymbolNameCount: 0,
+        verificationReadCount: 1,
       }),
     }),
   }));
   expect(providerTurn.submittedToolResults).toEqual([
     {
       toolCallId: "call_locate_codebase_symbols_1",
-      toolResultText: expect.stringContaining("<codebase_knowledge_query>"),
+      toolResultText: expect.stringContaining("<codebase_symbol_locations>"),
     },
   ]);
   expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("runtimeToolCallExecution.ts");
@@ -1325,17 +1310,19 @@ test("AssistantConversationRuntime executes locate_codebase_symbols without appr
     toolCallId: "call_locate_codebase_symbols_1",
     toolCallDetail: expect.objectContaining({
       toolName: "locate_codebase_symbols",
-      matchedKnowledgeCount: 1,
-      recommendedReadCount: 1,
+      locatedSymbolCount: 1,
+      notFoundSymbolCount: 0,
+      ambiguousSymbolNameCount: 0,
+      verificationReadCount: 1,
     }),
-    toolResultText: expect.stringContaining("<recommended_reads>"),
+    toolResultText: expect.stringContaining("<verification_read"),
   }));
 });
 
 test("AssistantConversationRuntime propagates locate_codebase_symbols index failures without submitting tool output", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-query-knowledge-failure-"));
   const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
-    queryFailure: new Error("index file is unreadable"),
+    locateFailure: new Error("index file is unreadable"),
   });
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
@@ -4057,6 +4044,140 @@ test("AssistantConversationRuntime leaves the session unchanged when compaction 
   expect(conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
 });
 
+test("AssistantConversationRuntime carries same-turn read coverage across top-level provider tool-call batches", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-read-overlap-"));
+  await writeFile(
+    join(workspaceRootPath, "notes.txt"),
+    Array.from({ length: 50 }, (_value, lineIndex) => `line ${lineIndex + 1}`).join("\n"),
+    "utf8",
+  );
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_1",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "notes.txt",
+          offsetLineNumber: 10,
+          maximumLineCount: 21,
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_read_2",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "notes.txt",
+          offsetLineNumber: 20,
+          maximumLineCount: 21,
+        },
+      },
+      { type: "text_chunk", text: "Done." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Read overlapping note windows",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(providerTurn.submittedToolResults).toHaveLength(2);
+  expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("10: line 10");
+  expect(providerTurn.submittedToolResults[0]?.toolResultText).not.toContain("<same_turn_read_overlap_advisory");
+  expect(providerTurn.submittedToolResults[1]?.toolResultText).toContain("20: line 20");
+  expect(providerTurn.submittedToolResults[1]?.toolResultText).toContain("<same_turn_read_overlap_advisory");
+  expect(providerTurn.submittedToolResults[1]?.toolResultText).toContain("lines 10-30 from tool_call_id call_read_1");
+  expect(providerTurn.submittedToolResults[1]?.toolResultText).toContain("- lines 31-40");
+});
+
+test("AssistantConversationRuntime gives each task subagent its own same-turn read coverage tracker", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-subagent-read-overlap-"));
+  await writeFile(
+    join(workspaceRootPath, "notes.txt"),
+    Array.from({ length: 50 }, (_value, lineIndex) => `line ${lineIndex + 1}`).join("\n"),
+    "utf8",
+  );
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_task_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "inspect overlapping note windows",
+          subagentPrompt: "Read overlapping note windows and summarize them.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Task acknowledged." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const subagentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_subagent_read_1",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "notes.txt",
+          offsetLineNumber: 10,
+          maximumLineCount: 21,
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_subagent_read_2",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "notes.txt",
+          offsetLineNumber: 20,
+          maximumLineCount: 21,
+        },
+      },
+      { type: "text_chunk", text: "Subagent read overlapping notes." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, subagentProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Run Explorer on overlapping notes",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(subagentProviderTurn.submittedToolResults).toHaveLength(2);
+  expect(subagentProviderTurn.submittedToolResults[0]?.toolResultText).not.toContain("<same_turn_read_overlap_advisory");
+  expect(subagentProviderTurn.submittedToolResults[1]?.toolResultText).toContain("<same_turn_read_overlap_advisory");
+  expect(subagentProviderTurn.submittedToolResults[1]?.toolResultText).toContain(
+    "lines 10-30 from tool_call_id call_subagent_read_1",
+  );
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Subagent read overlapping notes.");
+});
+
 test("AssistantConversationRuntime runs task as an isolated read-only child turn", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-tool-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nExplorer target\n", "utf8");
@@ -4691,7 +4812,7 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
   );
 });
 
-test("AssistantConversationRuntime lets Explorer exceed the old child output budget", async () => {
+test("AssistantConversationRuntime gates large Explorer child output without triggering the old child output checkpoint", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-expanded-budget-"));
   await writeFile(join(workspaceRootPath, "large.txt"), `${"x".repeat(320_000)}\n`, "utf8");
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nStill reachable\n", "utf8");
@@ -4752,7 +4873,9 @@ test("AssistantConversationRuntime lets Explorer exceed the old child output bud
   );
 
   expect(explorerProviderTurn.submittedToolResults).toHaveLength(2);
-  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText.length).toBeGreaterThan(300_000);
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<tool_result_budget_gate tool=\"read\">");
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<status>too_broad_incomplete</status>");
+  expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).not.toContain("x".repeat(1_000));
   expect(explorerProviderTurn.submittedToolResults[1]?.toolCallId).toBe("call_read_readme");
   expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("Still reachable");
   expect(explorerProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolResultText).join("\n"))
@@ -5341,9 +5464,9 @@ test("AssistantConversationRuntime denies write tool calls in plan mode", async 
 test("AssistantConversationRuntime starts workspace codebase knowledge indexing in background", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-codebase-knowledge-startup-"));
   const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({
-    queryResult: {
+    locatorResult: {
       query: { symbolNames: ["runtime"] },
-      matches: [],
+      symbolLookups: [],
     },
   });
   const runtime = new AssistantConversationRuntime({

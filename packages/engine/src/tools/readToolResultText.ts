@@ -8,7 +8,7 @@ export function buildDirectoryReadToolResultText(input: {
   const lastVisibleEntryNumber = input.offsetLineNumber + input.visibleEntryNames.length - 1;
   const visibleEntryText = input.visibleEntryNames.length > 0 ? input.visibleEntryNames.join("\n") : "<empty>";
   const statusLine = input.wasLineCountTruncated
-    ? `(Showing entries ${input.offsetLineNumber}-${lastVisibleEntryNumber} of ${input.entryNames.length}. Use offset=${lastVisibleEntryNumber + 1} to continue.)`
+    ? `(Showing entries ${input.offsetLineNumber}-${lastVisibleEntryNumber} of ${input.entryNames.length}; bounded window is incomplete. Use offset=${lastVisibleEntryNumber + 1} to continue before making completeness claims.)`
     : `(${input.entryNames.length} entries)`;
 
   return [
@@ -33,7 +33,7 @@ export function buildFileReadToolResultText(input: {
     .map((visibleFileLine, visibleFileLineIndex) => `${input.offsetLineNumber + visibleFileLineIndex}: ${visibleFileLine}`)
     .join("\n");
   const statusLine = input.wasLineCountTruncated
-    ? `(Showing lines ${input.offsetLineNumber}-${lastVisibleLineNumber} of ${input.fileLines.length}. Use offset=${lastVisibleLineNumber + 1} to continue.)`
+    ? `(Showing lines ${input.offsetLineNumber}-${lastVisibleLineNumber} of ${input.fileLines.length}; bounded window is incomplete. Use offset=${lastVisibleLineNumber + 1} to continue before making completeness claims.)`
     : `(End of file - total ${input.fileLines.length} lines)`;
 
   return [
@@ -59,7 +59,7 @@ export function buildLargeFileReadToolResultText(input: {
     .map((visibleFileLine, visibleFileLineIndex) => `${input.offsetLineNumber + visibleFileLineIndex}: ${visibleFileLine}`)
     .join("\n");
   const statusLine = input.wasLineCountTruncated
-    ? `(Showing lines ${input.offsetLineNumber}-${lastVisibleLineNumber} of a large ${input.fileByteCount}-byte file. Use offset=${lastVisibleLineNumber + 1} to continue.)`
+    ? `(Showing lines ${input.offsetLineNumber}-${lastVisibleLineNumber} of a large ${input.fileByteCount}-byte file; bounded window is incomplete. Use offset=${lastVisibleLineNumber + 1} to continue before making completeness claims.)`
     : `(End of file - total ${input.totalLineCount ?? lastVisibleLineNumber} lines; ${input.fileByteCount} bytes)`;
 
   return [

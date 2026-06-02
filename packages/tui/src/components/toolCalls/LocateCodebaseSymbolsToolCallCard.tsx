@@ -40,18 +40,18 @@ function buildLocateCodebaseSymbolsStatusLabel(props: LocateCodebaseSymbolsToolC
     return "locating…";
   }
 
-  const matchedKnowledgeCount = props.toolCallDetail.matchedKnowledgeCount;
-  if (matchedKnowledgeCount === undefined) {
+  const locatedSymbolCount = props.toolCallDetail.locatedSymbolCount;
+  if (locatedSymbolCount === undefined) {
     return "located";
   }
 
-  const matchLabel = `${matchedKnowledgeCount} ${matchedKnowledgeCount === 1 ? "match" : "matches"}`;
-  const recommendedReadCount = props.toolCallDetail.recommendedReadCount;
-  if (recommendedReadCount === undefined) {
-    return matchLabel;
+  const locatedSymbolLabel = `${locatedSymbolCount} ${locatedSymbolCount === 1 ? "definition" : "definitions"}`;
+  const verificationReadCount = props.toolCallDetail.verificationReadCount;
+  if (verificationReadCount === undefined) {
+    return locatedSymbolLabel;
   }
 
-  return `${matchLabel} · ${recommendedReadCount} ${recommendedReadCount === 1 ? "read" : "reads"}`;
+  return `${locatedSymbolLabel} · ${verificationReadCount} ${verificationReadCount === 1 ? "read" : "reads"}`;
 }
 
 function buildLocateCodebaseSymbolsTargetText(toolCallDetail: ToolCallLocateCodebaseSymbolsDetail): string {

@@ -3,6 +3,7 @@ import type {
   CodebaseImportDeclaration,
   CodebaseKnowledgeRecord,
   CodebaseSymbolDeclarationPreview,
+  CodebaseSymbolKind,
   CodebaseSymbolKnowledgeRecord,
 } from "../src/index.ts";
 
@@ -10,32 +11,39 @@ export function createTestSymbolKnowledgeRecord(input: {
   recordId: string;
   filePath: string;
   symbolName: string;
+  symbolKind?: CodebaseSymbolKind | undefined;
+  startLineNumber?: number | undefined;
+  endLineNumber?: number | undefined;
+  isExported?: boolean | undefined;
   title?: string | undefined;
   summary?: string | undefined;
   tags?: readonly string[] | undefined;
   declarationPreview?: CodebaseSymbolDeclarationPreview | undefined;
 }): CodebaseSymbolKnowledgeRecord {
+  const startLineNumber = input.startLineNumber ?? 10;
+  const endLineNumber = input.endLineNumber ?? 20;
+  const symbolKind = input.symbolKind ?? "function";
   return {
     recordId: input.recordId,
     recordKind: "symbol",
-    title: input.title ?? `${input.symbolName} (function)`,
-    summary: input.summary ?? `Defines function ${input.symbolName} in ${input.filePath}.`,
+    title: input.title ?? `${input.symbolName} (${symbolKind})`,
+    summary: input.summary ?? `Defines ${symbolKind} ${input.symbolName} in ${input.filePath}.`,
     tags: input.tags ?? [],
     evidenceRanges: [
       {
         filePath: input.filePath,
-        startLineNumber: 10,
-        endLineNumber: 20,
+        startLineNumber,
+        endLineNumber,
         contentHash: "hash-1",
       },
     ],
     updatedAtMs: 100,
     filePath: input.filePath,
     symbolName: input.symbolName,
-    symbolKind: "function",
-    startLineNumber: 10,
-    endLineNumber: 20,
-    isExported: true,
+    symbolKind,
+    startLineNumber,
+    endLineNumber,
+    isExported: input.isExported ?? true,
     ...(input.declarationPreview ? { declarationPreview: input.declarationPreview } : {}),
   };
 }

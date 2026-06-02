@@ -22,7 +22,6 @@ export const MAX_SKILL_NAME_LENGTH = 64;
 export const SKILL_NAME_PATTERN_TEXT = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
 export const MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT = 50;
 export const MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH = 512;
-export const MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT = 20;
 
 const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
 const InspectionQuestionSchema = z.string().min(1).max(MAX_INSPECTION_QUESTION_LENGTH);
@@ -176,18 +175,14 @@ export const RecordWorkflowHandoffToolCallRequestSchema = z
   })
   .strict();
 
-// The "at least one of symbolNames/filePaths" rule lives in toolCatalog's
-// parse path, not here: z.discriminatedUnion members must be raw ZodObjects,
-// and .refine() would produce a ZodEffects that cannot join the union.
 export const LocateCodebaseSymbolsToolCallRequestSchema = z
   .object({
     toolName: z.literal("locate_codebase_symbols"),
     symbolNames: z
       .array(z.string().min(1).max(MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH))
-      .max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT)
-      .optional(),
+      .min(1)
+      .max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT),
     filePaths: z.array(WorkspacePathSchema).max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT).optional(),
-    maximumResultCount: z.number().int().positive().max(MAX_CODEBASE_KNOWLEDGE_RESULT_COUNT).optional(),
   })
   .strict();
 

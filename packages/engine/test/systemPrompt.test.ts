@@ -107,10 +107,10 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
   );
   expect(systemPromptText).toContain(
-    "After grep surfaces a symbol name, call locate_codebase_symbols with that name to get its exact file and start-end line span, then read that exact range.",
+    "After grep surfaces a known exact symbol name, call locate_codebase_symbols with that name to get its exact definition file and start-end line span, then read that exact range.",
   );
   expect(systemPromptText).toContain(
-    "Call locate_codebase_symbols with filePaths to get a file's imports, exports, and symbol list before reading it.",
+    "Use locate_codebase_symbols only for known exact symbolNames; filePaths are optional filters/disambiguators, not file overview inputs.",
   );
   expect(systemPromptText).toContain(
     "When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
@@ -134,7 +134,10 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "When grep returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
   );
   expect(systemPromptText).toContain(
-    "If a result says content was truncated or omitted content is not currently visible, do not rely on or claim the omitted content; request a narrower follow-up read/search if those details matter.",
+    "If a result says content was truncated, omitted, incomplete, or too_broad/too broad, treat it as a budget gate rather than evidence of the omitted content. Do not rely on it for absence/completeness claims; request narrower or batched follow-up reads/searches before concluding.",
+  );
+  expect(systemPromptText).toContain(
+    "If a read result includes <same_turn_read_overlap_advisory>, treat it as guidance, not replacement evidence: reuse already-visible covered lines and request only listed missing line ranges when more evidence is needed; do not reread overlapping windows just to regain context.",
   );
   expect(systemPromptText).toContain(
     "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with glob or grep before reading.",
@@ -625,10 +628,10 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
   );
   expect(systemPromptText).toContain(
-    "After grep surfaces a symbol name, call locate_codebase_symbols with that name to get its exact file and start-end line span, then read that exact range.",
+    "After grep surfaces a known exact symbol name, call locate_codebase_symbols with that name to get its exact definition file and start-end line span, then read that exact range.",
   );
   expect(systemPromptText).toContain(
-    "Call locate_codebase_symbols with filePaths to get a file's imports, exports, and symbol list before reading it.",
+    "Use locate_codebase_symbols only for known exact symbolNames; filePaths are optional filters/disambiguators, not file overview inputs.",
   );
   expect(systemPromptText).toContain(
     "When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
@@ -652,7 +655,10 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "When grep returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
   );
   expect(systemPromptText).toContain(
-    "If a result says content was truncated or omitted content is not currently visible, do not rely on or claim the omitted content; request a narrower follow-up read/search if those details matter.",
+    "If a result says content was truncated, omitted, incomplete, or too_broad/too broad, treat it as a budget gate rather than evidence of the omitted content. Do not rely on it for absence/completeness claims; request narrower or batched follow-up reads/searches before concluding.",
+  );
+  expect(systemPromptText).toContain(
+    "If a read result includes <same_turn_read_overlap_advisory>, treat it as guidance, not replacement evidence: reuse already-visible covered lines and request only listed missing line ranges when more evidence is needed; do not reread overlapping windows just to regain context.",
   );
   expect(systemPromptText).toContain(
     "A path inferred from an import, symbol name, filename, likely extension, or project convention is not evidenced. Discover it with glob or grep before reading.",

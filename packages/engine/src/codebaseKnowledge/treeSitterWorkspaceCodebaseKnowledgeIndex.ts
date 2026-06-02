@@ -9,11 +9,11 @@ import {
   JsonFileCodebaseKnowledgeRepository,
   resolveCodebaseLanguageKindForFilePath,
   type CodebaseIndexedFileMetadata,
-  type CodebaseKnowledgeQuery,
-  type CodebaseKnowledgeQueryResult,
   type CodebaseKnowledgeRecord,
   type CodebaseKnowledgeRepository,
   type CodebaseKnowledgeRepositorySnapshot,
+  type CodebaseSymbolDefinitionLocatorQuery,
+  type CodebaseSymbolDefinitionLocatorResult,
   type CodebaseStructureFileRecord,
   type CodebaseStructureIndexer,
 } from "@buli/codebase-knowledge";
@@ -53,10 +53,10 @@ type WorkspaceIndexingCounters = {
 
 export type WorkspaceCodebaseKnowledgeIndex = {
   ensureWorkspaceIndexed(input?: { abortSignal?: AbortSignal | undefined }): Promise<void>;
-  queryCodebaseKnowledge(
-    query: CodebaseKnowledgeQuery,
+  locateSymbolDefinitions(
+    query: CodebaseSymbolDefinitionLocatorQuery,
     input?: { abortSignal?: AbortSignal | undefined },
-  ): Promise<CodebaseKnowledgeQueryResult>;
+  ): Promise<CodebaseSymbolDefinitionLocatorResult>;
   refreshChangedFilePaths(input: {
     changedFilePaths: readonly string[];
     abortSignal?: AbortSignal | undefined;
@@ -101,13 +101,13 @@ export class TreeSitterWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodeb
     });
   }
 
-  async queryCodebaseKnowledge(
-    query: CodebaseKnowledgeQuery,
+  async locateSymbolDefinitions(
+    query: CodebaseSymbolDefinitionLocatorQuery,
     input: { abortSignal?: AbortSignal | undefined } = {},
-  ): Promise<CodebaseKnowledgeQueryResult> {
+  ): Promise<CodebaseSymbolDefinitionLocatorResult> {
     await this.ensureWorkspaceIndexed(input);
     throwIfCodebaseKnowledgeIndexAborted(input.abortSignal);
-    return this.#codebaseKnowledgeRepository.queryRecords(query);
+    return this.#codebaseKnowledgeRepository.locateSymbolDefinitions(query);
   }
 
   async refreshChangedFilePaths(input: {

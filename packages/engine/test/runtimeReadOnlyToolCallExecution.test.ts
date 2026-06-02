@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CodebaseKnowledgeQuery, CodebaseKnowledgeQueryResult } from "@buli/codebase-knowledge";
+import type { CodebaseSymbolDefinitionLocatorQuery, CodebaseSymbolDefinitionLocatorResult } from "@buli/codebase-knowledge";
 import type { AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
 import type { WorkspaceCodebaseKnowledgeIndex } from "../src/codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
@@ -11,9 +11,11 @@ import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../
 import {
   type AutoApprovedReadOnlyRequestedToolCall,
   isAutoApprovedReadOnlyToolCallRequest,
+  READ_ONLY_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
 } from "../src/runtimeReadOnlyToolCallExecution.ts";
+import { SameTurnReadCoverageTracker } from "../src/readOnlyToolCallReadCoverage.ts";
 import { RuntimeReadOnlyToolCallConcurrencyLimiter } from "../src/runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
 
@@ -105,15 +107,15 @@ class CountingProjectInstructionTracker extends ProjectInstructionTracker {
 }
 
 class RecordingWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodebaseKnowledgeIndex {
-  queryCount = 0;
+  locateCount = 0;
 
   ensureWorkspaceIndexed(): Promise<void> {
     return Promise.resolve();
   }
 
-  queryCodebaseKnowledge(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult> {
-    this.queryCount += 1;
-    return Promise.resolve({ query, matches: [] });
+  locateSymbolDefinitions(query: CodebaseSymbolDefinitionLocatorQuery): Promise<CodebaseSymbolDefinitionLocatorResult> {
+    this.locateCount += 1;
+    return Promise.resolve({ query, symbolLookups: [] });
   }
 
   refreshChangedFilePaths(): Promise<void> {
@@ -179,7 +181,7 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
   })).toBe(false);
 });
 
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-executes duplicate codebase knowledge queries across turns", async () => {
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-executes duplicate exact symbol lookups across turns", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-query-"));
   const providerConversationTurn = new RecordingProviderConversationTurn();
   const workspaceCodebaseKnowledgeIndex = new RecordingWorkspaceCodebaseKnowledgeIndex();
@@ -199,10 +201,12 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-executes d
         toolCallDetail: {
           toolName: "locate_codebase_symbols",
           symbolNames: ["Runtime", "ToolCall"],
-          matchedKnowledgeCount: 1,
-          recommendedReadCount: 1,
+          locatedSymbolCount: 1,
+          notFoundSymbolCount: 0,
+          ambiguousSymbolNameCount: 0,
+          verificationReadCount: 1,
         },
-        toolResultText: "<codebase_knowledge_query>raw previous query result</codebase_knowledge_query>",
+        toolResultText: "<codebase_symbol_locations>raw previous locator result</codebase_symbol_locations>",
       },
       {
         entryKind: "tool_call",
@@ -233,15 +237,15 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-executes d
     throwIfConversationTurnInterrupted: () => {},
   });
 
-  expect(workspaceCodebaseKnowledgeIndex.queryCount).toBe(1);
+  expect(workspaceCodebaseKnowledgeIndex.locateCount).toBe(1);
   expect(providerConversationTurn.submittedToolResults).toEqual([
     {
       toolCallId: "call_query_2",
-      toolResultText: expect.stringContaining("<codebase_knowledge_query>"),
+      toolResultText: expect.stringContaining("<codebase_symbol_locations>"),
     },
   ]);
   expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<duplicate_read_only_tool_result>");
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("raw previous query result");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("raw previous locator result");
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-reads duplicate reads across turns", async () => {
@@ -459,6 +463,188 @@ test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and s
         }),
       }),
     ]);
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall appends same-turn read overlap advisory only to provider-visible text", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-overlap-advisory-"));
+  await writeFile(
+    join(workspaceRootPath, "notes.txt"),
+    Array.from({ length: 50 }, (_value, lineIndex) => `line ${lineIndex + 1}`).join("\n"),
+    "utf8",
+  );
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const conversationHistory = new InMemoryConversationHistory();
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+  const sameTurnReadCoverageTracker = new SameTurnReadCoverageTracker();
+
+  await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_read_1",
+    toolCallRequest: {
+      toolName: "read",
+      readTargetPath: "notes.txt",
+      offsetLineNumber: 10,
+      maximumLineCount: 21,
+    },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    sameTurnReadCoverageTracker,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+  await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_read_2",
+    toolCallRequest: {
+      toolName: "read",
+      readTargetPath: "notes.txt",
+      offsetLineNumber: 20,
+      maximumLineCount: 21,
+    },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    sameTurnReadCoverageTracker,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  expect(providerConversationTurn.submittedToolResults).toHaveLength(2);
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("10: line 10");
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<same_turn_read_overlap_advisory");
+  expect(providerConversationTurn.submittedToolResults[1]?.toolResultText).toContain("20: line 20");
+  expect(providerConversationTurn.submittedToolResults[1]?.toolResultText).toContain("<same_turn_read_overlap_advisory");
+  expect(providerConversationTurn.submittedToolResults[1]?.toolResultText).toContain("lines 10-30 from tool_call_id call_read_1");
+  expect(providerConversationTurn.submittedToolResults[1]?.toolResultText).toContain("- lines 31-40");
+  expect(conversationHistory.listConversationSessionEntries()).toContainEqual(expect.objectContaining({
+    entryKind: "completed_tool_result",
+    toolCallId: "call_read_2",
+    toolResultText: expect.stringContaining("40: line 40"),
+  }));
+  expect(conversationHistory.listConversationSessionEntries()).not.toContainEqual(expect.objectContaining({
+    toolCallId: "call_read_2",
+    toolResultText: expect.stringContaining("<same_turn_read_overlap_advisory"),
+  }));
+  expect(diagnosticEvents).toContainEqual(expect.objectContaining({
+    eventName: "tool_call.read_overlap_advisory_appended",
+    fields: expect.objectContaining({
+      toolCallId: "call_read_2",
+      overlappedLineCount: 11,
+      missingReadRangeCount: 1,
+    }),
+  }));
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall does not record budget-gated reads as visible coverage", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-overlap-budget-gate-"));
+  await writeFile(
+    join(workspaceRootPath, "large-notes.txt"),
+    Array.from({ length: 120 }, (_value, lineIndex) => `line ${lineIndex + 1} ${"x".repeat(400)}`).join("\n"),
+    "utf8",
+  );
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory();
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+  const sameTurnReadCoverageTracker = new SameTurnReadCoverageTracker();
+
+  await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_read_large",
+    toolCallRequest: { toolName: "read", readTargetPath: "large-notes.txt" },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    sameTurnReadCoverageTracker,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+  await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_read_small",
+    toolCallRequest: {
+      toolName: "read",
+      readTargetPath: "large-notes.txt",
+      offsetLineNumber: 1,
+      maximumLineCount: 10,
+    },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    sameTurnReadCoverageTracker,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).toContain("<tool_result_budget_gate tool=\"read\">");
+  expect(providerConversationTurn.submittedToolResults[1]?.toolResultText).toContain("1: line 1");
+  expect(providerConversationTurn.submittedToolResults[1]?.toolResultText).not.toContain("<same_turn_read_overlap_advisory");
+});
+
+test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall gates oversized provider-visible read results while storing canonical text", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-provider-gate-read-"));
+  const rawEvidenceMarker = "RAW_EVIDENCE_ONLY_IN_SESSION";
+  await writeFile(
+    join(workspaceRootPath, "large-notes.txt"),
+    Array.from({ length: 120 }, (_value, lineIndex) => `${lineIndex + 1}: ${rawEvidenceMarker} ${"x".repeat(400)}`).join("\n"),
+    "utf8",
+  );
+  const providerConversationTurn = new RecordingProviderConversationTurn();
+  const conversationHistory = new InMemoryConversationHistory({
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Read large notes",
+        modelFacingPromptText: "Read large notes",
+      },
+      {
+        entryKind: "tool_call",
+        toolCallId: "call_read_large",
+        toolCallRequest: {
+          toolName: "read",
+          readTargetPath: "large-notes.txt",
+        },
+      },
+    ],
+  });
+  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
+
+  await collectReadOnlyToolCallEvents({
+    assistantResponseMessageId: "assistant-message-1",
+    conversationTurnId: "conversation-turn-1",
+    providerConversationTurn,
+    toolCallId: "call_read_large",
+    toolCallRequest: {
+      toolName: "read",
+      readTargetPath: "large-notes.txt",
+    },
+    workspaceRootPath,
+    toolResultSessionRecorder,
+    abortSignal: new AbortController().signal,
+    throwIfConversationTurnInterrupted: () => {},
+  });
+
+  const submittedToolResultText = providerConversationTurn.submittedToolResults[0]?.toolResultText ?? "";
+  const storedToolResultEntry = conversationHistory.listConversationSessionEntries().at(-1);
+
+  expect(submittedToolResultText.length).toBeLessThanOrEqual(READ_ONLY_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT);
+  expect(submittedToolResultText).toContain("<tool_result_budget_gate tool=\"read\">");
+  expect(submittedToolResultText).toContain("<status>too_broad_incomplete</status>");
+  expect(submittedToolResultText).toContain("Do not make absence, completeness, or coverage claims");
+  expect(submittedToolResultText).toContain("Retry with smaller offsetLineNumber/maximumLineCount windows.");
+  expect(submittedToolResultText).not.toContain(rawEvidenceMarker);
+  expect(storedToolResultEntry).toMatchObject({
+    entryKind: "completed_tool_result",
+    toolCallId: "call_read_large",
+    toolResultText: expect.stringContaining(rawEvidenceMarker),
+  });
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall records and submits completed glob results", async () => {

@@ -65,29 +65,40 @@ export type CodebaseKnowledgeRecord =
   | CodebaseFileKnowledgeRecord
   | CodebaseSymbolKnowledgeRecord;
 
-export type CodebaseKnowledgeQuery = {
-  symbolNames?: readonly string[] | undefined;
+export type CodebaseSymbolDefinitionLocatorQuery = {
+  symbolNames: readonly string[];
   filePaths?: readonly string[] | undefined;
-  maximumResultCount?: number | undefined;
 };
 
-export type CodebaseKnowledgeRecommendedRead = {
+export type CodebaseSymbolDefinitionVerificationRead = {
   filePath: string;
   startLineNumber: number;
   maximumLineCount: number;
   reason: string;
 };
 
-export type CodebaseKnowledgeQueryMatch = {
-  record: CodebaseKnowledgeRecord;
-  score: number;
-  matchReasons: readonly string[];
-  recommendedReads: readonly CodebaseKnowledgeRecommendedRead[];
+export type CodebaseSymbolDefinitionLocation = {
+  filePath: string;
+  symbolName: string;
+  symbolKind: CodebaseSymbolKind;
+  startLineNumber: number;
+  endLineNumber: number;
+  isExported: boolean;
+  declarationPreview?: CodebaseSymbolDeclarationPreview | undefined;
+  verificationRead: CodebaseSymbolDefinitionVerificationRead;
 };
 
-export type CodebaseKnowledgeQueryResult = {
-  query: CodebaseKnowledgeQuery;
-  matches: readonly CodebaseKnowledgeQueryMatch[];
+export type CodebaseSymbolDefinitionLookupStatus = "resolved" | "not_found" | "ambiguous";
+
+export type CodebaseSymbolDefinitionLookup = {
+  requestedSymbolName: string;
+  lookupStatus: CodebaseSymbolDefinitionLookupStatus;
+  locations: readonly CodebaseSymbolDefinitionLocation[];
+};
+
+export type CodebaseSymbolDefinitionLocatorResult = {
+  query: CodebaseSymbolDefinitionLocatorQuery;
+  symbolLookups: readonly CodebaseSymbolDefinitionLookup[];
 };
 
 export type CodebaseIndexedFileMetadata = {
@@ -123,7 +134,7 @@ export type CodebaseKnowledgeRepository = {
   replaceStartupMetadata(startupMetadata: CodebaseKnowledgeRepositoryStartupMetadata): Promise<void>;
   readSnapshot(): Promise<CodebaseKnowledgeRepositorySnapshot>;
   replaceSnapshot(snapshot: CodebaseKnowledgeRepositorySnapshot): Promise<void>;
-  queryRecords(query: CodebaseKnowledgeQuery): Promise<CodebaseKnowledgeQueryResult>;
+  locateSymbolDefinitions(query: CodebaseSymbolDefinitionLocatorQuery): Promise<CodebaseSymbolDefinitionLocatorResult>;
   listRecords(): Promise<readonly CodebaseKnowledgeRecord[]>;
 };
 

@@ -483,9 +483,6 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
       ...(conversationSessionEntry.toolCallRequest.filePaths !== undefined
         ? [`Files: ${conversationSessionEntry.toolCallRequest.filePaths.join(", ")}`]
         : []),
-      ...(conversationSessionEntry.toolCallRequest.maximumResultCount !== undefined
-        ? [`Maximum results: ${conversationSessionEntry.toolCallRequest.maximumResultCount}`]
-        : []),
     ].join("\n");
   }
 

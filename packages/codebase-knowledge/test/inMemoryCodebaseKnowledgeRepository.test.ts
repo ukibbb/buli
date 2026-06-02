@@ -121,7 +121,7 @@ test("InMemoryCodebaseKnowledgeRepository removes records and indexed metadata f
   expect(snapshot.indexedFiles).toEqual([]);
 });
 
-test("InMemoryCodebaseKnowledgeRepository queries records with the shared ranker", async () => {
+test("InMemoryCodebaseKnowledgeRepository locates exact symbol definitions", async () => {
   const repository = new InMemoryCodebaseKnowledgeRepository();
   await repository.upsertRecords([
     createTestSymbolKnowledgeRecord({
@@ -140,14 +140,19 @@ test("InMemoryCodebaseKnowledgeRepository queries records with the shared ranker
     }),
   ]);
 
-  const queryResult = await repository.queryRecords({
+  const locatorResult = await repository.locateSymbolDefinitions({
     symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
   });
 
-  expect(queryResult.matches[0]?.record.recordId).toBe("symbol:runtime");
-  expect(queryResult.matches[0]?.recommendedReads[0]).toMatchObject({
+  expect(locatorResult.symbolLookups[0]?.lookupStatus).toBe("resolved");
+  expect(locatorResult.symbolLookups[0]?.locations[0]).toMatchObject({
     filePath: "packages/engine/src/runtimeToolCallExecution.ts",
-    startLineNumber: 10,
-    maximumLineCount: 11,
+    symbolName: "streamAssistantResponseEventsForRequestedToolCalls",
+    verificationRead: {
+      filePath: "packages/engine/src/runtimeToolCallExecution.ts",
+      startLineNumber: 10,
+      maximumLineCount: 11,
+      reason: "Verify exact definition of streamAssistantResponseEventsForRequestedToolCalls",
+    },
   });
 });

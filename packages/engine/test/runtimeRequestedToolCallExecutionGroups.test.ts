@@ -116,7 +116,7 @@ test("groupRequestedToolCallsForExecution keeps single auto-concurrent calls ser
   ]);
 });
 
-test("groupRequestedToolCallsForExecution groups codebase knowledge queries with read-only calls", () => {
+test("groupRequestedToolCallsForExecution groups exact symbol lookups with read-only calls", () => {
   expect(groupRequestedToolCallsForExecution([
     readRequestedToolCall,
     locateCodebaseSymbolsRequestedToolCall,
