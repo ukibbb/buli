@@ -14,7 +14,11 @@ import { isDuplicateReadOnlyToolResultText } from "./readOnlyToolCallCoalescing.
 
 export const DEFAULT_RELEVANT_EVIDENCE_NOTE_LIMIT = 8;
 export const DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT = 220;
-export const DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT = 260;
+export const DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT = 340;
+const MAX_DIRECT_PREVIEW_LINE_COUNT = 3;
+const MAX_GLOB_EXAMPLE_PATH_COUNT = 4;
+const MAX_GREP_EXAMPLE_MATCH_COUNT = 3;
+const MAX_CODEBASE_KNOWLEDGE_SUMMARY_TEXT_LENGTH = 72;
 
 type ToolCallConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "tool_call" }>;
 type UserPromptConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "user_prompt" }>;
@@ -24,8 +28,32 @@ type ToolResultConversationSessionEntry = Extract<
   { entryKind: "completed_tool_result" | "failed_tool_result" | "denied_tool_result" }
 >;
 type WorkspacePatchConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "workspace_patch" }>;
+type GrepWorkspaceInspectionToolCallRequest = Extract<WorkspaceInspectionToolCallRequest, { toolName: "grep" }>;
 
 type EvidenceNoteSourceKind = "read" | "search" | "knowledge";
+
+type BuliStickyNotesEvidenceRenderingLimits = {
+  readonly maximumPromptNoteTextCharacterCount: number;
+  readonly maximumObservationTextCharacterCount: number;
+};
+
+type CodebaseKnowledgeSourceRangeExcerpt = {
+  readonly filePath: string;
+  readonly lineRangeText: string;
+};
+
+type CodebaseKnowledgeRecommendedReadExcerpt = {
+  readonly filePath: string;
+  readonly offsetLineText?: string | undefined;
+  readonly lineCountText?: string | undefined;
+};
+
+type CodebaseKnowledgeTopMatchExcerpt = {
+  readonly titleText: string;
+  readonly summaryText?: string | undefined;
+  readonly sourceRange?: CodebaseKnowledgeSourceRangeExcerpt | undefined;
+  readonly recommendedRead?: CodebaseKnowledgeRecommendedReadExcerpt | undefined;
+};
 
 type ToolResultMutationEvidence =
   | {
@@ -136,15 +164,22 @@ export function buildRelevantBuliStickyNotesContextText(input: {
     return undefined;
   }
 
+  const renderingLimits: BuliStickyNotesEvidenceRenderingLimits = {
+    maximumPromptNoteTextCharacterCount: input.maximumPromptNoteTextCharacterCount ??
+      DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
+    maximumObservationTextCharacterCount: input.maximumObservationTextCharacterCount ??
+      DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT,
+  };
+
   return [
     "BuliStickyNotes:",
     "Purpose-aware evidence notes from prior turns:",
-    ...relevantEvidenceNotes.map((evidenceNote) =>
-      formatBuliStickyNotesEvidenceLine(evidenceNote, {
-        maximumPromptNoteTextCharacterCount: input.maximumPromptNoteTextCharacterCount ??
-          DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
-        maximumObservationTextCharacterCount: input.maximumObservationTextCharacterCount ??
-          DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT,
+    "",
+    ...relevantEvidenceNotes.flatMap((evidenceNote, evidenceNoteIndex) =>
+      formatBuliStickyNotesEvidenceBlock({
+        evidenceNote,
+        evidenceNoteNumber: evidenceNoteIndex + 1,
+        renderingLimits,
       })
     ),
     "Use these as source pointers, not active memory. Re-read sources before relying on details; ignore notes that do not fit the current task.",
@@ -249,7 +284,7 @@ function createReadOnlyToolEvidenceNote(input: {
     return {
       ...baseEvidenceNoteFields,
       sourceKind: "search",
-      sourceDescription: describeGrepSource(input.toolResultEntry.toolCallDetail),
+      sourceDescription: describeGrepSource(toolCallRequest, input.toolResultEntry.toolCallDetail),
       observedSummary: summarizeGrepObservation(input.toolResultEntry.toolCallDetail),
     };
   }
@@ -259,27 +294,31 @@ function createReadOnlyToolEvidenceNote(input: {
       ...baseEvidenceNoteFields,
       sourceKind: "knowledge",
       sourceDescription: describeCodebaseKnowledgeSource(toolCallRequest),
-      observedSummary: summarizeCodebaseKnowledgeObservation(input.toolResultEntry.toolCallDetail),
+      observedSummary: summarizeCodebaseKnowledgeObservation(
+        input.toolResultEntry.toolCallDetail,
+        input.toolResultEntry.toolResultText,
+      ),
     };
   }
 
   return undefined;
 }
 
-function formatBuliStickyNotesEvidenceLine(
-  evidenceNote: ReadOnlyToolEvidenceNote,
-  renderingLimits: {
-    maximumPromptNoteTextCharacterCount: number;
-    maximumObservationTextCharacterCount: number;
-  },
-): string {
+function formatBuliStickyNotesEvidenceBlock(input: {
+  evidenceNote: ReadOnlyToolEvidenceNote;
+  evidenceNoteNumber: number;
+  renderingLimits: BuliStickyNotesEvidenceRenderingLimits;
+}): readonly string[] {
+  const evidenceNote = input.evidenceNote;
   return [
-    `- Prior task: ${quoteNoteText(evidenceNote.originUserPromptText, renderingLimits.maximumPromptNoteTextCharacterCount)};`,
-    `question: ${quoteNoteText(evidenceNote.inspectionQuestion, renderingLimits.maximumPromptNoteTextCharacterCount)};`,
-    `source: ${truncateOneLine(evidenceNote.sourceDescription, renderingLimits.maximumPromptNoteTextCharacterCount)} via ${evidenceNote.priorToolCallId};`,
-    `observed: ${truncateOneLine(evidenceNote.observedSummary, renderingLimits.maximumObservationTextCharacterCount)};`,
-    `freshness: ${evidenceNote.freshness}.`,
-  ].join(" ");
+    `Evidence ${input.evidenceNoteNumber}:`,
+    `- Prior user task: ${quoteNoteText(evidenceNote.originUserPromptText, input.renderingLimits.maximumPromptNoteTextCharacterCount)}`,
+    `- Inspection question: ${quoteNoteText(evidenceNote.inspectionQuestion, input.renderingLimits.maximumPromptNoteTextCharacterCount)}`,
+    `- What was inspected: ${truncateOneLine(evidenceNote.sourceDescription, input.renderingLimits.maximumPromptNoteTextCharacterCount)} via ${evidenceNote.priorToolCallId}`,
+    `- What was found directly: ${truncateOneLine(evidenceNote.observedSummary, input.renderingLimits.maximumObservationTextCharacterCount)}`,
+    `- Freshness: ${evidenceNote.freshness}. Re-read the source before relying on details.`,
+    "",
+  ];
 }
 
 function resolveInspectionQuestion(
@@ -300,42 +339,67 @@ function resolveInspectionQuestion(
 function summarizeReadObservation(toolCallDetail: ToolCallReadDetail, toolResultText: string): string {
   const returnedLineRangeText = formatReturnedReadLineRange(toolCallDetail);
   const previewLineText = toolCallDetail.previewLines
-    ?.slice(0, 2)
+    ?.slice(0, MAX_DIRECT_PREVIEW_LINE_COUNT)
     .map((previewLine) => `${previewLine.lineNumber}: ${previewLine.lineText}`)
     .join(" | ");
   return compactSentenceParts([
     returnedLineRangeText ? `returned ${returnedLineRangeText}` : undefined,
-    toolCallDetail.returnedLineCount !== undefined ? `${toolCallDetail.returnedLineCount} lines` : undefined,
-    previewLineText ? `preview ${previewLineText}` : `excerpt ${createToolResultTextExcerpt(toolResultText)}`,
+    toolCallDetail.returnedLineCount !== undefined
+      ? formatCountedNoun(toolCallDetail.returnedLineCount, "line", "lines")
+      : undefined,
+    previewLineText ? `direct preview lines ${previewLineText}` : `direct excerpt ${createToolResultTextExcerpt(toolResultText)}`,
   ]);
 }
 
 function summarizeGlobObservation(toolCallDetail: ToolCallGlobDetail): string {
   return compactSentenceParts([
-    toolCallDetail.matchedPathCount !== undefined ? `${toolCallDetail.matchedPathCount} matched paths` : undefined,
-    toolCallDetail.returnedPathCount !== undefined ? `${toolCallDetail.returnedPathCount} returned paths` : undefined,
+    toolCallDetail.matchedPathCount !== undefined
+      ? formatCountedNoun(toolCallDetail.matchedPathCount, "matched path", "matched paths")
+      : undefined,
+    toolCallDetail.returnedPathCount !== undefined
+      ? formatCountedNoun(toolCallDetail.returnedPathCount, "returned path", "returned paths")
+      : undefined,
     toolCallDetail.matchedPaths && toolCallDetail.matchedPaths.length > 0
-      ? `examples ${toolCallDetail.matchedPaths.slice(0, 3).join(", ")}`
+      ? `first matched paths ${toolCallDetail.matchedPaths.slice(0, MAX_GLOB_EXAMPLE_PATH_COUNT).join(", ")}`
       : undefined,
   ]);
 }
 
 function summarizeGrepObservation(toolCallDetail: ToolCallGrepDetail): string {
   return compactSentenceParts([
-    toolCallDetail.totalMatchCount !== undefined ? `${toolCallDetail.totalMatchCount} total matches` : undefined,
-    toolCallDetail.matchedFileCount !== undefined ? `${toolCallDetail.matchedFileCount} matched files` : undefined,
+    toolCallDetail.totalMatchCount !== undefined
+      ? formatCountedNoun(toolCallDetail.totalMatchCount, "total match", "total matches")
+      : undefined,
+    toolCallDetail.matchedFileCount !== undefined
+      ? formatCountedNoun(toolCallDetail.matchedFileCount, "matched file", "matched files")
+      : undefined,
+    toolCallDetail.returnedMatchHitCount !== undefined
+      ? formatCountedNoun(toolCallDetail.returnedMatchHitCount, "returned match", "returned matches")
+      : undefined,
+    toolCallDetail.contextLineCount !== undefined
+      ? `included ${formatCountedNoun(toolCallDetail.contextLineCount, "context line", "context lines")} per match`
+      : undefined,
     toolCallDetail.matchHits && toolCallDetail.matchHits.length > 0
-      ? `examples ${toolCallDetail.matchHits.slice(0, 2).map((matchHit) =>
+      ? `first matches ${toolCallDetail.matchHits.slice(0, MAX_GREP_EXAMPLE_MATCH_COUNT).map((matchHit) =>
         `${matchHit.matchFilePath}:${matchHit.matchLineNumber}: ${matchHit.matchSnippet}`
       ).join(" | ")}`
       : undefined,
   ]);
 }
 
-function summarizeCodebaseKnowledgeObservation(toolCallDetail: ToolCallLocateCodebaseSymbolsDetail): string {
+function summarizeCodebaseKnowledgeObservation(
+  toolCallDetail: ToolCallLocateCodebaseSymbolsDetail,
+  toolResultText: string,
+): string {
+  const topMatchExcerpt = extractCodebaseKnowledgeTopMatchExcerpt(toolResultText);
   return compactSentenceParts([
-    toolCallDetail.matchedKnowledgeCount !== undefined ? `${toolCallDetail.matchedKnowledgeCount} knowledge matches` : undefined,
-    toolCallDetail.recommendedReadCount !== undefined ? `${toolCallDetail.recommendedReadCount} recommended reads` : undefined,
+    toolCallDetail.matchedKnowledgeCount !== undefined
+      ? formatCountedNoun(toolCallDetail.matchedKnowledgeCount, "knowledge match", "knowledge matches")
+      : undefined,
+    toolCallDetail.recommendedReadCount !== undefined
+      ? formatCountedNoun(toolCallDetail.recommendedReadCount, "recommended read", "recommended reads")
+      : undefined,
+    topMatchExcerpt ? formatCodebaseKnowledgeTopMatchExcerpt(topMatchExcerpt) : undefined,
   ]);
 }
 
@@ -344,6 +408,10 @@ function compactSentenceParts(parts: readonly (string | undefined)[]): string {
   return compactedParts.length > 0
     ? truncateOneLine(compactedParts.join("; "), DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT)
     : "completed inspection";
+}
+
+function formatCountedNoun(count: number, singularNoun: string, pluralNoun: string): string {
+  return `${count} ${count === 1 ? singularNoun : pluralNoun}`;
 }
 
 function describeReadSource(toolCallDetail: ToolCallReadDetail): string {
@@ -355,15 +423,134 @@ function describeGlobSource(toolCallDetail: ToolCallGlobDetail): string {
   return `glob ${toolCallDetail.globPattern}${toolCallDetail.searchDirectoryPath !== undefined ? ` in ${toolCallDetail.searchDirectoryPath}` : ""}`;
 }
 
-function describeGrepSource(toolCallDetail: ToolCallGrepDetail): string {
-  return `grep ${toolCallDetail.searchPattern}${toolCallDetail.contextLineCount !== undefined ? ` context ${toolCallDetail.contextLineCount}` : ""}`;
+function describeGrepSource(
+  toolCallRequest: GrepWorkspaceInspectionToolCallRequest,
+  toolCallDetail: ToolCallGrepDetail,
+): string {
+  const contextLineCount = toolCallDetail.contextLineCount ?? toolCallRequest.contextLineCount;
+  return joinDescriptionParts([
+    `grep ${quoteNoteText(toolCallDetail.searchPattern)}`,
+    toolCallRequest.searchPath !== undefined ? `in ${toolCallRequest.searchPath}` : undefined,
+    toolCallRequest.includeGlobPattern !== undefined ? `include ${toolCallRequest.includeGlobPattern}` : undefined,
+    contextLineCount !== undefined ? `context ${contextLineCount}` : undefined,
+  ]);
 }
 
 function describeCodebaseKnowledgeSource(toolCallRequest: LocateCodebaseSymbolsToolCallRequest): string {
-  return `locate_codebase_symbols ${quoteNoteText(
-    [...(toolCallRequest.symbolNames ?? []), ...(toolCallRequest.filePaths ?? [])].join(", "),
-    DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
-  )}`;
+  const targetDescriptionText = joinDescriptionParts([
+    toolCallRequest.symbolNames && toolCallRequest.symbolNames.length > 0
+      ? `symbols ${quoteNoteText(toolCallRequest.symbolNames.join(", "))}`
+      : undefined,
+    toolCallRequest.filePaths && toolCallRequest.filePaths.length > 0
+      ? `files ${quoteNoteText(toolCallRequest.filePaths.join(", "))}`
+      : undefined,
+    toolCallRequest.maximumResultCount !== undefined ? `maximum ${toolCallRequest.maximumResultCount} results` : undefined,
+  ], "; ");
+
+  return targetDescriptionText.length > 0
+    ? `locate_codebase_symbols ${targetDescriptionText}`
+    : "locate_codebase_symbols targets unspecified";
+}
+
+function joinDescriptionParts(parts: readonly (string | undefined)[], separator = " "): string {
+  return parts.filter((part): part is string => part !== undefined && part.trim().length > 0).join(separator);
+}
+
+function extractCodebaseKnowledgeTopMatchExcerpt(toolResultText: string): CodebaseKnowledgeTopMatchExcerpt | undefined {
+  const firstMatchBlockText = toolResultText.match(/<match\b[^>]*>([\s\S]*?)<\/match>/)?.[1];
+  if (!firstMatchBlockText) {
+    return undefined;
+  }
+
+  const titleText = extractXmlElementText(firstMatchBlockText, "title");
+  if (!titleText) {
+    return undefined;
+  }
+
+  return {
+    titleText,
+    summaryText: extractXmlElementText(firstMatchBlockText, "summary"),
+    sourceRange: extractCodebaseKnowledgeSourceRange(firstMatchBlockText),
+    recommendedRead: extractCodebaseKnowledgeRecommendedRead(firstMatchBlockText),
+  };
+}
+
+function formatCodebaseKnowledgeTopMatchExcerpt(topMatchExcerpt: CodebaseKnowledgeTopMatchExcerpt): string {
+  return compactSentenceParts([
+    `top match ${truncateOneLine(topMatchExcerpt.titleText, 90)}`,
+    topMatchExcerpt.summaryText
+      ? `summary ${truncateOneLine(topMatchExcerpt.summaryText, MAX_CODEBASE_KNOWLEDGE_SUMMARY_TEXT_LENGTH)}`
+      : undefined,
+    topMatchExcerpt.sourceRange
+      ? `source ${topMatchExcerpt.sourceRange.filePath} lines ${topMatchExcerpt.sourceRange.lineRangeText}`
+      : undefined,
+    topMatchExcerpt.recommendedRead
+      ? formatCodebaseKnowledgeRecommendedReadExcerpt(topMatchExcerpt.recommendedRead, topMatchExcerpt.sourceRange)
+      : undefined,
+  ]);
+}
+
+function formatCodebaseKnowledgeRecommendedReadExcerpt(
+  recommendedReadExcerpt: CodebaseKnowledgeRecommendedReadExcerpt,
+  sourceRangeExcerpt: CodebaseKnowledgeSourceRangeExcerpt | undefined,
+): string {
+  const recommendedReadLocationText = sourceRangeExcerpt?.filePath === recommendedReadExcerpt.filePath
+    ? "same file"
+    : recommendedReadExcerpt.filePath;
+
+  return joinDescriptionParts([
+    `recommended read ${recommendedReadLocationText}`,
+    recommendedReadExcerpt.offsetLineText !== undefined ? `offset ${recommendedReadExcerpt.offsetLineText}` : undefined,
+    recommendedReadExcerpt.lineCountText !== undefined ? `count ${recommendedReadExcerpt.lineCountText}` : undefined,
+  ]);
+}
+
+function extractCodebaseKnowledgeSourceRange(matchBlockText: string): CodebaseKnowledgeSourceRangeExcerpt | undefined {
+  const sourceAttributeText = matchBlockText.match(/<source\b([^>]*)\/>/)?.[1];
+  if (!sourceAttributeText) {
+    return undefined;
+  }
+
+  const filePath = extractXmlAttributeText(sourceAttributeText, "file");
+  const lineRangeText = extractXmlAttributeText(sourceAttributeText, "lines");
+  return filePath && lineRangeText ? { filePath, lineRangeText } : undefined;
+}
+
+function extractCodebaseKnowledgeRecommendedRead(matchBlockText: string): CodebaseKnowledgeRecommendedReadExcerpt | undefined {
+  const recommendedReadAttributeText = matchBlockText.match(/<read\b([^>]*)\/>/)?.[1];
+  if (!recommendedReadAttributeText) {
+    return undefined;
+  }
+
+  const filePath = extractXmlAttributeText(recommendedReadAttributeText, "file");
+  if (!filePath) {
+    return undefined;
+  }
+
+  return {
+    filePath,
+    offsetLineText: extractXmlAttributeText(recommendedReadAttributeText, "offset_line"),
+    lineCountText: extractXmlAttributeText(recommendedReadAttributeText, "line_count"),
+  };
+}
+
+function extractXmlElementText(sourceText: string, elementName: string): string | undefined {
+  const elementText = sourceText.match(new RegExp(`<${elementName}>\\s*([\\s\\S]*?)\\s*<\\/${elementName}>`))?.[1];
+  return elementText ? decodeXmlText(elementText.trim()) : undefined;
+}
+
+function extractXmlAttributeText(attributeText: string, attributeName: string): string | undefined {
+  const attributeValueText = attributeText.match(new RegExp(`${attributeName}="([^"]*)"`))?.[1];
+  return attributeValueText ? decodeXmlText(attributeValueText) : undefined;
+}
+
+function decodeXmlText(encodedText: string): string {
+  return encodedText
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 function formatReturnedReadLineRange(toolCallDetail: ToolCallReadDetail): string | undefined {
@@ -499,7 +686,10 @@ function extractSearchTokens(text: string): Set<string> {
   return tokens;
 }
 
-function quoteNoteText(noteText: string, maximumPromptNoteTextCharacterCount: number): string {
+function quoteNoteText(
+  noteText: string,
+  maximumPromptNoteTextCharacterCount = DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
+): string {
   return JSON.stringify(truncateOneLine(noteText, maximumPromptNoteTextCharacterCount));
 }
 

@@ -5,7 +5,7 @@ import {
   listReadOnlyToolEvidenceNotes,
 } from "../src/readOnlyToolEvidenceNotebook.ts";
 
-test("listReadOnlyToolEvidenceNotes records task purpose question source and compact observation", () => {
+test("listReadOnlyToolEvidenceNotes records task purpose question source and explicit direct observation", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     createUserPromptEntry("Plan tool-call memory between turns"),
     {
@@ -46,10 +46,12 @@ test("listReadOnlyToolEvidenceNotes records task purpose question source and com
     priorToolCallId: "call_read_replay",
     freshness: "fresh",
   });
-  expect(evidenceNotes[0]?.observedSummary).toContain("preview 148:");
+  expect(evidenceNotes[0]?.observedSummary).toContain("returned lines 148-149");
+  expect(evidenceNotes[0]?.observedSummary).toContain("2 lines");
+  expect(evidenceNotes[0]?.observedSummary).toContain("direct preview lines 148:");
 });
 
-test("buildRelevantBuliStickyNotesContextText includes matching notes and omits unrelated notes", () => {
+test("buildRelevantBuliStickyNotesContextText formats matching notes as explicit evidence blocks and omits unrelated notes", () => {
   const conversationSessionEntries: ConversationSessionEntry[] = [
     ...createCompletedReadTurn({
       promptText: "Investigate OpenAI replay growth",
@@ -75,8 +77,14 @@ test("buildRelevantBuliStickyNotesContextText includes matching notes and omits 
   });
 
   expect(buliStickyNotesContextText).toContain("BuliStickyNotes:\nPurpose-aware evidence notes from prior turns:");
-  expect(buliStickyNotesContextText).toContain("Where is providerTurnReplay projected into requests?");
-  expect(buliStickyNotesContextText).toContain("packages/openai/src/provider/request.ts");
+  expect(buliStickyNotesContextText).toContain([
+    "Evidence 1:",
+    "- Prior user task: \"Investigate OpenAI replay growth\"",
+    "- Inspection question: \"Where is providerTurnReplay projected into requests?\"",
+    "- What was inspected: read packages/openai/src/provider/request.ts line 1 via call_replay",
+    "- What was found directly: returned line 1; 1 line; direct preview lines 1: providerTurnReplay input items are appended to OpenAI requests",
+    "- Freshness: fresh. Re-read the source before relying on details.",
+  ].join("\n"));
   expect(buliStickyNotesContextText).not.toContain("Where are transcript rows rendered?");
 });
 
@@ -98,7 +106,8 @@ test("buildRelevantBuliStickyNotesContextText carries previous task notes for sh
   });
 
   expect(buliStickyNotesContextText).toContain("BuliStickyNotes:");
-  expect(buliStickyNotesContextText).toContain("Where is providerTurnReplay projected into requests?");
+  expect(buliStickyNotesContextText).toContain("- Prior user task: \"Investigate OpenAI replay growth\"");
+  expect(buliStickyNotesContextText).toContain("- What was found directly:");
   expect(buliStickyNotesContextText).toContain("Use these as source pointers, not active memory");
 });
 
@@ -130,14 +139,158 @@ test("buildRelevantBuliStickyNotesContextText honors profile-style note count an
     maximumObservationTextCharacterCount: 54,
   });
 
-  const stickyNoteLines = buliStickyNotesContextText?.split("\n").filter((line) => line.startsWith("- Prior task:")) ?? [];
-  expect(stickyNoteLines).toHaveLength(1);
+  const evidenceBlockHeaders = buliStickyNotesContextText?.split("\n").filter((line) => line.startsWith("Evidence ")) ?? [];
+  expect(evidenceBlockHeaders).toHaveLength(1);
   expect(buliStickyNotesContextText).toContain("via call_projection_second");
   expect(buliStickyNotesContextText).not.toContain("via call_projection_first");
   expect(buliStickyNotesContextText).toContain("…");
   expect(buliStickyNotesContextText).not.toContain(
     "Where is provider request projection assembled before the second provider turn starts?",
   );
+});
+
+test("listReadOnlyToolEvidenceNotes records grep source scope and first direct matches", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    createUserPromptEntry("Investigate providerTurnReplay search evidence"),
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_grep_replay",
+      toolCallRequest: {
+        toolName: "grep",
+        regexPattern: "providerTurnReplay",
+        searchPath: "packages/openai",
+        includeGlobPattern: "**/*.ts",
+        contextLineCount: 2,
+        inspectionQuestion: "Where does providerTurnReplay appear in OpenAI request code?",
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_grep_replay",
+      toolCallDetail: {
+        toolName: "grep",
+        searchPattern: "providerTurnReplay",
+        matchedFileCount: 1,
+        totalMatchCount: 3,
+        returnedMatchHitCount: 2,
+        contextLineCount: 2,
+        matchHits: [
+          {
+            matchFilePath: "packages/openai/src/provider/request.ts",
+            matchLineNumber: 90,
+            matchSnippet: "providerTurnReplay.inputItems",
+          },
+          {
+            matchFilePath: "packages/openai/src/provider/request.ts",
+            matchLineNumber: 118,
+            matchSnippet: "createProviderTurnReplay(providerTurnReplay)",
+          },
+        ],
+      },
+      toolResultText: "packages/openai/src/provider/request.ts:90: providerTurnReplay.inputItems",
+    },
+    createCompletedAssistantMessageEntry("providerTurnReplay appears in request projection."),
+  ];
+
+  const evidenceNotes = listReadOnlyToolEvidenceNotes({ conversationSessionEntries });
+
+  expect(evidenceNotes).toHaveLength(1);
+  expect(evidenceNotes[0]).toMatchObject({
+    sourceDescription: "grep \"providerTurnReplay\" in packages/openai include **/*.ts context 2",
+    inspectionQuestion: "Where does providerTurnReplay appear in OpenAI request code?",
+  });
+  expect(evidenceNotes[0]?.observedSummary).toContain("3 total matches");
+  expect(evidenceNotes[0]?.observedSummary).toContain("1 matched file");
+  expect(evidenceNotes[0]?.observedSummary).toContain("2 returned matches");
+  expect(evidenceNotes[0]?.observedSummary).toContain("first matches packages/openai/src/provider/request.ts:90: providerTurnReplay.inputItems");
+});
+
+test("listReadOnlyToolEvidenceNotes summarizes locate_codebase_symbols top match from direct result text", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    createUserPromptEntry("Investigate sticky note notebook symbols"),
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_locate_notebook",
+      toolCallRequest: {
+        toolName: "locate_codebase_symbols",
+        symbolNames: ["buildRelevantBuliStickyNotesContextText"],
+        filePaths: ["packages/engine/src/readOnlyToolEvidenceNotebook.ts"],
+        maximumResultCount: 5,
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_locate_notebook",
+      toolCallDetail: {
+        toolName: "locate_codebase_symbols",
+        symbolNames: ["buildRelevantBuliStickyNotesContextText"],
+        filePaths: ["packages/engine/src/readOnlyToolEvidenceNotebook.ts"],
+        matchedKnowledgeCount: 1,
+        recommendedReadCount: 1,
+      },
+      toolResultText: [
+        "<codebase_knowledge_query>",
+        "<matches>",
+        "<match rank=\"1\" score=\"190\">",
+        "<title>buildRelevantBuliStickyNotesContextText (function)</title>",
+        "<summary>Defines exported function buildRelevantBuliStickyNotesContextText in packages/engine/src/readOnlyToolEvidenceNotebook.ts lines 119-143.</summary>",
+        "<evidence>",
+        "<source file=\"packages/engine/src/readOnlyToolEvidenceNotebook.ts\" lines=\"119-143\" />",
+        "</evidence>",
+        "<recommended_reads>",
+        "<read file=\"packages/engine/src/readOnlyToolEvidenceNotebook.ts\" offset_line=\"119\" line_count=\"25\" reason=\"Verify buildRelevantBuliStickyNotesContextText\" />",
+        "</recommended_reads>",
+        "</match>",
+        "</matches>",
+        "</codebase_knowledge_query>",
+      ].join("\n"),
+    },
+    createCompletedAssistantMessageEntry("The notebook builder is the primary symbol."),
+  ];
+
+  const evidenceNotes = listReadOnlyToolEvidenceNotes({ conversationSessionEntries });
+
+  expect(evidenceNotes).toHaveLength(1);
+  expect(evidenceNotes[0]?.sourceDescription).toBe(
+    "locate_codebase_symbols symbols \"buildRelevantBuliStickyNotesContextText\"; files \"packages/engine/src/readOnlyToolEvidenceNotebook.ts\"; maximum 5 results",
+  );
+  expect(evidenceNotes[0]?.observedSummary).toContain("1 knowledge match");
+  expect(evidenceNotes[0]?.observedSummary).toContain("1 recommended read");
+  expect(evidenceNotes[0]?.observedSummary).toContain("top match buildRelevantBuliStickyNotesContextText (function)");
+  expect(evidenceNotes[0]?.observedSummary).toContain("summary Defines exported function buildRelevantBuliStickyNotesContextText");
+  expect(evidenceNotes[0]?.observedSummary).toContain("source packages/engine/src/readOnlyToolEvidenceNotebook.ts lines 119-143");
+  expect(evidenceNotes[0]?.observedSummary).toContain("recommended read same file offset 119 count 25");
+});
+
+test("listReadOnlyToolEvidenceNotes keeps locate_codebase_symbols count summary when result text has no parseable match", () => {
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    createUserPromptEntry("Investigate missing symbols"),
+    {
+      entryKind: "tool_call",
+      toolCallId: "call_locate_missing",
+      toolCallRequest: {
+        toolName: "locate_codebase_symbols",
+        symbolNames: ["MissingSymbol"],
+      },
+    },
+    {
+      entryKind: "completed_tool_result",
+      toolCallId: "call_locate_missing",
+      toolCallDetail: {
+        toolName: "locate_codebase_symbols",
+        symbolNames: ["MissingSymbol"],
+        matchedKnowledgeCount: 0,
+        recommendedReadCount: 0,
+      },
+      toolResultText: "<codebase_knowledge_query><match_count>0</match_count></codebase_knowledge_query>",
+    },
+    createCompletedAssistantMessageEntry("No symbol was found."),
+  ];
+
+  const evidenceNotes = listReadOnlyToolEvidenceNotes({ conversationSessionEntries });
+
+  expect(evidenceNotes).toHaveLength(1);
+  expect(evidenceNotes[0]?.observedSummary).toBe("0 knowledge matches; 0 recommended reads");
 });
 
 test("listReadOnlyToolEvidenceNotes removes stale notes after a changed file patch", () => {

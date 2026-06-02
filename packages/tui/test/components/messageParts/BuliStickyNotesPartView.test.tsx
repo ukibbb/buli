@@ -7,7 +7,14 @@ describe("BuliStickyNotesPartView", () => {
     const buliStickyNotesContextText = [
       "BuliStickyNotes:",
       "Purpose-aware evidence notes from prior turns:",
-      "- Prior task: \"Inspect prompts\"; question: \"Where inserted?\"; source: read src/systemPrompt.ts via call_read_1; observed: found prompt input; freshness: fresh.",
+      "",
+      "Evidence 1:",
+      "- Prior user task: \"Inspect prompts\"",
+      "- Inspection question: \"Where inserted?\"",
+      "- What was inspected: read src/systemPrompt.ts line 1 via call_read_1",
+      "- What was found directly: returned line 1; 1 line; direct preview lines 1: buildBuliSystemPrompt inserts context",
+      "- Freshness: fresh. Re-read the source before relying on details.",
+      "",
       "Use these as source pointers, not active memory.",
     ].join("\n");
 
@@ -19,7 +26,7 @@ describe("BuliStickyNotesPartView", () => {
           buliStickyNotesContextText,
         }}
       />,
-      { width: 220, height: 12 },
+      { width: 220, height: 18 },
     );
 
     await renderOnce();

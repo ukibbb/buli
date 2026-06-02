@@ -907,7 +907,11 @@ test("AssistantConversationRuntime emits and persists the exact BuliStickyNotes 
   }
 
   expect(emittedBuliStickyNotesContextText).toContain("BuliStickyNotes:\nPurpose-aware evidence notes from prior turns:");
-  expect(emittedBuliStickyNotesContextText).toContain("Where is providerTurnReplay projected into requests?");
+  expect(emittedBuliStickyNotesContextText).toContain("- Prior user task:");
+  expect(emittedBuliStickyNotesContextText).toContain("- Inspection question: \"Where is providerTurnReplay projected into requests?\"");
+  expect(emittedBuliStickyNotesContextText).toContain("- What was inspected:");
+  expect(emittedBuliStickyNotesContextText).toContain("- What was found directly:");
+  expect(emittedBuliStickyNotesContextText).toContain("- Freshness: fresh. Re-read the source before relying on details.");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(emittedBuliStickyNotesContextText);
   expect(provider.startedTurnRequests[0]?.systemPromptText).not.toContain("Context evidence ledger:");
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries).not.toContainEqual(
