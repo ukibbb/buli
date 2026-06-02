@@ -2,10 +2,15 @@ import { expect, test } from "bun:test";
 import type { ConversationSessionEntry } from "@buli/contracts";
 import {
   CONVERSATION_COMPACTION_PROMPT_TEXT,
+  buildConversationCompactionSystemPrompt,
   buildConversationCompactionWorkflowModeContext,
   createConversationCompactionPromptSessionEntry,
   formatConversationCompactionWorkflowModeContextPromptBlock,
 } from "../src/conversationCompaction/conversationCompactionPrompt.ts";
+import {
+  resolveDefaultAssistantProviderModelPromptProfile,
+  type AssistantProviderModelPromptProfile,
+} from "../src/assistantProviderModelPromptProfile.ts";
 
 test("conversation compaction prompt preserves resumable task state", () => {
   expect(CONVERSATION_COMPACTION_PROMPT_TEXT).toContain("active task state");
@@ -117,3 +122,38 @@ test("buildConversationCompactionWorkflowModeContext formats deterministic workf
     "<latest_mode_bearing_session_entry_mode>understand</latest_mode_bearing_session_entry_mode>",
   );
 });
+
+test("conversation compaction prompts include additive provider/model prompt fragments", () => {
+  const promptProfile = createTestPromptProfile();
+  const systemPromptText = buildConversationCompactionSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantProviderModelPromptProfile: promptProfile,
+  });
+  const promptEntry = createConversationCompactionPromptSessionEntry({
+    assistantProviderModelPromptProfile: promptProfile,
+  });
+
+  if (promptEntry.entryKind !== "user_prompt") {
+    throw new Error("Expected compaction prompt to be a user prompt entry.");
+  }
+  expect(systemPromptText).toContain("Compaction system prompt fragment for compact provider.");
+  expect(promptEntry.modelFacingPromptText).toContain("Compaction user prompt fragment for compact provider.");
+  expect(promptEntry.modelFacingPromptText).toContain("Create a compact continuation summary");
+});
+
+function createTestPromptProfile(): AssistantProviderModelPromptProfile {
+  const baselinePromptProfile = resolveDefaultAssistantProviderModelPromptProfile({
+    providerName: "openai",
+    selectedModelId: "future-model",
+  });
+
+  return {
+    ...baselinePromptProfile,
+    profileId: "test:compaction-prompt-profile",
+    promptFragments: {
+      ...baselinePromptProfile.promptFragments,
+      conversationCompactionSystemPrompt: ["Compaction system prompt fragment for compact provider."],
+      conversationCompactionPrompt: ["Compaction user prompt fragment for compact provider."],
+    },
+  };
+}

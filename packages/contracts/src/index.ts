@@ -15,6 +15,10 @@ export {
 } from "./assistantOperatingMode.ts";
 export type { AssistantOperatingMode } from "./assistantOperatingMode.ts";
 export {
+  readTrailingPossibleInternalModeScopeTagFragment,
+  removeInternalModeScopeTagsFromAssistantTranscriptText,
+} from "./assistantTranscriptTextProjection.ts";
+export {
   ConversationMessageRoleSchema,
   ConversationMessageSchema,
   ConversationMessageModelContextVisibilitySchema,

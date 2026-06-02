@@ -43,6 +43,10 @@ import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionReco
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { buildBuliExplorerSystemPrompt } from "./systemPrompt.ts";
 import { resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
+import {
+  formatAssistantProviderModelPromptProfileFragmentBlock,
+  type AssistantProviderModelPromptProfile,
+} from "./assistantProviderModelPromptProfile.ts";
 
 const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, glob, grep, and locate_codebase_symbols instead.";
 const TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT = 192;
@@ -92,6 +96,7 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   taskToolCallRequest: TaskToolCallRequest;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   workspaceRootPath: string;
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
@@ -171,6 +176,7 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
           taskToolCallRequest: input.taskToolCallRequest,
           selectedModelId: input.selectedModelId,
           ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+          assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
           workspaceRootPath: input.workspaceRootPath,
           workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
           projectInstructionTracker: input.projectInstructionTracker,
@@ -314,6 +320,7 @@ async function* streamTaskSubagentConversationProgress(input: {
   taskToolCallRequest: TaskToolCallRequest;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   workspaceRootPath: string;
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
@@ -324,7 +331,10 @@ async function* streamTaskSubagentConversationProgress(input: {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): AsyncGenerator<TaskSubagentConversationProgress> {
   const subagentConversationStartedAtMs = Date.now();
-  const subagentPromptText = buildTaskSubagentPromptText(input.taskToolCallRequest);
+  const subagentPromptText = buildTaskSubagentPromptText({
+    taskToolCallRequest: input.taskToolCallRequest,
+    assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+  });
   const subagentConversationHistory = new InMemoryConversationHistory();
   const subagentConversationSessionRecorder = new RuntimeConversationTurnSessionRecorder({
     conversationTurnId: input.conversationTurnId,
@@ -360,6 +370,7 @@ async function* streamTaskSubagentConversationProgress(input: {
       systemPromptText: buildBuliExplorerSystemPrompt({
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionSnapshots: toProjectInstructionSnapshots(input.projectInstructionTracker.listProjectInstructionFiles()),
+        assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
       }),
       conversationSessionEntries: subagentConversationHistory.listConversationSessionEntries(),
       selectedModelId: input.selectedModelId,
@@ -1152,13 +1163,21 @@ function buildTaskSubagentRepeatedToolAfterCheckpointFailureText(input: {
   ].join(" ");
 }
 
-function buildTaskSubagentPromptText(taskToolCallRequest: TaskToolCallRequest): string {
+function buildTaskSubagentPromptText(input: {
+  taskToolCallRequest: TaskToolCallRequest;
+  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+}): string {
+  const providerModelPromptProfileBlock = formatAssistantProviderModelPromptProfileFragmentBlock({
+    assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+    fragmentTarget: "taskSubagentPrompt",
+  });
   return [
-    `Subagent: ${taskToolCallRequest.subagentName}`,
-    `Task description: ${taskToolCallRequest.subagentDescription}`,
+    `Subagent: ${input.taskToolCallRequest.subagentName}`,
+    `Task description: ${input.taskToolCallRequest.subagentDescription}`,
+    ...(providerModelPromptProfileBlock ? ["", providerModelPromptProfileBlock] : []),
     "",
     "Detailed task instructions:",
-    taskToolCallRequest.subagentPrompt,
+    input.taskToolCallRequest.subagentPrompt,
     "",
     "Return a concise report for the parent assistant. Include important file paths, function names, and line references when they matter.",
   ].join("\n");

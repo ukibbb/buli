@@ -69,6 +69,55 @@ test("RuntimeProviderStreamEventTranslator emits the first streamed text chunk t
   expect(providerStreamEventTranslator.assistantMessageText).toBe("Hello world");
 });
 
+test("RuntimeProviderStreamEventTranslator keeps internal mode tags out of streamed and persisted assistant text", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator();
+
+  const openingTagTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: '<understand_mode speaker="assistant">\n' },
+  });
+  const visibleAnswerTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "Visible answer." },
+  });
+  const closingTagTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "\n</understand_mode>" },
+  });
+  const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "completed", usage: completedTokenUsage },
+  });
+
+  if (openingTagTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (visibleAnswerTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (closingTagTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (terminalTranslation.translationKind !== "terminal_assistant_response") {
+    throw new Error("expected terminal assistant response");
+  }
+
+  expect(openingTagTranslation.assistantResponseEvents).toEqual([]);
+  expect(visibleAnswerTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_added",
+      messageId: "assistant-message-1",
+      part: {
+        id: "assistant-text-1",
+        partKind: "assistant_text",
+        partStatus: "streaming",
+        rawMarkdownText: "Visible answer.",
+      },
+    },
+  ]);
+  expect(closingTagTranslation.assistantResponseEvents).toEqual([]);
+  expect(terminalTranslation.terminalAssistantMessageSessionEntry.assistantMessageText).toBe("Visible answer.");
+  expect(JSON.stringify(terminalTranslation.assistantResponseEventsBeforeTerminalSessionEntry)).not.toContain(
+    "understand_mode",
+  );
+});
+
 test("RuntimeProviderStreamEventTranslator coalesces many streamed text chunks and flushes exact terminal text", () => {
   const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 1_500 });
   const assistantTextChunks = Array.from({ length: 40 }, (_, chunkIndex) => `${chunkIndex % 10}`);

@@ -568,6 +568,65 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
   expect(chatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
 });
 
+test("hydrateConversationTranscriptFromSessionEntries projects internal mode tags out of persisted assistant text", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Explain understand mode",
+        modelFacingPromptText: "Explain understand mode",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: [
+          '<understand_mode speaker="assistant">',
+          "Fallback answer.",
+          "</understand_mode>",
+        ].join("\n"),
+      },
+      {
+        entryKind: "user_prompt",
+        promptText: "Plan next",
+        modelFacingPromptText: "Plan next",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: [
+          '<plan_mode speaker="assistant">',
+          "Segment answer.",
+          "</plan_mode>",
+        ].join("\n"),
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: [
+          '<plan_mode speaker="assistant">',
+          "Segment answer.",
+          "</plan_mode>",
+        ].join("\n"),
+      },
+    ],
+  );
+
+  const assistantTextParts = listOrderedConversationMessages(chatSessionState)
+    .filter((conversationMessage) => conversationMessage.role === "assistant")
+    .flatMap((conversationMessage) => listOrderedConversationMessageParts(chatSessionState, conversationMessage.id))
+    .filter(
+      (conversationMessagePart): conversationMessagePart is Extract<ConversationMessagePart, { partKind: "assistant_text" }> =>
+        conversationMessagePart.partKind === "assistant_text",
+    );
+
+  expect(assistantTextParts.map((assistantTextPart) => assistantTextPart.rawMarkdownText)).toEqual([
+    "Fallback answer.",
+    "Segment answer.",
+  ]);
+  expect(JSON.stringify(assistantTextParts)).not.toContain("understand_mode");
+  expect(JSON.stringify(assistantTextParts)).not.toContain("plan_mode");
+});
+
 test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compaction prompts", () => {
   const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

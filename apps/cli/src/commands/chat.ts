@@ -274,6 +274,7 @@ export async function runInteractiveChat(input: {
     };
     const assistantConversationRunner = new AssistantConversationRuntime({
       conversationTurnProvider: conversationTurnProviderResolution.conversationTurnProvider,
+      assistantProviderName: conversationTurnProviderResolution.assistantProviderName,
       workspaceRootPath,
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,

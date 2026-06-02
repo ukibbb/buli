@@ -12,9 +12,9 @@ import {
 } from "@buli/contracts";
 import { isDuplicateReadOnlyToolResultText } from "./readOnlyToolCallCoalescing.ts";
 
-const DEFAULT_RELEVANT_EVIDENCE_NOTE_LIMIT = 8;
-const MAX_PROMPT_NOTE_TEXT_LENGTH = 220;
-const MAX_OBSERVATION_TEXT_LENGTH = 340;
+export const DEFAULT_RELEVANT_EVIDENCE_NOTE_LIMIT = 8;
+export const DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT = 220;
+export const DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT = 340;
 const MAX_DIRECT_PREVIEW_LINE_COUNT = 3;
 const MAX_GLOB_EXAMPLE_PATH_COUNT = 4;
 const MAX_GREP_EXAMPLE_MATCH_COUNT = 3;
@@ -31,6 +31,11 @@ type WorkspacePatchConversationSessionEntry = Extract<ConversationSessionEntry, 
 type GrepWorkspaceInspectionToolCallRequest = Extract<WorkspaceInspectionToolCallRequest, { toolName: "grep" }>;
 
 type EvidenceNoteSourceKind = "read" | "search" | "knowledge";
+
+type BuliStickyNotesEvidenceRenderingLimits = {
+  readonly maximumPromptNoteTextCharacterCount: number;
+  readonly maximumObservationTextCharacterCount: number;
+};
 
 type CodebaseKnowledgeSourceRangeExcerpt = {
   readonly filePath: string;
@@ -143,6 +148,8 @@ export function buildRelevantBuliStickyNotesContextText(input: {
   conversationSessionEntries: readonly ConversationSessionEntry[];
   currentUserPromptText: string;
   maximumNoteCount?: number | undefined;
+  maximumPromptNoteTextCharacterCount?: number | undefined;
+  maximumObservationTextCharacterCount?: number | undefined;
 }): string | undefined {
   const evidenceNotes = listReadOnlyToolEvidenceNotes({
     conversationSessionEntries: input.conversationSessionEntries,
@@ -157,6 +164,13 @@ export function buildRelevantBuliStickyNotesContextText(input: {
     return undefined;
   }
 
+  const renderingLimits: BuliStickyNotesEvidenceRenderingLimits = {
+    maximumPromptNoteTextCharacterCount: input.maximumPromptNoteTextCharacterCount ??
+      DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
+    maximumObservationTextCharacterCount: input.maximumObservationTextCharacterCount ??
+      DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT,
+  };
+
   return [
     "BuliStickyNotes:",
     "Purpose-aware evidence notes from prior turns:",
@@ -165,6 +179,7 @@ export function buildRelevantBuliStickyNotesContextText(input: {
       formatBuliStickyNotesEvidenceBlock({
         evidenceNote,
         evidenceNoteNumber: evidenceNoteIndex + 1,
+        renderingLimits,
       })
     ),
     "Use these as source pointers, not active memory. Re-read sources before relying on details; ignore notes that do not fit the current task.",
@@ -292,14 +307,15 @@ function createReadOnlyToolEvidenceNote(input: {
 function formatBuliStickyNotesEvidenceBlock(input: {
   evidenceNote: ReadOnlyToolEvidenceNote;
   evidenceNoteNumber: number;
+  renderingLimits: BuliStickyNotesEvidenceRenderingLimits;
 }): readonly string[] {
   const evidenceNote = input.evidenceNote;
   return [
     `Evidence ${input.evidenceNoteNumber}:`,
-    `- Prior user task: ${quoteNoteText(evidenceNote.originUserPromptText)}`,
-    `- Inspection question: ${quoteNoteText(evidenceNote.inspectionQuestion)}`,
-    `- What was inspected: ${truncateOneLine(evidenceNote.sourceDescription, MAX_PROMPT_NOTE_TEXT_LENGTH)} via ${evidenceNote.priorToolCallId}`,
-    `- What was found directly: ${truncateOneLine(evidenceNote.observedSummary, MAX_OBSERVATION_TEXT_LENGTH)}`,
+    `- Prior user task: ${quoteNoteText(evidenceNote.originUserPromptText, input.renderingLimits.maximumPromptNoteTextCharacterCount)}`,
+    `- Inspection question: ${quoteNoteText(evidenceNote.inspectionQuestion, input.renderingLimits.maximumPromptNoteTextCharacterCount)}`,
+    `- What was inspected: ${truncateOneLine(evidenceNote.sourceDescription, input.renderingLimits.maximumPromptNoteTextCharacterCount)} via ${evidenceNote.priorToolCallId}`,
+    `- What was found directly: ${truncateOneLine(evidenceNote.observedSummary, input.renderingLimits.maximumObservationTextCharacterCount)}`,
     `- Freshness: ${evidenceNote.freshness}. Re-read the source before relying on details.`,
     "",
   ];
@@ -389,7 +405,9 @@ function summarizeCodebaseKnowledgeObservation(
 
 function compactSentenceParts(parts: readonly (string | undefined)[]): string {
   const compactedParts = parts.filter((part): part is string => part !== undefined && part.trim().length > 0);
-  return compactedParts.length > 0 ? truncateOneLine(compactedParts.join("; "), MAX_OBSERVATION_TEXT_LENGTH) : "completed inspection";
+  return compactedParts.length > 0
+    ? truncateOneLine(compactedParts.join("; "), DEFAULT_BULI_STICKY_NOTES_OBSERVATION_TEXT_CHARACTER_COUNT)
+    : "completed inspection";
 }
 
 function formatCountedNoun(count: number, singularNoun: string, pluralNoun: string): string {
@@ -668,8 +686,11 @@ function extractSearchTokens(text: string): Set<string> {
   return tokens;
 }
 
-function quoteNoteText(noteText: string): string {
-  return JSON.stringify(truncateOneLine(noteText, MAX_PROMPT_NOTE_TEXT_LENGTH));
+function quoteNoteText(
+  noteText: string,
+  maximumPromptNoteTextCharacterCount = DEFAULT_BULI_STICKY_NOTES_PROMPT_NOTE_TEXT_CHARACTER_COUNT,
+): string {
+  return JSON.stringify(truncateOneLine(noteText, maximumPromptNoteTextCharacterCount));
 }
 
 function truncateOneLine(text: string, maximumLength: number): string {

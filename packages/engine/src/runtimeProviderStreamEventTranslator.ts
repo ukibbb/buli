@@ -327,12 +327,23 @@ export class RuntimeProviderStreamEventTranslator {
     }
 
     const currentAssistantTextMessagePartBuilderState = this.ensureCurrentAssistantTextMessagePartBuilder();
+    const assistantTextBeforeAppend = readAssistantTextMessagePartBuilderRawMarkdownText(
+      currentAssistantTextMessagePartBuilderState,
+    );
     this.currentAssistantTextMessagePartBuilderState = appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
       currentAssistantTextMessagePartBuilderState,
       assistantTextDelta,
     );
+    const assistantTextAfterAppend = readAssistantTextMessagePartBuilderRawMarkdownText(
+      this.currentAssistantTextMessagePartBuilderState,
+    );
+    const visibleAssistantTextDeltaLength = assistantTextAfterAppend.length - assistantTextBeforeAppend.length;
+    if (visibleAssistantTextDeltaLength <= 0) {
+      return [];
+    }
+
     this.pendingCurrentAssistantTextPartUpdateChunkCount += 1;
-    this.pendingCurrentAssistantTextPartUpdateCharacterCount += assistantTextDelta.length;
+    this.pendingCurrentAssistantTextPartUpdateCharacterCount += visibleAssistantTextDeltaLength;
 
     const shouldEmitAssistantTextPartEvent = !this.hasEmittedCurrentAssistantTextMessagePart ||
       this.shouldEmitBufferedAssistantTextPartUpdate();

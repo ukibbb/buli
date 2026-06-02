@@ -3,6 +3,10 @@ import {
   type AssistantOperatingMode,
   type ConversationSessionEntry,
 } from "@buli/contracts";
+import {
+  formatAssistantProviderModelPromptProfileFragmentBlock,
+  type AssistantProviderModelPromptProfile,
+} from "../assistantProviderModelPromptProfile.ts";
 
 export type ConversationCompactionWorkflowModePhase = {
   assistantOperatingMode: AssistantOperatingMode;
@@ -78,13 +82,23 @@ export const CONVERSATION_COMPACTION_PROMPT_TEXT = [
   "- Do not mention the summary process or that context was compacted.",
 ].join("\n");
 
-export function buildConversationCompactionSystemPrompt(input: { workspaceRootPath: string }): string {
+export function buildConversationCompactionSystemPrompt(input: {
+  workspaceRootPath: string;
+  assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
+}): string {
+  const providerModelPromptProfileBlock = input.assistantProviderModelPromptProfile
+    ? formatAssistantProviderModelPromptProfileFragmentBlock({
+      assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+      fragmentTarget: "conversationCompactionSystemPrompt",
+    })
+    : undefined;
   return [
     "You are buli's conversation compaction worker.",
     `Current workspace root: ${input.workspaceRootPath}`,
     "Summarize the prior conversation for continuation by the same assistant.",
     "The summary you produce is the only prior conversation context the next model call will receive.",
     "Use only the provided conversation context. Do not call tools.",
+    ...(providerModelPromptProfileBlock ? ["", providerModelPromptProfileBlock] : []),
   ].join("\n");
 }
 
@@ -145,12 +159,22 @@ export function formatConversationCompactionWorkflowModeContextPromptBlock(
 
 export function createConversationCompactionPromptSessionEntry(input?: {
   workflowModeContext?: ConversationCompactionWorkflowModeContext | undefined;
+  assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
 }): ConversationSessionEntry {
-  const compactionPromptText = input?.workflowModeContext
+  const providerModelPromptProfileBlock = input?.assistantProviderModelPromptProfile
+    ? formatAssistantProviderModelPromptProfileFragmentBlock({
+      assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+      fragmentTarget: "conversationCompactionPrompt",
+    })
+    : undefined;
+  const compactionPromptText = input?.workflowModeContext || providerModelPromptProfileBlock
     ? [
         CONVERSATION_COMPACTION_PROMPT_TEXT,
+        ...(providerModelPromptProfileBlock ? ["", providerModelPromptProfileBlock] : []),
         "",
-        formatConversationCompactionWorkflowModeContextPromptBlock(input.workflowModeContext),
+        ...(input?.workflowModeContext
+          ? [formatConversationCompactionWorkflowModeContextPromptBlock(input.workflowModeContext)]
+          : []),
       ].join("\n")
     : CONVERSATION_COMPACTION_PROMPT_TEXT;
 

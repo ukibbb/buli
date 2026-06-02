@@ -1,5 +1,7 @@
 import {
   AssistantTextConversationMessagePartSchema,
+  readTrailingPossibleInternalModeScopeTagFragment,
+  removeInternalModeScopeTagsFromAssistantTranscriptText,
   type AssistantTextPartStatus,
   type AssistantTextConversationMessagePart,
 } from "@buli/contracts";
@@ -7,6 +9,7 @@ import {
 export type AssistantTextMessagePartBuilderState = {
   partId: string;
   rawMarkdownText: string;
+  pendingPossibleInternalModeScopeTagFragment: string;
 };
 
 function normalizeAssistantTextDeltaText(assistantTextDeltaText: string): string {
@@ -17,6 +20,7 @@ export function createInitialAssistantTextMessagePartBuilder(partId: string): As
   return {
     partId,
     rawMarkdownText: "",
+    pendingPossibleInternalModeScopeTagFragment: "",
   };
 }
 
@@ -29,7 +33,23 @@ export function appendAssistantTextDeltaToAssistantTextMessagePartBuilder(
     return assistantTextMessagePartBuilderState;
   }
 
-  assistantTextMessagePartBuilderState.rawMarkdownText += normalizedAssistantTextDeltaText;
+  const assistantTextDeltaWithPendingTagFragment = [
+    assistantTextMessagePartBuilderState.pendingPossibleInternalModeScopeTagFragment,
+    normalizedAssistantTextDeltaText,
+  ].join("");
+  const assistantTextDeltaWithoutCompleteInternalTags = removeInternalModeScopeTagsFromAssistantTranscriptText(
+    assistantTextDeltaWithPendingTagFragment,
+  );
+  const pendingPossibleInternalModeScopeTagFragment = readTrailingPossibleInternalModeScopeTagFragment(
+    assistantTextDeltaWithoutCompleteInternalTags,
+  );
+  const visibleAssistantTextDelta = pendingPossibleInternalModeScopeTagFragment.length > 0
+    ? assistantTextDeltaWithoutCompleteInternalTags.slice(0, -pendingPossibleInternalModeScopeTagFragment.length)
+    : assistantTextDeltaWithoutCompleteInternalTags;
+
+  assistantTextMessagePartBuilderState.pendingPossibleInternalModeScopeTagFragment =
+    pendingPossibleInternalModeScopeTagFragment;
+  assistantTextMessagePartBuilderState.rawMarkdownText += visibleAssistantTextDelta;
   return assistantTextMessagePartBuilderState;
 }
 

@@ -145,6 +145,7 @@ test("resolveInteractiveChatConversationTurnProvider keeps direct OpenAI as the 
   });
 
   expect(resolution.providerConnectionKind).toBe("direct_openai");
+  expect(resolution.assistantProviderName).toBe("openai");
   expect(resolution.conversationTurnProvider).toBe(openAiProvider);
   await resolution.dispose();
 });
@@ -171,6 +172,7 @@ test("resolveInteractiveChatConversationTurnProvider creates IPC provider when e
   });
 
   expect(resolution.providerConnectionKind).toBe("openai_provider_protocol_ipc");
+  expect(resolution.assistantProviderName).toBe("openai");
   expect(resolution.conversationTurnProvider).toBeInstanceOf(ProviderProtocolConversationTurnProvider);
   expect(capturedTransportInput).toEqual({
     command: ["bun", "provider-host.ts"],
@@ -379,6 +381,7 @@ test("runInteractiveChat wires the direct provider by default and IPC provider w
     },
   })).resolves.toBe("");
   expect(directRuntime?.conversationTurnProvider).toBeInstanceOf(OpenAiProvider);
+  expect(directRuntime?.assistantProviderName).toBe("openai");
 
   const ipcDir = await mkdtemp(join(tmpdir(), "buli-cli-ipc-provider-"));
   const ipcStore = new OpenAiAuthStore({ filePath: join(ipcDir, "auth.json") });
@@ -406,6 +409,7 @@ test("runInteractiveChat wires the direct provider by default and IPC provider w
     },
   })).resolves.toBe("");
   expect(ipcRuntime?.conversationTurnProvider).toBeInstanceOf(ProviderProtocolConversationTurnProvider);
+  expect(ipcRuntime?.assistantProviderName).toBe("openai");
   expect(capturedTransportInput?.environment["BULI_OPENAI_AUTH_FILE"]).toBe(ipcStore.filePath);
   expect(didDisposeTransport).toBe(true);
 });
@@ -433,6 +437,7 @@ test("runInteractiveChat can use an external provider host command without OpenA
   })).resolves.toBe("");
 
   expect(capturedRuntime?.conversationTurnProvider).toBeInstanceOf(ProviderProtocolConversationTurnProvider);
+  expect(capturedRuntime?.assistantProviderName).toBe("external_provider_protocol");
   expect(capturedTransportInput).toEqual({
     command: ["python3", "provider.py"],
     environment: { BULI_PROVIDER_HOST_COMMAND: "[\"python3\",\"provider.py\"]" },
