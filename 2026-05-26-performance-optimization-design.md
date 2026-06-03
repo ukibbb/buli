@@ -101,6 +101,7 @@ Before changing context projection, check these report sections:
 
 - `OpenAI Response Steps`: provider step count, HTTP wait, stream time, request construction time.
 - `OpenAI Request Size Contributors`: largest stable request parts and input items by serialized byte length.
+- `OpenAI Working-Set Visibility`: why provider-visible input items were sent, their evidence IDs when stable, exact projection counts, shadow saved bytes, and largest visible items.
 - `Request And Context Growth`: request and context growth across the turn.
 - `Tool Attribution`: tool-result payload and wait time by tool.
 - `Task Subagent Attribution`: subagent execution time, parent wait, concurrent-group wall time, and result size.
@@ -108,7 +109,7 @@ Before changing context projection, check these report sections:
 - `SQLite Storage`: append/load/switch/compaction persistence cost.
 - `Process Peaks`: RSS, heap, CPU, and event-loop delay.
 
-The `OpenAI Request Size Contributors` section is the first filter for working-set optimization. It answers whether the largest visible contributor is stable request scaffolding, tool definitions, current-turn function outputs, historical/failure evidence, reasoning, or assistant/user messages.
+The `OpenAI Request Size Contributors` section is the first filter for working-set optimization. It answers whether the largest visible contributor is stable request scaffolding, tool definitions, current-turn function outputs, historical/failure evidence, reasoning, or assistant/user messages. The `OpenAI Working-Set Visibility` section is the second filter: it explains why those input items were visible and confirms whether the current implementation kept the projection exact.
 
 ## Model-Visible Working-Set Rules
 
@@ -213,19 +214,21 @@ Compact sooner:
 
 Failed/interrupted work may need old tool evidence to recover safely, but not unlimited raw logs. Prefer capped evidence cards over raw transcript blocks.
 
-### 10. Task subagent results are parent-visible summaries
+### 10. Task subagent completed results stay complete and uncapped
 
-Child transcript and raw tool evidence stay stored. The parent-visible task result should be bounded and structured:
+Child transcript and raw tool evidence stay stored. The parent-visible task result should be clear and structured when that helps readability, but it must not have a hard size cap that can remove necessary evidence:
 
 ```text
 <task_result>
   <subagent>...</subagent>
   <description>...</description>
-  <summary>bounded summary</summary>
+  <summary>complete report, not truncated for length</summary>
   <inspected_evidence>...</inspected_evidence>
   <open_questions>...</open_questions>
 </task_result>
 ```
+
+The accepted optimization path for task subagents is provider-turn routing: use a cheaper/faster default model or lower reasoning effort where safe, expose the selected model/effort in diagnostics, and keep environment overrides as the rollback path when quality drops.
 
 ### 11. Compaction is not the first line of defense
 
@@ -288,6 +291,7 @@ Source-verified completed or mostly completed items:
 - Request-size contributor diagnostics and OpenAI request-size report sections.
 - Per-tool result-size diagnostics and conversation resource summaries.
 - Deterministic `tool-output-context-growth` profile coverage and profile-report working-set sections.
+- OpenAI provider working-set visibility sidecar diagnostics with reasons, stable evidence IDs for provider replay items, largest visible input items, exact projection counts, and saved/compacted bytes fixed at 0.
 - Bash output capping before provider submission.
 - Read-only bash patch-capture skipping for auto-run read-only commands.
 - SSE frame buffering and response text/function-call chunk accumulation without repeated string concatenation.
@@ -297,8 +301,9 @@ Source-verified completed or mostly completed items:
 - Workspace-stable prompt cache key behavior.
 - Same-step duplicate read-only tool-call coalescing.
 - Task subagent context scoping through fresh child conversation history.
+- Task subagent model/effort routing diagnostics and override hooks.
 
-Partial caveat: historical failed/interrupted turns and current-turn continuations can still need bounded recovery evidence or compact replay. Task subagent context is scoped, but the parent-visible task result still needs an explicit bounded contract.
+Partial caveat: historical failed/interrupted turns and current-turn continuations can still need bounded recovery evidence or compact replay. Task subagent context is scoped, and completed parent-visible task results are intentionally uncapped for correctness.
 
 ### Needs source verification
 
@@ -325,7 +330,7 @@ Examples:
 - Current-turn provider replay growth from exact `function_call_output` continuation items.
 - Aggregate tool-output accumulation across many read/grep/bash calls after individual caps apply.
 - Skill catalog disk parsing and memoization impact.
-- Existing subagent scoping, checkpointing, and remaining parent-visible task-result size.
+- Existing subagent scoping, checkpointing, task-subagent routing quality/latency, and parent-visible task-result size diagnostics.
 - Prompt-context lookup, TUI render, SQLite hydration, and codebase-knowledge startup costs after fresh deterministic and manual profiles exist.
 
 ## Prioritized Working-Set Roadmap
@@ -334,24 +339,26 @@ Examples:
 
 These should preserve model-visible meaning and usually do not require task-completion evals:
 
-1. Visibility reasons for provider-request items.
+Implemented in this tier:
+
+1. Visibility reasons for provider-request input items.
 2. Evidence IDs and metadata while preserving full visible text.
-3. Cross-step duplicate references only for unchanged evidence already visible in the current working set.
+3. Shadow original/projected/saved diagnostics with exact projection counts and saved/compacted bytes fixed at 0.
 4. Fresh profile annotations that tie each proposed optimization to a `profile-runs/` path and stable metric.
 
-Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, and deterministic/report sections for working-set growth.
+Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, OpenAI Working-Set Visibility report sections, and deterministic/report sections for working-set growth. These diagnostics do not compact current-turn replay and do not prove that compaction is safe.
 
 ### Moderate: compact repeated or stale evidence
 
 These need task-completion evals because they alter model-visible content:
 
 1. Evidence-card projection for large read/grep/bash outputs.
-2. Fresh tool result visible once, compact replay later.
+2. Fresh tool result visible once, compact replay later. This is not implemented; current-turn tool evidence remains exact across same-turn continuations.
 3. Adaptive per-tool budgets based on remaining context.
-4. Structured, bounded subagent result contract.
+4. Structured-but-uncapped subagent report guidance.
 5. Failed/interrupted-turn evidence cards instead of raw transcript blocks.
 
-Subagent context scoping itself is already implemented; the remaining risk is the bounded shape and size of the parent-visible result.
+Subagent context scoping itself is already implemented; the remaining risk is report quality when prompts encourage structure or when routing uses a cheaper/faster subagent model.
 
 ### Aggressive: semantic compression and prediction
 
@@ -361,7 +368,7 @@ These need real-model evals:
 2. Sliding-window current-turn replay.
 3. Semantic evidence selection.
 4. Predictive tool prefetch for safe read-only patterns.
-5. Subagent model routing/downgrade.
+5. More aggressive subagent model routing/downgrade beyond the conservative default.
 6. Incremental or two-stage compaction.
 
 ## Evaluation Gates

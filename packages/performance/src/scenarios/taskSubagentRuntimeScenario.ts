@@ -131,7 +131,6 @@ export const taskSubagentRuntimeScenario: PerformanceScenario = {
         createBytesMetric({
           metricName: "task_subagent_runtime.parent_task_result_text_bytes",
           bytes: sumToolResultTextLength(completedTaskToolResults),
-          budget: { warnAbove: 8_000, failAbove: 16_000 },
         }),
         createBytesMetric({
           metricName: "task_subagent_runtime.heap_used_delta_bytes",

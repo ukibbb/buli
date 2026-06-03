@@ -216,7 +216,19 @@ test("runInteractiveChat returns clean messages for invalid concurrency environm
   );
 });
 
-test("runInteractiveChat applies concurrency environment overrides", async () => {
+test("runInteractiveChat returns a clean message when task subagent reasoning environment is invalid", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-task-subagent-env-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await expect(runInteractiveChat({
+    store,
+    environment: { BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT: "extreme" },
+  })).resolves.toBe(
+    "Invalid BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT. Use none, minimal, low, medium, high, or xhigh.",
+  );
+});
+
+test("runInteractiveChat applies concurrency and task subagent environment overrides", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-concurrency-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
@@ -239,6 +251,8 @@ test("runInteractiveChat applies concurrency environment overrides", async () =>
       BULI_READ_ONLY_TOOL_CONCURRENCY: "11",
       BULI_SUBAGENT_CONCURRENCY: "5",
       BULI_OPENAI_MAX_CONCURRENT_STREAMS: "7",
+      BULI_TASK_SUBAGENT_MODEL: "gpt-5.4-mini",
+      BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT: "low",
     },
     renderChatScreen: async (renderInput) => {
       capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
@@ -249,6 +263,10 @@ test("runInteractiveChat applies concurrency environment overrides", async () =>
   expect(output).toBe("");
   expect(capturedConversationRuntime?.maximumConcurrentReadOnlyToolCalls).toBe(11);
   expect(capturedConversationRuntime?.maximumConcurrentSubagentConversations).toBe(5);
+  expect(capturedConversationRuntime?.taskSubagentProviderModelSelectionPolicy).toEqual({
+    selectedModelIdOverride: "gpt-5.4-mini",
+    maximumReasoningEffort: "low",
+  });
   const conversationTurnProvider = capturedConversationRuntime?.conversationTurnProvider;
   if (!(conversationTurnProvider instanceof OpenAiProvider)) {
     throw new Error("expected direct OpenAI provider");
@@ -534,6 +552,8 @@ test("runInteractiveChat writes startup timing diagnostics", async () => {
     environment: {
       BULI_CONSOLE_LOG_FILE: logFilePath,
       BULI_CONSOLE_LOG_RESET: "true",
+      BULI_TASK_SUBAGENT_MODEL: "gpt-5.4-mini",
+      BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT: "low",
     },
     renderChatScreen: async () => ({ destroy: () => {}, waitUntilExit: async () => {} }),
   });
@@ -541,6 +561,8 @@ test("runInteractiveChat writes startup timing diagnostics", async () => {
   expect(output).toBe("");
   const diagnosticLogText = await readFile(logFilePath, "utf8");
   expect(diagnosticLogText).toContain("interactive_chat.startup_timing");
+  expect(diagnosticLogText).toContain("taskSubagentSelectedModelIdOverride: 'gpt-5.4-mini'");
+  expect(diagnosticLogText).toContain("taskSubagentMaximumReasoningEffortOverride: 'low'");
   expect(diagnosticLogText).toContain("phase: 'auth'");
   expect(diagnosticLogText).toContain("phase: 'session_load'");
   expect(diagnosticLogText).toContain("phase: 'renderer_load'");

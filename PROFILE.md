@@ -183,6 +183,7 @@ Signals:
 - OpenAI continuation step count.
 - Tool-result and request body growth.
 - Largest OpenAI request size contributors by serialized byte length.
+- Provider-visible working-set visibility reasons, evidence IDs, exact projection counts, and shadow saved bytes.
 
 ### Task Subagents
 
@@ -271,6 +272,7 @@ Profiling is useful when it can answer:
 - Which objects or components account for meaningful memory growth.
 - Whether the TUI is blocked by local CPU work or mostly waiting on external systems.
 - Which request parts and model-visible items dominate OpenAI request size.
+- Why provider-visible items are included, which raw evidence IDs they relate to when available, and whether diagnostics show replay pressure without implying evidence was dropped.
 - Which improvement should be implemented first and why.
 
 The final answer must be based on measured evidence, not assumptions.

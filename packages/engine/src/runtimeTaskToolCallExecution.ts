@@ -48,6 +48,7 @@ import {
   formatAssistantProviderModelPromptProfileFragmentBlock,
   type AssistantProviderModelPromptProfile,
 } from "./assistantProviderModelPromptProfile.ts";
+import type { TaskSubagentProviderModelSelection } from "./taskSubagentProviderModelSelection.ts";
 
 const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, glob, grep, and locate_codebase_symbols instead.";
 const TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT = 192;
@@ -95,9 +96,10 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   conversationTurnId: string;
   toolCallId: string;
   taskToolCallRequest: TaskToolCallRequest;
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
-  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  parentSelectedModelId: string;
+  parentSelectedReasoningEffort?: ReasoningEffort;
+  taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
+  taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   workspaceRootPath: string;
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
@@ -164,6 +166,19 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
   }
 
   input.throwIfConversationTurnInterrupted();
+  logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.task_subagent_model_selection_resolved", {
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.toolCallId,
+    subagentName: input.taskToolCallRequest.subagentName,
+    parentAssistantProviderName: input.taskSubagentAssistantProviderModelPromptProfile.providerName,
+    parentSelectedModelId: input.parentSelectedModelId,
+    parentSelectedReasoningEffort: input.parentSelectedReasoningEffort ?? null,
+    taskSubagentSelectedModelId: input.taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
+    taskSubagentSelectedReasoningEffort:
+      input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort ?? null,
+    modelSelectionReason: input.taskSubagentProviderModelSelection.modelSelectionReason,
+    reasoningEffortSelectionReason: input.taskSubagentProviderModelSelection.reasoningEffortSelectionReason,
+  });
   let latestSubagentChildToolCalls: SubagentChildToolCall[] = [];
   let latestSubagentResearchCheckpoint: SubagentResearchCheckpoint | undefined;
   let taskSubagentConversationOutcome: TaskSubagentConversationOutcome | undefined;
@@ -175,9 +190,8 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
           conversationTurnId: input.conversationTurnId,
           parentTaskToolCallId: input.toolCallId,
           taskToolCallRequest: input.taskToolCallRequest,
-          selectedModelId: input.selectedModelId,
-          ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
-          assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+          taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
+          taskSubagentAssistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
           workspaceRootPath: input.workspaceRootPath,
           workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
           projectInstructionTracker: input.projectInstructionTracker,
@@ -319,9 +333,8 @@ async function* streamTaskSubagentConversationProgress(input: {
   conversationTurnId: string;
   parentTaskToolCallId: string;
   taskToolCallRequest: TaskToolCallRequest;
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
-  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
+  taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   workspaceRootPath: string;
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
@@ -334,7 +347,7 @@ async function* streamTaskSubagentConversationProgress(input: {
   const subagentConversationStartedAtMs = Date.now();
   const subagentPromptText = buildTaskSubagentPromptText({
     taskToolCallRequest: input.taskToolCallRequest,
-    assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+    assistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
   });
   const subagentConversationHistory = new InMemoryConversationHistory();
   const subagentConversationSessionRecorder = new RuntimeConversationTurnSessionRecorder({
@@ -372,11 +385,13 @@ async function* streamTaskSubagentConversationProgress(input: {
       systemPromptText: buildBuliExplorerSystemPrompt({
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionSnapshots: toProjectInstructionSnapshots(input.projectInstructionTracker.listProjectInstructionFiles()),
-        assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+        assistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
       }),
       conversationSessionEntries: subagentConversationHistory.listConversationSessionEntries(),
-      selectedModelId: input.selectedModelId,
-      ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      selectedModelId: input.taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
+      ...(input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort !== undefined
+        ? { selectedReasoningEffort: input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort }
+        : {}),
       availableToolNames: subagentDefinition.availableToolNames,
       abortSignal: input.abortSignal,
     });
@@ -1139,7 +1154,7 @@ function buildTaskSubagentCheckpointRequestText(input: SubagentResearchCheckpoin
     `Explorer research budget reached: ${reasonText}.`,
     `Current research state: ${input.childToolCallCount} child tool calls, ${input.childToolResultTextLength} characters of child tool output${elapsedText}.`,
     skippedChildToolCallText,
-    "Stop requesting tools and return a concise checkpoint summary with findings, inspected files, important line references, remaining uncertainty, and recommended next searches.",
+    "Stop requesting tools and return a correct checkpoint report with findings, inspected files, important line references, remaining uncertainty, and recommended next searches. The checkpoint should be compact enough to unblock the parent, but must not omit details needed for correctness.",
   ].join("\n");
 }
 
@@ -1187,7 +1202,7 @@ function buildTaskSubagentPromptText(input: {
     "Detailed task instructions:",
     input.taskToolCallRequest.subagentPrompt,
     "",
-    "Return a concise report for the parent assistant. Include important file paths, function names, and line references when they matter.",
+    "Return a correct and complete report for the parent assistant. Use a clear structured report when it helps readability, but do not omit necessary details just to stay short. Include important file paths, function names, and line references when they matter. There is no hard length cap on a completed report; completeness and correctness are more important than compactness.",
   ].join("\n");
 }
 

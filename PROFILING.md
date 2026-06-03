@@ -69,6 +69,19 @@ BULI_CONSOLE_LOG_FILE=/tmp/buli-profile/diagnostics.log BULI_CONSOLE_LOG_RESET=1
 
 Do not treat synchronous diagnostic file logging as a neutral streaming benchmark.
 
+### Task Subagent Routing Overrides
+
+Task subagent completed reports stay complete and uncapped. Use routing overrides to compare speed/cost tradeoffs without hiding parent-visible evidence:
+
+```bash
+BULI_TASK_SUBAGENT_MODEL=gpt-5.4 BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT=medium bun run profile:manual -- --output-dir profile-runs/measurements/manual-subagent-routing --sample-ms 250
+```
+
+- `BULI_TASK_SUBAGENT_MODEL` forces the model used for task-subagent provider turns.
+- `BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT` clamps explicit parent reasoning effort for task subagents. Valid values are `none`, `minimal`, `low`, `medium`, `high`, and `xhigh`.
+- Provider/account model availability is not checked at startup; use the model override as the rollback/tuning path.
+- Compare reports by checking task-subagent `Model`/`Effort` columns, largest task-result sizes, wall-clock task attribution, and report quality.
+
 ## Deterministic Profiles
 
 Run deterministic profiles for touched boundaries:
@@ -137,6 +150,7 @@ Use these metrics when judging rewrites:
 - `task_subagent_runtime.task_execution.duration_ms`
 - `task_subagent_runtime.task_group_wall_time.duration_ms`
 - `task_subagent_runtime.parent_task_result_wait.duration_ms`
+- `task_subagent_runtime.parent_task_result_text_bytes` (observed size only; no warn/fail budget because completed task reports are intentionally uncapped)
 - `task_subagent_runtime.checkpoint_elapsed_ms`
 - `sqlite_session_large_history.load_entries.duration_ms`
 - `sqlite_session_large_history.switch_session.duration_ms`
@@ -170,8 +184,9 @@ Use these metrics when judging rewrites:
 - OpenAI retry, timeout, and rate-limit summaries
 - OpenAI context-guard summaries
 - OpenAI request size contributors
+- OpenAI working-set visibility reasons, evidence IDs, exact projection counts, shadow saved bytes, and largest provider-visible input items
 - tool attribution by payload, wait, execution, and bash approval wait
-- task subagent attribution by per-call duration, parent wait, concurrent-group wall time, and subagent slot wait
+- task subagent attribution by per-call duration, parent wait, concurrent-group wall time, selected model/effort, largest task results, and subagent slot wait
 - request/context growth summaries
 - compaction impact summaries
 - TUI render summaries
@@ -187,8 +202,9 @@ Use report sections as a decision tree:
 | High elapsed turn time with low CPU deltas | `OpenAI Response Steps`, retry/rate-limit events, `provider_turn.summary` | OpenAI/model/network waiting |
 | Many `TimeoutError` transport retries | `OpenAI Retries And Timeouts`, `response_step.transport_retry_scheduled`, `response_step.summary.requestAttemptCount` | OpenAI first-byte wait or network stall |
 | High `task` execution total with high `task` wait | `Task Subagent Attribution`, `Tool Attribution`, task-only `tool_call.concurrent_group_finished` | subagent runtime |
-| Many response steps and huge request bodies | `response_step.summary.requestBodyTextLength`, `provider_turn.summary.maxRequestBodyTextLength`, `OpenAI Request Size Contributors` | context growth, large tool schemas, tool-result replay growth, or current-turn evidence volume |
-| Large `toolResultTextLength` or `maxToolResultTextLength` | `response_step.summary`, `conversation_turn.summary`, `OpenAI Request Size Contributors` | tool output volume |
+| Many response steps and huge request bodies | `response_step.summary.requestBodyTextLength`, `provider_turn.summary.maxRequestBodyTextLength`, `OpenAI Request Size Contributors`, `OpenAI Working-Set Visibility` | context growth, large tool schemas, tool-result replay growth, or current-turn evidence volume |
+| Need to know why model-visible items are present | `OpenAI Working-Set Visibility` reason rows, evidence IDs, exact/compacted counts, saved bytes | provider-visible working-set diagnostics; not compaction by itself |
+| Large `toolResultTextLength` or `maxToolResultTextLength` | `response_step.summary`, `conversation_turn.summary`, `OpenAI Request Size Contributors`, `OpenAI Working-Set Visibility` | tool output volume |
 | Individual tool results are capped but totals keep growing | `conversation_turn.summary.totalToolResultTextLength`, `Request And Context Growth` | aggregate tool-output accumulation |
 | Context usage reaches the soft budget | `OpenAI Context Guard`, `response_step.continuation_context_guard_triggered`, `conversation_compaction.completed` | guard-triggered continuation and compaction |
 | High event-loop delay with moderate CPU | `process_sample.eventLoopDelayMaxMs`, top diagnostic durations | synchronous local work or heavy rendering/storage |

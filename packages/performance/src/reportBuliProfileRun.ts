@@ -37,6 +37,8 @@ type TaskSubagentCallSummary = Readonly<{
   toolCallId: string;
   subagentName: string;
   outcomeKind: string;
+  selectedModelId: string | undefined;
+  selectedReasoningEffort: string | undefined;
   durationMs: number;
   parentToolResultWaitMs: number;
   toolResultTextLength: number;
@@ -63,6 +65,26 @@ type OpenAiRequestSizeContributorReportRow = Readonly<{
   inputItemIndex: number;
   serializedByteLength: number;
   textLength: number;
+}>;
+
+type OpenAiWorkingSetVisibilityReasonReportRow = Readonly<{
+  visibilityReason: string;
+  inputItemCount: number;
+  textLength: number;
+  serializedByteLength: number;
+}>;
+
+type OpenAiWorkingSetLargestInputItemReportRow = Readonly<{
+  conversationTurnId: string | undefined;
+  providerTurnKind: string;
+  responseStepIndex: number;
+  inputItemIndex: number;
+  visibilityReason: string;
+  projectionKind: string;
+  evidenceId: string | null;
+  textLength: number;
+  serializedByteLength: number;
+  isCurrentTurnItem: boolean;
 }>;
 
 export async function writeBuliProfileRunReport(input: BuliProfileReportCliOptions): Promise<string> {
@@ -119,6 +141,7 @@ export function formatBuliProfileRunReportMarkdown(input: {
     ...formatOpenAiRequestConstructionSection(diagnosticEvents),
     ...formatOpenAiRequestSizeContributorSection(diagnosticEvents),
     ...formatOpenAiReplayInputAgeSection(diagnosticEvents),
+    ...formatOpenAiWorkingSetVisibilitySection(diagnosticEvents),
     ...formatToolAttributionSection(diagnosticEvents),
     ...formatToolResultDuplicationSection(diagnosticEvents),
     ...formatTaskSubagentAttributionSection(diagnosticEvents),
@@ -299,11 +322,11 @@ function formatOpenAiProviderTurnSection(diagnosticEvents: readonly ProfileDiagn
   return [
     "## OpenAI Provider Turns",
     "",
-    "| Turn | Terminal | Duration | Steps | Tool Calls | Input Tokens | Output Tokens | Max Request Body | Tool Result Text |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Turn | Kind | Model | Effort | Terminal | Duration | Steps | Tool Calls | Input Tokens | Output Tokens | Max Request Body | Tool Result Text |",
+    "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...providerTurnSummaries.map((event) => {
       const fields = event.fields;
-      return `| ${formatShortField(fields, "conversationTurnId")} | ${formatStringField(fields, "terminalKind")} | ${formatMilliseconds(readNumberField(fields, "durationMs"))} | ${formatNumberField(fields, "responseStepCount")} | ${formatNumberField(fields, "requestedToolCallCount")} | ${formatNumberField(fields, "inputTokens")} | ${formatNumberField(fields, "outputTokens")} | ${formatNumberField(fields, "maxRequestBodyTextLength")} | ${formatNumberField(fields, "totalToolResultTextLength")} |`;
+      return `| ${formatShortField(fields, "conversationTurnId")} | ${formatStringField(fields, "providerTurnKind")} | ${formatStringField(fields, "selectedModelId")} | ${formatStringField(fields, "selectedReasoningEffort")} | ${formatStringField(fields, "terminalKind")} | ${formatMilliseconds(readNumberField(fields, "durationMs"))} | ${formatNumberField(fields, "responseStepCount")} | ${formatNumberField(fields, "requestedToolCallCount")} | ${formatNumberField(fields, "inputTokens")} | ${formatNumberField(fields, "outputTokens")} | ${formatNumberField(fields, "maxRequestBodyTextLength")} | ${formatNumberField(fields, "totalToolResultTextLength")} |`;
     }),
     "",
   ];
@@ -555,6 +578,85 @@ function formatOpenAiReplayInputAgeSection(diagnosticEvents: readonly ProfileDia
   ];
 }
 
+function formatOpenAiWorkingSetVisibilitySection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
+  const responseStepSummaries = listDiagnosticEvents(diagnosticEvents, "openai", "response_step.summary");
+  const responseStepsWithWorkingSetDiagnostics = responseStepSummaries.filter((event) =>
+    readOptionalNumberField(event.fields, "requestWorkingSetInputItemCount") !== undefined
+  );
+  if (responseStepsWithWorkingSetDiagnostics.length === 0) {
+    return ["## OpenAI Working-Set Visibility", "", "No working-set visibility fields were recorded.", ""];
+  }
+
+  const exactInputItemCount = aggregateNumericField(responseStepsWithWorkingSetDiagnostics, "requestWorkingSetExactInputItemCount");
+  const compactedInputItemCount = aggregateNumericField(responseStepsWithWorkingSetDiagnostics, "requestWorkingSetCompactedInputItemCount");
+  const originalTextLength = aggregateNumericField(responseStepsWithWorkingSetDiagnostics, "requestWorkingSetOriginalTextLength");
+  const projectedTextLength = aggregateNumericField(responseStepsWithWorkingSetDiagnostics, "requestWorkingSetProjectedTextLength");
+  const savedCharacterCount = aggregateNumericField(responseStepsWithWorkingSetDiagnostics, "requestWorkingSetSavedCharacterCount");
+  const originalSerializedByteLength = aggregateNumericField(
+    responseStepsWithWorkingSetDiagnostics,
+    "requestWorkingSetOriginalSerializedByteLength",
+  );
+  const projectedSerializedByteLength = aggregateNumericField(
+    responseStepsWithWorkingSetDiagnostics,
+    "requestWorkingSetProjectedSerializedByteLength",
+  );
+  const savedSerializedByteLength = aggregateNumericField(
+    responseStepsWithWorkingSetDiagnostics,
+    "requestWorkingSetSavedSerializedByteLength",
+  );
+  const unclassifiedInputItemCount = aggregateNumericField(
+    responseStepsWithWorkingSetDiagnostics,
+    "requestWorkingSetUnclassifiedInputItemCount",
+  );
+  const currentTurnFunctionOutputOriginalTextLength = aggregateNumericField(
+    responseStepsWithWorkingSetDiagnostics,
+    "requestCurrentTurnFunctionCallOutputOriginalTextLength",
+  );
+  const currentTurnFunctionOutputProjectedTextLength = aggregateNumericField(
+    responseStepsWithWorkingSetDiagnostics,
+    "requestCurrentTurnFunctionCallOutputProjectedTextLength",
+  );
+  const currentTurnFunctionOutputSavedCharacterCount = aggregateNumericField(
+    responseStepsWithWorkingSetDiagnostics,
+    "requestCurrentTurnFunctionCallOutputSavedCharacterCount",
+  );
+  const reasonRows = listOpenAiWorkingSetVisibilityReasonRows(responseStepsWithWorkingSetDiagnostics);
+  const largestVisibleInputItemRows = [...listOpenAiWorkingSetLargestInputItemRows(responseStepsWithWorkingSetDiagnostics)]
+    .sort((leftRow, rightRow) =>
+      rightRow.serializedByteLength - leftRow.serializedByteLength ||
+      leftRow.visibilityReason.localeCompare(rightRow.visibilityReason) ||
+      leftRow.inputItemIndex - rightRow.inputItemIndex
+    )
+    .slice(0, 20);
+
+  return [
+    "## OpenAI Working-Set Visibility",
+    "",
+    "- Note: these are provider-visible projection diagnostics only. Raw evidence was not deleted, current requests were not compacted, and saved bytes are 0 for this conservative slice.",
+    `- Response steps with working-set diagnostics: ${formatInteger(responseStepsWithWorkingSetDiagnostics.length)}`,
+    `- Input items exact/compacted: ${formatInteger(exactInputItemCount.total)} / ${formatInteger(compactedInputItemCount.total)}`,
+    `- Text original/projected/saved: ${formatBytes(originalTextLength.total)} / ${formatBytes(projectedTextLength.total)} / ${formatBytes(savedCharacterCount.total)}`,
+    `- Serialized original/projected/saved: ${formatBytes(originalSerializedByteLength.total)} / ${formatBytes(projectedSerializedByteLength.total)} / ${formatBytes(savedSerializedByteLength.total)}`,
+    `- Current-turn function-output original/projected/saved: ${formatBytes(currentTurnFunctionOutputOriginalTextLength.total)} / ${formatBytes(currentTurnFunctionOutputProjectedTextLength.total)} / ${formatBytes(currentTurnFunctionOutputSavedCharacterCount.total)}`,
+    `- Unclassified visible input items: ${formatInteger(unclassifiedInputItemCount.total)}`,
+    "",
+    "| Visibility Reason | Items | Text | Serialized |",
+    "| --- | ---: | ---: | ---: |",
+    ...reasonRows.map((row) =>
+      `| ${row.visibilityReason} | ${formatInteger(row.inputItemCount)} | ${formatBytes(row.textLength)} | ${formatBytes(row.serializedByteLength)} |`
+    ),
+    "",
+    "Largest provider-visible input items:",
+    "",
+    "| Turn | Kind | Step | Input Item | Reason | Projection | Evidence | Current Turn | Text | Serialized |",
+    "| --- | --- | ---: | ---: | --- | --- | --- | --- | ---: | ---: |",
+    ...largestVisibleInputItemRows.map((row) =>
+      `| ${formatShortText(row.conversationTurnId)} | ${row.providerTurnKind} | ${formatInteger(row.responseStepIndex)} | ${formatInputItemIndex(row.inputItemIndex)} | ${row.visibilityReason} | ${row.projectionKind} | ${formatNullableText(row.evidenceId)} | ${row.isCurrentTurnItem ? "yes" : "no"} | ${formatBytes(row.textLength)} | ${formatBytes(row.serializedByteLength)} |`
+    ),
+    "",
+  ];
+}
+
 function formatToolAttributionSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
   const toolNameByToolCallId = buildToolNameByToolCallId(diagnosticEvents);
   const toolResultSubmittedEvents = listDiagnosticEvents(diagnosticEvents, "engine", "provider_turn.tool_result_submitted");
@@ -713,11 +815,22 @@ function formatTaskSubagentAttributionSection(diagnosticEvents: readonly Profile
     `- Subagents: ${formatCountByTaskSubagentName(taskCallSummaries, taskSubagentSlotAcquiredEvents)}`,
     "- Note: task execution and parent tool-result wait are per-call sums. Use task-only concurrent group wall time to understand elapsed time when task calls run in parallel.",
     "",
-    "| Turn | Tool Call | Subagent | Outcome | Duration | Parent Wait | Result Text |",
-    "| --- | --- | --- | --- | ---: | ---: | ---: |",
+    "| Turn | Tool Call | Subagent | Model | Effort | Outcome | Duration | Parent Wait | Result Text |",
+    "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
     ...slowestTaskCalls.map((taskCall) =>
-      `| ${formatShortText(taskCall.conversationTurnId)} | ${formatShortText(taskCall.toolCallId)} | ${taskCall.subagentName} | ${taskCall.outcomeKind} | ${formatMilliseconds(taskCall.durationMs)} | ${formatMilliseconds(taskCall.parentToolResultWaitMs)} | ${formatBytes(taskCall.toolResultTextLength)} |`
+      `| ${formatShortText(taskCall.conversationTurnId)} | ${formatShortText(taskCall.toolCallId)} | ${taskCall.subagentName} | ${formatOptionalText(taskCall.selectedModelId)} | ${formatOptionalText(taskCall.selectedReasoningEffort)} | ${taskCall.outcomeKind} | ${formatMilliseconds(taskCall.durationMs)} | ${formatMilliseconds(taskCall.parentToolResultWaitMs)} | ${formatBytes(taskCall.toolResultTextLength)} |`
     ),
+    "",
+    "Largest task results:",
+    "",
+    "| Turn | Tool Call | Subagent | Model | Effort | Result Text | Duration |",
+    "| --- | --- | --- | --- | --- | ---: | ---: |",
+    ...[...taskCallSummaries]
+      .sort((leftCall, rightCall) => rightCall.toolResultTextLength - leftCall.toolResultTextLength)
+      .slice(0, 10)
+      .map((taskCall) =>
+        `| ${formatShortText(taskCall.conversationTurnId)} | ${formatShortText(taskCall.toolCallId)} | ${taskCall.subagentName} | ${formatOptionalText(taskCall.selectedModelId)} | ${formatOptionalText(taskCall.selectedReasoningEffort)} | ${formatBytes(taskCall.toolResultTextLength)} | ${formatMilliseconds(taskCall.durationMs)} |`
+      ),
     "",
   ];
 }
@@ -936,6 +1049,7 @@ function isToolResultEntryKind(entryKind: string | undefined): boolean {
 
 function buildTaskSubagentCallSummaries(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly TaskSubagentCallSummary[] {
   const subagentNameByToolCallId = buildTaskSubagentNameByToolCallId(diagnosticEvents);
+  const providerTurnRoutingByParentTaskToolCallId = buildTaskSubagentProviderTurnRoutingByParentTaskToolCallId(diagnosticEvents);
   const parentToolResultWaitByToolCallId = buildNumericFieldByToolCallId({
     diagnosticEvents: [
       ...listDiagnosticEvents(diagnosticEvents, "openai", "tool_result_submission.resolved_pending_wait"),
@@ -952,16 +1066,45 @@ function buildTaskSubagentCallSummaries(diagnosticEvents: readonly ProfileDiagno
     .filter((event) => readStringField(event.fields, "toolName") === "task")
     .map((event) => {
       const toolCallId = readStringField(event.fields, "toolCallId") ?? "unknown";
+      const providerTurnRouting = providerTurnRoutingByParentTaskToolCallId.get(toolCallId);
       return {
         conversationTurnId: readStringField(event.fields, "conversationTurnId"),
         toolCallId,
         subagentName: readStringField(event.fields, "subagentName") ?? subagentNameByToolCallId.get(toolCallId) ?? "unknown",
         outcomeKind: readStringField(event.fields, "outcomeKind") ?? "unknown",
+        selectedModelId: providerTurnRouting?.selectedModelId,
+        selectedReasoningEffort: providerTurnRouting?.selectedReasoningEffort,
         durationMs: readNumberField(event.fields, "durationMs"),
         parentToolResultWaitMs: parentToolResultWaitByToolCallId.get(toolCallId) ?? 0,
         toolResultTextLength: toolResultTextLengthByToolCallId.get(toolCallId) ?? 0,
       };
     });
+}
+
+function buildTaskSubagentProviderTurnRoutingByParentTaskToolCallId(
+  diagnosticEvents: readonly ProfileDiagnosticEvent[],
+): Map<string, { selectedModelId: string | undefined; selectedReasoningEffort: string | undefined }> {
+  const providerTurnRoutingByParentTaskToolCallId = new Map<
+    string,
+    { selectedModelId: string | undefined; selectedReasoningEffort: string | undefined }
+  >();
+  for (const providerTurnSummary of listDiagnosticEvents(diagnosticEvents, "openai", "provider_turn.summary")) {
+    if (readStringField(providerTurnSummary.fields, "providerTurnKind") !== "task_subagent") {
+      continue;
+    }
+
+    const parentTaskToolCallId = readStringField(providerTurnSummary.fields, "parentTaskToolCallId");
+    if (!parentTaskToolCallId) {
+      continue;
+    }
+
+    providerTurnRoutingByParentTaskToolCallId.set(parentTaskToolCallId, {
+      selectedModelId: readStringField(providerTurnSummary.fields, "selectedModelId"),
+      selectedReasoningEffort: readStringField(providerTurnSummary.fields, "selectedReasoningEffort"),
+    });
+  }
+
+  return providerTurnRoutingByParentTaskToolCallId;
 }
 
 function buildTaskSubagentNameByToolCallId(diagnosticEvents: readonly ProfileDiagnosticEvent[]): Map<string, string> {
@@ -1167,6 +1310,67 @@ function listOpenAiRequestSizeContributorReportRows(
   });
 }
 
+function listOpenAiWorkingSetVisibilityReasonRows(
+  responseStepSummaries: readonly ProfileDiagnosticEvent[],
+): readonly OpenAiWorkingSetVisibilityReasonReportRow[] {
+  const aggregateByVisibilityReason = new Map<string, OpenAiWorkingSetVisibilityReasonReportRow>();
+  for (const event of responseStepSummaries) {
+    const visibilityReasons = readStringArrayField(event.fields, "requestWorkingSetVisibilityReasons") ?? [];
+    const inputItemCounts = readNumberArrayField(event.fields, "requestWorkingSetVisibilityReasonInputItemCounts") ?? [];
+    const textLengths = readNumberArrayField(event.fields, "requestWorkingSetVisibilityReasonTextLengths") ?? [];
+    const serializedByteLengths = readNumberArrayField(
+      event.fields,
+      "requestWorkingSetVisibilityReasonSerializedByteLengths",
+    ) ?? [];
+
+    for (const [reasonIndex, visibilityReason] of visibilityReasons.entries()) {
+      const previousAggregate = aggregateByVisibilityReason.get(visibilityReason) ?? {
+        visibilityReason,
+        inputItemCount: 0,
+        textLength: 0,
+        serializedByteLength: 0,
+      };
+      aggregateByVisibilityReason.set(visibilityReason, {
+        visibilityReason,
+        inputItemCount: previousAggregate.inputItemCount + (inputItemCounts[reasonIndex] ?? 0),
+        textLength: previousAggregate.textLength + (textLengths[reasonIndex] ?? 0),
+        serializedByteLength: previousAggregate.serializedByteLength + (serializedByteLengths[reasonIndex] ?? 0),
+      });
+    }
+  }
+
+  return [...aggregateByVisibilityReason.values()].sort((leftRow, rightRow) =>
+    rightRow.serializedByteLength - leftRow.serializedByteLength || leftRow.visibilityReason.localeCompare(rightRow.visibilityReason)
+  );
+}
+
+function listOpenAiWorkingSetLargestInputItemRows(
+  responseStepSummaries: readonly ProfileDiagnosticEvent[],
+): readonly OpenAiWorkingSetLargestInputItemReportRow[] {
+  return responseStepSummaries.flatMap((event) => {
+    const inputItemIndexes = readNumberArrayField(event.fields, "requestWorkingSetLargestInputItemIndexes") ?? [];
+    const visibilityReasons = readStringArrayField(event.fields, "requestWorkingSetLargestInputItemVisibilityReasons") ?? [];
+    const projectionKinds = readStringArrayField(event.fields, "requestWorkingSetLargestInputItemProjectionKinds") ?? [];
+    const evidenceIds = readNullableStringArrayField(event.fields, "requestWorkingSetLargestInputItemEvidenceIds") ?? [];
+    const textLengths = readNumberArrayField(event.fields, "requestWorkingSetLargestInputItemTextLengths") ?? [];
+    const serializedByteLengths = readNumberArrayField(event.fields, "requestWorkingSetLargestInputItemSerializedByteLengths") ?? [];
+    const currentTurnFlags = readBooleanArrayField(event.fields, "requestWorkingSetLargestInputItemCurrentTurnFlags") ?? [];
+
+    return inputItemIndexes.map((inputItemIndex, largestItemIndex) => ({
+      conversationTurnId: readStringField(event.fields, "conversationTurnId"),
+      providerTurnKind: readProviderTurnKind(event.fields),
+      responseStepIndex: readNumberField(event.fields, "responseStepIndex"),
+      inputItemIndex,
+      visibilityReason: visibilityReasons[largestItemIndex] ?? "unknown",
+      projectionKind: projectionKinds[largestItemIndex] ?? "unknown",
+      evidenceId: evidenceIds[largestItemIndex] ?? null,
+      textLength: textLengths[largestItemIndex] ?? 0,
+      serializedByteLength: serializedByteLengths[largestItemIndex] ?? 0,
+      isCurrentTurnItem: currentTurnFlags[largestItemIndex] ?? false,
+    }));
+  });
+}
+
 function calculateNumericFieldGrowth(
   diagnosticEvents: readonly ProfileDiagnosticEvent[],
   fieldName: string,
@@ -1243,9 +1447,24 @@ function readStringArrayField(fields: ProfileDiagnosticEvent["fields"] | undefin
   return Array.isArray(fieldValue) && fieldValue.every((fieldItem) => typeof fieldItem === "string") ? fieldValue : undefined;
 }
 
+function readNullableStringArrayField(
+  fields: ProfileDiagnosticEvent["fields"] | undefined,
+  fieldName: string,
+): readonly (string | null)[] | undefined {
+  const fieldValue = fields?.[fieldName];
+  return Array.isArray(fieldValue) && fieldValue.every((fieldItem) => typeof fieldItem === "string" || fieldItem === null)
+    ? fieldValue
+    : undefined;
+}
+
 function readNumberArrayField(fields: ProfileDiagnosticEvent["fields"] | undefined, fieldName: string): readonly number[] | undefined {
   const fieldValue = fields?.[fieldName];
   return Array.isArray(fieldValue) && fieldValue.every((fieldItem) => typeof fieldItem === "number") ? fieldValue : undefined;
+}
+
+function readBooleanArrayField(fields: ProfileDiagnosticEvent["fields"] | undefined, fieldName: string): readonly boolean[] | undefined {
+  const fieldValue = fields?.[fieldName];
+  return Array.isArray(fieldValue) && fieldValue.every((fieldItem) => typeof fieldItem === "boolean") ? fieldValue : undefined;
 }
 
 function readFieldValueText(fields: ProfileDiagnosticEvent["fields"] | undefined, fieldName: string): string | undefined {
@@ -1271,6 +1490,14 @@ function formatShortText(value: string | undefined): string {
 
 function formatStringField(fields: ProfileDiagnosticEvent["fields"] | undefined, fieldName: string): string {
   return readStringField(fields, fieldName) ?? "n/a";
+}
+
+function formatOptionalText(value: string | undefined): string {
+  return value ?? "n/a";
+}
+
+function formatNullableText(value: string | null | undefined): string {
+  return value ?? "n/a";
 }
 
 function formatNumberField(fields: ProfileDiagnosticEvent["fields"] | undefined, fieldName: string): string {

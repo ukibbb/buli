@@ -55,6 +55,7 @@ import type { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
 import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 import type { AssistantProviderModelPromptProfile } from "./assistantProviderModelPromptProfile.ts";
+import type { TaskSubagentProviderModelSelection } from "./taskSubagentProviderModelSelection.ts";
 
 export type {
   RuntimePendingToolApproval,
@@ -69,9 +70,10 @@ export type RuntimeToolCallExecutionContext = {
   assistantResponseMessageId: string;
   providerConversationTurn: ProviderConversationTurn;
   conversationTurnProvider: ConversationTurnProvider;
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
-  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  parentSelectedModelId: string;
+  parentSelectedReasoningEffort?: ReasoningEffort;
+  taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
+  taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   assistantOperatingMode: AssistantOperatingMode;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
   bashToolApprovalMode: BashToolApprovalMode;
@@ -472,9 +474,12 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     taskToolCallRequest: input.toolCallRequest,
-    selectedModelId: input.selectedModelId,
-    ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
-    assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+    parentSelectedModelId: input.parentSelectedModelId,
+    ...(input.parentSelectedReasoningEffort !== undefined
+      ? { parentSelectedReasoningEffort: input.parentSelectedReasoningEffort }
+      : {}),
+    taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
+    taskSubagentAssistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
     workspaceRootPath: input.workspaceRootPath,
     workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,

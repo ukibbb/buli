@@ -10,6 +10,7 @@ import {
   PrivateGitWorkspaceSnapshotStore,
   PromptContextCandidateCatalog,
   type BashToolApprovalMode,
+  type TaskSubagentProviderModelSelectionPolicy,
 } from "@buli/engine";
 import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
 import type { RenderChatScreenInTerminalInput, TuiChatScreenInstance } from "@buli/tui";
@@ -29,6 +30,7 @@ import {
   INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE,
   INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE,
   INVALID_SUBAGENT_CONCURRENCY_MESSAGE,
+  INVALID_TASK_SUBAGENT_MAX_REASONING_EFFORT_MESSAGE,
   type InteractiveChatEnvironment,
   resolveConversationAutoCompactionThresholdRatio,
   resolveInteractiveChatBashToolApprovalMode,
@@ -36,6 +38,7 @@ import {
   resolveInteractiveChatPromptContextScope,
   resolveInteractiveChatReadOnlyToolConcurrency,
   resolveInteractiveChatSubagentConcurrency,
+  resolveInteractiveChatTaskSubagentProviderModelSelectionPolicy,
 } from "../interactiveChat/interactiveChatEnvironment.ts";
 import { resolveInitialConversationSessionModelSelection } from "../interactiveChat/interactiveChatModelSelection.ts";
 import {
@@ -65,6 +68,7 @@ type InteractiveChatStartupConfiguration = {
   maximumConcurrentReadOnlyToolCalls: number | undefined;
   maximumConcurrentSubagentConversations: number | undefined;
   maximumConcurrentResponseStepStreams: number | undefined;
+  taskSubagentProviderModelSelectionPolicy: TaskSubagentProviderModelSelectionPolicy | undefined;
   workspaceRootPath: string;
   promptContextScope: ReturnType<typeof resolveInteractiveChatPromptContextScope>;
 };
@@ -113,6 +117,7 @@ export async function runInteractiveChat(input: {
     maximumConcurrentReadOnlyToolCalls,
     maximumConcurrentSubagentConversations,
     maximumConcurrentResponseStepStreams,
+    taskSubagentProviderModelSelectionPolicy,
     promptContextScope,
   } = startupConfigurationResolution.configuration;
 
@@ -194,6 +199,8 @@ export async function runInteractiveChat(input: {
       maximumConcurrentReadOnlyToolCalls: maximumConcurrentReadOnlyToolCalls ?? null,
       maximumConcurrentSubagentConversations: maximumConcurrentSubagentConversations ?? null,
       maximumConcurrentResponseStepStreams: maximumConcurrentResponseStepStreams ?? null,
+      taskSubagentSelectedModelIdOverride: taskSubagentProviderModelSelectionPolicy?.selectedModelIdOverride ?? null,
+      taskSubagentMaximumReasoningEffortOverride: taskSubagentProviderModelSelectionPolicy?.maximumReasoningEffort ?? null,
       startupElapsedMs: Date.now() - startupStartedAtMs,
     });
     logCliDiagnosticEvent(diagnosticLogger, "conversation_session.loaded", {
@@ -286,6 +293,9 @@ export async function runInteractiveChat(input: {
       ...(autoCompactionThresholdRatio !== undefined ? { autoCompactionThresholdRatio } : {}),
       ...(maximumConcurrentReadOnlyToolCalls !== undefined ? { maximumConcurrentReadOnlyToolCalls } : {}),
       ...(maximumConcurrentSubagentConversations !== undefined ? { maximumConcurrentSubagentConversations } : {}),
+      ...(taskSubagentProviderModelSelectionPolicy !== undefined
+        ? { taskSubagentProviderModelSelectionPolicy }
+        : {}),
     });
     assistantConversationRunner.startWorkspaceCodebaseKnowledgeIndexing();
     const conversationSessionBindings = createInteractiveChatConversationSessionBindings({
@@ -419,6 +429,13 @@ function resolveInteractiveChatStartupConfiguration(input: {
     return { status: "failed", message: INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE };
   }
 
+  const taskSubagentProviderModelSelectionPolicyResolution = resolveInteractiveChatTaskSubagentProviderModelSelectionPolicy({
+    environment: input.environment,
+  });
+  if (taskSubagentProviderModelSelectionPolicyResolution.status === "invalid") {
+    return { status: "failed", message: INVALID_TASK_SUBAGENT_MAX_REASONING_EFFORT_MESSAGE };
+  }
+
   return {
     status: "ready",
     configuration: {
@@ -429,6 +446,7 @@ function resolveInteractiveChatStartupConfiguration(input: {
       maximumConcurrentReadOnlyToolCalls: readOnlyToolConcurrencyResolution.value,
       maximumConcurrentSubagentConversations: subagentConcurrencyResolution.value,
       maximumConcurrentResponseStepStreams: openAiMaxConcurrentStreamsResolution.value,
+      taskSubagentProviderModelSelectionPolicy: taskSubagentProviderModelSelectionPolicyResolution.policy,
       workspaceRootPath: input.workspaceRootPath,
       promptContextScope: resolveInteractiveChatPromptContextScope({
         workspaceRootPath: input.workspaceRootPath,

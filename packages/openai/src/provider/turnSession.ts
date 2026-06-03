@@ -45,6 +45,7 @@ import {
   type OpenAiResponsesHttpRequestTemplate,
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "./openAiResponsesRequest.ts";
+import { summarizeOpenAiWorkingSetVisibilityForDiagnostics } from "./openAiWorkingSetVisibilityDiagnostics.ts";
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import type { OpenAiRateLimitCoordinator } from "./openAiRateLimitCoordinator.ts";
@@ -442,6 +443,12 @@ export class OpenAiProviderConversationTurn {
       const requestSizeContributorDiagnostics = this.diagnosticLogger
         ? summarizeOpenAiRequestSizeContributorsForDiagnostics({ requestBody })
         : {};
+      const workingSetVisibilityDiagnostics = this.diagnosticLogger
+        ? summarizeOpenAiWorkingSetVisibilityForDiagnostics({
+            requestBody,
+            currentTurnFirstInputItemIndex: this.initialOpenAiConversationInputItemCount,
+          }).diagnosticFields
+        : {};
       totalRequestBodyTextLength += responseStepRequestBodyTextLength;
       maxRequestBodyTextLength = Math.max(maxRequestBodyTextLength, responseStepRequestBodyTextLength);
       maxRequestInputItemCount = Math.max(maxRequestInputItemCount, responseStepRequestInputItemCount);
@@ -449,6 +456,7 @@ export class OpenAiProviderConversationTurn {
         requestBody,
         responseStepIndex,
         currentTurnFunctionCallOutputReplayDiagnostics,
+        workingSetVisibilityDiagnostics,
       });
 
       let terminalState: OpenAiResponseStepTerminalState | undefined;
@@ -744,6 +752,7 @@ export class OpenAiProviderConversationTurn {
           requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
           requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
           ...currentTurnFunctionCallOutputReplayDiagnostics,
+          ...workingSetVisibilityDiagnostics,
           ...requestSizeContributorDiagnostics,
           responseOutputItemCount: terminalState.responseOutputItems.length,
           toolCallCount: requestedToolCalls.length,
@@ -806,6 +815,7 @@ export class OpenAiProviderConversationTurn {
           requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
           requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
           ...currentTurnFunctionCallOutputReplayDiagnostics,
+          ...workingSetVisibilityDiagnostics,
           ...requestSizeContributorDiagnostics,
           responseOutputItemCount: 0,
           toolCallCount: 0,
@@ -876,6 +886,7 @@ export class OpenAiProviderConversationTurn {
         requestHistoricalFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.historicalTextLength,
         requestCurrentTurnFunctionCallOutputTextLength: requestFunctionCallOutputTextLengthByReplayAge.currentTurnTextLength,
         ...currentTurnFunctionCallOutputReplayDiagnostics,
+        ...workingSetVisibilityDiagnostics,
         ...requestSizeContributorDiagnostics,
         responseOutputItemCount: 0,
         toolCallCount: 0,
@@ -986,6 +997,7 @@ export class OpenAiProviderConversationTurn {
     requestBody: OpenAiResponsesHttpRequestBody;
     responseStepIndex: number;
     currentTurnFunctionCallOutputReplayDiagnostics: CurrentTurnFunctionCallOutputReplayDiagnostics;
+    workingSetVisibilityDiagnostics: BuliDiagnosticLogFields;
   }): Promise<void> {
     if (!this.shouldPrepareOpenAiDiagnosticOrDebugSummary()) {
       return;
@@ -996,6 +1008,7 @@ export class OpenAiProviderConversationTurn {
       conversationTurnId: this.conversationTurnId ?? null,
       ...this.createProviderTurnDiagnosticFields(),
       ...input.currentTurnFunctionCallOutputReplayDiagnostics,
+      ...input.workingSetVisibilityDiagnostics,
       ...requestDebugSummary,
     });
     await writeOpenAiDebugLog("OpenAI responses request", requestDebugSummary);
@@ -1112,6 +1125,8 @@ export class OpenAiProviderConversationTurn {
       parentTaskToolCallId: this.parentTaskToolCallId ?? null,
       subagentName: this.subagentName ?? null,
       compactionSource: this.compactionSource ?? null,
+      selectedModelId: this.selectedModelId,
+      selectedReasoningEffort: this.selectedReasoningEffort ?? null,
     };
   }
 }

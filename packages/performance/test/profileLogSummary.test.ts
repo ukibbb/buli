@@ -125,6 +125,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       fields: {
         conversationTurnId: "conversation-turn-1",
         providerTurnKind: "assistant",
+        selectedModelId: "gpt-5.5",
+        selectedReasoningEffort: "xhigh",
         responseStepIndex: 1,
         terminalKind: "tool_calls_requested",
         durationMs: 20,
@@ -139,6 +141,33 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         requestFunctionCallOutputTextLength: 90,
         requestHistoricalFunctionCallOutputTextLength: 30,
         requestCurrentTurnFunctionCallOutputTextLength: 60,
+        requestCurrentTurnFunctionCallOutputOriginalTextLength: 60,
+        requestCurrentTurnFunctionCallOutputProjectedTextLength: 60,
+        requestCurrentTurnFunctionCallOutputSavedCharacterCount: 0,
+        requestCurrentTurnCompactedFunctionCallOutputCount: 0,
+        requestCurrentTurnExactWorkingSetFunctionCallOutputCount: 1,
+        requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: 60,
+        requestWorkingSetInputItemCount: 2,
+        requestWorkingSetExactInputItemCount: 2,
+        requestWorkingSetCompactedInputItemCount: 0,
+        requestWorkingSetOriginalTextLength: 120,
+        requestWorkingSetProjectedTextLength: 120,
+        requestWorkingSetSavedCharacterCount: 0,
+        requestWorkingSetOriginalSerializedByteLength: 170,
+        requestWorkingSetProjectedSerializedByteLength: 170,
+        requestWorkingSetSavedSerializedByteLength: 0,
+        requestWorkingSetUnclassifiedInputItemCount: 0,
+        requestWorkingSetVisibilityReasons: ["active_user_intent", "current_turn_evidence"],
+        requestWorkingSetVisibilityReasonInputItemCounts: [1, 1],
+        requestWorkingSetVisibilityReasonTextLengths: [60, 60],
+        requestWorkingSetVisibilityReasonSerializedByteLengths: [70, 100],
+        requestWorkingSetLargestInputItemIndexes: [1, 0],
+        requestWorkingSetLargestInputItemVisibilityReasons: ["current_turn_evidence", "active_user_intent"],
+        requestWorkingSetLargestInputItemProjectionKinds: ["exact", "exact"],
+        requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_read", null],
+        requestWorkingSetLargestInputItemTextLengths: [60, 60],
+        requestWorkingSetLargestInputItemSerializedByteLengths: [100, 70],
+        requestWorkingSetLargestInputItemCurrentTurnFlags: [true, false],
         requestStableSerializedByteLength: 180,
         requestInputSerializedByteLength: 120,
         requestLargestContributorKinds: ["request_tools", "input_function_call_output"],
@@ -162,6 +191,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         providerTurnKind: "task_subagent",
         parentTaskToolCallId: "tool-call-task",
         subagentName: "explore",
+        selectedModelId: "gpt-5.4",
+        selectedReasoningEffort: "medium",
         responseStepIndex: 2,
         terminalKind: "message_completed",
         durationMs: 50,
@@ -176,6 +207,33 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         requestFunctionCallOutputTextLength: 420,
         requestHistoricalFunctionCallOutputTextLength: 420,
         requestCurrentTurnFunctionCallOutputTextLength: 0,
+        requestCurrentTurnFunctionCallOutputOriginalTextLength: 0,
+        requestCurrentTurnFunctionCallOutputProjectedTextLength: 0,
+        requestCurrentTurnFunctionCallOutputSavedCharacterCount: 0,
+        requestCurrentTurnCompactedFunctionCallOutputCount: 0,
+        requestCurrentTurnExactWorkingSetFunctionCallOutputCount: 0,
+        requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: 0,
+        requestWorkingSetInputItemCount: 6,
+        requestWorkingSetExactInputItemCount: 6,
+        requestWorkingSetCompactedInputItemCount: 0,
+        requestWorkingSetOriginalTextLength: 700,
+        requestWorkingSetProjectedTextLength: 700,
+        requestWorkingSetSavedCharacterCount: 0,
+        requestWorkingSetOriginalSerializedByteLength: 800,
+        requestWorkingSetProjectedSerializedByteLength: 800,
+        requestWorkingSetSavedSerializedByteLength: 0,
+        requestWorkingSetUnclassifiedInputItemCount: 0,
+        requestWorkingSetVisibilityReasons: ["active_user_intent", "recent_decision_context", "current_turn_evidence"],
+        requestWorkingSetVisibilityReasonInputItemCounts: [1, 4, 1],
+        requestWorkingSetVisibilityReasonTextLengths: [100, 180, 420],
+        requestWorkingSetVisibilityReasonSerializedByteLengths: [120, 168, 512],
+        requestWorkingSetLargestInputItemIndexes: [4, 5, 0],
+        requestWorkingSetLargestInputItemVisibilityReasons: ["current_turn_evidence", "recent_decision_context", "active_user_intent"],
+        requestWorkingSetLargestInputItemProjectionKinds: ["exact", "exact", "exact"],
+        requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_task_result", null, null],
+        requestWorkingSetLargestInputItemTextLengths: [420, 100, 100],
+        requestWorkingSetLargestInputItemSerializedByteLengths: [512, 128, 120],
+        requestWorkingSetLargestInputItemCurrentTurnFlags: [true, false, false],
         requestStableSerializedByteLength: 220,
         requestInputSerializedByteLength: 680,
         requestLargestContributorKinds: ["input_function_call_output", "request_instructions"],
@@ -197,6 +255,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
       fields: {
         conversationTurnId: "conversation-turn-1",
         providerTurnKind: "assistant",
+        selectedModelId: "gpt-5.5",
+        selectedReasoningEffort: "xhigh",
         terminalKind: "completed",
         responseStepCount: 1,
         requestedToolCallCount: 1,
@@ -217,6 +277,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         providerTurnKind: "task_subagent",
         parentTaskToolCallId: "tool-call-task",
         subagentName: "explore",
+        selectedModelId: "gpt-5.4",
+        selectedReasoningEffort: "medium",
         terminalKind: "completed",
         responseStepCount: 1,
         requestedToolCallCount: 0,
@@ -517,6 +579,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("Total cache read tokens: 3");
   expect(reportMarkdown).toContain("## OpenAI Provider Turn Kind Attribution");
   expect(reportMarkdown).toContain("task_subagent");
+  expect(reportMarkdown).toContain("gpt-5.4");
+  expect(reportMarkdown).toContain("medium");
   expect(reportMarkdown).toContain("## OpenAI Retries And Timeouts");
   expect(reportMarkdown).toContain("Timeout transport retries scheduled: 1");
   expect(reportMarkdown).toContain("Transport retry error names: TimeoutError (1)");
@@ -527,6 +591,14 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("512 B");
   expect(reportMarkdown).toContain("## OpenAI Replay Input Age");
   expect(reportMarkdown).toContain("Historical function-output text: 450 B");
+  expect(reportMarkdown).toContain("## OpenAI Working-Set Visibility");
+  expect(reportMarkdown).toContain("provider-visible projection diagnostics only");
+  expect(reportMarkdown).toContain("Raw evidence was not deleted");
+  expect(reportMarkdown).toContain("Text original/projected/saved: 820 B / 820 B / 0 B");
+  expect(reportMarkdown).toContain("Serialized original/projected/saved: 970 B / 970 B / 0 B");
+  expect(reportMarkdown).toContain("current_turn_evidence");
+  expect(reportMarkdown).toContain("tool_result:call_read");
+  expect(reportMarkdown).toContain("tool_result:call_task_result");
   expect(reportMarkdown).toContain("## Tool Attribution");
   expect(reportMarkdown).toContain("read");
   expect(reportMarkdown).toContain("Total approval wait: 13 ms");
@@ -536,6 +608,8 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("Per-call task execution total: 89 ms");
   expect(reportMarkdown).toContain("Per-call parent tool-result wait total: 21 ms");
   expect(reportMarkdown).toContain("Task-only concurrent group wall time: 89 ms");
+  expect(reportMarkdown).toContain("Largest task results:");
+  expect(reportMarkdown).toContain("128 B");
   expect(reportMarkdown).toContain("explore (1)");
   expect(reportMarkdown).toContain("## OpenAI Context Guard");
   expect(reportMarkdown).toContain("Performance Budget");

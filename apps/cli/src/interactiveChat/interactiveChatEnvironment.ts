@@ -1,11 +1,13 @@
 import { dirname, resolve, sep } from "node:path";
-import { parseBashToolApprovalMode, type BashToolApprovalMode } from "@buli/engine";
+import { ReasoningEffortSchema, type ReasoningEffort } from "@buli/contracts";
+import { parseBashToolApprovalMode, type BashToolApprovalMode, type TaskSubagentProviderModelSelectionPolicy } from "@buli/engine";
 
 export const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 export const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
 export const INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE = "Invalid BULI_READ_ONLY_TOOL_CONCURRENCY. Use a positive integer.";
 export const INVALID_SUBAGENT_CONCURRENCY_MESSAGE = "Invalid BULI_SUBAGENT_CONCURRENCY. Use a positive integer.";
 export const INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE = "Invalid BULI_OPENAI_MAX_CONCURRENT_STREAMS. Use a positive integer.";
+export const INVALID_TASK_SUBAGENT_MAX_REASONING_EFFORT_MESSAGE = "Invalid BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT. Use none, minimal, low, medium, high, or xhigh.";
 export const OPENAI_PROVIDER_PROTOCOL_IPC_ENVIRONMENT_VALUE = "1";
 
 const DEFAULT_INTERACTIVE_CHAT_BASH_TOOL_APPROVAL_MODE: BashToolApprovalMode = "trusted";
@@ -17,6 +19,8 @@ export type InteractiveChatEnvironment = Readonly<{
   BULI_READ_ONLY_TOOL_CONCURRENCY?: string | undefined;
   BULI_SUBAGENT_CONCURRENCY?: string | undefined;
   BULI_OPENAI_MAX_CONCURRENT_STREAMS?: string | undefined;
+  BULI_TASK_SUBAGENT_MODEL?: string | undefined;
+  BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT?: string | undefined;
   BULI_PROMPT_CONTEXT_ROOT?: string | undefined;
   BULI_PROVIDER_IPC?: string | undefined;
   BULI_PROVIDER_HOST_COMMAND?: string | undefined;
@@ -29,6 +33,10 @@ export type AutoCompactionThresholdResolution =
 
 export type PositiveIntegerEnvironmentResolution =
   | { status: "resolved"; value?: number }
+  | { status: "invalid" };
+
+export type TaskSubagentProviderModelSelectionPolicyEnvironmentResolution =
+  | { status: "resolved"; policy?: TaskSubagentProviderModelSelectionPolicy }
   | { status: "invalid" };
 
 export type PromptContextScopeResolution = {
@@ -86,6 +94,32 @@ export function resolveInteractiveChatOpenAiMaxConcurrentStreams(input: {
   return resolvePositiveIntegerEnvironmentValue(input.environment.BULI_OPENAI_MAX_CONCURRENT_STREAMS);
 }
 
+export function resolveInteractiveChatTaskSubagentProviderModelSelectionPolicy(input: {
+  environment: InteractiveChatEnvironment;
+}): TaskSubagentProviderModelSelectionPolicyEnvironmentResolution {
+  const selectedModelIdOverride = input.environment.BULI_TASK_SUBAGENT_MODEL?.trim();
+  const maximumReasoningEffortResolution = resolveOptionalReasoningEffortEnvironmentValue(
+    input.environment.BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT,
+  );
+  if (maximumReasoningEffortResolution.status === "invalid") {
+    return { status: "invalid" };
+  }
+
+  if (!selectedModelIdOverride && maximumReasoningEffortResolution.value === undefined) {
+    return { status: "resolved" };
+  }
+
+  return {
+    status: "resolved",
+    policy: {
+      ...(selectedModelIdOverride ? { selectedModelIdOverride } : {}),
+      ...(maximumReasoningEffortResolution.value !== undefined
+        ? { maximumReasoningEffort: maximumReasoningEffortResolution.value }
+        : {}),
+    },
+  };
+}
+
 export function resolveInteractiveChatProviderIpcEnabled(input: {
   environment: InteractiveChatEnvironment;
 }): boolean {
@@ -140,4 +174,20 @@ function resolvePositiveIntegerEnvironmentValue(
   }
 
   return { status: "resolved", value: numericEnvironmentValue };
+}
+
+function resolveOptionalReasoningEffortEnvironmentValue(
+  requestedEnvironmentValue: string | undefined,
+): { status: "resolved"; value?: ReasoningEffort } | { status: "invalid" } {
+  const environmentValue = requestedEnvironmentValue?.trim();
+  if (!environmentValue) {
+    return { status: "resolved" };
+  }
+
+  const parsedReasoningEffort = ReasoningEffortSchema.safeParse(environmentValue);
+  if (!parsedReasoningEffort.success) {
+    return { status: "invalid" };
+  }
+
+  return { status: "resolved", value: parsedReasoningEffort.data };
 }

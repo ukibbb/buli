@@ -68,6 +68,11 @@ import {
   type AssistantProviderName,
 } from "./assistantProviderModelPromptProfile.ts";
 import {
+  resolveTaskSubagentProviderModelSelection,
+  type TaskSubagentProviderModelSelection,
+  type TaskSubagentProviderModelSelectionPolicy,
+} from "./taskSubagentProviderModelSelection.ts";
+import {
   finalizeFailedConversationTurn,
   finalizeInterruptedConversationTurn,
   finalizeProviderStreamEndedBeforeCompletion,
@@ -93,6 +98,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
+  readonly taskSubagentProviderModelSelectionPolicy: TaskSubagentProviderModelSelectionPolicy | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly skillCatalog: WorkspaceSkillCatalog;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
@@ -118,6 +124,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
     taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
+    taskSubagentProviderModelSelectionPolicy?: TaskSubagentProviderModelSelectionPolicy | undefined;
     projectInstructionTracker?: ProjectInstructionTracker;
     skillCatalog?: WorkspaceSkillCatalog;
     skillHomeDirectoryPath?: string | undefined;
@@ -149,6 +156,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.taskSubagentSoftElapsedTimeCheckpointMilliseconds = validateTaskSubagentSoftElapsedTimeCheckpointMilliseconds(
       input.taskSubagentSoftElapsedTimeCheckpointMilliseconds,
     );
+    this.taskSubagentProviderModelSelectionPolicy = input.taskSubagentProviderModelSelectionPolicy;
     this.projectInstructionTracker = input.projectInstructionTracker ?? new ProjectInstructionTracker({
       workspaceRootPath: input.workspaceRootPath,
     });
@@ -260,6 +268,9 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       ...(this.taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
         ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds: this.taskSubagentSoftElapsedTimeCheckpointMilliseconds }
         : {}),
+      ...(this.taskSubagentProviderModelSelectionPolicy !== undefined
+        ? { taskSubagentProviderModelSelectionPolicy: this.taskSubagentProviderModelSelectionPolicy }
+        : {}),
       projectInstructionTracker: this.projectInstructionTracker,
       skillCatalog: this.skillCatalog,
       onConversationTurnFinished: () => {
@@ -307,6 +318,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly assistantOperatingMode: AssistantOperatingMode;
   readonly conversationTurnProvider: ConversationTurnProvider;
   readonly assistantProviderName: AssistantProviderName;
+  readonly assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
   readonly assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
   readonly conversationHistory: InMemoryConversationHistory;
@@ -324,6 +336,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly maximumConcurrentReadOnlyToolCalls: number | undefined;
   readonly maximumConcurrentSubagentConversations: number | undefined;
   readonly taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
+  readonly taskSubagentProviderModelSelectionPolicy: TaskSubagentProviderModelSelectionPolicy | undefined;
   readonly projectInstructionTracker: ProjectInstructionTracker;
   readonly skillCatalog: WorkspaceSkillCatalog;
   readonly onConversationTurnFinished: () => void;
@@ -355,6 +368,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     maximumConcurrentReadOnlyToolCalls?: number | undefined;
     maximumConcurrentSubagentConversations?: number | undefined;
     taskSubagentSoftElapsedTimeCheckpointMilliseconds?: number | undefined;
+    taskSubagentProviderModelSelectionPolicy?: TaskSubagentProviderModelSelectionPolicy | undefined;
     projectInstructionTracker: ProjectInstructionTracker;
     skillCatalog: WorkspaceSkillCatalog;
     onConversationTurnFinished: () => void;
@@ -364,6 +378,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.assistantOperatingMode = input.assistantOperatingMode;
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.assistantProviderName = input.assistantProviderName;
+    this.assistantProviderModelPromptProfileResolver = input.assistantProviderModelPromptProfileResolver;
     this.assistantProviderModelPromptProfile = input.assistantProviderModelPromptProfileResolver({
       providerName: input.assistantProviderName,
       selectedModelId: input.conversationTurnInput.selectedModelId,
@@ -384,6 +399,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.maximumConcurrentReadOnlyToolCalls = input.maximumConcurrentReadOnlyToolCalls;
     this.maximumConcurrentSubagentConversations = input.maximumConcurrentSubagentConversations;
     this.taskSubagentSoftElapsedTimeCheckpointMilliseconds = input.taskSubagentSoftElapsedTimeCheckpointMilliseconds;
+    this.taskSubagentProviderModelSelectionPolicy = input.taskSubagentProviderModelSelectionPolicy;
     this.projectInstructionTracker = input.projectInstructionTracker;
     this.skillCatalog = input.skillCatalog;
     this.onConversationTurnFinished = input.onConversationTurnFinished;
@@ -692,16 +708,21 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     providerConversationTurn: ProviderConversationTurn;
     sameTurnReadCoverageTracker: SameTurnReadCoverageTracker;
   }): RuntimeToolCallExecutionContext {
+    const taskSubagentProviderModelSelection = this.resolveTaskSubagentProviderModelSelection();
+    const taskSubagentAssistantProviderModelPromptProfile =
+      this.resolveTaskSubagentAssistantProviderModelPromptProfile(taskSubagentProviderModelSelection);
+
     return {
       assistantResponseMessageId: input.assistantResponseMessageId,
       providerConversationTurn: input.providerConversationTurn,
       conversationTurnId: this.conversationTurnId,
       conversationTurnProvider: this.conversationTurnProvider,
-      selectedModelId: this.conversationTurnInput.selectedModelId,
-      ...(this.conversationTurnInput.selectedReasoningEffort
-        ? { selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
+      parentSelectedModelId: this.conversationTurnInput.selectedModelId,
+      ...(this.conversationTurnInput.selectedReasoningEffort !== undefined
+        ? { parentSelectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
         : {}),
-      assistantProviderModelPromptProfile: this.assistantProviderModelPromptProfile,
+      taskSubagentProviderModelSelection,
+      taskSubagentAssistantProviderModelPromptProfile,
       assistantOperatingMode: this.assistantOperatingMode,
       ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
       bashToolApprovalMode: this.bashToolApprovalMode,
@@ -731,6 +752,32 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       },
       diagnosticLogger: this.diagnosticLogger,
     };
+  }
+
+  private resolveTaskSubagentProviderModelSelection(): TaskSubagentProviderModelSelection {
+    return resolveTaskSubagentProviderModelSelection({
+      parentAssistantProviderName: this.assistantProviderName,
+      parentSelectedModelId: this.conversationTurnInput.selectedModelId,
+      ...(this.conversationTurnInput.selectedReasoningEffort !== undefined
+        ? { parentSelectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort }
+        : {}),
+      ...(this.taskSubagentProviderModelSelectionPolicy !== undefined
+        ? { policy: this.taskSubagentProviderModelSelectionPolicy }
+        : {}),
+    });
+  }
+
+  private resolveTaskSubagentAssistantProviderModelPromptProfile(
+    taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection,
+  ): AssistantProviderModelPromptProfile {
+    if (taskSubagentProviderModelSelection.taskSubagentSelectedModelId === this.conversationTurnInput.selectedModelId) {
+      return this.assistantProviderModelPromptProfile;
+    }
+
+    return this.assistantProviderModelPromptProfileResolver({
+      providerName: this.assistantProviderName,
+      selectedModelId: taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
+    });
   }
 
   private throwIfConversationTurnInterrupted(): void {

@@ -23,6 +23,18 @@ export { reconcileSelectedPromptContextReferenceTextsWithPromptDraft } from "./p
 export { replaceActivePromptContextQueryWithSelectedReference } from "./prompt-context/replaceActivePromptContextQueryWithSelectedReference.ts";
 export { AssistantConversationRuntime } from "./runtime.ts";
 export {
+  DEFAULT_OPENAI_HIGH_TIER_TASK_SUBAGENT_MODEL_ID,
+  DEFAULT_TASK_SUBAGENT_MAX_REASONING_EFFORT,
+  resolveTaskSubagentProviderModelSelection,
+} from "./taskSubagentProviderModelSelection.ts";
+export type {
+  ResolveTaskSubagentProviderModelSelectionInput,
+  TaskSubagentProviderModelSelection,
+  TaskSubagentProviderModelSelectionPolicy,
+  TaskSubagentProviderModelSelectionReason,
+  TaskSubagentReasoningEffortSelectionReason,
+} from "./taskSubagentProviderModelSelection.ts";
+export {
   CURRENT_DEFAULT_STICKY_NOTES_PROMPT_RENDERING_PROFILE,
   CURRENT_DEFAULT_WORKFLOW_HANDOFF_PROMPT_RENDERING_PROFILE,
   DEFAULT_ASSISTANT_PROVIDER_NAME,

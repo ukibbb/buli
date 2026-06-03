@@ -255,6 +255,7 @@ test("OpenAiProviderConversationTurn captures replay items for a completed tool 
     fetchImpl: createFetchImpl(queuedResponses, requestBodies),
     loadRequestHeaders: async () => new Headers(),
     selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "medium",
     systemPromptText: "You are buli.",
     conversationSessionEntries: createConversationSessionEntries("Run pwd"),
     onStepRequestFailed: async () => new Error("unexpected request failure"),
@@ -361,6 +362,7 @@ test("OpenAiProviderConversationTurn emits turn metadata, request timing, and re
     fetchImpl: createFetchImpl(queuedResponses, requestBodies),
     loadRequestHeaders: async () => new Headers(),
     selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "medium",
     systemPromptText: "You are buli.",
     conversationSessionEntries: createConversationSessionEntries("Run pwd"),
     onStepRequestFailed: async () => new Error("unexpected request failure"),
@@ -384,6 +386,8 @@ test("OpenAiProviderConversationTurn emits turn metadata, request timing, and re
     parentTaskToolCallId: "call_task_1",
     subagentName: "explore",
     compactionSource: null,
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "medium",
     requestConstructionDurationMs: expect.any(Number),
     requestObjectBuildDurationMs: expect.any(Number),
     requestSerializationDurationMs: expect.any(Number),
@@ -400,10 +404,21 @@ test("OpenAiProviderConversationTurn emits turn metadata, request timing, and re
   });
   expect(responseStepSummaries[1]?.fields).toMatchObject({
     providerTurnKind: "task_subagent",
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "medium",
     requestInputItemCount: 3,
     requestFunctionCallOutputTextLength: toolResultText.length,
     requestHistoricalFunctionCallOutputTextLength: 0,
     requestCurrentTurnFunctionCallOutputTextLength: toolResultText.length,
+    requestWorkingSetInputItemCount: 3,
+    requestWorkingSetExactInputItemCount: 3,
+    requestWorkingSetCompactedInputItemCount: 0,
+    requestWorkingSetSavedCharacterCount: 0,
+    requestWorkingSetSavedSerializedByteLength: 0,
+    requestWorkingSetUnclassifiedInputItemCount: 0,
+    requestWorkingSetVisibilityReasons: ["active_user_intent", "current_turn_evidence", "provider_protocol_continuation"],
+    requestWorkingSetVisibilityReasonInputItemCounts: [1, 1, 1],
+    requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_1", "tool_call:call_1", null],
     requestStableSerializedByteLength: expect.any(Number),
     requestInputSerializedByteLength: expect.any(Number),
     requestLargestContributorKinds: expect.any(Array),
@@ -416,6 +431,8 @@ test("OpenAiProviderConversationTurn emits turn metadata, request timing, and re
     providerTurnKind: "task_subagent",
     parentTaskToolCallId: "call_task_1",
     subagentName: "explore",
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "medium",
   });
 });
 
@@ -640,9 +657,12 @@ test("OpenAiProviderConversationTurn keeps large current-turn tool output replay
   const secondToolOutputInSecondContinuation = secondContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_2");
 
   expect(firstToolOutputInFirstContinuation?.output).toBe(firstLargeToolResultText);
+  expect(Object.keys(firstToolOutputInFirstContinuation ?? {}).sort()).toEqual(["call_id", "output", "type"]);
   expect(firstToolOutputInSecondContinuation?.output).toBe(firstLargeToolResultText);
+  expect(Object.keys(firstToolOutputInSecondContinuation ?? {}).sort()).toEqual(["call_id", "output", "type"]);
   expect(firstToolOutputInSecondContinuation?.output).not.toContain("[Current-turn tool result replay compacted]");
   expect(secondToolOutputInSecondContinuation?.output).toBe(secondLargeToolResultText);
+  expect(Object.keys(secondToolOutputInSecondContinuation ?? {}).sort()).toEqual(["call_id", "output", "type"]);
   const requestPreparedDiagnostics = diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.request_prepared");
   expect(requestPreparedDiagnostics).toHaveLength(3);
   expect(requestPreparedDiagnostics[2]?.fields).toMatchObject({
@@ -652,8 +672,21 @@ test("OpenAiProviderConversationTurn keeps large current-turn tool output replay
     requestCurrentTurnCompactedFunctionCallOutputCount: 0,
     requestCurrentTurnExactWorkingSetFunctionCallOutputCount: 2,
     requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: firstLargeToolResultText.length + secondLargeToolResultText.length,
+    requestWorkingSetInputItemCount: 5,
+    requestWorkingSetExactInputItemCount: 5,
+    requestWorkingSetCompactedInputItemCount: 0,
+    requestWorkingSetSavedCharacterCount: 0,
+    requestWorkingSetSavedSerializedByteLength: 0,
+    requestWorkingSetVisibilityReasons: ["active_user_intent", "current_turn_evidence", "provider_protocol_continuation"],
+    requestWorkingSetVisibilityReasonInputItemCounts: [1, 2, 2],
+    requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_2", "tool_result:call_1", "tool_call:call_1", "tool_call:call_2", null],
+    requestWorkingSetLargestInputItemProjectionKinds: ["exact", "exact", "exact", "exact", "exact"],
   });
-  expect(providerTurn.getProviderTurnReplay()).toMatchObject({
+  const providerReplay = providerTurn.getProviderTurnReplay();
+  const providerReplayFunctionOutputItems = providerReplay?.inputItems.filter((inputItem) =>
+    inputItem.type === "function_call_output"
+  ) ?? [];
+  expect(providerReplay).toMatchObject({
     provider: "openai",
     inputItems: expect.arrayContaining([
       expect.objectContaining({
@@ -668,6 +701,10 @@ test("OpenAiProviderConversationTurn keeps large current-turn tool output replay
       }),
     ]),
   });
+  expect(providerReplayFunctionOutputItems.map((inputItem) => Object.keys(inputItem).sort())).toEqual([
+    ["call_id", "output", "type"],
+    ["call_id", "output", "type"],
+  ]);
 });
 
 test("OpenAiProviderConversationTurn keeps recent small current-turn tool output replay exact after first visibility", async () => {
