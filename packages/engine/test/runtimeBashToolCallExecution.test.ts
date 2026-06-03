@@ -147,9 +147,10 @@ function createFailingWorkspaceShellCommandExecutor(): WorkspaceShellCommandExec
   } satisfies WorkspaceShellCommandExecutor;
 }
 
-test("streamAssistantResponseEventsForBashToolCall blocks all bash commands in plan mode", async () => {
+test("streamAssistantResponseEventsForBashToolCall requires approval for read-only bash in plan mode", async () => {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const executedShellCommands: string[] = [];
+  const pendingApprovalInputs: RuntimePendingToolApprovalInput[] = [];
   const { assistantResponseEvents, providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
     shellCommand: "pwd",
     assistantOperatingMode: "plan",
@@ -166,7 +167,81 @@ test("streamAssistantResponseEventsForBashToolCall blocks all bash commands in p
         };
       },
     },
+    createPendingToolApproval: (pendingToolApprovalInput) => {
+      pendingApprovalInputs.push(pendingToolApprovalInput);
+      return {
+        approvalId: "approval_1",
+        approvalDecisionPromise: Promise.resolve("denied"),
+      };
+    },
     diagnosticEvents,
+  });
+
+  expect(executedShellCommands).toEqual([]);
+  expect(pendingApprovalInputs).toEqual<RuntimePendingToolApprovalInput[]>([
+    {
+      toolCallId: "call_bash_1",
+      toolCallRequest: {
+        toolName: "bash",
+        shellCommand: "pwd",
+        commandDescription: "Run command",
+      },
+    },
+  ]);
+  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_message_part_added",
+    "assistant_pending_tool_approval_requested",
+    "assistant_pending_tool_approval_cleared",
+    "assistant_message_part_updated",
+  ]);
+  expect(assistantResponseEvents[1]).toMatchObject({
+    type: "assistant_pending_tool_approval_requested",
+    approvalRequest: {
+      riskExplanation: expect.stringContaining("Plan Agent is read-only"),
+    },
+  });
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_bash_1",
+      toolResultText: "The user denied this bash command, so it was not executed.",
+    },
+  ]);
+  expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
+    entryKind: "denied_tool_result",
+    toolCallId: "call_bash_1",
+    toolResultText: "The user denied this bash command, so it was not executed.",
+  });
+  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.tool_result_submitted"))
+    .toEqual([
+      expect.objectContaining({
+        subsystem: "engine",
+        fields: expect.objectContaining({
+          toolCallId: "call_bash_1",
+          toolResultKind: "denied",
+          toolResultTextLength: providerConversationTurn.submittedToolResults[0]?.toolResultText.length,
+        }),
+      }),
+    ]);
+});
+
+test("streamAssistantResponseEventsForBashToolCall denies risky bash in plan mode without approval", async () => {
+  const executedShellCommands: string[] = [];
+  const { assistantResponseEvents, providerConversationTurn, conversationHistory } = await collectBashToolCallEvents({
+    shellCommand: "mkdir blocked-test",
+    assistantOperatingMode: "plan",
+    bashToolApprovalMode: "trusted",
+    workspaceShellCommandExecutor: {
+      workspaceRootPath: process.cwd(),
+      shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+      async runShellCommand(input) {
+        executedShellCommands.push(input.shellCommand);
+        return {
+          exitCode: 0,
+          stdoutText: "should not run\n",
+          stderrText: "",
+        };
+      },
+    },
   });
 
   expect(executedShellCommands).toEqual([]);
@@ -184,7 +259,7 @@ test("streamAssistantResponseEventsForBashToolCall blocks all bash commands in p
   expect(providerConversationTurn.submittedToolResults).toEqual([
     {
       toolCallId: "call_bash_1",
-      toolResultText: expect.stringContaining("Plan Agent is read-only"),
+      toolResultText: expect.stringContaining("This bash command can create, remove, or rewrite files or directories"),
     },
   ]);
   expect(conversationHistory.listConversationSessionEntries().at(-1)).toMatchObject({
@@ -192,17 +267,46 @@ test("streamAssistantResponseEventsForBashToolCall blocks all bash commands in p
     toolCallId: "call_bash_1",
     toolResultText: expect.stringContaining("Plan Agent is read-only"),
   });
-  expect(diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "provider_turn.tool_result_submitted"))
-    .toEqual([
-      expect.objectContaining({
-        subsystem: "engine",
-        fields: expect.objectContaining({
-          toolCallId: "call_bash_1",
-          toolResultKind: "denied",
-          toolResultTextLength: providerConversationTurn.submittedToolResults[0]?.toolResultText.length,
-        }),
-      }),
-    ]);
+});
+
+test("streamAssistantResponseEventsForBashToolCall executes approved read-only bash in plan mode", async () => {
+  const executedShellCommands: string[] = [];
+  const { assistantResponseEvents, providerConversationTurn } = await collectBashToolCallEvents({
+    shellCommand: "pwd",
+    assistantOperatingMode: "plan",
+    bashToolApprovalMode: "trusted",
+    workspaceShellCommandExecutor: {
+      workspaceRootPath: process.cwd(),
+      shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+      async runShellCommand(input) {
+        executedShellCommands.push(input.shellCommand);
+        return {
+          exitCode: 0,
+          stdoutText: "/repo\n",
+          stderrText: "",
+        };
+      },
+    },
+    createPendingToolApproval: () => ({
+      approvalId: "approval_1",
+      approvalDecisionPromise: Promise.resolve("approved"),
+    }),
+  });
+
+  expect(executedShellCommands).toEqual(["pwd"]);
+  expect(assistantResponseEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_message_part_added",
+    "assistant_pending_tool_approval_requested",
+    "assistant_pending_tool_approval_cleared",
+    "assistant_message_part_updated",
+    "assistant_message_part_updated",
+  ]);
+  expect(providerConversationTurn.submittedToolResults).toEqual([
+    {
+      toolCallId: "call_bash_1",
+      toolResultText: expect.stringContaining("Stdout:\n/repo"),
+    },
+  ]);
 });
 
 test("streamAssistantResponseEventsForBashToolCall records user-denied bash approvals", async () => {

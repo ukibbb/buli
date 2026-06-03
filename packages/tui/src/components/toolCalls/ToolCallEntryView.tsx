@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ToolCallDetail, WorkspacePatch } from "@buli/contracts";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ApprovalDecisionControl } from "../primitives/ApprovalDecisionControl.tsx";
 import { BashToolCallCard } from "./BashToolCallCard.tsx";
 import { EditManyToolCallCard } from "./EditManyToolCallCard.tsx";
@@ -32,6 +33,7 @@ export type ToolCallEntryViewProps = {
 export type PendingToolCallApprovalDecisionActions = {
   onApprove: () => void;
   onDeny: () => void;
+  approvalRiskExplanation: string;
 };
 
 type ToolCallDetailName = ToolCallDetail["toolName"];
@@ -97,11 +99,25 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   ) : undefined;
 
   const renderToolCallEntry = resolveToolCallEntryRenderer(toolCallDetail);
-  return renderToolCallEntry({
+  const renderedToolCallEntry = renderToolCallEntry({
     ...props,
     toolCallDetail,
     approvalDecisionControl,
   });
+  const approvalRiskExplanation = props.pendingToolCallApprovalDecisionActions?.approvalRiskExplanation;
+
+  return (
+    <box flexDirection="column" width="100%">
+      {renderedToolCallEntry}
+      {approvalRiskExplanation ? (
+        <box marginLeft={2} width="100%">
+          <text fg={chatScreenTheme.textDim} wrapMode="word" width="100%">
+            {approvalRiskExplanation}
+          </text>
+        </box>
+      ) : null}
+    </box>
+  );
 }
 
 function resolveToolCallEntryRenderer<ToolName extends ToolCallDetailName>(

@@ -175,6 +175,30 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("exit 0");
   });
 
+  test("renders_pending_approval_risk_explanation", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="streaming"
+        toolCallDetail={{
+          toolName: "bash",
+          commandLine: "aws sts get-caller-identity",
+        }}
+        pendingToolCallApprovalDecisionActions={{
+          onApprove: () => {},
+          onDeny: () => {},
+          approvalRiskExplanation: "Plan Agent is read-only, so this AWS read command needs explicit approval.",
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Yes");
+    expect(frame).toContain("No");
+    expect(frame).toContain("Plan Agent is read-only");
+    expect(frame).toContain("explicit approval");
+  });
+
   test("dispatches_todowrite", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView

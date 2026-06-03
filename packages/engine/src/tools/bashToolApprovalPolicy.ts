@@ -6,6 +6,7 @@ export const DEFAULT_BASH_TOOL_APPROVAL_MODE: BashToolApprovalMode = "risk_based
 
 export type BashCommandRiskKind =
   | "ambiguous_shell_syntax"
+  | "cloud_state_change"
   | "filesystem_change"
   | "git_mutation"
   | "github_mutation"
@@ -118,6 +119,75 @@ const SAFE_GITHUB_ISSUE_SUBCOMMAND_NAMES = new Set(["list", "view"]);
 const SAFE_GITHUB_REPO_SUBCOMMAND_NAMES = new Set(["view"]);
 const SAFE_GITHUB_RUN_SUBCOMMAND_NAMES = new Set(["list", "view"]);
 const SAFE_GITHUB_RELEASE_SUBCOMMAND_NAMES = new Set(["list", "view"]);
+
+const AWS_GLOBAL_OPTIONS_WITH_SEPARATE_VALUE = new Set([
+  "--ca-bundle",
+  "--cli-binary-format",
+  "--cli-connect-timeout",
+  "--cli-read-timeout",
+  "--color",
+  "--endpoint-url",
+  "--max-items",
+  "--output",
+  "--page-size",
+  "--profile",
+  "--query",
+  "--region",
+  "--starting-token",
+]);
+const AWS_GLOBAL_OPTIONS_WITH_INLINE_VALUE_PREFIXES = [...AWS_GLOBAL_OPTIONS_WITH_SEPARATE_VALUE].map(
+  (awsGlobalOptionName) => `${awsGlobalOptionName}=`,
+);
+const AWS_GLOBAL_OPTIONS_WITHOUT_VALUE = new Set([
+  "--debug",
+  "--no-cli-auto-prompt",
+  "--no-cli-pager",
+  "--no-paginate",
+  "--no-sign-request",
+  "--no-verify-ssl",
+  "--version",
+]);
+const AWS_CLOUD_STATE_CHANGING_OPERATION_PREFIXES = [
+  "accept-",
+  "add-",
+  "allocate-",
+  "associate-",
+  "attach-",
+  "authorize-",
+  "cancel-",
+  "complete-",
+  "configure",
+  "copy-",
+  "create-",
+  "delete-",
+  "deregister-",
+  "detach-",
+  "disable-",
+  "disassociate-",
+  "enable-",
+  "invoke",
+  "modify-",
+  "move-",
+  "put-",
+  "reboot-",
+  "register-",
+  "reject-",
+  "remove-",
+  "restore-",
+  "revoke-",
+  "run-",
+  "send-",
+  "set-",
+  "start-",
+  "stop-",
+  "submit-",
+  "sync",
+  "tag-",
+  "terminate-",
+  "untag-",
+  "update-",
+  "upload-",
+];
 
 export function parseBashToolApprovalMode(rawBashToolApprovalMode: string): BashToolApprovalMode | undefined {
   const normalizedBashToolApprovalMode = rawBashToolApprovalMode.trim().toLowerCase().replace(/-/g, "_");
@@ -281,6 +351,10 @@ function classifyCommandSegment(commandSegment: string): BashToolApprovalDecisio
     return classifyGitHubCliCommand(commandArguments);
   }
 
+  if (commandName === "aws") {
+    return classifyAwsCliCommand(commandArguments);
+  }
+
   if (SAFE_READ_ONLY_COMMAND_NAMES.has(commandName)) {
     return { approvalPolicy: "auto_run", isReadOnly: true };
   }
@@ -288,6 +362,121 @@ function classifyCommandSegment(commandSegment: string): BashToolApprovalDecisio
   return requiresUserApproval(
     "unclassified_command",
     "This bash command is not classified as clearly non-destructive, so it still requires explicit user approval.",
+  );
+}
+
+function classifyAwsCliCommand(commandArguments: string[]): BashToolApprovalDecision {
+  const awsCliCommand = parseAwsCliServiceCommand(commandArguments);
+  if (!awsCliCommand) {
+    return requiresUserApproval(
+      "cloud_state_change",
+      "This AWS CLI command is malformed or uses options that are not classified as read-only, so it still requires explicit user approval.",
+    );
+  }
+
+  if (awsCliCommand.serviceName === "configure") {
+    return requiresUserApproval(
+      "cloud_state_change",
+      "This AWS CLI command can read or change local AWS credentials or configuration, so it still requires explicit user approval.",
+    );
+  }
+
+  const awsOperationName = awsCliCommand.operationName;
+  if (!awsOperationName) {
+    return requiresUserApproval(
+      "cloud_state_change",
+      "This AWS CLI command does not name a classified read-only operation, so it still requires explicit user approval.",
+    );
+  }
+
+  if (isClassifiedAwsReadOnlyOperation({ serviceName: awsCliCommand.serviceName, operationName: awsOperationName })) {
+    return { approvalPolicy: "auto_run", isReadOnly: true };
+  }
+
+  if (isKnownAwsCloudStateChangingOperation(awsOperationName)) {
+    return requiresUserApproval(
+      "cloud_state_change",
+      "This AWS CLI command can change cloud account state, invoke cloud workloads, or write local files, so it still requires explicit user approval.",
+    );
+  }
+
+  return requiresUserApproval(
+    "cloud_state_change",
+    "This AWS CLI command is not classified as read-only, so it still requires explicit user approval.",
+  );
+}
+
+function parseAwsCliServiceCommand(commandArguments: string[]): { serviceName: string; operationName?: string } | undefined {
+  let commandArgumentIndex = 0;
+
+  while (commandArgumentIndex < commandArguments.length) {
+    const commandArgument = commandArguments[commandArgumentIndex]!;
+
+    if (AWS_GLOBAL_OPTIONS_WITHOUT_VALUE.has(commandArgument) || isAwsGlobalOptionWithInlineValue(commandArgument)) {
+      commandArgumentIndex += 1;
+      continue;
+    }
+
+    if (AWS_GLOBAL_OPTIONS_WITH_SEPARATE_VALUE.has(commandArgument)) {
+      if (commandArgumentIndex + 1 >= commandArguments.length) {
+        return undefined;
+      }
+      commandArgumentIndex += 2;
+      continue;
+    }
+
+    if (commandArgument.startsWith("-")) {
+      return undefined;
+    }
+
+    const operationName = commandArguments[commandArgumentIndex + 1];
+    if (operationName?.startsWith("-")) {
+      return undefined;
+    }
+    return {
+      serviceName: commandArgument,
+      ...(operationName !== undefined ? { operationName } : {}),
+    };
+  }
+
+  return undefined;
+}
+
+function isAwsGlobalOptionWithInlineValue(commandArgument: string): boolean {
+  return AWS_GLOBAL_OPTIONS_WITH_INLINE_VALUE_PREFIXES.some((awsGlobalOptionPrefix) =>
+    commandArgument.startsWith(awsGlobalOptionPrefix)
+  );
+}
+
+function isClassifiedAwsReadOnlyOperation(awsCliCommand: { serviceName: string; operationName: string }): boolean {
+  if (awsCliCommand.serviceName === "sts") {
+    return awsCliCommand.operationName === "get-caller-identity";
+  }
+
+  if (awsCliCommand.serviceName === "ec2") {
+    return awsCliCommand.operationName.startsWith("describe-");
+  }
+
+  if (awsCliCommand.serviceName === "cloudformation") {
+    return awsCliCommand.operationName.startsWith("list-");
+  }
+
+  if (awsCliCommand.serviceName === "s3") {
+    return awsCliCommand.operationName === "ls";
+  }
+
+  if (awsCliCommand.serviceName === "s3api") {
+    return awsCliCommand.operationName.startsWith("list-") ||
+      awsCliCommand.operationName.startsWith("head-") ||
+      (awsCliCommand.operationName.startsWith("get-") && awsCliCommand.operationName !== "get-object");
+  }
+
+  return false;
+}
+
+function isKnownAwsCloudStateChangingOperation(operationName: string): boolean {
+  return AWS_CLOUD_STATE_CHANGING_OPERATION_PREFIXES.some((operationPrefix) =>
+    operationName === operationPrefix.slice(0, -1) || operationName.startsWith(operationPrefix)
   );
 }
 
