@@ -92,7 +92,7 @@ export function createBashToolDefinition(): OpenAiToolDefinition<"bash"> {
   return {
     type: "function",
     name: "bash",
-    description: "Run a command line inside the current workspace and return stdout, stderr, and the exit code. Provide the command directly; do not wrap it in bash -lc, sh -c, or another shell. Do not use bash for simple file reads, file discovery, or text search; use read, glob, or grep instead.",
+    description: "Run a command line inside the current workspace and return stdout, stderr, and the exit code. Provide the command directly; do not wrap it in bash -lc, sh -c, or another shell. Do not use bash for simple file reads, file discovery, or text search; use read, glob, or grep instead. In read-only modes, use bash only for explicitly approved read/inspect CLI commands and never for mutation, configuration, deploy, delete, or other side-effect commands.",
     parameters: {
       type: "object",
       properties: {
@@ -767,12 +767,9 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
 export function createOpenAiToolDefinitions(input: {
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
 } = {}): OpenAiToolDefinition[] {
-  const availableToolNameSet = input.availableToolNames
-    ? new Set<ProviderAvailableToolName>(input.availableToolNames)
-    : undefined;
+  const toolNamesInProviderOrder = input.availableToolNames ?? ASSISTANT_TOOL_REQUEST_NAMES;
 
-  return ASSISTANT_TOOL_REQUEST_NAMES
-    .filter((toolName) => !availableToolNameSet || availableToolNameSet.has(toolName))
+  return toolNamesInProviderOrder
     .map((toolName) => openAiToolAdapterByName[toolName].definition);
 }
 

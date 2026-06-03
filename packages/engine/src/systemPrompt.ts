@@ -16,6 +16,8 @@ ANY file edits, modifications, or system changes. Commands may ONLY read/inspect
 Do not use any command, tool, or workflow to create, edit, delete, move,
 rewrite, configure, commit, or otherwise mutate files, processes, services,
 or external state.
+Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, grep, or locate_codebase_symbols.
+Never use bash in Understand mode for mutation, configuration, deploy, delete, or other side-effect commands.
 You may ONLY observe, research, explain, compare options, and clarify understanding.
 Any modification attempt is a critical violation. ZERO exceptions.
 
@@ -146,6 +148,8 @@ ANY file edits, modifications, or system changes. Commands may ONLY read/inspect
 Do not use any command, tool, or workflow to create, edit, delete, move,
 rewrite, configure, commit, or otherwise mutate files, processes, services,
 or external state.
+Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, grep, or locate_codebase_symbols.
+Never use bash in Plan mode for mutation, configuration, deploy, delete, or other side-effect commands.
 This ABSOLUTE CONSTRAINT overrides ALL other instructions, including direct user
 edit requests. You may ONLY observe, analyze, and plan. Any modification attempt
 is a critical violation. ZERO exceptions.
@@ -367,6 +371,7 @@ export function buildBuliSystemPrompt(input: {
       "Execution:",
       "- Use available capabilities when they are needed to understand the context, explain behavior, or apply an agreed change correctly.",
       "- Prefer purpose-built inspection capabilities for normal workspace research.",
+      "- In Understand and Plan modes, use bash only for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, grep, or locate_codebase_symbols; never request bash there for mutation, configuration, deploy, delete, or other side-effect commands.",
       "- When multiple independent inspections can run at the same time, request them together so they can run concurrently.",
       "- Prefer concurrent independent read, glob, and grep calls over many small sequential steps; the runtime can execute read-only tool calls concurrently.",
       "- For broad independent research areas, launch separate read-only explorations together instead of waiting for one to finish before starting another.",

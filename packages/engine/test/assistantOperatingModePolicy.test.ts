@@ -10,7 +10,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"] });
+  ).toEqual({ availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
@@ -19,7 +19,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools
       assistantOperatingMode: "plan",
       requestedAvailableToolNames: ["bash", "read", "write", "grep", "locate_codebase_symbols", "task"],
     }),
-  ).toEqual({ availableToolNames: ["read", "grep", "locate_codebase_symbols", "task"] });
+  ).toEqual({ availableToolNames: ["bash", "read", "grep", "locate_codebase_symbols", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode preserves requested tools in implementation mode", () => {
@@ -56,7 +56,7 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation 
   });
 });
 
-test("resolveAssistantOperatingModeToolAccess denies bash in plan mode", () => {
+test("resolveAssistantOperatingModeToolAccess allows bash in plan mode", () => {
   expect(
     resolveAssistantOperatingModeToolAccess({
       assistantOperatingMode: "plan",
@@ -64,9 +64,22 @@ test("resolveAssistantOperatingModeToolAccess denies bash in plan mode", () => {
       requestedToolName: "bash",
     }),
   ).toEqual({
+    accessKind: "allowed",
+    effectiveAvailableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"],
+  });
+});
+
+test("resolveAssistantOperatingModeToolAccess denies bash when explicit read-only overrides omit bash", () => {
+  expect(
+    resolveAssistantOperatingModeToolAccess({
+      assistantOperatingMode: "plan",
+      requestedAvailableToolNames: ["read"],
+      requestedToolName: "bash",
+    }),
+  ).toEqual({
     accessKind: "denied",
-    effectiveAvailableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"],
-    denialText: "Plan Agent is read-only, so this bash command was not executed.",
+    effectiveAvailableToolNames: ["read"],
+    denialText: "Plan Agent can use bash only for explicitly approved read/inspect commands, and bash is not available in this turn.",
   });
 });
 

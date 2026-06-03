@@ -77,7 +77,7 @@ function formatUnavailableToolDenialText(input: {
   const assistantOperatingModeDisplayName = formatAssistantOperatingModeName(input.assistantOperatingMode);
   if (isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)) {
     if (input.requestedToolName === "bash") {
-      return `${assistantOperatingModeDisplayName} is read-only, so this bash command was not executed.`;
+      return `${assistantOperatingModeDisplayName} can use bash only for explicitly approved read/inspect commands, and bash is not available in this turn.`;
     }
 
     if (

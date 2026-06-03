@@ -870,6 +870,8 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const workflowHandoffToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "record_workflow_handoff");
 
   expect(bashToolDefinition?.description).toContain("Do not use bash for simple file reads");
+  expect(bashToolDefinition?.description).toContain("In read-only modes, use bash only for explicitly approved read/inspect CLI commands");
+  expect(bashToolDefinition?.description).toContain("never for mutation, configuration, deploy, delete");
   expect(readToolDefinition?.description).toContain("Read an exact evidenced workspace file or directory window");
   expect(readToolDefinition?.description).toContain("Do not infer paths");
   expect(readToolDefinition?.description).toContain("discover uncertain paths with glob or grep first");
@@ -990,6 +992,23 @@ test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => 
   });
 
   expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
+});
+
+test("createOpenAiToolDefinitions preserves explicit available tool order", () => {
+  const readOnlyModeToolDefinitions = createOpenAiToolDefinitions({
+    availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"],
+  });
+
+  expect(readOnlyModeToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual([
+    "read",
+    "glob",
+    "grep",
+    "locate_codebase_symbols",
+    "task",
+    "skill",
+    "record_workflow_handoff",
+    "bash",
+  ]);
 });
 
 test("parseOpenAiStream reports malformed typed tool JSON arguments as invalid function calls", async () => {

@@ -1021,7 +1021,7 @@ test("AssistantConversationRuntime injects the plan mode system reminder", async
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
     "The output should be clean enough that Implementation mode can execute it without re-planning or broad rediscovery.",
   );
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"]);
   expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
     entryKind: "user_prompt",
     assistantOperatingMode: "plan",
@@ -1051,7 +1051,7 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent - System Reminder");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"]);
 });
 
 test("AssistantConversationRuntime allows plan mode without a completed understand turn", async () => {
@@ -1206,7 +1206,7 @@ test("AssistantConversationRuntime filters explicit tool overrides in read-only 
     }),
   );
 
-  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "grep", "locate_codebase_symbols", "task"]);
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["bash", "read", "grep", "locate_codebase_symbols", "task"]);
 });
 
 test("AssistantConversationRuntime executes locate_codebase_symbols without approval", async () => {
@@ -1499,7 +1499,7 @@ test("AssistantConversationRuntime injects project instructions into prompt and 
   });
 });
 
-test("AssistantConversationRuntime blocks bash tool calls in plan mode", async () => {
+test("AssistantConversationRuntime denies risky bash tool calls in plan mode", async () => {
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
       {
@@ -1507,8 +1507,8 @@ test("AssistantConversationRuntime blocks bash tool calls in plan mode", async (
         toolCallId: "call_bash_1",
         toolCallRequest: {
           toolName: "bash",
-          shellCommand: "pwd",
-          commandDescription: "Inspect the working directory",
+          shellCommand: "mkdir blocked-plan-bash",
+          commandDescription: "Create a directory",
         },
       },
     ],
@@ -1559,6 +1559,90 @@ test("AssistantConversationRuntime blocks bash tool calls in plan mode", async (
   expect(executedShellCommands).toEqual([]);
   expect(deniedToolCallEvent).toBeDefined();
   expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("Plan Agent is read-only");
+  expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("create, remove, or rewrite files");
+});
+
+test("AssistantConversationRuntime runs read-only bash in plan mode after explicit approval", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_bash_1",
+        toolCallRequest: {
+          toolName: "bash",
+          shellCommand: "pwd",
+          commandDescription: "Inspect the working directory",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Approved acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const executedShellCommands: string[] = [];
+  const workspaceShellCommandExecutor = {
+    workspaceRootPath: process.cwd(),
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+    async runShellCommand(input) {
+      executedShellCommands.push(input.shellCommand);
+      return {
+        exitCode: 0,
+        stdoutText: "/repo\n",
+        stderrText: "",
+      };
+    },
+  } satisfies WorkspaceShellCommandExecutor;
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+    workspaceShellCommandExecutor,
+    bashToolApprovalMode: "trusted",
+  });
+  const activeConversationTurn = runtime.startConversationTurn({
+    userPromptText: "Inspect with AWS-like read-only shell",
+    assistantOperatingMode: "plan",
+    selectedModelId: "gpt-5.4",
+  });
+  const assistantEventIterator = activeConversationTurn.streamAssistantResponseEvents()[Symbol.asyncIterator]();
+  const emittedAssistantEvents = [];
+
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  emittedAssistantEvents.push((await assistantEventIterator.next()).value);
+  const approvalEventResult = await assistantEventIterator.next();
+  emittedAssistantEvents.push(approvalEventResult.value);
+  if (approvalEventResult.value?.type !== "assistant_pending_tool_approval_requested") {
+    throw new Error("expected assistant_pending_tool_approval_requested");
+  }
+  expect(approvalEventResult.value.approvalRequest.riskExplanation).toContain("Plan Agent is read-only");
+
+  await activeConversationTurn.approvePendingToolCall(approvalEventResult.value.approvalRequest.approvalId);
+
+  while (true) {
+    const nextAssistantEvent = await assistantEventIterator.next();
+    if (nextAssistantEvent.done) {
+      break;
+    }
+
+    emittedAssistantEvents.push(nextAssistantEvent.value);
+  }
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).toEqual([
+    "assistant_turn_started",
+    "assistant_message_part_added",
+    "assistant_pending_tool_approval_requested",
+    "assistant_pending_tool_approval_cleared",
+    "assistant_message_part_updated",
+    "assistant_message_part_updated",
+    "assistant_message_part_added",
+    "assistant_message_part_added",
+    "assistant_message_part_updated",
+    "assistant_message_completed",
+  ]);
+  expect(executedShellCommands).toEqual(["pwd"]);
+  expect(providerTurn.submittedToolResults[0]?.toolResultText).toContain("Stdout:\n/repo");
 });
 
 test("AssistantConversationRuntime emits failure and releases the active turn when provider start fails", async () => {

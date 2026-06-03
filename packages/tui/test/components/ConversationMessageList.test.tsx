@@ -342,9 +342,12 @@ describe("ConversationMessageList", () => {
 
     const frame = captureCharFrame();
     expect(findRenderedLineContaining(frame, "src/unrelated.ts")).not.toContain("Yes");
+    expect(findRenderedLineContaining(frame, "src/unrelated.ts")).not.toContain("This edit will modify");
     const matchingEditHeaderLine = findRenderedLineContaining(frame, "packages/engine/test/systemPrompt.test.ts");
     expect(matchingEditHeaderLine).toContain("Yes");
     expect(matchingEditHeaderLine).toContain("No");
+    expect(frame).toContain("This edit will modify packages/engine/test/systemPrompt.test.ts");
+    expect(frame).toContain("Review");
   });
 
   test("renders show older messages reveal row", async () => {
@@ -716,8 +719,8 @@ describe("ConversationMessageList", () => {
     const matchingEditHeaderLine = findRenderedLineContaining(frame, "packages/engine/test/systemPrompt.test.ts");
     expect(matchingEditHeaderLine).toContain("Yes");
     expect(matchingEditHeaderLine).toContain("No");
-    expect(frame).not.toContain("This edit will modify");
-    expect(frame).not.toContain("Review");
+    expect(frame).toContain("This edit will modify packages/engine/test/systemPrompt.test.ts");
+    expect(frame).toContain("Review");
   });
 
   test("renders_unmatched_workspace_patch_as_standalone_fallback", async () => {

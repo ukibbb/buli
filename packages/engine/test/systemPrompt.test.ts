@@ -292,6 +292,8 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("Understand Agent - System Reminder");
   expect(systemPromptText).toContain("Understand Agent ACTIVE - you are in READ-ONLY phase");
   expect(systemPromptText).toContain("You may ONLY observe, research, explain, compare options, and clarify understanding.");
+  expect(systemPromptText).toContain("Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands");
+  expect(systemPromptText).toContain("Never use bash in Understand mode for mutation, configuration, deploy, delete, or other side-effect commands.");
   expect(systemPromptText).toContain("teach Lukasz the current situation before planning or applying code");
   expect(systemPromptText).toContain("Act like a patient teacher: explain the system in simple words first");
   expect(systemPromptText).toContain("learning the topic from zero");
@@ -377,6 +379,8 @@ test("plan mode points inspection toward read-only capabilities", () => {
 
   expect(systemPromptText).toContain("ANY file edits, modifications, or system changes. Commands may ONLY read/inspect.");
   expect(systemPromptText).toContain("Do not use any command, tool, or workflow to create, edit, delete, move,");
+  expect(systemPromptText).toContain("Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands");
+  expect(systemPromptText).toContain("Never use bash in Plan mode for mutation, configuration, deploy, delete, or other side-effect commands.");
   expect(systemPromptText).toContain("turn understanding into a clear implementation strategy");
   expect(systemPromptText).toContain("construct a well-formed plan");
   expect(systemPromptText).toContain("compare viable approaches before choosing the plan.");
@@ -599,7 +603,7 @@ test("keeps task style independent from mutation posture", () => {
   );
 });
 
-test("documents truthful execution without requiring tool approval in prose", () => {
+test("documents truthful execution and the read-only bash approval boundary", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
 
   expect(systemPromptText).toContain("Do not claim actions you did not take.");
@@ -610,7 +614,9 @@ test("documents truthful execution without requiring tool approval in prose", ()
   expect(systemPromptText).toContain(
     "Do not ask for permission solely because an available capability is needed.",
   );
-  expect(systemPromptText).not.toContain("require explicit user approval");
+  expect(systemPromptText).toContain(
+    "In Understand and Plan modes, use bash only for explicitly approved read/inspect CLI commands",
+  );
 });
 
 test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspection", () => {

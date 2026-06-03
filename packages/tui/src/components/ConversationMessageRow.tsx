@@ -232,7 +232,7 @@ export type PendingToolApprovalDecision = {
 function resolvePendingToolCallApprovalDecisionActions(input: {
   conversationMessagePart: AssistantToolCallConversationMessagePart;
   pendingToolApprovalDecision: PendingToolApprovalDecision | undefined;
-}): { onApprove: () => void; onDeny: () => void } | undefined {
+}): { onApprove: () => void; onDeny: () => void; approvalRiskExplanation: string } | undefined {
   if (
     input.pendingToolApprovalDecision?.pendingToolApprovalRequest.pendingToolCallId !==
       input.conversationMessagePart.toolCallId
@@ -243,6 +243,7 @@ function resolvePendingToolCallApprovalDecisionActions(input: {
   return {
     onApprove: input.pendingToolApprovalDecision.onPendingToolApprovalApproved,
     onDeny: input.pendingToolApprovalDecision.onPendingToolApprovalDenied,
+    approvalRiskExplanation: input.pendingToolApprovalDecision.pendingToolApprovalRequest.riskExplanation,
   };
 }
 

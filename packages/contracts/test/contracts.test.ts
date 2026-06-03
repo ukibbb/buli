@@ -1201,7 +1201,7 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
   ]);
   expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "edit_many", "patch", "patch_many", "write"]);
-  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"]);
   expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite"]);
 });
 
@@ -1227,6 +1227,7 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isReadOnlyAssistantModeToolRequestName("task")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("skill")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("record_workflow_handoff")).toBe(true);
+  expect(isReadOnlyAssistantModeToolRequestName("bash")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
   expect(isSkillToolCallRequest({ toolName: "skill", skillName: "code-review" })).toBe(true);
   expect(isSkillToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
