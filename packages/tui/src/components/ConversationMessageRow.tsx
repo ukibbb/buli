@@ -18,7 +18,6 @@ import { UserImageAttachmentBlock } from "./UserImageAttachmentBlock.tsx";
 import { UserPromptBlock } from "./UserPromptBlock.tsx";
 import { AssistantTextPartView } from "./messageParts/AssistantTextPartView.tsx";
 import { AssistantTurnSummaryPartView } from "./messageParts/AssistantTurnSummaryPartView.tsx";
-import { BuliStickyNotesPartView } from "./messageParts/BuliStickyNotesPartView.tsx";
 import { CompactionSeparatorPartView } from "./messageParts/CompactionSeparatorPartView.tsx";
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
@@ -57,7 +56,7 @@ const conversationMessagePartRendererByKind: {
   user_image_attachment: renderUserImageAttachmentConversationMessagePart,
   assistant_text: renderAssistantTextConversationMessagePart,
   assistant_reasoning: renderAssistantReasoningConversationMessagePart,
-  assistant_buli_sticky_notes: renderAssistantBuliStickyNotesConversationMessagePart,
+  assistant_buli_sticky_notes: renderNothingForAssistantBuliStickyNotesConversationMessagePart,
   assistant_tool_call: renderAssistantToolCallConversationMessagePart,
   assistant_workspace_patch: renderAssistantWorkspacePatchConversationMessagePart,
   assistant_plan_proposal: renderAssistantPlanProposalConversationMessagePart,
@@ -129,10 +128,8 @@ function renderAssistantReasoningConversationMessagePart(
   );
 }
 
-function renderAssistantBuliStickyNotesConversationMessagePart(
-  props: ConversationMessagePartRendererProps<"assistant_buli_sticky_notes">,
-): ReactNode {
-  return <BuliStickyNotesPartView assistantBuliStickyNotesConversationMessagePart={props.conversationMessagePart} />;
+function renderNothingForAssistantBuliStickyNotesConversationMessagePart(): ReactNode {
+  return null;
 }
 
 function renderAssistantToolCallConversationMessagePart(
@@ -264,6 +261,11 @@ function shouldRenderConversationMessagePart(input: {
 
   if (input.conversationMessagePart.partKind === "assistant_reasoning") {
     return hasVisibleReasoningSummaryText(input.conversationMessagePart.reasoningSummaryText);
+  }
+
+  if (input.conversationMessagePart.partKind === "assistant_buli_sticky_notes") {
+    // Sticky notes stay in session/model context, but the interactive TUI transcript hides them.
+    return false;
   }
 
   if (input.conversationMessagePart.partKind === "assistant_turn_summary") {

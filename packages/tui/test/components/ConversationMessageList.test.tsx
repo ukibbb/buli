@@ -147,6 +147,58 @@ describe("ConversationMessageList", () => {
     expect(secondPreparedMessages[1]?.conversationMessageParts).not.toBe(firstPreparedMessages[1]?.conversationMessageParts);
   });
 
+  test("prepareRenderableConversationMessages hides Buli sticky notes from the interactive transcript", () => {
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-sticky-notes-only",
+        role: "assistant",
+        messageStatus: "completed",
+        createdAtMs: 1,
+        partIds: ["sticky-notes-1"],
+      },
+      {
+        id: "assistant-answer-with-sticky-notes",
+        role: "assistant",
+        messageStatus: "completed",
+        createdAtMs: 2,
+        partIds: ["sticky-notes-2", "assistant-text-1"],
+      },
+    ];
+    const stickyNotesOnlyPart = {
+      id: "sticky-notes-1",
+      partKind: "assistant_buli_sticky_notes",
+      buliStickyNotesContextText: "Only context notes.",
+    } satisfies ConversationMessagePart;
+    const stickyNotesBeforeAssistantTextPart = {
+      id: "sticky-notes-2",
+      partKind: "assistant_buli_sticky_notes",
+      buliStickyNotesContextText: "Context notes before the answer.",
+    } satisfies ConversationMessagePart;
+    const assistantAnswerTextPart = {
+      id: "assistant-text-1",
+      partKind: "assistant_text",
+      partStatus: "completed",
+      rawMarkdownText: "Visible answer.",
+    } satisfies ConversationMessagePart;
+
+    const preparedMessages = prepareRenderableConversationMessages({
+      visibleConversationMessageRows: createVisibleConversationMessageRows({
+        conversationMessages,
+        conversationMessagePartsById: {
+          "sticky-notes-1": stickyNotesOnlyPart,
+          "sticky-notes-2": stickyNotesBeforeAssistantTextPart,
+          "assistant-text-1": assistantAnswerTextPart,
+        },
+      }),
+      reasoningSummaryDisplayMode: "expanded",
+      preparationCache: createConversationMessageListPreparationCache(),
+    });
+
+    expect(preparedMessages).toHaveLength(1);
+    expect(preparedMessages[0]?.conversationMessage.id).toBe("assistant-answer-with-sticky-notes");
+    expect(preparedMessages[0]?.conversationMessageParts).toEqual([assistantAnswerTextPart]);
+  });
+
   test("prepareRenderableConversationMessages keeps reasoning rows when reasoning display mode changes", () => {
     const conversationMessages: ConversationMessage[] = [
       {
