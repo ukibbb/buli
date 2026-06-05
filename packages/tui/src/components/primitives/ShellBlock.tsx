@@ -34,7 +34,7 @@ export function ShellBlock(props: ShellBlockProps): ReactNode {
       />
       {limitedOutputLines.visibleItems.map((toolCallBashOutputLine, index) => (
         <box key={`shell-line-${index}`} width="100%">
-          <text fg={shellLineColors[toolCallBashOutputLine.lineKind]}>
+          <text fg={shellLineColors[toolCallBashOutputLine.lineKind]} wrapMode="char" width="100%">
             {toolCallBashOutputLine.lineText}
           </text>
         </box>

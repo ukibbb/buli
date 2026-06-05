@@ -45,7 +45,6 @@ type AssistantMarkdownRenderSectionBase = {
 export type AssistantMarkdownRenderSection =
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "markdown"; markdownText: string })
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "streamingTail"; streamingTailText: string })
-  | (AssistantMarkdownRenderSectionBase & { sectionKind: "paragraph"; paragraphText: string })
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "heading"; headingDepth: number; headingText: string })
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "horizontalRule" })
   | (AssistantMarkdownRenderSectionBase & { sectionKind: "table"; tableMarkdownText: string })

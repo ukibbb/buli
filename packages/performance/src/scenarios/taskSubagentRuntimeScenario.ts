@@ -85,6 +85,12 @@ export const taskSubagentRuntimeScenario: PerformanceScenario = {
       diagnosticEvent.subsystem === "engine" &&
       diagnosticEvent.eventName === "tool_call.task_subagent_research_checkpoint_requested"
     ).length;
+    const terminalTaskSubagentDiagnosticEvents = listTerminalTaskSubagentDiagnosticEvents(diagnosticEvents);
+    const parentVisibleFailedTaskResultCount = countParentVisibleFailedTaskResults(terminalTaskSubagentDiagnosticEvents);
+    const requestedToolsAfterCheckpointFailureCount = countRequestedToolsAfterCheckpointFailures(
+      terminalTaskSubagentDiagnosticEvents,
+    );
+    const checkpointCompletedTaskResultCount = countCompletedCheckpointTaskResults(terminalTaskSubagentDiagnosticEvents);
 
     return {
       iterationLabel: `${input.isWarmup ? "warmup" : "repeat"}-${input.iterationIndex}`,
@@ -117,6 +123,21 @@ export const taskSubagentRuntimeScenario: PerformanceScenario = {
         createCountMetric({
           metricName: "task_subagent_runtime.checkpoint_request_count",
           count: checkpointRequestCount,
+          lowerIsBetter: false,
+        }),
+        createCountMetric({
+          metricName: "task_subagent_runtime.parent_visible_failed_task_result_count",
+          count: parentVisibleFailedTaskResultCount,
+          budget: { warnAbove: 0, failAbove: 0 },
+        }),
+        createCountMetric({
+          metricName: "task_subagent_runtime.requested_tools_after_checkpoint_failure_count",
+          count: requestedToolsAfterCheckpointFailureCount,
+          budget: { warnAbove: 0, failAbove: 0 },
+        }),
+        createCountMetric({
+          metricName: "task_subagent_runtime.checkpoint_completed_task_result_count",
+          count: checkpointCompletedTaskResultCount,
           lowerIsBetter: false,
         }),
         createCountMetric({
@@ -378,6 +399,35 @@ function sumDiagnosticDurationMs(diagnosticEvents: readonly BuliDiagnosticLogEve
     (totalDurationMs, diagnosticEvent) => totalDurationMs + readNumberField(diagnosticEvent.fields, "durationMs"),
     0,
   );
+}
+
+function listTerminalTaskSubagentDiagnosticEvents(
+  diagnosticEvents: readonly BuliDiagnosticLogEvent[],
+): readonly BuliDiagnosticLogEvent[] {
+  return diagnosticEvents.filter((diagnosticEvent) =>
+    diagnosticEvent.subsystem === "engine" && diagnosticEvent.eventName === "tool_call.task_subagent_finished"
+  );
+}
+
+function countParentVisibleFailedTaskResults(terminalTaskSubagentDiagnosticEvents: readonly BuliDiagnosticLogEvent[]): number {
+  return terminalTaskSubagentDiagnosticEvents.filter((diagnosticEvent) =>
+    readStringField(diagnosticEvent.fields, "parentVisibleToolResultKind") === "failed"
+  ).length;
+}
+
+function countRequestedToolsAfterCheckpointFailures(
+  terminalTaskSubagentDiagnosticEvents: readonly BuliDiagnosticLogEvent[],
+): number {
+  return terminalTaskSubagentDiagnosticEvents.filter((diagnosticEvent) =>
+    readStringField(diagnosticEvent.fields, "failureKind") === "requested_tools_after_checkpoint"
+  ).length;
+}
+
+function countCompletedCheckpointTaskResults(terminalTaskSubagentDiagnosticEvents: readonly BuliDiagnosticLogEvent[]): number {
+  return terminalTaskSubagentDiagnosticEvents.filter((diagnosticEvent) =>
+    readStringField(diagnosticEvent.fields, "parentVisibleToolResultKind") === "completed" &&
+    readStringField(diagnosticEvent.fields, "checkpointReason") !== undefined
+  ).length;
 }
 
 function readNumberField(fields: BuliDiagnosticLogEvent["fields"] | undefined, fieldName: string): number {

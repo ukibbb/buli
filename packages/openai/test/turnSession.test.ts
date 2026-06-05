@@ -613,6 +613,95 @@ test("OpenAiProviderConversationTurn appends model-facing feedback to repeated e
   );
 });
 
+test("OpenAiProviderConversationTurn references duplicate current-turn tool outputs only after an exact copy is visible", async () => {
+  const requestBodies: string[] = [];
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const duplicateLargeToolResultText = `<path>duplicate-large.txt</path>\n${"same duplicate evidence line\n".repeat(2_000)}`;
+  const queuedResponses = [
+    createOpenAiReadToolStepResponse(1),
+    createOpenAiReadToolStepResponse(2),
+    createOpenAiStepResponse([
+      createOpenAiSseFrame({ type: "response.output_text.delta", item_id: "msg_1", delta: "Done" }),
+      createOpenAiSseFrame({
+        type: "response.completed",
+        response: { usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 } },
+      }),
+    ]),
+  ];
+  const providerTurn = new OpenAiProviderConversationTurn({
+    endpoint: "https://example.test/v1/responses",
+    fetchImpl: createFetchImpl(queuedResponses, requestBodies),
+    loadRequestHeaders: async () => new Headers(),
+    selectedModelId: "gpt-5.4",
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: createConversationSessionEntries("Read duplicate large files"),
+    onStepRequestFailed: async () => new Error("unexpected request failure"),
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  for await (const emittedEvent of providerTurn.streamProviderEvents()) {
+    if (emittedEvent.type === "tool_call_requested") {
+      await providerTurn.submitToolResult({
+        toolCallId: emittedEvent.toolCallId,
+        toolResultText: duplicateLargeToolResultText,
+      });
+    }
+  }
+
+  expect(requestBodies).toHaveLength(3);
+  const firstContinuationFunctionOutputItems = listFunctionCallOutputRequestInputItems(requestBodies[1] ?? "{}");
+  const secondContinuationFunctionOutputItems = listFunctionCallOutputRequestInputItems(requestBodies[2] ?? "{}");
+  const firstToolOutputInFirstContinuation = firstContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_1");
+  const firstToolOutputInSecondContinuation = secondContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_1");
+  const duplicateToolOutputInSecondContinuation = secondContinuationFunctionOutputItems.find((inputItem) => inputItem.call_id === "call_2");
+
+  expect(firstToolOutputInFirstContinuation?.output).toBe(duplicateLargeToolResultText);
+  expect(firstToolOutputInSecondContinuation?.output).toBe(duplicateLargeToolResultText);
+  expect(duplicateToolOutputInSecondContinuation?.output).not.toBe(duplicateLargeToolResultText);
+  expect(duplicateToolOutputInSecondContinuation?.output).toContain("<duplicate_current_turn_tool_result_reference>");
+  expect(duplicateToolOutputInSecondContinuation?.output).toContain("reference_evidence_id: tool_result:call_1");
+  expect(duplicateToolOutputInSecondContinuation?.output).toContain("duplicate_evidence_id: tool_result:call_2");
+  expect(duplicateToolOutputInSecondContinuation?.output).toContain("content_sha256:");
+  expect(duplicateToolOutputInSecondContinuation?.output.length ?? 0).toBeLessThan(duplicateLargeToolResultText.length);
+
+  const requestPreparedDiagnostics = diagnosticEvents.filter((diagnosticEvent) => diagnosticEvent.eventName === "response_step.request_prepared");
+  expect(requestPreparedDiagnostics).toHaveLength(3);
+  const projectedDuplicateTextLength = duplicateToolOutputInSecondContinuation?.output.length ?? 0;
+  expect(requestPreparedDiagnostics[2]?.fields).toMatchObject({
+    requestCurrentTurnFunctionCallOutputOriginalTextLength: duplicateLargeToolResultText.length * 2,
+    requestCurrentTurnFunctionCallOutputProjectedTextLength: duplicateLargeToolResultText.length + projectedDuplicateTextLength,
+    requestCurrentTurnFunctionCallOutputSavedCharacterCount: duplicateLargeToolResultText.length - projectedDuplicateTextLength,
+    requestCurrentTurnCompactedFunctionCallOutputCount: 1,
+    requestCurrentTurnExactWorkingSetFunctionCallOutputCount: 1,
+    requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: duplicateLargeToolResultText.length,
+    requestWorkingSetInputItemCount: 5,
+    requestWorkingSetExactInputItemCount: 4,
+    requestWorkingSetCompactedInputItemCount: 1,
+    requestWorkingSetProjectionKinds: ["exact", "duplicate_reference"],
+    requestWorkingSetProjectionKindInputItemCounts: [4, 1],
+    requestWorkingSetProjectionKindSavedCharacterCounts: [0, duplicateLargeToolResultText.length - projectedDuplicateTextLength],
+    requestWorkingSetLargestInputItemProjectionKinds: expect.arrayContaining(["exact", "duplicate_reference"]),
+    requestWorkingSetLargestInputItemEvidenceIds: expect.arrayContaining(["tool_result:call_1", "tool_result:call_2"]),
+  });
+
+  const providerReplay = providerTurn.getProviderTurnReplay();
+  expect(providerReplay).toMatchObject({
+    provider: "openai",
+    inputItems: expect.arrayContaining([
+      expect.objectContaining({
+        type: "function_call_output",
+        call_id: "call_1",
+        output: duplicateLargeToolResultText,
+      }),
+      expect.objectContaining({
+        type: "function_call_output",
+        call_id: "call_2",
+        output: duplicateLargeToolResultText,
+      }),
+    ]),
+  });
+});
+
 test("OpenAiProviderConversationTurn keeps large current-turn tool output replay exact across continuation requests", async () => {
   const requestBodies: string[] = [];
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];

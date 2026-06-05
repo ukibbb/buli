@@ -1,10 +1,13 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
 import {
   buildPerformanceRunSummary,
   formatPerformanceRunMarkdown,
 } from "../src/model/performanceRunSummary.ts";
-import type { PerformanceScenario } from "../src/model/performanceScenario.ts";
-import { listBuliPerformanceScenarioNames } from "../src/scenarios/scenarioRegistry.ts";
+import type { PerformanceMetric, PerformanceScenario } from "../src/model/performanceScenario.ts";
+import { listBuliPerformanceScenarioNames, resolveBuliPerformanceScenario } from "../src/scenarios/scenarioRegistry.ts";
 
 const performanceScenarioStub: PerformanceScenario = {
   scenarioName: "scenario-a",
@@ -93,4 +96,45 @@ test("scenario registry exposes storage and context-growth profiling scenarios",
   expect(listBuliPerformanceScenarioNames()).toContain("sqlite-session-large-history");
   expect(listBuliPerformanceScenarioNames()).toContain("tool-output-context-growth");
   expect(listBuliPerformanceScenarioNames()).toContain("codebase-knowledge-startup-index");
+  expect(listBuliPerformanceScenarioNames()).toContain("assistant-markdown-render-sections");
 });
+
+test("task-subagent runtime scenario reports checkpoint compliance metrics", async () => {
+  const scenario = resolveBuliPerformanceScenario("task-subagent-runtime");
+  const runOutputDirectoryPath = await mkdtemp(join(tmpdir(), "buli-task-subagent-runtime-scenario-"));
+
+  const iterationResult = await scenario.runIteration({
+    iterationIndex: 0,
+    isWarmup: false,
+    runOutputDirectoryPath,
+  });
+
+  const parentVisibleFailedTaskResultMetric = readPerformanceMetric(
+    iterationResult.metrics,
+    "task_subagent_runtime.parent_visible_failed_task_result_count",
+  );
+  const requestedToolsAfterCheckpointFailureMetric = readPerformanceMetric(
+    iterationResult.metrics,
+    "task_subagent_runtime.requested_tools_after_checkpoint_failure_count",
+  );
+  const checkpointCompletedTaskResultMetric = readPerformanceMetric(
+    iterationResult.metrics,
+    "task_subagent_runtime.checkpoint_completed_task_result_count",
+  );
+
+  expect(parentVisibleFailedTaskResultMetric.value).toBe(0);
+  expect(parentVisibleFailedTaskResultMetric.budget).toEqual({ warnAbove: 0, failAbove: 0 });
+  expect(requestedToolsAfterCheckpointFailureMetric.value).toBe(0);
+  expect(requestedToolsAfterCheckpointFailureMetric.budget).toEqual({ warnAbove: 0, failAbove: 0 });
+  expect(checkpointCompletedTaskResultMetric.value).toBe(1);
+  expect(checkpointCompletedTaskResultMetric.lowerIsBetter).toBe(false);
+});
+
+function readPerformanceMetric(metrics: readonly PerformanceMetric[], metricName: string): PerformanceMetric {
+  const metric = metrics.find((candidateMetric) => candidateMetric.metricName === metricName);
+  if (!metric) {
+    throw new Error(`Expected performance metric ${metricName}. Present metrics: ${metrics.map((candidateMetric) => candidateMetric.metricName).join(", ")}.`);
+  }
+
+  return metric;
+}

@@ -40,6 +40,21 @@ describe("ShellBlock", () => {
     expect(frame).not.toContain("showing first");
   });
 
+  test("wraps_long_output_lines_so_full_content_remains_visible", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ShellBlock
+        outputLines={[
+          { lineKind: "stdout", lineText: "packages/tui/src/components/ConversationMessageList.tsx" },
+        ]}
+      />,
+      { width: 34, height: 8 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame.replace(/\s/g, "")).toContain("ConversationMessageList.tsx");
+  });
+
   test("limits_large_output_transcripts", async () => {
     const outputLines = Array.from({ length: 55 }, (_value, index) => ({
       lineKind: "stdout" as const,

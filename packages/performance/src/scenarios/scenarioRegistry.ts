@@ -1,4 +1,5 @@
 import type { PerformanceScenario } from "../model/performanceScenario.ts";
+import { assistantMarkdownRenderSectionsScenario } from "./assistantMarkdownRenderSectionsScenario.ts";
 import { assistantReducerReplayScenario } from "./assistantReducerReplayScenario.ts";
 import { codebaseKnowledgeStartupIndexScenario } from "./codebaseKnowledgeStartupIndexScenario.ts";
 import { openAiStreamReplayScenario } from "./openAiStreamReplayScenario.ts";
@@ -17,6 +18,7 @@ export const buliPerformanceScenarios = [
   sqliteSessionLargeHistoryScenario,
   toolOutputContextGrowthScenario,
   codebaseKnowledgeStartupIndexScenario,
+  assistantMarkdownRenderSectionsScenario,
 ] as const satisfies readonly PerformanceScenario[];
 
 export function listBuliPerformanceScenarioNames(): readonly string[] {

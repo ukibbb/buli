@@ -339,21 +339,33 @@ test("understand mode starts non-trivial explanations with a mental model", () =
   expect(systemPromptText).toContain("What objects and arrows Lukasz should picture.");
 });
 
-test("understand mode uses source-explained markdown for code behavior", () => {
+test("understand mode defaults to dense source-explained markdown for non-trivial code", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "understand",
   });
 
   expect(systemPromptText).toContain("Source-Explained Markdown");
-  expect(systemPromptText).toContain("render the explanation directly in normal Markdown");
+  expect(systemPromptText).toContain("default to this style when explaining non-trivial source code");
+  expect(systemPromptText).toContain("architecture or data flow");
+  expect(systemPromptText).toContain("debugging context");
+  expect(systemPromptText).toContain("state/persistence");
+  expect(systemPromptText).toContain("performance, concurrency");
+  expect(systemPromptText).toContain("UI/framework lifecycle");
+  expect(systemPromptText).toContain("invisible code-driven behavior");
+  expect(systemPromptText).toContain("Render the explanation directly in normal Markdown");
   expect(systemPromptText).toContain("not a separate presentation channel or expandable details block");
+  expect(systemPromptText).toContain("Scale down only when Lukasz explicitly asks for a short or concise answer");
+  expect(systemPromptText).toContain("Start with the beginner mental picture before source-heavy detail");
+  expect(systemPromptText).toContain("Then show execution order");
   expect(systemPromptText).toContain("Walk through the source like a detailed debugging session");
   expect(systemPromptText).toContain("what triggers the step");
   expect(systemPromptText).toContain("what data/state exists");
   expect(systemPromptText).toContain("which condition or branch decides the next path");
   expect(systemPromptText).toContain("which collaborator receives control next");
-  expect(systemPromptText).toContain("Use source snippets after the mental model.");
+  expect(systemPromptText).toContain("For non-trivial source-backed explanations, include source-explained snippets copied from inspected source");
+  expect(systemPromptText).toContain("after the mental model and execution order");
+  expect(systemPromptText).toContain("If a snippet would not help, explicitly say why.");
   expect(systemPromptText).toContain('path="file:line-line"');
   expect(systemPromptText).toContain('```ts path="packages/example/src/runtime.ts:10-12"');
   expect(systemPromptText).toContain("Put short teaching comments directly inside the code fence immediately before the source line they explain.");
@@ -364,11 +376,33 @@ test("understand mode uses source-explained markdown for code behavior", () => {
   expect(systemPromptText).toContain("`library mechanics` for what a framework, library, or tool is doing here");
   expect(systemPromptText).toContain("Prefer `plain pseudocode` for control flow, branching, data transformation, lifecycle steps");
   expect(systemPromptText).toContain("A good comment should not create a new question");
+  expect(systemPromptText).toContain("what value/state exists afterward");
+  expect(systemPromptText).toContain("what RAM, disk, cache, database, browser, terminal, cloud storage, network, or external service boundary is crossed");
   expect(systemPromptText).toContain("Use this direct Markdown shape, not a rich card");
   expect(systemPromptText).toContain("Explanations may be long when the code needs it.");
   expect(systemPromptText).toContain("simple enough for a curious beginner learning from zero");
   expect(systemPromptText).toContain("If you cannot confidently explain a language, runtime, framework, library, or tool mechanism");
   expect(systemPromptText).toContain("Do not invent runtime values or code snippets.");
+  expect(systemPromptText).toContain("Do not anchor this style to any specific file, language, framework, or example project");
+  expect(systemPromptText).toContain("actual snippets must come from the inspected source");
+});
+
+test("understand mode source-explained instructions stay generic", () => {
+  const systemPromptText = buildBuliSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    assistantOperatingMode: "understand",
+  });
+
+  const referencePythonFileNameParts = [
+    ["data", "_", "fetcher", ".", "py"],
+    ["state", "_", "manager", ".", "py"],
+    ["daemon", "_", "db", ".", "py"],
+    ["deamon", "_", "db", ".", "py"],
+  ] as const;
+
+  for (const referencePythonFileNamePartList of referencePythonFileNameParts) {
+    expect(systemPromptText).not.toContain(referencePythonFileNamePartList.join(""));
+  }
 });
 
 test("plan mode points inspection toward read-only capabilities", () => {
@@ -689,7 +723,9 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "Run locate_codebase_symbols concurrently with independent read, glob, or grep calls when those inspections do not depend on its result.",
   );
   expect(systemPromptText).toContain("Do not modify files, run commands");
-  expect(systemPromptText).toContain("Return a concise report for the parent assistant.");
+  expect(systemPromptText).toContain("treat it as a terminal checkpoint instruction. Do not request more tools");
+  expect(systemPromptText).toContain("Return a focused, complete report for the parent assistant.");
+  expect(systemPromptText).toContain("do not omit necessary details just to stay short");
   expect(systemPromptText).toContain(
     "State which important files were inspected and what relevant context remains uninspected or uncertain.",
   );

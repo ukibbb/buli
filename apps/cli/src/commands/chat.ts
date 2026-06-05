@@ -31,6 +31,7 @@ import {
   INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE,
   INVALID_SUBAGENT_CONCURRENCY_MESSAGE,
   INVALID_TASK_SUBAGENT_MAX_REASONING_EFFORT_MESSAGE,
+  INVALID_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MESSAGE,
   type InteractiveChatEnvironment,
   resolveConversationAutoCompactionThresholdRatio,
   resolveInteractiveChatBashToolApprovalMode,
@@ -39,6 +40,7 @@ import {
   resolveInteractiveChatReadOnlyToolConcurrency,
   resolveInteractiveChatSubagentConcurrency,
   resolveInteractiveChatTaskSubagentProviderModelSelectionPolicy,
+  resolveInteractiveChatTaskSubagentSoftElapsedTimeCheckpointMilliseconds,
 } from "../interactiveChat/interactiveChatEnvironment.ts";
 import { resolveInitialConversationSessionModelSelection } from "../interactiveChat/interactiveChatModelSelection.ts";
 import {
@@ -68,6 +70,7 @@ type InteractiveChatStartupConfiguration = {
   maximumConcurrentReadOnlyToolCalls: number | undefined;
   maximumConcurrentSubagentConversations: number | undefined;
   maximumConcurrentResponseStepStreams: number | undefined;
+  taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
   taskSubagentProviderModelSelectionPolicy: TaskSubagentProviderModelSelectionPolicy | undefined;
   workspaceRootPath: string;
   promptContextScope: ReturnType<typeof resolveInteractiveChatPromptContextScope>;
@@ -117,6 +120,7 @@ export async function runInteractiveChat(input: {
     maximumConcurrentReadOnlyToolCalls,
     maximumConcurrentSubagentConversations,
     maximumConcurrentResponseStepStreams,
+    taskSubagentSoftElapsedTimeCheckpointMilliseconds,
     taskSubagentProviderModelSelectionPolicy,
     promptContextScope,
   } = startupConfigurationResolution.configuration;
@@ -199,6 +203,7 @@ export async function runInteractiveChat(input: {
       maximumConcurrentReadOnlyToolCalls: maximumConcurrentReadOnlyToolCalls ?? null,
       maximumConcurrentSubagentConversations: maximumConcurrentSubagentConversations ?? null,
       maximumConcurrentResponseStepStreams: maximumConcurrentResponseStepStreams ?? null,
+      taskSubagentSoftElapsedTimeCheckpointMilliseconds: taskSubagentSoftElapsedTimeCheckpointMilliseconds ?? null,
       taskSubagentSelectedModelIdOverride: taskSubagentProviderModelSelectionPolicy?.selectedModelIdOverride ?? null,
       taskSubagentMaximumReasoningEffortOverride: taskSubagentProviderModelSelectionPolicy?.maximumReasoningEffort ?? null,
       startupElapsedMs: Date.now() - startupStartedAtMs,
@@ -293,6 +298,9 @@ export async function runInteractiveChat(input: {
       ...(autoCompactionThresholdRatio !== undefined ? { autoCompactionThresholdRatio } : {}),
       ...(maximumConcurrentReadOnlyToolCalls !== undefined ? { maximumConcurrentReadOnlyToolCalls } : {}),
       ...(maximumConcurrentSubagentConversations !== undefined ? { maximumConcurrentSubagentConversations } : {}),
+      ...(taskSubagentSoftElapsedTimeCheckpointMilliseconds !== undefined
+        ? { taskSubagentSoftElapsedTimeCheckpointMilliseconds }
+        : {}),
       ...(taskSubagentProviderModelSelectionPolicy !== undefined
         ? { taskSubagentProviderModelSelectionPolicy }
         : {}),
@@ -429,6 +437,14 @@ function resolveInteractiveChatStartupConfiguration(input: {
     return { status: "failed", message: INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE };
   }
 
+  const taskSubagentSoftElapsedTimeCheckpointResolution =
+    resolveInteractiveChatTaskSubagentSoftElapsedTimeCheckpointMilliseconds({
+      environment: input.environment,
+    });
+  if (taskSubagentSoftElapsedTimeCheckpointResolution.status === "invalid") {
+    return { status: "failed", message: INVALID_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MESSAGE };
+  }
+
   const taskSubagentProviderModelSelectionPolicyResolution = resolveInteractiveChatTaskSubagentProviderModelSelectionPolicy({
     environment: input.environment,
   });
@@ -446,6 +462,7 @@ function resolveInteractiveChatStartupConfiguration(input: {
       maximumConcurrentReadOnlyToolCalls: readOnlyToolConcurrencyResolution.value,
       maximumConcurrentSubagentConversations: subagentConcurrencyResolution.value,
       maximumConcurrentResponseStepStreams: openAiMaxConcurrentStreamsResolution.value,
+      taskSubagentSoftElapsedTimeCheckpointMilliseconds: taskSubagentSoftElapsedTimeCheckpointResolution.value,
       taskSubagentProviderModelSelectionPolicy: taskSubagentProviderModelSelectionPolicyResolution.policy,
       workspaceRootPath: input.workspaceRootPath,
       promptContextScope: resolveInteractiveChatPromptContextScope({

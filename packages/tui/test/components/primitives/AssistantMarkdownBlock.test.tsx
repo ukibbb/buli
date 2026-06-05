@@ -511,6 +511,57 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("╭");
   });
 
+  test("wraps_long_code_fence_lines_in_narrow_terminals", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["```ts", "const path = 'packages/tui/src/components/ConversationMessageList.tsx';", "```"].join("\n")}
+      />,
+      { width: 34, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("const path");
+    expect(frame.replace(/[\s│┃]/g, "")).toContain("ConversationMessageList.tsx");
+  });
+
+  test("wraps_long_bash_snippet_lines_in_narrow_terminals", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["```bash", "bun --filter @buli/tui test packages/tui/src/components/ConversationMessageList.tsx", "```"].join("\n")}
+      />,
+      { width: 34, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("$ bun");
+    expect(frame.replace(/[\s│┃]/g, "")).toContain("ConversationMessageList.tsx");
+  });
+
+  test("wraps_fallback_diff_snippet_lines_in_narrow_terminals", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={["```diff", "+packages/tui/src/components/ConversationMessageList.tsx", "```"].join("\n")}
+      />,
+      { width: 34, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("patch snippet");
+    expect(frame.replace(/[\s│┃]/g, "")).toContain("ConversationMessageList.tsx");
+  });
+
   test("renders_raw_unified_diffs_as_structured_diff_blocks", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock

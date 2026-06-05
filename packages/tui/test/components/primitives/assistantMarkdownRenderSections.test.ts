@@ -5,6 +5,22 @@ import {
 } from "../../../src/components/primitives/assistantMarkdownRenderSections.ts";
 
 describe("assistantMarkdownRenderSections", () => {
+  test("keeps_plain_prose_as_native_markdown_sections", () => {
+    const markdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: ["First paragraph with `code`.", "", "Second paragraph with **bold** text."].join("\n"),
+      isStreaming: false,
+      previousCache: undefined,
+    });
+
+    expect(markdownSections.renderSections).toEqual([
+      {
+        sectionKind: "markdown",
+        sectionKey: "markdown:0",
+        markdownText: ["First paragraph with `code`.", "", "Second paragraph with **bold** text."].join("\n"),
+      },
+    ]);
+  });
+
   test("reuses_completed_custom_render_sections_when_streaming_tail_changes", () => {
     const firstMarkdownSections = buildStableAssistantMarkdownRenderSections({
       markdownText: ["```ts title=src/stable.ts", "const stable = true;", "```"].join("\n"),
@@ -59,7 +75,7 @@ describe("assistantMarkdownRenderSections", () => {
 
     expect(firstMarkdownSections.renderSections.map((renderSection) => renderSection.sectionKind)).toEqual([
       "heading",
-      "paragraph",
+      "markdown",
       "codeFence",
     ]);
     expect(secondMarkdownSections.renderSections[0]).toBe(firstMarkdownSections.renderSections[0]);
@@ -80,7 +96,7 @@ describe("assistantMarkdownRenderSections", () => {
 
     expect(markdownSections.renderSections).toMatchObject([
       { sectionKind: "heading", headingText: "Stable heading" },
-      { sectionKind: "paragraph", paragraphText: "Stable paragraph" },
+      { sectionKind: "markdown", markdownText: "Stable paragraph" },
       { sectionKind: "streamingTail", streamingTailText: "## Tail still typing" },
     ]);
   });
@@ -94,7 +110,7 @@ describe("assistantMarkdownRenderSections", () => {
 
     expect(markdownSections.renderSections).toMatchObject([
       { sectionKind: "heading", headingText: "Stable heading" },
-      { sectionKind: "paragraph", paragraphText: "Stable paragraph" },
+      { sectionKind: "markdown", markdownText: "Stable paragraph" },
       { sectionKind: "heading", headingText: "Tail completed" },
     ]);
   });
@@ -132,8 +148,8 @@ describe("assistantMarkdownRenderSections", () => {
     expect(completedMarkdownSections.renderSections).not.toBe(streamingMarkdownSections.renderSections);
     expect(completedMarkdownSections.nextCache).not.toBe(streamingMarkdownSections.nextCache);
     expect(completedMarkdownSections.renderSections[0]).toMatchObject({
-      sectionKind: "paragraph",
-      paragraphText: "Still **typing",
+      sectionKind: "markdown",
+      markdownText: "Still **typing",
     });
   });
 
@@ -182,8 +198,8 @@ describe("assistantMarkdownRenderSections", () => {
 
     expect(markdownSections.renderSections).toHaveLength(1);
     expect(markdownSections.renderSections[0]).toMatchObject({
-      sectionKind: "paragraph",
-      paragraphText: "Ready",
+      sectionKind: "markdown",
+      markdownText: "Ready",
     });
     expect(markdownSections.renderSections.some((renderSection) => renderSection.sectionKind === "codeFence")).toBe(false);
   });
@@ -195,14 +211,14 @@ describe("assistantMarkdownRenderSections", () => {
       previousCache: undefined,
     });
 
-    expect(markdownSections.renderSections.map((renderSection) => renderSection.sectionKind)).toEqual(["table", "paragraph"]);
+    expect(markdownSections.renderSections.map((renderSection) => renderSection.sectionKind)).toEqual(["table", "markdown"]);
     expect(markdownSections.renderSections[0]).toMatchObject({
       sectionKind: "table",
       tableMarkdownText: ["| Key | Value |", "| --- | --- |", "| A | B |"].join("\n"),
     });
     expect(markdownSections.renderSections[1]).toMatchObject({
-      sectionKind: "paragraph",
-      paragraphText: "Next paragraph.",
+      sectionKind: "markdown",
+      markdownText: "Next paragraph.",
     });
   });
 

@@ -20,7 +20,6 @@ import {
   createFunctionCallOutputInputItem,
   createOpenAiResponseReplayItems,
   createOpenAiResponsesInputItems,
-  type OpenAiFunctionCallOutputInputItem,
   type OpenAiConversationInputItem,
 } from "./request.ts";
 import { isOpenAiDebugLoggingEnabled, writeOpenAiDebugLog } from "./debugLog.ts";
@@ -46,6 +45,10 @@ import {
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "./openAiResponsesRequest.ts";
 import { summarizeOpenAiWorkingSetVisibilityForDiagnostics } from "./openAiWorkingSetVisibilityDiagnostics.ts";
+import {
+  projectCurrentTurnToolResultReplayForOpenAiRequest,
+  type OpenAiCurrentTurnToolResultReplayProjectionDiagnostics,
+} from "./openAiCurrentTurnToolResultReplayProjection.ts";
 import { parseOpenAiStream, type OpenAiResponseStepTerminalState } from "./stream.ts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import type { OpenAiRateLimitCoordinator } from "./openAiRateLimitCoordinator.ts";
@@ -59,14 +62,7 @@ type OpenAiProviderToolResultSubmission = {
   toolResultText: string;
 };
 
-type CurrentTurnFunctionCallOutputReplayDiagnostics = Readonly<{
-  requestCurrentTurnFunctionCallOutputOriginalTextLength: number;
-  requestCurrentTurnFunctionCallOutputProjectedTextLength: number;
-  requestCurrentTurnFunctionCallOutputSavedCharacterCount: number;
-  requestCurrentTurnCompactedFunctionCallOutputCount: number;
-  requestCurrentTurnExactWorkingSetFunctionCallOutputCount: number;
-  requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: number;
-}>;
+type CurrentTurnFunctionCallOutputReplayDiagnostics = OpenAiCurrentTurnToolResultReplayProjectionDiagnostics;
 
 type PendingOpenAiToolResultSubmissionWait = {
   waitStartedAtMs: number;
@@ -421,13 +417,14 @@ export class OpenAiProviderConversationTurn {
       const responseStepRequestConstructionStartedAtMs = Date.now();
       const responseStepRequestObjectBuildStartedAtMs = Date.now();
       const exactOpenAiConversationInputItemsForRequest = [...this.openAiConversationInputItems];
-      const currentTurnFunctionCallOutputReplayDiagnostics = summarizeExactCurrentTurnFunctionCallOutputReplayForDiagnostics({
+      const currentTurnToolResultReplayProjection = projectCurrentTurnToolResultReplayForOpenAiRequest({
         openAiInputItems: exactOpenAiConversationInputItemsForRequest,
         currentTurnFirstInputItemIndex: this.initialOpenAiConversationInputItemCount,
       });
+      const currentTurnFunctionCallOutputReplayDiagnostics = currentTurnToolResultReplayProjection.diagnostics;
       const requestBody = createOpenAiResponsesHttpRequestBodyFromTemplate({
         requestTemplate: this.openAiResponsesRequestTemplate,
-        openAiInputItems: exactOpenAiConversationInputItemsForRequest,
+        openAiInputItems: currentTurnToolResultReplayProjection.projectedOpenAiInputItems,
       });
       const responseStepRequestObjectBuildDurationMs = Date.now() - responseStepRequestObjectBuildStartedAtMs;
       const responseStepRequestSerializationStartedAtMs = Date.now();
@@ -447,6 +444,7 @@ export class OpenAiProviderConversationTurn {
         ? summarizeOpenAiWorkingSetVisibilityForDiagnostics({
             requestBody,
             currentTurnFirstInputItemIndex: this.initialOpenAiConversationInputItemCount,
+            projectionMetadataByInputItemIndex: currentTurnToolResultReplayProjection.projectionMetadataByInputItemIndex,
           }).diagnosticFields
         : {};
       totalRequestBodyTextLength += responseStepRequestBodyTextLength;
@@ -1399,43 +1397,6 @@ function sumFunctionCallOutputTextLength(
 
     return totalTextLength + openAiInputItem.output.length;
   }, 0);
-}
-
-function summarizeExactCurrentTurnFunctionCallOutputReplayForDiagnostics(input: {
-  openAiInputItems: readonly OpenAiConversationInputItem[];
-  currentTurnFirstInputItemIndex: number;
-}): CurrentTurnFunctionCallOutputReplayDiagnostics {
-  let currentTurnFunctionCallOutputTextLength = 0;
-  let currentTurnFunctionCallOutputCount = 0;
-
-  for (
-    let inputItemIndex = input.currentTurnFirstInputItemIndex;
-    inputItemIndex < input.openAiInputItems.length;
-    inputItemIndex += 1
-  ) {
-    const openAiInputItem = input.openAiInputItems[inputItemIndex];
-    if (!openAiInputItem || !isOpenAiFunctionCallOutputInputItem(openAiInputItem)) {
-      continue;
-    }
-
-    currentTurnFunctionCallOutputTextLength += openAiInputItem.output.length;
-    currentTurnFunctionCallOutputCount += 1;
-  }
-
-  return {
-    requestCurrentTurnFunctionCallOutputOriginalTextLength: currentTurnFunctionCallOutputTextLength,
-    requestCurrentTurnFunctionCallOutputProjectedTextLength: currentTurnFunctionCallOutputTextLength,
-    requestCurrentTurnFunctionCallOutputSavedCharacterCount: 0,
-    requestCurrentTurnCompactedFunctionCallOutputCount: 0,
-    requestCurrentTurnExactWorkingSetFunctionCallOutputCount: currentTurnFunctionCallOutputCount,
-    requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: currentTurnFunctionCallOutputTextLength,
-  };
-}
-
-function isOpenAiFunctionCallOutputInputItem(
-  openAiInputItem: OpenAiConversationInputItem,
-): openAiInputItem is OpenAiFunctionCallOutputInputItem {
-  return "type" in openAiInputItem && openAiInputItem.type === "function_call_output";
 }
 
 function summarizeFunctionCallOutputTextLengthByReplayAge(input: {

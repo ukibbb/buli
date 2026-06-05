@@ -18,7 +18,13 @@ function splitUnifiedDiffTextIntoRows(unifiedDiffText: UnifiedDiffText): string[
   return unifiedDiffText.replace(/\n$/, "").split("\n");
 }
 
-function countUnifiedDiffRenderableRows(unifiedDiffLines: readonly string[]): number {
+type VisibleUnifiedDiffContent = {
+  totalRenderableRowCount: number;
+  visibleRenderableRowCount: number;
+  visibleUnifiedDiffText: UnifiedDiffText;
+};
+
+function countUnifiedDiffRenderableBodyRows(unifiedDiffLines: readonly string[]): number {
   let isInsideHunk = false;
   let renderableRowCount = 0;
 
@@ -40,9 +46,79 @@ function countUnifiedDiffRenderableRows(unifiedDiffLines: readonly string[]): nu
   return renderableRowCount;
 }
 
-function countUnifiedDiffRowsForFullHeight(unifiedDiffText: UnifiedDiffText): number {
+function countUnifiedDiffRowsForLimitNotice(unifiedDiffLines: readonly string[]): number {
+  return countUnifiedDiffRenderableBodyRows(unifiedDiffLines) || unifiedDiffLines.length;
+}
+
+function buildVisibleUnifiedDiffContent(unifiedDiffText: UnifiedDiffText): VisibleUnifiedDiffContent {
   const unifiedDiffLines = splitUnifiedDiffTextIntoRows(unifiedDiffText);
-  return countUnifiedDiffRenderableRows(unifiedDiffLines) || unifiedDiffLines.length;
+  const totalRenderableRowCount = countUnifiedDiffRowsForLimitNotice(unifiedDiffLines);
+  const visibleRenderableRowCount = Math.min(totalRenderableRowCount, MAX_VISIBLE_DIFF_ROW_COUNT);
+
+  if (totalRenderableRowCount <= MAX_VISIBLE_DIFF_ROW_COUNT) {
+    return {
+      totalRenderableRowCount,
+      visibleRenderableRowCount,
+      visibleUnifiedDiffText: unifiedDiffText,
+    };
+  }
+
+  const renderableBodyRowCount = countUnifiedDiffRenderableBodyRows(unifiedDiffLines);
+  const visibleUnifiedDiffLines = renderableBodyRowCount === 0
+    ? unifiedDiffLines.slice(0, MAX_VISIBLE_DIFF_ROW_COUNT)
+    : collectVisibleUnifiedDiffLines(unifiedDiffLines, MAX_VISIBLE_DIFF_ROW_COUNT);
+
+  return {
+    totalRenderableRowCount,
+    visibleRenderableRowCount,
+    visibleUnifiedDiffText: visibleUnifiedDiffLines.join("\n"),
+  };
+}
+
+function collectVisibleUnifiedDiffLines(
+  unifiedDiffLines: readonly string[],
+  maximumRenderableBodyRowCount: number,
+): string[] {
+  let isInsideHunk = false;
+  let visibleRenderableBodyRowCount = 0;
+  const visibleUnifiedDiffLines: string[] = [];
+
+  for (const unifiedDiffLine of unifiedDiffLines) {
+    if (unifiedDiffLine.startsWith("diff --git ")) {
+      if (visibleRenderableBodyRowCount >= maximumRenderableBodyRowCount) {
+        break;
+      }
+      isInsideHunk = false;
+      visibleUnifiedDiffLines.push(unifiedDiffLine);
+      continue;
+    }
+
+    if (unifiedDiffLine.startsWith("@@")) {
+      if (visibleRenderableBodyRowCount >= maximumRenderableBodyRowCount) {
+        break;
+      }
+      isInsideHunk = true;
+      visibleUnifiedDiffLines.push(unifiedDiffLine);
+      continue;
+    }
+
+    const isRenderableBodyLine = isInsideHunk && !unifiedDiffLine.startsWith("\\ No newline");
+    if (!isRenderableBodyLine) {
+      if (visibleRenderableBodyRowCount < maximumRenderableBodyRowCount) {
+        visibleUnifiedDiffLines.push(unifiedDiffLine);
+      }
+      continue;
+    }
+
+    if (visibleRenderableBodyRowCount >= maximumRenderableBodyRowCount) {
+      break;
+    }
+
+    visibleUnifiedDiffLines.push(unifiedDiffLine);
+    visibleRenderableBodyRowCount += 1;
+  }
+
+  return visibleUnifiedDiffLines;
 }
 
 export function resolveOpenTuiDiffFiletype(filePath: string | undefined): string {
@@ -54,8 +130,7 @@ export function resolveOpenTuiDiffFiletype(filePath: string | undefined): string
 }
 
 export function DiffBlock(props: DiffBlockProps): ReactNode {
-  const unifiedDiffRowCount = countUnifiedDiffRowsForFullHeight(props.unifiedDiffText);
-  const visibleUnifiedDiffRowCount = Math.min(unifiedDiffRowCount, MAX_VISIBLE_DIFF_ROW_COUNT);
+  const visibleUnifiedDiffContent = buildVisibleUnifiedDiffContent(props.unifiedDiffText);
   const diffFiletype = resolveOpenTuiDiffFiletype(props.filePath);
   const isCompact = props.density === "compact";
   const lineNumberForegroundColor = terminalDiffColors.lineNumberForeground;
@@ -71,8 +146,8 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
   return (
     <box flexDirection="column" width="100%">
       <VisibleContentLimitNotice
-        visibleItemCount={visibleUnifiedDiffRowCount}
-        totalItemCount={unifiedDiffRowCount}
+        visibleItemCount={visibleUnifiedDiffContent.visibleRenderableRowCount}
+        totalItemCount={visibleUnifiedDiffContent.totalRenderableRowCount}
         itemLabelPlural="diff lines"
       />
       <diff
@@ -82,10 +157,9 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
         addedSignColor={terminalDiffColors.addedSignForeground}
         contextBg={terminalDiffColors.contextBackground}
         contextContentBg={terminalDiffColors.contextContentBackground}
-        diff={props.unifiedDiffText}
+        diff={visibleUnifiedDiffContent.visibleUnifiedDiffText}
         filetype={diffFiletype}
         fg={githubLikeTerminalCodeColors.foreground}
-        height={visibleUnifiedDiffRowCount}
         lineNumberBg={lineNumberBackgroundColor}
         lineNumberFg={lineNumberForegroundColor}
         removedBg={terminalDiffColors.removedBackground}
@@ -99,7 +173,7 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
         treeSitterClient={openTuiSharedTreeSitterClient}
         view="unified"
         width="100%"
-        wrapMode="none"
+        wrapMode="char"
       />
     </box>
   );

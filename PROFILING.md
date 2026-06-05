@@ -23,6 +23,7 @@ profile-runs/current/task-subagent/summary.md
 profile-runs/current/sqlite/summary.md
 profile-runs/current/tool-output/summary.md
 profile-runs/current/codebase-knowledge/summary.md
+profile-runs/current/assistant-markdown-render-sections/summary.md
 ```
 
 `profile-runs/` is local ignored output. Keep only current runs unless an older run is needed for an active before/after comparison. If these files are missing, rerun the commands below before making optimization claims.
@@ -75,12 +76,13 @@ Task subagent completed reports stay complete and uncapped. Use routing override
 
 ```bash
 BULI_TASK_SUBAGENT_MODEL=gpt-5.4 BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT=medium bun run profile:manual -- --output-dir profile-runs/measurements/manual-subagent-routing --sample-ms 250
+BULI_TASK_SUBAGENT_MODEL=gpt-5.4 BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT=high bun run profile:manual -- --output-dir profile-runs/measurements/manual-subagent-routing-high --sample-ms 250
 ```
 
 - `BULI_TASK_SUBAGENT_MODEL` forces the model used for task-subagent provider turns.
 - `BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT` clamps explicit parent reasoning effort for task subagents. Valid values are `none`, `minimal`, `low`, `medium`, `high`, and `xhigh`.
 - Provider/account model availability is not checked at startup; use the model override as the rollback/tuning path.
-- Compare reports by checking task-subagent `Model`/`Effort` columns, largest task-result sizes, wall-clock task attribution, and report quality.
+- Compare reports by checking task-subagent `Model`/`Effort` columns, `Executor` versus `Parent Result`, checkpoint/failure details, largest task-result sizes, wall-clock task attribution, and report quality. A higher effort/model A/B is useful only after the report shows whether parent-visible checkpoint failures remain.
 
 ## Deterministic Profiles
 
@@ -95,6 +97,7 @@ bun run profile -- --scenario task-subagent-runtime --output-dir profile-runs/cu
 bun run profile -- --scenario sqlite-session-large-history --output-dir profile-runs/current/sqlite --implementation-label current --repeat 3 --warmups 1
 bun run profile -- --scenario tool-output-context-growth --output-dir profile-runs/current/tool-output --implementation-label current --repeat 5 --warmups 1
 bun run profile -- --scenario codebase-knowledge-startup-index --output-dir profile-runs/current/codebase-knowledge --implementation-label current --repeat 3 --warmups 1
+bun run profile -- --scenario assistant-markdown-render-sections --output-dir profile-runs/current/assistant-markdown-render-sections --implementation-label current --repeat 8 --warmups 1
 ```
 
 Every deterministic run writes:
@@ -114,6 +117,7 @@ Available deterministic scenarios:
 | `sqlite-session-large-history` | append, load, list, and switch costs for a large persisted SQLite session | `apps/cli/src/conversationSession/sqlite/*` |
 | `tool-output-context-growth` | model-context projection, compaction projection, provider replay pressure, and budgeted batch-tool output size | `packages/engine/src/conversationHistoryProjection.ts`, `packages/engine/src/conversationCompaction/*`, `packages/engine/src/tools/*` |
 | `codebase-knowledge-startup-index` | full startup indexing, unchanged restart reuse, single-file reindexing, mtime-only hash reuse, snapshot write skipping, index size, and heap delta | `packages/engine/src/codebaseKnowledge/*`, `packages/codebase-knowledge/src/*` |
+| `assistant-markdown-render-sections` | cold markdown section builds, append-only streaming updates, completion promotion, stable section reuse, streaming tail count, and heap delta | `packages/tui/src/components/primitives/assistantMarkdownRenderSectionBuilder.ts` |
 
 ## Before/After Comparisons
 
@@ -152,6 +156,9 @@ Use these metrics when judging rewrites:
 - `task_subagent_runtime.parent_task_result_wait.duration_ms`
 - `task_subagent_runtime.parent_task_result_text_bytes` (observed size only; no warn/fail budget because completed task reports are intentionally uncapped)
 - `task_subagent_runtime.checkpoint_elapsed_ms`
+- `task_subagent_runtime.parent_visible_failed_task_result_count` (fails above `0`)
+- `task_subagent_runtime.requested_tools_after_checkpoint_failure_count` (fails above `0`)
+- `task_subagent_runtime.checkpoint_completed_task_result_count`
 - `sqlite_session_large_history.load_entries.duration_ms`
 - `sqlite_session_large_history.switch_session.duration_ms`
 - `tool_output_context_growth.model_context_projection.duration_ms`
@@ -169,6 +176,12 @@ Use these metrics when judging rewrites:
 - `codebase_knowledge_startup_index.*.workspace_scan.duration_ms`
 - `codebase_knowledge_startup_index.*.snapshot_write.duration_ms`
 - `codebase_knowledge_startup_index.*.snapshot_write_skipped_count`
+- `assistant_markdown_render_sections.cold_build.duration_ms`
+- `assistant_markdown_render_sections.initial_streaming_build.duration_ms`
+- `assistant_markdown_render_sections.streaming_updates.p95_duration_ms`
+- `assistant_markdown_render_sections.streaming_updates.max_duration_ms`
+- `assistant_markdown_render_sections.completion_promotion.duration_ms`
+- `assistant_markdown_render_sections.stable_section_reference_reuse_count`
 - `*.heap_used_delta_bytes`
 
 ## Report Contents
@@ -184,9 +197,9 @@ Use these metrics when judging rewrites:
 - OpenAI retry, timeout, and rate-limit summaries
 - OpenAI context-guard summaries
 - OpenAI request size contributors
-- OpenAI working-set visibility reasons, evidence IDs, exact projection counts, shadow saved bytes, and largest provider-visible input items
+- OpenAI working-set visibility reasons, evidence IDs, exact/duplicate-reference projection counts, saved bytes, and largest provider-visible input items
 - tool attribution by payload, wait, execution, and bash approval wait
-- task subagent attribution by per-call duration, parent wait, concurrent-group wall time, selected model/effort, largest task results, and subagent slot wait
+- task subagent attribution by per-call executor duration, parent-visible result kind, checkpoint/failure details, parent wait, concurrent-group wall time, selected model/effort, largest task results, and subagent slot wait
 - request/context growth summaries
 - compaction impact summaries
 - TUI render summaries
@@ -201,9 +214,9 @@ Use report sections as a decision tree:
 | --- | --- | --- |
 | High elapsed turn time with low CPU deltas | `OpenAI Response Steps`, retry/rate-limit events, `provider_turn.summary` | OpenAI/model/network waiting |
 | Many `TimeoutError` transport retries | `OpenAI Retries And Timeouts`, `response_step.transport_retry_scheduled`, `response_step.summary.requestAttemptCount` | OpenAI first-byte wait or network stall |
-| High `task` execution total with high `task` wait | `Task Subagent Attribution`, `Tool Attribution`, task-only `tool_call.concurrent_group_finished` | subagent runtime |
+| High `task` execution total, failed parent-visible task results, or checkpoint failures | `Task Subagent Attribution`, `Tool Attribution`, task-only `tool_call.concurrent_group_finished` | subagent runtime, routing quality, or checkpoint compliance |
 | Many response steps and huge request bodies | `response_step.summary.requestBodyTextLength`, `provider_turn.summary.maxRequestBodyTextLength`, `OpenAI Request Size Contributors`, `OpenAI Working-Set Visibility` | context growth, large tool schemas, tool-result replay growth, or current-turn evidence volume |
-| Need to know why model-visible items are present | `OpenAI Working-Set Visibility` reason rows, evidence IDs, exact/compacted counts, saved bytes | provider-visible working-set diagnostics; not compaction by itself |
+| Need to know why model-visible items are present | `OpenAI Working-Set Visibility` reason rows, evidence IDs, exact/duplicate-reference counts, saved bytes, and projection-kind table | provider-visible working-set diagnostics; same-request duplicate references keep an earlier exact copy visible, while cross-step replay aggregation is still off by default |
 | Large `toolResultTextLength` or `maxToolResultTextLength` | `response_step.summary`, `conversation_turn.summary`, `OpenAI Request Size Contributors`, `OpenAI Working-Set Visibility` | tool output volume |
 | Individual tool results are capped but totals keep growing | `conversation_turn.summary.totalToolResultTextLength`, `Request And Context Growth` | aggregate tool-output accumulation |
 | Context usage reaches the soft budget | `OpenAI Context Guard`, `response_step.continuation_context_guard_triggered`, `conversation_compaction.completed` | guard-triggered continuation and compaction |

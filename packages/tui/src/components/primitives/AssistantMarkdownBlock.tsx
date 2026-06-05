@@ -17,7 +17,6 @@ import {
 import {
   areAssistantMarkdownCodeFenceInfoValuesEqual,
   areAssistantMarkdownVisibleListLinesEqual,
-  assistantMarkdownUnorderedListMarkers,
   buildAssistantDiffSnippetUnifiedDiff,
   buildStableAssistantMarkdownRenderSections,
   formatAssistantMarkdownCalloutText,
@@ -46,6 +45,17 @@ import {
   assistantMarkdownSyntaxStyle,
   githubLikeTerminalCodeColors,
 } from "./codeRenderingTheme.ts";
+import {
+  assistantMarkdownCalloutSyntaxStyleByKind,
+  assistantMarkdownQuoteSyntaxStyle,
+  assistantMarkdownTableOptions,
+  assistantMarkdownTaskListSyntaxStyle,
+  defaultAssistantMarkdownTerminalColumnCount,
+  formatAssistantMarkdownVisibleHeadingText,
+  resolveAssistantMarkdownHeadingForegroundColor,
+  resolveAssistantMarkdownHeadingSyntaxStyle,
+  resolveAssistantMarkdownVisibleListMarkerColor,
+} from "./assistantMarkdownTerminalTheme.ts";
 import { DiffBlock } from "./DiffBlock.tsx";
 import { FencedCodeBlock } from "./FencedCodeBlock.tsx";
 import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.ts";
@@ -63,45 +73,6 @@ export type AssistantMarkdownBlockProps = {
   horizontalRuleColor: string;
   terminalColumnCount?: number | undefined;
 };
-
-const assistantMarkdownHeadingSyntaxStyleByDepth = {
-  1: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true } }),
-  2: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true } }),
-  3: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true } }),
-  fallback: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary), bold: true } }),
-} as const;
-
-const assistantMarkdownQuoteSyntaxStyle = SyntaxStyle.fromStyles({
-  default: { fg: RGBA.fromHex(chatScreenTheme.textSecondary), italic: true },
-});
-
-const assistantMarkdownTaskListSyntaxStyle = SyntaxStyle.fromStyles({
-  default: { fg: RGBA.fromHex(chatScreenTheme.textPrimary) },
-  checked: { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true },
-  unchecked: { fg: RGBA.fromHex(chatScreenTheme.textDim), bold: true },
-});
-
-const assistantMarkdownCalloutSyntaxStyleByKind: Record<AssistantMarkdownCalloutKind, SyntaxStyle> = {
-  NOTE: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentCyan), bold: true } }),
-  TIP: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentGreen), bold: true } }),
-  IMPORTANT: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentPurple), bold: true } }),
-  WARNING: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentAmber), bold: true } }),
-  CAUTION: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(chatScreenTheme.accentRed), bold: true } }),
-};
-
-const defaultAssistantMarkdownTerminalColumnCount = 80;
-const assistantMarkdownTableOptions = {
-  borders: true,
-  borderColor: chatScreenTheme.borderSubtle,
-  borderStyle: "single",
-  cellPadding: 0,
-  columnFitter: "balanced",
-  outerBorder: true,
-  selectable: true,
-  style: "grid",
-  widthMode: "content",
-  wrapMode: "word",
-} satisfies NonNullable<MarkdownOptions["tableOptions"]>;
 
 function createAssistantMarkdownPlainTextChunk(input: {
   text: string;
@@ -145,13 +116,6 @@ function AssistantMarkdownInlineText(props: {
   ));
 }
 
-function resolveAssistantMarkdownHeadingSyntaxStyle(depth: number): SyntaxStyle {
-  if (depth === 1) return assistantMarkdownHeadingSyntaxStyleByDepth[1];
-  if (depth === 2) return assistantMarkdownHeadingSyntaxStyleByDepth[2];
-  if (depth === 3) return assistantMarkdownHeadingSyntaxStyleByDepth[3];
-  return assistantMarkdownHeadingSyntaxStyleByDepth.fallback;
-}
-
 function AssistantMarkdownTextSection(props: {
   isStreaming: boolean;
   markdownText: string;
@@ -175,16 +139,6 @@ function AssistantMarkdownTextSection(props: {
   );
 }
 
-function AssistantMarkdownParagraphBlock(props: { paragraphText: string }): ReactNode {
-  return (
-    <box marginBottom={1} width="100%">
-      <text fg={chatScreenTheme.textPrimary} wrapMode="word">
-        <AssistantMarkdownInlineText inlineText={props.paragraphText} />
-      </text>
-    </box>
-  );
-}
-
 function AssistantMarkdownStreamingTailBlock(props: { streamingTailText: string }): ReactNode {
   const streamingTailLines = props.streamingTailText.split("\n");
   return (
@@ -198,26 +152,6 @@ function AssistantMarkdownStreamingTailBlock(props: { streamingTailText: string 
       ))}
     </box>
   );
-}
-
-function resolveAssistantMarkdownHeadingForegroundColor(headingDepth: number): string {
-  if (headingDepth === 1) return chatScreenTheme.accentCyan;
-  if (headingDepth === 2) return chatScreenTheme.accentAmber;
-  if (headingDepth === 3) return chatScreenTheme.accentPurple;
-  return chatScreenTheme.textPrimary;
-}
-
-function formatAssistantMarkdownVisibleHeadingText(input: { headingDepth: number; headingText: string }): string {
-  if (input.headingDepth === 1) {
-    return `▌ ${input.headingText}`;
-  }
-  if (input.headingDepth === 2) {
-    return `◆ ${input.headingText}`;
-  }
-  if (input.headingDepth === 3) {
-    return input.headingText;
-  }
-  return `• ${input.headingText}`;
 }
 
 function AssistantMarkdownHeadingBlock(props: { headingDepth: number; headingText: string }): ReactNode {
@@ -267,29 +201,6 @@ function AssistantMarkdownTableBlock(props: {
       />
     </box>
   );
-}
-
-function resolveAssistantMarkdownVisibleListMarkerColor(listItemMarkerText: string): string {
-  const trimmedListItemMarkerText = listItemMarkerText.trim();
-  if (trimmedListItemMarkerText === "☑") {
-    return chatScreenTheme.accentGreen;
-  }
-  if (trimmedListItemMarkerText === "☐") {
-    return chatScreenTheme.textDim;
-  }
-  if (/^\d+\.$/.test(trimmedListItemMarkerText)) {
-    return chatScreenTheme.accentAmber;
-  }
-
-  const unorderedListMarkerIndex = assistantMarkdownUnorderedListMarkers.indexOf(
-    trimmedListItemMarkerText as (typeof assistantMarkdownUnorderedListMarkers)[number],
-  );
-  return [
-    chatScreenTheme.accentPrimaryMuted,
-    chatScreenTheme.accentCyan,
-    chatScreenTheme.accentAmber,
-    chatScreenTheme.accentPurple,
-  ][unorderedListMarkerIndex] ?? chatScreenTheme.textMuted;
 }
 
 function AssistantMarkdownListBlock(props: {
@@ -471,7 +382,7 @@ function AssistantDiffSnippetBlock(props: {
     <AssistantSnippetFrame accentColor={chatScreenTheme.accentPrimaryMuted} headerText={headerText}>
       {diffSnippetLines.map((diffSnippetLine, index) => (
         <box key={`assistant-diff-snippet-line-${index}`} width="100%">
-          <text fg={resolveAssistantDiffSnippetLineColor(diffSnippetLine)} wrapMode="none">
+          <text fg={resolveAssistantDiffSnippetLineColor(diffSnippetLine)} wrapMode="char" width="100%">
             {diffSnippetLine}
           </text>
         </box>
@@ -486,7 +397,7 @@ function AssistantShellSnippetBlock(props: { shellSnippetText: string }): ReactN
     <AssistantSnippetFrame accentColor={chatScreenTheme.accentGreen}>
       {shellSnippetLines.map((shellSnippetLine, index) => (
         <box key={`assistant-shell-snippet-line-${index}`} width="100%">
-          <text wrapMode="none">
+          <text wrapMode="char" width="100%">
             {shellSnippetLine.trim().length > 0 ? (
               <>
                 <span fg={chatScreenTheme.accentGreen}>$ </span>
@@ -518,7 +429,7 @@ function AssistantCodeFenceBlock(props: {
         {...(props.codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: props.codeFenceInfo.codeFenceFilePath } : {})}
         languageLabel={props.codeFenceInfo.codeLanguageLabel}
         showLabel={false}
-        wrapMode="none"
+        wrapMode="char"
       />
     </box>
   );
@@ -530,7 +441,6 @@ const MemoizedAssistantCodeFenceBlock = memo(AssistantCodeFenceBlock, (previousP
 });
 const MemoizedAssistantMarkdownTextSection = memo(AssistantMarkdownTextSection);
 const MemoizedAssistantMarkdownStreamingTailBlock = memo(AssistantMarkdownStreamingTailBlock);
-const MemoizedAssistantMarkdownParagraphBlock = memo(AssistantMarkdownParagraphBlock);
 const MemoizedAssistantMarkdownHeadingBlock = memo(AssistantMarkdownHeadingBlock);
 const MemoizedAssistantMarkdownHorizontalRuleBlock = memo(AssistantMarkdownHorizontalRuleBlock);
 const MemoizedAssistantMarkdownTableBlock = memo(AssistantMarkdownTableBlock);
@@ -566,7 +476,6 @@ const assistantMarkdownRenderSectionRendererByKind: {
 } = {
   markdown: renderMarkdownTextRenderSection,
   streamingTail: renderStreamingTailRenderSection,
-  paragraph: renderParagraphRenderSection,
   heading: renderHeadingRenderSection,
   horizontalRule: renderHorizontalRuleRenderSection,
   table: renderTableRenderSection,
@@ -732,15 +641,6 @@ function renderStreamingTailRenderSection(input: AssistantMarkdownRenderSectionR
     <MemoizedAssistantMarkdownStreamingTailBlock
       key={input.assistantMarkdownRenderSection.sectionKey}
       streamingTailText={input.assistantMarkdownRenderSection.streamingTailText}
-    />
-  );
-}
-
-function renderParagraphRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"paragraph">): ReactNode {
-  return (
-    <MemoizedAssistantMarkdownParagraphBlock
-      key={input.assistantMarkdownRenderSection.sectionKey}
-      paragraphText={input.assistantMarkdownRenderSection.paragraphText}
     />
   );
 }

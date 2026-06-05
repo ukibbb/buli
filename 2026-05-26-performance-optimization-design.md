@@ -38,7 +38,7 @@ That means:
 - Provider requests should contain current user intent, active instructions, recent relevant evidence, failure-recovery context, and compact summaries.
 - Historical large or repeated tool outputs should become evidence cards with stable IDs, metadata, hashes when available, visible excerpts, and explicit omission notices.
 - Full raw evidence remains stored even when the model-visible projection is compact.
-- Current-turn evidence stays exact throughout one assistant/tool-calling loop; compact evidence notes are for later user turns, not for hiding evidence the model just read while it is still answering.
+- Current-turn evidence stays exact at least once inside the provider request that uses it. A later identical `function_call_output` in the same request may become a duplicate reference only when an earlier exact copy remains visible in that same request. Cross-response-step replay aggregation is still eval-gated and off by default.
 
 The target shape is:
 
@@ -104,7 +104,7 @@ Before changing context projection, check these report sections:
 - `OpenAI Working-Set Visibility`: why provider-visible input items were sent, their evidence IDs when stable, exact projection counts, shadow saved bytes, and largest visible items.
 - `Request And Context Growth`: request and context growth across the turn.
 - `Tool Attribution`: tool-result payload and wait time by tool.
-- `Task Subagent Attribution`: subagent execution time, parent wait, concurrent-group wall time, and result size.
+- `Task Subagent Attribution`: task executor time, parent-visible result kind, checkpoint/failure details, parent wait, concurrent-group wall time, selected model/effort, and result size.
 - `TUI Render`: render duration and churn.
 - `SQLite Storage`: append/load/switch/compaction persistence cost.
 - `Process Peaks`: RSS, heap, CPU, and event-loop delay.
@@ -228,7 +228,7 @@ Child transcript and raw tool evidence stay stored. The parent-visible task resu
 </task_result>
 ```
 
-The accepted optimization path for task subagents is provider-turn routing: use a cheaper/faster default model or lower reasoning effort where safe, expose the selected model/effort in diagnostics, and keep environment overrides as the rollback path when quality drops.
+The accepted optimization path for task subagents is provider-turn routing: use a cheaper/faster default model or lower reasoning effort where safe, expose the selected model/effort in diagnostics, and keep environment overrides as the rollback path when quality drops. Checkpoint compliance is hardened first with terminal/no-more-tools prompt wording and deterministic failure metrics; a separate no-tool finalizer turn remains a deeper redesign because it must explicitly reconstruct model-visible child evidence.
 
 ### 11. Compaction is not the first line of defense
 
@@ -291,7 +291,7 @@ Source-verified completed or mostly completed items:
 - Request-size contributor diagnostics and OpenAI request-size report sections.
 - Per-tool result-size diagnostics and conversation resource summaries.
 - Deterministic `tool-output-context-growth` profile coverage and profile-report working-set sections.
-- OpenAI provider working-set visibility sidecar diagnostics with reasons, stable evidence IDs for provider replay items, largest visible input items, exact projection counts, and saved/compacted bytes fixed at 0.
+- OpenAI provider working-set visibility sidecar diagnostics with reasons, stable evidence IDs for provider replay items, largest visible input items, exact/duplicate-reference projection counts, and original/projected/saved byte counts.
 - Bash output capping before provider submission.
 - Read-only bash patch-capture skipping for auto-run read-only commands.
 - SSE frame buffering and response text/function-call chunk accumulation without repeated string concatenation.
@@ -302,6 +302,8 @@ Source-verified completed or mostly completed items:
 - Same-step duplicate read-only tool-call coalescing.
 - Task subagent context scoping through fresh child conversation history.
 - Task subagent model/effort routing diagnostics and override hooks.
+- Task subagent attribution diagnostics distinguish executor completion from parent-visible result kind, join model/effort fallback from model-selection events, and surface checkpoint/failure evidence without capping completed reports.
+- Task subagent checkpoint prompt hardening and deterministic compliance metrics for parent-visible failed task results, `requested_tools_after_checkpoint` failures, and completed checkpoint task results. This does not force a no-tool finalizer, change default routing, compact provider context, or cap completed reports.
 
 Partial caveat: historical failed/interrupted turns and current-turn continuations can still need bounded recovery evidence or compact replay. Task subagent context is scoped, and completed parent-visible task results are intentionally uncapped for correctness.
 
@@ -327,10 +329,10 @@ Use this bucket when source behavior has been checked but the current product im
 
 Examples:
 
-- Current-turn provider replay growth from exact `function_call_output` continuation items.
+- Cross-response-step current-turn provider replay growth from repeated `function_call_output` continuation items. Same-request exact duplicates can now be referenced, but replay across later response-step requests remains exact unless a future eval-gated flag proves quality is preserved.
 - Aggregate tool-output accumulation across many read/grep/bash calls after individual caps apply.
 - Skill catalog disk parsing and memoization impact.
-- Existing subagent scoping, checkpointing, task-subagent routing quality/latency, and parent-visible task-result size diagnostics.
+- Task-subagent routing quality/latency and real-model checkpoint-compliance impact after prompt hardening, using manual A/B runs with model/effort overrides when deterministic metrics stay clean.
 - Prompt-context lookup, TUI render, SQLite hydration, and codebase-knowledge startup costs after fresh deterministic and manual profiles exist.
 
 ## Prioritized Working-Set Roadmap
@@ -345,20 +347,22 @@ Implemented in this tier:
 2. Evidence IDs and metadata while preserving full visible text.
 3. Shadow original/projected/saved diagnostics with exact projection counts and saved/compacted bytes fixed at 0.
 4. Fresh profile annotations that tie each proposed optimization to a `profile-runs/` path and stable metric.
+5. Task-subagent checkpoint prompt hardening plus deterministic compliance metrics, while preserving uncapped completed reports.
+6. Same-request duplicate `function_call_output` references when an earlier exact copy remains visible in the same OpenAI request. Raw session history and stored provider-turn replay stay exact.
 
-Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, OpenAI Working-Set Visibility report sections, and deterministic/report sections for working-set growth. These diagnostics do not compact current-turn replay and do not prove that compaction is safe.
+Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, OpenAI Working-Set Visibility report sections, deterministic/report sections for working-set growth, and same-request duplicate-reference projection metrics. These diagnostics do not compact cross-step current-turn replay and do not prove that broader compaction is safe.
 
 ### Moderate: compact repeated or stale evidence
 
 These need task-completion evals because they alter model-visible content:
 
 1. Evidence-card projection for large read/grep/bash outputs.
-2. Fresh tool result visible once, compact replay later. This is not implemented; current-turn tool evidence remains exact across same-turn continuations.
+2. Fresh tool result visible once, compact replay later across response-step requests. This is not implemented; current-turn tool evidence still replays exactly across same-turn continuations except for same-request duplicate references where an exact copy remains visible.
 3. Adaptive per-tool budgets based on remaining context.
 4. Structured-but-uncapped subagent report guidance.
 5. Failed/interrupted-turn evidence cards instead of raw transcript blocks.
 
-Subagent context scoping itself is already implemented; the remaining risk is report quality when prompts encourage structure or when routing uses a cheaper/faster subagent model.
+Subagent context scoping, attribution correctness diagnostics, and conservative checkpoint prompt/metric hardening are implemented. The remaining risk is real-model behavior quality when routing, effort, or a future no-tool checkpoint finalizer changes what the parent receives.
 
 ### Aggressive: semantic compression and prediction
 

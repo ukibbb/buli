@@ -1,13 +1,11 @@
 import { areAssistantMarkdownCodeFenceInfoValuesEqual, parseAssistantMarkdownCodeFenceInfo } from "./assistantMarkdownCodeFenceInfo.ts";
 import {
   formatAssistantUnifiedDiffText,
-  isAssistantMarkdownDiffLikeLine,
   readAssistantMarkdownRawDiffSnippetBlock,
   readAssistantMarkdownUnifiedDiffBlock,
 } from "./assistantMarkdownDiffSections.ts";
 import {
   areAssistantMarkdownVisibleListLinesEqual,
-  assistantMarkdownListLinePattern,
   readAssistantMarkdownListBlock,
 } from "./assistantMarkdownListSections.ts";
 import type {
@@ -39,11 +37,6 @@ type AssistantMarkdownFencedCodeBlock = {
 
 type AssistantMarkdownBlockquoteBlock = {
   quoteText: string;
-  nextLineIndex: number;
-};
-
-type AssistantMarkdownParagraphBlock = {
-  paragraphText: string;
   nextLineIndex: number;
 };
 
@@ -378,18 +371,18 @@ function splitAssistantMarkdownTextIntoRenderSections(
   let pendingMarkdownStartLineIndex: number | undefined;
 
   const flushPendingMarkdownLines = () => {
-    const markdownSectionLines = trimAssistantMarkdownSectionBoundaryBlankLines(pendingMarkdownLines);
-    const markdownSectionStartLineIndex = pendingMarkdownStartLineIndex ?? 0;
+    const trimmedMarkdownSection = trimAssistantMarkdownSectionBoundaryBlankLinesWithLineOffset(pendingMarkdownLines);
+    const markdownSectionStartLineIndex = (pendingMarkdownStartLineIndex ?? 0) + trimmedMarkdownSection.leadingBlankLineCount;
     pendingMarkdownLines = [];
     pendingMarkdownStartLineIndex = undefined;
-    if (markdownSectionLines.length === 0) {
+    if (trimmedMarkdownSection.markdownLines.length === 0) {
       return;
     }
 
     renderSections.push({
       sectionKind: "markdown",
       sectionKey: `markdown:${markdownSectionStartLineIndex}`,
-      markdownText: markdownSectionLines.join("\n"),
+      markdownText: trimmedMarkdownSection.markdownLines.join("\n"),
     });
   };
 
@@ -534,18 +527,6 @@ function splitAssistantMarkdownTextIntoRenderSections(
       continue;
     }
 
-    const paragraphBlock = readAssistantMarkdownParagraphBlock(markdownLines, lineIndex, isStreaming);
-    if (paragraphBlock) {
-      flushPendingMarkdownLines();
-      renderSections.push({
-        sectionKind: "paragraph",
-        sectionKey: `paragraph:${sectionStartLineIndex}`,
-        paragraphText: paragraphBlock.paragraphText,
-      });
-      lineIndex = paragraphBlock.nextLineIndex;
-      continue;
-    }
-
     if (pendingMarkdownStartLineIndex === undefined) {
       pendingMarkdownStartLineIndex = startingLineIndex + lineIndex;
     }
@@ -587,9 +568,6 @@ function areAssistantMarkdownRenderSectionsEqual(
   }
   if (previousRenderSection.sectionKind === "streamingTail" && nextRenderSection.sectionKind === "streamingTail") {
     return previousRenderSection.streamingTailText === nextRenderSection.streamingTailText;
-  }
-  if (previousRenderSection.sectionKind === "paragraph" && nextRenderSection.sectionKind === "paragraph") {
-    return previousRenderSection.paragraphText === nextRenderSection.paragraphText;
   }
   if (previousRenderSection.sectionKind === "heading" && nextRenderSection.sectionKind === "heading") {
     return previousRenderSection.headingDepth === nextRenderSection.headingDepth &&
@@ -639,6 +617,13 @@ function formatAssistantCodeFenceText(codeFenceLines: readonly string[]): string
 }
 
 function trimAssistantMarkdownSectionBoundaryBlankLines(markdownLines: readonly string[]): string[] {
+  return trimAssistantMarkdownSectionBoundaryBlankLinesWithLineOffset(markdownLines).markdownLines;
+}
+
+function trimAssistantMarkdownSectionBoundaryBlankLinesWithLineOffset(markdownLines: readonly string[]): {
+  markdownLines: string[];
+  leadingBlankLineCount: number;
+} {
   let firstNonBlankLineIndex = 0;
   let lastNonBlankLineExclusiveIndex = markdownLines.length;
   while (
@@ -653,7 +638,10 @@ function trimAssistantMarkdownSectionBoundaryBlankLines(markdownLines: readonly 
   ) {
     lastNonBlankLineExclusiveIndex -= 1;
   }
-  return markdownLines.slice(firstNonBlankLineIndex, lastNonBlankLineExclusiveIndex);
+  return {
+    markdownLines: markdownLines.slice(firstNonBlankLineIndex, lastNonBlankLineExclusiveIndex),
+    leadingBlankLineCount: firstNonBlankLineIndex,
+  };
 }
 
 function formatAssistantMarkdownInlineTextForRender(inlineMarkdownText: string, isStreaming: boolean): string {
@@ -793,44 +781,4 @@ function readAssistantMarkdownTableBlock(
 
 function isAssistantMarkdownTableRowLine(markdownLine: string): boolean {
   return markdownLine.trim().length > 0 && markdownLine.includes("|");
-}
-
-function isAssistantMarkdownCustomBlockStart(markdownLines: readonly string[], lineIndex: number): boolean {
-  const markdownLine = markdownLines[lineIndex] ?? "";
-  return (
-    fencedCodeBlockStartPattern.test(markdownLine) ||
-    markdownHeadingLinePattern.test(markdownLine) ||
-    assistantMarkdownDashOnlyParagraphPattern.test(markdownLine.trim()) ||
-    isAssistantMarkdownTableStart(markdownLines, lineIndex) ||
-    assistantMarkdownListLinePattern.test(markdownLine) ||
-    markdownBlockquoteLinePattern.test(markdownLine) ||
-    isAssistantMarkdownDiffLikeLine(markdownLine)
-  );
-}
-
-function readAssistantMarkdownParagraphBlock(
-  markdownLines: readonly string[],
-  startLineIndex: number,
-  isStreaming: boolean,
-): AssistantMarkdownParagraphBlock | undefined {
-  const firstParagraphLine = markdownLines[startLineIndex] ?? "";
-  if (firstParagraphLine.trim().length === 0 || isAssistantMarkdownCustomBlockStart(markdownLines, startLineIndex)) {
-    return undefined;
-  }
-
-  const paragraphLines: string[] = [];
-  let lineIndex = startLineIndex;
-  while (
-    lineIndex < markdownLines.length &&
-    (markdownLines[lineIndex] ?? "").trim().length > 0 &&
-    !isAssistantMarkdownCustomBlockStart(markdownLines, lineIndex)
-  ) {
-    paragraphLines.push(markdownLines[lineIndex] ?? "");
-    lineIndex += 1;
-  }
-
-  return {
-    paragraphText: formatAssistantMarkdownInlineTextForRender(paragraphLines.join(" ").trim(), isStreaming),
-    nextLineIndex: lineIndex,
-  };
 }

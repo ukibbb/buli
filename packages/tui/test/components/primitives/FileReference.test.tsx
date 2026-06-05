@@ -30,19 +30,19 @@ describe("FileReference", () => {
     expect(captureCharFrame()).toContain("src/index.ts");
   });
 
-  test("inline_variant_clips_long_paths_without_rendering_ellipses", async () => {
+  test("inline_variant_wraps_long_paths_without_rendering_ellipses", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <FileReference
         variant="inline"
         filePath="packages/tui/src/components/ConversationMessageList.tsx"
         lineNumber={180}
       />,
-      { width: 36, height: 5 },
+      { width: 36, height: 6 },
     );
     await renderOnce();
     const frame = captureCharFrame();
     expect(frame).not.toContain("...");
     expect(frame).not.toContain("…");
-    expect(frame).not.toContain("ConversationMessageList.tsx");
+    expect(frame.replace(/\s/g, "")).toContain("ConversationMessageList.tsx:180");
   });
 });

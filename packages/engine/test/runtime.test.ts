@@ -4833,9 +4833,20 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
   expect(explorerProviderTurn.submittedToolResults).toHaveLength(193);
   expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolCallId).toBe("call_read_193");
   expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain("Explorer research budget reached");
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain("Terminal checkpoint instruction");
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain("Do not request more tools");
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain(
+    "Your next response must be the final checkpoint report",
+  );
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain(
+    "state the uncertainty and recommended next searches instead of continuing",
+  );
   expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain("192 child tool calls");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Budget checkpoint returned");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<research_checkpoint>");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).not.toContain(
+    "<soft_elapsed_time_checkpoint_ms>",
+  );
   const completedTaskToolResult = runtime.conversationHistory.listConversationSessionEntries().find(
     (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
       conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
@@ -4849,14 +4860,91 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
     childToolResultTextLength: expect.any(Number),
     skippedChildToolCallCount: 1,
     elapsedMilliseconds: expect.any(Number),
-    softElapsedTimeCheckpointMilliseconds: 120_000,
   });
+  expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint?.softElapsedTimeCheckpointMilliseconds)
+    .toBeUndefined();
   expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
   expect(
     completedTaskToolResult.toolCallDetail.subagentChildToolCalls?.some(
       (subagentChildToolCall) => subagentChildToolCall.subagentChildToolCallStatus === "denied",
     ),
   ).toBe(false);
+});
+
+test("AssistantConversationRuntime preserves uncapped checkpoint reports after the child tool budget", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-budget-uncapped-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nBudget target\n", "utf8");
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_explore_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map docs repeatedly with full checkpoint",
+          subagentPrompt: "Keep reading until you can summarize docs.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Explorer uncapped checkpoint acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const completeCheckpointReportSuffix = `FULL_UNCAPPED_CHECKPOINT_REPORT_SUFFIX_${"x".repeat(20_000)}`;
+  const explorerProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: Array.from({ length: 193 }, (_value, index): ProviderStreamEvent => ({
+      type: "tool_call_requested",
+      toolCallId: `call_read_${index + 1}`,
+      toolCallRequest: {
+        toolName: "read",
+        readTargetPath: "README.md",
+      },
+    })),
+    afterToolResultEvents: [
+      {
+        type: "text_chunk",
+        text: `Checkpoint findings: README.md contains the Demo heading and Budget target text. ${completeCheckpointReportSuffix}`,
+      },
+      { type: "completed", usage: { total: 12, input: 6, output: 6, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, explorerProviderTurn]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Explore docs with a budget and preserve the full checkpoint",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(explorerProviderTurn.submittedToolResults).toHaveLength(193);
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolCallId).toBe("call_read_193");
+  expect(explorerProviderTurn.submittedToolResults.at(-1)?.toolResultText).toContain("Terminal checkpoint instruction");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<research_checkpoint>");
+  expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain(completeCheckpointReportSuffix);
+  const completedTaskToolResult = runtime.conversationHistory.listConversationSessionEntries().find(
+    (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
+      conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
+  );
+  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+    throw new Error("Expected completed Explorer task tool result");
+  }
+  expect(completedTaskToolResult.toolCallDetail.subagentResultSummary).toContain(completeCheckpointReportSuffix);
+  expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
+  const recordedChildToolCallIds = completedTaskToolResult.toolCallDetail.subagentChildToolCalls?.map(
+    (subagentChildToolCall) => subagentChildToolCall.subagentChildToolCallId,
+  ) ?? [];
+  expect(recordedChildToolCallIds).not.toContain("call_read_193");
+  expect(explorerProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).not.toContain(
+    "call_read_194",
+  );
 });
 
 test("AssistantConversationRuntime asks task subagents for a checkpoint after the soft elapsed-time budget", async () => {
@@ -4905,6 +4993,11 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
   expect(explorerProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Elapsed target");
   expect(explorerProviderTurn.submittedToolResults[1]?.toolCallId).toBe("call_read_second");
   expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("Explorer research budget reached");
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("Terminal checkpoint instruction");
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("Do not request more tools");
+  expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain(
+    "Your next response must be the final checkpoint report",
+  );
   expect(explorerProviderTurn.submittedToolResults[1]?.toolResultText).toContain("soft elapsed-time limit");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("Elapsed checkpoint summary");
   expect(parentProviderTurn.submittedToolResults[0]?.toolResultText).toContain("<reason>elapsed_time</reason>");
@@ -5080,6 +5173,7 @@ test("AssistantConversationRuntime bounds default Explorer reads", async () => {
 test("AssistantConversationRuntime fails Explorer clearly when it keeps requesting tools after checkpoint", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-explorer-post-checkpoint-loop-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nLoop target\n", "utf8");
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const parentProviderTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
       {
@@ -5113,12 +5207,14 @@ test("AssistantConversationRuntime fails Explorer clearly when it keeps requesti
     conversationTurnProvider: provider,
     workspaceRootPath,
     promptContextBrowseRootPath: workspaceRootPath,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
 
   await collectAssistantEvents(
     runtime.startConversationTurn({
       userPromptText: "Explore docs with a loop",
-      selectedModelId: "gpt-5.4",
+      selectedModelId: "gpt-5.5",
+      selectedReasoningEffort: "xhigh",
     }),
   );
 
@@ -5139,11 +5235,50 @@ test("AssistantConversationRuntime fails Explorer clearly when it keeps requesti
     childToolResultTextLength: expect.any(Number),
     skippedChildToolCallCount: 1,
     elapsedMilliseconds: expect.any(Number),
-    softElapsedTimeCheckpointMilliseconds: 120_000,
   });
+  expect(failedTaskToolResult.toolCallDetail.subagentResearchCheckpoint?.softElapsedTimeCheckpointMilliseconds)
+    .toBeUndefined();
   expect(failedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
   expect(explorerProviderTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId)).not.toContain(
     "call_read_194",
+  );
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "tool_call.task_subagent_research_checkpoint_requested",
+      fields: expect.objectContaining({
+        toolCallId: "call_explore_1",
+        parentTaskToolCallId: "call_explore_1",
+        subagentName: "explore",
+        taskSubagentSelectedModelId: "gpt-5.4",
+        taskSubagentSelectedReasoningEffort: "medium",
+        checkpointReason: "child_tool_call_count",
+        childToolCallCount: 192,
+        skippedChildToolCallCount: 1,
+      }),
+    }),
+  );
+  expect(diagnosticEvents).toContainEqual(
+    expect.objectContaining({
+      subsystem: "engine",
+      eventName: "tool_call.task_subagent_finished",
+      fields: expect.objectContaining({
+        toolCallId: "call_explore_1",
+        subagentName: "explore",
+        taskSubagentSelectedModelId: "gpt-5.4",
+        taskSubagentSelectedReasoningEffort: "medium",
+        parentVisibleToolResultKind: "failed",
+        taskSubagentOutcomeKind: "failed",
+        failureKind: "requested_tools_after_checkpoint",
+        failureExplanation: expect.stringContaining("Explorer continued requesting tools after the research checkpoint"),
+        checkpointReason: "child_tool_call_count",
+        checkpointChildToolCallCount: 192,
+        checkpointSkippedChildToolCallCount: 1,
+        subagentChildToolCallCount: 192,
+        parentToolResultTextLength: expect.any(Number),
+        durationMs: expect.any(Number),
+      }),
+    }),
   );
 });
 

@@ -74,6 +74,30 @@ describe("GlobToolCallCard", () => {
     expect(frame).toContain("src/index.ts");
   });
 
+  test("completed_wraps_expanded_long_matched_paths", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <GlobToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "glob",
+          globPattern: "packages/**/*.tsx",
+          matchedPathCount: 1,
+          matchedPaths: ["packages/tui/src/components/ConversationMessageList.tsx"],
+        }}
+      />,
+      { width: 38, height: 12 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame.replace(/[\s│┃]/g, "")).toContain("ConversationMessageList.tsx");
+  });
+
   test("completed_expands_all_returned_matched_paths", async () => {
     const matchedPaths = Array.from({ length: 30 }, (_, index) => `src/file-${index + 1}.ts`);
     const { captureCharFrame, mockMouse, renderOnce } = await testRender(

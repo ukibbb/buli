@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 import type { OpenAiResponsesHttpRequestBody } from "../src/provider/openAiResponsesRequest.ts";
 import type { OpenAiConversationInputItem } from "../src/provider/request.ts";
-import { summarizeOpenAiWorkingSetVisibilityForDiagnostics } from "../src/provider/openAiWorkingSetVisibilityDiagnostics.ts";
+import {
+  summarizeOpenAiWorkingSetVisibilityForDiagnostics,
+  type OpenAiWorkingSetInputItemProjectionMetadata,
+} from "../src/provider/openAiWorkingSetVisibilityDiagnostics.ts";
+
+const textEncoder = new TextEncoder();
 
 test("summarizeOpenAiWorkingSetVisibilityForDiagnostics classifies provider-visible items without changing request input", () => {
   const requestInputItems: OpenAiConversationInputItem[] = [
@@ -102,6 +107,10 @@ test("summarizeOpenAiWorkingSetVisibilityForDiagnostics classifies provider-visi
     requestWorkingSetVisibilityReasonInputItemCounts: [1, 1, 2, 1, 2],
     requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_1", "tool_call:call_1", "reasoning:rs_1"],
     requestWorkingSetLargestInputItemProjectionKinds: ["exact", "exact", "exact"],
+    requestWorkingSetProjectionKinds: ["exact"],
+    requestWorkingSetProjectionKindInputItemCounts: [7],
+    requestWorkingSetProjectionKindSavedCharacterCounts: [0],
+    requestWorkingSetProjectionKindSavedSerializedByteLengths: [0],
   });
   expect(diagnostics.diagnosticFields["requestWorkingSetOriginalTextLength"]).toBe(
     diagnostics.diagnosticFields["requestWorkingSetProjectedTextLength"],
@@ -110,3 +119,97 @@ test("summarizeOpenAiWorkingSetVisibilityForDiagnostics classifies provider-visi
     diagnostics.diagnosticFields["requestWorkingSetProjectedSerializedByteLength"],
   );
 });
+
+test("summarizeOpenAiWorkingSetVisibilityForDiagnostics reports duplicate-reference projection savings", () => {
+  const exactToolResultText = `${"duplicate exact tool evidence\n".repeat(400)}final exact line`;
+  const duplicateReferenceText = [
+    "<duplicate_current_turn_tool_result_reference>",
+    "reference_evidence_id: tool_result:call_1",
+    "</duplicate_current_turn_tool_result_reference>",
+  ].join("\n");
+  const originalDuplicateInputItem: OpenAiConversationInputItem = {
+    type: "function_call_output",
+    call_id: "call_2",
+    output: exactToolResultText,
+  };
+  const projectedDuplicateInputItem: OpenAiConversationInputItem = {
+    type: "function_call_output",
+    call_id: "call_2",
+    output: duplicateReferenceText,
+  };
+  const requestInputItems: OpenAiConversationInputItem[] = [
+    {
+      role: "user",
+      content: "Inspect duplicate tool output",
+    },
+    {
+      type: "function_call_output",
+      call_id: "call_1",
+      output: exactToolResultText,
+    },
+    projectedDuplicateInputItem,
+  ];
+  const duplicateProjectionMetadata: OpenAiWorkingSetInputItemProjectionMetadata = {
+    projectionKind: "duplicate_reference",
+    evidenceId: "tool_result:call_2",
+    originalTextLength: exactToolResultText.length,
+    projectedTextLength: duplicateReferenceText.length,
+    originalSerializedByteLength: calculateSerializedUtf8ByteLength(originalDuplicateInputItem),
+    projectedSerializedByteLength: calculateSerializedUtf8ByteLength(projectedDuplicateInputItem),
+  };
+  const requestBody: OpenAiResponsesHttpRequestBody = {
+    model: "gpt-5.4",
+    instructions: "You are buli.",
+    store: false,
+    input: requestInputItems,
+    stream: true,
+  };
+
+  const diagnostics = summarizeOpenAiWorkingSetVisibilityForDiagnostics({
+    requestBody,
+    currentTurnFirstInputItemIndex: 1,
+    projectionMetadataByInputItemIndex: new Map([[2, duplicateProjectionMetadata]]),
+    largestVisibleInputItemCount: 3,
+  });
+
+  expect(diagnostics.inputItems.map((inputItem) => inputItem.projectionKind)).toEqual([
+    "exact",
+    "exact",
+    "duplicate_reference",
+  ]);
+  expect(diagnostics.inputItems[2]).toMatchObject({
+    evidenceId: "tool_result:call_2",
+    originalTextLength: exactToolResultText.length,
+    projectedTextLength: duplicateReferenceText.length,
+    savedCharacterCount: exactToolResultText.length - duplicateReferenceText.length,
+    originalSerializedByteLength: calculateSerializedUtf8ByteLength(originalDuplicateInputItem),
+    projectedSerializedByteLength: calculateSerializedUtf8ByteLength(projectedDuplicateInputItem),
+    savedSerializedByteLength: calculateSerializedUtf8ByteLength(originalDuplicateInputItem) -
+      calculateSerializedUtf8ByteLength(projectedDuplicateInputItem),
+  });
+  expect(diagnostics.diagnosticFields).toMatchObject({
+    requestWorkingSetInputItemCount: 3,
+    requestWorkingSetExactInputItemCount: 2,
+    requestWorkingSetCompactedInputItemCount: 1,
+    requestWorkingSetSavedCharacterCount: exactToolResultText.length - duplicateReferenceText.length,
+    requestWorkingSetSavedSerializedByteLength: calculateSerializedUtf8ByteLength(originalDuplicateInputItem) -
+      calculateSerializedUtf8ByteLength(projectedDuplicateInputItem),
+    requestWorkingSetProjectionKinds: ["exact", "duplicate_reference"],
+    requestWorkingSetProjectionKindInputItemCounts: [2, 1],
+    requestWorkingSetProjectionKindOriginalTextLengths: [
+      "Inspect duplicate tool output".length + exactToolResultText.length,
+      exactToolResultText.length,
+    ],
+    requestWorkingSetProjectionKindProjectedTextLengths: [
+      "Inspect duplicate tool output".length + exactToolResultText.length,
+      duplicateReferenceText.length,
+    ],
+    requestWorkingSetProjectionKindSavedCharacterCounts: [0, exactToolResultText.length - duplicateReferenceText.length],
+    requestWorkingSetLargestInputItemProjectionKinds: ["exact", "duplicate_reference", "exact"],
+    requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_1", "tool_result:call_2", null],
+  });
+});
+
+function calculateSerializedUtf8ByteLength(value: OpenAiConversationInputItem): number {
+  return textEncoder.encode(JSON.stringify(value)).byteLength;
+}

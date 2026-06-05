@@ -248,15 +248,26 @@ function buildTaskBodyContent(input: TaskBodyContentInput): ReactNode {
 }
 
 function formatSubagentResearchCheckpointText(subagentResearchCheckpoint: SubagentResearchCheckpoint): string {
-  const checkpointReasonText = subagentResearchCheckpoint.checkpointReason === "child_tool_call_count"
-    ? "tool-call limit reached"
-    : "tool output limit reached";
+  const checkpointReasonText = formatSubagentResearchCheckpointReasonText(subagentResearchCheckpoint.checkpointReason);
   return [
     `Explorer research checkpoint: ${checkpointReasonText}.`,
     `Completed tool calls: ${subagentResearchCheckpoint.childToolCallCount}.`,
     `Tool output: ${subagentResearchCheckpoint.childToolResultTextLength} characters.`,
     `Skipped requested tool calls: ${subagentResearchCheckpoint.skippedChildToolCallCount}.`,
   ].join("\n");
+}
+
+function formatSubagentResearchCheckpointReasonText(
+  checkpointReason: SubagentResearchCheckpoint["checkpointReason"],
+): string {
+  switch (checkpointReason) {
+    case "child_tool_call_count":
+      return "tool-call limit reached";
+    case "child_tool_result_text_length":
+      return "tool output limit reached";
+    case "elapsed_time":
+      return "elapsed-time limit reached";
+  }
 }
 
 function SubagentChildToolCallCard(props: { subagentChildToolCall: SubagentChildToolCall }): ReactNode {

@@ -44,7 +44,7 @@ export type FencedCodeBlockProps = FencedCodeBlockCommonProps & (
 export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
   const variant: FencedCodeBlockVariant = props.variant ?? "standalone";
   const isStandalone = variant === "standalone";
-  const codeWrapMode = props.wrapMode ?? "none";
+  const codeWrapMode = props.wrapMode ?? "char";
   const shouldShowLineNumbers = props.showLineNumbers ?? true;
   const visibleLabel = props.showLabel === false ? undefined : props.displayLabel ?? props.languageLabel;
   const codeLines = props.codeLines;
@@ -244,7 +244,7 @@ function FencedCodeBlockPreSuppliedSpanContent(props: {
         <box
           key={`code-line-${index}`}
           flexDirection="row"
-          alignItems="center"
+          alignItems="flex-start"
           overflow="hidden"
           width="100%"
         >

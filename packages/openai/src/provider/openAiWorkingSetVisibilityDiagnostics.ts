@@ -13,13 +13,28 @@ export type OpenAiWorkingSetVisibilityReason =
   | "provider_protocol_continuation"
   | "unclassified";
 
-export type OpenAiWorkingSetProjectionKind = "exact";
+export type OpenAiWorkingSetProjectionKind = "exact" | "duplicate_reference";
+
+export type OpenAiWorkingSetInputItemProjectionMetadata = Readonly<{
+  projectionKind: OpenAiWorkingSetProjectionKind;
+  evidenceId: string | null;
+  originalTextLength: number;
+  projectedTextLength: number;
+  originalSerializedByteLength: number;
+  projectedSerializedByteLength: number;
+}>;
 
 export type OpenAiWorkingSetInputItemDiagnostics = Readonly<{
   inputItemIndex: number;
   visibilityReason: OpenAiWorkingSetVisibilityReason;
   projectionKind: OpenAiWorkingSetProjectionKind;
   evidenceId: string | null;
+  originalTextLength: number;
+  projectedTextLength: number;
+  savedCharacterCount: number;
+  originalSerializedByteLength: number;
+  projectedSerializedByteLength: number;
+  savedSerializedByteLength: number;
   textLength: number;
   serializedByteLength: number;
   isCurrentTurnItem: boolean;
@@ -37,7 +52,19 @@ type OpenAiWorkingSetVisibilityReasonAggregate = Readonly<{
   serializedByteLength: number;
 }>;
 
+type OpenAiWorkingSetProjectionKindAggregate = Readonly<{
+  projectionKind: OpenAiWorkingSetProjectionKind;
+  inputItemCount: number;
+  originalTextLength: number;
+  projectedTextLength: number;
+  savedCharacterCount: number;
+  originalSerializedByteLength: number;
+  projectedSerializedByteLength: number;
+  savedSerializedByteLength: number;
+}>;
+
 const DEFAULT_LARGEST_VISIBLE_INPUT_ITEM_COUNT = 10;
+const OPENAI_WORKING_SET_PROJECTION_KINDS: readonly OpenAiWorkingSetProjectionKind[] = ["exact", "duplicate_reference"];
 const OPENAI_WORKING_SET_VISIBILITY_REASONS: readonly OpenAiWorkingSetVisibilityReason[] = [
   "active_user_intent",
   "active_instructions",
@@ -54,6 +81,7 @@ const textEncoder = new TextEncoder();
 export function summarizeOpenAiWorkingSetVisibilityForDiagnostics(input: {
   requestBody: OpenAiResponsesHttpRequestBody;
   currentTurnFirstInputItemIndex: number;
+  projectionMetadataByInputItemIndex?: ReadonlyMap<number, OpenAiWorkingSetInputItemProjectionMetadata> | undefined;
   largestVisibleInputItemCount?: number;
 }): OpenAiWorkingSetVisibilityDiagnostics {
   const activeUserIntentInputItemIndex = findActiveUserIntentInputItemIndex({
@@ -66,36 +94,49 @@ export function summarizeOpenAiWorkingSetVisibilityForDiagnostics(input: {
       inputItemIndex,
       currentTurnFirstInputItemIndex: input.currentTurnFirstInputItemIndex,
       activeUserIntentInputItemIndex,
+      projectionMetadata: input.projectionMetadataByInputItemIndex?.get(inputItemIndex),
     })
   );
   const reasonAggregates = aggregateOpenAiWorkingSetVisibilityReasons(inputItems);
+  const projectionKindAggregates = aggregateOpenAiWorkingSetProjectionKinds(inputItems);
   const largestVisibleInputItemCount = input.largestVisibleInputItemCount ?? DEFAULT_LARGEST_VISIBLE_INPUT_ITEM_COUNT;
   const largestVisibleInputItems = [...inputItems]
     .sort((leftItem, rightItem) =>
       rightItem.serializedByteLength - leftItem.serializedByteLength || leftItem.inputItemIndex - rightItem.inputItemIndex
     )
     .slice(0, largestVisibleInputItemCount);
-  const originalTextLength = sumInputItemTextLength(inputItems);
-  const originalSerializedByteLength = sumInputItemSerializedByteLength(inputItems);
+  const originalTextLength = sumInputItemOriginalTextLength(inputItems);
+  const projectedTextLength = sumInputItemProjectedTextLength(inputItems);
+  const savedCharacterCount = sumInputItemSavedCharacterCount(inputItems);
+  const originalSerializedByteLength = sumInputItemOriginalSerializedByteLength(inputItems);
+  const projectedSerializedByteLength = sumInputItemProjectedSerializedByteLength(inputItems);
+  const savedSerializedByteLength = sumInputItemSavedSerializedByteLength(inputItems);
   const exactInputItemCount = inputItems.filter((inputItem) => inputItem.projectionKind === "exact").length;
+  const compactedInputItemCount = inputItems.length - exactInputItemCount;
   const unclassifiedInputItemCount = inputItems.filter((inputItem) => inputItem.visibilityReason === "unclassified").length;
 
-  // This diagnostic is intentionally sidecar-only. It measures the provider-visible
-  // working set without adding fields to OpenAI input items, provider-turn replay,
-  // or request JSON. This conservative slice reports the projection as exact, so
-  // every saved/compacted field must remain zero until a separate eval-gated change
-  // intentionally alters model-visible content.
+  // This diagnostic stays sidecar-only: projection metadata explains how a request
+  // was projected without adding diagnostic fields to OpenAI input items, raw
+  // session evidence, or stored provider-turn replay.
   const diagnosticFields: BuliDiagnosticLogFields = {
     requestWorkingSetInputItemCount: inputItems.length,
     requestWorkingSetExactInputItemCount: exactInputItemCount,
-    requestWorkingSetCompactedInputItemCount: 0,
+    requestWorkingSetCompactedInputItemCount: compactedInputItemCount,
     requestWorkingSetOriginalTextLength: originalTextLength,
-    requestWorkingSetProjectedTextLength: originalTextLength,
-    requestWorkingSetSavedCharacterCount: 0,
+    requestWorkingSetProjectedTextLength: projectedTextLength,
+    requestWorkingSetSavedCharacterCount: savedCharacterCount,
     requestWorkingSetOriginalSerializedByteLength: originalSerializedByteLength,
-    requestWorkingSetProjectedSerializedByteLength: originalSerializedByteLength,
-    requestWorkingSetSavedSerializedByteLength: 0,
+    requestWorkingSetProjectedSerializedByteLength: projectedSerializedByteLength,
+    requestWorkingSetSavedSerializedByteLength: savedSerializedByteLength,
     requestWorkingSetUnclassifiedInputItemCount: unclassifiedInputItemCount,
+    requestWorkingSetProjectionKinds: projectionKindAggregates.map((aggregate) => aggregate.projectionKind),
+    requestWorkingSetProjectionKindInputItemCounts: projectionKindAggregates.map((aggregate) => aggregate.inputItemCount),
+    requestWorkingSetProjectionKindOriginalTextLengths: projectionKindAggregates.map((aggregate) => aggregate.originalTextLength),
+    requestWorkingSetProjectionKindProjectedTextLengths: projectionKindAggregates.map((aggregate) => aggregate.projectedTextLength),
+    requestWorkingSetProjectionKindSavedCharacterCounts: projectionKindAggregates.map((aggregate) => aggregate.savedCharacterCount),
+    requestWorkingSetProjectionKindOriginalSerializedByteLengths: projectionKindAggregates.map((aggregate) => aggregate.originalSerializedByteLength),
+    requestWorkingSetProjectionKindProjectedSerializedByteLengths: projectionKindAggregates.map((aggregate) => aggregate.projectedSerializedByteLength),
+    requestWorkingSetProjectionKindSavedSerializedByteLengths: projectionKindAggregates.map((aggregate) => aggregate.savedSerializedByteLength),
     requestWorkingSetVisibilityReasons: reasonAggregates.map((aggregate) => aggregate.visibilityReason),
     requestWorkingSetVisibilityReasonInputItemCounts: reasonAggregates.map((aggregate) => aggregate.inputItemCount),
     requestWorkingSetVisibilityReasonTextLengths: reasonAggregates.map((aggregate) => aggregate.textLength),
@@ -120,8 +161,14 @@ function createOpenAiWorkingSetInputItemDiagnostics(input: {
   inputItemIndex: number;
   currentTurnFirstInputItemIndex: number;
   activeUserIntentInputItemIndex: number | undefined;
+  projectionMetadata: OpenAiWorkingSetInputItemProjectionMetadata | undefined;
 }): OpenAiWorkingSetInputItemDiagnostics {
   const isCurrentTurnItem = input.inputItemIndex >= input.currentTurnFirstInputItemIndex;
+  const projectedTextLength = input.projectionMetadata?.projectedTextLength ?? calculateOpenAiInputItemTextLength(input.openAiInputItem);
+  const projectedSerializedByteLength = input.projectionMetadata?.projectedSerializedByteLength ??
+    calculateSerializedUtf8ByteLength(input.openAiInputItem);
+  const originalTextLength = input.projectionMetadata?.originalTextLength ?? projectedTextLength;
+  const originalSerializedByteLength = input.projectionMetadata?.originalSerializedByteLength ?? projectedSerializedByteLength;
   return {
     inputItemIndex: input.inputItemIndex,
     visibilityReason: classifyOpenAiInputItemVisibilityReason({
@@ -130,10 +177,16 @@ function createOpenAiWorkingSetInputItemDiagnostics(input: {
       isCurrentTurnItem,
       activeUserIntentInputItemIndex: input.activeUserIntentInputItemIndex,
     }),
-    projectionKind: "exact",
-    evidenceId: createOpenAiInputItemEvidenceId(input.openAiInputItem),
-    textLength: calculateOpenAiInputItemTextLength(input.openAiInputItem),
-    serializedByteLength: calculateSerializedUtf8ByteLength(input.openAiInputItem),
+    projectionKind: input.projectionMetadata?.projectionKind ?? "exact",
+    evidenceId: input.projectionMetadata?.evidenceId ?? createOpenAiInputItemEvidenceId(input.openAiInputItem),
+    originalTextLength,
+    projectedTextLength,
+    savedCharacterCount: originalTextLength - projectedTextLength,
+    originalSerializedByteLength,
+    projectedSerializedByteLength,
+    savedSerializedByteLength: originalSerializedByteLength - projectedSerializedByteLength,
+    textLength: projectedTextLength,
+    serializedByteLength: projectedSerializedByteLength,
     isCurrentTurnItem,
   };
 }
@@ -210,6 +263,24 @@ function aggregateOpenAiWorkingSetVisibilityReasons(
   }).filter((aggregate) => aggregate.inputItemCount > 0);
 }
 
+function aggregateOpenAiWorkingSetProjectionKinds(
+  inputItems: readonly OpenAiWorkingSetInputItemDiagnostics[],
+): readonly OpenAiWorkingSetProjectionKindAggregate[] {
+  return OPENAI_WORKING_SET_PROJECTION_KINDS.map((projectionKind) => {
+    const itemsForProjectionKind = inputItems.filter((inputItem) => inputItem.projectionKind === projectionKind);
+    return {
+      projectionKind,
+      inputItemCount: itemsForProjectionKind.length,
+      originalTextLength: sumInputItemOriginalTextLength(itemsForProjectionKind),
+      projectedTextLength: sumInputItemProjectedTextLength(itemsForProjectionKind),
+      savedCharacterCount: sumInputItemSavedCharacterCount(itemsForProjectionKind),
+      originalSerializedByteLength: sumInputItemOriginalSerializedByteLength(itemsForProjectionKind),
+      projectedSerializedByteLength: sumInputItemProjectedSerializedByteLength(itemsForProjectionKind),
+      savedSerializedByteLength: sumInputItemSavedSerializedByteLength(itemsForProjectionKind),
+    };
+  }).filter((aggregate) => aggregate.inputItemCount > 0);
+}
+
 function isOpenAiCompactionSummaryMessageInputItem(
   openAiInputItem: Extract<OpenAiConversationInputItem, { role: "user" | "assistant" }>,
 ): boolean {
@@ -249,11 +320,56 @@ function sumInputItemTextLength(inputItems: readonly Pick<OpenAiWorkingSetInputI
   return inputItems.reduce((totalTextLength, inputItem) => totalTextLength + inputItem.textLength, 0);
 }
 
+function sumInputItemOriginalTextLength(
+  inputItems: readonly Pick<OpenAiWorkingSetInputItemDiagnostics, "originalTextLength">[],
+): number {
+  return inputItems.reduce((totalTextLength, inputItem) => totalTextLength + inputItem.originalTextLength, 0);
+}
+
+function sumInputItemProjectedTextLength(
+  inputItems: readonly Pick<OpenAiWorkingSetInputItemDiagnostics, "projectedTextLength">[],
+): number {
+  return inputItems.reduce((totalTextLength, inputItem) => totalTextLength + inputItem.projectedTextLength, 0);
+}
+
+function sumInputItemSavedCharacterCount(
+  inputItems: readonly Pick<OpenAiWorkingSetInputItemDiagnostics, "savedCharacterCount">[],
+): number {
+  return inputItems.reduce((savedCharacterCount, inputItem) => savedCharacterCount + inputItem.savedCharacterCount, 0);
+}
+
 function sumInputItemSerializedByteLength(
   inputItems: readonly Pick<OpenAiWorkingSetInputItemDiagnostics, "serializedByteLength">[],
 ): number {
   return inputItems.reduce(
     (totalSerializedByteLength, inputItem) => totalSerializedByteLength + inputItem.serializedByteLength,
+    0,
+  );
+}
+
+function sumInputItemOriginalSerializedByteLength(
+  inputItems: readonly Pick<OpenAiWorkingSetInputItemDiagnostics, "originalSerializedByteLength">[],
+): number {
+  return inputItems.reduce(
+    (totalSerializedByteLength, inputItem) => totalSerializedByteLength + inputItem.originalSerializedByteLength,
+    0,
+  );
+}
+
+function sumInputItemProjectedSerializedByteLength(
+  inputItems: readonly Pick<OpenAiWorkingSetInputItemDiagnostics, "projectedSerializedByteLength">[],
+): number {
+  return inputItems.reduce(
+    (totalSerializedByteLength, inputItem) => totalSerializedByteLength + inputItem.projectedSerializedByteLength,
+    0,
+  );
+}
+
+function sumInputItemSavedSerializedByteLength(
+  inputItems: readonly Pick<OpenAiWorkingSetInputItemDiagnostics, "savedSerializedByteLength">[],
+): number {
+  return inputItems.reduce(
+    (savedSerializedByteLength, inputItem) => savedSerializedByteLength + inputItem.savedSerializedByteLength,
     0,
   );
 }

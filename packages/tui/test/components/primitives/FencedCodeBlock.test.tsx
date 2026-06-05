@@ -115,25 +115,10 @@ describe("FencedCodeBlock", () => {
     expect(frame).toContain("embedded line");
   });
 
-  test("embedded_truncates_long_code_rows_instead_of_wrapping_them", async () => {
+  test("embedded_wraps_long_code_rows_by_default", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <FencedCodeBlock
         variant="embedded"
-        codeLines={[{ lineNumber: 1, lineText: "const path = 'packages/tui/src/components/ConversationMessageList.tsx';" }]}
-      />,
-      { width: 34, height: 5 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("const path");
-    expect(frame).not.toContain("ConversationMessageList.tsx");
-  });
-
-  test("embedded_wraps_long_code_rows_when_requested", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <FencedCodeBlock
-        variant="embedded"
-        wrapMode="char"
         codeLines={[{ lineNumber: 1, lineText: "const path = 'packages/tui/src/components/ConversationMessageList.tsx';" }]}
       />,
       { width: 34, height: 8 },
@@ -142,6 +127,21 @@ describe("FencedCodeBlock", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("const path");
     expect(frame.replace(/\s/g, "")).toContain("ConversationMessageList.tsx");
+  });
+
+  test("embedded_truncates_long_code_rows_when_no_wrap_is_requested", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <FencedCodeBlock
+        variant="embedded"
+        wrapMode="none"
+        codeLines={[{ lineNumber: 1, lineText: "const path = 'packages/tui/src/components/ConversationMessageList.tsx';" }]}
+      />,
+      { width: 34, height: 5 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("const path");
+    expect(frame).not.toContain("ConversationMessageList.tsx");
   });
 
   test("hides_line_number_gutter_when_requested", async () => {

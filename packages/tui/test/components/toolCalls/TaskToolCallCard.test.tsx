@@ -480,6 +480,41 @@ describe("TaskToolCallCard (opentui)", () => {
     expect(expandedFrame).not.toContain("Explorer research budget reached");
   });
 
+  test("completed with elapsed-time research checkpoint renders elapsed-time label", async () => {
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      <TaskToolCallCard
+        toolCallDetail={{
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "map runtime",
+          subagentResearchCheckpoint: {
+            checkpointReason: "elapsed_time",
+            childToolCallCount: 7,
+            childToolResultTextLength: 24_000,
+            skippedChildToolCallCount: 1,
+            elapsedMilliseconds: 300_100,
+            softElapsedTimeCheckpointMilliseconds: 300_000,
+          },
+          subagentChildToolCalls: [],
+          subagentResultSummary: "Elapsed checkpoint summary returned.",
+        }}
+        renderState="completed"
+        durationMs={300100}
+      />,
+      { width: 150, height: 28 },
+    );
+    await renderOnce();
+
+    await act(async () => {
+      await mockMouse.click(3, 0);
+    });
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const expandedFrame = captureCharFrame();
+    expect(expandedFrame).toContain("elapsed-time limit reached");
+    expect(expandedFrame).not.toContain("tool output limit reached");
+  });
+
   test("failed renders Task label, bracketed description, and error text", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <TaskToolCallCard

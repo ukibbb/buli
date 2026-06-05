@@ -800,7 +800,7 @@ function validateTaskSubagentSoftElapsedTimeCheckpointMilliseconds(
     !Number.isInteger(taskSubagentSoftElapsedTimeCheckpointMilliseconds) ||
     taskSubagentSoftElapsedTimeCheckpointMilliseconds < 1
   ) {
-    throw new Error("Task subagent soft elapsed-time checkpoint must be a positive integer number of milliseconds.");
+    throw new Error("Configured task subagent soft elapsed-time checkpoint must be a positive integer number of milliseconds.");
   }
 
   return taskSubagentSoftElapsedTimeCheckpointMilliseconds;

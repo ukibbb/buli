@@ -7,6 +7,7 @@ export const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMP
 export const INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE = "Invalid BULI_READ_ONLY_TOOL_CONCURRENCY. Use a positive integer.";
 export const INVALID_SUBAGENT_CONCURRENCY_MESSAGE = "Invalid BULI_SUBAGENT_CONCURRENCY. Use a positive integer.";
 export const INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE = "Invalid BULI_OPENAI_MAX_CONCURRENT_STREAMS. Use a positive integer.";
+export const INVALID_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MESSAGE = "Invalid BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS. Use a positive integer number of milliseconds.";
 export const INVALID_TASK_SUBAGENT_MAX_REASONING_EFFORT_MESSAGE = "Invalid BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT. Use none, minimal, low, medium, high, or xhigh.";
 export const OPENAI_PROVIDER_PROTOCOL_IPC_ENVIRONMENT_VALUE = "1";
 
@@ -19,6 +20,7 @@ export type InteractiveChatEnvironment = Readonly<{
   BULI_READ_ONLY_TOOL_CONCURRENCY?: string | undefined;
   BULI_SUBAGENT_CONCURRENCY?: string | undefined;
   BULI_OPENAI_MAX_CONCURRENT_STREAMS?: string | undefined;
+  BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS?: string | undefined;
   BULI_TASK_SUBAGENT_MODEL?: string | undefined;
   BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT?: string | undefined;
   BULI_PROMPT_CONTEXT_ROOT?: string | undefined;
@@ -92,6 +94,12 @@ export function resolveInteractiveChatOpenAiMaxConcurrentStreams(input: {
   environment: InteractiveChatEnvironment;
 }): PositiveIntegerEnvironmentResolution {
   return resolvePositiveIntegerEnvironmentValue(input.environment.BULI_OPENAI_MAX_CONCURRENT_STREAMS);
+}
+
+export function resolveInteractiveChatTaskSubagentSoftElapsedTimeCheckpointMilliseconds(input: {
+  environment: InteractiveChatEnvironment;
+}): PositiveIntegerEnvironmentResolution {
+  return resolvePositiveIntegerEnvironmentValue(input.environment.BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS);
 }
 
 export function resolveInteractiveChatTaskSubagentProviderModelSelectionPolicy(input: {

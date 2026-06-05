@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   resolveInteractiveChatBashToolApprovalMode,
   resolveInteractiveChatTaskSubagentProviderModelSelectionPolicy,
+  resolveInteractiveChatTaskSubagentSoftElapsedTimeCheckpointMilliseconds,
 } from "../src/interactiveChat/interactiveChatEnvironment.ts";
 
 test("interactive chat uses trusted bash approval by default", () => {
@@ -37,6 +38,30 @@ test("interactive chat leaves task subagent provider model selection unconfigure
   });
 
   expect(resolvedPolicy).toEqual({ status: "resolved" });
+});
+
+test("interactive chat leaves task subagent elapsed-time checkpoint unconfigured by default", () => {
+  const resolvedSoftElapsedTimeCheckpoint = resolveInteractiveChatTaskSubagentSoftElapsedTimeCheckpointMilliseconds({
+    environment: {},
+  });
+
+  expect(resolvedSoftElapsedTimeCheckpoint).toEqual({ status: "resolved" });
+});
+
+test("interactive chat resolves task subagent elapsed-time checkpoint environment override", () => {
+  const resolvedSoftElapsedTimeCheckpoint = resolveInteractiveChatTaskSubagentSoftElapsedTimeCheckpointMilliseconds({
+    environment: { BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS: " 300000 " },
+  });
+
+  expect(resolvedSoftElapsedTimeCheckpoint).toEqual({ status: "resolved", value: 300_000 });
+});
+
+test("interactive chat rejects invalid task subagent elapsed-time checkpoint environment overrides", () => {
+  const resolvedSoftElapsedTimeCheckpoint = resolveInteractiveChatTaskSubagentSoftElapsedTimeCheckpointMilliseconds({
+    environment: { BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS: "0" },
+  });
+
+  expect(resolvedSoftElapsedTimeCheckpoint).toEqual({ status: "invalid" });
 });
 
 test("interactive chat resolves task subagent model and reasoning effort environment overrides", () => {

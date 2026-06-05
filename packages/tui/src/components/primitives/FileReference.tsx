@@ -19,7 +19,7 @@ export function FileReference(props: FileReferenceProps): ReactNode {
   if (props.variant === "inline") {
     // <u> is a text-node element and must live inside a <text> parent.
     return (
-      <text wrapMode="none" width="100%">
+      <text wrapMode="char" width="100%">
         <u fg={chatScreenTheme.accentCyan}>
           {displayText}
         </u>

@@ -228,6 +228,18 @@ test("runInteractiveChat returns a clean message when task subagent reasoning en
   );
 });
 
+test("runInteractiveChat returns a clean message when task subagent elapsed-time checkpoint environment is invalid", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-task-subagent-elapsed-env-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+
+  await expect(runInteractiveChat({
+    store,
+    environment: { BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS: "0" },
+  })).resolves.toBe(
+    "Invalid BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS. Use a positive integer number of milliseconds.",
+  );
+});
+
 test("runInteractiveChat applies concurrency and task subagent environment overrides", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-concurrency-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
@@ -251,6 +263,7 @@ test("runInteractiveChat applies concurrency and task subagent environment overr
       BULI_READ_ONLY_TOOL_CONCURRENCY: "11",
       BULI_SUBAGENT_CONCURRENCY: "5",
       BULI_OPENAI_MAX_CONCURRENT_STREAMS: "7",
+      BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS: "300000",
       BULI_TASK_SUBAGENT_MODEL: "gpt-5.4-mini",
       BULI_TASK_SUBAGENT_MAX_REASONING_EFFORT: "low",
     },
@@ -263,6 +276,7 @@ test("runInteractiveChat applies concurrency and task subagent environment overr
   expect(output).toBe("");
   expect(capturedConversationRuntime?.maximumConcurrentReadOnlyToolCalls).toBe(11);
   expect(capturedConversationRuntime?.maximumConcurrentSubagentConversations).toBe(5);
+  expect(capturedConversationRuntime?.taskSubagentSoftElapsedTimeCheckpointMilliseconds).toBe(300_000);
   expect(capturedConversationRuntime?.taskSubagentProviderModelSelectionPolicy).toEqual({
     selectedModelIdOverride: "gpt-5.4-mini",
     maximumReasoningEffort: "low",

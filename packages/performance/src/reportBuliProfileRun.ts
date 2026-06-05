@@ -36,12 +36,61 @@ type TaskSubagentCallSummary = Readonly<{
   conversationTurnId: string | undefined;
   toolCallId: string;
   subagentName: string;
-  outcomeKind: string;
+  executorOutcomeKind: string;
+  parentVisibleToolResultKind: string;
+  failureKind: string | undefined;
+  failureExplanation: string | undefined;
   selectedModelId: string | undefined;
   selectedReasoningEffort: string | undefined;
+  routingSource: string | undefined;
   durationMs: number;
   parentToolResultWaitMs: number;
   toolResultTextLength: number;
+  checkpointReason: string | undefined;
+  checkpointChildToolCallCount: number | undefined;
+  checkpointChildToolResultTextLength: number | undefined;
+  checkpointSkippedChildToolCallCount: number | undefined;
+  checkpointElapsedMilliseconds: number | undefined;
+  checkpointSoftElapsedTimeCheckpointMilliseconds: number | undefined;
+  subagentChildToolCallCount: number | undefined;
+}>;
+
+type TaskSubagentParentVisibleResultSummary = Readonly<{
+  parentVisibleToolResultKind: string | undefined;
+  failureExplanation: string | undefined;
+  toolResultTextLength: number | undefined;
+}>;
+
+type TaskSubagentRoutingSummary = Readonly<{
+  selectedModelId: string | undefined;
+  selectedReasoningEffort: string | undefined;
+  routingSource: string | undefined;
+}>;
+
+type TaskSubagentCheckpointSummary = Readonly<{
+  checkpointReason: string | undefined;
+  checkpointChildToolCallCount: number | undefined;
+  checkpointChildToolResultTextLength: number | undefined;
+  checkpointSkippedChildToolCallCount: number | undefined;
+  checkpointElapsedMilliseconds: number | undefined;
+  checkpointSoftElapsedTimeCheckpointMilliseconds: number | undefined;
+}>;
+
+type TaskSubagentFinishedDiagnosticSummary = Readonly<{
+  conversationTurnId: string | undefined;
+  toolCallId: string;
+  subagentName: string | undefined;
+  executorOutcomeKind: string | undefined;
+  parentVisibleToolResultKind: string | undefined;
+  taskSubagentOutcomeKind: string | undefined;
+  failureKind: string | undefined;
+  failureExplanation: string | undefined;
+  selectedModelId: string | undefined;
+  selectedReasoningEffort: string | undefined;
+  durationMs: number | undefined;
+  parentToolResultTextLength: number | undefined;
+  subagentChildToolCallCount: number | undefined;
+  checkpointSummary: TaskSubagentCheckpointSummary;
 }>;
 
 type ProviderTurnKindAttribution = {
@@ -72,6 +121,17 @@ type OpenAiWorkingSetVisibilityReasonReportRow = Readonly<{
   inputItemCount: number;
   textLength: number;
   serializedByteLength: number;
+}>;
+
+type OpenAiWorkingSetProjectionKindReportRow = Readonly<{
+  projectionKind: string;
+  inputItemCount: number;
+  originalTextLength: number;
+  projectedTextLength: number;
+  savedCharacterCount: number;
+  originalSerializedByteLength: number;
+  projectedSerializedByteLength: number;
+  savedSerializedByteLength: number;
 }>;
 
 type OpenAiWorkingSetLargestInputItemReportRow = Readonly<{
@@ -219,7 +279,7 @@ function formatSuspectedBottlenecksSection(input: {
     }),
     createDurationBottleneckCandidate({
       boundaryName: "Task subagent execution",
-      evidence: "Sum of `engine:tool_call.execution_finished.durationMs` where `toolName` is `task`; parallel task calls can overlap.",
+      evidence: "Sum of task executor `engine:tool_call.execution_finished.durationMs`; parent-visible success/failure is reported separately in Task Subagent Attribution.",
       durationMs: aggregateNumericField(taskToolExecutionFinishedEvents, "durationMs").total,
     }),
     createDurationBottleneckCandidate({
@@ -621,6 +681,7 @@ function formatOpenAiWorkingSetVisibilitySection(diagnosticEvents: readonly Prof
     "requestCurrentTurnFunctionCallOutputSavedCharacterCount",
   );
   const reasonRows = listOpenAiWorkingSetVisibilityReasonRows(responseStepsWithWorkingSetDiagnostics);
+  const projectionKindRows = listOpenAiWorkingSetProjectionKindRows(responseStepsWithWorkingSetDiagnostics);
   const largestVisibleInputItemRows = [...listOpenAiWorkingSetLargestInputItemRows(responseStepsWithWorkingSetDiagnostics)]
     .sort((leftRow, rightRow) =>
       rightRow.serializedByteLength - leftRow.serializedByteLength ||
@@ -628,11 +689,14 @@ function formatOpenAiWorkingSetVisibilitySection(diagnosticEvents: readonly Prof
       leftRow.inputItemIndex - rightRow.inputItemIndex
     )
     .slice(0, 20);
+  const projectionNote = savedSerializedByteLength.total > 0 || compactedInputItemCount.total > 0
+    ? "- Note: duplicate-reference projection is request-local only. Raw evidence and stored provider-turn replay stayed exact; cross-step evidence replay aggregation is still off by default."
+    : "- Note: these are provider-visible projection diagnostics only. Raw evidence was not deleted, current requests stayed exact, and saved bytes are 0.";
 
   return [
     "## OpenAI Working-Set Visibility",
     "",
-    "- Note: these are provider-visible projection diagnostics only. Raw evidence was not deleted, current requests were not compacted, and saved bytes are 0 for this conservative slice.",
+    projectionNote,
     `- Response steps with working-set diagnostics: ${formatInteger(responseStepsWithWorkingSetDiagnostics.length)}`,
     `- Input items exact/compacted: ${formatInteger(exactInputItemCount.total)} / ${formatInteger(compactedInputItemCount.total)}`,
     `- Text original/projected/saved: ${formatBytes(originalTextLength.total)} / ${formatBytes(projectedTextLength.total)} / ${formatBytes(savedCharacterCount.total)}`,
@@ -640,6 +704,7 @@ function formatOpenAiWorkingSetVisibilitySection(diagnosticEvents: readonly Prof
     `- Current-turn function-output original/projected/saved: ${formatBytes(currentTurnFunctionOutputOriginalTextLength.total)} / ${formatBytes(currentTurnFunctionOutputProjectedTextLength.total)} / ${formatBytes(currentTurnFunctionOutputSavedCharacterCount.total)}`,
     `- Unclassified visible input items: ${formatInteger(unclassifiedInputItemCount.total)}`,
     "",
+    ...formatOpenAiWorkingSetProjectionKindRows(projectionKindRows),
     "| Visibility Reason | Items | Text | Serialized |",
     "| --- | ---: | ---: | ---: |",
     ...reasonRows.map((row) =>
@@ -652,6 +717,25 @@ function formatOpenAiWorkingSetVisibilitySection(diagnosticEvents: readonly Prof
     "| --- | --- | ---: | ---: | --- | --- | --- | --- | ---: | ---: |",
     ...largestVisibleInputItemRows.map((row) =>
       `| ${formatShortText(row.conversationTurnId)} | ${row.providerTurnKind} | ${formatInteger(row.responseStepIndex)} | ${formatInputItemIndex(row.inputItemIndex)} | ${row.visibilityReason} | ${row.projectionKind} | ${formatNullableText(row.evidenceId)} | ${row.isCurrentTurnItem ? "yes" : "no"} | ${formatBytes(row.textLength)} | ${formatBytes(row.serializedByteLength)} |`
+    ),
+    "",
+  ];
+}
+
+function formatOpenAiWorkingSetProjectionKindRows(
+  projectionKindRows: readonly OpenAiWorkingSetProjectionKindReportRow[],
+): readonly string[] {
+  if (projectionKindRows.length === 0) {
+    return [];
+  }
+
+  return [
+    "Projection kinds:",
+    "",
+    "| Projection | Items | Original Text | Projected Text | Saved Text | Original Serialized | Projected Serialized | Saved Serialized |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...projectionKindRows.map((row) =>
+      `| ${row.projectionKind} | ${formatInteger(row.inputItemCount)} | ${formatBytes(row.originalTextLength)} | ${formatBytes(row.projectedTextLength)} | ${formatBytes(row.savedCharacterCount)} | ${formatBytes(row.originalSerializedByteLength)} | ${formatBytes(row.projectedSerializedByteLength)} | ${formatBytes(row.savedSerializedByteLength)} |`
     ),
     "",
   ];
@@ -791,6 +875,9 @@ function formatTaskSubagentAttributionSection(diagnosticEvents: readonly Profile
   const taskResultTextLength = summarizeTaskSubagentCallField(taskCallSummaries, "toolResultTextLength");
   const taskConcurrentGroupDuration = aggregateNumericField(taskOnlyConcurrentGroupEvents, "durationMs");
   const subagentSlotWaitDuration = aggregateNumericField(taskSubagentSlotAcquiredEvents, "waitDurationMs");
+  const parentVisibleFailedTaskResultCount = taskCallSummaries.filter((taskCallSummary) =>
+    taskCallSummary.parentVisibleToolResultKind === "failed"
+  ).length;
   const maxActiveSubagentConversationCount = maxNumber(
     taskSubagentSlotAcquiredEvents.map((event) => readNumberField(event.fields, "activeSubagentConversationCount")),
   ) ?? 0;
@@ -802,6 +889,8 @@ function formatTaskSubagentAttributionSection(diagnosticEvents: readonly Profile
     "## Task Subagent Attribution",
     "",
     `- Task calls: ${formatInteger(taskCallSummaries.length)}`,
+    `- Parent-visible failed task results: ${formatInteger(parentVisibleFailedTaskResultCount)}`,
+    `- Parent-visible result kinds: ${formatCountByTaskParentVisibleResultKind(taskCallSummaries)}`,
     `- Per-call task execution total: ${formatMilliseconds(taskExecutionDuration.total)}`,
     `- Max task execution duration: ${formatMilliseconds(taskExecutionDuration.max)}`,
     `- Per-call parent tool-result wait total: ${formatMilliseconds(taskParentToolResultWaitDuration.total)}`,
@@ -813,12 +902,13 @@ function formatTaskSubagentAttributionSection(diagnosticEvents: readonly Profile
     `- Subagent slot wait total: ${formatMilliseconds(subagentSlotWaitDuration.total)}`,
     `- Max active subagent conversations: ${formatInteger(maxActiveSubagentConversationCount)}`,
     `- Subagents: ${formatCountByTaskSubagentName(taskCallSummaries, taskSubagentSlotAcquiredEvents)}`,
+    "- Note: task execution means the runtime task executor returned; parent result is what the parent assistant/model actually received.",
     "- Note: task execution and parent tool-result wait are per-call sums. Use task-only concurrent group wall time to understand elapsed time when task calls run in parallel.",
     "",
-    "| Turn | Tool Call | Subagent | Model | Effort | Outcome | Duration | Parent Wait | Result Text |",
-    "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
+    "| Turn | Tool Call | Subagent | Model | Effort | Executor | Parent Result | Duration | Parent Wait | Result Text |",
+    "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
     ...slowestTaskCalls.map((taskCall) =>
-      `| ${formatShortText(taskCall.conversationTurnId)} | ${formatShortText(taskCall.toolCallId)} | ${taskCall.subagentName} | ${formatOptionalText(taskCall.selectedModelId)} | ${formatOptionalText(taskCall.selectedReasoningEffort)} | ${taskCall.outcomeKind} | ${formatMilliseconds(taskCall.durationMs)} | ${formatMilliseconds(taskCall.parentToolResultWaitMs)} | ${formatBytes(taskCall.toolResultTextLength)} |`
+      `| ${formatShortText(taskCall.conversationTurnId)} | ${formatShortText(taskCall.toolCallId)} | ${taskCall.subagentName} | ${formatOptionalText(taskCall.selectedModelId)} | ${formatOptionalText(taskCall.selectedReasoningEffort)} | ${taskCall.executorOutcomeKind} | ${taskCall.parentVisibleToolResultKind} | ${formatMilliseconds(taskCall.durationMs)} | ${formatMilliseconds(taskCall.parentToolResultWaitMs)} | ${formatBytes(taskCall.toolResultTextLength)} |`
     ),
     "",
     "Largest task results:",
@@ -832,6 +922,7 @@ function formatTaskSubagentAttributionSection(diagnosticEvents: readonly Profile
         `| ${formatShortText(taskCall.conversationTurnId)} | ${formatShortText(taskCall.toolCallId)} | ${taskCall.subagentName} | ${formatOptionalText(taskCall.selectedModelId)} | ${formatOptionalText(taskCall.selectedReasoningEffort)} | ${formatBytes(taskCall.toolResultTextLength)} | ${formatMilliseconds(taskCall.durationMs)} |`
       ),
     "",
+    ...formatTaskSubagentCheckpointFailureDetails(taskCallSummaries),
   ];
 }
 
@@ -1049,7 +1140,14 @@ function isToolResultEntryKind(entryKind: string | undefined): boolean {
 
 function buildTaskSubagentCallSummaries(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly TaskSubagentCallSummary[] {
   const subagentNameByToolCallId = buildTaskSubagentNameByToolCallId(diagnosticEvents);
+  const taskSubagentFinishedSummaryByToolCallId = buildTaskSubagentFinishedDiagnosticSummaryByToolCallId(diagnosticEvents);
   const providerTurnRoutingByParentTaskToolCallId = buildTaskSubagentProviderTurnRoutingByParentTaskToolCallId(diagnosticEvents);
+  const modelSelectionRoutingByToolCallId = buildTaskSubagentModelSelectionRoutingByToolCallId(diagnosticEvents);
+  const parentVisibleResultByToolCallId = buildTaskSubagentParentVisibleResultByToolCallId(diagnosticEvents);
+  const checkpointSummaryByToolCallId = buildTaskSubagentCheckpointSummaryByToolCallId(diagnosticEvents);
+  const unattributedCheckpointSummaries = listUnattributedTaskSubagentCheckpointSummaries(diagnosticEvents);
+  const taskExecutionFinishedEvents = listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.execution_finished")
+    .filter((event) => readStringField(event.fields, "toolName") === "task");
   const parentToolResultWaitByToolCallId = buildNumericFieldByToolCallId({
     diagnosticEvents: [
       ...listDiagnosticEvents(diagnosticEvents, "openai", "tool_result_submission.resolved_pending_wait"),
@@ -1062,32 +1160,293 @@ function buildTaskSubagentCallSummaries(diagnosticEvents: readonly ProfileDiagno
     fieldName: "toolResultTextLength",
   });
 
-  return listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.execution_finished")
-    .filter((event) => readStringField(event.fields, "toolName") === "task")
+  return taskExecutionFinishedEvents
     .map((event) => {
       const toolCallId = readStringField(event.fields, "toolCallId") ?? "unknown";
-      const providerTurnRouting = providerTurnRoutingByParentTaskToolCallId.get(toolCallId);
-      return {
+      const taskSubagentFinishedSummary = taskSubagentFinishedSummaryByToolCallId.get(toolCallId);
+      const parentVisibleResult = parentVisibleResultByToolCallId.get(toolCallId);
+      const parentVisibleToolResultKind = taskSubagentFinishedSummary?.parentVisibleToolResultKind ??
+        parentVisibleResult?.parentVisibleToolResultKind ??
+        "unknown";
+      const selectedRouting = selectTaskSubagentRoutingSummary({
+        taskSubagentFinishedSummary,
+        providerTurnRouting: providerTurnRoutingByParentTaskToolCallId.get(toolCallId),
+        modelSelectionRouting: modelSelectionRoutingByToolCallId.get(toolCallId),
+      });
+      const directCheckpointSummary = taskSubagentFinishedSummary &&
+          hasTaskSubagentCheckpointSummary(taskSubagentFinishedSummary.checkpointSummary)
+        ? taskSubagentFinishedSummary.checkpointSummary
+        : checkpointSummaryByToolCallId.get(toolCallId);
+      const checkpointSummary = directCheckpointSummary ?? findUnattributedTaskSubagentCheckpointSummary({
         conversationTurnId: readStringField(event.fields, "conversationTurnId"),
+        subagentName: readStringField(event.fields, "subagentName") ?? subagentNameByToolCallId.get(toolCallId),
+        parentVisibleToolResultKind,
+        taskExecutionFinishedEvents,
+        unattributedCheckpointSummaries,
+      });
+      const failureExplanation = taskSubagentFinishedSummary?.failureExplanation ?? parentVisibleResult?.failureExplanation;
+      const failureKind = taskSubagentFinishedSummary?.failureKind ?? inferTaskSubagentFailureKind({
+        parentVisibleToolResultKind,
+        failureExplanation,
+        checkpointSummary,
+      });
+      return {
+        conversationTurnId: readStringField(event.fields, "conversationTurnId") ?? taskSubagentFinishedSummary?.conversationTurnId,
         toolCallId,
-        subagentName: readStringField(event.fields, "subagentName") ?? subagentNameByToolCallId.get(toolCallId) ?? "unknown",
-        outcomeKind: readStringField(event.fields, "outcomeKind") ?? "unknown",
-        selectedModelId: providerTurnRouting?.selectedModelId,
-        selectedReasoningEffort: providerTurnRouting?.selectedReasoningEffort,
-        durationMs: readNumberField(event.fields, "durationMs"),
+        subagentName: readStringField(event.fields, "subagentName") ?? taskSubagentFinishedSummary?.subagentName ??
+          subagentNameByToolCallId.get(toolCallId) ??
+          "unknown",
+        executorOutcomeKind: readStringField(event.fields, "outcomeKind") ?? taskSubagentFinishedSummary?.executorOutcomeKind ?? "unknown",
+        parentVisibleToolResultKind,
+        failureKind,
+        failureExplanation,
+        selectedModelId: selectedRouting.selectedModelId,
+        selectedReasoningEffort: selectedRouting.selectedReasoningEffort,
+        routingSource: selectedRouting.routingSource,
+        durationMs: readOptionalNumberField(event.fields, "durationMs") ?? taskSubagentFinishedSummary?.durationMs ?? 0,
         parentToolResultWaitMs: parentToolResultWaitByToolCallId.get(toolCallId) ?? 0,
-        toolResultTextLength: toolResultTextLengthByToolCallId.get(toolCallId) ?? 0,
+        toolResultTextLength: taskSubagentFinishedSummary?.parentToolResultTextLength ?? parentVisibleResult?.toolResultTextLength ??
+          toolResultTextLengthByToolCallId.get(toolCallId) ??
+          0,
+        checkpointReason: checkpointSummary?.checkpointReason,
+        checkpointChildToolCallCount: checkpointSummary?.checkpointChildToolCallCount,
+        checkpointChildToolResultTextLength: checkpointSummary?.checkpointChildToolResultTextLength,
+        checkpointSkippedChildToolCallCount: checkpointSummary?.checkpointSkippedChildToolCallCount,
+        checkpointElapsedMilliseconds: checkpointSummary?.checkpointElapsedMilliseconds,
+        checkpointSoftElapsedTimeCheckpointMilliseconds: checkpointSummary?.checkpointSoftElapsedTimeCheckpointMilliseconds,
+        subagentChildToolCallCount: taskSubagentFinishedSummary?.subagentChildToolCallCount,
       };
     });
 }
 
+function buildTaskSubagentFinishedDiagnosticSummaryByToolCallId(
+  diagnosticEvents: readonly ProfileDiagnosticEvent[],
+): Map<string, TaskSubagentFinishedDiagnosticSummary> {
+  const summaryByToolCallId = new Map<string, TaskSubagentFinishedDiagnosticSummary>();
+  for (const event of listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.task_subagent_finished")) {
+    const toolCallId = readStringField(event.fields, "toolCallId") ?? readStringField(event.fields, "parentTaskToolCallId");
+    if (!toolCallId) {
+      continue;
+    }
+
+    summaryByToolCallId.set(toolCallId, {
+      conversationTurnId: readStringField(event.fields, "conversationTurnId"),
+      toolCallId,
+      subagentName: readStringField(event.fields, "subagentName"),
+      executorOutcomeKind: readStringField(event.fields, "executorOutcomeKind"),
+      parentVisibleToolResultKind: readStringField(event.fields, "parentVisibleToolResultKind"),
+      taskSubagentOutcomeKind: readStringField(event.fields, "taskSubagentOutcomeKind"),
+      failureKind: readStringField(event.fields, "failureKind"),
+      failureExplanation: readStringField(event.fields, "failureExplanation"),
+      selectedModelId: readStringField(event.fields, "taskSubagentSelectedModelId"),
+      selectedReasoningEffort: readStringField(event.fields, "taskSubagentSelectedReasoningEffort"),
+      durationMs: readOptionalNumberField(event.fields, "durationMs"),
+      parentToolResultTextLength: readOptionalNumberField(event.fields, "parentToolResultTextLength"),
+      subagentChildToolCallCount: readOptionalNumberField(event.fields, "subagentChildToolCallCount"),
+      checkpointSummary: readTaskSubagentFinishedCheckpointSummary(event.fields),
+    });
+  }
+
+  return summaryByToolCallId;
+}
+
+function buildTaskSubagentParentVisibleResultByToolCallId(
+  diagnosticEvents: readonly ProfileDiagnosticEvent[],
+): Map<string, TaskSubagentParentVisibleResultSummary> {
+  const parentVisibleResultByToolCallId = new Map<string, TaskSubagentParentVisibleResultSummary>();
+  for (const event of listDiagnosticEvents(diagnosticEvents, "engine", "provider_turn.tool_result_submitted")) {
+    const toolCallId = readStringField(event.fields, "toolCallId");
+    if (!toolCallId) {
+      continue;
+    }
+
+    mergeTaskSubagentParentVisibleResult(parentVisibleResultByToolCallId, toolCallId, {
+      parentVisibleToolResultKind: readStringField(event.fields, "toolResultKind"),
+      failureExplanation: undefined,
+      toolResultTextLength: readOptionalNumberField(event.fields, "toolResultTextLength"),
+    });
+  }
+
+  for (const event of listDiagnosticEvents(diagnosticEvents, "engine", "conversation_history.entry_appended")) {
+    const toolCallId = readStringField(event.fields, "toolCallId");
+    if (!toolCallId) {
+      continue;
+    }
+
+    mergeTaskSubagentParentVisibleResult(parentVisibleResultByToolCallId, toolCallId, {
+      parentVisibleToolResultKind: readParentVisibleToolResultKindFromConversationEntryKind(readStringField(event.fields, "entryKind")),
+      failureExplanation: readStringField(event.fields, "failureExplanation"),
+      toolResultTextLength: readOptionalNumberField(event.fields, "toolResultTextLength"),
+    });
+  }
+
+  return parentVisibleResultByToolCallId;
+}
+
+function mergeTaskSubagentParentVisibleResult(
+  parentVisibleResultByToolCallId: Map<string, TaskSubagentParentVisibleResultSummary>,
+  toolCallId: string,
+  incomingResult: TaskSubagentParentVisibleResultSummary,
+): void {
+  const existingResult = parentVisibleResultByToolCallId.get(toolCallId);
+  parentVisibleResultByToolCallId.set(toolCallId, {
+    parentVisibleToolResultKind: incomingResult.parentVisibleToolResultKind ?? existingResult?.parentVisibleToolResultKind,
+    failureExplanation: incomingResult.failureExplanation ?? existingResult?.failureExplanation,
+    toolResultTextLength: incomingResult.toolResultTextLength ?? existingResult?.toolResultTextLength,
+  });
+}
+
+function readParentVisibleToolResultKindFromConversationEntryKind(entryKind: string | undefined): string | undefined {
+  switch (entryKind) {
+    case "completed_tool_result":
+      return "completed";
+    case "failed_tool_result":
+      return "failed";
+    case "denied_tool_result":
+      return "denied";
+    default:
+      return undefined;
+  }
+}
+
+function buildTaskSubagentCheckpointSummaryByToolCallId(
+  diagnosticEvents: readonly ProfileDiagnosticEvent[],
+): Map<string, TaskSubagentCheckpointSummary> {
+  const checkpointSummaryByToolCallId = new Map<string, TaskSubagentCheckpointSummary>();
+  for (const event of listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.task_subagent_research_checkpoint_requested")) {
+    const toolCallId = readStringField(event.fields, "toolCallId") ?? readStringField(event.fields, "parentTaskToolCallId");
+    if (!toolCallId) {
+      continue;
+    }
+
+    checkpointSummaryByToolCallId.set(toolCallId, readTaskSubagentCheckpointRequestedSummary(event.fields));
+  }
+
+  return checkpointSummaryByToolCallId;
+}
+
+function listUnattributedTaskSubagentCheckpointSummaries(
+  diagnosticEvents: readonly ProfileDiagnosticEvent[],
+): readonly (Readonly<{
+  conversationTurnId: string | undefined;
+  subagentName: string | undefined;
+  checkpointSummary: TaskSubagentCheckpointSummary;
+}>)[] {
+  return listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.task_subagent_research_checkpoint_requested")
+    .filter((event) => !readStringField(event.fields, "toolCallId") && !readStringField(event.fields, "parentTaskToolCallId"))
+    .map((event) => ({
+      conversationTurnId: readStringField(event.fields, "conversationTurnId"),
+      subagentName: readStringField(event.fields, "subagentName"),
+      checkpointSummary: readTaskSubagentCheckpointRequestedSummary(event.fields),
+    }));
+}
+
+function findUnattributedTaskSubagentCheckpointSummary(input: {
+  conversationTurnId: string | undefined;
+  subagentName: string | undefined;
+  parentVisibleToolResultKind: string;
+  taskExecutionFinishedEvents: readonly ProfileDiagnosticEvent[];
+  unattributedCheckpointSummaries: readonly (Readonly<{
+    conversationTurnId: string | undefined;
+    subagentName: string | undefined;
+    checkpointSummary: TaskSubagentCheckpointSummary;
+  }>)[];
+}): TaskSubagentCheckpointSummary | undefined {
+  const matchingCheckpointSummaries = input.unattributedCheckpointSummaries.filter((checkpointSummary) =>
+    optionalTextFieldsMatch(checkpointSummary.conversationTurnId, input.conversationTurnId) &&
+    optionalTextFieldsMatch(checkpointSummary.subagentName, input.subagentName)
+  );
+  if (matchingCheckpointSummaries.length !== 1) {
+    return undefined;
+  }
+
+  if (input.parentVisibleToolResultKind === "failed") {
+    return matchingCheckpointSummaries[0]?.checkpointSummary;
+  }
+
+  const matchingTaskCallCount = input.taskExecutionFinishedEvents.filter((event) =>
+    optionalTextFieldsMatch(readStringField(event.fields, "conversationTurnId"), input.conversationTurnId) &&
+    optionalTextFieldsMatch(readStringField(event.fields, "subagentName"), input.subagentName)
+  ).length;
+  return matchingTaskCallCount === 1 ? matchingCheckpointSummaries[0]?.checkpointSummary : undefined;
+}
+
+function optionalTextFieldsMatch(leftValue: string | undefined, rightValue: string | undefined): boolean {
+  return leftValue === undefined || rightValue === undefined || leftValue === rightValue;
+}
+
+function readTaskSubagentFinishedCheckpointSummary(fields: ProfileDiagnosticEvent["fields"] | undefined): TaskSubagentCheckpointSummary {
+  return {
+    checkpointReason: readStringField(fields, "checkpointReason"),
+    checkpointChildToolCallCount: readOptionalNumberField(fields, "checkpointChildToolCallCount"),
+    checkpointChildToolResultTextLength: readOptionalNumberField(fields, "checkpointChildToolResultTextLength"),
+    checkpointSkippedChildToolCallCount: readOptionalNumberField(fields, "checkpointSkippedChildToolCallCount"),
+    checkpointElapsedMilliseconds: readOptionalNumberField(fields, "checkpointElapsedMilliseconds"),
+    checkpointSoftElapsedTimeCheckpointMilliseconds: readOptionalNumberField(
+      fields,
+      "checkpointSoftElapsedTimeCheckpointMilliseconds",
+    ),
+  };
+}
+
+function readTaskSubagentCheckpointRequestedSummary(fields: ProfileDiagnosticEvent["fields"] | undefined): TaskSubagentCheckpointSummary {
+  return {
+    checkpointReason: readStringField(fields, "checkpointReason"),
+    checkpointChildToolCallCount: readOptionalNumberField(fields, "childToolCallCount"),
+    checkpointChildToolResultTextLength: readOptionalNumberField(fields, "childToolResultTextLength"),
+    checkpointSkippedChildToolCallCount: readOptionalNumberField(fields, "skippedChildToolCallCount"),
+    checkpointElapsedMilliseconds: readOptionalNumberField(fields, "elapsedMilliseconds"),
+    checkpointSoftElapsedTimeCheckpointMilliseconds: readOptionalNumberField(fields, "softElapsedTimeCheckpointMilliseconds"),
+  };
+}
+
+function hasTaskSubagentCheckpointSummary(checkpointSummary: TaskSubagentCheckpointSummary): boolean {
+  return checkpointSummary.checkpointReason !== undefined || checkpointSummary.checkpointChildToolCallCount !== undefined ||
+    checkpointSummary.checkpointChildToolResultTextLength !== undefined ||
+    checkpointSummary.checkpointSkippedChildToolCallCount !== undefined ||
+    checkpointSummary.checkpointElapsedMilliseconds !== undefined ||
+    checkpointSummary.checkpointSoftElapsedTimeCheckpointMilliseconds !== undefined;
+}
+
+function selectTaskSubagentRoutingSummary(input: {
+  taskSubagentFinishedSummary: TaskSubagentFinishedDiagnosticSummary | undefined;
+  providerTurnRouting: TaskSubagentRoutingSummary | undefined;
+  modelSelectionRouting: TaskSubagentRoutingSummary | undefined;
+}): TaskSubagentRoutingSummary {
+  if (input.taskSubagentFinishedSummary?.selectedModelId || input.taskSubagentFinishedSummary?.selectedReasoningEffort) {
+    return {
+      selectedModelId: input.taskSubagentFinishedSummary.selectedModelId,
+      selectedReasoningEffort: input.taskSubagentFinishedSummary.selectedReasoningEffort,
+      routingSource: "tool_call.task_subagent_finished",
+    };
+  }
+
+  return input.providerTurnRouting ?? input.modelSelectionRouting ?? {
+    selectedModelId: undefined,
+    selectedReasoningEffort: undefined,
+    routingSource: undefined,
+  };
+}
+
+function inferTaskSubagentFailureKind(input: {
+  parentVisibleToolResultKind: string;
+  failureExplanation: string | undefined;
+  checkpointSummary: TaskSubagentCheckpointSummary | undefined;
+}): string | undefined {
+  if (
+    input.parentVisibleToolResultKind === "failed" && input.checkpointSummary &&
+    input.failureExplanation?.includes("continued requesting tools after the research checkpoint")
+  ) {
+    return "requested_tools_after_checkpoint";
+  }
+
+  return undefined;
+}
+
 function buildTaskSubagentProviderTurnRoutingByParentTaskToolCallId(
   diagnosticEvents: readonly ProfileDiagnosticEvent[],
-): Map<string, { selectedModelId: string | undefined; selectedReasoningEffort: string | undefined }> {
-  const providerTurnRoutingByParentTaskToolCallId = new Map<
-    string,
-    { selectedModelId: string | undefined; selectedReasoningEffort: string | undefined }
-  >();
+): Map<string, TaskSubagentRoutingSummary> {
+  const providerTurnRoutingByParentTaskToolCallId = new Map<string, TaskSubagentRoutingSummary>();
   for (const providerTurnSummary of listDiagnosticEvents(diagnosticEvents, "openai", "provider_turn.summary")) {
     if (readStringField(providerTurnSummary.fields, "providerTurnKind") !== "task_subagent") {
       continue;
@@ -1101,10 +1460,31 @@ function buildTaskSubagentProviderTurnRoutingByParentTaskToolCallId(
     providerTurnRoutingByParentTaskToolCallId.set(parentTaskToolCallId, {
       selectedModelId: readStringField(providerTurnSummary.fields, "selectedModelId"),
       selectedReasoningEffort: readStringField(providerTurnSummary.fields, "selectedReasoningEffort"),
+      routingSource: "openai.provider_turn.summary",
     });
   }
 
   return providerTurnRoutingByParentTaskToolCallId;
+}
+
+function buildTaskSubagentModelSelectionRoutingByToolCallId(
+  diagnosticEvents: readonly ProfileDiagnosticEvent[],
+): Map<string, TaskSubagentRoutingSummary> {
+  const modelSelectionRoutingByToolCallId = new Map<string, TaskSubagentRoutingSummary>();
+  for (const event of listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.task_subagent_model_selection_resolved")) {
+    const toolCallId = readStringField(event.fields, "toolCallId");
+    if (!toolCallId) {
+      continue;
+    }
+
+    modelSelectionRoutingByToolCallId.set(toolCallId, {
+      selectedModelId: readStringField(event.fields, "taskSubagentSelectedModelId"),
+      selectedReasoningEffort: readStringField(event.fields, "taskSubagentSelectedReasoningEffort"),
+      routingSource: "tool_call.task_subagent_model_selection_resolved",
+    });
+  }
+
+  return modelSelectionRoutingByToolCallId;
 }
 
 function buildTaskSubagentNameByToolCallId(diagnosticEvents: readonly ProfileDiagnosticEvent[]): Map<string, string> {
@@ -1112,6 +1492,9 @@ function buildTaskSubagentNameByToolCallId(diagnosticEvents: readonly ProfileDia
   for (const event of [
     ...listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.requested"),
     ...listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.execution_finished"),
+    ...listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.task_subagent_model_selection_resolved"),
+    ...listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.task_subagent_research_checkpoint_requested"),
+    ...listDiagnosticEvents(diagnosticEvents, "engine", "tool_call.task_subagent_finished"),
     ...listDiagnosticEvents(diagnosticEvents, "engine", "subagent_conversation_limiter.slot_wait_started"),
     ...listDiagnosticEvents(diagnosticEvents, "engine", "subagent_conversation_limiter.slot_acquired"),
     ...listDiagnosticEvents(diagnosticEvents, "engine", "subagent_conversation_limiter.slot_released"),
@@ -1177,6 +1560,92 @@ function formatCountByTaskSubagentName(
   return [...countBySubagentName.entries()].sort((leftEntry, rightEntry) =>
     rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0])
   ).map(([subagentName, count]) => `${subagentName} (${formatInteger(count)})`).join(", ");
+}
+
+function formatCountByTaskParentVisibleResultKind(taskCallSummaries: readonly TaskSubagentCallSummary[]): string {
+  const countByParentVisibleResultKind = new Map<string, number>();
+  for (const taskCallSummary of taskCallSummaries) {
+    countByParentVisibleResultKind.set(
+      taskCallSummary.parentVisibleToolResultKind,
+      (countByParentVisibleResultKind.get(taskCallSummary.parentVisibleToolResultKind) ?? 0) + 1,
+    );
+  }
+
+  if (countByParentVisibleResultKind.size === 0) {
+    return "n/a";
+  }
+
+  const preferredResultKindOrder = ["failed", "denied", "completed", "unknown"];
+  return [...countByParentVisibleResultKind.entries()].sort((leftEntry, rightEntry) => {
+    const leftOrderIndex = preferredResultKindOrder.indexOf(leftEntry[0]);
+    const rightOrderIndex = preferredResultKindOrder.indexOf(rightEntry[0]);
+    const normalizedLeftOrderIndex = leftOrderIndex === -1 ? preferredResultKindOrder.length : leftOrderIndex;
+    const normalizedRightOrderIndex = rightOrderIndex === -1 ? preferredResultKindOrder.length : rightOrderIndex;
+    return normalizedLeftOrderIndex - normalizedRightOrderIndex || rightEntry[1] - leftEntry[1] ||
+      leftEntry[0].localeCompare(rightEntry[0]);
+  }).map(([parentVisibleResultKind, count]) => `${parentVisibleResultKind} (${formatInteger(count)})`).join(", ");
+}
+
+function formatTaskSubagentCheckpointFailureDetails(
+  taskCallSummaries: readonly TaskSubagentCallSummary[],
+): readonly string[] {
+  const taskCallsWithCheckpointOrFailure = taskCallSummaries.filter((taskCallSummary) =>
+    taskCallSummary.parentVisibleToolResultKind === "failed" || taskCallSummary.failureKind !== undefined ||
+    taskCallSummary.failureExplanation !== undefined || taskCallSummary.checkpointReason !== undefined
+  );
+  if (taskCallsWithCheckpointOrFailure.length === 0) {
+    return [];
+  }
+
+  return [
+    "Checkpoint / Failure details:",
+    "",
+    "| Turn | Tool Call | Subagent | Failure | Parent Result | Checkpoint | Child Calls | Child Output | Skipped | Elapsed | Soft Limit | Explanation |",
+    "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+    ...taskCallsWithCheckpointOrFailure.map((taskCallSummary) =>
+      `| ${formatShortText(taskCallSummary.conversationTurnId)} | ${formatShortText(taskCallSummary.toolCallId)} | ${taskCallSummary.subagentName} | ${formatOptionalText(taskCallSummary.failureKind)} | ${taskCallSummary.parentVisibleToolResultKind} | ${formatOptionalText(taskCallSummary.checkpointReason)} | ${formatOptionalInteger(taskCallSummary.checkpointChildToolCallCount ?? taskCallSummary.subagentChildToolCallCount)} | ${formatOptionalCompactBytes(taskCallSummary.checkpointChildToolResultTextLength)} | ${formatOptionalInteger(taskCallSummary.checkpointSkippedChildToolCallCount)} | ${formatOptionalMilliseconds(taskCallSummary.checkpointElapsedMilliseconds)} | ${formatOptionalMilliseconds(taskCallSummary.checkpointSoftElapsedTimeCheckpointMilliseconds)} | ${formatMarkdownTableText(taskCallSummary.failureExplanation)} |`
+    ),
+    "",
+  ];
+}
+
+function formatOptionalInteger(value: number | undefined): string {
+  return value === undefined ? "n/a" : formatInteger(value);
+}
+
+function formatOptionalCompactBytes(value: number | undefined): string {
+  return value === undefined ? "n/a" : formatCompactBytes(value);
+}
+
+function formatCompactBytes(value: number): string {
+  if (Math.abs(value) >= 1024 * 1024) {
+    return `${formatCompactNumber(value / 1024 / 1024)} MiB`;
+  }
+  if (Math.abs(value) >= 1024) {
+    return `${formatCompactNumber(value / 1024)} KiB`;
+  }
+
+  return `${formatInteger(value)} B`;
+}
+
+function formatCompactNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (Number.isInteger(value)) {
+    return formatInteger(value);
+  }
+
+  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function formatMarkdownTableText(value: string | undefined): string {
+  if (!value) {
+    return "n/a";
+  }
+
+  const singleLineText = value.replace(/\s+/g, " ").replaceAll("|", "\\|").trim();
+  return singleLineText.length > 240 ? `${singleLineText.slice(0, 237)}...` : singleLineText;
 }
 
 function appendToolNameMappingFromFields(
@@ -1341,6 +1810,63 @@ function listOpenAiWorkingSetVisibilityReasonRows(
 
   return [...aggregateByVisibilityReason.values()].sort((leftRow, rightRow) =>
     rightRow.serializedByteLength - leftRow.serializedByteLength || leftRow.visibilityReason.localeCompare(rightRow.visibilityReason)
+  );
+}
+
+function listOpenAiWorkingSetProjectionKindRows(
+  responseStepSummaries: readonly ProfileDiagnosticEvent[],
+): readonly OpenAiWorkingSetProjectionKindReportRow[] {
+  const aggregateByProjectionKind = new Map<string, OpenAiWorkingSetProjectionKindReportRow>();
+  for (const event of responseStepSummaries) {
+    const projectionKinds = readStringArrayField(event.fields, "requestWorkingSetProjectionKinds") ?? [];
+    const inputItemCounts = readNumberArrayField(event.fields, "requestWorkingSetProjectionKindInputItemCounts") ?? [];
+    const originalTextLengths = readNumberArrayField(event.fields, "requestWorkingSetProjectionKindOriginalTextLengths") ?? [];
+    const projectedTextLengths = readNumberArrayField(event.fields, "requestWorkingSetProjectionKindProjectedTextLengths") ?? [];
+    const savedCharacterCounts = readNumberArrayField(event.fields, "requestWorkingSetProjectionKindSavedCharacterCounts") ?? [];
+    const originalSerializedByteLengths = readNumberArrayField(
+      event.fields,
+      "requestWorkingSetProjectionKindOriginalSerializedByteLengths",
+    ) ?? [];
+    const projectedSerializedByteLengths = readNumberArrayField(
+      event.fields,
+      "requestWorkingSetProjectionKindProjectedSerializedByteLengths",
+    ) ?? [];
+    const savedSerializedByteLengths = readNumberArrayField(
+      event.fields,
+      "requestWorkingSetProjectionKindSavedSerializedByteLengths",
+    ) ?? [];
+
+    for (const [projectionKindIndex, projectionKind] of projectionKinds.entries()) {
+      const previousAggregate = aggregateByProjectionKind.get(projectionKind) ?? {
+        projectionKind,
+        inputItemCount: 0,
+        originalTextLength: 0,
+        projectedTextLength: 0,
+        savedCharacterCount: 0,
+        originalSerializedByteLength: 0,
+        projectedSerializedByteLength: 0,
+        savedSerializedByteLength: 0,
+      };
+      aggregateByProjectionKind.set(projectionKind, {
+        projectionKind,
+        inputItemCount: previousAggregate.inputItemCount + (inputItemCounts[projectionKindIndex] ?? 0),
+        originalTextLength: previousAggregate.originalTextLength + (originalTextLengths[projectionKindIndex] ?? 0),
+        projectedTextLength: previousAggregate.projectedTextLength + (projectedTextLengths[projectionKindIndex] ?? 0),
+        savedCharacterCount: previousAggregate.savedCharacterCount + (savedCharacterCounts[projectionKindIndex] ?? 0),
+        originalSerializedByteLength: previousAggregate.originalSerializedByteLength +
+          (originalSerializedByteLengths[projectionKindIndex] ?? 0),
+        projectedSerializedByteLength: previousAggregate.projectedSerializedByteLength +
+          (projectedSerializedByteLengths[projectionKindIndex] ?? 0),
+        savedSerializedByteLength: previousAggregate.savedSerializedByteLength +
+          (savedSerializedByteLengths[projectionKindIndex] ?? 0),
+      });
+    }
+  }
+
+  return [...aggregateByProjectionKind.values()].sort((leftRow, rightRow) =>
+    rightRow.savedSerializedByteLength - leftRow.savedSerializedByteLength ||
+    rightRow.projectedSerializedByteLength - leftRow.projectedSerializedByteLength ||
+    leftRow.projectionKind.localeCompare(rightRow.projectionKind)
   );
 }
 

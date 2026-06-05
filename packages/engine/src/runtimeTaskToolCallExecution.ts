@@ -53,7 +53,6 @@ import type { TaskSubagentProviderModelSelection } from "./taskSubagentProviderM
 const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, glob, grep, and locate_codebase_symbols instead.";
 const TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT = 192;
 const TASK_SUBAGENT_CHILD_TOOL_RESULT_TEXT_CHECKPOINT_LIMIT = 1_200_000;
-export const DEFAULT_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS = 120_000;
 const MAX_FAILED_TASK_CHILD_TOOL_RESULT_TEXT_TOTAL_LENGTH = 20_000;
 const MAX_FAILED_TASK_CHILD_TOOL_RESULT_TEXT_LENGTH = 4_000;
 
@@ -62,11 +61,19 @@ type TaskSubagentToolResultConversationSessionEntry =
   | FailedToolResultConversationSessionEntry
   | DeniedToolResultConversationSessionEntry;
 
+type TaskSubagentFailureKind =
+  | "requested_tools_after_checkpoint"
+  | "empty_summary"
+  | "provider_incomplete"
+  | "provider_stream_ended"
+  | "provider_error";
+
 type TaskSubagentConversationOutcome = {
   outcomeKind: "completed" | "failed";
   subagentResultSummary: string;
   toolResultText: string;
   durationMilliseconds: number;
+  failureKind?: TaskSubagentFailureKind;
   failureExplanation?: string;
 };
 
@@ -286,6 +293,17 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
         durationMs: taskSubagentConversationOutcome.durationMilliseconds,
       }),
     }));
+    logTaskSubagentFinishedDiagnostic({
+      diagnosticLogger: input.diagnosticLogger,
+      conversationTurnId: input.conversationTurnId,
+      toolCallId: input.toolCallId,
+      taskToolCallRequest: input.taskToolCallRequest,
+      taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
+      taskSubagentConversationOutcome,
+      parentVisibleToolResultKind: "completed",
+      latestSubagentChildToolCalls,
+      ...(latestSubagentResearchCheckpoint ? { latestSubagentResearchCheckpoint } : {}),
+    });
     await submitProviderToolResultWithDiagnostics({
       providerConversationTurn: input.providerConversationTurn,
       conversationTurnId: input.conversationTurnId,
@@ -318,6 +336,17 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
       durationMs: taskSubagentConversationOutcome.durationMilliseconds,
     }),
   }));
+  logTaskSubagentFinishedDiagnostic({
+    diagnosticLogger: input.diagnosticLogger,
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.toolCallId,
+    taskToolCallRequest: input.taskToolCallRequest,
+    taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
+    taskSubagentConversationOutcome,
+    parentVisibleToolResultKind: "failed",
+    latestSubagentChildToolCalls,
+    ...(latestSubagentResearchCheckpoint ? { latestSubagentResearchCheckpoint } : {}),
+  });
   await submitProviderToolResultWithDiagnostics({
     providerConversationTurn: input.providerConversationTurn,
     conversationTurnId: input.conversationTurnId,
@@ -325,6 +354,54 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
     toolResultText: taskSubagentConversationOutcome.toolResultText,
     diagnosticLogger: input.diagnosticLogger,
     toolResultKind: "failed",
+  });
+}
+
+function logTaskSubagentFinishedDiagnostic(input: {
+  diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  conversationTurnId: string;
+  toolCallId: string;
+  taskToolCallRequest: TaskToolCallRequest;
+  taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
+  taskSubagentConversationOutcome: TaskSubagentConversationOutcome;
+  parentVisibleToolResultKind: "completed" | "failed";
+  latestSubagentResearchCheckpoint?: SubagentResearchCheckpoint | undefined;
+  latestSubagentChildToolCalls: readonly SubagentChildToolCall[];
+}): void {
+  const selectedReasoningEffort = input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort ?? null;
+  const failureFields = input.taskSubagentConversationOutcome.outcomeKind === "failed"
+    ? {
+        failureKind: input.taskSubagentConversationOutcome.failureKind ?? null,
+        failureExplanation: input.taskSubagentConversationOutcome.failureExplanation ?? null,
+      }
+    : {};
+  const checkpointFields = input.latestSubagentResearchCheckpoint
+    ? {
+        checkpointReason: input.latestSubagentResearchCheckpoint.checkpointReason,
+        checkpointChildToolCallCount: input.latestSubagentResearchCheckpoint.childToolCallCount,
+        checkpointChildToolResultTextLength: input.latestSubagentResearchCheckpoint.childToolResultTextLength,
+        checkpointSkippedChildToolCallCount: input.latestSubagentResearchCheckpoint.skippedChildToolCallCount,
+        checkpointElapsedMilliseconds: input.latestSubagentResearchCheckpoint.elapsedMilliseconds ?? null,
+        checkpointSoftElapsedTimeCheckpointMilliseconds:
+          input.latestSubagentResearchCheckpoint.softElapsedTimeCheckpointMilliseconds ?? null,
+      }
+    : {};
+
+  logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.task_subagent_finished", {
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.toolCallId,
+    parentTaskToolCallId: input.toolCallId,
+    subagentName: input.taskToolCallRequest.subagentName,
+    taskSubagentSelectedModelId: input.taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
+    taskSubagentSelectedReasoningEffort: selectedReasoningEffort,
+    executorOutcomeKind: "completed",
+    parentVisibleToolResultKind: input.parentVisibleToolResultKind,
+    taskSubagentOutcomeKind: input.taskSubagentConversationOutcome.outcomeKind,
+    durationMs: input.taskSubagentConversationOutcome.durationMilliseconds,
+    parentToolResultTextLength: input.taskSubagentConversationOutcome.toolResultText.length,
+    subagentChildToolCallCount: input.latestSubagentChildToolCalls.length,
+    ...failureFields,
+    ...checkpointFields,
   });
 }
 
@@ -422,6 +499,7 @@ async function* streamTaskSubagentConversationProgress(input: {
             progressKind: "subagent_conversation_finished",
             taskSubagentConversationOutcome: createFailedTaskSubagentConversationOutcome({
               taskToolCallRequest: input.taskToolCallRequest,
+              failureKind: "requested_tools_after_checkpoint",
               failureExplanation,
               subagentResultSummary: subagentAssistantMessageText.trim(),
               subagentResearchCheckpoint,
@@ -437,12 +515,13 @@ async function* streamTaskSubagentConversationProgress(input: {
         }
 
         const subagentElapsedMilliseconds = Date.now() - subagentConversationStartedAtMs;
-        const softElapsedTimeCheckpointMilliseconds = input.taskSubagentSoftElapsedTimeCheckpointMilliseconds ??
-          DEFAULT_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS;
+        const softElapsedTimeCheckpointMilliseconds = input.taskSubagentSoftElapsedTimeCheckpointMilliseconds;
         const subagentResearchBudgetDecision = decideTaskSubagentResearchBudget({
           researchBudget: subagentResearchBudget,
           elapsedMilliseconds: subagentElapsedMilliseconds,
-          softElapsedTimeCheckpointMilliseconds,
+          ...(softElapsedTimeCheckpointMilliseconds !== undefined
+            ? { softElapsedTimeCheckpointMilliseconds }
+            : {}),
         });
         if (subagentResearchBudgetDecision.shouldRequestCheckpoint) {
           subagentResearchCheckpoint = createTaskSubagentResearchCheckpoint({
@@ -450,11 +529,18 @@ async function* streamTaskSubagentConversationProgress(input: {
             checkpointReason: subagentResearchBudgetDecision.checkpointReason,
             skippedChildToolCallCount: requestedToolCalls.length,
             elapsedMilliseconds: subagentElapsedMilliseconds,
-            softElapsedTimeCheckpointMilliseconds,
+            ...(softElapsedTimeCheckpointMilliseconds !== undefined
+              ? { softElapsedTimeCheckpointMilliseconds }
+              : {}),
           });
           logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.task_subagent_research_checkpoint_requested", {
             conversationTurnId: input.conversationTurnId,
+            toolCallId: input.parentTaskToolCallId,
+            parentTaskToolCallId: input.parentTaskToolCallId,
             subagentName: input.taskToolCallRequest.subagentName,
+            taskSubagentSelectedModelId: input.taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
+            taskSubagentSelectedReasoningEffort:
+              input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort ?? null,
             checkpointReason: subagentResearchCheckpoint.checkpointReason,
             childToolCallCount: subagentResearchCheckpoint.childToolCallCount,
             childToolResultTextLength: subagentResearchCheckpoint.childToolResultTextLength,
@@ -538,6 +624,7 @@ async function* streamTaskSubagentConversationProgress(input: {
             progressKind: "subagent_conversation_finished",
             taskSubagentConversationOutcome: createFailedTaskSubagentConversationOutcome({
               taskToolCallRequest: input.taskToolCallRequest,
+              failureKind: "empty_summary",
               failureExplanation,
               ...(subagentResearchCheckpoint ? { subagentResearchCheckpoint } : {}),
               durationMilliseconds: Date.now() - subagentConversationStartedAtMs,
@@ -585,6 +672,7 @@ async function* streamTaskSubagentConversationProgress(input: {
           progressKind: "subagent_conversation_finished",
           taskSubagentConversationOutcome: createFailedTaskSubagentConversationOutcome({
             taskToolCallRequest: input.taskToolCallRequest,
+            failureKind: "provider_incomplete",
             failureExplanation,
             subagentResultSummary: subagentAssistantMessageText.trim(),
             ...(subagentResearchCheckpoint ? { subagentResearchCheckpoint } : {}),
@@ -612,6 +700,7 @@ async function* streamTaskSubagentConversationProgress(input: {
       progressKind: "subagent_conversation_finished",
       taskSubagentConversationOutcome: createFailedTaskSubagentConversationOutcome({
         taskToolCallRequest: input.taskToolCallRequest,
+        failureKind: "provider_stream_ended",
         failureExplanation,
         subagentResultSummary: subagentAssistantMessageText.trim(),
         ...(subagentResearchCheckpoint ? { subagentResearchCheckpoint } : {}),
@@ -643,6 +732,7 @@ async function* streamTaskSubagentConversationProgress(input: {
       progressKind: "subagent_conversation_finished",
       taskSubagentConversationOutcome: createFailedTaskSubagentConversationOutcome({
         taskToolCallRequest: input.taskToolCallRequest,
+        failureKind: "provider_error",
         failureExplanation,
         subagentResultSummary: subagentAssistantMessageText.trim(),
         ...(subagentResearchCheckpoint ? { subagentResearchCheckpoint } : {}),
@@ -670,7 +760,7 @@ type TaskSubagentResearchBudget = {
 function decideTaskSubagentResearchBudget(input: {
   researchBudget: TaskSubagentResearchBudget;
   elapsedMilliseconds: number;
-  softElapsedTimeCheckpointMilliseconds: number;
+  softElapsedTimeCheckpointMilliseconds?: number;
 }): TaskSubagentResearchBudgetDecision {
   if (input.researchBudget.childToolCallCount >= TASK_SUBAGENT_CHILD_TOOL_CALL_CHECKPOINT_LIMIT) {
     return {
@@ -687,6 +777,7 @@ function decideTaskSubagentResearchBudget(input: {
   }
 
   if (
+    input.softElapsedTimeCheckpointMilliseconds !== undefined &&
     input.researchBudget.childToolCallCount > 0 &&
     input.elapsedMilliseconds >= input.softElapsedTimeCheckpointMilliseconds
   ) {
@@ -704,7 +795,7 @@ function createTaskSubagentResearchCheckpoint(input: {
   checkpointReason: SubagentResearchCheckpoint["checkpointReason"];
   skippedChildToolCallCount: number;
   elapsedMilliseconds: number;
-  softElapsedTimeCheckpointMilliseconds: number;
+  softElapsedTimeCheckpointMilliseconds?: number;
 }): SubagentResearchCheckpoint {
   return {
     checkpointReason: input.checkpointReason,
@@ -712,7 +803,9 @@ function createTaskSubagentResearchCheckpoint(input: {
     childToolResultTextLength: input.researchBudget.childToolResultTextLength,
     skippedChildToolCallCount: input.skippedChildToolCallCount,
     elapsedMilliseconds: input.elapsedMilliseconds,
-    softElapsedTimeCheckpointMilliseconds: input.softElapsedTimeCheckpointMilliseconds,
+    ...(input.softElapsedTimeCheckpointMilliseconds !== undefined
+      ? { softElapsedTimeCheckpointMilliseconds: input.softElapsedTimeCheckpointMilliseconds }
+      : {}),
   };
 }
 
@@ -1151,10 +1244,11 @@ function buildTaskSubagentCheckpointRequestText(input: SubagentResearchCheckpoin
     : `These ${input.skippedChildToolCallCount} child tool calls were not executed.`;
   const elapsedText = input.elapsedMilliseconds !== undefined ? `, ${input.elapsedMilliseconds} ms elapsed` : "";
   return [
-    `Explorer research budget reached: ${reasonText}.`,
+    `Terminal checkpoint instruction: Explorer research budget reached: ${reasonText}.`,
     `Current research state: ${input.childToolCallCount} child tool calls, ${input.childToolResultTextLength} characters of child tool output${elapsedText}.`,
     skippedChildToolCallText,
-    "Stop requesting tools and return a correct checkpoint report with findings, inspected files, important line references, remaining uncertainty, and recommended next searches. The checkpoint should be compact enough to unblock the parent, but must not omit details needed for correctness.",
+    "Do not request more tools. Your next response must be the final checkpoint report for the parent assistant.",
+    "Report findings, inspected files, important line references, remaining uncertainty, and recommended next searches. If important context remains uninspected, state the uncertainty and recommended next searches instead of continuing. The checkpoint should be focused enough to unblock the parent, but must not omit details needed for correctness.",
   ].join("\n");
 }
 
@@ -1250,6 +1344,7 @@ function buildTaskSubagentResearchCheckpointXmlLines(
 
 function createFailedTaskSubagentConversationOutcome(input: {
   taskToolCallRequest: TaskToolCallRequest;
+  failureKind: TaskSubagentFailureKind;
   failureExplanation: string;
   subagentResultSummary?: string;
   subagentResearchCheckpoint?: SubagentResearchCheckpoint;
@@ -1280,6 +1375,7 @@ function createFailedTaskSubagentConversationOutcome(input: {
       "</task_result>",
     ].join("\n"),
     durationMilliseconds: input.durationMilliseconds,
+    failureKind: input.failureKind,
     failureExplanation: input.failureExplanation,
   };
 }

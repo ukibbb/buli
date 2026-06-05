@@ -33,6 +33,7 @@ Important deterministic summaries after a fresh run:
 - `profile-runs/current/sqlite/summary.md`
 - `profile-runs/current/tool-output/summary.md`
 - `profile-runs/current/codebase-knowledge/summary.md`
+- `profile-runs/current/assistant-markdown-render-sections/summary.md`
 
 `profile-runs/` is ignored by git. Treat these paths as local measurement state, not durable project history. If the files are missing, rerun the commands in `PROFILING.md` before making optimization claims.
 
@@ -163,6 +164,20 @@ Signals:
 - Event-loop stalls while streaming.
 - RSS and heap growth after completion.
 
+### Assistant Markdown Render Sections
+
+Purpose: measure deterministic markdown render-section building without OpenAI or terminal rendering noise.
+
+Signals:
+
+- Cold assistant markdown section build duration.
+- Initial streaming build duration.
+- Append-only streaming update p95 and max duration.
+- Stable section reference reuse count.
+- Streaming tail section count.
+- Completion promotion duration.
+- Heap growth while building markdown sections.
+
 ### Tool-Heavy Turn
 
 Purpose: measure read/search/bash/tool-result waits, provider continuation overhead, and request-size contributor diagnostics.
@@ -183,19 +198,22 @@ Signals:
 - OpenAI continuation step count.
 - Tool-result and request body growth.
 - Largest OpenAI request size contributors by serialized byte length.
-- Provider-visible working-set visibility reasons, evidence IDs, exact projection counts, and shadow saved bytes.
+- Provider-visible working-set visibility reasons, evidence IDs, exact/duplicate-reference projection counts, saved bytes, and whether cross-step replay aggregation is still off.
 
 ### Task Subagents
 
-Purpose: measure subagent runtime, parent tool-result wait, concurrent group wall time, checkpoint behavior, and subagent result size.
+Purpose: measure subagent runtime, parent-visible result kind, parent tool-result wait, concurrent group wall time, checkpoint behavior, and subagent result size.
 
 Signals:
 
-- Per-call task execution duration.
+- Per-call task executor duration.
+- Parent-visible task result kind: `completed`, `failed`, or `denied`.
 - Task-only concurrent group wall time.
 - Parent tool-result wait duration.
 - Subagent slot wait duration.
-- Checkpoint count, reason, elapsed time, and post-checkpoint behavior.
+- Checkpoint count, reason, elapsed time, skipped child calls, and post-checkpoint behavior.
+- Checkpoint compliance counts: parent-visible failed task results, `requested_tools_after_checkpoint` failures, and completed checkpoint task results.
+- Failure kind/explanation when a parent-visible task result failed.
 - Task result text length.
 
 ### Prompt Context Lookup

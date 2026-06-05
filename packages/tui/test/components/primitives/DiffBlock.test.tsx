@@ -64,7 +64,7 @@ describe("DiffBlock", () => {
     expect(removalLine ?? "").toContain("-");
   });
 
-  test("truncates_long_code_lines_instead_of_wrapping_them", async () => {
+  test("wraps_long_code_lines_and_keeps_full_content_visible", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <DiffBlock
         unifiedDiffText={
@@ -78,18 +78,39 @@ describe("DiffBlock", () => {
           ])
         }
       />,
-      { width: 42, height: 5 },
+      { width: 42, height: 8 },
     );
     await renderOnce();
     const frame = captureCharFrame();
-    const renderedLinesWithCode = frame
-      .split("\n")
-      .filter((line) => line.includes("import"));
+    const importLine = frame.split("\n").find((line) => line.includes("import")) ?? "";
 
-    expect(renderedLinesWithCode).toHaveLength(1);
-    expect(renderedLinesWithCode[0] ?? "").toContain("53");
-    expect(renderedLinesWithCode[0] ?? "").toContain("+");
-    expect(frame).not.toContain("components/ConversationMessageList.tsx");
+    expect(importLine).toContain("53");
+    expect(importLine).toContain("+");
+    expect(frame.replace(/\s/g, "")).toContain("components/ConversationMessageList.tsx");
+  });
+
+  test("renders_later_diff_rows_after_wrapped_long_rows", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <DiffBlock
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/ChatScreen.tsx b/src/ChatScreen.tsx",
+            "--- a/src/ChatScreen.tsx",
+            "+++ b/src/ChatScreen.tsx",
+            "@@ -0,0 +53,2 @@",
+            "+import ConversationMessageList from './components/ConversationMessageList.tsx';",
+            "+later visible row",
+            "",
+          ])
+        }
+      />,
+      { width: 42, height: 12 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame.replace(/\s/g, "")).toContain("components/ConversationMessageList.tsx");
+    expect(frame).toContain("later visible row");
   });
 
   test("renders_all_diff_rows", async () => {

@@ -137,37 +137,45 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         requestObjectBuildDurationMs: 1,
         requestSerializationDurationMs: 2,
         requestBodyTextLength: 300,
-        requestInputItemCount: 2,
-        requestFunctionCallOutputTextLength: 90,
+        requestInputItemCount: 3,
+        requestFunctionCallOutputTextLength: 150,
         requestHistoricalFunctionCallOutputTextLength: 30,
-        requestCurrentTurnFunctionCallOutputTextLength: 60,
-        requestCurrentTurnFunctionCallOutputOriginalTextLength: 60,
-        requestCurrentTurnFunctionCallOutputProjectedTextLength: 60,
-        requestCurrentTurnFunctionCallOutputSavedCharacterCount: 0,
-        requestCurrentTurnCompactedFunctionCallOutputCount: 0,
+        requestCurrentTurnFunctionCallOutputTextLength: 120,
+        requestCurrentTurnFunctionCallOutputOriginalTextLength: 180,
+        requestCurrentTurnFunctionCallOutputProjectedTextLength: 120,
+        requestCurrentTurnFunctionCallOutputSavedCharacterCount: 60,
+        requestCurrentTurnCompactedFunctionCallOutputCount: 1,
         requestCurrentTurnExactWorkingSetFunctionCallOutputCount: 1,
         requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: 60,
-        requestWorkingSetInputItemCount: 2,
+        requestWorkingSetInputItemCount: 3,
         requestWorkingSetExactInputItemCount: 2,
-        requestWorkingSetCompactedInputItemCount: 0,
-        requestWorkingSetOriginalTextLength: 120,
-        requestWorkingSetProjectedTextLength: 120,
-        requestWorkingSetSavedCharacterCount: 0,
-        requestWorkingSetOriginalSerializedByteLength: 170,
-        requestWorkingSetProjectedSerializedByteLength: 170,
-        requestWorkingSetSavedSerializedByteLength: 0,
+        requestWorkingSetCompactedInputItemCount: 1,
+        requestWorkingSetOriginalTextLength: 240,
+        requestWorkingSetProjectedTextLength: 180,
+        requestWorkingSetSavedCharacterCount: 60,
+        requestWorkingSetOriginalSerializedByteLength: 220,
+        requestWorkingSetProjectedSerializedByteLength: 160,
+        requestWorkingSetSavedSerializedByteLength: 60,
         requestWorkingSetUnclassifiedInputItemCount: 0,
+        requestWorkingSetProjectionKinds: ["exact", "duplicate_reference"],
+        requestWorkingSetProjectionKindInputItemCounts: [2, 1],
+        requestWorkingSetProjectionKindOriginalTextLengths: [120, 120],
+        requestWorkingSetProjectionKindProjectedTextLengths: [120, 60],
+        requestWorkingSetProjectionKindSavedCharacterCounts: [0, 60],
+        requestWorkingSetProjectionKindOriginalSerializedByteLengths: [130, 90],
+        requestWorkingSetProjectionKindProjectedSerializedByteLengths: [130, 30],
+        requestWorkingSetProjectionKindSavedSerializedByteLengths: [0, 60],
         requestWorkingSetVisibilityReasons: ["active_user_intent", "current_turn_evidence"],
-        requestWorkingSetVisibilityReasonInputItemCounts: [1, 1],
-        requestWorkingSetVisibilityReasonTextLengths: [60, 60],
-        requestWorkingSetVisibilityReasonSerializedByteLengths: [70, 100],
-        requestWorkingSetLargestInputItemIndexes: [1, 0],
-        requestWorkingSetLargestInputItemVisibilityReasons: ["current_turn_evidence", "active_user_intent"],
-        requestWorkingSetLargestInputItemProjectionKinds: ["exact", "exact"],
-        requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_read", null],
-        requestWorkingSetLargestInputItemTextLengths: [60, 60],
-        requestWorkingSetLargestInputItemSerializedByteLengths: [100, 70],
-        requestWorkingSetLargestInputItemCurrentTurnFlags: [true, false],
+        requestWorkingSetVisibilityReasonInputItemCounts: [1, 2],
+        requestWorkingSetVisibilityReasonTextLengths: [60, 120],
+        requestWorkingSetVisibilityReasonSerializedByteLengths: [70, 90],
+        requestWorkingSetLargestInputItemIndexes: [1, 2, 0],
+        requestWorkingSetLargestInputItemVisibilityReasons: ["current_turn_evidence", "current_turn_evidence", "active_user_intent"],
+        requestWorkingSetLargestInputItemProjectionKinds: ["exact", "duplicate_reference", "exact"],
+        requestWorkingSetLargestInputItemEvidenceIds: ["tool_result:call_read_exact", "tool_result:call_read", null],
+        requestWorkingSetLargestInputItemTextLengths: [60, 60, 60],
+        requestWorkingSetLargestInputItemSerializedByteLengths: [90, 70, 70],
+        requestWorkingSetLargestInputItemCurrentTurnFlags: [true, true, false],
         requestStableSerializedByteLength: 180,
         requestInputSerializedByteLength: 120,
         requestLargestContributorKinds: ["request_tools", "input_function_call_output"],
@@ -223,6 +231,14 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         requestWorkingSetProjectedSerializedByteLength: 800,
         requestWorkingSetSavedSerializedByteLength: 0,
         requestWorkingSetUnclassifiedInputItemCount: 0,
+        requestWorkingSetProjectionKinds: ["exact"],
+        requestWorkingSetProjectionKindInputItemCounts: [6],
+        requestWorkingSetProjectionKindOriginalTextLengths: [700],
+        requestWorkingSetProjectionKindProjectedTextLengths: [700],
+        requestWorkingSetProjectionKindSavedCharacterCounts: [0],
+        requestWorkingSetProjectionKindOriginalSerializedByteLengths: [800],
+        requestWorkingSetProjectionKindProjectedSerializedByteLengths: [800],
+        requestWorkingSetProjectionKindSavedSerializedByteLengths: [0],
         requestWorkingSetVisibilityReasons: ["active_user_intent", "recent_decision_context", "current_turn_evidence"],
         requestWorkingSetVisibilityReasonInputItemCounts: [1, 4, 1],
         requestWorkingSetVisibilityReasonTextLengths: [100, 180, 420],
@@ -494,6 +510,111 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
     }),
     JSON.stringify({
       type: "diagnostic_event",
+      atMs: 1_029.1,
+      subsystem: "engine",
+      eventName: "tool_call.requested",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        toolCallId: "tool-call-task-failed",
+        toolName: "task",
+        subagentName: "explore",
+        subagentDescriptionLength: 12,
+        subagentPromptLength: 96,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_029.2,
+      subsystem: "engine",
+      eventName: "tool_call.task_subagent_model_selection_resolved",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        toolCallId: "tool-call-task-failed",
+        subagentName: "explore",
+        parentAssistantProviderName: "openai",
+        parentSelectedModelId: "gpt-5.5",
+        parentSelectedReasoningEffort: "xhigh",
+        taskSubagentSelectedModelId: "gpt-5.4",
+        taskSubagentSelectedReasoningEffort: "medium",
+        modelSelectionReason: "known_openai_high_tier_default_downgrade",
+        reasoningEffortSelectionReason: "clamped_to_policy_maximum",
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_029.3,
+      subsystem: "engine",
+      eventName: "tool_call.task_subagent_research_checkpoint_requested",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        toolCallId: "tool-call-task-failed",
+        parentTaskToolCallId: "tool-call-task-failed",
+        subagentName: "explore",
+        taskSubagentSelectedModelId: "gpt-5.4",
+        taskSubagentSelectedReasoningEffort: "medium",
+        checkpointReason: "child_tool_call_count",
+        childToolCallCount: 36,
+        childToolResultTextLength: 161_239,
+        skippedChildToolCallCount: 1,
+        elapsedMilliseconds: 133_298,
+        softElapsedTimeCheckpointMilliseconds: 120_000,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_029.4,
+      subsystem: "engine",
+      eventName: "provider_turn.tool_result_submitted",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        toolCallId: "tool-call-task-failed",
+        toolResultKind: "failed",
+        toolResultTextLength: 2_048,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_029.5,
+      subsystem: "engine",
+      eventName: "conversation_history.entry_appended",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        entryKind: "failed_tool_result",
+        toolCallId: "tool-call-task-failed",
+        toolName: "task",
+        toolResultTextLength: 2_048,
+        failureExplanation: "Explorer continued requesting tools after the research checkpoint instead of returning a summary.",
+        conversationSessionEntryCount: 24,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_029.6,
+      subsystem: "openai",
+      eventName: "tool_result_submission.resolved_pending_wait",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        toolCallId: "tool-call-task-failed",
+        toolResultTextLength: 2_048,
+        waitDurationMs: 34,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_029.7,
+      subsystem: "engine",
+      eventName: "tool_call.execution_finished",
+      fields: {
+        conversationTurnId: "conversation-turn-1",
+        toolCallId: "tool-call-task-failed",
+        toolName: "task",
+        subagentName: "explore",
+        outcomeKind: "completed",
+        durationMs: 133,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
       atMs: 1_030,
       subsystem: "engine",
       eventName: "tool_call.concurrent_group_finished",
@@ -592,10 +713,14 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("## OpenAI Replay Input Age");
   expect(reportMarkdown).toContain("Historical function-output text: 450 B");
   expect(reportMarkdown).toContain("## OpenAI Working-Set Visibility");
-  expect(reportMarkdown).toContain("provider-visible projection diagnostics only");
-  expect(reportMarkdown).toContain("Raw evidence was not deleted");
-  expect(reportMarkdown).toContain("Text original/projected/saved: 820 B / 820 B / 0 B");
-  expect(reportMarkdown).toContain("Serialized original/projected/saved: 970 B / 970 B / 0 B");
+  expect(reportMarkdown).toContain("duplicate-reference projection is request-local only");
+  expect(reportMarkdown).toContain("Raw evidence and stored provider-turn replay stayed exact");
+  expect(reportMarkdown).toContain("cross-step evidence replay aggregation is still off by default");
+  expect(reportMarkdown).toContain("Text original/projected/saved: 940 B / 880 B / 60 B");
+  expect(reportMarkdown).toContain("Serialized original/projected/saved: 1,020 B / 960 B / 60 B");
+  expect(reportMarkdown).toContain("Current-turn function-output original/projected/saved: 180 B / 120 B / 60 B");
+  expect(reportMarkdown).toContain("Projection kinds:");
+  expect(reportMarkdown).toContain("| duplicate_reference | 1 | 120 B | 60 B | 60 B | 90 B | 30 B | 60 B |");
   expect(reportMarkdown).toContain("current_turn_evidence");
   expect(reportMarkdown).toContain("tool_result:call_read");
   expect(reportMarkdown).toContain("tool_result:call_task_result");
@@ -605,12 +730,22 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("## Tool Result Duplication");
   expect(reportMarkdown).toContain("Duplicate result entries: 1");
   expect(reportMarkdown).toContain("## Task Subagent Attribution");
-  expect(reportMarkdown).toContain("Per-call task execution total: 89 ms");
-  expect(reportMarkdown).toContain("Per-call parent tool-result wait total: 21 ms");
+  expect(reportMarkdown).toContain("Task calls: 2");
+  expect(reportMarkdown).toContain("Parent-visible failed task results: 1");
+  expect(reportMarkdown).toContain("Parent-visible result kinds: failed (1), completed (1)");
+  expect(reportMarkdown).toContain("Per-call task execution total: 222 ms");
+  expect(reportMarkdown).toContain("Per-call parent tool-result wait total: 55 ms");
   expect(reportMarkdown).toContain("Task-only concurrent group wall time: 89 ms");
+  expect(reportMarkdown).toContain("| Turn | Tool Call | Subagent | Model | Effort | Executor | Parent Result | Duration | Parent Wait | Result Text |");
+  expect(reportMarkdown).toContain("| `conversa` | `tool-cal` | explore | gpt-5.4 | medium | completed | failed | 133 ms | 34 ms | 2 KiB |");
   expect(reportMarkdown).toContain("Largest task results:");
-  expect(reportMarkdown).toContain("128 B");
-  expect(reportMarkdown).toContain("explore (1)");
+  expect(reportMarkdown).toContain("2 KiB");
+  expect(reportMarkdown).toContain("Checkpoint / Failure details:");
+  expect(reportMarkdown).toContain("requested_tools_after_checkpoint");
+  expect(reportMarkdown).toContain("child_tool_call_count");
+  expect(reportMarkdown).toContain("157.46 KiB");
+  expect(reportMarkdown).toContain("Explorer continued requesting tools after the research checkpoint");
+  expect(reportMarkdown).toContain("explore (2)");
   expect(reportMarkdown).toContain("## OpenAI Context Guard");
   expect(reportMarkdown).toContain("Performance Budget");
   expect(reportMarkdown).toContain("272,000");
