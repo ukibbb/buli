@@ -66,4 +66,35 @@ describe("teachingCommentCodeChunks", () => {
     expect(labelChunk?.fg?.toString()).toBe(RGBA.fromHex(chatScreenTheme.accentCyan).toString());
     expect((labelChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
   });
+
+  test("recognizes_example_values_teaching_comment_label", () => {
+    const sourceText = "// example values: if forecast_hours = 30, forecast_days becomes 3.";
+    const decoratedChunks = decorateTeachingCommentCodeChunks([createCodeTextChunk(sourceText)]);
+
+    const labelChunk = findTextChunkByExactText(decoratedChunks, "example values");
+
+    expect(joinTextChunks(decoratedChunks)).toBe(sourceText);
+    expect(labelChunk?.fg?.toString()).toBe(RGBA.fromHex(chatScreenTheme.accentCyan).toString());
+    expect((labelChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+  });
+
+  test("styles_hash_teaching_comment_markers_without_changing_code_text", () => {
+    const sourceText = [
+      "# example values: if forecast_hours = 30, forecast_days becomes 3.",
+      "# regular comment",
+    ].join("\n");
+    const decoratedChunks = decorateTeachingCommentCodeChunks([createCodeTextChunk(sourceText)]);
+
+    const commentMarkerChunk = findTextChunkByExactText(decoratedChunks, "# ");
+    const labelChunk = findTextChunkByExactText(decoratedChunks, "example values");
+
+    expect(joinTextChunks(decoratedChunks)).toBe(sourceText);
+    expect(commentMarkerChunk?.fg?.toString()).toBe(RGBA.fromHex(githubLikeTerminalCodeColors.subtle).toString());
+    expect((commentMarkerChunk?.attributes ?? 0) & TextAttributes.ITALIC).toBe(TextAttributes.ITALIC);
+    expect(labelChunk?.fg?.toString()).toBe(RGBA.fromHex(chatScreenTheme.accentCyan).toString());
+    expect((labelChunk?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+    expect(findTextChunkContainingText(decoratedChunks, "# regular comment")?.fg?.toString()).toBe(
+      defaultCodeForegroundColor.toString(),
+    );
+  });
 });

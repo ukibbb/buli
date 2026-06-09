@@ -339,14 +339,14 @@ test("understand mode starts non-trivial explanations with a mental model", () =
   expect(systemPromptText).toContain("What objects and arrows Lukasz should picture.");
 });
 
-test("understand mode defaults to dense source-explained markdown for non-trivial code", () => {
+test("understand mode defaults to dense source-explained markdown for behavior-changing code", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "understand",
   });
 
   expect(systemPromptText).toContain("Source-Explained Markdown");
-  expect(systemPromptText).toContain("default to this style when explaining non-trivial source code");
+  expect(systemPromptText).toContain("default to this style when explaining code whose behavior is not obvious from syntax alone");
   expect(systemPromptText).toContain("architecture or data flow");
   expect(systemPromptText).toContain("debugging context");
   expect(systemPromptText).toContain("state/persistence");
@@ -363,7 +363,7 @@ test("understand mode defaults to dense source-explained markdown for non-trivia
   expect(systemPromptText).toContain("what data/state exists");
   expect(systemPromptText).toContain("which condition or branch decides the next path");
   expect(systemPromptText).toContain("which collaborator receives control next");
-  expect(systemPromptText).toContain("For non-trivial source-backed explanations, include source-explained snippets copied from inspected source");
+  expect(systemPromptText).toContain("For source-backed explanations about code that does meaningful work, include source-explained snippets copied from inspected source");
   expect(systemPromptText).toContain("after the mental model and execution order");
   expect(systemPromptText).toContain("If a snippet would not help, explicitly say why.");
   expect(systemPromptText).toContain('path="file:line-line"');
@@ -372,8 +372,31 @@ test("understand mode defaults to dense source-explained markdown for non-trivia
   expect(systemPromptText).toContain("normal code blocks with a path label, not as a numbered source gutter");
   expect(systemPromptText).toContain("Explain source snippets line-by-line for someone learning the language, framework, library, runtime, or domain.");
   expect(systemPromptText).toContain("If you use a technical word, explain its practical meaning in the same comment using the current line as the example.");
+  expect(systemPromptText).toContain("Do not use `non-trivial` as a subjective permission to skip source lines");
+  expect(systemPromptText).toContain("add at least one teaching comment before every behavior-changing logical statement");
+  expect(systemPromptText).toContain("assignments, calculations, branches/conditions, function/method calls, object construction");
+  expect(systemPromptText).toContain("reads/writes, filtering, mapping, reducing, joining/merging, sorting/reordering");
+  expect(systemPromptText).toContain("Skip or group only physical lines that are purely structural or repeated parts of one operation");
+  expect(systemPromptText).toContain("closing brackets/braces/parentheses, continuation lines, import grouping, list/object literal items");
+  expect(systemPromptText).toContain("when a nearby comment explains the whole logical operation");
   expect(systemPromptText).toContain("`plain pseudocode` for the same idea in simple everyday logic");
+  expect(systemPromptText).toContain("`example values` for tiny realistic sample inputs, intermediate values, and after values");
   expect(systemPromptText).toContain("`library mechanics` for what a framework, library, or tool is doing here");
+  expect(systemPromptText).toContain("For every important line that transforms data/state, calculates arithmetic");
+  expect(systemPromptText).toContain("evaluates a branch, builds a time/range/window, mutates or persists state, or prepares API/tool parameters");
+  expect(systemPromptText).toContain("include `example values` unless no meaningful value can be inferred");
+  expect(systemPromptText).toContain("`example values` are illustrative teaching values, not observed runtime values");
+  expect(systemPromptText).toContain("nested expression, constructor/builder, chained call, or composed expression");
+  expect(systemPromptText).toContain("unpack it from the inside outward");
+  expect(systemPromptText).toContain("raw inputs first, then each intermediate value or object");
+  expect(systemPromptText).toContain("final value, object, or state produced by the whole line");
+  expect(systemPromptText).toContain("Show the constructed shape of the result");
+  expect(systemPromptText).toContain("structured data changes shape or meaning");
+  expect(systemPromptText).toContain("collections, maps, records, tables, indexes, queues, UI state, persisted rows, trees, graphs, or API payloads");
+  expect(systemPromptText).toContain("show a tiny before/after shape");
+  expect(systemPromptText).toContain("rows, columns, index labels, identifiers, ordering");
+  expect(systemPromptText).toContain("which values move versus which labels/locations move");
+  expect(systemPromptText).toContain("// example values: when isReady = true, the body runs; when isReady = false, startup is skipped.");
   expect(systemPromptText).toContain("Prefer `plain pseudocode` for control flow, branching, data transformation, lifecycle steps");
   expect(systemPromptText).toContain("A good comment should not create a new question");
   expect(systemPromptText).toContain("what value/state exists afterward");

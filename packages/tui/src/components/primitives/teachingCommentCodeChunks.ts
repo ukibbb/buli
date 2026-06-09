@@ -19,7 +19,7 @@ type TeachingCommentCodeRange = {
   rangeStyle: TeachingCommentCodeRangeStyle;
 };
 
-const teachingCommentLinePattern = /^(\s*)(\/\/\s*)(explain|plain pseudocode|project model|library mechanics|language mechanics|not verified)(:\s?)(.*)$/gim;
+const teachingCommentLinePattern = /^(\s*)((?:\/\/|#)\s*)(explain|plain pseudocode|example values|project model|library mechanics|language mechanics|not verified)(:\s?)(.*)$/gim;
 
 const teachingCommentMarkerStyle: TeachingCommentCodeChunkStyle = {
   foregroundColor: RGBA.fromHex(githubLikeTerminalCodeColors.subtle),
