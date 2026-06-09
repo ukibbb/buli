@@ -29,6 +29,13 @@ export {
   JsonFileCodebaseKnowledgeRepository,
   type CodebaseKnowledgeJsonIndexFile,
   type CodebaseKnowledgeRecordsJsonFile,
+  type JsonFileCodebaseKnowledgeRepositoryDiagnosticEvent,
+  type JsonFileCodebaseKnowledgeRepositoryDiagnosticOperationName,
+  type JsonFileCodebaseKnowledgeRepositoryDiagnosticOperationStatus,
+  type JsonFileCodebaseKnowledgeRepositoryDiagnosticReporter,
+  type JsonFileCodebaseKnowledgeRepositoryDiagnosticStepName,
+  type JsonFileCodebaseKnowledgeRepositoryDiagnosticStoredFileRole,
+  type JsonFileCodebaseKnowledgeRepositoryMemoryUsageSnapshot,
 } from "./jsonFileCodebaseKnowledgeRepository.ts";
 export { locateCodebaseSymbolDefinitions } from "./locateCodebaseSymbolDefinitions.ts";
 export {

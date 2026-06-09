@@ -16,6 +16,7 @@ import {
   type CodebaseSymbolDefinitionLocatorResult,
   type CodebaseStructureFileRecord,
   type CodebaseStructureIndexer,
+  type JsonFileCodebaseKnowledgeRepositoryDiagnosticEvent,
 } from "@buli/codebase-knowledge";
 import { logEngineDiagnosticEvent } from "../runtimeDiagnostics.ts";
 import { listWorkspaceFiles } from "../tools/workspaceFileSearch.ts";
@@ -33,7 +34,14 @@ type IndexedWorkspaceFile = {
 type IndexedWorkspaceFileKnowledge = {
   structureFile: CodebaseStructureFileRecord;
   indexedAtMs: number;
+  phaseDurations: IndexedWorkspaceFileKnowledgePhaseDurations;
 };
+
+type IndexedWorkspaceFileKnowledgePhaseDurations = Readonly<{
+  structureIndexerLoadDurationMs: number;
+  fileReadDurationMs: number;
+  fileIndexDurationMs: number;
+}>;
 
 type ParsedIndexedWorkspaceFile = {
   indexedWorkspaceFile: IndexedWorkspaceFile;
@@ -50,6 +58,43 @@ type WorkspaceIndexingCounters = {
   removedIndexedFileCount: number;
   removedRecordCount: number;
 };
+
+type CodebaseKnowledgeMemorySnapshot = Readonly<{
+  rssBytes: number;
+  heapTotalBytes: number;
+  heapUsedBytes: number;
+  externalBytes: number;
+  arrayBuffersBytes: number;
+}>;
+
+type CodebaseKnowledgeMemoryDiagnosticFields = Readonly<{
+  memoryBeforeRssBytes: number;
+  memoryAfterRssBytes: number;
+  memoryDeltaRssBytes: number;
+  memoryBeforeHeapTotalBytes: number;
+  memoryAfterHeapTotalBytes: number;
+  memoryDeltaHeapTotalBytes: number;
+  memoryBeforeHeapUsedBytes: number;
+  memoryAfterHeapUsedBytes: number;
+  memoryDeltaHeapUsedBytes: number;
+  memoryBeforeExternalBytes: number;
+  memoryAfterExternalBytes: number;
+  memoryDeltaExternalBytes: number;
+  memoryBeforeArrayBuffersBytes: number;
+  memoryAfterArrayBuffersBytes: number;
+  memoryDeltaArrayBuffersBytes: number;
+}>;
+
+type ChangedFileRefreshAction = "replace_file_records" | "remove_file_records";
+
+type ChangedFileRefreshResult = Readonly<{
+  changedFilePath: string;
+  displayPath: string;
+  action: ChangedFileRefreshAction;
+  status: string;
+  durationMs: number;
+  outputRecordCount: number;
+}>;
 
 export type WorkspaceCodebaseKnowledgeIndex = {
   ensureWorkspaceIndexed(input?: { abortSignal?: AbortSignal | undefined }): Promise<void>;
@@ -114,14 +159,32 @@ export class TreeSitterWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodeb
     changedFilePaths: readonly string[];
     abortSignal?: AbortSignal | undefined;
   }): Promise<void> {
+    const refreshStartedAtMs = performance.now();
+    const memoryBefore = readCodebaseKnowledgeMemorySnapshot();
+    const uniqueChangedFilePaths = listUniqueChangedFilePaths(input.changedFilePaths);
+    const refreshResults: ChangedFileRefreshResult[] = [];
+    let skippedGeneratedFileCount = 0;
     await this.#runExclusiveWorkspaceIndexUpdate(async () => {
-      for (const changedFilePath of listUniqueChangedFilePaths(input.changedFilePaths)) {
+      for (const changedFilePath of uniqueChangedFilePaths) {
         throwIfCodebaseKnowledgeIndexAborted(input.abortSignal);
         if (isGeneratedCodebaseKnowledgeIndexPath(changedFilePath)) {
+          skippedGeneratedFileCount += 1;
           continue;
         }
-        await this.#refreshChangedFilePath({ changedFilePath, abortSignal: input.abortSignal });
+        refreshResults.push(await this.#refreshChangedFilePath({ changedFilePath, abortSignal: input.abortSignal }));
       }
+    });
+    logEngineDiagnosticEvent(this.#diagnosticLogger, "codebase_knowledge.changed_files_refresh_completed", {
+      workspaceRootPath: this.#workspaceRootPath,
+      durationMs: performance.now() - refreshStartedAtMs,
+      requestedChangedFileCount: input.changedFilePaths.length,
+      uniqueChangedFileCount: uniqueChangedFilePaths.length,
+      refreshedFileCount: refreshResults.length,
+      skippedGeneratedFileCount,
+      replacedFileRecordCount: refreshResults.filter((refreshResult) => refreshResult.action === "replace_file_records").length,
+      removedFileRecordCount: refreshResults.filter((refreshResult) => refreshResult.action === "remove_file_records").length,
+      outputRecordCount: refreshResults.reduce((recordCount, refreshResult) => recordCount + refreshResult.outputRecordCount, 0),
+      ...createCodebaseKnowledgeMemoryDiagnosticFields({ memoryBefore, memoryAfter: readCodebaseKnowledgeMemorySnapshot() }),
     });
   }
 
@@ -302,22 +365,55 @@ export class TreeSitterWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodeb
   async #refreshChangedFilePath(input: {
     changedFilePath: string;
     abortSignal?: AbortSignal | undefined;
-  }): Promise<void> {
+  }): Promise<ChangedFileRefreshResult> {
+    const refreshStartedAtMs = performance.now();
+    const memoryBefore = readCodebaseKnowledgeMemorySnapshot();
     const absoluteFilePath = resolveWorkspacePath({
       workspaceRootPath: this.#workspaceRootPath,
       requestedPath: input.changedFilePath,
     });
     const displayPath = formatWorkspaceDisplayPath(this.#workspaceRootPath, absoluteFilePath);
+    const lstatStartedAtMs = performance.now();
     const fileStats = await lstat(absoluteFilePath).catch((error: unknown) => {
       if (isFileNotFoundError(error)) {
         return undefined;
       }
       throw error;
     });
+    const lstatDurationMs = performance.now() - lstatStartedAtMs;
     const languageId = resolveIndexableLanguageIdForWorkspaceFile(displayPath);
     if (!fileStats?.isFile() || !languageId) {
+      const repositoryRemoveStartedAtMs = performance.now();
       await this.#codebaseKnowledgeRepository.removeFileRecords(displayPath);
-      return;
+      const repositoryRemoveDurationMs = performance.now() - repositoryRemoveStartedAtMs;
+      const durationMs = performance.now() - refreshStartedAtMs;
+      const refreshStatus = !fileStats ? "file_missing" : fileStats.isFile() ? "unsupported_language" : "not_file";
+      const refreshResult: ChangedFileRefreshResult = {
+        changedFilePath: input.changedFilePath,
+        displayPath,
+        action: "remove_file_records",
+        status: refreshStatus,
+        durationMs,
+        outputRecordCount: 0,
+      };
+      logEngineDiagnosticEvent(this.#diagnosticLogger, "codebase_knowledge.changed_file_refresh_completed", {
+        workspaceRootPath: this.#workspaceRootPath,
+        changedFilePath: input.changedFilePath,
+        displayPath,
+        action: refreshResult.action,
+        status: refreshStatus,
+        durationMs,
+        lstatDurationMs,
+        structureIndexerLoadDurationMs: 0,
+        fileReadDurationMs: 0,
+        fileIndexDurationMs: 0,
+        repositoryReplaceDurationMs: 0,
+        repositoryRemoveDurationMs,
+        sourceFileSizeBytes: fileStats?.size ?? 0,
+        outputRecordCount: 0,
+        ...createCodebaseKnowledgeMemoryDiagnosticFields({ memoryBefore, memoryAfter: readCodebaseKnowledgeMemorySnapshot() }),
+      });
+      return refreshResult;
     }
 
     const indexedWorkspaceFile: IndexedWorkspaceFile = {
@@ -330,11 +426,41 @@ export class TreeSitterWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodeb
       indexedWorkspaceFile,
       abortSignal: input.abortSignal,
     });
+    const repositoryReplaceStartedAtMs = performance.now();
     await this.#codebaseKnowledgeRepository.replaceFileRecords({
       filePath: displayPath,
       records: indexedFileKnowledge.structureFile.knowledgeRecords,
       indexedFileMetadata: createIndexedFileMetadata({ indexedWorkspaceFile, indexedFileKnowledge }),
     });
+    const repositoryReplaceDurationMs = performance.now() - repositoryReplaceStartedAtMs;
+    const durationMs = performance.now() - refreshStartedAtMs;
+    const outputRecordCount = indexedFileKnowledge.structureFile.knowledgeRecords.length;
+    const refreshResult: ChangedFileRefreshResult = {
+      changedFilePath: input.changedFilePath,
+      displayPath,
+      action: "replace_file_records",
+      status: "indexed",
+      durationMs,
+      outputRecordCount,
+    };
+    logEngineDiagnosticEvent(this.#diagnosticLogger, "codebase_knowledge.changed_file_refresh_completed", {
+      workspaceRootPath: this.#workspaceRootPath,
+      changedFilePath: input.changedFilePath,
+      displayPath,
+      action: refreshResult.action,
+      status: refreshResult.status,
+      durationMs,
+      lstatDurationMs,
+      structureIndexerLoadDurationMs: indexedFileKnowledge.phaseDurations.structureIndexerLoadDurationMs,
+      fileReadDurationMs: indexedFileKnowledge.phaseDurations.fileReadDurationMs,
+      fileIndexDurationMs: indexedFileKnowledge.phaseDurations.fileIndexDurationMs,
+      repositoryReplaceDurationMs,
+      repositoryRemoveDurationMs: 0,
+      sourceFileSizeBytes: fileStats.size,
+      outputRecordCount,
+      ...createCodebaseKnowledgeMemoryDiagnosticFields({ memoryBefore, memoryAfter: readCodebaseKnowledgeMemorySnapshot() }),
+    });
+    return refreshResult;
   }
 
   async #reuseIndexedFileIfUnchanged(input: {
@@ -377,17 +503,31 @@ export class TreeSitterWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodeb
     indexedWorkspaceFile: IndexedWorkspaceFile;
     abortSignal?: AbortSignal | undefined;
   }): Promise<IndexedWorkspaceFileKnowledge> {
+    const structureIndexerLoadStartedAtMs = performance.now();
     const structureIndexer = await this.#loadStructureIndexer();
+    const structureIndexerLoadDurationMs = performance.now() - structureIndexerLoadStartedAtMs;
     throwIfCodebaseKnowledgeIndexAborted(input.abortSignal);
+    const fileReadStartedAtMs = performance.now();
     const fileText = await readFile(input.indexedWorkspaceFile.absoluteFilePath, "utf8");
+    const fileReadDurationMs = performance.now() - fileReadStartedAtMs;
     throwIfCodebaseKnowledgeIndexAborted(input.abortSignal);
     const indexedAtMs = Date.now();
+    const fileIndexStartedAtMs = performance.now();
     const indexedFile = await structureIndexer.indexFile({
       filePath: input.indexedWorkspaceFile.displayPath,
       fileText,
       indexedAtMs,
     });
-    return { structureFile: indexedFile, indexedAtMs };
+    const fileIndexDurationMs = performance.now() - fileIndexStartedAtMs;
+    return {
+      structureFile: indexedFile,
+      indexedAtMs,
+      phaseDurations: {
+        structureIndexerLoadDurationMs,
+        fileReadDurationMs,
+        fileIndexDurationMs,
+      },
+    };
   }
 
   #loadStructureIndexer(): Promise<CodebaseStructureIndexer> {
@@ -413,9 +553,78 @@ export function createDefaultWorkspaceCodebaseKnowledgeIndex(input: {
     workspaceRootPath: input.workspaceRootPath,
     codebaseKnowledgeRepository: new JsonFileCodebaseKnowledgeRepository({
       indexFilePath: defaultWorkspaceCodebaseKnowledgeIndexFilePath({ workspaceRootPath: input.workspaceRootPath }),
+      ...(input.diagnosticLogger
+        ? { diagnosticReporter: (diagnosticEvent) => logJsonFileCodebaseKnowledgeRepositoryDiagnosticEvent(input.diagnosticLogger, diagnosticEvent) }
+        : {}),
     }),
     ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
   });
+}
+
+function logJsonFileCodebaseKnowledgeRepositoryDiagnosticEvent(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  diagnosticEvent: JsonFileCodebaseKnowledgeRepositoryDiagnosticEvent,
+): void {
+  logEngineDiagnosticEvent(diagnosticLogger, "codebase_knowledge.repository_step_completed", {
+    operationName: diagnosticEvent.operationName,
+    stepName: diagnosticEvent.stepName,
+    storedFileRole: diagnosticEvent.storedFileRole,
+    operationStatus: diagnosticEvent.operationStatus,
+    durationMs: diagnosticEvent.durationMs,
+    memoryBeforeRssBytes: diagnosticEvent.memoryBeforeRssBytes,
+    memoryAfterRssBytes: diagnosticEvent.memoryAfterRssBytes,
+    memoryDeltaRssBytes: diagnosticEvent.memoryDeltaRssBytes,
+    memoryBeforeHeapTotalBytes: diagnosticEvent.memoryBeforeHeapTotalBytes,
+    memoryAfterHeapTotalBytes: diagnosticEvent.memoryAfterHeapTotalBytes,
+    memoryDeltaHeapTotalBytes: diagnosticEvent.memoryDeltaHeapTotalBytes,
+    memoryBeforeHeapUsedBytes: diagnosticEvent.memoryBeforeHeapUsedBytes,
+    memoryAfterHeapUsedBytes: diagnosticEvent.memoryAfterHeapUsedBytes,
+    memoryDeltaHeapUsedBytes: diagnosticEvent.memoryDeltaHeapUsedBytes,
+    memoryBeforeExternalBytes: diagnosticEvent.memoryBeforeExternalBytes,
+    memoryAfterExternalBytes: diagnosticEvent.memoryAfterExternalBytes,
+    memoryDeltaExternalBytes: diagnosticEvent.memoryDeltaExternalBytes,
+    memoryBeforeArrayBuffersBytes: diagnosticEvent.memoryBeforeArrayBuffersBytes,
+    memoryAfterArrayBuffersBytes: diagnosticEvent.memoryAfterArrayBuffersBytes,
+    memoryDeltaArrayBuffersBytes: diagnosticEvent.memoryDeltaArrayBuffersBytes,
+    ...(diagnosticEvent.fileTextByteLength !== undefined ? { fileTextByteLength: diagnosticEvent.fileTextByteLength } : {}),
+    ...(diagnosticEvent.serializedJsonByteLength !== undefined ? { serializedJsonByteLength: diagnosticEvent.serializedJsonByteLength } : {}),
+    ...(diagnosticEvent.recordCount !== undefined ? { recordCount: diagnosticEvent.recordCount } : {}),
+    ...(diagnosticEvent.indexedFileCount !== undefined ? { indexedFileCount: diagnosticEvent.indexedFileCount } : {}),
+  });
+}
+
+function readCodebaseKnowledgeMemorySnapshot(): CodebaseKnowledgeMemorySnapshot {
+  const memoryUsage = process.memoryUsage();
+  return {
+    rssBytes: memoryUsage.rss,
+    heapTotalBytes: memoryUsage.heapTotal,
+    heapUsedBytes: memoryUsage.heapUsed,
+    externalBytes: memoryUsage.external,
+    arrayBuffersBytes: memoryUsage.arrayBuffers,
+  };
+}
+
+function createCodebaseKnowledgeMemoryDiagnosticFields(input: {
+  memoryBefore: CodebaseKnowledgeMemorySnapshot;
+  memoryAfter: CodebaseKnowledgeMemorySnapshot;
+}): CodebaseKnowledgeMemoryDiagnosticFields {
+  return {
+    memoryBeforeRssBytes: input.memoryBefore.rssBytes,
+    memoryAfterRssBytes: input.memoryAfter.rssBytes,
+    memoryDeltaRssBytes: input.memoryAfter.rssBytes - input.memoryBefore.rssBytes,
+    memoryBeforeHeapTotalBytes: input.memoryBefore.heapTotalBytes,
+    memoryAfterHeapTotalBytes: input.memoryAfter.heapTotalBytes,
+    memoryDeltaHeapTotalBytes: input.memoryAfter.heapTotalBytes - input.memoryBefore.heapTotalBytes,
+    memoryBeforeHeapUsedBytes: input.memoryBefore.heapUsedBytes,
+    memoryAfterHeapUsedBytes: input.memoryAfter.heapUsedBytes,
+    memoryDeltaHeapUsedBytes: input.memoryAfter.heapUsedBytes - input.memoryBefore.heapUsedBytes,
+    memoryBeforeExternalBytes: input.memoryBefore.externalBytes,
+    memoryAfterExternalBytes: input.memoryAfter.externalBytes,
+    memoryDeltaExternalBytes: input.memoryAfter.externalBytes - input.memoryBefore.externalBytes,
+    memoryBeforeArrayBuffersBytes: input.memoryBefore.arrayBuffersBytes,
+    memoryAfterArrayBuffersBytes: input.memoryAfter.arrayBuffersBytes,
+    memoryDeltaArrayBuffersBytes: input.memoryAfter.arrayBuffersBytes - input.memoryBefore.arrayBuffersBytes,
+  };
 }
 
 export function defaultWorkspaceCodebaseKnowledgeIndexFilePath(input: { workspaceRootPath: string }): string {

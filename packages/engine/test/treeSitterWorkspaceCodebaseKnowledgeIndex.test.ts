@@ -14,7 +14,10 @@ import {
   type CodebaseStructureFileRecord,
   type CodebaseStructureIndexer,
 } from "@buli/codebase-knowledge";
-import { TreeSitterWorkspaceCodebaseKnowledgeIndex } from "../src/index.ts";
+import {
+  createDefaultWorkspaceCodebaseKnowledgeIndex,
+  TreeSitterWorkspaceCodebaseKnowledgeIndex,
+} from "../src/index.ts";
 
 class RecordingCodebaseStructureIndexer implements CodebaseStructureIndexer {
   readonly indexedFilePaths: string[] = [];
@@ -287,6 +290,85 @@ test("TreeSitterWorkspaceCodebaseKnowledgeIndex removes deleted indexed files on
   }));
 });
 
+test("TreeSitterWorkspaceCodebaseKnowledgeIndex emits changed-file refresh diagnostics", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-changed-file-refresh-diagnostics-"));
+  await writeWorkspaceFile(workspaceRootPath, "src/runtime.ts", "export function runRuntime() { return 1; }\n");
+  const repository = new RecordingCodebaseKnowledgeRepository();
+  const structureIndexer = new RecordingCodebaseStructureIndexer();
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const workspaceCodebaseKnowledgeIndex = createWorkspaceCodebaseKnowledgeIndex({
+    workspaceRootPath,
+    repository,
+    structureIndexer,
+    diagnosticEvents,
+  });
+  await workspaceCodebaseKnowledgeIndex.ensureWorkspaceIndexed();
+  diagnosticEvents.length = 0;
+
+  await writeWorkspaceFile(workspaceRootPath, "src/runtime.ts", "export function runRuntime() { return 2; }\n");
+  await workspaceCodebaseKnowledgeIndex.refreshChangedFilePaths({
+    changedFilePaths: ["src/runtime.ts", "src/runtime.ts", ".buli/index/codebase-knowledge.json"],
+  });
+
+  const changedFileRefreshDiagnostic = readRequiredDiagnosticEvent(
+    diagnosticEvents,
+    "codebase_knowledge.changed_file_refresh_completed",
+  );
+  expect(changedFileRefreshDiagnostic.fields).toEqual(expect.objectContaining({
+    changedFilePath: "src/runtime.ts",
+    displayPath: "src/runtime.ts",
+    action: "replace_file_records",
+    status: "indexed",
+    durationMs: expect.any(Number),
+    lstatDurationMs: expect.any(Number),
+    structureIndexerLoadDurationMs: expect.any(Number),
+    fileReadDurationMs: expect.any(Number),
+    fileIndexDurationMs: expect.any(Number),
+    repositoryReplaceDurationMs: expect.any(Number),
+    repositoryRemoveDurationMs: 0,
+    sourceFileSizeBytes: expect.any(Number),
+    outputRecordCount: 1,
+    memoryBeforeRssBytes: expect.any(Number),
+    memoryAfterRssBytes: expect.any(Number),
+    memoryDeltaRssBytes: expect.any(Number),
+  }));
+  expect(readRequiredDiagnosticEvent(diagnosticEvents, "codebase_knowledge.changed_files_refresh_completed").fields).toEqual(expect.objectContaining({
+    requestedChangedFileCount: 3,
+    uniqueChangedFileCount: 2,
+    refreshedFileCount: 1,
+    skippedGeneratedFileCount: 1,
+    replacedFileRecordCount: 1,
+    removedFileRecordCount: 0,
+    outputRecordCount: 1,
+    memoryBeforeHeapUsedBytes: expect.any(Number),
+    memoryAfterHeapUsedBytes: expect.any(Number),
+    memoryDeltaHeapUsedBytes: expect.any(Number),
+  }));
+});
+
+test("createDefaultWorkspaceCodebaseKnowledgeIndex forwards JSON repository diagnostics", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-default-codebase-repository-diagnostics-"));
+  await writeWorkspaceFile(workspaceRootPath, "src/runtime.ts", "export function runRuntime() { return 1; }\n");
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const workspaceCodebaseKnowledgeIndex = createDefaultWorkspaceCodebaseKnowledgeIndex({
+    workspaceRootPath,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await workspaceCodebaseKnowledgeIndex.ensureWorkspaceIndexed();
+
+  expect(readRequiredDiagnosticEvent(diagnosticEvents, "codebase_knowledge.repository_step_completed").fields).toEqual(expect.objectContaining({
+    operationName: expect.any(String),
+    stepName: expect.any(String),
+    storedFileRole: expect.any(String),
+    operationStatus: expect.any(String),
+    durationMs: expect.any(Number),
+    memoryBeforeRssBytes: expect.any(Number),
+    memoryAfterRssBytes: expect.any(Number),
+    memoryDeltaRssBytes: expect.any(Number),
+  }));
+});
+
 function createWorkspaceCodebaseKnowledgeIndex(input: {
   workspaceRootPath: string;
   repository: InMemoryCodebaseKnowledgeRepository;
@@ -307,6 +389,14 @@ function readWorkspaceIndexCompletedDiagnostic(diagnosticEvents: readonly BuliDi
   );
   if (!diagnosticEvent) {
     throw new Error("Expected codebase knowledge workspace index completion diagnostic event.");
+  }
+  return diagnosticEvent;
+}
+
+function readRequiredDiagnosticEvent(diagnosticEvents: readonly BuliDiagnosticLogEvent[], eventName: string): BuliDiagnosticLogEvent {
+  const diagnosticEvent = diagnosticEvents.find((event) => event.subsystem === "engine" && event.eventName === eventName);
+  if (!diagnosticEvent) {
+    throw new Error(`Expected engine diagnostic event ${eventName}.`);
   }
   return diagnosticEvent;
 }

@@ -107,6 +107,7 @@ Before changing context projection, check these report sections:
 - `Task Subagent Attribution`: task executor time, parent-visible result kind, checkpoint/failure details, parent wait, concurrent-group wall time, selected model/effort, and result size.
 - `TUI Render`: render duration and churn.
 - `SQLite Storage`: append/load/switch/compaction persistence cost.
+- `Codebase Knowledge`: changed-file refresh totals and JSON repository read/parse/schema/stringify/write memory/duration attribution.
 - `Process Peaks`: RSS, heap, CPU, and event-loop delay.
 
 The `OpenAI Request Size Contributors` section is the first filter for working-set optimization. It answers whether the largest visible contributor is stable request scaffolding, tool definitions, current-turn function outputs, historical/failure evidence, reasoning, or assistant/user messages. The `OpenAI Working-Set Visibility` section is the second filter: it explains why those input items were visible and confirms whether the current implementation kept the projection exact.
@@ -304,6 +305,7 @@ Source-verified completed or mostly completed items:
 - Task subagent model/effort routing diagnostics and override hooks.
 - Task subagent attribution diagnostics distinguish executor completion from parent-visible result kind, join model/effort fallback from model-selection events, and surface checkpoint/failure evidence without capping completed reports.
 - Task subagent checkpoint prompt hardening and deterministic compliance metrics for parent-visible failed task results, `requested_tools_after_checkpoint` failures, and completed checkpoint task results. This does not force a no-tool finalizer, change default routing, compact provider context, or cap completed reports.
+- Codebase knowledge changed-file refresh diagnostics and deterministic profile metrics for repository records-file read, JSON.parse, schema parse, map-to-memory, map-to-disk, JSON.stringify, temporary write, rename, and RSS/heap/external/arrayBuffers deltas. This is measurement only; it does not shard records, switch storage, or move indexing out of TypeScript.
 
 Partial caveat: historical failed/interrupted turns and current-turn continuations can still need bounded recovery evidence or compact replay. Task subagent context is scoped, and completed parent-visible task results are intentionally uncapped for correctness.
 
@@ -333,7 +335,8 @@ Examples:
 - Aggregate tool-output accumulation across many read/grep/bash calls after individual caps apply.
 - Skill catalog disk parsing and memoization impact.
 - Task-subagent routing quality/latency and real-model checkpoint-compliance impact after prompt hardening, using manual A/B runs with model/effort overrides when deterministic metrics stay clean.
-- Prompt-context lookup, TUI render, SQLite hydration, and codebase-knowledge startup costs after fresh deterministic and manual profiles exist.
+- Prompt-context lookup, TUI render, and SQLite hydration after fresh deterministic and manual profiles exist.
+- Codebase-knowledge storage rewrite choices after changed-file refresh diagnostics identify whether records read/parse/schema/stringify/write or tree-sitter indexing is the real memory/time boundary.
 
 ## Prioritized Working-Set Roadmap
 
@@ -349,8 +352,9 @@ Implemented in this tier:
 4. Fresh profile annotations that tie each proposed optimization to a `profile-runs/` path and stable metric.
 5. Task-subagent checkpoint prompt hardening plus deterministic compliance metrics, while preserving uncapped completed reports.
 6. Same-request duplicate `function_call_output` references when an earlier exact copy remains visible in the same OpenAI request. Raw session history and stored provider-turn replay stay exact.
+7. Codebase-knowledge changed-file refresh phase attribution and deterministic large-record refresh metrics before considering sharding, SQLite/NDJSON, or another-language/process boundaries.
 
-Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, OpenAI Working-Set Visibility report sections, deterministic/report sections for working-set growth, and same-request duplicate-reference projection metrics. These diagnostics do not compact cross-step current-turn replay and do not prove that broader compaction is safe.
+Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, OpenAI Working-Set Visibility report sections, deterministic/report sections for working-set growth, same-request duplicate-reference projection metrics, and Codebase Knowledge refresh/repository attribution. These diagnostics do not compact cross-step current-turn replay and do not prove that broader compaction or storage rewrites are safe.
 
 ### Moderate: compact repeated or stale evidence
 

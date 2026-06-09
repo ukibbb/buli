@@ -116,7 +116,7 @@ Available deterministic scenarios:
 | `task-subagent-runtime` | deterministic task subagent execution, elapsed checkpointing, parent wait, group wall time, and result payload shape | `packages/engine/src/runtimeTaskToolCallExecution.ts`, `packages/engine/src/runtimeToolCallExecution.ts` |
 | `sqlite-session-large-history` | append, load, list, and switch costs for a large persisted SQLite session | `apps/cli/src/conversationSession/sqlite/*` |
 | `tool-output-context-growth` | model-context projection, compaction projection, provider replay pressure, and budgeted batch-tool output size | `packages/engine/src/conversationHistoryProjection.ts`, `packages/engine/src/conversationCompaction/*`, `packages/engine/src/tools/*` |
-| `codebase-knowledge-startup-index` | full startup indexing, unchanged restart reuse, single-file reindexing, mtime-only hash reuse, snapshot write skipping, index size, and heap delta | `packages/engine/src/codebaseKnowledge/*`, `packages/codebase-knowledge/src/*` |
+| `codebase-knowledge-startup-index` | full startup indexing, unchanged restart reuse, runtime changed-file refresh, JSON records read/parse/stringify/write attribution, single-file reindexing, mtime-only hash reuse, snapshot write skipping, index size, and heap delta | `packages/engine/src/codebaseKnowledge/*`, `packages/codebase-knowledge/src/*` |
 | `assistant-markdown-render-sections` | cold markdown section builds, append-only streaming updates, completion promotion, stable section reuse, streaming tail count, and heap delta | `packages/tui/src/components/primitives/assistantMarkdownRenderSectionBuilder.ts` |
 
 ## Before/After Comparisons
@@ -169,6 +169,14 @@ Use these metrics when judging rewrites:
 - `codebase_knowledge_startup_index.unchanged_restart.duration_ms`
 - `codebase_knowledge_startup_index.modified_file_restart.duration_ms`
 - `codebase_knowledge_startup_index.mtime_only_restart.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.engine_refresh.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.repository.records_read.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.repository.records_json_parse.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.repository.records_schema_parse.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.repository.records_json_stringify.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.repository.records_write_temporary_file.duration_ms`
+- `codebase_knowledge_startup_index.changed_file_refresh.memory_delta_*_bytes`
 - `codebase_knowledge_startup_index.*.parsed_file_count`
 - `codebase_knowledge_startup_index.*.snapshot_read.duration_ms`
 - `codebase_knowledge_startup_index.*.records_load.duration_ms`
@@ -204,6 +212,7 @@ Use these metrics when judging rewrites:
 - compaction impact summaries
 - TUI render summaries
 - SQLite storage summaries
+- Codebase Knowledge changed-file refresh and JSON repository operation-step attribution
 - top diagnostic event durations and counts
 
 ## Interpreting Reports
@@ -223,6 +232,7 @@ Use report sections as a decision tree:
 | High event-loop delay with moderate CPU | `process_sample.eventLoopDelayMaxMs`, top diagnostic durations | synchronous local work or heavy rendering/storage |
 | High render commit count or duration | `TUI Render` | React/OpenTUI render churn |
 | Slow appends, loads, or switches | `SQLite Storage` | session persistence |
+| RSS or heap spike after edit/write/patch/patch_many | `Codebase Knowledge`, `codebase_knowledge.file_mutation_refresh_completed`, repository step rows | changed-file refresh, records JSON load/parse/stringify/write, or workspace patch capture |
 | High profiler overhead | `Profiler Logger` | profiling distortion from event volume |
 | Memory growth across a run | `Process Peaks`, request/context growth summaries | retained transcript, tool output, replay, or render data |
 
@@ -265,7 +275,7 @@ sample <pid> 1 1
 - SQLite diagnostics measure store-level operations, not each individual query.
 - CPU and memory samples are attributed to an active turn only when exactly one turn is running.
 - Bun CPU and heap artifacts are opt-in because they can distort runtime cost.
-- Heap attribution requires a Bun heap artifact; JSONL records process-level memory samples only.
+- Heap attribution requires a Bun heap artifact; JSONL records process-level memory samples only. Codebase Knowledge memory deltas are boundary samples, not proof of retained live objects.
 - Per-call task execution and wait totals can overcount elapsed time when task calls run in parallel.
 - Aggregate tool-result and provider replay growth can still accumulate across many calls.
 - Request size contributor diagnostics are emitted only when response-step diagnostics are enabled; they intentionally report sizes and item kinds, not raw content.

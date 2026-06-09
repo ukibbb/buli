@@ -62,6 +62,14 @@ type FileMutationToolCallRequestByName<ToolName extends FileMutationToolName> = 
   { toolName: ToolName }
 >;
 
+type FileMutationCodebaseRefreshMemorySnapshot = Readonly<{
+  rssBytes: number;
+  heapTotalBytes: number;
+  heapUsedBytes: number;
+  externalBytes: number;
+  arrayBuffersBytes: number;
+}>;
+
 type PrepareFileMutationToolCallInput<ToolName extends FileMutationToolName> = {
   fileMutationToolCallRequest: FileMutationToolCallRequestByName<ToolName>;
   workspaceRootPath: string;
@@ -319,9 +327,21 @@ async function refreshCodebaseKnowledgeForCompletedFileMutation(input: {
   }
 
   try {
+    const refreshStartedAtMs = performance.now();
+    const memoryBefore = readFileMutationCodebaseRefreshMemorySnapshot();
     await input.workspaceCodebaseKnowledgeIndex.refreshChangedFilePaths({
       changedFilePaths,
       abortSignal: input.abortSignal,
+    });
+    logEngineDiagnosticEvent(input.diagnosticLogger, "codebase_knowledge.file_mutation_refresh_completed", {
+      toolName: input.toolCallDetail.toolName,
+      changedFileCount: changedFilePaths.length,
+      changedFilePaths,
+      durationMs: performance.now() - refreshStartedAtMs,
+      ...createFileMutationCodebaseRefreshMemoryDiagnosticFields({
+        memoryBefore,
+        memoryAfter: readFileMutationCodebaseRefreshMemorySnapshot(),
+      }),
     });
   } catch (error) {
     if (input.abortSignal.aborted) {
@@ -332,6 +352,56 @@ async function refreshCodebaseKnowledgeForCompletedFileMutation(input: {
       failureExplanation: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+function readFileMutationCodebaseRefreshMemorySnapshot(): FileMutationCodebaseRefreshMemorySnapshot {
+  const memoryUsage = process.memoryUsage();
+  return {
+    rssBytes: memoryUsage.rss,
+    heapTotalBytes: memoryUsage.heapTotal,
+    heapUsedBytes: memoryUsage.heapUsed,
+    externalBytes: memoryUsage.external,
+    arrayBuffersBytes: memoryUsage.arrayBuffers,
+  };
+}
+
+function createFileMutationCodebaseRefreshMemoryDiagnosticFields(input: {
+  memoryBefore: FileMutationCodebaseRefreshMemorySnapshot;
+  memoryAfter: FileMutationCodebaseRefreshMemorySnapshot;
+}): Readonly<{
+  memoryBeforeRssBytes: number;
+  memoryAfterRssBytes: number;
+  memoryDeltaRssBytes: number;
+  memoryBeforeHeapTotalBytes: number;
+  memoryAfterHeapTotalBytes: number;
+  memoryDeltaHeapTotalBytes: number;
+  memoryBeforeHeapUsedBytes: number;
+  memoryAfterHeapUsedBytes: number;
+  memoryDeltaHeapUsedBytes: number;
+  memoryBeforeExternalBytes: number;
+  memoryAfterExternalBytes: number;
+  memoryDeltaExternalBytes: number;
+  memoryBeforeArrayBuffersBytes: number;
+  memoryAfterArrayBuffersBytes: number;
+  memoryDeltaArrayBuffersBytes: number;
+}> {
+  return {
+    memoryBeforeRssBytes: input.memoryBefore.rssBytes,
+    memoryAfterRssBytes: input.memoryAfter.rssBytes,
+    memoryDeltaRssBytes: input.memoryAfter.rssBytes - input.memoryBefore.rssBytes,
+    memoryBeforeHeapTotalBytes: input.memoryBefore.heapTotalBytes,
+    memoryAfterHeapTotalBytes: input.memoryAfter.heapTotalBytes,
+    memoryDeltaHeapTotalBytes: input.memoryAfter.heapTotalBytes - input.memoryBefore.heapTotalBytes,
+    memoryBeforeHeapUsedBytes: input.memoryBefore.heapUsedBytes,
+    memoryAfterHeapUsedBytes: input.memoryAfter.heapUsedBytes,
+    memoryDeltaHeapUsedBytes: input.memoryAfter.heapUsedBytes - input.memoryBefore.heapUsedBytes,
+    memoryBeforeExternalBytes: input.memoryBefore.externalBytes,
+    memoryAfterExternalBytes: input.memoryAfter.externalBytes,
+    memoryDeltaExternalBytes: input.memoryAfter.externalBytes - input.memoryBefore.externalBytes,
+    memoryBeforeArrayBuffersBytes: input.memoryBefore.arrayBuffersBytes,
+    memoryAfterArrayBuffersBytes: input.memoryAfter.arrayBuffersBytes,
+    memoryDeltaArrayBuffersBytes: input.memoryAfter.arrayBuffersBytes - input.memoryBefore.arrayBuffersBytes,
+  };
 }
 
 function listChangedFilePathsFromFileMutationToolCallDetail(toolCallDetail: ToolCallDetail): readonly string[] {

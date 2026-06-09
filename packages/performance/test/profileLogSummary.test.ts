@@ -688,6 +688,107 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
         lastCommitAtMs: 1_034,
       },
     }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_035,
+      subsystem: "engine",
+      eventName: "codebase_knowledge.changed_files_refresh_completed",
+      fields: {
+        workspaceRootPath: "/workspace",
+        durationMs: 42,
+        requestedChangedFileCount: 1,
+        uniqueChangedFileCount: 1,
+        refreshedFileCount: 1,
+        skippedGeneratedFileCount: 0,
+        replacedFileRecordCount: 1,
+        removedFileRecordCount: 0,
+        outputRecordCount: 3,
+        memoryDeltaRssBytes: 2_048,
+        memoryDeltaHeapUsedBytes: 512,
+        memoryDeltaExternalBytes: 128,
+        memoryDeltaArrayBuffersBytes: 64,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_036,
+      subsystem: "engine",
+      eventName: "codebase_knowledge.changed_file_refresh_completed",
+      fields: {
+        workspaceRootPath: "/workspace",
+        changedFilePath: "src/runtime.ts",
+        displayPath: "src/runtime.ts",
+        action: "replace_file_records",
+        status: "indexed",
+        durationMs: 38,
+        lstatDurationMs: 1,
+        structureIndexerLoadDurationMs: 2,
+        fileReadDurationMs: 3,
+        fileIndexDurationMs: 4,
+        repositoryReplaceDurationMs: 30,
+        repositoryRemoveDurationMs: 0,
+        sourceFileSizeBytes: 120,
+        outputRecordCount: 3,
+        memoryDeltaRssBytes: 1_024,
+        memoryDeltaHeapUsedBytes: 256,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_037,
+      subsystem: "engine",
+      eventName: "codebase_knowledge.repository_step_completed",
+      fields: {
+        operationName: "load_records",
+        stepName: "read_file",
+        storedFileRole: "records",
+        operationStatus: "completed",
+        durationMs: 7,
+        memoryDeltaRssBytes: 4_096,
+        memoryDeltaHeapUsedBytes: 2_048,
+        memoryDeltaExternalBytes: 256,
+        memoryDeltaArrayBuffersBytes: 128,
+        fileTextByteLength: 12_000,
+        recordCount: 12,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_038,
+      subsystem: "engine",
+      eventName: "codebase_knowledge.repository_step_completed",
+      fields: {
+        operationName: "load_records",
+        stepName: "json_parse",
+        storedFileRole: "records",
+        operationStatus: "completed",
+        durationMs: 6,
+        memoryDeltaRssBytes: 8_192,
+        memoryDeltaHeapUsedBytes: 4_096,
+        memoryDeltaExternalBytes: 512,
+        memoryDeltaArrayBuffersBytes: 256,
+        recordCount: 12,
+      },
+    }),
+    JSON.stringify({
+      type: "diagnostic_event",
+      atMs: 1_039,
+      subsystem: "engine",
+      eventName: "codebase_knowledge.repository_step_completed",
+      fields: {
+        operationName: "write_records",
+        stepName: "json_stringify",
+        storedFileRole: "records",
+        operationStatus: "completed",
+        durationMs: 8,
+        memoryDeltaRssBytes: 2_048,
+        memoryDeltaHeapUsedBytes: 1_024,
+        memoryDeltaExternalBytes: 64,
+        memoryDeltaArrayBuffersBytes: 32,
+        serializedJsonByteLength: 12_400,
+        recordCount: 12,
+      },
+    }),
     JSON.stringify({ type: "profile_stopped", atMs: 1_040, profileFilePath: "profile.jsonl", sampleIntervalMs: 250 }),
   ].join("\n"));
 
@@ -762,6 +863,16 @@ test("formatBuliProfileRunReportMarkdown highlights provider and storage summari
   expect(reportMarkdown).toContain("Mean actual duration: 5 ms");
   expect(reportMarkdown).toContain("## SQLite Storage");
   expect(reportMarkdown).toContain("append_entry");
+  expect(reportMarkdown).toContain("## Codebase Knowledge");
+  expect(reportMarkdown).toContain("Changed-file refresh operations: 1");
+  expect(reportMarkdown).toContain("Requested/refreshed files: 1 / 1");
+  expect(reportMarkdown).toContain("Replaced/removed file record sets: 1 / 0");
+  expect(reportMarkdown).toContain("Total refresh duration: 42 ms");
+  expect(reportMarkdown).toContain("Changed-file refresh by action/status:");
+  expect(reportMarkdown).toContain("| replace_file_records | indexed | 1 | 38 ms | 38 ms | 1 KiB | 256 B | 3 |");
+  expect(reportMarkdown).toContain("Repository operation steps:");
+  expect(reportMarkdown).toContain("| write_records | json_stringify | records | completed | 1 | 8 ms | 8 ms |");
+  expect(reportMarkdown).toContain("| load_records | json_parse | records | completed | 1 | 6 ms | 6 ms |");
 });
 
 test("createManualBuliProfileRuntimeArgs adds Bun CPU and heap profiler args only when requested", () => {

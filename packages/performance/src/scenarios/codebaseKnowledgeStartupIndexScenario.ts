@@ -1,13 +1,10 @@
 import { mkdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import {
-  createTreeSitterCodebaseStructureIndexer,
-  JsonFileCodebaseKnowledgeRepository,
-} from "@buli/codebase-knowledge";
+import { JsonFileCodebaseKnowledgeRepository } from "@buli/codebase-knowledge";
 import type { BuliDiagnosticLogEvent, BuliDiagnosticLogFields } from "@buli/contracts";
 import {
+  createDefaultWorkspaceCodebaseKnowledgeIndex,
   defaultWorkspaceCodebaseKnowledgeIndexFilePath,
-  TreeSitterWorkspaceCodebaseKnowledgeIndex,
 } from "@buli/engine";
 import {
   createBytesMetric,
@@ -38,6 +35,34 @@ type StartupIndexPassMeasurement = Readonly<{
   snapshotWriteSkippedCount: number;
 }>;
 
+type RuntimeChangedFileRefreshPassMeasurement = Readonly<{
+  durationMs: number;
+  changedFilesRefreshDurationMs: number;
+  requestedChangedFileCount: number;
+  refreshedFileCount: number;
+  replacedFileRecordCount: number;
+  removedFileRecordCount: number;
+  outputRecordCount: number;
+  fileReadDurationMs: number;
+  fileIndexDurationMs: number;
+  repositoryReplaceDurationMs: number;
+  repositoryRecordsReadDurationMs: number;
+  repositoryRecordsJsonParseDurationMs: number;
+  repositoryRecordsSchemaParseDurationMs: number;
+  repositoryRecordsMapToMemoryDurationMs: number;
+  repositoryRecordsMapToDiskDurationMs: number;
+  repositoryRecordsJsonStringifyDurationMs: number;
+  repositoryRecordsWriteTemporaryFileDurationMs: number;
+  repositoryRecordsRenameTemporaryFileDurationMs: number;
+  repositoryRecordsFileTextByteLength: number;
+  repositoryRecordsSerializedJsonByteLength: number;
+  repositoryRecordsSchemaParsedRecordCount: number;
+  changedFilesRefreshMemoryDeltaRssBytes: number;
+  changedFilesRefreshMemoryDeltaHeapUsedBytes: number;
+  changedFilesRefreshMemoryDeltaExternalBytes: number;
+  changedFilesRefreshMemoryDeltaArrayBuffersBytes: number;
+}>;
+
 const defaultScenarioConfig: CodebaseKnowledgeStartupIndexScenarioConfig = {
   sourceDirectoryCount: 24,
   sourceFilesPerDirectory: 25,
@@ -53,7 +78,7 @@ export function createCodebaseKnowledgeStartupIndexScenario(
   return {
     scenarioName: "codebase-knowledge-startup-index",
     description:
-      "Builds a larger synthetic TypeScript/TSX/Python workspace and measures full startup indexing, unchanged restart reuse, modified-file reindexing, and mtime-only restart hashing.",
+      "Builds a larger synthetic TypeScript/TSX/Python workspace and measures full startup indexing, unchanged restart reuse, runtime changed-file refresh, modified-file reindexing, and mtime-only restart hashing.",
     defaultWarmupCount: 1,
     defaultRepeatCount: 3,
     async runIteration(input) {
@@ -67,10 +92,15 @@ export function createCodebaseKnowledgeStartupIndexScenario(
       const sourceFilePaths = await createSyntheticCodebaseWorkspace({ workspaceRootPath, config });
       const modifiedSourceFilePath = readRequiredSourceFilePath({ sourceFilePaths, fileIndex: 0 });
       const mtimeOnlySourceFilePath = readRequiredSourceFilePath({ sourceFilePaths, fileIndex: 1 });
+      const runtimeRefreshSourceFilePath = readRequiredSourceFilePath({ sourceFilePaths, fileIndex: 2 });
       const heapUsedBeforeIndexing = process.memoryUsage().heapUsed;
 
       const fullIndexPass = await measureStartupIndexPass({ workspaceRootPath });
       const unchangedRestartPass = await measureStartupIndexPass({ workspaceRootPath });
+      const runtimeChangedFileRefreshPass = await measureRuntimeChangedFileRefreshPass({
+        workspaceRootPath,
+        sourceFilePath: runtimeRefreshSourceFilePath,
+      });
 
       await writeFile(
         join(workspaceRootPath, modifiedSourceFilePath),
@@ -112,6 +142,58 @@ export function createCodebaseKnowledgeStartupIndexScenario(
             metricName: "codebase_knowledge_startup_index.mtime_only_restart.duration_ms",
             durationMs: mtimeOnlyRestartPass.durationMs,
             budget: { warnAbove: 500, failAbove: 2_000 },
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.durationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.engine_refresh.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.changedFilesRefreshDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.file_read.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.fileReadDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.file_index.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.fileIndexDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository_replace.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryReplaceDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_read.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsReadDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_json_parse.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsJsonParseDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_schema_parse.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsSchemaParseDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_map_to_memory.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsMapToMemoryDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_map_to_disk.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsMapToDiskDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_json_stringify.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsJsonStringifyDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_write_temporary_file.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsWriteTemporaryFileDurationMs,
+          }),
+          createDurationMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_rename_temporary_file.duration_ms",
+            durationMs: runtimeChangedFileRefreshPass.repositoryRecordsRenameTemporaryFileDurationMs,
           }),
           createDurationMetric({
             metricName: "codebase_knowledge_startup_index.full.snapshot_read.duration_ms",
@@ -259,6 +341,36 @@ export function createCodebaseKnowledgeStartupIndexScenario(
             count: mtimeOnlyRestartPass.snapshotWriteSkippedCount,
           }),
           createCountMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.requested_changed_file_count",
+            count: runtimeChangedFileRefreshPass.requestedChangedFileCount,
+            budget: { warnAbove: 1, failAbove: 1 },
+          }),
+          createCountMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.refreshed_file_count",
+            count: runtimeChangedFileRefreshPass.refreshedFileCount,
+            budget: { warnAbove: 1, failAbove: 1 },
+          }),
+          createCountMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.replaced_file_record_count",
+            count: runtimeChangedFileRefreshPass.replacedFileRecordCount,
+            budget: { warnAbove: 1, failAbove: 1 },
+          }),
+          createCountMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.removed_file_record_count",
+            count: runtimeChangedFileRefreshPass.removedFileRecordCount,
+            budget: { warnAbove: 0, failAbove: 0 },
+          }),
+          createCountMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.output_record_count",
+            count: runtimeChangedFileRefreshPass.outputRecordCount,
+            lowerIsBetter: false,
+          }),
+          createCountMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_schema_parse.record_count",
+            count: runtimeChangedFileRefreshPass.repositoryRecordsSchemaParsedRecordCount,
+            lowerIsBetter: false,
+          }),
+          createCountMetric({
             metricName: "codebase_knowledge_startup_index.indexed_file_count",
             count: repositorySnapshot.indexedFiles.length,
             lowerIsBetter: false,
@@ -273,6 +385,30 @@ export function createCodebaseKnowledgeStartupIndexScenario(
             bytes: indexFileStats.size,
           }),
           createBytesMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_file_text_bytes",
+            bytes: runtimeChangedFileRefreshPass.repositoryRecordsFileTextByteLength,
+          }),
+          createBytesMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.repository.records_serialized_json_bytes",
+            bytes: runtimeChangedFileRefreshPass.repositoryRecordsSerializedJsonByteLength,
+          }),
+          createBytesMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.memory_delta_rss_bytes",
+            bytes: runtimeChangedFileRefreshPass.changedFilesRefreshMemoryDeltaRssBytes,
+          }),
+          createBytesMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.memory_delta_heap_used_bytes",
+            bytes: runtimeChangedFileRefreshPass.changedFilesRefreshMemoryDeltaHeapUsedBytes,
+          }),
+          createBytesMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.memory_delta_external_bytes",
+            bytes: runtimeChangedFileRefreshPass.changedFilesRefreshMemoryDeltaExternalBytes,
+          }),
+          createBytesMetric({
+            metricName: "codebase_knowledge_startup_index.changed_file_refresh.memory_delta_array_buffers_bytes",
+            bytes: runtimeChangedFileRefreshPass.changedFilesRefreshMemoryDeltaArrayBuffersBytes,
+          }),
+          createBytesMetric({
             metricName: "codebase_knowledge_startup_index.heap_used_delta_bytes",
             bytes: Math.max(0, heapUsedAfterIndexing - heapUsedBeforeIndexing),
             budget: { warnAbove: 150_000_000, failAbove: 300_000_000 },
@@ -285,12 +421,8 @@ export function createCodebaseKnowledgeStartupIndexScenario(
 
 async function measureStartupIndexPass(input: { workspaceRootPath: string }): Promise<StartupIndexPassMeasurement> {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
-  const workspaceCodebaseKnowledgeIndex = new TreeSitterWorkspaceCodebaseKnowledgeIndex({
+  const workspaceCodebaseKnowledgeIndex = createDefaultWorkspaceCodebaseKnowledgeIndex({
     workspaceRootPath: input.workspaceRootPath,
-    codebaseKnowledgeRepository: new JsonFileCodebaseKnowledgeRepository({
-      indexFilePath: defaultWorkspaceCodebaseKnowledgeIndexFilePath({ workspaceRootPath: input.workspaceRootPath }),
-    }),
-    createStructureIndexer: createTreeSitterCodebaseStructureIndexer,
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
   const measuredIndexingPass = await measureDurationMs(() => workspaceCodebaseKnowledgeIndex.ensureWorkspaceIndexed());
@@ -309,6 +441,99 @@ async function measureStartupIndexPass(input: { workspaceRootPath: string }): Pr
     parsedFileCount: readNumberField(workspaceIndexDiagnosticFields, "parsedFileCount"),
     snapshotWriteDurationMs: readNumberField(workspaceIndexDiagnosticFields, "snapshotWriteDurationMs"),
     snapshotWriteSkippedCount: readBooleanField(workspaceIndexDiagnosticFields, "snapshotWriteSkipped") ? 1 : 0,
+  };
+}
+
+async function measureRuntimeChangedFileRefreshPass(input: {
+  workspaceRootPath: string;
+  sourceFilePath: string;
+}): Promise<RuntimeChangedFileRefreshPassMeasurement> {
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const workspaceCodebaseKnowledgeIndex = createDefaultWorkspaceCodebaseKnowledgeIndex({
+    workspaceRootPath: input.workspaceRootPath,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await workspaceCodebaseKnowledgeIndex.ensureWorkspaceIndexed();
+  await writeFile(
+    join(input.workspaceRootPath, input.sourceFilePath),
+    createSyntheticSourceFileText({ displayPath: input.sourceFilePath, revision: "modified" }),
+    "utf8",
+  );
+
+  const measuredRefreshPass = await measureDurationMs(() =>
+    workspaceCodebaseKnowledgeIndex.refreshChangedFilePaths({ changedFilePaths: [input.sourceFilePath] })
+  );
+  const changedFilesRefreshFields = readRequiredDiagnosticEvent(
+    diagnosticEvents,
+    "codebase_knowledge.changed_files_refresh_completed",
+  ).fields;
+  const changedFileRefreshFields = readRequiredDiagnosticEvent(
+    diagnosticEvents,
+    "codebase_knowledge.changed_file_refresh_completed",
+  ).fields;
+
+  return {
+    durationMs: measuredRefreshPass.durationMs,
+    changedFilesRefreshDurationMs: readNumberField(changedFilesRefreshFields, "durationMs"),
+    requestedChangedFileCount: readNumberField(changedFilesRefreshFields, "requestedChangedFileCount"),
+    refreshedFileCount: readNumberField(changedFilesRefreshFields, "refreshedFileCount"),
+    replacedFileRecordCount: readNumberField(changedFilesRefreshFields, "replacedFileRecordCount"),
+    removedFileRecordCount: readNumberField(changedFilesRefreshFields, "removedFileRecordCount"),
+    outputRecordCount: readNumberField(changedFilesRefreshFields, "outputRecordCount"),
+    fileReadDurationMs: readNumberField(changedFileRefreshFields, "fileReadDurationMs"),
+    fileIndexDurationMs: readNumberField(changedFileRefreshFields, "fileIndexDurationMs"),
+    repositoryReplaceDurationMs: readNumberField(changedFileRefreshFields, "repositoryReplaceDurationMs"),
+    repositoryRecordsReadDurationMs: sumRepositoryStepDurationMs({ diagnosticEvents, operationName: "load_records", stepName: "read_file" }),
+    repositoryRecordsJsonParseDurationMs: sumRepositoryStepDurationMs({ diagnosticEvents, operationName: "load_records", stepName: "json_parse" }),
+    repositoryRecordsSchemaParseDurationMs: sumRepositoryStepDurationMs({ diagnosticEvents, operationName: "load_records", stepName: "schema_parse" }),
+    repositoryRecordsMapToMemoryDurationMs: sumRepositoryStepDurationMs({
+      diagnosticEvents,
+      operationName: "load_records",
+      stepName: "map_disk_records_to_memory",
+    }),
+    repositoryRecordsMapToDiskDurationMs: sumRepositoryStepDurationMs({
+      diagnosticEvents,
+      operationName: "write_records",
+      stepName: "map_memory_records_to_disk",
+    }),
+    repositoryRecordsJsonStringifyDurationMs: sumRepositoryStepDurationMs({
+      diagnosticEvents,
+      operationName: "write_records",
+      stepName: "json_stringify",
+    }),
+    repositoryRecordsWriteTemporaryFileDurationMs: sumRepositoryStepDurationMs({
+      diagnosticEvents,
+      operationName: "write_records",
+      stepName: "write_temporary_file",
+    }),
+    repositoryRecordsRenameTemporaryFileDurationMs: sumRepositoryStepDurationMs({
+      diagnosticEvents,
+      operationName: "write_records",
+      stepName: "rename_temporary_file",
+    }),
+    repositoryRecordsFileTextByteLength: readRepositoryStepNumberField({
+      diagnosticEvents,
+      operationName: "load_records",
+      stepName: "read_file",
+      fieldName: "fileTextByteLength",
+    }),
+    repositoryRecordsSerializedJsonByteLength: readRepositoryStepNumberField({
+      diagnosticEvents,
+      operationName: "write_records",
+      stepName: "json_stringify",
+      fieldName: "serializedJsonByteLength",
+    }),
+    repositoryRecordsSchemaParsedRecordCount: readRepositoryStepNumberField({
+      diagnosticEvents,
+      operationName: "load_records",
+      stepName: "schema_parse",
+      fieldName: "recordCount",
+    }),
+    changedFilesRefreshMemoryDeltaRssBytes: readNumberField(changedFilesRefreshFields, "memoryDeltaRssBytes"),
+    changedFilesRefreshMemoryDeltaHeapUsedBytes: readNumberField(changedFilesRefreshFields, "memoryDeltaHeapUsedBytes"),
+    changedFilesRefreshMemoryDeltaExternalBytes: readNumberField(changedFilesRefreshFields, "memoryDeltaExternalBytes"),
+    changedFilesRefreshMemoryDeltaArrayBuffersBytes: readNumberField(changedFilesRefreshFields, "memoryDeltaArrayBuffersBytes"),
   };
 }
 
@@ -425,8 +650,8 @@ function readRequiredSourceFilePath(input: { sourceFilePaths: readonly string[];
 }
 
 function validateScenarioConfig(config: CodebaseKnowledgeStartupIndexScenarioConfig): void {
-  if (config.sourceDirectoryCount < 1 || config.sourceFilesPerDirectory < 2) {
-    throw new Error("Codebase knowledge startup index scenario requires at least one directory and two files per directory.");
+  if (config.sourceDirectoryCount < 1 || config.sourceFilesPerDirectory < 3) {
+    throw new Error("Codebase knowledge startup index scenario requires at least one directory and three files per directory.");
   }
 }
 
@@ -438,6 +663,59 @@ function readWorkspaceIndexCompletedDiagnostic(diagnosticEvents: readonly BuliDi
     throw new Error("Codebase knowledge startup index scenario did not receive workspace index diagnostics.");
   }
   return diagnosticEvent;
+}
+
+function readRequiredDiagnosticEvent(diagnosticEvents: readonly BuliDiagnosticLogEvent[], eventName: string): BuliDiagnosticLogEvent {
+  const diagnosticEvent = diagnosticEvents.find((event) => event.subsystem === "engine" && event.eventName === eventName);
+  if (!diagnosticEvent) {
+    throw new Error(`Codebase knowledge startup index scenario did not receive diagnostic event ${eventName}.`);
+  }
+  return diagnosticEvent;
+}
+
+function sumRepositoryStepDurationMs(input: {
+  diagnosticEvents: readonly BuliDiagnosticLogEvent[];
+  operationName: string;
+  stepName: string;
+}): number {
+  return input.diagnosticEvents
+    .filter((diagnosticEvent) => isMatchingRepositoryRecordsStepDiagnostic({
+      diagnosticEvent,
+      operationName: input.operationName,
+      stepName: input.stepName,
+    }))
+    .reduce((totalDurationMs, diagnosticEvent) => totalDurationMs + readNumberField(diagnosticEvent.fields, "durationMs"), 0);
+}
+
+function readRepositoryStepNumberField(input: {
+  diagnosticEvents: readonly BuliDiagnosticLogEvent[];
+  operationName: string;
+  stepName: string;
+  fieldName: string;
+}): number {
+  const diagnosticEvent = input.diagnosticEvents.find((candidateEvent) => isMatchingRepositoryRecordsStepDiagnostic({
+    diagnosticEvent: candidateEvent,
+    operationName: input.operationName,
+    stepName: input.stepName,
+  }));
+  if (!diagnosticEvent) {
+    throw new Error(
+      `Codebase knowledge startup index scenario did not receive repository diagnostic ${input.operationName}/${input.stepName}.`,
+    );
+  }
+  return readNumberField(diagnosticEvent.fields, input.fieldName);
+}
+
+function isMatchingRepositoryRecordsStepDiagnostic(input: {
+  diagnosticEvent: BuliDiagnosticLogEvent;
+  operationName: string;
+  stepName: string;
+}): boolean {
+  return input.diagnosticEvent.subsystem === "engine" &&
+    input.diagnosticEvent.eventName === "codebase_knowledge.repository_step_completed" &&
+    input.diagnosticEvent.fields?.["operationName"] === input.operationName &&
+    input.diagnosticEvent.fields["stepName"] === input.stepName &&
+    input.diagnosticEvent.fields["storedFileRole"] === "records";
 }
 
 function readNumberField(fields: BuliDiagnosticLogFields | undefined, fieldName: string): number {

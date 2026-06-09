@@ -115,7 +115,7 @@ Use RSS samples and heap snapshots for:
 - Tool results and workspace patch summaries.
 - SQLite-loaded sessions and hydrated transcript data.
 - Prompt-context recursive snapshots.
-- Codebase knowledge records, indexed-file metadata, and workspace-local index JSON.
+- Codebase knowledge records, indexed-file metadata, workspace-local index JSON, and changed-file refresh phases after file mutations.
 
 ## Workloads
 
@@ -131,7 +131,7 @@ Steps:
 - Start with a small active session.
 - Start with a large persisted session.
 - Compare startup timings, RSS, and heap after first render.
-- Include a larger indexed workspace and compare full codebase knowledge indexing with unchanged restart reuse.
+- Include a larger indexed workspace and compare full codebase knowledge indexing, unchanged restart reuse, and one runtime changed-file refresh after a metadata-only startup.
 
 Signals:
 
@@ -141,6 +141,8 @@ Signals:
 - Mtime-only restart duration and parsed-file count.
 - Snapshot read and workspace scan duration.
 - Records-load duration and records-loaded count.
+- Runtime changed-file refresh duration, refreshed/replaced/removed counts, file read/index duration, repository replace duration, and RSS/heap/external/arrayBuffers deltas.
+- JSON repository records-file read, JSON.parse, schema parse, map-to-memory, map-to-disk, stringify, temporary write, and rename durations.
 - Snapshot write duration and skipped-write count.
 - Codebase knowledge index size and heap delta.
 

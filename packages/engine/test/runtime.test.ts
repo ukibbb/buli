@@ -123,6 +123,7 @@ class StubWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodebaseKnowledgeI
   readonly locateFailure: Error | undefined;
   ensureWorkspaceIndexedCallCount = 0;
   readonly requestedSymbolDefinitionQueries: CodebaseSymbolDefinitionLocatorQuery[] = [];
+  readonly refreshedChangedFilePathBatches: string[][] = [];
 
   constructor(input: {
     locatorResult?: CodebaseSymbolDefinitionLocatorResult | undefined;
@@ -147,7 +148,9 @@ class StubWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodebaseKnowledgeI
     return this.locatorResult;
   }
 
-  async refreshChangedFilePaths(): Promise<void> {}
+  async refreshChangedFilePaths(input: { changedFilePaths: readonly string[] }): Promise<void> {
+    this.refreshedChangedFilePathBatches.push([...input.changedFilePaths]);
+  }
 }
 
 class RecordingConversationTurnProvider implements ConversationTurnProvider {
@@ -5672,6 +5675,65 @@ test("AssistantConversationRuntime auto-applies edit tool calls in implementatio
     { entryKind: "assistant_text_segment", assistantTextSegmentText: "Edit acknowledged." },
     { entryKind: "assistant_message", assistantMessageStatus: "completed" },
   ]);
+});
+
+test("AssistantConversationRuntime logs codebase refresh diagnostics for completed file mutation tools", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-edit-codebase-refresh-diagnostics-"));
+  const notesPath = join(workspaceRootPath, "notes.txt");
+  await writeFile(notesPath, "alpha\nbeta\n", "utf8");
+  const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
+  const workspaceCodebaseKnowledgeIndex = new StubWorkspaceCodebaseKnowledgeIndex({});
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_edit_1",
+        toolCallRequest: {
+          toolName: "edit",
+          editTargetPath: "notes.txt",
+          oldString: "beta",
+          newString: "delta",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Edit acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new RecordingConversationTurnProvider([providerTurn]),
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+    workspaceCodebaseKnowledgeIndex,
+    diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Edit notes",
+      assistantOperatingMode: "implementation",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  expect(workspaceCodebaseKnowledgeIndex.refreshedChangedFilePathBatches).toEqual([["notes.txt"]]);
+  expect(diagnosticEvents).toContainEqual(expect.objectContaining({
+    subsystem: "engine",
+    eventName: "codebase_knowledge.file_mutation_refresh_completed",
+    fields: expect.objectContaining({
+      toolName: "edit",
+      changedFileCount: 1,
+      changedFilePaths: ["notes.txt"],
+      durationMs: expect.any(Number),
+      memoryBeforeRssBytes: expect.any(Number),
+      memoryAfterRssBytes: expect.any(Number),
+      memoryDeltaRssBytes: expect.any(Number),
+      memoryBeforeHeapUsedBytes: expect.any(Number),
+      memoryAfterHeapUsedBytes: expect.any(Number),
+      memoryDeltaHeapUsedBytes: expect.any(Number),
+    }),
+  }));
 });
 
 test("AssistantConversationRuntime denies write tool calls in plan mode", async () => {

@@ -147,6 +147,35 @@ type OpenAiWorkingSetLargestInputItemReportRow = Readonly<{
   isCurrentTurnItem: boolean;
 }>;
 
+type CodebaseKnowledgeChangedFileRefreshReportRow = Readonly<{
+  action: string;
+  status: string;
+  refreshCount: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+  maxMemoryDeltaRssBytes: number;
+  maxMemoryDeltaHeapUsedBytes: number;
+  outputRecordCount: number;
+}>;
+
+type CodebaseKnowledgeRepositoryStepReportRow = Readonly<{
+  operationName: string;
+  stepName: string;
+  storedFileRole: string;
+  operationStatus: string;
+  stepCount: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+  maxMemoryDeltaRssBytes: number;
+  maxMemoryDeltaHeapUsedBytes: number;
+  maxMemoryDeltaExternalBytes: number;
+  maxMemoryDeltaArrayBuffersBytes: number;
+  maxFileTextByteLength: number;
+  maxSerializedJsonByteLength: number;
+  maxRecordCount: number;
+  maxIndexedFileCount: number;
+}>;
+
 export async function writeBuliProfileRunReport(input: BuliProfileReportCliOptions): Promise<string> {
   const profileEvents = await readBuliProfileJsonl(input.profileFilePath);
   const reportMarkdown = formatBuliProfileRunReportMarkdown({
@@ -210,6 +239,7 @@ export function formatBuliProfileRunReportMarkdown(input: {
     ...formatCompactionImpactSection(diagnosticEvents),
     ...formatTuiRenderSection(diagnosticEvents),
     ...formatStorageSection(diagnosticEvents),
+    ...formatCodebaseKnowledgeSection(diagnosticEvents),
     ...formatTopDiagnosticDurationSection(profileSummary.diagnosticDurationSummaries),
     ...formatTopDiagnosticCountSection(profileSummary.diagnosticEventCounts),
   ].join("\n");
@@ -1058,6 +1088,86 @@ function formatStorageSection(diagnosticEvents: readonly ProfileDiagnosticEvent[
   ];
 }
 
+function formatCodebaseKnowledgeSection(diagnosticEvents: readonly ProfileDiagnosticEvent[]): readonly string[] {
+  const changedFilesRefreshEvents = listDiagnosticEvents(diagnosticEvents, "engine", "codebase_knowledge.changed_files_refresh_completed");
+  const changedFileRefreshEvents = listDiagnosticEvents(diagnosticEvents, "engine", "codebase_knowledge.changed_file_refresh_completed");
+  const repositoryStepEvents = listDiagnosticEvents(diagnosticEvents, "engine", "codebase_knowledge.repository_step_completed");
+  if (changedFilesRefreshEvents.length === 0 && changedFileRefreshEvents.length === 0 && repositoryStepEvents.length === 0) {
+    return ["## Codebase Knowledge", "", "No codebase knowledge refresh or repository diagnostics were recorded.", ""];
+  }
+
+  const refreshDuration = aggregateNumericField(changedFilesRefreshEvents, "durationMs");
+  const requestedChangedFileCount = aggregateNumericField(changedFilesRefreshEvents, "requestedChangedFileCount");
+  const refreshedFileCount = aggregateNumericField(changedFilesRefreshEvents, "refreshedFileCount");
+  const replacedFileRecordCount = aggregateNumericField(changedFilesRefreshEvents, "replacedFileRecordCount");
+  const removedFileRecordCount = aggregateNumericField(changedFilesRefreshEvents, "removedFileRecordCount");
+  const maxRefreshMemoryDeltaRssBytes = maxNumber(changedFilesRefreshEvents.map((event) => readNumberField(event.fields, "memoryDeltaRssBytes"))) ?? 0;
+  const maxRefreshMemoryDeltaHeapUsedBytes = maxNumber(
+    changedFilesRefreshEvents.map((event) => readNumberField(event.fields, "memoryDeltaHeapUsedBytes")),
+  ) ?? 0;
+  const maxRefreshMemoryDeltaExternalBytes = maxNumber(
+    changedFilesRefreshEvents.map((event) => readNumberField(event.fields, "memoryDeltaExternalBytes")),
+  ) ?? 0;
+  const maxRefreshMemoryDeltaArrayBuffersBytes = maxNumber(
+    changedFilesRefreshEvents.map((event) => readNumberField(event.fields, "memoryDeltaArrayBuffersBytes")),
+  ) ?? 0;
+  const changedFileRefreshRows = listCodebaseKnowledgeChangedFileRefreshRows(changedFileRefreshEvents);
+  const repositoryStepRows = listCodebaseKnowledgeRepositoryStepRows(repositoryStepEvents).slice(0, 20);
+
+  return [
+    "## Codebase Knowledge",
+    "",
+    "- Note: this section attributes successful changed-file refresh and JSON repository phases. It is measurement only; it does not imply records sharding, SQLite, or another-language rewrite happened.",
+    `- Changed-file refresh operations: ${formatInteger(changedFilesRefreshEvents.length)}`,
+    `- Requested/refreshed files: ${formatInteger(requestedChangedFileCount.total)} / ${formatInteger(refreshedFileCount.total)}`,
+    `- Replaced/removed file record sets: ${formatInteger(replacedFileRecordCount.total)} / ${formatInteger(removedFileRecordCount.total)}`,
+    `- Total refresh duration: ${formatMilliseconds(refreshDuration.total)}`,
+    `- Max refresh duration: ${formatMilliseconds(refreshDuration.max)}`,
+    `- Max refresh RSS/heap/external/arrayBuffers delta: ${formatBytes(maxRefreshMemoryDeltaRssBytes)} / ${formatBytes(maxRefreshMemoryDeltaHeapUsedBytes)} / ${formatBytes(maxRefreshMemoryDeltaExternalBytes)} / ${formatBytes(maxRefreshMemoryDeltaArrayBuffersBytes)}`,
+    "",
+    ...formatCodebaseKnowledgeChangedFileRefreshRows(changedFileRefreshRows),
+    ...formatCodebaseKnowledgeRepositoryStepRows(repositoryStepRows),
+  ];
+}
+
+function formatCodebaseKnowledgeChangedFileRefreshRows(
+  changedFileRefreshRows: readonly CodebaseKnowledgeChangedFileRefreshReportRow[],
+): readonly string[] {
+  if (changedFileRefreshRows.length === 0) {
+    return [];
+  }
+
+  return [
+    "Changed-file refresh by action/status:",
+    "",
+    "| Action | Status | Count | Total Duration | Max Duration | Max RSS Delta | Max Heap Delta | Output Records |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...changedFileRefreshRows.map((row) =>
+      `| ${row.action} | ${row.status} | ${formatInteger(row.refreshCount)} | ${formatMilliseconds(row.totalDurationMs)} | ${formatMilliseconds(row.maxDurationMs)} | ${formatBytes(row.maxMemoryDeltaRssBytes)} | ${formatBytes(row.maxMemoryDeltaHeapUsedBytes)} | ${formatInteger(row.outputRecordCount)} |`
+    ),
+    "",
+  ];
+}
+
+function formatCodebaseKnowledgeRepositoryStepRows(
+  repositoryStepRows: readonly CodebaseKnowledgeRepositoryStepReportRow[],
+): readonly string[] {
+  if (repositoryStepRows.length === 0) {
+    return [];
+  }
+
+  return [
+    "Repository operation steps:",
+    "",
+    "| Operation | Step | Role | Status | Count | Total Duration | Max Duration | Max RSS Delta | Max Heap Delta | Max External Delta | Max ArrayBuffers Delta | Max Text | Max JSON | Max Records | Max Indexed Files |",
+    "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...repositoryStepRows.map((row) =>
+      `| ${row.operationName} | ${row.stepName} | ${row.storedFileRole} | ${row.operationStatus} | ${formatInteger(row.stepCount)} | ${formatMilliseconds(row.totalDurationMs)} | ${formatMilliseconds(row.maxDurationMs)} | ${formatBytes(row.maxMemoryDeltaRssBytes)} | ${formatBytes(row.maxMemoryDeltaHeapUsedBytes)} | ${formatBytes(row.maxMemoryDeltaExternalBytes)} | ${formatBytes(row.maxMemoryDeltaArrayBuffersBytes)} | ${formatBytes(row.maxFileTextByteLength)} | ${formatBytes(row.maxSerializedJsonByteLength)} | ${formatInteger(row.maxRecordCount)} | ${formatInteger(row.maxIndexedFileCount)} |`
+    ),
+    "",
+  ];
+}
+
 function formatTopDiagnosticDurationSection(
   diagnosticDurationSummaries: ReturnType<typeof summarizeBuliProfileRun>["diagnosticDurationSummaries"],
 ): readonly string[] {
@@ -1737,6 +1847,114 @@ function formatCountByField(diagnosticEvents: readonly ProfileDiagnosticEvent[],
   return [...countByFieldValue.entries()].sort((leftEntry, rightEntry) =>
     rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0])
   ).map(([fieldValueText, count]) => `${fieldValueText} (${formatInteger(count)})`).join(", ");
+}
+
+function listCodebaseKnowledgeChangedFileRefreshRows(
+  changedFileRefreshEvents: readonly ProfileDiagnosticEvent[],
+): readonly CodebaseKnowledgeChangedFileRefreshReportRow[] {
+  const rowByActionAndStatus = new Map<string, CodebaseKnowledgeChangedFileRefreshReportRow>();
+  for (const changedFileRefreshEvent of changedFileRefreshEvents) {
+    const action = readStringField(changedFileRefreshEvent.fields, "action") ?? "unknown";
+    const status = readStringField(changedFileRefreshEvent.fields, "status") ?? "unknown";
+    const rowKey = `${action}\u0000${status}`;
+    const previousRow = rowByActionAndStatus.get(rowKey) ?? {
+      action,
+      status,
+      refreshCount: 0,
+      totalDurationMs: 0,
+      maxDurationMs: 0,
+      maxMemoryDeltaRssBytes: 0,
+      maxMemoryDeltaHeapUsedBytes: 0,
+      outputRecordCount: 0,
+    };
+    const durationMs = readNumberField(changedFileRefreshEvent.fields, "durationMs");
+    rowByActionAndStatus.set(rowKey, {
+      action,
+      status,
+      refreshCount: previousRow.refreshCount + 1,
+      totalDurationMs: previousRow.totalDurationMs + durationMs,
+      maxDurationMs: Math.max(previousRow.maxDurationMs, durationMs),
+      maxMemoryDeltaRssBytes: Math.max(
+        previousRow.maxMemoryDeltaRssBytes,
+        readNumberField(changedFileRefreshEvent.fields, "memoryDeltaRssBytes"),
+      ),
+      maxMemoryDeltaHeapUsedBytes: Math.max(
+        previousRow.maxMemoryDeltaHeapUsedBytes,
+        readNumberField(changedFileRefreshEvent.fields, "memoryDeltaHeapUsedBytes"),
+      ),
+      outputRecordCount: previousRow.outputRecordCount + readNumberField(changedFileRefreshEvent.fields, "outputRecordCount"),
+    });
+  }
+
+  return [...rowByActionAndStatus.values()].sort((leftRow, rightRow) =>
+    rightRow.totalDurationMs - leftRow.totalDurationMs || leftRow.action.localeCompare(rightRow.action) ||
+    leftRow.status.localeCompare(rightRow.status)
+  );
+}
+
+function listCodebaseKnowledgeRepositoryStepRows(
+  repositoryStepEvents: readonly ProfileDiagnosticEvent[],
+): readonly CodebaseKnowledgeRepositoryStepReportRow[] {
+  const rowByOperationStepRoleAndStatus = new Map<string, CodebaseKnowledgeRepositoryStepReportRow>();
+  for (const repositoryStepEvent of repositoryStepEvents) {
+    const operationName = readStringField(repositoryStepEvent.fields, "operationName") ?? "unknown";
+    const stepName = readStringField(repositoryStepEvent.fields, "stepName") ?? "unknown";
+    const storedFileRole = readStringField(repositoryStepEvent.fields, "storedFileRole") ?? "unknown";
+    const operationStatus = readStringField(repositoryStepEvent.fields, "operationStatus") ?? "unknown";
+    const rowKey = `${operationName}\u0000${stepName}\u0000${storedFileRole}\u0000${operationStatus}`;
+    const previousRow = rowByOperationStepRoleAndStatus.get(rowKey) ?? {
+      operationName,
+      stepName,
+      storedFileRole,
+      operationStatus,
+      stepCount: 0,
+      totalDurationMs: 0,
+      maxDurationMs: 0,
+      maxMemoryDeltaRssBytes: 0,
+      maxMemoryDeltaHeapUsedBytes: 0,
+      maxMemoryDeltaExternalBytes: 0,
+      maxMemoryDeltaArrayBuffersBytes: 0,
+      maxFileTextByteLength: 0,
+      maxSerializedJsonByteLength: 0,
+      maxRecordCount: 0,
+      maxIndexedFileCount: 0,
+    };
+    const durationMs = readNumberField(repositoryStepEvent.fields, "durationMs");
+    rowByOperationStepRoleAndStatus.set(rowKey, {
+      operationName,
+      stepName,
+      storedFileRole,
+      operationStatus,
+      stepCount: previousRow.stepCount + 1,
+      totalDurationMs: previousRow.totalDurationMs + durationMs,
+      maxDurationMs: Math.max(previousRow.maxDurationMs, durationMs),
+      maxMemoryDeltaRssBytes: Math.max(previousRow.maxMemoryDeltaRssBytes, readNumberField(repositoryStepEvent.fields, "memoryDeltaRssBytes")),
+      maxMemoryDeltaHeapUsedBytes: Math.max(
+        previousRow.maxMemoryDeltaHeapUsedBytes,
+        readNumberField(repositoryStepEvent.fields, "memoryDeltaHeapUsedBytes"),
+      ),
+      maxMemoryDeltaExternalBytes: Math.max(
+        previousRow.maxMemoryDeltaExternalBytes,
+        readNumberField(repositoryStepEvent.fields, "memoryDeltaExternalBytes"),
+      ),
+      maxMemoryDeltaArrayBuffersBytes: Math.max(
+        previousRow.maxMemoryDeltaArrayBuffersBytes,
+        readNumberField(repositoryStepEvent.fields, "memoryDeltaArrayBuffersBytes"),
+      ),
+      maxFileTextByteLength: Math.max(previousRow.maxFileTextByteLength, readNumberField(repositoryStepEvent.fields, "fileTextByteLength")),
+      maxSerializedJsonByteLength: Math.max(
+        previousRow.maxSerializedJsonByteLength,
+        readNumberField(repositoryStepEvent.fields, "serializedJsonByteLength"),
+      ),
+      maxRecordCount: Math.max(previousRow.maxRecordCount, readNumberField(repositoryStepEvent.fields, "recordCount")),
+      maxIndexedFileCount: Math.max(previousRow.maxIndexedFileCount, readNumberField(repositoryStepEvent.fields, "indexedFileCount")),
+    });
+  }
+
+  return [...rowByOperationStepRoleAndStatus.values()].sort((leftRow, rightRow) =>
+    rightRow.totalDurationMs - leftRow.totalDurationMs || leftRow.operationName.localeCompare(rightRow.operationName) ||
+    leftRow.stepName.localeCompare(rightRow.stepName) || leftRow.storedFileRole.localeCompare(rightRow.storedFileRole)
+  );
 }
 
 function listDiagnosticEvents(
