@@ -299,7 +299,7 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("learning the topic from zero");
   expect(systemPromptText).toContain("baby-simple version");
   expect(systemPromptText).toContain('If Lukasz says "simpler", "example", "draw it", "line by line", or "why"');
-  expect(systemPromptText).toContain("explain the flow in execution order");
+  expect(systemPromptText).toContain("Explain the flow in execution order");
   expect(systemPromptText).toContain("Use tiny concrete example data");
   expect(systemPromptText).toContain("Cover every behavior-changing branch");
   expect(systemPromptText).toContain("Remove timing ambiguity");
@@ -318,16 +318,17 @@ test("understand mode is read-only and explains before planning", () => {
   expect(systemPromptText).toContain("Treat Understand mode as teach-first");
 });
 
-test("understand mode starts non-trivial explanations with a mental model", () => {
+test("understand mode builds the mental model where it teaches best", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "understand",
   });
 
-  expect(systemPromptText).toContain("Mental Model First");
+  expect(systemPromptText).toContain("Mental Model in Context");
   expect(systemPromptText).toContain(
-    "Before giving conclusions, optimization targets, implementation advice, or source-heavy details",
+    "For source-code explanations, do not force a separate mental-model section before the code",
   );
+  expect(systemPromptText).toContain("inside the line-by-line walkthrough exactly where the code reveals it");
   expect(systemPromptText).toContain("The boxes: important objects");
   expect(systemPromptText).toContain("The arrows: what calls, sends, stores, renders, waits, streams, replays, owns, or mutates what.");
   expect(systemPromptText).toContain(
@@ -339,7 +340,7 @@ test("understand mode starts non-trivial explanations with a mental model", () =
   expect(systemPromptText).toContain("What objects and arrows Lukasz should picture.");
 });
 
-test("understand mode defaults to dense source-explained markdown for behavior-changing code", () => {
+test("understand mode defaults to source explanations that read code like a book", () => {
   const systemPromptText = buildBuliSystemPrompt({
     workspaceRootPath: "/workspace/demo",
     assistantOperatingMode: "understand",
@@ -356,15 +357,17 @@ test("understand mode defaults to dense source-explained markdown for behavior-c
   expect(systemPromptText).toContain("Render the explanation directly in normal Markdown");
   expect(systemPromptText).toContain("not a separate presentation channel or expandable details block");
   expect(systemPromptText).toContain("Scale down only when Lukasz explicitly asks for a short or concise answer");
-  expect(systemPromptText).toContain("Start with the beginner mental picture before source-heavy detail");
-  expect(systemPromptText).toContain("Then show execution order");
-  expect(systemPromptText).toContain("Walk through the source like a detailed debugging session");
+  expect(systemPromptText).toContain("do not start with a separate mental-model section");
+  expect(systemPromptText).toContain("Give at most one tiny orientation sentence when needed");
+  expect(systemPromptText).toContain("then begin at the trigger or first relevant source line");
+  expect(systemPromptText).toContain("Build the mental model inside the walkthrough");
+  expect(systemPromptText).toContain("Walk through the source like a readable book and a detailed debugging session");
   expect(systemPromptText).toContain("what triggers the step");
   expect(systemPromptText).toContain("what data/state exists");
   expect(systemPromptText).toContain("which condition or branch decides the next path");
   expect(systemPromptText).toContain("which collaborator receives control next");
-  expect(systemPromptText).toContain("For source-backed explanations about code that does meaningful work, include source-explained snippets copied from inspected source");
-  expect(systemPromptText).toContain("after the mental model and execution order");
+  expect(systemPromptText).toContain("For source-backed explanations about code that does meaningful work, make copied source-explained snippets the main reading path");
+  expect(systemPromptText).toContain("do not make Lukasz decode unannotated source before teaching begins");
   expect(systemPromptText).toContain("If a snippet would not help, explicitly say why.");
   expect(systemPromptText).toContain('path="file:line-line"');
   expect(systemPromptText).toContain('```ts path="packages/example/src/runtime.ts:10-12"');
@@ -373,12 +376,15 @@ test("understand mode defaults to dense source-explained markdown for behavior-c
   expect(systemPromptText).toContain("Explain source snippets line-by-line for someone learning the language, framework, library, runtime, or domain.");
   expect(systemPromptText).toContain("If you use a technical word, explain its practical meaning in the same comment using the current line as the example.");
   expect(systemPromptText).toContain("Do not use `non-trivial` as a subjective permission to skip source lines");
-  expect(systemPromptText).toContain("add at least one teaching comment before every behavior-changing logical statement");
+  expect(systemPromptText).toContain("account for every visible non-blank source line");
+  expect(systemPromptText).toContain("Add at least one teaching comment before the line itself, or before an adjacent group whose exact range and role are named");
+  expect(systemPromptText).toContain("Do not skip imports, exports, declarations, type annotations, object fields");
+  expect(systemPromptText).toContain("simple returns, or structural closing braces/brackets/parentheses");
   expect(systemPromptText).toContain("assignments, calculations, branches/conditions, function/method calls, object construction");
   expect(systemPromptText).toContain("reads/writes, filtering, mapping, reducing, joining/merging, sorting/reordering");
-  expect(systemPromptText).toContain("Skip or group only physical lines that are purely structural or repeated parts of one operation");
-  expect(systemPromptText).toContain("closing brackets/braces/parentheses, continuation lines, import grouping, list/object literal items");
-  expect(systemPromptText).toContain("when a nearby comment explains the whole logical operation");
+  expect(systemPromptText).toContain("Group only adjacent structural/repeated lines when the nearby comment names the exact line or range role");
+  expect(systemPromptText).toContain("never silently skip them");
+  expect(systemPromptText).toContain("split it into smaller chunks instead of summarizing or omitting lines");
   expect(systemPromptText).toContain("`plain pseudocode` for the same idea in simple everyday logic");
   expect(systemPromptText).toContain("`example values` for tiny realistic sample inputs, intermediate values, and after values");
   expect(systemPromptText).toContain("`library mechanics` for what a framework, library, or tool is doing here");
@@ -397,6 +403,7 @@ test("understand mode defaults to dense source-explained markdown for behavior-c
   expect(systemPromptText).toContain("rows, columns, index labels, identifiers, ordering");
   expect(systemPromptText).toContain("which values move versus which labels/locations move");
   expect(systemPromptText).toContain("// example values: when isReady = true, the body runs; when isReady = false, startup is skipped.");
+  expect(systemPromptText).toContain("// explain: This closing brace ends the block that only runs when isReady is true.");
   expect(systemPromptText).toContain("Prefer `plain pseudocode` for control flow, branching, data transformation, lifecycle steps");
   expect(systemPromptText).toContain("A good comment should not create a new question");
   expect(systemPromptText).toContain("what value/state exists afterward");
