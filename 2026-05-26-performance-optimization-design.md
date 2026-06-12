@@ -285,10 +285,11 @@ Template:
   Validation: ...
 ```
 
-- Candidate: stop rewriting the whole codebase-knowledge records JSON on changed-file refresh (shard, append-log, or SQLite).
-  Evidence: `profile-runs/measurements/manual-working-set-baseline/profile.jsonl` — RSS 711 MiB -> 2,709 MiB and the run-maximum 302 ms event-loop stall within one second of the t+576.5s `patch_many` mutation refresh; `.buli/index/codebase-knowledge.records.json` is 121 MB in this workspace while the deterministic scenario fixture is 2.6 MB (`codebase_knowledge_startup_index.changed_file_refresh.repository.records_file_text_bytes`). Attribution details: `2026-06-12-mocked-task-completion-evals-design.md`.
-  Expected effect: remove the ~1.5 GiB transient allocation and event-loop stalls after every mutating tool call in large indexed workspaces.
-  Validation: deterministic `codebase-knowledge-startup-index` scenario with a production-scale records fixture, plus a manual profile during edit-heavy work.
+- Candidate (implemented 2026-06-12): SQLite codebase-knowledge store (`SqliteCodebaseKnowledgeRepository`, default via `createDefaultWorkspaceCodebaseKnowledgeIndex`) replacing the monolithic records JSON rewrite on changed-file refresh.
+  Evidence before: `profile-runs/measurements/manual-working-set-baseline/profile.jsonl` — RSS 711 MiB -> 2,709 MiB and the run-maximum 302 ms event-loop stall within one second of the t+576.5s `patch_many` mutation refresh; `.buli/index/codebase-knowledge.records.json` was 121 MB while the deterministic fixture was 2.6 MB.
+  Measured after: deterministic `codebase-knowledge-startup-index` refresh write bytes 2,638,580 -> 3,413 (only changed rows serialize), stringify 3.98 ms -> 0.017 ms, refresh total 16.8 ms -> 8.9 ms; the `-large` variant (9,216 records) writes the same ~3.4 KB, proving write cost is store-size independent. Against a copy of the real 121 MB index: one-time legacy migration 1.2 s, SQLite load of 82,505 records 310 ms row-by-row, `replaceFileRecords` 30 ms.
+  Remaining: first mutation per session still lazily loads all records into the in-memory map (needed for symbol lookup either way); the one-time legacy JSON migration pays a final monolith parse, then deletes the JSON files.
+  Validation: `codebase-knowledge` and `engine` test suites, new `sqliteCodebaseKnowledgeRepository.test.ts` (persistence, delta writes, migration, stale-schema fresh start), `codebase-knowledge-startup-index[-large]` scenarios, full `bun run test`/`typecheck`/`build:cli`.
 
 - Candidate: cross-response-step current-turn tool-result replay references (implemented behind `BULI_OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES=1`, default off).
   Evidence: `profile-runs/measurements/manual-working-set-baseline/profile-report.md` — OpenAI Replay Input Age: 1.008 MiB current-turn function output sent across steps vs ~311 KiB unique tool-result text. Eval gate: `bun run eval` passes flag-off and flag-on; flag-on cut eval function-output bytes by 18-21% on the multi-step evals with at most one bounded recovery re-read.

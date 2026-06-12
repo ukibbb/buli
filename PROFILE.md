@@ -142,7 +142,7 @@ Signals:
 - Snapshot read and workspace scan duration.
 - Records-load duration and records-loaded count.
 - Runtime changed-file refresh duration, refreshed/replaced/removed counts, file read/index duration, repository replace duration, and RSS/heap/external/arrayBuffers deltas.
-- JSON repository records-file read, JSON.parse, schema parse, map-to-memory, map-to-disk, stringify, temporary write, and rename durations.
+- SQLite repository row reads, schema parse, map-to-memory, delta-row stringify, and transaction write durations. The store migrates once from the legacy records JSON at first load.
 - Snapshot write duration and skipped-write count.
 - Codebase knowledge index size and heap delta.
 

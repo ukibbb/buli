@@ -116,7 +116,8 @@ Available deterministic scenarios:
 | `task-subagent-runtime` | deterministic task subagent execution, elapsed checkpointing, parent wait, group wall time, and result payload shape | `packages/engine/src/runtimeTaskToolCallExecution.ts`, `packages/engine/src/runtimeToolCallExecution.ts` |
 | `sqlite-session-large-history` | append, load, list, and switch costs for a large persisted SQLite session | `apps/cli/src/conversationSession/sqlite/*` |
 | `tool-output-context-growth` | model-context projection, compaction projection, provider replay pressure, and budgeted batch-tool output size | `packages/engine/src/conversationHistoryProjection.ts`, `packages/engine/src/conversationCompaction/*`, `packages/engine/src/tools/*` |
-| `codebase-knowledge-startup-index` | full startup indexing, unchanged restart reuse, runtime changed-file refresh, JSON records read/parse/stringify/write attribution, single-file reindexing, mtime-only hash reuse, snapshot write skipping, index size, and heap delta | `packages/engine/src/codebaseKnowledge/*`, `packages/codebase-knowledge/src/*` |
+| `codebase-knowledge-startup-index` | full startup indexing, unchanged restart reuse, runtime changed-file refresh, SQLite row read/parse and delta-write attribution, single-file reindexing, mtime-only hash reuse, snapshot write skipping, index size, and heap delta | `packages/engine/src/codebaseKnowledge/*`, `packages/codebase-knowledge/src/*` |
+| `codebase-knowledge-startup-index-large` | same boundaries on a production-shaped store (~9k records); use for storage-rewrite before/after comparisons | `packages/codebase-knowledge/src/sqliteCodebaseKnowledgeRepository.ts` |
 | `assistant-markdown-render-sections` | cold markdown section builds, append-only streaming updates, completion promotion, stable section reuse, streaming tail count, and heap delta | `packages/tui/src/components/primitives/assistantMarkdownRenderSectionBuilder.ts` |
 
 ## Task-Completion Evals
@@ -231,7 +232,7 @@ Use these metrics when judging rewrites:
 - compaction impact summaries
 - TUI render summaries
 - SQLite storage summaries
-- Codebase Knowledge changed-file refresh and JSON repository operation-step attribution
+- Codebase Knowledge changed-file refresh and repository operation-step attribution (SQLite row reads, schema parse, and delta writes; `records_json_parse`/`records_map_to_disk`/`records_rename_temporary_file` report 0 for the SQLite store)
 - top diagnostic event durations and counts
 
 ## Interpreting Reports
@@ -251,7 +252,7 @@ Use report sections as a decision tree:
 | High event-loop delay with moderate CPU | `process_sample.eventLoopDelayMaxMs`, top diagnostic durations | synchronous local work or heavy rendering/storage |
 | High render commit count or duration | `TUI Render` | React/OpenTUI render churn |
 | Slow appends, loads, or switches | `SQLite Storage` | session persistence |
-| RSS or heap spike after edit/write/patch/patch_many | `Codebase Knowledge`, `codebase_knowledge.file_mutation_refresh_completed`, repository step rows | changed-file refresh, records JSON load/parse/stringify/write, or workspace patch capture |
+| RSS or heap spike after edit/write/patch/patch_many | `Codebase Knowledge`, `codebase_knowledge.file_mutation_refresh_completed`, repository step rows | changed-file refresh first-load row parsing, one-time legacy JSON migration, or workspace patch capture |
 | High profiler overhead | `Profiler Logger` | profiling distortion from event volume |
 | Memory growth across a run | `Process Peaks`, request/context growth summaries | retained transcript, tool output, replay, or render data |
 
