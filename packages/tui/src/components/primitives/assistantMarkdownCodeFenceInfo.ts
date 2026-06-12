@@ -1,4 +1,4 @@
-import type { AssistantMarkdownCodeFenceInfo, AssistantMarkdownSourceLineRange } from "./assistantMarkdownRenderSectionTypes.ts";
+import type { AssistantMarkdownCodeFenceInfo, AssistantMarkdownSourceLineRange } from "./assistantMarkdownTypes.ts";
 
 const codeFenceFileLabelPattern = /(?:^|\s)(?:title|filename|file|path)=("[^"]+"|'[^']+'|[^\s]+)/i;
 const codeFenceFileMetadataTokenPattern = /^(?:title|filename|file|path)=/i;

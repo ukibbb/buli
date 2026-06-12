@@ -74,6 +74,64 @@ describe("AssistantMarkdownBlock", () => {
     expect(updatedMarkdownRenderable._blockStates[0]?.renderable).toBe(firstStableBlockRenderable);
   });
 
+  test("streaming_updates_keep_stable_top_level_block_renderables_through_the_component", async () => {
+    let updateMarkdownContent: ((nextMarkdownText: string) => void) | undefined;
+    let readContainerRenderable: (() => MarkdownRenderable | null) | undefined;
+
+    function UnifiedStreamingStabilityProbe() {
+      const markdownContainerRef = useRef<MarkdownRenderable | null>(null);
+      const [markdownContent, setMarkdownContent] = useState(
+        ["# Stable heading", "", "Stable paragraph.", "", "Streaming tail"].join("\n"),
+      );
+      updateMarkdownContent = (nextMarkdownText) => setMarkdownContent(nextMarkdownText);
+      readContainerRenderable = () => markdownContainerRef.current;
+
+      return (
+        <box ref={markdownContainerRef as never} width="100%">
+          <AssistantMarkdownBlock
+            horizontalRuleColor="#10B981"
+            isStreaming={true}
+            markdownText={markdownContent}
+          />
+        </box>
+      );
+    }
+
+    const { renderOnce } = await testRender(<UnifiedStreamingStabilityProbe />, { width: 80, height: 12 });
+    await renderOnce();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    await renderOnce();
+
+    const readMountedMarkdownRenderable = (): MarkdownRenderable => {
+      const containerRenderable = readContainerRenderable?.();
+      const markdownRenderable = containerRenderable?.getChildren()[0] as MarkdownRenderable | undefined;
+      if (!markdownRenderable) {
+        throw new Error("Unified markdown renderable was not mounted.");
+      }
+      return markdownRenderable;
+    };
+
+    const firstStableBlockRenderable = readMountedMarkdownRenderable()._blockStates[0]?.renderable;
+    if (!firstStableBlockRenderable) {
+      throw new Error("Unified markdown did not create the first top-level block.");
+    }
+
+    const mountedUpdateMarkdownContent = updateMarkdownContent;
+    if (!mountedUpdateMarkdownContent) {
+      throw new Error("Unified markdown content updater was not mounted.");
+    }
+    await act(async () => {
+      mountedUpdateMarkdownContent(
+        ["# Stable heading", "", "Stable paragraph.", "", "Streaming tail keeps growing"].join("\n"),
+      );
+    });
+    await renderOnce();
+
+    const updatedMarkdownRenderable = readMountedMarkdownRenderable();
+    expect(updatedMarkdownRenderable._stableBlockCount).toBeGreaterThanOrEqual(1);
+    expect(updatedMarkdownRenderable._blockStates[0]?.renderable).toBe(firstStableBlockRenderable);
+  });
+
   test("renders_heading_paragraph_list_and_code_fence_with_native_code_block", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
@@ -162,7 +220,33 @@ describe("AssistantMarkdownBlock", () => {
     expect(captureCharFrame()).toContain("Still");
   });
 
-  test("renders_active_streaming_heading_tail_without_promoting_it_to_heading", async () => {
+  test("keeps_heading_glyph_formatting_while_a_streaming_heading_grows", async () => {
+    let growHeadingText: (() => void) | undefined;
+
+    function GrowingHeadingProbe() {
+      const [markdownText, setMarkdownText] = useState(
+        ["# Stable", "", "Paragraph.", "", "## Grow"].join("\n"),
+      );
+      growHeadingText = () => setMarkdownText(["# Stable", "", "Paragraph.", "", "## Growing further now"].join("\n"));
+      return <AssistantMarkdownBlock horizontalRuleColor="#10B981" isStreaming={true} markdownText={markdownText} />;
+    }
+
+    const { captureCharFrame, renderOnce } = await testRender(<GrowingHeadingProbe />, { width: 80, height: 12 });
+    await renderSettledMarkdownFrame(renderOnce);
+    expect(captureCharFrame()).toContain("◆ Grow");
+
+    await act(async () => {
+      growHeadingText?.();
+    });
+    await renderSettledMarkdownFrame(renderOnce);
+
+    expect(captureCharFrame()).toContain("◆ Growing further now");
+  });
+
+  test("renders_streaming_heading_tail_progressively_as_a_heading", async () => {
+    // The retired section pipeline held the growing tail back as plain text; the
+    // single-renderable path styles it as soon as the parser classifies it, matching
+    // how completed content will look and avoiding a restyle flash on completion.
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
         horizontalRuleColor="#10B981"
@@ -177,8 +261,7 @@ describe("AssistantMarkdownBlock", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("▌ Stable heading");
     expect(frame).toContain("Stable paragraph");
-    expect(frame).toContain("Tail still typing");
-    expect(frame).not.toContain("◆ Tail still typing");
+    expect(frame).toContain("◆ Tail still typing");
   });
 
   test("hides_incomplete_streaming_inline_markdown_delimiters", async () => {

@@ -1,4 +1,4 @@
-import type { AssistantUnifiedDiffFileSummary } from "./assistantMarkdownRenderSectionTypes.ts";
+import type { AssistantUnifiedDiffFileSummary } from "./assistantMarkdownTypes.ts";
 
 const unifiedDiffFileHeaderPattern = /^diff --git a\/(.+) b\/(.+)$/;
 const quotedUnifiedDiffFileHeaderPattern = /^diff --git "a\/(.+)" "b\/(.+)"$/;
@@ -106,10 +106,6 @@ export function readAssistantMarkdownRawDiffSnippetBlock(
   }
 
   return diffSnippetLines.length > 0 ? { diffSnippetLines, nextLineIndex: lineIndex } : undefined;
-}
-
-export function isAssistantMarkdownDiffLikeLine(markdownLine: string): boolean {
-  return parseAssistantUnifiedDiffFileHeader(markdownLine) !== undefined || isRawDiffSnippetLine(markdownLine);
 }
 
 export function formatAssistantUnifiedDiffText(unifiedDiffLines: readonly string[]): string {

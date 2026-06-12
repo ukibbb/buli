@@ -18,7 +18,7 @@ function splitUnifiedDiffTextIntoRows(unifiedDiffText: UnifiedDiffText): string[
   return unifiedDiffText.replace(/\n$/, "").split("\n");
 }
 
-type VisibleUnifiedDiffContent = {
+export type VisibleUnifiedDiffContent = {
   totalRenderableRowCount: number;
   visibleRenderableRowCount: number;
   visibleUnifiedDiffText: UnifiedDiffText;
@@ -50,7 +50,7 @@ function countUnifiedDiffRowsForLimitNotice(unifiedDiffLines: readonly string[])
   return countUnifiedDiffRenderableBodyRows(unifiedDiffLines) || unifiedDiffLines.length;
 }
 
-function buildVisibleUnifiedDiffContent(unifiedDiffText: UnifiedDiffText): VisibleUnifiedDiffContent {
+export function buildVisibleUnifiedDiffContent(unifiedDiffText: UnifiedDiffText): VisibleUnifiedDiffContent {
   const unifiedDiffLines = splitUnifiedDiffTextIntoRows(unifiedDiffText);
   const totalRenderableRowCount = countUnifiedDiffRowsForLimitNotice(unifiedDiffLines);
   const visibleRenderableRowCount = Math.min(totalRenderableRowCount, MAX_VISIBLE_DIFF_ROW_COUNT);
