@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { buliOpenTuiTreeSitterParserConfigs } from "../../../src/components/primitives/buliOpenTuiTreeSitterParsers.ts";
 import { resolveOpenTuiCodeFiletype } from "../../../src/components/primitives/FencedCodeBlock.tsx";
 
@@ -32,6 +33,14 @@ describe("buliOpenTuiTreeSitterParserConfigs", () => {
     ]);
   });
 
+  test("every_parser_points_at_an_existing_vendored_highlight_query_file", () => {
+    for (const parserConfig of buliOpenTuiTreeSitterParserConfigs) {
+      for (const highlightQueryPath of parserConfig.queries.highlights) {
+        expect(existsSync(highlightQueryPath)).toBe(true);
+      }
+    }
+  });
+
   test("covers_python_fence_labels_and_source_paths", () => {
     const pythonParserConfig = buliOpenTuiTreeSitterParserConfigs.find(
       (parserConfig) => parserConfig.filetype === "python",
@@ -39,7 +48,7 @@ describe("buliOpenTuiTreeSitterParserConfigs", () => {
 
     expect(pythonParserConfig?.aliases).toContain("py");
     expect(pythonParserConfig?.wasm).toContain("tree-sitter-python");
-    expect(pythonParserConfig?.queries.highlights[0]).toContain("tree-sitter-python");
+    expect(pythonParserConfig?.queries.highlights[0]).toContain("treeSitterHighlightQueries/python.highlights.scm");
     expect(resolveOpenTuiCodeFiletype(undefined, "py")).toBe("python");
     expect(resolveOpenTuiCodeFiletype(undefined, "python")).toBe("python");
     expect(resolveOpenTuiCodeFiletype("apps/api/tests/unit/auth/test_oauth_login_use_cases.py:67-83", undefined)).toBe(

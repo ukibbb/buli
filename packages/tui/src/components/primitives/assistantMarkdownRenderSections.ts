@@ -9,7 +9,6 @@ export {
 } from "./assistantMarkdownDiffSections.ts";
 export {
   areAssistantMarkdownVisibleListLinesEqual,
-  formatAssistantMarkdownListText,
 } from "./assistantMarkdownListSections.ts";
 export {
   buildStableAssistantMarkdownRenderSections,
@@ -30,15 +29,11 @@ export {
   type AssistantMarkdownVisibleListLine,
 } from "./assistantMarkdownRenderSectionTypes.ts";
 export {
-  formatAssistantMarkdownCalloutText,
   formatAssistantMarkdownHeadingText,
   formatAssistantMarkdownInlineTextForStyledText,
-  formatAssistantMarkdownQuoteText,
-  isAssistantMarkdownBlockquoteToken,
   isAssistantMarkdownCodeToken,
   isAssistantMarkdownDashOnlyParagraphToken,
   isAssistantMarkdownHeadingToken,
-  isAssistantMarkdownListToken,
   isAssistantMarkdownParagraphToken,
   parseAssistantMarkdownCallout,
   repeatAssistantMarkdownChromeRule,

@@ -33,6 +33,12 @@ type FencedCodeBlockCommonProps = {
   filePath?: string;
   conceal?: boolean;
   decorateTeachingComments?: boolean;
+  /**
+   * Keep true while fence content is still being appended so the code renderable
+   * reuses its incremental tree-sitter parse state instead of re-highlighting the
+   * whole block on every chunk; flip to false to finalize.
+   */
+  isStreaming?: boolean;
   wrapMode?: "char" | "none" | "word";
 };
 
@@ -84,6 +90,7 @@ export function FencedCodeBlock(props: FencedCodeBlockProps): ReactNode {
           conceal={props.conceal}
           decorateTeachingComments={props.decorateTeachingComments}
           filePath={props.filePath}
+          isStreaming={props.isStreaming ?? false}
           languageLabel={props.languageLabel}
           showLineNumbers={shouldShowLineNumbers}
           wrapMode={codeWrapMode}
@@ -99,6 +106,7 @@ function OpenTuiFencedCodeContent(props: {
   conceal: boolean | undefined;
   decorateTeachingComments: boolean | undefined;
   filePath: string | undefined;
+  isStreaming: boolean;
   languageLabel: string | undefined;
   showLineNumbers: boolean;
   wrapMode: "char" | "none" | "word";
@@ -121,6 +129,7 @@ function OpenTuiFencedCodeContent(props: {
         filetype={codeFiletype}
         {...(props.decorateTeachingComments ? { onChunks: decorateTeachingCommentCodeChunks } : {})}
         selectable={true}
+        streaming={props.isStreaming}
         syntaxStyle={codeBlockSyntaxStyle}
         treeSitterClient={openTuiSharedTreeSitterClient}
         width="100%"
@@ -147,6 +156,7 @@ function OpenTuiFencedCodeContent(props: {
         filetype={codeFiletype}
         {...(props.decorateTeachingComments ? { onChunks: decorateTeachingCommentCodeChunks } : {})}
         selectable={true}
+        streaming={props.isStreaming}
         syntaxStyle={codeBlockSyntaxStyle}
         treeSitterClient={openTuiSharedTreeSitterClient}
         width="100%"

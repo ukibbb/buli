@@ -5,12 +5,12 @@ import {
   SyntaxStyle,
   TextAttributes,
   type MarkdownOptions,
+  type Renderable,
   type TextChunk,
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
   decorateAssistantMarkdownInlineTextChunks,
-  decorateAssistantMarkdownListChunks,
   decorateAssistantMarkdownProseChunks,
   type AssistantMarkdownInlineDecorationProfile,
 } from "./assistantMarkdownChunkDecorators.ts";
@@ -19,16 +19,11 @@ import {
   areAssistantMarkdownVisibleListLinesEqual,
   buildAssistantDiffSnippetUnifiedDiff,
   buildStableAssistantMarkdownRenderSections,
-  formatAssistantMarkdownCalloutText,
   formatAssistantMarkdownHeadingText,
   formatAssistantMarkdownInlineTextForStyledText,
-  formatAssistantMarkdownListText,
-  formatAssistantMarkdownQuoteText,
-  isAssistantMarkdownBlockquoteToken,
   isAssistantMarkdownCodeToken,
   isAssistantMarkdownDashOnlyParagraphToken,
   isAssistantMarkdownHeadingToken,
-  isAssistantMarkdownListToken,
   isAssistantMarkdownParagraphToken,
   listVisibleAssistantDiffSnippetLines,
   parseAssistantMarkdownCallout,
@@ -46,13 +41,8 @@ import {
   githubLikeTerminalCodeColors,
 } from "./codeRenderingTheme.ts";
 import {
-  assistantMarkdownCalloutSyntaxStyleByKind,
-  assistantMarkdownQuoteSyntaxStyle,
   assistantMarkdownTableOptions,
-  assistantMarkdownTaskListSyntaxStyle,
   defaultAssistantMarkdownTerminalColumnCount,
-  formatAssistantMarkdownVisibleHeadingText,
-  resolveAssistantMarkdownHeadingForegroundColor,
   resolveAssistantMarkdownHeadingSyntaxStyle,
   resolveAssistantMarkdownVisibleListMarkerColor,
 } from "./assistantMarkdownTerminalTheme.ts";
@@ -154,55 +144,6 @@ function AssistantMarkdownStreamingTailBlock(props: { streamingTailText: string 
   );
 }
 
-function AssistantMarkdownHeadingBlock(props: { headingDepth: number; headingText: string }): ReactNode {
-  const headingForegroundColor = resolveAssistantMarkdownHeadingForegroundColor(props.headingDepth);
-  return (
-    <box marginBottom={1} width="100%">
-      <text fg={headingForegroundColor} wrapMode="word">
-        <AssistantMarkdownInlineText
-          attributes={TextAttributes.BOLD}
-          foregroundColor={headingForegroundColor}
-          inlineText={formatAssistantMarkdownVisibleHeadingText(props)}
-        />
-      </text>
-    </box>
-  );
-}
-
-function AssistantMarkdownHorizontalRuleBlock(props: { horizontalRuleText: string; horizontalRuleColor: string }): ReactNode {
-  return (
-    <box marginBottom={1} width="100%">
-      <text fg={props.horizontalRuleColor} wrapMode="none">
-        {props.horizontalRuleText}
-      </text>
-    </box>
-  );
-}
-
-function AssistantMarkdownTableBlock(props: {
-  isStreaming: boolean;
-  renderNode: NonNullable<MarkdownOptions["renderNode"]>;
-  tableMarkdownText: string;
-}): ReactNode {
-  return (
-    <box marginBottom={1} width="100%">
-      <markdown
-        bg={chatScreenTheme.bg}
-        conceal={true}
-        concealCode={false}
-        content={props.tableMarkdownText}
-        fg={chatScreenTheme.textPrimary}
-        renderNode={props.renderNode}
-        streaming={props.isStreaming}
-        syntaxStyle={assistantMarkdownSyntaxStyle}
-        tableOptions={assistantMarkdownTableOptions}
-        treeSitterClient={openTuiSharedTreeSitterClient}
-        width="100%"
-      />
-    </box>
-  );
-}
-
 function AssistantMarkdownListBlock(props: {
   listLines: readonly AssistantMarkdownVisibleListLine[];
   hasLeadingBlankLine: boolean;
@@ -290,6 +231,15 @@ function AssistantMarkdownCalloutBlock(props: { calloutKind: AssistantMarkdownCa
 
 function applyAssistantMarkdownFlowSpacing(defaultRenderable: CodeRenderable): void {
   defaultRenderable.marginBottom = 1;
+}
+
+function enableImmediateTextDrawingOnNestedCodeRenderables(renderable: Renderable): void {
+  if (renderable instanceof CodeRenderable) {
+    renderable.drawUnstyledText = true;
+  }
+  for (const childRenderable of renderable.getChildren()) {
+    enableImmediateTextDrawingOnNestedCodeRenderables(childRenderable);
+  }
 }
 
 function AssistantUnifiedDiffBlock(props: { unifiedDiffText: string }): ReactNode {
@@ -414,6 +364,7 @@ function AssistantShellSnippetBlock(props: { shellSnippetText: string }): ReactN
 function AssistantCodeFenceBlock(props: {
   codeFenceInfo: AssistantMarkdownCodeFenceInfo;
   codeFenceText: string;
+  isStreamingOpenCodeFence: boolean;
 }): ReactNode {
   return (
     <box flexDirection="column" marginBottom={1} width="100%">
@@ -427,6 +378,7 @@ function AssistantCodeFenceBlock(props: {
         codeText={props.codeFenceText}
         decorateTeachingComments={true}
         {...(props.codeFenceInfo.codeFenceFilePath !== undefined ? { filePath: props.codeFenceInfo.codeFenceFilePath } : {})}
+        isStreaming={props.isStreamingOpenCodeFence}
         languageLabel={props.codeFenceInfo.codeLanguageLabel}
         showLabel={false}
         wrapMode="char"
@@ -437,13 +389,11 @@ function AssistantCodeFenceBlock(props: {
 
 const MemoizedAssistantCodeFenceBlock = memo(AssistantCodeFenceBlock, (previousProps, nextProps) => {
   return previousProps.codeFenceText === nextProps.codeFenceText &&
+    previousProps.isStreamingOpenCodeFence === nextProps.isStreamingOpenCodeFence &&
     areAssistantMarkdownCodeFenceInfoValuesEqual(previousProps.codeFenceInfo, nextProps.codeFenceInfo);
 });
 const MemoizedAssistantMarkdownTextSection = memo(AssistantMarkdownTextSection);
 const MemoizedAssistantMarkdownStreamingTailBlock = memo(AssistantMarkdownStreamingTailBlock);
-const MemoizedAssistantMarkdownHeadingBlock = memo(AssistantMarkdownHeadingBlock);
-const MemoizedAssistantMarkdownHorizontalRuleBlock = memo(AssistantMarkdownHorizontalRuleBlock);
-const MemoizedAssistantMarkdownTableBlock = memo(AssistantMarkdownTableBlock);
 const MemoizedAssistantMarkdownListBlock = memo(AssistantMarkdownListBlock, (previousProps, nextProps) => {
   return previousProps.hasLeadingBlankLine === nextProps.hasLeadingBlankLine &&
     areAssistantMarkdownVisibleListLinesEqual(previousProps.listLines, nextProps.listLines);
@@ -476,9 +426,6 @@ const assistantMarkdownRenderSectionRendererByKind: {
 } = {
   markdown: renderMarkdownTextRenderSection,
   streamingTail: renderStreamingTailRenderSection,
-  heading: renderHeadingRenderSection,
-  horizontalRule: renderHorizontalRuleRenderSection,
-  table: renderTableRenderSection,
   codeFence: renderCodeFenceRenderSection,
   list: renderListRenderSection,
   blockquote: renderBlockquoteRenderSection,
@@ -533,29 +480,6 @@ function AssistantMarkdownBlockComponent(props: AssistantMarkdownBlockProps): Re
         return defaultRenderable;
       }
 
-      if (isAssistantMarkdownBlockquoteToken(token)) {
-        const assistantMarkdownCallout = parseAssistantMarkdownCallout(token.text);
-        defaultRenderable.content = assistantMarkdownCallout
-          ? formatAssistantMarkdownCalloutText(assistantMarkdownCallout)
-          : formatAssistantMarkdownQuoteText(token.text);
-        defaultRenderable.filetype = "markdown";
-        defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
-        applyAssistantMarkdownFlowSpacing(defaultRenderable);
-        defaultRenderable.syntaxStyle = assistantMarkdownCallout
-          ? assistantMarkdownCalloutSyntaxStyleByKind[assistantMarkdownCallout.calloutKind]
-          : assistantMarkdownQuoteSyntaxStyle;
-        return defaultRenderable;
-      }
-
-      if (isAssistantMarkdownListToken(token)) {
-        defaultRenderable.content = formatAssistantMarkdownListText(token);
-        defaultRenderable.filetype = "markdown";
-        defaultRenderable.onChunks = decorateAssistantMarkdownListChunks;
-        applyAssistantMarkdownFlowSpacing(defaultRenderable);
-        defaultRenderable.syntaxStyle = assistantMarkdownTaskListSyntaxStyle;
-        return defaultRenderable;
-      }
-
       if (token.type === "hr" || isAssistantMarkdownDashOnlyParagraphToken(token)) {
         // Dash-only paragraphs slip through during streaming before the parser classifies
         // them as `hr`. Render both the same way to avoid raw `---` leaking on screen.
@@ -568,14 +492,24 @@ function AssistantMarkdownBlockComponent(props: AssistantMarkdownBlockProps): Re
       }
 
       if (isAssistantMarkdownParagraphToken(token)) {
-        defaultRenderable.content = formatAssistantMarkdownInlineTextForStyledText(token.text);
-        defaultRenderable.filetype = "markdown";
+        // Keep the raw markdown content: OpenTUI conceal+linkify renders links as
+        // clickable "text (url)" and strikethrough natively; rewriting the content
+        // here would drop the URL and diverge from the in-place block update path,
+        // which always re-applies the raw token text.
         defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
         applyAssistantMarkdownFlowSpacing(defaultRenderable);
         return defaultRenderable;
       }
 
       defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
+      return defaultRenderable;
+    }
+
+    if (defaultRenderable) {
+      // OpenTUI builds list and blockquote children with drawUnstyledText=false, which
+      // keeps their text invisible until tree-sitter highlighting completes (or forever
+      // when it never does). Force immediate drawing on every nested code renderable.
+      enableImmediateTextDrawingOnNestedCodeRenderables(defaultRenderable);
     }
 
     return defaultRenderable;
@@ -645,42 +579,12 @@ function renderStreamingTailRenderSection(input: AssistantMarkdownRenderSectionR
   );
 }
 
-function renderHeadingRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"heading">): ReactNode {
-  return (
-    <MemoizedAssistantMarkdownHeadingBlock
-      headingDepth={input.assistantMarkdownRenderSection.headingDepth}
-      headingText={input.assistantMarkdownRenderSection.headingText}
-      key={input.assistantMarkdownRenderSection.sectionKey}
-    />
-  );
-}
-
-function renderHorizontalRuleRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"horizontalRule">): ReactNode {
-  return (
-    <MemoizedAssistantMarkdownHorizontalRuleBlock
-      horizontalRuleColor={input.horizontalRuleColor}
-      horizontalRuleText={input.horizontalRuleText}
-      key={input.assistantMarkdownRenderSection.sectionKey}
-    />
-  );
-}
-
-function renderTableRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"table">): ReactNode {
-  return (
-    <MemoizedAssistantMarkdownTableBlock
-      isStreaming={input.isStreaming}
-      key={input.assistantMarkdownRenderSection.sectionKey}
-      renderNode={input.renderNode}
-      tableMarkdownText={input.assistantMarkdownRenderSection.tableMarkdownText}
-    />
-  );
-}
-
 function renderCodeFenceRenderSection(input: AssistantMarkdownRenderSectionRendererInput<"codeFence">): ReactNode {
   return (
     <MemoizedAssistantCodeFenceBlock
       codeFenceInfo={input.assistantMarkdownRenderSection.codeFenceInfo}
       codeFenceText={input.assistantMarkdownRenderSection.codeFenceText}
+      isStreamingOpenCodeFence={input.assistantMarkdownRenderSection.isStreamingOpenCodeFence}
       key={input.assistantMarkdownRenderSection.sectionKey}
     />
   );

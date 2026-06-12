@@ -203,9 +203,17 @@ function omitRecordKeys<T>(record: Record<string, T>, omittedKeys: ReadonlySet<s
   return nextRecord;
 }
 
+// Each hydration pass gets a fresh id scope so replacing a transcript (session switch,
+// session deletion fallback, compaction) remounts message rows instead of mutating rows
+// that happen to share ids with the previous transcript — reused rows keep showing the
+// old content until OpenTUI's asynchronous re-highlight completes.
+let conversationTranscriptHydrationGeneration = 0;
+
 function buildHydratedConversationTranscript(
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): HydratedConversationTranscript {
+  conversationTranscriptHydrationGeneration += 1;
+  const hydratedIdScope = `persisted-${conversationTranscriptHydrationGeneration}`;
   const latestCompactionBoundary = findLatestConversationCompactionBoundary(conversationSessionEntries);
   const conversationMessagesById: Record<string, ConversationMessage> = {};
   const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
@@ -273,7 +281,7 @@ function buildHydratedConversationTranscript(
       return currentAssistantMessageId;
     }
 
-    const assistantMessageId = `persisted-assistant-${assistantMessageIndex}`;
+    const assistantMessageId = `${hydratedIdScope}-assistant-${assistantMessageIndex}`;
     assistantMessageIndex += 1;
     appendConversationMessage({
       id: assistantMessageId,
@@ -338,7 +346,7 @@ function buildHydratedConversationTranscript(
     }
 
     appendConversationMessagePart(currentAssistantMessageId, {
-      id: `persisted-entry-${interruptedAtEntryIndex}-assistant-interrupted-tool-call`,
+      id: `${hydratedIdScope}-entry-${interruptedAtEntryIndex}-assistant-interrupted-tool-call`,
       partKind: "assistant_interrupted_notice",
       interruptionReason: INTERRUPTED_TOOL_CALL_ERROR_TEXT,
     });
@@ -356,8 +364,8 @@ function buildHydratedConversationTranscript(
         return;
       }
 
-      const userMessageId = `persisted-entry-${entryIndex}-user`;
-      const userTextPartId = `persisted-entry-${entryIndex}-user-text`;
+      const userMessageId = `${hydratedIdScope}-entry-${entryIndex}-user`;
+      const userTextPartId = `${hydratedIdScope}-entry-${entryIndex}-user-text`;
       appendConversationMessage({
         id: userMessageId,
         role: "user",
@@ -375,7 +383,7 @@ function buildHydratedConversationTranscript(
       }
       for (const [imageAttachmentIndex, imageAttachment] of (conversationSessionEntry.imageAttachments ?? []).entries()) {
         appendConversationMessagePart(userMessageId, {
-          id: `persisted-entry-${entryIndex}-user-image-${imageAttachmentIndex}`,
+          id: `${hydratedIdScope}-entry-${entryIndex}-user-image-${imageAttachmentIndex}`,
           partKind: "user_image_attachment",
           attachment: imageAttachment,
         });
@@ -387,7 +395,7 @@ function buildHydratedConversationTranscript(
       markDanglingHydratedToolCallsAsInterrupted(entryIndex);
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
-      const compactionMessageId = `persisted-entry-${entryIndex}-compaction`;
+      const compactionMessageId = `${hydratedIdScope}-entry-${entryIndex}-compaction`;
       appendConversationMessage({
         id: compactionMessageId,
         role: "assistant",
@@ -396,11 +404,11 @@ function buildHydratedConversationTranscript(
           partIds: [],
       });
       appendConversationMessagePart(compactionMessageId, createCompactionSeparatorPart({
-        id: `persisted-entry-${entryIndex}-compaction-separator`,
+        id: `${hydratedIdScope}-entry-${entryIndex}-compaction-separator`,
         source: conversationSessionEntry.compactionSource ?? "manual",
       }));
       appendConversationMessagePart(compactionMessageId, {
-        id: `persisted-entry-${entryIndex}-compaction-summary`,
+        id: `${hydratedIdScope}-entry-${entryIndex}-compaction-summary`,
         partKind: "assistant_text",
         partStatus: "completed",
         rawMarkdownText: conversationSessionEntry.summaryText,
@@ -411,7 +419,7 @@ function buildHydratedConversationTranscript(
     if (conversationSessionEntry.entryKind === "buli_sticky_notes") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       appendConversationMessagePart(assistantMessageId, {
-        id: `persisted-entry-${entryIndex}-buli-sticky-notes`,
+        id: `${hydratedIdScope}-entry-${entryIndex}-buli-sticky-notes`,
         partKind: "assistant_buli_sticky_notes",
         buliStickyNotesContextText: conversationSessionEntry.buliStickyNotesContextText,
       });
@@ -428,7 +436,7 @@ function buildHydratedConversationTranscript(
 
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       appendConversationMessagePart(assistantMessageId, {
-        id: `persisted-entry-${entryIndex}-assistant-text-segment`,
+        id: `${hydratedIdScope}-entry-${entryIndex}-assistant-text-segment`,
         partKind: "assistant_text",
         partStatus: "completed",
         rawMarkdownText: visibleAssistantTextSegmentText,
@@ -438,7 +446,7 @@ function buildHydratedConversationTranscript(
 
     if (conversationSessionEntry.entryKind === "tool_call") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
-      const toolCallPartId = `persisted-entry-${entryIndex}-tool-call`;
+      const toolCallPartId = `${hydratedIdScope}-entry-${entryIndex}-tool-call`;
       toolCallPartIdByToolCallId.set(conversationSessionEntry.toolCallId, toolCallPartId);
       appendConversationMessagePart(assistantMessageId, {
         id: toolCallPartId,
@@ -456,6 +464,7 @@ function buildHydratedConversationTranscript(
       upsertHydratedToolResultPart({
         conversationSessionEntry,
         entryIndex,
+        hydratedIdScope,
         assistantMessageId,
         toolCallPartIdByToolCallId,
         conversationMessagePartsById,
@@ -467,7 +476,7 @@ function buildHydratedConversationTranscript(
     if (conversationSessionEntry.entryKind === "workspace_patch") {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       appendConversationMessagePart(assistantMessageId, {
-        id: `persisted-entry-${entryIndex}-workspace-patch`,
+        id: `${hydratedIdScope}-entry-${entryIndex}-workspace-patch`,
         partKind: "assistant_workspace_patch",
         workspacePatch: conversationSessionEntry.workspacePatch,
       });
@@ -489,7 +498,7 @@ function buildHydratedConversationTranscript(
       );
       if (visibleAssistantMessageText.length > 0 && !hasAssistantRenderedContentPart(assistantMessageId)) {
         appendConversationMessagePart(assistantMessageId, {
-          id: `persisted-entry-${entryIndex}-assistant-text`,
+          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-text`,
           partKind: "assistant_text",
           partStatus: conversationSessionEntry.assistantMessageStatus satisfies AssistantTextPartStatus,
           rawMarkdownText: visibleAssistantMessageText,
@@ -502,7 +511,7 @@ function buildHydratedConversationTranscript(
 
       if (conversationSessionEntry.assistantMessageStatus === "incomplete") {
         appendConversationMessagePart(assistantMessageId, {
-          id: `persisted-entry-${entryIndex}-assistant-incomplete`,
+          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-incomplete`,
           partKind: "assistant_incomplete_notice",
           incompleteReason: conversationSessionEntry.incompleteReason,
         });
@@ -510,7 +519,7 @@ function buildHydratedConversationTranscript(
 
       if (conversationSessionEntry.assistantMessageStatus === "failed") {
         appendConversationMessagePart(assistantMessageId, {
-          id: `persisted-entry-${entryIndex}-assistant-error`,
+          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-error`,
           partKind: "assistant_error_notice",
           errorText: conversationSessionEntry.failureExplanation,
         });
@@ -519,7 +528,7 @@ function buildHydratedConversationTranscript(
       if (conversationSessionEntry.assistantMessageStatus === "interrupted") {
         markDanglingHydratedToolCallsAsInterrupted(entryIndex);
         appendConversationMessagePart(assistantMessageId, {
-          id: `persisted-entry-${entryIndex}-assistant-interrupted`,
+          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-interrupted`,
           partKind: "assistant_interrupted_notice",
           interruptionReason: conversationSessionEntry.interruptionReason,
         });
@@ -528,6 +537,7 @@ function buildHydratedConversationTranscript(
       const assistantTurnSummaryPart = createHydratedAssistantTurnSummaryPart({
         conversationSessionEntry,
         entryIndex,
+        hydratedIdScope,
       });
       if (assistantTurnSummaryPart) {
         appendConversationMessagePart(assistantMessageId, assistantTurnSummaryPart);
@@ -551,6 +561,7 @@ function buildHydratedConversationTranscript(
 function createHydratedAssistantTurnSummaryPart(input: {
   conversationSessionEntry: AssistantMessageConversationSessionEntry;
   entryIndex: number;
+  hydratedIdScope: string;
 }): ConversationMessagePart | undefined {
   if (
     input.conversationSessionEntry.selectedModelId === undefined ||
@@ -560,7 +571,7 @@ function createHydratedAssistantTurnSummaryPart(input: {
   }
 
   return {
-    id: `persisted-entry-${input.entryIndex}-assistant-turn-summary`,
+    id: `${input.hydratedIdScope}-entry-${input.entryIndex}-assistant-turn-summary`,
     partKind: "assistant_turn_summary",
     turnDurationMs: input.conversationSessionEntry.turnDurationMs,
     modelDisplayName: input.conversationSessionEntry.selectedModelId,
@@ -574,6 +585,7 @@ function createHydratedAssistantTurnSummaryPart(input: {
 function upsertHydratedToolResultPart(input: {
   conversationSessionEntry: ToolResultConversationSessionEntry;
   entryIndex: number;
+  hydratedIdScope: string;
   assistantMessageId: string;
   toolCallPartIdByToolCallId: Map<string, string>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
@@ -598,7 +610,7 @@ function upsertHydratedToolResultPart(input: {
     return;
   }
 
-  const toolCallPartId = `persisted-entry-${input.entryIndex}-tool-result`;
+  const toolCallPartId = `${input.hydratedIdScope}-entry-${input.entryIndex}-tool-result`;
   input.toolCallPartIdByToolCallId.set(input.conversationSessionEntry.toolCallId, toolCallPartId);
   input.appendConversationMessagePart(
     input.assistantMessageId,

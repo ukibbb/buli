@@ -46,8 +46,28 @@ describe("assistantMarkdownRenderSections", () => {
       (renderSection) => renderSection.sectionKind === "codeFence",
     );
 
-    expect(firstCodeFenceSection?.sectionKind).toBe("codeFence");
-    expect(secondCodeFenceSection).toBe(firstCodeFenceSection);
+    const thirdMarkdownSections = buildStableAssistantMarkdownRenderSections({
+      markdownText: [
+        "```ts title=src/stable.ts",
+        "const stable = true;",
+        "```",
+        "",
+        "Streaming tail is still changing and growing",
+      ].join("\n"),
+      isStreaming: true,
+      previousCache: secondMarkdownSections.nextCache,
+    });
+    const thirdCodeFenceSection = thirdMarkdownSections.renderSections.find(
+      (renderSection) => renderSection.sectionKind === "codeFence",
+    );
+
+    // While the dangling closing fence is the streamed text's last line it is stripped, so
+    // the first build sees an open fence; once trailing text arrives the fence closes and
+    // the section is replaced (same key, new flag) and then reused by reference.
+    expect(firstCodeFenceSection).toMatchObject({ sectionKind: "codeFence", isStreamingOpenCodeFence: true });
+    expect(secondCodeFenceSection).toMatchObject({ sectionKind: "codeFence", isStreamingOpenCodeFence: false });
+    expect(secondCodeFenceSection?.sectionKey).toBe(firstCodeFenceSection?.sectionKey ?? "");
+    expect(thirdCodeFenceSection).toBe(secondCodeFenceSection);
   });
 
   test("reuses_stable_prefix_sections_when_streaming_appends_after_a_longer_prefix", () => {
@@ -74,14 +94,20 @@ describe("assistantMarkdownRenderSections", () => {
     });
 
     expect(firstMarkdownSections.renderSections.map((renderSection) => renderSection.sectionKind)).toEqual([
-      "heading",
       "markdown",
       "codeFence",
     ]);
     expect(secondMarkdownSections.renderSections[0]).toBe(firstMarkdownSections.renderSections[0]);
-    expect(secondMarkdownSections.renderSections[1]).toBe(firstMarkdownSections.renderSections[1]);
-    expect(secondMarkdownSections.renderSections[2]).toBe(firstMarkdownSections.renderSections[2]);
-    expect(secondMarkdownSections.renderSections[3]).toMatchObject({
+    // The fence closes between builds (its dangling closing line was stripped while it was
+    // the streamed tail), so the section is rebuilt with the same key instead of reused.
+    expect(secondMarkdownSections.renderSections[1]).toMatchObject({
+      sectionKind: "codeFence",
+      isStreamingOpenCodeFence: false,
+    });
+    expect(secondMarkdownSections.renderSections[1]?.sectionKey).toBe(
+      firstMarkdownSections.renderSections[1]?.sectionKey ?? "",
+    );
+    expect(secondMarkdownSections.renderSections[2]).toMatchObject({
       sectionKind: "streamingTail",
       streamingTailText: "Streaming tail",
     });
@@ -95,8 +121,7 @@ describe("assistantMarkdownRenderSections", () => {
     });
 
     expect(markdownSections.renderSections).toMatchObject([
-      { sectionKind: "heading", headingText: "Stable heading" },
-      { sectionKind: "markdown", markdownText: "Stable paragraph" },
+      { sectionKind: "markdown", markdownText: ["# Stable heading", "", "Stable paragraph"].join("\n") },
       { sectionKind: "streamingTail", streamingTailText: "## Tail still typing" },
     ]);
   });
@@ -109,9 +134,10 @@ describe("assistantMarkdownRenderSections", () => {
     });
 
     expect(markdownSections.renderSections).toMatchObject([
-      { sectionKind: "heading", headingText: "Stable heading" },
-      { sectionKind: "markdown", markdownText: "Stable paragraph" },
-      { sectionKind: "heading", headingText: "Tail completed" },
+      {
+        sectionKind: "markdown",
+        markdownText: ["# Stable heading", "", "Stable paragraph", "", "## Tail completed"].join("\n"),
+      },
     ]);
   });
 
@@ -204,22 +230,20 @@ describe("assistantMarkdownRenderSections", () => {
     expect(markdownSections.renderSections.some((renderSection) => renderSection.sectionKind === "codeFence")).toBe(false);
   });
 
-  test("table_sections_stop_before_non_table_prose_lines", () => {
+  test("keeps_tables_inside_native_markdown_sections", () => {
     const markdownSections = buildStableAssistantMarkdownRenderSections({
       markdownText: ["| Key | Value |", "| --- | --- |", "| A | B |", "Next paragraph."].join("\n"),
       isStreaming: false,
       previousCache: undefined,
     });
 
-    expect(markdownSections.renderSections.map((renderSection) => renderSection.sectionKind)).toEqual(["table", "markdown"]);
-    expect(markdownSections.renderSections[0]).toMatchObject({
-      sectionKind: "table",
-      tableMarkdownText: ["| Key | Value |", "| --- | --- |", "| A | B |"].join("\n"),
-    });
-    expect(markdownSections.renderSections[1]).toMatchObject({
-      sectionKind: "markdown",
-      markdownText: "Next paragraph.",
-    });
+    expect(markdownSections.renderSections).toEqual([
+      {
+        sectionKind: "markdown",
+        sectionKey: "markdown:0",
+        markdownText: ["| Key | Value |", "| --- | --- |", "| A | B |", "Next paragraph."].join("\n"),
+      },
+    ]);
   });
 
   test("parses_path_only_code_fence_info_without_using_path_as_language", () => {

@@ -204,6 +204,32 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("https://example.com");
   });
 
+  test("renders_links_with_visible_urls_instead_of_dropping_them", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        horizontalRuleColor="#10B981"
+        isStreaming={false}
+        markdownText={[
+          "See the [docs](https://example.com/page) for ~~outdated~~ details.",
+          "",
+          "- Read the [guide](https://example.com/guide) first",
+        ].join("\n")}
+      />,
+      { width: 90, height: 10 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("docs");
+    expect(frame).toContain("(https://example.com/page)");
+    expect(frame).toContain("guide (https://example.com/guide)");
+    expect(frame).toContain("outdated");
+    expect(frame).not.toContain("[docs](");
+    expect(frame).not.toContain("[guide](");
+    expect(frame).not.toContain("~~");
+  });
+
   test("conceals_inline_code_and_bold_inside_list_items", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock

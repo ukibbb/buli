@@ -546,7 +546,7 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
   expect(conversationMessages.map((conversationMessage) => conversationMessage.role)).toEqual(["user", "assistant"]);
   expect(listOrderedConversationMessageParts(chatSessionState, conversationMessages[0]!.id)).toEqual([
     {
-      id: "persisted-entry-0-user-text",
+      id: expect.stringMatching(/^persisted-\d+-entry-0-user-text$/) as unknown as string,
       partKind: "user_text",
       text: "Run pwd",
     },
@@ -557,7 +557,7 @@ test("hydrateConversationTranscriptFromSessionEntries rebuilds visible persisted
     "assistant_turn_summary",
   ]);
   expect(listOrderedConversationMessageParts(chatSessionState, conversationMessages[1]!.id).at(-1)).toEqual({
-    id: "persisted-entry-3-assistant-turn-summary",
+    id: expect.stringMatching(/^persisted-\d+-entry-3-assistant-turn-summary$/) as unknown as string,
     partKind: "assistant_turn_summary",
     turnDurationMs: 1250,
     modelDisplayName: "gpt-5.4",
@@ -666,12 +666,12 @@ test("hydrateConversationTranscriptFromSessionEntries hides synthetic auto-compa
   expect(compactionMessage).toBeDefined();
   expect(listOrderedConversationMessageParts(chatSessionState, compactionMessage!.id)).toEqual([
     {
-      id: "persisted-entry-0-compaction-separator",
+      id: expect.stringMatching(/^persisted-\d+-entry-0-compaction-separator$/) as unknown as string,
       partKind: "assistant_compaction_separator",
       source: "auto",
     },
     {
-      id: "persisted-entry-0-compaction-summary",
+      id: expect.stringMatching(/^persisted-\d+-entry-0-compaction-summary$/) as unknown as string,
       partKind: "assistant_text",
       partStatus: "completed",
       rawMarkdownText: "Goal: continue after compaction.",

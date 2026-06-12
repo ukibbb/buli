@@ -1,14 +1,10 @@
 import {
   assistantMarkdownUnorderedListMarkers,
-  type AssistantMarkdownListItemToken,
-  type AssistantMarkdownListToken,
   type AssistantMarkdownVisibleListLine,
 } from "./assistantMarkdownRenderSectionTypes.ts";
 import {
   formatAssistantMarkdownInlineTextForStyledText,
   formatStreamingAssistantMarkdownInlineTextForStyledText,
-  isAssistantMarkdownListToken,
-  isAssistantMarkdownParagraphToken,
 } from "./assistantMarkdownTextFormatting.ts";
 
 export const assistantMarkdownListLinePattern = /^(\s*)(?:([-*+])\s+(?:\[([ xX])\]\s+)?|(\d+\.)\s+)(.*)$/;
@@ -23,35 +19,6 @@ type ParsedAssistantMarkdownListLine = {
   listItemMarkerText: string;
   listItemText: string;
 };
-
-export function formatAssistantMarkdownListText(listToken: AssistantMarkdownListToken, depth = 0): string {
-  const orderedListStartNumber = typeof listToken.start === "number" ? listToken.start : 1;
-  const listItems = listToken.items ?? [];
-  const listItemMarkers = listItems.map((listItem, index) =>
-    resolveAssistantMarkdownListItemMarker({
-      listItem,
-      listToken,
-      depth,
-      index,
-      orderedListStartNumber,
-    })
-  );
-  const listItemMarkerWidth = Math.max(...listItemMarkers.map((listItemMarker) => listItemMarker.length), 1);
-  return listItems
-    .map((listItem, index) => {
-      const listItemIndent = "  ".repeat(depth);
-      const listItemMarker = listItemMarkers[index] ?? "•";
-      const alignedListItemMarker = listToken.ordered === true ? listItemMarker.padStart(listItemMarkerWidth, " ") : listItemMarker;
-      const listItemText = resolveAssistantMarkdownListItemText(listItem);
-      const listItemLine = `${listItemIndent}${alignedListItemMarker} ${listItemText}`.trimEnd();
-      const childListText = resolveAssistantMarkdownChildListTokens(listItem)
-        .map((childListToken) => formatAssistantMarkdownListText(childListToken, depth + 1))
-        .join("\n");
-
-      return childListText.length > 0 ? `${listItemLine}\n${childListText}` : listItemLine;
-    })
-    .join("\n");
-}
 
 export function readAssistantMarkdownListBlock(
   markdownLines: readonly string[],
@@ -86,33 +53,6 @@ export function areAssistantMarkdownVisibleListLinesEqual(
       previousListLine.listItemMarkerText === nextListLine.listItemMarkerText &&
       previousListLine.listItemText === nextListLine.listItemText;
   });
-}
-
-function resolveAssistantMarkdownListItemMarker(input: {
-  listItem: AssistantMarkdownListItemToken;
-  listToken: AssistantMarkdownListToken;
-  depth: number;
-  index: number;
-  orderedListStartNumber: number;
-}): string {
-  if (input.listItem.task === true) {
-    return input.listItem.checked ? "☑" : "☐";
-  }
-
-  if (input.listToken.ordered === true) {
-    return `${input.orderedListStartNumber + input.index}.`;
-  }
-
-  return assistantMarkdownUnorderedListMarkers[input.depth % assistantMarkdownUnorderedListMarkers.length] ?? "•";
-}
-
-function resolveAssistantMarkdownListItemText(listItem: AssistantMarkdownListItemToken): string {
-  const paragraphText = (listItem.tokens ?? []).find(isAssistantMarkdownParagraphToken)?.text;
-  return formatAssistantMarkdownInlineTextForStyledText((paragraphText ?? listItem.text ?? "").replace(/\n+/g, " ").trim());
-}
-
-function resolveAssistantMarkdownChildListTokens(listItem: AssistantMarkdownListItemToken): AssistantMarkdownListToken[] {
-  return (listItem.tokens ?? []).filter(isAssistantMarkdownListToken);
 }
 
 function parseAssistantMarkdownListLine(

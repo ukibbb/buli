@@ -13,7 +13,6 @@ import type {
   AssistantMarkdownRenderSectionCache,
 } from "./assistantMarkdownRenderSectionTypes.ts";
 import {
-  assistantMarkdownDashOnlyParagraphPattern,
   formatAssistantMarkdownInlineTextForStyledText,
   formatStreamingAssistantMarkdownInlineTextForStyledText,
 } from "./assistantMarkdownTextFormatting.ts";
@@ -24,9 +23,7 @@ const fencedCodeBlockStartPattern = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 const incompleteStreamingFencePattern = /^\s*(?:`{3,}[^`]*|~{3,}[^~]*)$/;
 const incompleteStreamingListMarkerPattern = /^\s*(?:[-*+]\s*(?:\[[ xX]?\]?)?|\d+\.)\s*$/;
 const incompleteStreamingHeadingPattern = /^\s*#{1,6}\s*$/;
-const markdownHeadingLinePattern = /^(#{1,6})\s+(.+)$/;
 const markdownBlockquoteLinePattern = /^\s*>\s?(.*)$/;
-const markdownTableSeparatorLinePattern = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 
 type AssistantMarkdownFencedCodeBlock = {
   fenceInfoString: string;
@@ -37,11 +34,6 @@ type AssistantMarkdownFencedCodeBlock = {
 
 type AssistantMarkdownBlockquoteBlock = {
   quoteText: string;
-  nextLineIndex: number;
-};
-
-type AssistantMarkdownTableBlock = {
-  tableMarkdownText: string;
   nextLineIndex: number;
 };
 
@@ -422,6 +414,7 @@ function splitAssistantMarkdownTextIntoRenderSections(
           sectionKey: `codeFence:${sectionStartLineIndex}`,
           codeFenceInfo: parseAssistantMarkdownCodeFenceInfo(fencedCodeBlock.fenceInfoString),
           codeFenceText: formatAssistantCodeFenceText(fencedCodeBlock.fencedContentLines),
+          isStreamingOpenCodeFence: isStreaming && !fencedCodeBlock.hasClosingFence,
         });
       }
       lineIndex = fencedCodeBlock.nextLineIndex;
@@ -463,41 +456,6 @@ function splitAssistantMarkdownTextIntoRenderSections(
         });
       }
       break;
-    }
-
-    const headingLineMatch = markdownHeadingLinePattern.exec(markdownLines[lineIndex] ?? "");
-    if (headingLineMatch) {
-      flushPendingMarkdownLines();
-      renderSections.push({
-        sectionKind: "heading",
-        sectionKey: `heading:${sectionStartLineIndex}`,
-        headingDepth: headingLineMatch[1]?.length ?? 1,
-        headingText: formatAssistantMarkdownInlineTextForRender(headingLineMatch[2] ?? "", isStreaming),
-      });
-      lineIndex += 1;
-      continue;
-    }
-
-    if (assistantMarkdownDashOnlyParagraphPattern.test((markdownLines[lineIndex] ?? "").trim())) {
-      flushPendingMarkdownLines();
-      renderSections.push({
-        sectionKind: "horizontalRule",
-        sectionKey: `horizontalRule:${sectionStartLineIndex}`,
-      });
-      lineIndex += 1;
-      continue;
-    }
-
-    const tableBlock = readAssistantMarkdownTableBlock(markdownLines, lineIndex);
-    if (tableBlock) {
-      flushPendingMarkdownLines();
-      renderSections.push({
-        sectionKind: "table",
-        sectionKey: `table:${sectionStartLineIndex}`,
-        tableMarkdownText: tableBlock.tableMarkdownText,
-      });
-      lineIndex = tableBlock.nextLineIndex;
-      continue;
     }
 
     const listBlock = readAssistantMarkdownListBlock(markdownLines, lineIndex, isStreaming);
@@ -569,18 +527,9 @@ function areAssistantMarkdownRenderSectionsEqual(
   if (previousRenderSection.sectionKind === "streamingTail" && nextRenderSection.sectionKind === "streamingTail") {
     return previousRenderSection.streamingTailText === nextRenderSection.streamingTailText;
   }
-  if (previousRenderSection.sectionKind === "heading" && nextRenderSection.sectionKind === "heading") {
-    return previousRenderSection.headingDepth === nextRenderSection.headingDepth &&
-      previousRenderSection.headingText === nextRenderSection.headingText;
-  }
-  if (previousRenderSection.sectionKind === "horizontalRule" && nextRenderSection.sectionKind === "horizontalRule") {
-    return true;
-  }
-  if (previousRenderSection.sectionKind === "table" && nextRenderSection.sectionKind === "table") {
-    return previousRenderSection.tableMarkdownText === nextRenderSection.tableMarkdownText;
-  }
   if (previousRenderSection.sectionKind === "codeFence" && nextRenderSection.sectionKind === "codeFence") {
     return previousRenderSection.codeFenceText === nextRenderSection.codeFenceText &&
+      previousRenderSection.isStreamingOpenCodeFence === nextRenderSection.isStreamingOpenCodeFence &&
       areAssistantMarkdownCodeFenceInfoValuesEqual(previousRenderSection.codeFenceInfo, nextRenderSection.codeFenceInfo);
   }
   if (previousRenderSection.sectionKind === "list" && nextRenderSection.sectionKind === "list") {
@@ -750,35 +699,4 @@ function readAssistantMarkdownBlockquoteBlock(
   }
 
   return { quoteText: quoteLines.join("\n"), nextLineIndex: lineIndex };
-}
-
-function isAssistantMarkdownTableStart(markdownLines: readonly string[], lineIndex: number): boolean {
-  const tableHeaderLine = markdownLines[lineIndex] ?? "";
-  const tableSeparatorLine = markdownLines[lineIndex + 1] ?? "";
-  return tableHeaderLine.includes("|") && markdownTableSeparatorLinePattern.test(tableSeparatorLine);
-}
-
-function readAssistantMarkdownTableBlock(
-  markdownLines: readonly string[],
-  startLineIndex: number,
-): AssistantMarkdownTableBlock | undefined {
-  if (!isAssistantMarkdownTableStart(markdownLines, startLineIndex)) {
-    return undefined;
-  }
-
-  const tableLines: string[] = [];
-  let lineIndex = startLineIndex;
-  while (lineIndex < markdownLines.length && isAssistantMarkdownTableRowLine(markdownLines[lineIndex] ?? "")) {
-    tableLines.push(markdownLines[lineIndex] ?? "");
-    lineIndex += 1;
-  }
-
-  return {
-    tableMarkdownText: tableLines.join("\n"),
-    nextLineIndex: lineIndex,
-  };
-}
-
-function isAssistantMarkdownTableRowLine(markdownLine: string): boolean {
-  return markdownLine.trim().length > 0 && markdownLine.includes("|");
 }

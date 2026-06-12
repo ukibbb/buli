@@ -1,10 +1,8 @@
 import type {
-  AssistantMarkdownBlockquoteToken,
   AssistantMarkdownCallout,
   AssistantMarkdownCalloutKind,
   AssistantMarkdownCodeToken,
   AssistantMarkdownHeadingToken,
-  AssistantMarkdownListToken,
   AssistantMarkdownParagraphToken,
   AssistantMarkdownToken,
 } from "./assistantMarkdownRenderSectionTypes.ts";
@@ -29,14 +27,6 @@ export function isAssistantMarkdownHeadingToken(token: AssistantMarkdownToken): 
   );
 }
 
-export function isAssistantMarkdownBlockquoteToken(token: AssistantMarkdownToken): token is AssistantMarkdownBlockquoteToken {
-  return token.type === "blockquote" && "text" in token && typeof token.text === "string";
-}
-
-export function isAssistantMarkdownListToken(token: AssistantMarkdownToken): token is AssistantMarkdownListToken {
-  return token.type === "list" && "items" in token && Array.isArray(token.items);
-}
-
 export function isAssistantMarkdownDashOnlyParagraphToken(
   token: AssistantMarkdownToken,
 ): token is AssistantMarkdownParagraphToken {
@@ -55,7 +45,13 @@ export function isAssistantMarkdownParagraphToken(token: AssistantMarkdownToken)
 export function formatAssistantMarkdownInlineTextForStyledText(inlineMarkdownText: string): string {
   return inlineMarkdownText
     .replace(/~~([^~\n]+)~~/g, "$1")
-    .replace(/!?\[([^\]\n]+)\]\([^\n)]+\)/g, "$1");
+    .replace(
+      /!?\[([^\]\n]+)\]\(\s*([^\s)]+)(?:\s+[^)]*)?\)/g,
+      (_linkMarkdown, visibleLinkText: string, linkUrl: string) =>
+        // Dropping the URL would make the link unreachable in a terminal, and
+        // repeating it reads as noise when the visible text already is the URL.
+        visibleLinkText === linkUrl ? linkUrl : `${visibleLinkText} (${linkUrl})`,
+    );
 }
 
 export function formatStreamingAssistantMarkdownInlineTextForStyledText(inlineMarkdownText: string): string {
@@ -127,20 +123,6 @@ export function parseAssistantMarkdownCallout(inputText: string): AssistantMarkd
     calloutKind: calloutMarkerMatch[1]!.toUpperCase() as AssistantMarkdownCalloutKind,
     bodyText: calloutMarkerMatch[2]?.trimStart() ?? "",
   };
-}
-
-export function formatAssistantMarkdownQuoteText(quoteText: string): string {
-  const quoteLines = quoteText.trim().split("\n");
-  return quoteLines.map((quoteLine) => `│ ${formatAssistantMarkdownInlineTextForStyledText(quoteLine)}`).join("\n");
-}
-
-export function formatAssistantMarkdownCalloutText(input: AssistantMarkdownCallout): string {
-  const bodyLines = input.bodyText.trim().length > 0 ? input.bodyText.trim().split("\n") : [];
-  return [
-    `▌ ${input.calloutKind}`,
-    "├" + "─".repeat(Math.max(12, input.calloutKind.length + 2)),
-    ...bodyLines.map((bodyLine) => `│ ${formatAssistantMarkdownInlineTextForStyledText(bodyLine)}`),
-  ].join("\n");
 }
 
 export function repeatAssistantMarkdownChromeRule(input: { availableColumnCount: number; occupiedColumnCount?: number }): string {
