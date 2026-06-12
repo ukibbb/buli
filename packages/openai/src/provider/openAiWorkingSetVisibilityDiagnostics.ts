@@ -13,7 +13,7 @@ export type OpenAiWorkingSetVisibilityReason =
   | "provider_protocol_continuation"
   | "unclassified";
 
-export type OpenAiWorkingSetProjectionKind = "exact" | "duplicate_reference";
+export type OpenAiWorkingSetProjectionKind = "exact" | "duplicate_reference" | "cross_step_reference";
 
 export type OpenAiWorkingSetInputItemProjectionMetadata = Readonly<{
   projectionKind: OpenAiWorkingSetProjectionKind;
@@ -64,7 +64,7 @@ type OpenAiWorkingSetProjectionKindAggregate = Readonly<{
 }>;
 
 const DEFAULT_LARGEST_VISIBLE_INPUT_ITEM_COUNT = 10;
-const OPENAI_WORKING_SET_PROJECTION_KINDS: readonly OpenAiWorkingSetProjectionKind[] = ["exact", "duplicate_reference"];
+const OPENAI_WORKING_SET_PROJECTION_KINDS: readonly OpenAiWorkingSetProjectionKind[] = ["exact", "duplicate_reference", "cross_step_reference"];
 const OPENAI_WORKING_SET_VISIBILITY_REASONS: readonly OpenAiWorkingSetVisibilityReason[] = [
   "active_user_intent",
   "active_instructions",

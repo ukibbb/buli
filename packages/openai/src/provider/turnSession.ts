@@ -46,6 +46,7 @@ import {
 } from "./openAiResponsesRequest.ts";
 import { summarizeOpenAiWorkingSetVisibilityForDiagnostics } from "./openAiWorkingSetVisibilityDiagnostics.ts";
 import {
+  OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES_ENV_VAR,
   projectCurrentTurnToolResultReplayForOpenAiRequest,
   type OpenAiCurrentTurnToolResultReplayProjectionDiagnostics,
 } from "./openAiCurrentTurnToolResultReplayProjection.ts";
@@ -213,6 +214,8 @@ export class OpenAiProviderConversationTurn {
   readonly openAiResponsesRequestTemplate: OpenAiResponsesHttpRequestTemplate;
   readonly openAiConversationInputItems: OpenAiConversationInputItem[];
   readonly initialOpenAiConversationInputItemCount: number;
+  readonly crossStepToolResultReferencesEnabled: boolean;
+  readonly inputItemCountByBuiltRequestIndex: number[];
   readonly providerTurnReplayInputItems: OpenAiProviderTurnReplayInputItem[];
   readonly queuedToolResultSubmissionByToolCallId: Map<string, OpenAiProviderToolResultSubmission>;
   readonly pendingToolResultSubmissionWaitByToolCallId: Map<string, PendingOpenAiToolResultSubmissionWait>;
@@ -245,6 +248,7 @@ export class OpenAiProviderConversationTurn {
     responseStepHttpRetryPolicy?: OpenAiHttpRetryPolicy | undefined;
     rateLimitCoordinator?: OpenAiRateLimitCoordinator | undefined;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
+    crossStepToolResultReferencesEnabled?: boolean | undefined;
   }) {
     this.conversationTurnId = input.conversationTurnId;
     this.providerTurnKind = input.providerTurnKind;
@@ -295,6 +299,9 @@ export class OpenAiProviderConversationTurn {
     });
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
     this.initialOpenAiConversationInputItemCount = this.openAiConversationInputItems.length;
+    this.crossStepToolResultReferencesEnabled = input.crossStepToolResultReferencesEnabled ??
+      process.env[OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES_ENV_VAR] === "1";
+    this.inputItemCountByBuiltRequestIndex = [];
     this.providerTurnReplayInputItems = [];
     this.queuedToolResultSubmissionByToolCallId = new Map<string, OpenAiProviderToolResultSubmission>();
     this.pendingToolResultSubmissionWaitByToolCallId = new Map<string, PendingOpenAiToolResultSubmissionWait>();
@@ -420,7 +427,16 @@ export class OpenAiProviderConversationTurn {
       const currentTurnToolResultReplayProjection = projectCurrentTurnToolResultReplayForOpenAiRequest({
         openAiInputItems: exactOpenAiConversationInputItemsForRequest,
         currentTurnFirstInputItemIndex: this.initialOpenAiConversationInputItemCount,
+        ...(this.crossStepToolResultReferencesEnabled
+          ? {
+              crossStepReference: {
+                currentRequestIndex: this.inputItemCountByBuiltRequestIndex.length,
+                inputItemCountByBuiltRequestIndex: this.inputItemCountByBuiltRequestIndex,
+              },
+            }
+          : {}),
       });
+      this.inputItemCountByBuiltRequestIndex.push(exactOpenAiConversationInputItemsForRequest.length);
       const currentTurnFunctionCallOutputReplayDiagnostics = currentTurnToolResultReplayProjection.diagnostics;
       const requestBody = createOpenAiResponsesHttpRequestBodyFromTemplate({
         requestTemplate: this.openAiResponsesRequestTemplate,

@@ -4,6 +4,20 @@ import type { OpenAiConversationInputItem, OpenAiFunctionCallOutputInputItem } f
 
 export const OPENAI_CURRENT_TURN_DUPLICATE_TOOL_RESULT_REFERENCE_MIN_CHARACTER_COUNT = 8_192;
 
+export const OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES_ENV_VAR = "BULI_OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES";
+
+/** Results first sent in the immediately preceding request stay exact; only older same-turn replay may be referenced. */
+export const OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCE_MIN_REQUEST_AGE = 2;
+
+const CROSS_STEP_REFERENCE_EXCERPT_CHARACTER_COUNT = 200;
+
+export type OpenAiCrossStepToolResultReplayReferenceInput = Readonly<{
+  /** 0-based index of the request currently being built within this provider turn. */
+  currentRequestIndex: number;
+  /** Input item count included in each previously built request of this turn, in build order. */
+  inputItemCountByBuiltRequestIndex: readonly number[];
+}>;
+
 export type OpenAiCurrentTurnToolResultReplayProjectionDiagnostics = Readonly<{
   requestCurrentTurnFunctionCallOutputOriginalTextLength: number;
   requestCurrentTurnFunctionCallOutputProjectedTextLength: number;
@@ -32,6 +46,7 @@ export function projectCurrentTurnToolResultReplayForOpenAiRequest(input: {
   openAiInputItems: readonly OpenAiConversationInputItem[];
   currentTurnFirstInputItemIndex: number;
   duplicateReferenceMinimumCharacterCount?: number | undefined;
+  crossStepReference?: OpenAiCrossStepToolResultReplayReferenceInput | undefined;
 }): OpenAiCurrentTurnToolResultReplayProjection {
   const duplicateReferenceMinimumCharacterCount = input.duplicateReferenceMinimumCharacterCount ??
     OPENAI_CURRENT_TURN_DUPLICATE_TOOL_RESULT_REFERENCE_MIN_CHARACTER_COUNT;
@@ -56,6 +71,43 @@ export function projectCurrentTurnToolResultReplayForOpenAiRequest(input: {
 
     const originalToolResultText = openAiInputItem.output;
     currentTurnFunctionCallOutputOriginalTextLength += originalToolResultText.length;
+
+    if (
+      input.crossStepReference !== undefined &&
+      originalToolResultText.length >= duplicateReferenceMinimumCharacterCount &&
+      !isInvalidFunctionCallOutputText(originalToolResultText) &&
+      isInputItemOldEnoughForCrossStepReference({
+        inputItemIndex,
+        crossStepReference: input.crossStepReference,
+      })
+    ) {
+      const crossStepReferenceText = createCrossStepCurrentTurnToolResultReferenceText({
+        toolCallId: openAiInputItem.call_id,
+        evidenceId: createToolResultEvidenceId(openAiInputItem.call_id),
+        contentSha256: createSha256HexDigest(originalToolResultText),
+        originalCharacterCount: originalToolResultText.length,
+        visibleExcerptText: originalToolResultText.slice(0, CROSS_STEP_REFERENCE_EXCERPT_CHARACTER_COUNT),
+      });
+      if (crossStepReferenceText.length < originalToolResultText.length) {
+        const projectedFunctionCallOutputItem: OpenAiFunctionCallOutputInputItem = {
+          ...openAiInputItem,
+          output: crossStepReferenceText,
+        };
+        projectedOpenAiInputItems[inputItemIndex] = projectedFunctionCallOutputItem;
+        projectionMetadataByInputItemIndex.set(inputItemIndex, {
+          projectionKind: "cross_step_reference",
+          evidenceId: createToolResultEvidenceId(openAiInputItem.call_id),
+          originalTextLength: originalToolResultText.length,
+          projectedTextLength: crossStepReferenceText.length,
+          originalSerializedByteLength: calculateSerializedUtf8ByteLength(openAiInputItem),
+          projectedSerializedByteLength: calculateSerializedUtf8ByteLength(projectedFunctionCallOutputItem),
+        });
+        currentTurnFunctionCallOutputProjectedTextLength += crossStepReferenceText.length;
+        compactedCurrentTurnFunctionCallOutputCount += 1;
+        continue;
+      }
+    }
+
     const firstExactCurrentTurnToolResult = firstExactCurrentTurnToolResultByOutputText.get(originalToolResultText);
     const shouldKeepOutputExact = firstExactCurrentTurnToolResult === undefined ||
       originalToolResultText.length < duplicateReferenceMinimumCharacterCount ||
@@ -121,6 +173,39 @@ export function projectCurrentTurnToolResultReplayForOpenAiRequest(input: {
       requestCurrentTurnExactWorkingSetFunctionCallOutputTextLength: exactCurrentTurnFunctionCallOutputTextLength,
     },
   };
+}
+
+function isInputItemOldEnoughForCrossStepReference(input: {
+  inputItemIndex: number;
+  crossStepReference: OpenAiCrossStepToolResultReplayReferenceInput;
+}): boolean {
+  const firstSentRequestIndex = input.crossStepReference.inputItemCountByBuiltRequestIndex.findIndex(
+    (inputItemCount) => inputItemCount > input.inputItemIndex,
+  );
+  if (firstSentRequestIndex === -1) {
+    return false;
+  }
+  return firstSentRequestIndex <= input.crossStepReference.currentRequestIndex - OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCE_MIN_REQUEST_AGE;
+}
+
+function createCrossStepCurrentTurnToolResultReferenceText(input: {
+  toolCallId: string;
+  evidenceId: string;
+  contentSha256: string;
+  originalCharacterCount: number;
+  visibleExcerptText: string;
+}): string {
+  return [
+    "<cross_step_tool_result_reference>",
+    `tool_call_id: ${input.toolCallId}`,
+    `evidence_id: ${input.evidenceId}`,
+    `content_sha256: ${input.contentSha256}`,
+    `original_character_count: ${input.originalCharacterCount}`,
+    "visible_excerpt:",
+    input.visibleExcerptText,
+    "The exact tool result text was shown in an earlier request of this same assistant turn and is stored unchanged. If the exact content is needed again, request the same tool call again instead of guessing.",
+    "</cross_step_tool_result_reference>",
+  ].join("\n");
 }
 
 function createDuplicateCurrentTurnToolResultReferenceText(input: {
