@@ -58,6 +58,7 @@ export type {
 } from "./assistantProviderModelPromptProfile.ts";
 export {
   createDefaultWorkspaceCodebaseKnowledgeIndex,
+  defaultWorkspaceCodebaseKnowledgeDatabaseFilePath,
   defaultWorkspaceCodebaseKnowledgeIndexFilePath,
   TreeSitterWorkspaceCodebaseKnowledgeIndex,
 } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";

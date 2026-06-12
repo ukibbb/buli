@@ -6,7 +6,7 @@ import {
   createCodebaseSourceContentHash,
   createTreeSitterCodebaseStructureIndexer,
   CURRENT_CODEBASE_STRUCTURE_MAP_VERSION,
-  JsonFileCodebaseKnowledgeRepository,
+  SqliteCodebaseKnowledgeRepository,
   resolveCodebaseLanguageKindForFilePath,
   type CodebaseIndexedFileMetadata,
   type CodebaseKnowledgeRecord,
@@ -23,6 +23,7 @@ import { listWorkspaceFiles } from "../tools/workspaceFileSearch.ts";
 import { formatWorkspaceDisplayPath, resolveWorkspacePath } from "../tools/workspacePath.ts";
 
 const DEFAULT_CODEBASE_KNOWLEDGE_INDEX_FILE_NAME = "codebase-knowledge.json";
+const DEFAULT_CODEBASE_KNOWLEDGE_DATABASE_FILE_NAME = "codebase-knowledge.sqlite";
 
 type IndexedWorkspaceFile = {
   absoluteFilePath: string;
@@ -551,8 +552,9 @@ export function createDefaultWorkspaceCodebaseKnowledgeIndex(input: {
 }): WorkspaceCodebaseKnowledgeIndex {
   return new TreeSitterWorkspaceCodebaseKnowledgeIndex({
     workspaceRootPath: input.workspaceRootPath,
-    codebaseKnowledgeRepository: new JsonFileCodebaseKnowledgeRepository({
-      indexFilePath: defaultWorkspaceCodebaseKnowledgeIndexFilePath({ workspaceRootPath: input.workspaceRootPath }),
+    codebaseKnowledgeRepository: new SqliteCodebaseKnowledgeRepository({
+      databaseFilePath: defaultWorkspaceCodebaseKnowledgeDatabaseFilePath({ workspaceRootPath: input.workspaceRootPath }),
+      legacyJsonIndexFilePath: defaultWorkspaceCodebaseKnowledgeIndexFilePath({ workspaceRootPath: input.workspaceRootPath }),
       ...(input.diagnosticLogger
         ? { diagnosticReporter: (diagnosticEvent) => logJsonFileCodebaseKnowledgeRepositoryDiagnosticEvent(input.diagnosticLogger, diagnosticEvent) }
         : {}),
@@ -629,6 +631,10 @@ function createCodebaseKnowledgeMemoryDiagnosticFields(input: {
 
 export function defaultWorkspaceCodebaseKnowledgeIndexFilePath(input: { workspaceRootPath: string }): string {
   return join(input.workspaceRootPath, ".buli", "index", DEFAULT_CODEBASE_KNOWLEDGE_INDEX_FILE_NAME);
+}
+
+export function defaultWorkspaceCodebaseKnowledgeDatabaseFilePath(input: { workspaceRootPath: string }): string {
+  return join(input.workspaceRootPath, ".buli", "index", DEFAULT_CODEBASE_KNOWLEDGE_DATABASE_FILE_NAME);
 }
 
 function resolveIndexableLanguageIdForWorkspaceFile(displayPath: string): string | undefined {
@@ -794,7 +800,7 @@ function isGeneratedCodebaseKnowledgeIndexPath(filePath: string): boolean {
   }) || isGeneratedCodebaseKnowledgeIndexFilePath({
     normalizedFilePath,
     generatedFilePath: ".buli/index/codebase-knowledge.records.json",
-  });
+  }) || normalizedFilePath.startsWith(`.buli/index/${DEFAULT_CODEBASE_KNOWLEDGE_DATABASE_FILE_NAME}`);
 }
 
 function isGeneratedCodebaseKnowledgeIndexFilePath(input: { normalizedFilePath: string; generatedFilePath: string }): boolean {

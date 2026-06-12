@@ -1,10 +1,10 @@
 import { mkdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { JsonFileCodebaseKnowledgeRepository } from "@buli/codebase-knowledge";
+import { SqliteCodebaseKnowledgeRepository } from "@buli/codebase-knowledge";
 import type { BuliDiagnosticLogEvent, BuliDiagnosticLogFields } from "@buli/contracts";
 import {
   createDefaultWorkspaceCodebaseKnowledgeIndex,
-  defaultWorkspaceCodebaseKnowledgeIndexFilePath,
+  defaultWorkspaceCodebaseKnowledgeDatabaseFilePath,
 } from "@buli/engine";
 import {
   createBytesMetric,
@@ -17,6 +17,10 @@ import {
 export type CodebaseKnowledgeStartupIndexScenarioConfig = Readonly<{
   sourceDirectoryCount: number;
   sourceFilesPerDirectory: number;
+  /** Extra exported declarations per synthetic file so record volume approaches production-scale stores. */
+  extraExportedSymbolCount?: number | undefined;
+  scenarioName?: string | undefined;
+  scenarioDefaultRepeatCount?: number | undefined;
 }>;
 
 type StartupIndexPassMeasurement = Readonly<{
@@ -70,17 +74,26 @@ const defaultScenarioConfig: CodebaseKnowledgeStartupIndexScenarioConfig = {
 
 export const codebaseKnowledgeStartupIndexScenario = createCodebaseKnowledgeStartupIndexScenario();
 
+/** On-demand variant sized to make monolithic-store rewrite costs visible; not part of the default quick profile set. */
+export const codebaseKnowledgeStartupIndexLargeScenario = createCodebaseKnowledgeStartupIndexScenario({
+  sourceDirectoryCount: 48,
+  sourceFilesPerDirectory: 25,
+  extraExportedSymbolCount: 12,
+  scenarioName: "codebase-knowledge-startup-index-large",
+  scenarioDefaultRepeatCount: 2,
+});
+
 export function createCodebaseKnowledgeStartupIndexScenario(
   config: CodebaseKnowledgeStartupIndexScenarioConfig = defaultScenarioConfig,
 ): PerformanceScenario {
   validateScenarioConfig(config);
 
   return {
-    scenarioName: "codebase-knowledge-startup-index",
+    scenarioName: config.scenarioName ?? "codebase-knowledge-startup-index",
     description:
       "Builds a larger synthetic TypeScript/TSX/Python workspace and measures full startup indexing, unchanged restart reuse, runtime changed-file refresh, modified-file reindexing, and mtime-only restart hashing.",
     defaultWarmupCount: 1,
-    defaultRepeatCount: 3,
+    defaultRepeatCount: config.scenarioDefaultRepeatCount ?? 3,
     async runIteration(input) {
       const scenarioDirectoryPath = join(
         input.runOutputDirectoryPath,
@@ -100,11 +113,12 @@ export function createCodebaseKnowledgeStartupIndexScenario(
       const runtimeChangedFileRefreshPass = await measureRuntimeChangedFileRefreshPass({
         workspaceRootPath,
         sourceFilePath: runtimeRefreshSourceFilePath,
+        config,
       });
 
       await writeFile(
         join(workspaceRootPath, modifiedSourceFilePath),
-        createSyntheticSourceFileText({ displayPath: modifiedSourceFilePath, revision: "modified" }),
+        createSyntheticSourceFileText({ displayPath: modifiedSourceFilePath, revision: "modified", config }),
         "utf8",
       );
       const modifiedFileRestartPass = await measureStartupIndexPass({ workspaceRootPath });
@@ -115,10 +129,10 @@ export function createCodebaseKnowledgeStartupIndexScenario(
       const mtimeOnlyRestartPass = await measureStartupIndexPass({ workspaceRootPath });
 
       const heapUsedAfterIndexing = process.memoryUsage().heapUsed;
-      const repositorySnapshot = await new JsonFileCodebaseKnowledgeRepository({
-        indexFilePath: defaultWorkspaceCodebaseKnowledgeIndexFilePath({ workspaceRootPath }),
+      const repositorySnapshot = await new SqliteCodebaseKnowledgeRepository({
+        databaseFilePath: defaultWorkspaceCodebaseKnowledgeDatabaseFilePath({ workspaceRootPath }),
       }).readSnapshot();
-      const indexFileStats = await stat(defaultWorkspaceCodebaseKnowledgeIndexFilePath({ workspaceRootPath }));
+      const indexFileStats = await stat(defaultWorkspaceCodebaseKnowledgeDatabaseFilePath({ workspaceRootPath }));
 
       return {
         iterationLabel: `${input.isWarmup ? "warmup" : "repeat"}-${input.iterationIndex}`,
@@ -447,6 +461,7 @@ async function measureStartupIndexPass(input: { workspaceRootPath: string }): Pr
 async function measureRuntimeChangedFileRefreshPass(input: {
   workspaceRootPath: string;
   sourceFilePath: string;
+  config: CodebaseKnowledgeStartupIndexScenarioConfig;
 }): Promise<RuntimeChangedFileRefreshPassMeasurement> {
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
   const workspaceCodebaseKnowledgeIndex = createDefaultWorkspaceCodebaseKnowledgeIndex({
@@ -457,7 +472,7 @@ async function measureRuntimeChangedFileRefreshPass(input: {
   await workspaceCodebaseKnowledgeIndex.ensureWorkspaceIndexed();
   await writeFile(
     join(input.workspaceRootPath, input.sourceFilePath),
-    createSyntheticSourceFileText({ displayPath: input.sourceFilePath, revision: "modified" }),
+    createSyntheticSourceFileText({ displayPath: input.sourceFilePath, revision: "modified", config: input.config }),
     "utf8",
   );
 
@@ -550,7 +565,7 @@ async function createSyntheticCodebaseWorkspace(input: {
       await mkdir(dirname(absoluteSourceFilePath), { recursive: true });
       await writeFile(
         absoluteSourceFilePath,
-        createSyntheticSourceFileText({ displayPath: sourceFilePath, revision: "initial" }),
+        createSyntheticSourceFileText({ displayPath: sourceFilePath, revision: "initial", config: input.config }),
         "utf8",
       );
     }
@@ -572,15 +587,31 @@ function createSyntheticSourceFilePath(input: { sourceDirectoryIndex: number; so
   }
 }
 
-function createSyntheticSourceFileText(input: { displayPath: string; revision: "initial" | "modified" }): string {
+function createSyntheticSourceFileText(input: {
+  displayPath: string;
+  revision: "initial" | "modified";
+  config: CodebaseKnowledgeStartupIndexScenarioConfig;
+}): string {
   const sourceIdentifier = createSourceIdentifier(input.displayPath);
-  if (input.displayPath.endsWith(".py")) {
-    return createSyntheticPythonSourceFileText({ sourceIdentifier, revision: input.revision });
+  const baseSourceFileText = input.displayPath.endsWith(".py")
+    ? createSyntheticPythonSourceFileText({ sourceIdentifier, revision: input.revision })
+    : input.displayPath.endsWith(".tsx")
+    ? createSyntheticTsxSourceFileText({ sourceIdentifier, revision: input.revision })
+    : createSyntheticTypeScriptSourceFileText({ sourceIdentifier, revision: input.revision });
+  const extraExportedSymbolCount = input.config.extraExportedSymbolCount ?? 0;
+  if (extraExportedSymbolCount === 0 || input.displayPath.endsWith(".py") || input.displayPath.endsWith(".tsx")) {
+    return baseSourceFileText;
   }
-  if (input.displayPath.endsWith(".tsx")) {
-    return createSyntheticTsxSourceFileText({ sourceIdentifier, revision: input.revision });
+  const extraExportedSymbolLines: string[] = [];
+  for (let symbolIndex = 0; symbolIndex < extraExportedSymbolCount; symbolIndex += 1) {
+    extraExportedSymbolLines.push(
+      `export function generated${sourceIdentifier}Helper${symbolIndex}(input: { value: number }): number {`,
+      `  return input.value + ${symbolIndex};`,
+      "}",
+      "",
+    );
   }
-  return createSyntheticTypeScriptSourceFileText({ sourceIdentifier, revision: input.revision });
+  return `${baseSourceFileText}${extraExportedSymbolLines.join("\n")}\n`;
 }
 
 function createSyntheticTypeScriptSourceFileText(input: { sourceIdentifier: string; revision: "initial" | "modified" }): string {

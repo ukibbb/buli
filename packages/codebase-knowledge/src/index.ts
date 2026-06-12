@@ -38,6 +38,7 @@ export {
   type JsonFileCodebaseKnowledgeRepositoryMemoryUsageSnapshot,
 } from "./jsonFileCodebaseKnowledgeRepository.ts";
 export { locateCodebaseSymbolDefinitions } from "./locateCodebaseSymbolDefinitions.ts";
+export { SqliteCodebaseKnowledgeRepository } from "./sqliteCodebaseKnowledgeRepository.ts";
 export {
   createTreeSitterCodebaseStructureIndexer,
   createTreeSitterTypeScriptCodebaseStructureIndexer,
