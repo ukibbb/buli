@@ -119,6 +119,25 @@ Available deterministic scenarios:
 | `codebase-knowledge-startup-index` | full startup indexing, unchanged restart reuse, runtime changed-file refresh, JSON records read/parse/stringify/write attribution, single-file reindexing, mtime-only hash reuse, snapshot write skipping, index size, and heap delta | `packages/engine/src/codebaseKnowledge/*`, `packages/codebase-knowledge/src/*` |
 | `assistant-markdown-render-sections` | cold markdown section builds, append-only streaming updates, completion promotion, stable section reuse, streaming tail count, and heap delta | `packages/tui/src/components/primitives/assistantMarkdownRenderSectionBuilder.ts` |
 
+## Task-Completion Evals
+
+Mocked task-completion evals gate working-set projection changes (the moderate tier in `2026-05-26-performance-optimization-design.md`). They drive the real engine, real tools, and the real OpenAI request building through a scripted model that only uses evidence visible in the post-projection request body:
+
+```bash
+bun run eval -- --output-dir profile-runs/evals/baseline --implementation-label baseline
+BULI_OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES=1 bun run eval -- --output-dir profile-runs/evals/cross-step-on --implementation-label cross-step-on
+```
+
+Run a single eval with `--eval <name>`. Available evals: `eval-file-exploration`, `eval-multi-file-edit`, `eval-debugging`, `eval-long-tool-chain`, `eval-subagent-delegation`.
+
+Gate metrics per eval:
+
+- `eval.<name>.task_completion_failure_count` fails above 0.
+- `eval.<name>.recovery_tool_call_count` warns above 0 and fails above 4; recovery calls are explicit re-reads the scripted model issued because exact evidence was compacted out of the request.
+- `eval.<name>.total_function_output_bytes_sent` and `eval.<name>.max_request_body_bytes` measure the byte side of the trade.
+
+A projection change passes the gate when every eval completes with the change enabled and the byte metrics improve enough to justify any added recovery calls. Eval summaries are `summary.json`/`summary.md` like deterministic profiles, so `bun run profile:compare` works on them.
+
 ## Before/After Comparisons
 
 Run the same scenario before and after a rewrite:
@@ -225,7 +244,7 @@ Use report sections as a decision tree:
 | Many `TimeoutError` transport retries | `OpenAI Retries And Timeouts`, `response_step.transport_retry_scheduled`, `response_step.summary.requestAttemptCount` | OpenAI first-byte wait or network stall |
 | High `task` execution total, failed parent-visible task results, or checkpoint failures | `Task Subagent Attribution`, `Tool Attribution`, task-only `tool_call.concurrent_group_finished` | subagent runtime, routing quality, or checkpoint compliance |
 | Many response steps and huge request bodies | `response_step.summary.requestBodyTextLength`, `provider_turn.summary.maxRequestBodyTextLength`, `OpenAI Request Size Contributors`, `OpenAI Working-Set Visibility` | context growth, large tool schemas, tool-result replay growth, or current-turn evidence volume |
-| Need to know why model-visible items are present | `OpenAI Working-Set Visibility` reason rows, evidence IDs, exact/duplicate-reference counts, saved bytes, and projection-kind table | provider-visible working-set diagnostics; same-request duplicate references keep an earlier exact copy visible, while cross-step replay aggregation is still off by default |
+| Need to know why model-visible items are present | `OpenAI Working-Set Visibility` reason rows, evidence IDs, exact/duplicate-reference counts, saved bytes, and projection-kind table | provider-visible working-set diagnostics; same-request duplicates of at least 8,192 characters become references while an earlier exact copy stays visible, and cross-step replay aggregation is not implemented |
 | Large `toolResultTextLength` or `maxToolResultTextLength` | `response_step.summary`, `conversation_turn.summary`, `OpenAI Request Size Contributors`, `OpenAI Working-Set Visibility` | tool output volume |
 | Individual tool results are capped but totals keep growing | `conversation_turn.summary.totalToolResultTextLength`, `Request And Context Growth` | aggregate tool-output accumulation |
 | Context usage reaches the soft budget | `OpenAI Context Guard`, `response_step.continuation_context_guard_triggered`, `conversation_compaction.completed` | guard-triggered continuation and compaction |

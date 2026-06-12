@@ -200,7 +200,7 @@ Signals:
 - OpenAI continuation step count.
 - Tool-result and request body growth.
 - Largest OpenAI request size contributors by serialized byte length.
-- Provider-visible working-set visibility reasons, evidence IDs, exact/duplicate-reference projection counts, saved bytes, and whether cross-step replay aggregation is still off.
+- Provider-visible working-set visibility reasons, evidence IDs, exact/duplicate-reference projection counts, and saved bytes. Cross-step replay aggregation is not implemented; only same-request duplicates of at least 8,192 characters become references.
 
 ### Task Subagents
 

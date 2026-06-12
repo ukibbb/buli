@@ -25,6 +25,7 @@ Required deterministic summaries:
 - `profile-runs/current/sqlite/summary.md`
 - `profile-runs/current/tool-output/summary.md`
 - `profile-runs/current/codebase-knowledge/summary.md`
+- `profile-runs/current/assistant-markdown-render-sections/summary.md`
 
 The previous hardcoded bottleneck numbers are intentionally removed from this document. Reintroduce numeric claims only by pointing to a current profile report or deterministic summary.
 
@@ -38,7 +39,7 @@ That means:
 - Provider requests should contain current user intent, active instructions, recent relevant evidence, failure-recovery context, and compact summaries.
 - Historical large or repeated tool outputs should become evidence cards with stable IDs, metadata, hashes when available, visible excerpts, and explicit omission notices.
 - Full raw evidence remains stored even when the model-visible projection is compact.
-- Current-turn evidence stays exact at least once inside the provider request that uses it. A later identical `function_call_output` in the same request may become a duplicate reference only when an earlier exact copy remains visible in that same request. Cross-response-step replay aggregation is still eval-gated and off by default.
+- Current-turn evidence stays exact at least once inside the provider request that uses it. A later identical `function_call_output` in the same request may become a duplicate reference only when an earlier exact copy remains visible in that same request and the result is at least 8,192 characters (`OPENAI_CURRENT_TURN_DUPLICATE_TOOL_RESULT_REFERENCE_MIN_CHARACTER_COUNT`); smaller results always replay exactly. Cross-response-step replay aggregation is not implemented; adding it would require an eval gate first.
 
 The target shape is:
 
@@ -79,6 +80,7 @@ bun run profile -- --scenario task-subagent-runtime --output-dir profile-runs/cu
 bun run profile -- --scenario sqlite-session-large-history --output-dir profile-runs/current/sqlite --implementation-label current --repeat 3 --warmups 1
 bun run profile -- --scenario tool-output-context-growth --output-dir profile-runs/current/tool-output --implementation-label current --repeat 5 --warmups 1
 bun run profile -- --scenario codebase-knowledge-startup-index --output-dir profile-runs/current/codebase-knowledge --implementation-label current --repeat 3 --warmups 1
+bun run profile -- --scenario assistant-markdown-render-sections --output-dir profile-runs/current/assistant-markdown-render-sections --implementation-label current --repeat 8 --warmups 1
 ```
 
 Fresh manual baseline:
@@ -283,6 +285,16 @@ Template:
   Validation: ...
 ```
 
+- Candidate: stop rewriting the whole codebase-knowledge records JSON on changed-file refresh (shard, append-log, or SQLite).
+  Evidence: `profile-runs/measurements/manual-working-set-baseline/profile.jsonl` — RSS 711 MiB -> 2,709 MiB and the run-maximum 302 ms event-loop stall within one second of the t+576.5s `patch_many` mutation refresh; `.buli/index/codebase-knowledge.records.json` is 121 MB in this workspace while the deterministic scenario fixture is 2.6 MB (`codebase_knowledge_startup_index.changed_file_refresh.repository.records_file_text_bytes`). Attribution details: `2026-06-12-mocked-task-completion-evals-design.md`.
+  Expected effect: remove the ~1.5 GiB transient allocation and event-loop stalls after every mutating tool call in large indexed workspaces.
+  Validation: deterministic `codebase-knowledge-startup-index` scenario with a production-scale records fixture, plus a manual profile during edit-heavy work.
+
+- Candidate: cross-response-step current-turn tool-result replay references (implemented behind `BULI_OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES=1`, default off).
+  Evidence: `profile-runs/measurements/manual-working-set-baseline/profile-report.md` — OpenAI Replay Input Age: 1.008 MiB current-turn function output sent across steps vs ~311 KiB unique tool-result text. Eval gate: `bun run eval` passes flag-off and flag-on; flag-on cut eval function-output bytes by 18-21% on the multi-step evals with at most one bounded recovery re-read.
+  Expected effect: shrink continuation request bodies in long tool-heavy turns.
+  Validation: task-completion evals (flag on), openai unit tests, `openai-stream-replay` and `tool-output-context-growth` deterministic profiles. Real-model A/B is still required before default-on.
+
 ### Implemented or no longer relevant
 
 Keep ideas here when source verification shows they are already done or based on an outdated assumption.
@@ -306,6 +318,8 @@ Source-verified completed or mostly completed items:
 - Task subagent attribution diagnostics distinguish executor completion from parent-visible result kind, join model/effort fallback from model-selection events, and surface checkpoint/failure evidence without capping completed reports.
 - Task subagent checkpoint prompt hardening and deterministic compliance metrics for parent-visible failed task results, `requested_tools_after_checkpoint` failures, and completed checkpoint task results. This does not force a no-tool finalizer, change default routing, compact provider context, or cap completed reports.
 - Codebase knowledge changed-file refresh diagnostics and deterministic profile metrics for repository records-file read, JSON.parse, schema parse, map-to-memory, map-to-disk, JSON.stringify, temporary write, rename, and RSS/heap/external/arrayBuffers deltas. This is measurement only; it does not shard records, switch storage, or move indexing out of TypeScript.
+- Mocked task-completion eval harness (`bun run eval`, `packages/performance/src/evals/`): five scripted-model evals (file exploration, multi-file edit, debugging, long tool chain, subagent delegation) that drive the real engine, real tools, and the real OpenAI request-building/projection code through a scripted `fetchImpl`. Scripted models may only use evidence visible in the post-projection request body and pay explicit recovery tool calls when exact evidence was compacted. Design record: `2026-06-12-mocked-task-completion-evals-design.md`.
+- Cross-response-step current-turn tool-result replay references behind `BULI_OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES=1` (default off): same-turn `function_call_output` items at least 8,192 characters that were first sent at least two requests earlier project to a `<cross_step_tool_result_reference>` card with evidence ID, sha256, original size, and a head excerpt. Working-set visibility diagnostics report the new `cross_step_reference` projection kind with real saved bytes. Raw history and stored replay stay exact.
 
 Partial caveat: historical failed/interrupted turns and current-turn continuations can still need bounded recovery evidence or compact replay. Task subagent context is scoped, and completed parent-visible task results are intentionally uncapped for correctness.
 
@@ -331,7 +345,7 @@ Use this bucket when source behavior has been checked but the current product im
 
 Examples:
 
-- Cross-response-step current-turn provider replay growth from repeated `function_call_output` continuation items. Same-request exact duplicates can now be referenced, but replay across later response-step requests remains exact unless a future eval-gated flag proves quality is preserved.
+- Cross-response-step current-turn provider replay growth from repeated `function_call_output` continuation items. Same-request exact duplicates of at least 8,192 characters can now be referenced, but replay across later response-step requests always remains exact today; compacting it is unimplemented and would need an eval gate proving quality is preserved.
 - Aggregate tool-output accumulation across many read/grep/bash calls after individual caps apply.
 - Skill catalog disk parsing and memoization impact.
 - Task-subagent routing quality/latency and real-model checkpoint-compliance impact after prompt hardening, using manual A/B runs with model/effort overrides when deterministic metrics stay clean.
@@ -351,7 +365,7 @@ Implemented in this tier:
 3. Shadow original/projected/saved diagnostics with exact projection counts and saved/compacted bytes fixed at 0.
 4. Fresh profile annotations that tie each proposed optimization to a `profile-runs/` path and stable metric.
 5. Task-subagent checkpoint prompt hardening plus deterministic compliance metrics, while preserving uncapped completed reports.
-6. Same-request duplicate `function_call_output` references when an earlier exact copy remains visible in the same OpenAI request. Raw session history and stored provider-turn replay stay exact.
+6. Same-request duplicate `function_call_output` references when an earlier exact copy remains visible in the same OpenAI request and the result is at least 8,192 characters. Raw session history and stored provider-turn replay stay exact.
 7. Codebase-knowledge changed-file refresh phase attribution and deterministic large-record refresh metrics before considering sharding, SQLite/NDJSON, or another-language/process boundaries.
 
 Completed diagnostics that support this tier: request-size contributor diagnostics, per-tool result-size diagnostics, OpenAI Working-Set Visibility report sections, deterministic/report sections for working-set growth, same-request duplicate-reference projection metrics, and Codebase Knowledge refresh/repository attribution. These diagnostics do not compact cross-step current-turn replay and do not prove that broader compaction or storage rewrites are safe.
@@ -361,7 +375,7 @@ Completed diagnostics that support this tier: request-size contributor diagnosti
 These need task-completion evals because they alter model-visible content:
 
 1. Evidence-card projection for large read/grep/bash outputs.
-2. Fresh tool result visible once, compact replay later across response-step requests. This is not implemented; current-turn tool evidence still replays exactly across same-turn continuations except for same-request duplicate references where an exact copy remains visible.
+2. Fresh tool result visible once, compact replay later across response-step requests. Implemented behind the default-off `BULI_OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES=1` flag and gated by the task-completion evals; default-on still requires a real-model A/B because mocked evals cannot prove encrypted-reasoning replay carries enough memory.
 3. Adaptive per-tool budgets based on remaining context.
 4. Structured-but-uncapped subagent report guidance.
 5. Failed/interrupted-turn evidence cards instead of raw transcript blocks.

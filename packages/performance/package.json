@@ -13,6 +13,7 @@
     "@buli/openai": "workspace:*"
   },
   "scripts": {
+    "eval": "bun src/runBuliEvals.ts",
     "profile": "bun src/runBuliPerformanceProfile.ts",
     "compare": "bun src/compareBuliPerformanceProfiles.ts",
     "manual": "bun src/runManualBuliProfile.ts",

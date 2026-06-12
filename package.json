@@ -17,6 +17,7 @@
     "dev:cli": "bun --filter @buli/cli dev",
     "link:cli": "bun scripts/link-cli.mjs",
     "login": "bun --filter @buli/cli login",
+    "eval": "bun packages/performance/src/runBuliEvals.ts",
     "profile": "bun packages/performance/src/runBuliPerformanceProfile.ts",
     "profile:compare": "bun packages/performance/src/compareBuliPerformanceProfiles.ts",
     "profile:manual": "bun packages/performance/src/runManualBuliProfile.ts",
