@@ -1613,75 +1613,41 @@ Source file:
 
 `packages/engine/src/assistantTextMessagePartBuilder.ts`
 
-The builder keeps both raw markdown and parsed display parts:
+The builder keeps only the raw markdown text plus bookkeeping for splitting
+internal mode-scope tags out of the stream:
 
 ```ts
 export type AssistantTextMessagePartBuilderState = {
   partId: string;
   rawMarkdownText: string;
-  completedContentParts: AssistantContentPart[];
-  openMarkdownBufferText: string;
-  openContentPart: ConversationOpenAssistantTextPart | undefined;
+  pendingPossibleInternalModeScopeTagFragment: string;
 };
 ```
 
-It normalizes text chunks:
+On each delta it normalizes line endings (CRLF to LF), strips complete internal
+mode-scope tags from the visible stream, holds back a trailing fragment that
+might be the start of such a tag, and appends the remaining visible delta to
+`rawMarkdownText`. There is no incremental block extraction and no typed
+content-part tree: the engine stores the full markdown string and the TUI parses
+structure at render time.
+
+The message part it produces carries that raw markdown plus a `partStatus`:
 
 ```ts
-function normalizeAssistantTextDeltaText(assistantTextDeltaText: string): string {
-  return assistantTextDeltaText.replace(/\r\n?/g, "\n");
-}
+export const AssistantTextConversationMessagePartSchema = z
+  .object({
+    id: z.string().min(1),
+    partKind: z.literal("assistant_text"),
+    partStatus: AssistantTextPartStatusSchema,
+    rawMarkdownText: z.string(),
+  })
+  .strict();
 ```
 
-It extracts completed markdown blocks and leaves the unfinished tail open:
-
-```ts
-const { completedBlockTexts, remainingMarkdownBufferText } = extractCompletedMarkdownBlocks(nextOpenMarkdownBufferText);
-const newlyCompletedContentParts = completedBlockTexts.flatMap((completedBlockText) =>
-  parseAssistantResponseIntoContentParts(completedBlockText),
-);
-```
-
-This is why the UI can show completed paragraphs/lists/code blocks while the
-last unfinished paragraph is still streaming.
-
-### Content Part Parser
-
-Source file:
-
-`packages/engine/src/assistantContentPartParser.ts`
-
-```ts
-export function parseAssistantResponseIntoContentParts(assistantResponseText: string): readonly AssistantContentPart[] {
-```
-
-It parses a supported markdown subset into typed content parts:
-
-- paragraph
-- heading
-- bulleted list
-- numbered list
-- checklist
-- fenced code block
-- callout
-- horizontal rule
-
-The typed shape lives in:
-
-`packages/contracts/src/assistantContentPart.ts`
-
-```ts
-export const AssistantContentPartSchema = z.discriminatedUnion("kind", [
-  ParagraphContentPartSchema,
-  HeadingContentPartSchema,
-  BulletedListContentPartSchema,
-  NumberedListContentPartSchema,
-  ChecklistContentPartSchema,
-  FencedCodeBlockContentPartSchema,
-  CalloutContentPartSchema,
-  HorizontalRuleContentPartSchema,
-]);
-```
+Defined in `packages/contracts/src/conversationMessagePart.ts`. Markdown
+structure (paragraphs, lists, code fences, tables) is produced by OpenTUI's
+incremental markdown parser in the TUI — see the Assistant Text Rendering
+section below.
 
 ## Reasoning Flow
 
@@ -2453,72 +2419,62 @@ Source file:
 `packages/tui/src/components/messageParts/AssistantTextPartView.tsx`
 
 ```tsx
-const hasCompletedContentParts = props.assistantTextConversationMessagePart.completedContentParts.length > 0;
-const hasOpenContentPart = props.assistantTextConversationMessagePart.openContentPart !== undefined;
+const markdownText = props.assistantTextConversationMessagePart.rawMarkdownText;
+const hasMarkdownText = markdownText.length > 0;
 ```
 
-Assistant text can have:
+Assistant text carries a single `rawMarkdownText` string plus a `partStatus`.
+There is no typed content-part tree: the message part holds the full markdown
+source, streaming or complete.
 
-- completed content parts
-- one open streaming tail
-- neither yet, in which case it shows a waiting placeholder
-
-Completed parts render here:
+When there is markdown text, the whole string is handed to one markdown block:
 
 ```tsx
-<RenderAssistantResponseTree
-  assistantContentParts={props.assistantTextConversationMessagePart.completedContentParts}
+<AssistantMarkdownBlock
+  markdownText={markdownText}
+  isStreaming={props.assistantTextConversationMessagePart.partStatus === "streaming"}
 />
 ```
 
-Open unfinished markdown text renders as plain text:
+When there is no text yet, it shows a waiting placeholder:
 
 ```tsx
-return <text fg={chatScreenTheme.textPrimary}>{props.openContentPart.text}</text>;
+return <text fg={chatScreenTheme.textDim}>Waiting for model output...</text>;
 ```
 
-Open unfinished code block renders as a code block:
-
-```tsx
-if (props.openContentPart.kind === "streaming_fenced_code_block") {
-  return <FencedCodeBlock ... />;
-}
-```
-
-## Rich Text Component Dispatch
+## Markdown Rendering
 
 Source file:
 
-`packages/tui/src/richText/renderAssistantResponseTree.tsx`
+`packages/tui/src/components/primitives/AssistantMarkdownBlock.tsx`
+
+The entire assistant text part is rendered by a single OpenTUI `<markdown>`
+element rather than a React component-per-content-kind dispatch. OpenTUI's
+incremental parser and in-place block reconciliation handle the structure
+(paragraphs, headings, lists, tables, code fences); buli-specific chrome is
+applied through a custom `renderNode`:
 
 ```tsx
-function AssistantContentPartView(props: { assistantContentPart: AssistantContentPart }): ReactNode {
-  const { assistantContentPart } = props;
-  if (assistantContentPart.kind === "paragraph") {
-    return <InlineMarkdownText spans={assistantContentPart.inlineSpans} />;
-  }
-  if (assistantContentPart.kind === "heading") {
-    return <HeadingView ... />;
-  }
+<markdown
+  content={formatAssistantMarkdownTaskListMarkers(
+    prepareAssistantMarkdownTextForRendering(props.markdownText, props.isStreaming),
+  )}
+  renderNode={assistantMarkdownUnifiedRenderNode}
+  streaming={true}
+  ...
+/>
 ```
 
-Dispatch table:
-
-| Content kind | Component |
-| --- | --- |
-| `paragraph` | `InlineMarkdownText` |
-| `heading` | `HeadingView` |
-| `bulleted_list` | `BulletedList` |
-| `numbered_list` | `NumberedList` |
-| `checklist` | `Checklist` |
-| `fenced_code_block` | `FencedCodeBlock` |
-| `callout` | `Callout` |
-| `horizontal_rule` | inline divider layout |
+The custom render node lives in
+`packages/tui/src/components/primitives/assistantMarkdownUnifiedRenderNode.ts`
+and decorates fences, diffs, callouts, and prose. The block always renders in
+streaming mode — finalizing on completion would re-render the whole tree just
+to settle a trailing block whose content has already stopped changing.
 
 This is the answer to “how does the agent decide which component to render?”
 
-It does not decide directly. The parser produces typed content parts. The
-renderer switches on `kind`.
+It does not decide directly. The model emits markdown text; OpenTUI parses it
+and the unified render node applies buli's styling per block.
 
 ## Tool Card Dispatch
 
@@ -3038,7 +2994,7 @@ OpenAI streams response
   -> relay batches assistant events
   -> assistantTurnEventReducer updates chatSessionState
   -> ConversationMessageRow renders AssistantTextPartView
-  -> RenderAssistantResponseTree renders rich text
+  -> AssistantMarkdownBlock renders markdown
 
 OpenAI completes
   -> provider emits completed
@@ -3259,11 +3215,11 @@ Use this map when you are trying to answer “where does this happen?”
 | How is OpenAI request built? | `packages/openai/src/provider/turnSession.ts` |
 | How is history reconstructed? | `packages/openai/src/provider/request.ts` |
 | How is SSE parsed? | `packages/openai/src/provider/stream.ts` |
-| How is assistant text parsed? | `packages/engine/src/assistantTextMessagePartBuilder.ts` |
-| How is markdown converted to typed content? | `packages/engine/src/assistantContentPartParser.ts` |
+| How is assistant text accumulated? | `packages/engine/src/assistantTextMessagePartBuilder.ts` |
+| How is assistant markdown rendered? | `packages/tui/src/components/primitives/AssistantMarkdownBlock.tsx` |
 | How do assistant events update UI state? | `packages/chat-session-state/src/assistantTurnEventReducer.ts` |
 | How are transcript rows rendered? | `packages/tui/src/components/ConversationMessageRow.tsx` |
-| How are rich text blocks rendered? | `packages/tui/src/richText/renderAssistantResponseTree.tsx` |
+| How is markdown block chrome applied? | `packages/tui/src/components/primitives/assistantMarkdownUnifiedRenderNode.ts` |
 | How are tool cards chosen? | `packages/tui/src/components/toolCalls/ToolCallEntryView.tsx` |
 | How is bash approval decided? | `packages/engine/src/tools/bashToolApprovalPolicy.ts` |
 | How is bash executed? | `packages/engine/src/tools/bashTool.ts` |
@@ -3303,7 +3259,7 @@ Read these files in this order if you want to build understanding gradually.
 29. `packages/tui/src/components/ConversationMessageList.tsx`
 30. `packages/tui/src/components/ConversationMessageRow.tsx`
 31. `packages/tui/src/components/messageParts/AssistantTextPartView.tsx`
-32. `packages/tui/src/richText/renderAssistantResponseTree.tsx`
+32. `packages/tui/src/components/primitives/AssistantMarkdownBlock.tsx`
 33. `packages/engine/src/tools/bashToolApprovalPolicy.ts`
 34. `packages/engine/src/tools/bashTool.ts`
 
@@ -3349,7 +3305,7 @@ OpenAI stream
   -> assistant_text part in chatSessionState
   -> ConversationMessageRow
   -> AssistantTextPartView
-  -> RenderAssistantResponseTree
+  -> AssistantMarkdownBlock
 
 OpenAI completed
   -> provider completed event
