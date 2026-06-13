@@ -14,10 +14,7 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import {
-  createAssistantMarkdownChromeRenderNode,
-  type AssistantMarkdownChromeRenderNodeOptions,
-} from "./assistantMarkdownChromeRenderNode.ts";
+import { createAssistantMarkdownChromeRenderNode } from "./assistantMarkdownChromeRenderNode.ts";
 import { decorateAssistantMarkdownInlineTextChunks } from "./assistantMarkdownChunkDecorators.ts";
 import { parseAssistantMarkdownCodeFenceInfo } from "./assistantMarkdownCodeFenceInfo.ts";
 import {
@@ -520,10 +517,8 @@ function renderAssistantProseDiffParagraph(
   return undefined;
 }
 
-export function createAssistantMarkdownUnifiedRenderNode(
-  options: AssistantMarkdownChromeRenderNodeOptions,
-): NonNullable<MarkdownOptions["renderNode"]> {
-  const chromeRenderNode = createAssistantMarkdownChromeRenderNode(options);
+export function createAssistantMarkdownUnifiedRenderNode(): NonNullable<MarkdownOptions["renderNode"]> {
+  const chromeRenderNode = createAssistantMarkdownChromeRenderNode();
   const specialFenceRenderNode = createMarkdownCodeBlockRenderer({
     bash: renderAssistantShellSnippetFence,
     diff: renderAssistantDiffFence,

@@ -1,17 +1,12 @@
-import { memo, useMemo, type ReactNode } from "react";
-import { RGBA, SyntaxStyle } from "@opentui/core";
+import { memo, type ReactNode } from "react";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import {
   formatAssistantMarkdownTaskListMarkers,
   prepareAssistantMarkdownTextForRendering,
-  repeatAssistantMarkdownChromeRule,
 } from "./assistantMarkdownTextFormatting.ts";
 import { createAssistantMarkdownUnifiedRenderNode } from "./assistantMarkdownUnifiedRenderNode.ts";
 import { assistantMarkdownSyntaxStyle } from "./codeRenderingTheme.ts";
-import {
-  assistantMarkdownTableOptions,
-  defaultAssistantMarkdownTerminalColumnCount,
-} from "./assistantMarkdownTerminalTheme.ts";
+import { assistantMarkdownTableOptions } from "./assistantMarkdownTerminalTheme.ts";
 import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.ts";
 
 // The whole assistant text part is handed to one OpenTUI `<markdown>` element, relying
@@ -22,26 +17,11 @@ import { openTuiSharedTreeSitterClient } from "./openTuiSharedTreeSitterClient.t
 export type AssistantMarkdownBlockProps = {
   markdownText: string;
   isStreaming: boolean;
-  horizontalRuleColor: string;
-  terminalColumnCount?: number | undefined;
 };
 
-function AssistantMarkdownBlockComponent(props: AssistantMarkdownBlockProps): ReactNode {
-  const terminalColumnCount = props.terminalColumnCount ?? defaultAssistantMarkdownTerminalColumnCount;
-  const markdownChromeColumnCount = Math.max(20, terminalColumnCount - 4);
-  const horizontalRuleText = useMemo(
-    () => repeatAssistantMarkdownChromeRule({ availableColumnCount: markdownChromeColumnCount }),
-    [markdownChromeColumnCount],
-  );
-  const horizontalRuleSyntaxStyle = useMemo(
-    () => SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex(props.horizontalRuleColor) } }),
-    [props.horizontalRuleColor],
-  );
-  const unifiedChromeRenderNode = useMemo(
-    () => createAssistantMarkdownUnifiedRenderNode({ horizontalRuleSyntaxStyle, horizontalRuleText }),
-    [horizontalRuleSyntaxStyle, horizontalRuleText],
-  );
+const assistantMarkdownUnifiedRenderNode = createAssistantMarkdownUnifiedRenderNode();
 
+function AssistantMarkdownBlockComponent(props: AssistantMarkdownBlockProps): ReactNode {
   return (
     <markdown
       bg={chatScreenTheme.bg}
@@ -52,7 +32,7 @@ function AssistantMarkdownBlockComponent(props: AssistantMarkdownBlockProps): Re
       )}
       fg={chatScreenTheme.textPrimary}
       internalBlockMode="top-level"
-      renderNode={unifiedChromeRenderNode}
+      renderNode={assistantMarkdownUnifiedRenderNode}
       // Permanently streaming, like opencode's session view: flipping the flag on
       // completion would re-render the whole block tree once just to "finalize" a
       // trailing block whose content has already stopped changing. Code fence
@@ -72,9 +52,7 @@ function areAssistantMarkdownBlockPropsEqual(
   nextProps: AssistantMarkdownBlockProps,
 ): boolean {
   return previousProps.markdownText === nextProps.markdownText &&
-    previousProps.isStreaming === nextProps.isStreaming &&
-    previousProps.horizontalRuleColor === nextProps.horizontalRuleColor &&
-    previousProps.terminalColumnCount === nextProps.terminalColumnCount;
+    previousProps.isStreaming === nextProps.isStreaming;
 }
 
 export const AssistantMarkdownBlock = memo(AssistantMarkdownBlockComponent, areAssistantMarkdownBlockPropsEqual);

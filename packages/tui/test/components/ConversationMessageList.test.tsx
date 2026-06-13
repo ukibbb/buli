@@ -268,7 +268,7 @@ describe("ConversationMessageList", () => {
         visibleConversationMessageIds={[conversationMessage.id]}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         userMessageBorderColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
       />,
@@ -364,7 +364,7 @@ describe("ConversationMessageList", () => {
         visibleConversationMessageIds={conversationMessages.map((conversationMessage) => conversationMessage.id)}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         pendingToolApprovalDecisionCallbacks={{
           onPendingToolApprovalApproved: () => {},
@@ -408,7 +408,7 @@ describe("ConversationMessageList", () => {
         visibleConversationMessageRows={[]}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         hiddenOlderConversationMessageCount={42}
         olderConversationMessageRevealCount={10}
         onRevealOlderConversationMessages={() => {}}
@@ -444,7 +444,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -463,7 +463,7 @@ describe("ConversationMessageList", () => {
         visibleConversationMessageRows={[]}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
         conversationSessionCompactionStatus={{ step: "compacting", source: "auto" }}
@@ -514,7 +514,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -591,7 +591,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -674,7 +674,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -750,7 +750,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         pendingToolApprovalDecision={{
           pendingToolApprovalRequest,
@@ -827,7 +827,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -874,7 +874,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="collapsed"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -921,7 +921,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -961,7 +961,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,
@@ -1004,7 +1004,7 @@ describe("ConversationMessageList", () => {
         })}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
-        horizontalRuleColor="#10B981"
+        transcriptAccentColor="#10B981"
         {...noHiddenOlderConversationMessagesProps}
         userMessageBorderColor="#10B981"
       />,

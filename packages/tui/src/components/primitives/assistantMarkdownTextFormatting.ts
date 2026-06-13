@@ -7,8 +7,6 @@ import type {
   AssistantMarkdownToken,
 } from "./assistantMarkdownTypes.ts";
 
-const minimumAssistantMarkdownChromeRuleLength = 8;
-const maximumAssistantMarkdownChromeRuleLength = 120;
 const calloutMarkerPattern = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n?([\s\S]*)$/i;
 
 export const assistantMarkdownDashOnlyParagraphPattern = /^[-*_\s]{3,}$/;
@@ -58,12 +56,21 @@ function removeIncompleteStreamingInlineMarkdownSyntax(inlineMarkdownText: strin
   const inlineTextWithoutIncompleteLinks = inlineMarkdownText
     .replace(/!?\[([^\]\n]*)\]\([^\n)]*$/g, "$1")
     .replace(/!?\[([^\]\n]*)$/g, "$1");
-  return removeUnmatchedTrailingInlineDelimiter(
+  const inlineTextWithoutUnmatchedMultiCharacterDelimiters = removeUnmatchedTrailingInlineDelimiter(
     removeUnmatchedTrailingInlineDelimiter(
-      removeUnmatchedTrailingInlineDelimiter(inlineTextWithoutIncompleteLinks, "`"),
+      removeUnmatchedTrailingInlineDelimiter(
+        removeUnmatchedTrailingInlineDelimiter(inlineTextWithoutIncompleteLinks, "`"),
+        "~~",
+      ),
       "**",
     ),
     "__",
+  );
+  // Single-character emphasis runs after the double-delimiter passes: healing an
+  // unmatched `**` can expose a leftover single `*` that must be healed in turn.
+  return removeUnmatchedTrailingSingleEmphasisDelimiter(
+    removeUnmatchedTrailingSingleEmphasisDelimiter(inlineTextWithoutUnmatchedMultiCharacterDelimiters, "*"),
+    "_",
   );
 }
 
@@ -88,6 +95,69 @@ function removeUnmatchedTrailingInlineDelimiter(inlineMarkdownText: string, inli
   return unmatchedDelimiterIndex === -1
     ? inlineMarkdownText
     : `${inlineMarkdownText.slice(0, unmatchedDelimiterIndex)}${inlineMarkdownText.slice(unmatchedDelimiterIndex + inlineDelimiter.length)}`;
+}
+
+const inlineEmphasisWordCharacterPattern = /[A-Za-z0-9]/;
+
+function isInlineEmphasisWhitespaceOrLineEdge(character: string | undefined): boolean {
+  return character === undefined || /\s/.test(character);
+}
+
+// A `*` isolated by whitespace is arithmetic and a `_` flanked by word characters is an
+// identifier (snake_case) — markdown treats neither as emphasis, so healing must not
+// strip them. Runs of the delimiter belong to the double-delimiter passes; only a
+// leftover odd character at the end of a run counts as a single here.
+function removeUnmatchedTrailingSingleEmphasisDelimiter(
+  inlineMarkdownText: string,
+  delimiterCharacter: "*" | "_",
+): string {
+  const emphasisCapableDelimiterIndexes: number[] = [];
+  for (let characterIndex = 0; characterIndex < inlineMarkdownText.length; characterIndex += 1) {
+    if (inlineMarkdownText[characterIndex] !== delimiterCharacter) {
+      continue;
+    }
+
+    let delimiterRunEndIndex = characterIndex;
+    while (inlineMarkdownText[delimiterRunEndIndex + 1] === delimiterCharacter) {
+      delimiterRunEndIndex += 1;
+    }
+    const delimiterRunLength = delimiterRunEndIndex - characterIndex + 1;
+    const precedingCharacter = characterIndex > 0 ? inlineMarkdownText[characterIndex - 1] : undefined;
+    const followingCharacter =
+      delimiterRunEndIndex + 1 < inlineMarkdownText.length ? inlineMarkdownText[delimiterRunEndIndex + 1] : undefined;
+    characterIndex = delimiterRunEndIndex;
+    if (delimiterRunLength % 2 === 0) {
+      continue;
+    }
+
+    if (delimiterCharacter === "*") {
+      if (
+        isInlineEmphasisWhitespaceOrLineEdge(precedingCharacter) &&
+        isInlineEmphasisWhitespaceOrLineEdge(followingCharacter)
+      ) {
+        continue;
+      }
+    } else {
+      const canOpenEmphasis =
+        (precedingCharacter === undefined || !inlineEmphasisWordCharacterPattern.test(precedingCharacter)) &&
+        !isInlineEmphasisWhitespaceOrLineEdge(followingCharacter);
+      const canCloseEmphasis =
+        !isInlineEmphasisWhitespaceOrLineEdge(precedingCharacter) &&
+        (followingCharacter === undefined || !inlineEmphasisWordCharacterPattern.test(followingCharacter));
+      if (!canOpenEmphasis && !canCloseEmphasis) {
+        continue;
+      }
+    }
+
+    emphasisCapableDelimiterIndexes.push(delimiterRunEndIndex);
+  }
+
+  if (emphasisCapableDelimiterIndexes.length % 2 === 0) {
+    return inlineMarkdownText;
+  }
+
+  const unmatchedDelimiterIndex = emphasisCapableDelimiterIndexes[emphasisCapableDelimiterIndexes.length - 1]!;
+  return `${inlineMarkdownText.slice(0, unmatchedDelimiterIndex)}${inlineMarkdownText.slice(unmatchedDelimiterIndex + 1)}`;
 }
 
 const incompleteStreamingFencePattern = /^\s*(?:`{3,}[^`]*|~{3,}[^~]*)$/;
@@ -183,23 +253,6 @@ export function trimAssistantMarkdownBoundaryBlankLines(markdownLines: readonly 
   return markdownLines.slice(firstNonBlankLineIndex, lastNonBlankLineExclusiveIndex);
 }
 
-export function formatAssistantMarkdownHeadingText(headingText: string, depth: number): string {
-  const visibleHeadingText = formatAssistantMarkdownInlineTextForStyledText(headingText);
-  if (depth === 1) {
-    return `\n▌ ${visibleHeadingText}`;
-  }
-
-  if (depth === 2) {
-    return `\n◆ ${visibleHeadingText}`;
-  }
-
-  if (depth === 3) {
-    return `\n${visibleHeadingText}`;
-  }
-
-  return `\n• ${visibleHeadingText}`;
-}
-
 export function parseAssistantMarkdownCallout(inputText: string): AssistantMarkdownCallout | undefined {
   const calloutMarkerMatch = calloutMarkerPattern.exec(inputText.trimStart());
   if (!calloutMarkerMatch) {
@@ -210,14 +263,4 @@ export function parseAssistantMarkdownCallout(inputText: string): AssistantMarkd
     calloutKind: calloutMarkerMatch[1]!.toUpperCase() as AssistantMarkdownCalloutKind,
     bodyText: calloutMarkerMatch[2]?.trimStart() ?? "",
   };
-}
-
-export function repeatAssistantMarkdownChromeRule(input: { availableColumnCount: number; occupiedColumnCount?: number }): string {
-  const availableRuleColumnCount = input.availableColumnCount - (input.occupiedColumnCount ?? 0);
-  return "─".repeat(
-    Math.max(
-      minimumAssistantMarkdownChromeRuleLength,
-      Math.min(maximumAssistantMarkdownChromeRuleLength, availableRuleColumnCount),
-    ),
-  );
 }

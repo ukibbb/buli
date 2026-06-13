@@ -50,7 +50,6 @@ const chatScreenMainAreaPropKeys = [
   "inputPanelAccentColor",
   "availableCommandHelpModalRowCount",
   "terminalSizeTierForChatScreen",
-  "terminalColumnCount",
   "availableChatSlashCommands",
   "chatAppRenderStore",
   "visibleConversationMessageIds",

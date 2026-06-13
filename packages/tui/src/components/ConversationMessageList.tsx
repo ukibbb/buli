@@ -29,14 +29,13 @@ type ConversationMessageListPrebuiltRowsProps = {
 type ConversationMessageListCommonProps = {
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
-  horizontalRuleColor: string;
+  transcriptAccentColor: string;
   hiddenOlderConversationMessageCount: number;
   olderConversationMessageRevealCount: number;
   onRevealOlderConversationMessages: () => void;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   pendingToolApprovalDecisionCallbacks?: PendingToolApprovalDecisionCallbacks | undefined;
   userMessageBorderColor: string;
-  terminalColumnCount?: number | undefined;
   conversationSessionCompactionStatus?: ConversationSessionCompactionStatus | undefined;
   queuedPromptCount?: number | undefined;
   totalContextTokensUsed?: number | undefined;
@@ -74,9 +73,8 @@ function areConversationMessageRowPropsEqual(
 ): boolean {
   return previousProps.conversationMessage === nextProps.conversationMessage &&
     previousProps.reasoningSummaryDisplayMode === nextProps.reasoningSummaryDisplayMode &&
-    previousProps.horizontalRuleColor === nextProps.horizontalRuleColor &&
+    previousProps.transcriptAccentColor === nextProps.transcriptAccentColor &&
     previousProps.userMessageBorderColor === nextProps.userMessageBorderColor &&
-    previousProps.terminalColumnCount === nextProps.terminalColumnCount &&
     previousProps.pendingToolApprovalDecision === nextProps.pendingToolApprovalDecision &&
     areConversationMessagePartReferencesEqual(
       previousProps.conversationMessageParts,
@@ -191,12 +189,11 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
               chatAppRenderStore={props.chatAppRenderStore}
               conversationMessageId={conversationMessageId}
               reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
-              horizontalRuleColor={props.horizontalRuleColor}
+              transcriptAccentColor={props.transcriptAccentColor}
               {...(activePendingToolApprovalDecision !== undefined
                 ? { pendingToolApprovalDecision: activePendingToolApprovalDecision }
                 : {})}
               userMessageBorderColor={props.userMessageBorderColor}
-              terminalColumnCount={props.terminalColumnCount}
             />
           ))
           : renderableConversationMessages?.map(({ conversationMessage, conversationMessageParts }) => {
@@ -211,12 +208,11 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
                   conversationMessage={conversationMessage}
                   conversationMessageParts={conversationMessageParts}
                   reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
-                  horizontalRuleColor={props.horizontalRuleColor}
+                  transcriptAccentColor={props.transcriptAccentColor}
                   {...(rowPendingToolApprovalDecision !== undefined
                     ? { pendingToolApprovalDecision: rowPendingToolApprovalDecision }
                     : {})}
                   userMessageBorderColor={props.userMessageBorderColor}
-                  terminalColumnCount={props.terminalColumnCount}
                 />
               </box>
             );
@@ -239,10 +235,9 @@ type ConversationMessageRowContainerProps = {
   chatAppRenderStore: ChatAppRenderStore;
   conversationMessageId: string;
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
-  horizontalRuleColor: string;
+  transcriptAccentColor: string;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
-  terminalColumnCount?: number | undefined;
 };
 
 function ConversationMessageRowContainer(props: ConversationMessageRowContainerProps): ReactNode {
@@ -293,12 +288,11 @@ function ConversationMessageRowContainer(props: ConversationMessageRowContainerP
         conversationMessage={conversationMessageRowSnapshot.conversationMessage}
         conversationMessageParts={renderableConversationMessageParts}
         reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
-        horizontalRuleColor={props.horizontalRuleColor}
+        transcriptAccentColor={props.transcriptAccentColor}
         {...(pendingToolApprovalDecision !== undefined
           ? { pendingToolApprovalDecision }
           : {})}
         userMessageBorderColor={props.userMessageBorderColor}
-        terminalColumnCount={props.terminalColumnCount}
       />
     </box>
   );

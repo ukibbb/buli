@@ -1,7 +1,6 @@
-import { MarkdownRenderable, RGBA, ScrollBoxRenderable, SyntaxStyle } from "@opentui/core";
+import { MarkdownRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { createTestRenderer, MockTreeSitterClient } from "@opentui/core/testing";
 import { createAssistantMarkdownUnifiedRenderNode } from "../components/primitives/assistantMarkdownUnifiedRenderNode.ts";
-import { repeatAssistantMarkdownChromeRule } from "../components/primitives/assistantMarkdownTextFormatting.ts";
 import { assistantMarkdownSyntaxStyle } from "../components/primitives/codeRenderingTheme.ts";
 import {
   assistantMarkdownTableOptions,
@@ -37,11 +36,7 @@ export async function createConversationTranscriptRetentionProbe(): Promise<Conv
   });
   testRendererSetup.renderer.root.add(transcriptScrollBox);
 
-  const markdownChromeColumnCount = Math.max(20, terminalColumnCount - 4);
-  const unifiedRenderNode = createAssistantMarkdownUnifiedRenderNode({
-    horizontalRuleText: repeatAssistantMarkdownChromeRule({ availableColumnCount: markdownChromeColumnCount }),
-    horizontalRuleSyntaxStyle: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex("#6B7280") } }),
-  });
+  const unifiedRenderNode = createAssistantMarkdownUnifiedRenderNode();
 
   let mountedMessageCount = 0;
 

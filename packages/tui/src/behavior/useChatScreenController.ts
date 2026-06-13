@@ -282,7 +282,6 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     inputPanelAccentColor,
     availableCommandHelpModalRowCount,
     terminalSizeTierForChatScreen,
-    terminalColumnCount,
     availableChatSlashCommands,
     chatAppRenderStore: chatAppController.chatAppRenderStore,
     visibleConversationMessageIds,

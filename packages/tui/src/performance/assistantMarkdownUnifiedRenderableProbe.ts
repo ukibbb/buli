@@ -1,7 +1,6 @@
-import { MarkdownRenderable, RGBA, SyntaxStyle } from "@opentui/core";
+import { MarkdownRenderable } from "@opentui/core";
 import { createTestRenderer, MockTreeSitterClient } from "@opentui/core/testing";
 import { createAssistantMarkdownUnifiedRenderNode } from "../components/primitives/assistantMarkdownUnifiedRenderNode.ts";
-import { repeatAssistantMarkdownChromeRule } from "../components/primitives/assistantMarkdownTextFormatting.ts";
 import { assistantMarkdownSyntaxStyle } from "../components/primitives/codeRenderingTheme.ts";
 import {
   assistantMarkdownTableOptions,
@@ -43,17 +42,13 @@ export async function createAssistantMarkdownUnifiedRenderableProbe(
   const mockTreeSitterClient = new MockTreeSitterClient();
   mockTreeSitterClient.setMockResult({ highlights: [] });
 
-  const markdownChromeColumnCount = Math.max(20, terminalColumnCount - 4);
   const markdownRenderable = new MarkdownRenderable(testRendererSetup.renderer, {
     id: "assistant-markdown-unified-renderable-probe",
     content: "",
     conceal: true,
     concealCode: false,
     internalBlockMode: "top-level",
-    renderNode: createAssistantMarkdownUnifiedRenderNode({
-      horizontalRuleText: repeatAssistantMarkdownChromeRule({ availableColumnCount: markdownChromeColumnCount }),
-      horizontalRuleSyntaxStyle: SyntaxStyle.fromStyles({ default: { fg: RGBA.fromHex("#6B7280") } }),
-    }),
+    renderNode: createAssistantMarkdownUnifiedRenderNode(),
     streaming: true,
     syntaxStyle: assistantMarkdownSyntaxStyle,
     tableOptions: assistantMarkdownTableOptions,

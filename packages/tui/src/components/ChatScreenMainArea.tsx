@@ -13,7 +13,6 @@ export type ChatScreenMainAreaProps = {
   inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   availableCommandHelpModalRowCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
-  terminalColumnCount: number;
   availableChatSlashCommands: readonly ChatSlashCommand[];
   chatAppRenderStore: ChatAppRenderStore;
   visibleConversationMessageIds: readonly string[];
@@ -62,8 +61,7 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
         ? { pendingToolApprovalDecisionCallbacks: props.pendingToolApprovalDecisionCallbacks }
         : {})}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
-      accentColor={props.inputPanelAccentColor}
-      terminalColumnCount={props.terminalColumnCount}
+      transcriptAccentColor={props.inputPanelAccentColor}
       conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
       queuedPromptCount={props.queuedPromptCount}
       totalContextTokensUsed={props.totalContextTokensUsed}

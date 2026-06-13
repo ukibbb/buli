@@ -27,11 +27,10 @@ import { hasVisibleReasoningSummaryText } from "./messageParts/reasoningSummaryT
 type ConversationMessagePartViewProps = {
   conversationMessagePart: ConversationMessagePart;
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
-  horizontalRuleColor: string;
+  transcriptAccentColor: string;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
   workspacePatch?: WorkspacePatch;
-  terminalColumnCount?: number | undefined;
 };
 
 type ConversationMessagePartKind = ConversationMessagePart["partKind"];
@@ -100,8 +99,6 @@ function renderAssistantTextConversationMessagePart(
   return (
     <AssistantTextPartView
       assistantTextConversationMessagePart={props.conversationMessagePart}
-      horizontalRuleColor={props.horizontalRuleColor}
-      terminalColumnCount={props.terminalColumnCount}
     />
   );
 }
@@ -112,7 +109,7 @@ function renderAssistantCompactionSeparatorConversationMessagePart(
   return (
     <CompactionSeparatorPartView
       assistantCompactionSeparatorConversationMessagePart={props.conversationMessagePart}
-      accentColor={props.horizontalRuleColor}
+      accentColor={props.transcriptAccentColor}
     />
   );
 }
@@ -214,10 +211,9 @@ export type ConversationMessageRowProps = {
   conversationMessage: ConversationMessage;
   conversationMessageParts: readonly ConversationMessagePart[];
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
-  horizontalRuleColor: string;
+  transcriptAccentColor: string;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   userMessageBorderColor: string;
-  terminalColumnCount?: number | undefined;
 };
 
 export type PendingToolApprovalDecision = {
@@ -401,13 +397,12 @@ export function ConversationMessageRow(props: ConversationMessageRowProps): Reac
             <ConversationMessagePartView
               conversationMessagePart={conversationMessagePart}
               reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
-              horizontalRuleColor={props.horizontalRuleColor}
+              transcriptAccentColor={props.transcriptAccentColor}
               {...(props.pendingToolApprovalDecision !== undefined
                 ? { pendingToolApprovalDecision: props.pendingToolApprovalDecision }
                 : {})}
               userMessageBorderColor={props.userMessageBorderColor}
               {...(workspacePatch !== undefined ? { workspacePatch } : {})}
-              terminalColumnCount={props.terminalColumnCount}
             />
           </box>
         );

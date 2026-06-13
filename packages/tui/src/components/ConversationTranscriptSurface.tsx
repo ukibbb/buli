@@ -19,8 +19,7 @@ export type ConversationTranscriptSurfaceProps = {
     PendingToolApprovalDecision,
     "onPendingToolApprovalApproved" | "onPendingToolApprovalDenied"
   > | undefined;
-  accentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
-  terminalColumnCount: number;
+  transcriptAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
   conversationSessionCompactionStatus?: ConversationSessionCompactionStatus | undefined;
   queuedPromptCount?: number | undefined;
   totalContextTokensUsed?: number | undefined;
@@ -43,9 +42,8 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
         ? { pendingToolApprovalDecisionCallbacks: props.pendingToolApprovalDecisionCallbacks }
         : {})}
       conversationMessageScrollBoxRef={props.conversationMessageScrollBoxRef}
-      horizontalRuleColor={props.accentColor}
-      userMessageBorderColor={props.accentColor}
-      terminalColumnCount={props.terminalColumnCount}
+      transcriptAccentColor={props.transcriptAccentColor}
+      userMessageBorderColor={props.transcriptAccentColor}
       conversationSessionCompactionStatus={props.conversationSessionCompactionStatus}
       queuedPromptCount={props.queuedPromptCount}
       totalContextTokensUsed={props.totalContextTokensUsed}

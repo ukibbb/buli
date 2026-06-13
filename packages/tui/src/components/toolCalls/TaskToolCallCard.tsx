@@ -237,7 +237,6 @@ function buildTaskBodyContent(input: TaskBodyContentInput): ReactNode {
       {subagentResultSummary ? (
         <box width="100%">
           <TaskTextSection
-            horizontalRuleColor={input.accentColor}
             presentation="markdown"
             taskSectionText={subagentResultSummary}
           />
@@ -314,7 +313,7 @@ type TaskTextSectionProps = {
   taskSectionText: string;
 } & (
   { presentation: "plain"; foregroundColor: string } |
-  { presentation: "markdown"; horizontalRuleColor: string }
+  { presentation: "markdown" }
 );
 
 function TaskTextSection(props: TaskTextSectionProps): ReactNode {
@@ -324,7 +323,6 @@ function TaskTextSection(props: TaskTextSectionProps): ReactNode {
         <text fg={props.foregroundColor} wrapMode="word">{props.taskSectionText}</text>
       ) : (
         <AssistantMarkdownBlock
-          horizontalRuleColor={props.horizontalRuleColor}
           isStreaming={false}
           markdownText={props.taskSectionText}
         />

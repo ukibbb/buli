@@ -89,7 +89,6 @@ describe("AssistantMarkdownBlock", () => {
       return (
         <box ref={markdownContainerRef as never} width="100%">
           <AssistantMarkdownBlock
-            horizontalRuleColor="#10B981"
             isStreaming={true}
             markdownText={markdownContent}
           />
@@ -135,7 +134,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_heading_paragraph_list_and_code_fence_with_native_code_block", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "# Done",
@@ -156,8 +154,8 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("▌");
     expect(frame).toContain("Done");
+    expect(frame).not.toContain("▌ Done");
     expect(frame).toContain("Here is");
     expect(frame).toContain("code");
     expect(frame).toContain("first");
@@ -171,7 +169,6 @@ describe("AssistantMarkdownBlock", () => {
   test("keeps_one_blank_row_between_paragraphs_and_ordered_lists", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["Main risks I see", "", "1. RuntimeConversation loses state", "2. Tests miss coverage"].join("\n")}
       />,
@@ -189,10 +186,9 @@ describe("AssistantMarkdownBlock", () => {
     expect(firstListRowIndex - paragraphRowIndex).toBeLessThanOrEqual(3);
   });
 
-  test("renders_third_level_headings_without_the_hollow_diamond_decoration", async () => {
+  test("renders_headings_without_decorative_prefix_glyphs", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["# Done", "", "## Scope", "", "### 1. The scope is huge", "", "#### Follow-up"].join("\n")}
       />,
@@ -202,16 +198,22 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("▌ Done");
-    expect(frame).toContain("◆ Scope");
+    expect(frame).toContain("Done");
+    expect(frame).toContain("Scope");
     expect(frame).toContain("1. The scope is huge");
-    expect(frame).toContain("• Follow-up");
+    expect(frame).toContain("Follow-up");
+    expect(frame).not.toContain("▌ Done");
+    expect(frame).not.toContain("◆ Scope");
+    expect(frame).not.toContain("• Follow-up");
     expect(frame).not.toContain("◇ 1. The scope is huge");
+    expect(frame).not.toContain("# Done");
+    expect(frame).not.toContain("## Scope");
+    expect(frame).not.toContain("#### Follow-up");
   });
 
   test("renders_streaming_markdown_tail", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      <AssistantMarkdownBlock horizontalRuleColor="#10B981" isStreaming={true} markdownText="Still **typing" />,
+      <AssistantMarkdownBlock isStreaming={true} markdownText="Still **typing" />,
       { width: 60, height: 8 },
     );
 
@@ -220,7 +222,7 @@ describe("AssistantMarkdownBlock", () => {
     expect(captureCharFrame()).toContain("Still");
   });
 
-  test("keeps_heading_glyph_formatting_while_a_streaming_heading_grows", async () => {
+  test("keeps_streaming_heading_text_visible_while_the_heading_grows", async () => {
     let growHeadingText: (() => void) | undefined;
 
     function GrowingHeadingProbe() {
@@ -228,19 +230,23 @@ describe("AssistantMarkdownBlock", () => {
         ["# Stable", "", "Paragraph.", "", "## Grow"].join("\n"),
       );
       growHeadingText = () => setMarkdownText(["# Stable", "", "Paragraph.", "", "## Growing further now"].join("\n"));
-      return <AssistantMarkdownBlock horizontalRuleColor="#10B981" isStreaming={true} markdownText={markdownText} />;
+      return <AssistantMarkdownBlock isStreaming={true} markdownText={markdownText} />;
     }
 
     const { captureCharFrame, renderOnce } = await testRender(<GrowingHeadingProbe />, { width: 80, height: 12 });
     await renderSettledMarkdownFrame(renderOnce);
-    expect(captureCharFrame()).toContain("◆ Grow");
+    const initialFrame = captureCharFrame();
+    expect(initialFrame).toContain("Grow");
+    expect(initialFrame).not.toContain("◆ Grow");
 
     await act(async () => {
       growHeadingText?.();
     });
     await renderSettledMarkdownFrame(renderOnce);
 
-    expect(captureCharFrame()).toContain("◆ Growing further now");
+    const updatedFrame = captureCharFrame();
+    expect(updatedFrame).toContain("Growing further now");
+    expect(updatedFrame).not.toContain("◆ Growing further now");
   });
 
   test("renders_streaming_heading_tail_progressively_as_a_heading", async () => {
@@ -249,7 +255,6 @@ describe("AssistantMarkdownBlock", () => {
     // how completed content will look and avoiding a restyle flash on completion.
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={true}
         markdownText={["# Stable heading", "", "Stable paragraph", "", "## Tail still typing"].join("\n")}
       />,
@@ -259,15 +264,16 @@ describe("AssistantMarkdownBlock", () => {
     await renderSettledMarkdownFrame(renderOnce);
 
     const frame = captureCharFrame();
-    expect(frame).toContain("▌ Stable heading");
+    expect(frame).toContain("Stable heading");
     expect(frame).toContain("Stable paragraph");
-    expect(frame).toContain("◆ Tail still typing");
+    expect(frame).toContain("Tail still typing");
+    expect(frame).not.toContain("▌ Stable heading");
+    expect(frame).not.toContain("◆ Tail still typing");
   });
 
   test("hides_incomplete_streaming_inline_markdown_delimiters", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={true}
         markdownText="Still **typing with `code and [docs](https://example.com"
       />,
@@ -290,7 +296,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_links_with_visible_urls_instead_of_dropping_them", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "See the [docs](https://example.com/page) for ~~outdated~~ details.",
@@ -316,7 +321,6 @@ describe("AssistantMarkdownBlock", () => {
   test("conceals_inline_code_and_bold_inside_list_items", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["- Use `read` for files", "1. **Prompt-only tightening**"].join("\n")}
       />,
@@ -335,7 +339,6 @@ describe("AssistantMarkdownBlock", () => {
   test("conceals_inline_code_inside_blockquotes", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText="> Use `read` before answering."
       />,
@@ -352,7 +355,6 @@ describe("AssistantMarkdownBlock", () => {
   test("hides_incomplete_streaming_structural_markers", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={true}
         markdownText={["Ready", "", "```ts"].join("\n")}
       />,
@@ -369,7 +371,6 @@ describe("AssistantMarkdownBlock", () => {
   test("hides_incomplete_streaming_tilde_fence_start", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={true}
         markdownText={["Ready", "", "~~~ts"].join("\n")}
       />,
@@ -383,10 +384,9 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("~~~ts");
   });
 
-  test("renders_horizontal_rules_as_terminal_dividers", async () => {
+  test("hides_horizontal_rules_without_drawing_terminal_dividers", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "Intro",
@@ -404,14 +404,13 @@ describe("AssistantMarkdownBlock", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("Intro");
     expect(frame).toContain("Implementation mode");
-    expect(frame).toContain("─");
+    expect(frame).not.toContain("─");
     expect(frame).not.toContain("---");
   });
 
   test("renders_blockquotes_with_a_quote_rail", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText="> Keep this constraint visible across wrapped terminal rows so the rail stays full height."
       />,
@@ -431,7 +430,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_github_style_callouts_as_colored_terminal_blocks", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["> [!WARNING]", "> Review the diff before approving."].join("\n")}
       />,
@@ -449,7 +447,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_task_lists_with_checkbox_glyphs", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["- [x] Read the file", "- [ ] Update the tests"].join("\n")}
       />,
@@ -468,7 +465,6 @@ describe("AssistantMarkdownBlock", () => {
   test("hides_incomplete_streaming_task_list_marker", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={true}
         markdownText={["Ready", "", "- [ ]"].join("\n")}
       />,
@@ -486,7 +482,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_markdown_tables_as_compact_visible_grids", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "Meaning:",
@@ -521,7 +516,6 @@ describe("AssistantMarkdownBlock", () => {
   test("does_not_absorb_following_prose_into_table_without_blank_line", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["| Key | Value |", "| --- | --- |", "| A | B |", "Next paragraph."].join("\n")}
       />,
@@ -541,7 +535,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_single_column_markdown_tables_as_grids", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["| Key |", "| --- |", "| Enter |"].join("\n")}
       />,
@@ -560,7 +553,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_nested_lists_with_depth_markers_and_indentation", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["- parent", "  - child", "    - grandchild"].join("\n")}
       />,
@@ -581,7 +573,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_partial_diff_fences_as_lightweight_patch_snippets", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["```diff", "@@ -1 +1 @@", "-old line", "+new line", "```"].join("\n")}
       />,
@@ -603,7 +594,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_bash_fences_as_compact_command_snippets", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["Verification:", "", "```bash", "bun --filter @buli/engine test", "bun --filter @buli/engine typecheck", "```"].join("\n")}
       />,
@@ -623,7 +613,6 @@ describe("AssistantMarkdownBlock", () => {
   test("wraps_long_code_fence_lines_in_narrow_terminals", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["```ts", "const path = 'packages/tui/src/components/ConversationMessageList.tsx';", "```"].join("\n")}
       />,
@@ -640,7 +629,6 @@ describe("AssistantMarkdownBlock", () => {
   test("wraps_long_bash_snippet_lines_in_narrow_terminals", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["```bash", "bun --filter @buli/tui test packages/tui/src/components/ConversationMessageList.tsx", "```"].join("\n")}
       />,
@@ -657,7 +645,6 @@ describe("AssistantMarkdownBlock", () => {
   test("wraps_fallback_diff_snippet_lines_in_narrow_terminals", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["```diff", "+packages/tui/src/components/ConversationMessageList.tsx", "```"].join("\n")}
       />,
@@ -674,7 +661,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_raw_unified_diffs_as_structured_diff_blocks", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "Apply this change:",
@@ -710,7 +696,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_invalid_raw_diff_blocks_as_diff_snippets_instead_of_prose", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "Malformed but still useful:",
@@ -742,7 +727,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_file_backed_invalid_diff_snippets_as_compact_structured_diffs", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "Proposed patch:",
@@ -774,7 +758,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_file_labeled_partial_diff_fences_as_file_patches", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["```diff title=src/example.ts", "@@", "-const removedWidget = 1;", "+const addedWidget = 2;", "```"].join("\n")}
       />,
@@ -798,7 +781,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_fenced_full_unified_diffs_as_structured_diff_blocks", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "```diff",
@@ -827,7 +809,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_code_fence_filename_labels_from_info_strings", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["```ts title=src/app.ts", "const app = true;", "```"].join("\n")}
       />,
@@ -845,7 +826,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_path_only_code_fence_info_as_file_label_without_duplicate_language", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["```src/app.ts", "const app = true;", "```"].join("\n")}
       />,
@@ -864,7 +844,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_source_labeled_code_fences_with_inline_explanation_comments", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "```ts path=\"src/runtime.ts:10-12\"",
@@ -903,7 +882,6 @@ describe("AssistantMarkdownBlock", () => {
   test("renders_plain_text_fences_as_lightweight_snippets", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "near-term mantra:",
@@ -935,7 +913,6 @@ describe("AssistantMarkdownBlock", () => {
   test("aligns_ordered_list_markers_by_digit_width", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={["9. ninth", "10. tenth"].join("\n")}
       />,
@@ -952,7 +929,6 @@ describe("AssistantMarkdownBlock", () => {
   test("keeps_decorated_blocks_readable_in_narrow_terminals", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
-        horizontalRuleColor="#10B981"
         isStreaming={false}
         markdownText={[
           "# Narrow",

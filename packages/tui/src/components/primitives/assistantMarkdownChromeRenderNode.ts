@@ -1,21 +1,27 @@
-import { CodeRenderable, type MarkdownOptions, type Renderable, type SyntaxStyle } from "@opentui/core";
+import { CodeRenderable, type MarkdownOptions, type RenderContext, type Renderable } from "@opentui/core";
 import { decorateAssistantMarkdownProseChunks } from "./assistantMarkdownChunkDecorators.ts";
 import {
-  formatAssistantMarkdownHeadingText,
   isAssistantMarkdownCodeToken,
   isAssistantMarkdownDashOnlyParagraphToken,
   isAssistantMarkdownHeadingToken,
   isAssistantMarkdownParagraphToken,
 } from "./assistantMarkdownTextFormatting.ts";
-import { resolveAssistantMarkdownHeadingSyntaxStyle } from "./assistantMarkdownTerminalTheme.ts";
-
-export type AssistantMarkdownChromeRenderNodeOptions = Readonly<{
-  horizontalRuleText: string;
-  horizontalRuleSyntaxStyle: SyntaxStyle;
-}>;
+import { assistantMarkdownSyntaxStyle } from "./codeRenderingTheme.ts";
 
 function applyAssistantMarkdownFlowSpacing(defaultRenderable: CodeRenderable): void {
   defaultRenderable.marginBottom = 1;
+}
+
+function createHiddenAssistantMarkdownBreakRenderable(renderContext: RenderContext): CodeRenderable {
+  return new CodeRenderable(renderContext, {
+    content: "",
+    drawUnstyledText: true,
+    filetype: "text",
+    marginBottom: 1,
+    streaming: true,
+    syntaxStyle: assistantMarkdownSyntaxStyle,
+    width: "100%",
+  });
 }
 
 function enableImmediateTextDrawingOnNestedCodeRenderables(renderable: Renderable): void {
@@ -27,11 +33,13 @@ function enableImmediateTextDrawingOnNestedCodeRenderables(renderable: Renderabl
   }
 }
 
-export function createAssistantMarkdownChromeRenderNode(
-  options: AssistantMarkdownChromeRenderNodeOptions,
-): NonNullable<MarkdownOptions["renderNode"]> {
+export function createAssistantMarkdownChromeRenderNode(): NonNullable<MarkdownOptions["renderNode"]> {
   return (token, context) => {
     const defaultRenderable = context.defaultRender();
+
+    if (token.type === "hr") {
+      return defaultRenderable ? createHiddenAssistantMarkdownBreakRenderable(defaultRenderable.ctx) : defaultRenderable;
+    }
 
     if (defaultRenderable instanceof CodeRenderable) {
       defaultRenderable.drawUnstyledText = true;
@@ -42,31 +50,16 @@ export function createAssistantMarkdownChromeRenderNode(
       }
 
       if (isAssistantMarkdownHeadingToken(token)) {
-        // A mutated default would be updated in place when the heading grows during
-        // streaming, resetting content to the raw `## …` text and dropping the glyph
-        // formatting. Returning a fresh renderable marks the block canUpdateInPlace=false,
-        // so renderNode runs again on every change and reapplies the formatting.
-        return new CodeRenderable(defaultRenderable.ctx, {
-          // Leading newline gives breathing room before each heading, including after an HR.
-          content: formatAssistantMarkdownHeadingText(token.text, token.depth),
-          conceal: context.conceal,
-          drawUnstyledText: true,
-          filetype: "markdown",
-          marginBottom: 1,
-          onChunks: decorateAssistantMarkdownProseChunks,
-          streaming: true,
-          syntaxStyle: resolveAssistantMarkdownHeadingSyntaxStyle(token.depth),
-          ...(context.treeSitterClient ? { treeSitterClient: context.treeSitterClient } : {}),
-          width: "100%",
-        });
+        defaultRenderable.onChunks = decorateAssistantMarkdownProseChunks;
+        applyAssistantMarkdownFlowSpacing(defaultRenderable);
+        return defaultRenderable;
       }
 
-      if (token.type === "hr" || isAssistantMarkdownDashOnlyParagraphToken(token)) {
+      if (isAssistantMarkdownDashOnlyParagraphToken(token)) {
         // Dash-only paragraphs slip through during streaming before the parser classifies
-        // them as `hr`. Render both the same way to avoid raw `---` leaking on screen.
-        defaultRenderable.content = options.horizontalRuleText;
+        // them as `hr`. Hide both so raw `---` does not leak, without drawing a divider.
+        defaultRenderable.content = "";
         defaultRenderable.filetype = "text";
-        defaultRenderable.syntaxStyle = options.horizontalRuleSyntaxStyle;
         applyAssistantMarkdownFlowSpacing(defaultRenderable);
         defaultRenderable.wrapMode = "none";
         return defaultRenderable;
