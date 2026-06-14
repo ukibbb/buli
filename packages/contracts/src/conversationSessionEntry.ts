@@ -14,7 +14,9 @@ import {
 } from "./workflowHandoff.ts";
 import { WorkspacePatchSchema } from "./workspacePatch.ts";
 
-export const ProjectInstructionFileNameSchema = z.enum(["AGENTS.md", "CLAUDE.md"]);
+export const PROJECT_INSTRUCTION_FILE_NAMES = ["AGENTS.md", "CLAUDE.md", "BULI.md"] as const;
+
+export const ProjectInstructionFileNameSchema = z.enum(PROJECT_INSTRUCTION_FILE_NAMES);
 
 export const ProjectInstructionSnapshotSchema = z
   .object({

@@ -119,6 +119,7 @@ It includes:
 
 - `AGENTS.md`
 - `CLAUDE.md`
+- `BULI.md`
 - `.goosehints`
 - tool-specific or product-specific local docs
 - subdirectory-local rules

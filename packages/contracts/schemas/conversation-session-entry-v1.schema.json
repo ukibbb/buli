@@ -59,7 +59,8 @@
                 "type": "string",
                 "enum": [
                   "AGENTS.md",
-                  "CLAUDE.md"
+                  "CLAUDE.md",
+                  "BULI.md"
                 ]
               },
               "displayPath": {

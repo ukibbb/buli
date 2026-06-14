@@ -183,7 +183,7 @@ Why:
 
 Design implication:
 
-- if repo instructions such as `AGENTS.md` are loaded during system-prompt construction, edits can affect the next turn without restarting `buli`
+- if repo instruction files such as `AGENTS.md`, `CLAUDE.md`, or `BULI.md` are loaded during system-prompt construction, edits can affect the next turn without restarting `buli`
 - this is the smallest correct form of hot reload for prompt and instruction files
 
 ### What The Current Architecture Does Not Support
@@ -232,7 +232,7 @@ Instead:
 
 Scope:
 
-- repo instruction files such as `AGENTS.md`
+- repo instruction files such as `AGENTS.md`, `CLAUDE.md`, or `BULI.md`
 - future prompt override files such as `SYSTEM.md` or `APPEND_SYSTEM.md`
 
 Behavior:

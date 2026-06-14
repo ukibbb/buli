@@ -1221,10 +1221,11 @@ The current system prompt defines:
 - execution style
 - safety posture
 
-Important current behavior: repo instruction files such as `AGENTS.md` are not
-loaded into this prompt by the current `buli` runtime. The prompt is stable and
-mostly static except for the workspace root and the current plan/implementation
-mode overlay.
+Important current behavior: repo instruction files are loaded into this prompt
+at turn start. `buli` supports `AGENTS.md`, `CLAUDE.md`, and `BULI.md` under the
+workspace root for the initial prompt, and nested files with those names are
+discovered later when tools read paths inside those directories. The base prompt
+is otherwise mostly stable except for the workspace root and current mode overlay.
 
 ## Runtime Event Sequence
 
