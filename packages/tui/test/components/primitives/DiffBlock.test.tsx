@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "../../testRenderWithCleanup.ts";
-import { DiffBlock, resolveOpenTuiDiffFiletype } from "../../../src/components/primitives/DiffBlock.tsx";
+import {
+  DiffBlock,
+  buildVisibleUnifiedDiffContent,
+  resolveOpenTuiDiffFiletype,
+} from "../../../src/components/primitives/DiffBlock.tsx";
 
 function joinUnifiedDiffLines(unifiedDiffLines: readonly string[]): string {
   return unifiedDiffLines.join("\n");
@@ -165,6 +169,32 @@ describe("DiffBlock", () => {
     expect(frame).toContain("showing first 50 of 55 diff lines");
     expect(frame).toContain("diff-line-050");
     expect(frame).not.toContain("diff-line-051");
+    expect(frame).not.toContain("Error parsing diff");
+  });
+
+  test("rewrites_truncated_hunk_counts_to_match_visible_diff_rows", () => {
+    const contextDiffLines = Array.from(
+      { length: 55 },
+      (_, index) => ` context-line-${String(index + 1).padStart(3, "0")}`,
+    );
+
+    const visibleUnifiedDiffContent = buildVisibleUnifiedDiffContent(
+      joinUnifiedDiffLines([
+        "diff --git a/src/example.ts b/src/example.ts",
+        "--- a/src/example.ts",
+        "+++ b/src/example.ts",
+        "@@ -1,55 +1,55 @@",
+        ...contextDiffLines,
+        "",
+      ]),
+    );
+
+    expect(visibleUnifiedDiffContent.totalRenderableRowCount).toBe(55);
+    expect(visibleUnifiedDiffContent.visibleRenderableRowCount).toBe(50);
+    expect(visibleUnifiedDiffContent.visibleUnifiedDiffText).toContain("@@ -1,50 +1,50 @@");
+    expect(visibleUnifiedDiffContent.visibleUnifiedDiffText).toContain(" context-line-050");
+    expect(visibleUnifiedDiffContent.visibleUnifiedDiffText).not.toContain(" context-line-051");
+    expect(visibleUnifiedDiffContent.visibleUnifiedDiffText).not.toContain("@@ -1,55 +1,55 @@");
   });
 
   test("compact_mode_keeps_change_signs_and_line_numbers_for_visual_diff", async () => {

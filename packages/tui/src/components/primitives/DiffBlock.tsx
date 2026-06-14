@@ -50,6 +50,33 @@ function countUnifiedDiffRowsForLimitNotice(unifiedDiffLines: readonly string[])
   return countUnifiedDiffRenderableBodyRows(unifiedDiffLines) || unifiedDiffLines.length;
 }
 
+type VisibleUnifiedDiffHunkHeader =
+  | {
+    headerKind: "parseable";
+    oldStartLine: number;
+    newStartLine: number;
+    sectionText: string;
+  }
+  | {
+    headerKind: "raw";
+    rawHeaderLine: string;
+  };
+
+type VisibleUnifiedDiffHunk = {
+  hunkHeader: VisibleUnifiedDiffHunkHeader;
+  bodyLines: string[];
+  oldLineCount: number;
+  newLineCount: number;
+};
+
+type UnifiedDiffBodyLineContribution = {
+  isRenderableBodyLine: boolean;
+  oldLineCount: number;
+  newLineCount: number;
+};
+
+const UNIFIED_DIFF_HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
+
 export function buildVisibleUnifiedDiffContent(unifiedDiffText: UnifiedDiffText): VisibleUnifiedDiffContent {
   const unifiedDiffLines = splitUnifiedDiffTextIntoRows(unifiedDiffText);
   const totalRenderableRowCount = countUnifiedDiffRowsForLimitNotice(unifiedDiffLines);
@@ -79,33 +106,59 @@ function collectVisibleUnifiedDiffLines(
   unifiedDiffLines: readonly string[],
   maximumRenderableBodyRowCount: number,
 ): string[] {
-  let isInsideHunk = false;
   let visibleRenderableBodyRowCount = 0;
   const visibleUnifiedDiffLines: string[] = [];
+  let currentFileMetadataLines: string[] = [];
+  let currentVisibleHunk: VisibleUnifiedDiffHunk | undefined;
+
+  const flushCurrentVisibleHunk = (): void => {
+    if (!currentVisibleHunk || currentVisibleHunk.bodyLines.length === 0) {
+      currentVisibleHunk = undefined;
+      return;
+    }
+
+    visibleUnifiedDiffLines.push(...currentFileMetadataLines);
+    currentFileMetadataLines = [];
+    visibleUnifiedDiffLines.push(formatVisibleUnifiedDiffHunkHeader(currentVisibleHunk));
+    visibleUnifiedDiffLines.push(...currentVisibleHunk.bodyLines);
+    currentVisibleHunk = undefined;
+  };
 
   for (const unifiedDiffLine of unifiedDiffLines) {
     if (unifiedDiffLine.startsWith("diff --git ")) {
+      flushCurrentVisibleHunk();
       if (visibleRenderableBodyRowCount >= maximumRenderableBodyRowCount) {
         break;
       }
-      isInsideHunk = false;
-      visibleUnifiedDiffLines.push(unifiedDiffLine);
+      currentFileMetadataLines = [unifiedDiffLine];
       continue;
     }
 
     if (unifiedDiffLine.startsWith("@@")) {
+      flushCurrentVisibleHunk();
       if (visibleRenderableBodyRowCount >= maximumRenderableBodyRowCount) {
         break;
       }
-      isInsideHunk = true;
-      visibleUnifiedDiffLines.push(unifiedDiffLine);
+      currentVisibleHunk = {
+        hunkHeader: parseVisibleUnifiedDiffHunkHeader(unifiedDiffLine),
+        bodyLines: [],
+        oldLineCount: 0,
+        newLineCount: 0,
+      };
       continue;
     }
 
-    const isRenderableBodyLine = isInsideHunk && !unifiedDiffLine.startsWith("\\ No newline");
-    if (!isRenderableBodyLine) {
+    if (!currentVisibleHunk) {
       if (visibleRenderableBodyRowCount < maximumRenderableBodyRowCount) {
-        visibleUnifiedDiffLines.push(unifiedDiffLine);
+        currentFileMetadataLines.push(unifiedDiffLine);
+      }
+      continue;
+    }
+
+    const bodyLineContribution = classifyUnifiedDiffHunkBodyLine(unifiedDiffLine);
+    if (!bodyLineContribution.isRenderableBodyLine) {
+      if (currentVisibleHunk.bodyLines.length > 0) {
+        currentVisibleHunk.bodyLines.push(unifiedDiffLine);
       }
       continue;
     }
@@ -114,11 +167,61 @@ function collectVisibleUnifiedDiffLines(
       break;
     }
 
-    visibleUnifiedDiffLines.push(unifiedDiffLine);
+    currentVisibleHunk.bodyLines.push(unifiedDiffLine);
+    currentVisibleHunk.oldLineCount += bodyLineContribution.oldLineCount;
+    currentVisibleHunk.newLineCount += bodyLineContribution.newLineCount;
     visibleRenderableBodyRowCount += 1;
   }
 
+  flushCurrentVisibleHunk();
+
   return visibleUnifiedDiffLines;
+}
+
+function parseVisibleUnifiedDiffHunkHeader(hunkHeaderLine: string): VisibleUnifiedDiffHunkHeader {
+  const hunkHeaderMatch = UNIFIED_DIFF_HUNK_HEADER_PATTERN.exec(hunkHeaderLine);
+  const oldStartLineText = hunkHeaderMatch?.[1];
+  const newStartLineText = hunkHeaderMatch?.[3];
+  if (!hunkHeaderMatch || oldStartLineText === undefined || newStartLineText === undefined) {
+    return { headerKind: "raw", rawHeaderLine: hunkHeaderLine };
+  }
+
+  return {
+    headerKind: "parseable",
+    oldStartLine: Number.parseInt(oldStartLineText, 10),
+    newStartLine: Number.parseInt(newStartLineText, 10),
+    sectionText: hunkHeaderMatch[5] ?? "",
+  };
+}
+
+function classifyUnifiedDiffHunkBodyLine(unifiedDiffLine: string): UnifiedDiffBodyLineContribution {
+  if (unifiedDiffLine.startsWith("\\ No newline")) {
+    return { isRenderableBodyLine: false, oldLineCount: 0, newLineCount: 0 };
+  }
+  if (unifiedDiffLine.startsWith("+")) {
+    return { isRenderableBodyLine: true, oldLineCount: 0, newLineCount: 1 };
+  }
+  if (unifiedDiffLine.startsWith("-")) {
+    return { isRenderableBodyLine: true, oldLineCount: 1, newLineCount: 0 };
+  }
+
+  return { isRenderableBodyLine: true, oldLineCount: 1, newLineCount: 1 };
+}
+
+function formatVisibleUnifiedDiffHunkHeader(visibleHunk: VisibleUnifiedDiffHunk): string {
+  if (visibleHunk.hunkHeader.headerKind === "raw") {
+    return visibleHunk.hunkHeader.rawHeaderLine;
+  }
+
+  return `@@ -${formatVisibleUnifiedDiffRange(visibleHunk.hunkHeader.oldStartLine, visibleHunk.oldLineCount)} +${formatVisibleUnifiedDiffRange(visibleHunk.hunkHeader.newStartLine, visibleHunk.newLineCount)} @@${visibleHunk.hunkHeader.sectionText}`;
+}
+
+function formatVisibleUnifiedDiffRange(startLine: number, lineCount: number): string {
+  if (lineCount === 1) {
+    return String(startLine);
+  }
+
+  return `${startLine},${lineCount}`;
 }
 
 export function resolveOpenTuiDiffFiletype(filePath: string | undefined): string {

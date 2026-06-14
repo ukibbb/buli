@@ -806,6 +806,34 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("diff --git");
   });
 
+  test("renders_large_fenced_unified_diffs_without_truncation_parse_errors", async () => {
+    const addedDiffLines = Array.from({ length: 55 }, (_, index) => `+diff-line-${String(index + 1).padStart(3, "0")}`);
+
+    const { captureCharFrame, renderOnce } = await testRender(
+      <AssistantMarkdownBlock
+        isStreaming={false}
+        markdownText={[
+          "```diff",
+          "diff --git a/src/large.ts b/src/large.ts",
+          "--- a/src/large.ts",
+          "+++ b/src/large.ts",
+          "@@ -0,0 +1,55 @@",
+          ...addedDiffLines,
+          "```",
+        ].join("\n")}
+      />,
+      { width: 96, height: 64 },
+    );
+
+    await renderSettledMarkdownFrame(renderOnce);
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("showing first 50 of 55 diff lines");
+    expect(frame).toContain("diff-line-050");
+    expect(frame).not.toContain("diff-line-051");
+    expect(frame).not.toContain("Error parsing diff");
+  });
+
   test("renders_code_fence_filename_labels_from_info_strings", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock

@@ -14,6 +14,20 @@
     }
   },
   {
+    "caseName": "limits context around a small insertion in a larger file",
+    "request": {
+      "displayPath": "src/large-notes.txt",
+      "beforeText": "line-01\nline-02\nline-03\nline-04\nline-05\nline-06\nline-07\nline-08\nline-09\nline-10\n",
+      "afterText": "line-01\nline-02\nline-03\nline-04\nline-05\ninserted-line\nline-06\nline-07\nline-08\nline-09\nline-10\n"
+    },
+    "expectedResult": {
+      "unifiedDiffText": "diff --git a/src/large-notes.txt b/src/large-notes.txt\n--- a/src/large-notes.txt\n+++ b/src/large-notes.txt\n@@ -3,6 +3,7 @@\n line-03\n line-04\n line-05\n+inserted-line\n line-06\n line-07\n line-08\n",
+      "addedLineCount": 1,
+      "removedLineCount": 0,
+      "hasChanges": true
+    }
+  },
+  {
     "caseName": "creates a new file",
     "request": {
       "displayPath": "src/generated.ts",
