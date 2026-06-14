@@ -1523,11 +1523,20 @@ test("ConversationSessionEntrySchema parses project instruction snapshots on use
           instructionText: "- Prefer integration tests.",
           contentHash: "abc123",
         },
+        {
+          fileName: "BULI.md",
+          displayPath: "BULI.md",
+          instructionText: "- Prefer Buli-specific local guidance.",
+          contentHash: "def456",
+        },
       ],
     }),
   ).toMatchObject({
     entryKind: "user_prompt",
-    projectInstructionSnapshots: [{ displayPath: "AGENTS.md" }],
+    projectInstructionSnapshots: [
+      { fileName: "AGENTS.md", displayPath: "AGENTS.md" },
+      { fileName: "BULI.md", displayPath: "BULI.md" },
+    ],
   });
 });
 

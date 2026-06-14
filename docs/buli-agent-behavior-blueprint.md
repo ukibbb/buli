@@ -201,14 +201,16 @@ This should answer:
 
 Recommended direction:
 
-- add a future instruction-loading layer for files such as `AGENTS.md`
-- keep precedence explicit
+- keep the current instruction-loading layer for files such as `AGENTS.md`,
+  `CLAUDE.md`, and `BULI.md`
+- keep precedence explicit: all matching files are included in root-to-target
+  order instead of silently choosing one winner
 - do not bury repo-specific rules inside the global base prompt
 - longer term, separate Lukasz-specific defaults from repo-local rules with a
   personal profile layer rather than hardcoding every personal preference into
   the binary forever
 
-This is one of the biggest missing layers in current `buli` behavior.
+This is now one of the important explicit layers in current `buli` behavior.
 
 ### 5. Tool Philosophy Layer
 

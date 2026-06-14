@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { ProjectInstructionFileName, ProjectInstructionSnapshot } from "@buli/contracts";
+import {
+  PROJECT_INSTRUCTION_FILE_NAMES as CONTRACT_PROJECT_INSTRUCTION_FILE_NAMES,
+  type ProjectInstructionFileName,
+  type ProjectInstructionSnapshot,
+} from "@buli/contracts";
 import { formatWorkspaceDisplayPath, isPathInsideWorkspace } from "./tools/workspacePath.ts";
 
-export const PROJECT_INSTRUCTION_FILE_NAMES = ["AGENTS.md", "CLAUDE.md"] as const satisfies readonly ProjectInstructionFileName[];
+export const PROJECT_INSTRUCTION_FILE_NAMES = CONTRACT_PROJECT_INSTRUCTION_FILE_NAMES;
 
 export type ProjectInstructionFile = ProjectInstructionSnapshot & {
   absolutePath: string;

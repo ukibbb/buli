@@ -8,8 +8,10 @@ test("discoverProjectInstructionFiles loads workspace instructions from root to 
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-project-instructions-"));
   await mkdir(join(workspaceRootPath, "src", "feature"), { recursive: true });
   await writeFile(join(workspaceRootPath, "AGENTS.md"), "- Root convention.\n", "utf8");
+  await writeFile(join(workspaceRootPath, "BULI.md"), "- Buli-specific root convention.\n", "utf8");
   await writeFile(join(workspaceRootPath, "src", "AGENTS.md"), "- Source convention.\n", "utf8");
   await writeFile(join(workspaceRootPath, "src", "feature", "CLAUDE.md"), "- Feature convention.\n", "utf8");
+  await writeFile(join(workspaceRootPath, "src", "feature", "BULI.md"), "- Buli-specific feature convention.\n", "utf8");
 
   const projectInstructionFiles = await discoverProjectInstructionFiles({
     workspaceRootPath,
@@ -18,13 +20,17 @@ test("discoverProjectInstructionFiles loads workspace instructions from root to 
 
   expect(projectInstructionFiles.map((projectInstructionFile) => projectInstructionFile.displayPath)).toEqual([
     "AGENTS.md",
+    "BULI.md",
     "src/AGENTS.md",
     "src/feature/CLAUDE.md",
+    "src/feature/BULI.md",
   ]);
   expect(projectInstructionFiles.map((projectInstructionFile) => projectInstructionFile.instructionText)).toEqual([
     "- Root convention.\n",
+    "- Buli-specific root convention.\n",
     "- Source convention.\n",
     "- Feature convention.\n",
+    "- Buli-specific feature convention.\n",
   ]);
   expect(projectInstructionFiles.every((projectInstructionFile) => projectInstructionFile.contentHash.length > 0)).toBe(true);
 });
@@ -33,7 +39,7 @@ test("ProjectInstructionTracker returns only newly discovered nested instruction
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-project-instruction-tracker-"));
   await mkdir(join(workspaceRootPath, "src"));
   await writeFile(join(workspaceRootPath, "AGENTS.md"), "- Root convention.\n", "utf8");
-  await writeFile(join(workspaceRootPath, "src", "AGENTS.md"), "- Source convention.\n", "utf8");
+  await writeFile(join(workspaceRootPath, "src", "BULI.md"), "- Buli-specific source convention.\n", "utf8");
   const projectInstructionTracker = new ProjectInstructionTracker({ workspaceRootPath });
 
   await projectInstructionTracker.loadProjectInstructionsForDirectory({ targetDirectoryPath: workspaceRootPath });
@@ -42,10 +48,10 @@ test("ProjectInstructionTracker returns only newly discovered nested instruction
   });
 
   expect(newProjectInstructionFiles.map((projectInstructionFile) => projectInstructionFile.displayPath)).toEqual([
-    "src/AGENTS.md",
+    "src/BULI.md",
   ]);
   expect(projectInstructionTracker.listProjectInstructionFiles().map((projectInstructionFile) => projectInstructionFile.displayPath)).toEqual([
     "AGENTS.md",
-    "src/AGENTS.md",
+    "src/BULI.md",
   ]);
 });

@@ -120,6 +120,7 @@ export {
   FailedToolResultConversationSessionEntrySchema,
   IncompleteAssistantMessageConversationSessionEntrySchema,
   InterruptedAssistantMessageConversationSessionEntrySchema,
+  PROJECT_INSTRUCTION_FILE_NAMES,
   ProjectInstructionFileNameSchema,
   ProjectInstructionSnapshotSchema,
   ToolCallConversationSessionEntrySchema,

@@ -264,7 +264,7 @@ test("runReadToolCall appends newly discovered nested project instructions", asy
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-tool-instructions-"));
   await mkdir(join(workspaceRootPath, "src"));
   await writeFile(join(workspaceRootPath, "AGENTS.md"), "- Root convention.\n", "utf8");
-  await writeFile(join(workspaceRootPath, "src", "AGENTS.md"), "- Source convention.\n", "utf8");
+  await writeFile(join(workspaceRootPath, "src", "BULI.md"), "- Buli-specific source convention.\n", "utf8");
   await writeFile(join(workspaceRootPath, "src", "module.ts"), "export const moduleValue = true;\n", "utf8");
   const projectInstructionTracker = new ProjectInstructionTracker({ workspaceRootPath });
   await projectInstructionTracker.loadProjectInstructionsForDirectory({ targetDirectoryPath: workspaceRootPath });
@@ -280,8 +280,8 @@ test("runReadToolCall appends newly discovered nested project instructions", asy
 
   expect(readToolCallOutcome.outcomeKind).toBe("completed");
   expect(readToolCallOutcome.toolResultText).toContain("<project_instruction_update>");
-  expect(readToolCallOutcome.toolResultText).toContain("Instructions from: src/AGENTS.md");
-  expect(readToolCallOutcome.toolResultText).toContain("- Source convention.");
+  expect(readToolCallOutcome.toolResultText).toContain("Instructions from: src/BULI.md");
+  expect(readToolCallOutcome.toolResultText).toContain("- Buli-specific source convention.");
   expect(readToolCallOutcome.toolResultText).not.toContain("- Root convention.");
 });
 

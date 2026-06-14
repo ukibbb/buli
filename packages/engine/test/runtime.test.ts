@@ -1466,7 +1466,7 @@ test("AssistantConversationRuntime denies file mutation tool calls in understand
 
 test("AssistantConversationRuntime injects project instructions into prompt and session audit", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-project-instructions-"));
-  await writeFile(join(workspaceRootPath, "AGENTS.md"), "- Prefer real behavior tests.\n", "utf8");
+  await writeFile(join(workspaceRootPath, "BULI.md"), "- Prefer real behavior tests.\n", "utf8");
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [
       { type: "text_chunk", text: "Explained." },
@@ -1488,14 +1488,14 @@ test("AssistantConversationRuntime injects project instructions into prompt and 
   );
 
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Project instructions:");
-  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Instructions from: AGENTS.md");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Instructions from: BULI.md");
   expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("- Prefer real behavior tests.");
   expect(runtime.conversationHistory.listConversationSessionEntries()[0]).toMatchObject({
     entryKind: "user_prompt",
     projectInstructionSnapshots: [
       {
-        fileName: "AGENTS.md",
-        displayPath: "AGENTS.md",
+        fileName: "BULI.md",
+        displayPath: "BULI.md",
         instructionText: "- Prefer real behavior tests.\n",
       },
     ],
