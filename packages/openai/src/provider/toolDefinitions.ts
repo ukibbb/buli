@@ -265,7 +265,7 @@ export function createEditToolDefinition(): OpenAiToolDefinition<"edit"> {
   return {
     type: "function",
     name: "edit",
-    description: "Replace one exact text occurrence in an existing workspace file. Use this for targeted file changes after reading the relevant file. The app shows a diff and requires approval before applying the edit.",
+    description: "Replace exact text in an existing workspace file. Use this for targeted file changes after reading the relevant file. By default oldString must appear exactly once; set replaceAll to true to replace every occurrence. The app shows a diff and requires approval before applying the edit.",
     parameters: {
       type: "object",
       properties: {
@@ -281,8 +281,12 @@ export function createEditToolDefinition(): OpenAiToolDefinition<"edit"> {
           type: "string",
           description: "Replacement text. Use an empty string only when intentionally deleting oldString.",
         },
+        replaceAll: {
+          type: ["boolean", "null"],
+          description: "True to replace every occurrence of oldString in that file; null or false requires exactly one match.",
+        },
       },
-      required: ["filePath", "oldString", "newString"],
+      required: ["filePath", "oldString", "newString", "replaceAll"],
       additionalProperties: false,
     },
     strict: true,
@@ -339,14 +343,14 @@ export function createPatchToolDefinition(): OpenAiToolDefinition<"patch"> {
   return {
     type: "function",
     name: "patch",
-    description: `Apply exactly one file section as a structured patch to the workspace in one approval. Use this for a single-file add/update/delete/move when a hunk is clearer than exact oldString replacement. Use patch_many for coordinated multi-file or multi-section changes. Patch syntax:\n*** Begin Patch\n*** Update File: src/app.ts\n@@\n-old\n+new\n*** End Patch`,
+    description: `Apply a structured patch with one or more file sections to the workspace in one approval. Use this for multi-file changes, multiple hunks in one file, or coordinated add/update/delete/move operations when a hunk is clearer than exact oldString replacement. Patch syntax:\n*** Begin Patch\n*** Add File: src/new.ts\n+export const value = true;\n*** Update File: src/app.ts\n@@\n-old\n+new\n*** Delete File: src/obsolete.ts\n*** End Patch`,
     parameters: {
       type: "object",
       properties: {
         patchText: {
           type: "string",
           maxLength: MAX_PATCH_TOOL_PATCH_TEXT_LENGTH,
-          description: "Full patch text. Must contain exactly one file section inside *** Begin Patch / *** End Patch.",
+          description: "Full patch text with one or more file sections inside *** Begin Patch / *** End Patch.",
         },
       },
       required: ["patchText"],
@@ -928,11 +932,13 @@ function parseLocateCodebaseSymbolsOpenAiToolCallRequest(
 }
 
 function parseEditOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<"edit"> {
+  const replaceAll = readOptionalBooleanToolArgument(parsedArguments, "replaceAll", "edit");
   return {
     toolName: "edit",
     editTargetPath: readRequiredStringToolArgument(parsedArguments, "filePath", "edit"),
     oldString: readRequiredStringToolArgument(parsedArguments, "oldString", "edit"),
     newString: readRequiredTextToolArgument(parsedArguments, "newString", "edit"),
+    ...(replaceAll !== undefined ? { replaceAll } : {}),
   };
 }
 

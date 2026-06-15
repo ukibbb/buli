@@ -1,5 +1,4 @@
 import {
-  ASSISTANT_TOOL_REQUEST_NAMES,
   READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
   WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
   type AssistantOperatingMode,
@@ -20,6 +19,20 @@ export type BuiltInSubagentDefinition = {
   availableToolNames: readonly ProviderAvailableToolName[];
 };
 
+const IMPLEMENTATION_ASSISTANT_MODE_TOOL_REQUEST_NAMES = [
+  "bash",
+  "read",
+  "glob",
+  "grep",
+  "locate_codebase_symbols",
+  "edit",
+  "patch",
+  "write",
+  "task",
+  "skill",
+  "record_workflow_handoff",
+] as const satisfies readonly ProviderAvailableToolName[];
+
 const PRIMARY_ASSISTANT_AGENT_BY_NAME = {
   understand: {
     agentName: "understand",
@@ -37,7 +50,7 @@ const PRIMARY_ASSISTANT_AGENT_BY_NAME = {
     agentName: "implementation",
     displayName: "Implementation Agent",
     isReadOnly: false,
-    availableToolNames: ASSISTANT_TOOL_REQUEST_NAMES,
+    availableToolNames: IMPLEMENTATION_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
   },
 } as const satisfies Record<AssistantOperatingMode, BuiltInPrimaryAssistantAgent>;
 

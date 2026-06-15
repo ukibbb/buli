@@ -97,7 +97,7 @@ export async function preparePatchToolCall(input: {
     toolName: "patch",
     patchToolCallRequest: input.patchToolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
-    requiresSinglePatchOperation: true,
+    requiresSinglePatchOperation: false,
     abortSignal: input.abortSignal,
   });
 }

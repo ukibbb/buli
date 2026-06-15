@@ -59,16 +59,25 @@ function buildEditManyBodyContent(props: EditManyToolCallCardProps): ReactNode {
   if (props.workspacePatch) {
     return <WorkspacePatchChangedFilesView workspacePatch={props.workspacePatch} />;
   }
-  return <ChangedFilesDiffView changedFiles={props.toolCallDetail.changedFiles ?? []} />;
+  return <ChangedFilesDiffView changedFiles={props.toolCallDetail.changedFiles ?? []} shouldRenderFullDiff={props.renderState === "completed"} />;
 }
 
-function ChangedFilesDiffView(props: { changedFiles: readonly WorkspacePatchFileDiff[] }): ReactNode {
+function ChangedFilesDiffView(props: {
+  changedFiles: readonly WorkspacePatchFileDiff[];
+  shouldRenderFullDiff: boolean;
+}): ReactNode {
   return (
     <box flexDirection="column" width="100%">
       {props.changedFiles.map((changedFile, index) => (
         <box flexDirection="column" key={`${changedFile.filePath}-${index}`} marginTop={index === 0 ? 0 : 1} width="100%">
           <text fg={chatScreenTheme.textMuted}>{`${changedFile.filePath} (+${changedFile.addedLineCount} -${changedFile.removedLineCount})`}</text>
-          {changedFile.unifiedDiffText ? <DiffBlock filePath={changedFile.filePath} unifiedDiffText={changedFile.unifiedDiffText} /> : null}
+          {changedFile.unifiedDiffText ? (
+            <DiffBlock
+              filePath={changedFile.filePath}
+              shouldRenderFullDiff={props.shouldRenderFullDiff}
+              unifiedDiffText={changedFile.unifiedDiffText}
+            />
+          ) : null}
         </box>
       ))}
     </box>

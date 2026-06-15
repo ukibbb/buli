@@ -485,7 +485,7 @@ test("implementation mode reminds the assistant to apply the agreed direction", 
   expect(systemPromptText).toContain(
     "In Implementation mode, if the latest Plan provides enough exact context, apply first; inspect only after a bounded exception makes inspection necessary.",
   );
-  expect(systemPromptText).toContain("Prefer edit_many over multiple edit calls when changing several exact strings");
+  expect(systemPromptText).toContain("Prefer edit with replaceAll for repeated exact replacements");
   expect(systemPromptText).toContain("verify important behavior");
 });
 

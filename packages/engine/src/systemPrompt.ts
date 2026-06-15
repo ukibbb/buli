@@ -389,7 +389,7 @@ export function buildBuliSystemPrompt(input: {
       "- Prefer several focused Explore tasks over one oversized generic Explore task when the research naturally separates into independent areas.",
       "- Do not delegate separate exploration for a simple single-file inspection, filename lookup, or one-off text search.",
       "- Use purpose-built workspace mutation capabilities only after explicit agreement to apply a change.",
-      "- Prefer edit_many over multiple edit calls when changing several exact strings, and prefer patch or patch_many for coordinated multi-hunk or multi-file changes.",
+      "- Prefer edit with replaceAll for repeated exact replacements, patch for coordinated multi-hunk or multi-file changes, and write for complete file rewrites.",
       "- Avoid command-line file mutation when a safer, purpose-built workspace mutation capability can express the change.",
       "- Treat read paths as evidence, not guesses: use read for known paths and glob or grep for path discovery.",
       "- Do not claim actions you did not take.",

@@ -842,6 +842,81 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("generated");
   });
 
+  test("renders_bash_workspace_patch_as_standalone_direct_patch_card", async () => {
+    const bashWorkspacePatch = createSingleFileWorkspacePatch({
+      toolCallId: "call-bash-1",
+      filePath: "src/generated.ts",
+      addedLineCount: 55,
+      removedLineCount: 0,
+      unifiedDiffText: [
+        "diff --git a/src/generated.ts b/src/generated.ts",
+        "--- a/src/generated.ts",
+        "+++ b/src/generated.ts",
+        "@@ -0,0 +1,55 @@",
+        ...Array.from({ length: 55 }, (_, index) => `+bash-patch-line-${String(index + 1).padStart(3, "0")}`),
+        "",
+      ].join("\n"),
+    });
+    const conversationMessages: ConversationMessage[] = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        messageStatus: "completed",
+        createdAtMs: 2,
+        partIds: ["tool-1", "patch-1"],
+      },
+    ];
+    const conversationMessagePartsByMessageId: Record<string, ConversationMessagePart[]> = {
+      "assistant-1": [
+        {
+          id: "tool-1",
+          partKind: "assistant_tool_call",
+          toolCallId: "call-bash-1",
+          toolCallStatus: "completed",
+          toolCallStartedAtMs: 2,
+          toolCallDetail: {
+            toolName: "bash",
+            commandLine: "bun run generate",
+            exitCode: 0,
+            outputLines: [{ lineKind: "stdout", lineText: "generated files" }],
+          },
+          durationMs: 20,
+        },
+        {
+          id: "patch-1",
+          partKind: "assistant_workspace_patch",
+          workspacePatch: bashWorkspacePatch,
+        },
+      ],
+    };
+    const conversationMessagePartsById = collectConversationMessagePartsById(conversationMessagePartsByMessageId);
+
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        visibleConversationMessageRows={createVisibleConversationMessageRows({
+          conversationMessages,
+          conversationMessagePartsById,
+        })}
+        reasoningSummaryDisplayMode="expanded"
+        conversationMessageScrollBoxRef={{ current: null }}
+        transcriptAccentColor="#10B981"
+        {...noHiddenOlderConversationMessagesProps}
+        userMessageBorderColor="#10B981"
+      />,
+      { width: 120, height: 90 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    const bashHeaderLine = findRenderedLineContaining(frame, "bun run generate");
+    expect(bashHeaderLine).toContain("Bash");
+    expect(bashHeaderLine).not.toContain("1 file");
+    expect(frame).toContain("workspace patch");
+    expect(frame).toContain("M src/generated.ts (+55 -0)");
+    expect(frame).not.toContain("showing first");
+    expect(frame).toContain("bash-patch-line-055");
+  });
+
   test("hides_reasoning_part_when_reasoning_summaries_are_not_visible", async () => {
     const conversationMessages: ConversationMessage[] = [
       {

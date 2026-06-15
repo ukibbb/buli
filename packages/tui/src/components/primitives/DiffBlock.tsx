@@ -10,6 +10,7 @@ export type DiffBlockProps = {
   unifiedDiffText: UnifiedDiffText;
   density?: "normal" | "compact";
   filePath?: string;
+  shouldRenderFullDiff?: boolean;
 };
 
 const MAX_VISIBLE_DIFF_ROW_COUNT = 50;
@@ -130,7 +131,9 @@ export function resolveOpenTuiDiffFiletype(filePath: string | undefined): string
 }
 
 export function DiffBlock(props: DiffBlockProps): ReactNode {
-  const visibleUnifiedDiffContent = buildVisibleUnifiedDiffContent(props.unifiedDiffText);
+  const visibleUnifiedDiffContent = props.shouldRenderFullDiff
+    ? undefined
+    : buildVisibleUnifiedDiffContent(props.unifiedDiffText);
   const diffFiletype = resolveOpenTuiDiffFiletype(props.filePath);
   const isCompact = props.density === "compact";
   const lineNumberForegroundColor = terminalDiffColors.lineNumberForeground;
@@ -145,11 +148,13 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
     : terminalDiffColors.removedLineNumberBackground;
   return (
     <box flexDirection="column" width="100%">
-      <VisibleContentLimitNotice
-        visibleItemCount={visibleUnifiedDiffContent.visibleRenderableRowCount}
-        totalItemCount={visibleUnifiedDiffContent.totalRenderableRowCount}
-        itemLabelPlural="diff lines"
-      />
+      {visibleUnifiedDiffContent ? (
+        <VisibleContentLimitNotice
+          visibleItemCount={visibleUnifiedDiffContent.visibleRenderableRowCount}
+          totalItemCount={visibleUnifiedDiffContent.totalRenderableRowCount}
+          itemLabelPlural="diff lines"
+        />
+      ) : null}
       <diff
         addedBg={terminalDiffColors.addedBackground}
         addedContentBg={terminalDiffColors.addedContentBackground}
@@ -157,7 +162,7 @@ export function DiffBlock(props: DiffBlockProps): ReactNode {
         addedSignColor={terminalDiffColors.addedSignForeground}
         contextBg={terminalDiffColors.contextBackground}
         contextContentBg={terminalDiffColors.contextContentBackground}
-        diff={visibleUnifiedDiffContent.visibleUnifiedDiffText}
+        diff={visibleUnifiedDiffContent?.visibleUnifiedDiffText ?? props.unifiedDiffText}
         filetype={diffFiletype}
         fg={githubLikeTerminalCodeColors.foreground}
         lineNumberBg={lineNumberBackgroundColor}

@@ -704,12 +704,13 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
     },
     {
       toolName: "edit",
-      argumentsText: '{"filePath":"src/app.ts","oldString":"old","newString":""}',
+      argumentsText: '{"filePath":"src/app.ts","oldString":"old","newString":"","replaceAll":true}',
       expectedToolCallRequest: {
         toolName: "edit",
         editTargetPath: "src/app.ts",
         oldString: "old",
         newString: "",
+        replaceAll: true,
       },
     },
     {
@@ -825,9 +826,9 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
   }
 });
 
-test("parseOpenAiStream reports patch requests with invalid section counts", async () => {
+test("parseOpenAiStream reports patch requests without file sections", async () => {
   const invalidPatchArgumentsText = JSON.stringify({
-    patchText: "*** Begin Patch\n*** Update File: one.txt\n@@\n-old\n+new\n*** Update File: two.txt\n@@\n-old\n+new\n*** End Patch",
+    patchText: "*** Begin Patch\n*** End Patch",
   });
   const response = new Response(
     [
@@ -847,7 +848,7 @@ test("parseOpenAiStream reports patch requests with invalid section counts", asy
         intentKind: "invalid_function_call",
         functionCallId: "call_1",
         functionName: "patch",
-        invalidCallExplanation: expect.stringContaining("exactly one file section"),
+        invalidCallExplanation: expect.stringContaining("at least one file section"),
       },
     ],
   });
@@ -899,10 +900,11 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["symbolNames"]?.minItems).toBe(1);
   expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["filePaths"]?.maxItems).toBe(50);
   expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["maximumResultCount"]).toBeUndefined();
-  expect(editToolDefinition?.description).toContain("requires approval before applying the edit");
+  expect(editToolDefinition?.description).toContain("replaceAll");
+  expect(editToolDefinition?.parameters.properties["replaceAll"]?.description).toContain("replace every occurrence");
   expect(editManyToolDefinition?.description).toContain("Prefer this over several edit calls");
   expect(editManyToolDefinition?.parameters.properties["edits"]?.minItems).toBe(1);
-  expect(patchToolDefinition?.description).toContain("exactly one file section");
+  expect(patchToolDefinition?.description).toContain("one or more file sections");
   expect(patchManyToolDefinition?.description).toContain("multi-file changes");
   expect(writeToolDefinition?.description).toContain("requires approval before writing");
   const openAiToolDefinitionNames: string[] = openAiToolDefinitions.map((toolDefinition) => toolDefinition.name);

@@ -54,4 +54,50 @@ describe("WorkspacePatchPartView", () => {
     expect(frame).toContain("newRule");
     expect(frame).toContain("oldRule");
   });
+
+  test("renders_large_workspace_patch_diffs_without_truncation", async () => {
+    const addedDiffLines = Array.from({ length: 55 }, (_, index) => `+workspace-line-${String(index + 1).padStart(3, "0")}`);
+    const { captureCharFrame, renderOnce } = await testRender(
+      <WorkspacePatchPartView
+        assistantWorkspacePatchConversationMessagePart={{
+          id: "workspace-patch-part-large",
+          partKind: "assistant_workspace_patch",
+          workspacePatch: {
+            workspacePatchId: "patch-large",
+            toolCallId: "tool-large",
+            capturedAtMs: 1,
+            baselineSnapshotHash: "before",
+            resultingSnapshotHash: "after",
+            changedFileCount: 1,
+            addedLineCount: 55,
+            removedLineCount: 0,
+            changedFiles: [
+              {
+                filePath: "src/generated.ts",
+                changeKind: "modified",
+                addedLineCount: 55,
+                removedLineCount: 0,
+                unifiedDiffText: [
+                  "diff --git a/src/generated.ts b/src/generated.ts",
+                  "--- a/src/generated.ts",
+                  "+++ b/src/generated.ts",
+                  "@@ -0,0 +1,55 @@",
+                  ...addedDiffLines,
+                  "",
+                ].join("\n"),
+              },
+            ],
+          },
+        }}
+      />,
+      { width: 100, height: 80 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("showing first");
+    expect(frame).toContain("workspace-line-050");
+    expect(frame).toContain("workspace-line-055");
+  });
 });

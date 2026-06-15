@@ -71,5 +71,11 @@ function buildWriteBodyContent(props: WriteToolCallCardProps): ReactNode {
   if (!unifiedDiffText) {
     return undefined;
   }
-  return <DiffBlock filePath={props.toolCallDetail.writtenFilePath} unifiedDiffText={unifiedDiffText} />;
+  return (
+    <DiffBlock
+      filePath={props.toolCallDetail.writtenFilePath}
+      shouldRenderFullDiff={props.renderState === "completed"}
+      unifiedDiffText={unifiedDiffText}
+    />
+  );
 }

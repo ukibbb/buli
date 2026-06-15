@@ -420,6 +420,9 @@
             "newString": {
               "type": "string",
               "maxLength": 1000000
+            },
+            "replaceAll": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -463,7 +466,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 1000000,
-              "pattern": "^\\s*\\*\\*\\* Begin Patch\\n(?:[ \\t]*\\n)*(?:\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+\\n?)(?:(?!\\n\\*\\*\\* (?:Add File|Update File|Delete File):)[\\s\\S])*\\n\\*\\*\\* End Patch\\s*$"
+              "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
             }
           },
           "required": [

@@ -70,6 +70,34 @@ test("prepareEditToolCall rejects ambiguous exact replacement text", async () =>
   });
 });
 
+test("prepareEditToolCall replaces all exact matches when replaceAll is true", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-edit-tool-replace-all-"));
+  const notesPath = join(workspaceRootPath, "notes.txt");
+  await writeFile(notesPath, "same\nkeep\nsame\n", "utf8");
+
+  const editPreparationOutcome = await prepareEditToolCall({
+    workspaceRootPath,
+    editToolCallRequest: {
+      toolName: "edit",
+      editTargetPath: "notes.txt",
+      oldString: "same",
+      newString: "different",
+      replaceAll: true,
+    },
+  });
+
+  if (!("preparationKind" in editPreparationOutcome) || editPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared edit");
+  }
+
+  const editToolCallOutcome = await runPreparedEditToolCall({
+    preparedEditToolCall: editPreparationOutcome.preparedEditToolCall,
+  });
+
+  expect(editToolCallOutcome.outcomeKind).toBe("completed");
+  expect(await readFile(notesPath, "utf8")).toBe("different\nkeep\ndifferent\n");
+});
+
 test("prepareEditToolCall rejects empty exact replacement text", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-edit-tool-empty-old-string-"));
   await writeFile(join(workspaceRootPath, "notes.txt"), "alpha\nbeta\n", "utf8");
@@ -177,10 +205,12 @@ test("preparePatchToolCall applies multiple hunks in one file", async () => {
   expect(await readFile(notesPath, "utf8")).toBe("line1\nchanged2\nline3\nchanged4\n");
 });
 
-test("preparePatchToolCall rejects multiple file sections", async () => {
+test("preparePatchToolCall applies multiple file sections", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-patch-tool-multiple-"));
-  await writeFile(join(workspaceRootPath, "one.txt"), "old\n", "utf8");
-  await writeFile(join(workspaceRootPath, "two.txt"), "old\n", "utf8");
+  const onePath = join(workspaceRootPath, "one.txt");
+  const twoPath = join(workspaceRootPath, "two.txt");
+  await writeFile(onePath, "old\n", "utf8");
+  await writeFile(twoPath, "old\n", "utf8");
 
   const patchPreparationOutcome = await preparePatchToolCall({
     workspaceRootPath,
@@ -190,10 +220,22 @@ test("preparePatchToolCall rejects multiple file sections", async () => {
     },
   });
 
-  expect(patchPreparationOutcome).toMatchObject({
-    outcomeKind: "failed",
-    failureExplanation: expect.stringContaining("exactly one file section"),
+  if (!("preparationKind" in patchPreparationOutcome) || patchPreparationOutcome.preparationKind !== "prepared") {
+    throw new Error("expected prepared patch");
+  }
+
+  expect(patchPreparationOutcome.preparedPatchToolCall.toolCallDetail).toMatchObject({
+    toolName: "patch",
+    changedFileCount: 2,
   });
+
+  const patchToolCallOutcome = await runPreparedPatchToolCall({
+    preparedPatchToolCall: patchPreparationOutcome.preparedPatchToolCall,
+  });
+
+  expect(patchToolCallOutcome.outcomeKind).toBe("completed");
+  expect(await readFile(onePath, "utf8")).toBe("new\n");
+  expect(await readFile(twoPath, "utf8")).toBe("new\n");
 });
 
 test("preparePatchToolCall rejects add-file sections for existing files", async () => {

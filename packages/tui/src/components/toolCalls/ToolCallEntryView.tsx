@@ -175,7 +175,7 @@ function renderWriteToolCallEntry(props: ToolCallEntryRendererProps<"write">): R
 }
 
 function renderBashToolCallEntry(props: ToolCallEntryRendererProps<"bash">): ReactNode {
-  return <BashToolCallCard {...buildWorkspacePatchToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+  return <BashToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
 }
 
 function renderTodoWriteToolCallEntry(props: ToolCallEntryRendererProps<"todowrite">): ReactNode {

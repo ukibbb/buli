@@ -63,11 +63,13 @@ export async function prepareEditToolCall(input: {
     if (matchCount === 0) {
       throw new Error(`Edit target text was not found in ${resolvedEditPath.displayPath}`);
     }
-    if (matchCount > 1) {
+    if (matchCount > 1 && input.editToolCallRequest.replaceAll !== true) {
       throw new Error(`Edit target text matched ${matchCount} times in ${resolvedEditPath.displayPath}; make oldString more specific`);
     }
 
-    const nextFileText = currentFileText.replace(input.editToolCallRequest.oldString, input.editToolCallRequest.newString);
+    const nextFileText = input.editToolCallRequest.replaceAll === true
+      ? currentFileText.split(input.editToolCallRequest.oldString).join(input.editToolCallRequest.newString)
+      : currentFileText.replace(input.editToolCallRequest.oldString, input.editToolCallRequest.newString);
     if (nextFileText === currentFileText) {
       throw new Error(`Edit would not change ${resolvedEditPath.displayPath}`);
     }

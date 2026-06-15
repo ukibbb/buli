@@ -96,4 +96,34 @@ describe("WriteToolCallCard", () => {
     expect(frame).toContain("actual");
     expect(frame).not.toContain("fallback");
   });
+
+  test("completed_direct_diff_is_not_truncated", async () => {
+    const addedDiffLines = Array.from({ length: 55 }, (_, index) => `+write-line-${String(index + 1).padStart(3, "0")}`);
+    const { captureCharFrame, renderOnce } = await testRender(
+      <WriteToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "write",
+          writtenFilePath: "/src/generated.ts",
+          addedLineCount: 55,
+          removedLineCount: 0,
+          unifiedDiffText: [
+            "diff --git a/src/generated.ts b/src/generated.ts",
+            "--- a/src/generated.ts",
+            "+++ b/src/generated.ts",
+            "@@ -0,0 +1,55 @@",
+            ...addedDiffLines,
+            "",
+          ].join("\n"),
+        }}
+      />,
+      { width: 100, height: 80 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("showing first");
+    expect(frame).toContain("write-line-050");
+    expect(frame).toContain("write-line-055");
+  });
 });

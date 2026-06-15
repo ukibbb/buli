@@ -71,5 +71,11 @@ function buildEditBodyContent(props: EditToolCallCardProps): ReactNode {
   if (!unifiedDiffText) {
     return undefined;
   }
-  return <DiffBlock filePath={props.toolCallDetail.editedFilePath} unifiedDiffText={unifiedDiffText} />;
+  return (
+    <DiffBlock
+      filePath={props.toolCallDetail.editedFilePath}
+      shouldRenderFullDiff={props.renderState === "completed"}
+      unifiedDiffText={unifiedDiffText}
+    />
+  );
 }

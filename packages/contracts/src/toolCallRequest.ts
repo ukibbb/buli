@@ -26,7 +26,6 @@ export const MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH = 512;
 const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
 const InspectionQuestionSchema = z.string().min(1).max(MAX_INSPECTION_QUESTION_LENGTH);
 const PATCH_FILE_SECTION_HEADER_PREFIXES = ["*** Add File:", "*** Update File:", "*** Delete File:"] as const;
-const PATCH_TEXT_WITH_EXACTLY_ONE_FILE_SECTION_PATTERN = /^\s*\*\*\* Begin Patch\n(?:[ \t]*\n)*(?:\*\*\* (?:Add File|Update File|Delete File): [^\n]+\n?)(?:(?!\n\*\*\* (?:Add File|Update File|Delete File):)[\s\S])*\n\*\*\* End Patch\s*$/;
 const PATCH_TEXT_WITH_ONE_OR_MORE_FILE_SECTIONS_PATTERN = /^\s*\*\*\* Begin Patch\n[\s\S]*\*\*\* (?:Add File|Update File|Delete File): [^\n]+[\s\S]*\n\*\*\* End Patch\s*$/;
 
 type PatchTextStructure = {
@@ -38,14 +37,14 @@ type PatchTextStructure = {
 const PatchToolPatchTextSchema = z.string()
   .min(1)
   .max(MAX_PATCH_TOOL_PATCH_TEXT_LENGTH)
-  .regex(PATCH_TEXT_WITH_EXACTLY_ONE_FILE_SECTION_PATTERN, "Patch text must contain exactly one file section inside Begin/End markers")
+  .regex(PATCH_TEXT_WITH_ONE_OR_MORE_FILE_SECTIONS_PATTERN, "Patch text must contain one or more file sections inside Begin/End markers")
   .superRefine((patchText, context) => {
     const patchTextStructure = inspectPatchTextStructure(patchText);
     addPatchTextEnvelopeIssues(patchTextStructure, context);
-    if (patchTextStructure.hasValidEnvelope && patchTextStructure.fileSectionCount !== 1) {
+    if (patchTextStructure.hasValidEnvelope && patchTextStructure.fileSectionCount < 1) {
       context.addIssue({
         code: "custom",
-        message: `Patch must contain exactly one file section; received ${patchTextStructure.fileSectionCount}`,
+        message: "Patch must contain at least one file section",
       });
     }
   });
@@ -111,6 +110,7 @@ export const EditToolCallRequestSchema = z
     editTargetPath: WorkspacePathSchema,
     oldString: z.string().min(1).max(MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH),
     newString: z.string().max(MAX_EDIT_TOOL_REPLACEMENT_TEXT_LENGTH),
+    replaceAll: z.boolean().optional(),
   })
   .strict();
 

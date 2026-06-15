@@ -1,11 +1,7 @@
 import type { ReactNode } from "react";
-import type { ToolCallBashDetail, WorkspacePatch } from "@buli/contracts";
+import type { ToolCallBashDetail } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ShellBlock } from "../primitives/ShellBlock.tsx";
-import {
-  formatWorkspacePatchCompactSummary,
-  WorkspacePatchChangedFilesView,
-} from "../workspacePatch/WorkspacePatchChangedFilesView.tsx";
 import {
   ExpandableToolCallCard,
   formatToolCallDurationMs,
@@ -18,7 +14,6 @@ export type BashToolCallCardProps = {
   approvalDecisionControl?: ReactNode;
   durationMs?: number;
   errorText?: string;
-  workspacePatch?: WorkspacePatch;
 };
 
 const MAX_AUTO_EXPANDED_BASH_OUTPUT_LINE_COUNT = 8;
@@ -26,13 +21,10 @@ const MAX_AUTO_EXPANDED_BASH_OUTPUT_CHARACTER_COUNT = 800;
 
 export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
   const bashToolCallPresentation = resolveBashToolCallRenderStatePresentation(props);
-  const accentColor = props.workspacePatch && bashToolCallPresentation.statusKind === "success"
-    ? chatScreenTheme.accentPrimary
-    : bashToolCallPresentation.accentColor;
-  const hasBashOutputContent = (props.toolCallDetail.outputLines?.length ?? 0) > 0 || Boolean(props.workspacePatch);
+  const hasBashOutputContent = (props.toolCallDetail.outputLines?.length ?? 0) > 0;
   return (
     <ExpandableToolCallCard
-      accentColor={accentColor}
+      accentColor={bashToolCallPresentation.accentColor}
       {...(props.approvalDecisionControl !== undefined
         ? { approvalDecisionControl: props.approvalDecisionControl }
         : {})}
@@ -48,10 +40,6 @@ export function BashToolCallCard(props: BashToolCallCardProps): ReactNode {
 }
 
 function shouldAutoExpandBashBodyContent(props: BashToolCallCardProps): boolean {
-  if (props.workspacePatch) {
-    return false;
-  }
-
   const outputLines = props.toolCallDetail.outputLines ?? [];
   if (outputLines.length === 0 || outputLines.length > MAX_AUTO_EXPANDED_BASH_OUTPUT_LINE_COUNT) {
     return false;
@@ -90,27 +78,19 @@ function buildBashStatusLabel(props: BashToolCallCardProps): string {
       : `exit ${props.toolCallDetail.exitCode}`;
   const durationLabel =
     props.durationMs === undefined ? "" : ` · ${formatToolCallDurationMs(props.durationMs)}`;
-  const workspacePatchSummaryLabel = props.workspacePatch
-    ? ` · ${formatWorkspacePatchCompactSummary(props.workspacePatch)}`
-    : "";
-  return `${exitCodeLabel}${durationLabel}${workspacePatchSummaryLabel}`;
+  return `${exitCodeLabel}${durationLabel}`;
 }
 
 function buildBashBodyContent(props: BashToolCallCardProps): ReactNode {
   const outputLines = props.toolCallDetail.outputLines;
   const hasBashOutputLines = outputLines !== undefined && outputLines.length > 0;
-  if (!hasBashOutputLines && !props.workspacePatch) {
+  if (!hasBashOutputLines) {
     return undefined;
   }
 
   return (
     <box flexDirection="column" width="100%">
       {hasBashOutputLines ? <ShellBlock outputLines={outputLines} /> : null}
-      {props.workspacePatch ? (
-        <box marginTop={hasBashOutputLines ? 1 : 0} width="100%">
-          <WorkspacePatchChangedFilesView workspacePatch={props.workspacePatch} />
-        </box>
-      ) : null}
     </box>
   );
 }

@@ -108,6 +108,36 @@ describe("EditToolCallCard", () => {
     expect(frame).not.toContain("fallbackNew");
   });
 
+  test("completed_direct_diff_is_not_truncated", async () => {
+    const addedDiffLines = Array.from({ length: 55 }, (_, index) => `+edit-line-${String(index + 1).padStart(3, "0")}`);
+    const { captureCharFrame, renderOnce } = await testRender(
+      <EditToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "edit",
+          editedFilePath: "/src/utils.ts",
+          addedLineCount: 55,
+          removedLineCount: 0,
+          unifiedDiffText: [
+            "diff --git a/src/utils.ts b/src/utils.ts",
+            "--- a/src/utils.ts",
+            "+++ b/src/utils.ts",
+            "@@ -0,0 +1,55 @@",
+            ...addedDiffLines,
+            "",
+          ].join("\n"),
+        }}
+      />,
+      { width: 100, height: 80 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("showing first");
+    expect(frame).toContain("edit-line-050");
+    expect(frame).toContain("edit-line-055");
+  });
+
   test("streaming_shows_amber_state_without_disclosure", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <EditToolCallCard

@@ -1064,12 +1064,14 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
       editTargetPath: "packages/contracts/src/index.ts",
       oldString: "old",
       newString: "",
+      replaceAll: true,
     }),
   ).toEqual({
     toolName: "edit",
     editTargetPath: "packages/contracts/src/index.ts",
     oldString: "old",
     newString: "",
+    replaceAll: true,
   });
   expect(
     ToolCallRequestSchema.parse({
@@ -1112,12 +1114,21 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
     toolName: "patch_many",
     patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch",
   });
-  expect(() =>
+  expect(
     ToolCallRequestSchema.parse({
       toolName: "patch",
       patchText: "*** Begin Patch\n*** Update File: one.txt\n@@\n-old\n+new\n*** Update File: two.txt\n@@\n-old\n+new\n*** End Patch",
+    }),
+  ).toEqual({
+    toolName: "patch",
+    patchText: "*** Begin Patch\n*** Update File: one.txt\n@@\n-old\n+new\n*** Update File: two.txt\n@@\n-old\n+new\n*** End Patch",
+  });
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "patch",
+      patchText: "*** Begin Patch\n*** End Patch",
     })
-  ).toThrow("exactly one file section");
+  ).toThrow("at least one file section");
   expect(() =>
     ToolCallRequestSchema.parse({
       toolName: "patch_many",

@@ -283,7 +283,6 @@ const mergedWorkspacePatchToolNames = new Set<AssistantToolCallConversationMessa
   "patch",
   "patch_many",
   "write",
-  "bash",
 ]);
 
 function mergeMatchingWorkspacePatchesIntoToolCallParts(

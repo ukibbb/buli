@@ -35,7 +35,7 @@ function WorkspacePatchChangedFileView(props: {
     <box flexDirection="column" marginTop={props.marginTop} width="100%">
       <text fg={chatScreenTheme.textMuted}>{formatWorkspacePatchChangedFileSummary(props.changedFile)}</text>
       {props.changedFile.unifiedDiffText ? (
-        <DiffBlock filePath={props.changedFile.filePath} unifiedDiffText={props.changedFile.unifiedDiffText} />
+        <DiffBlock filePath={props.changedFile.filePath} shouldRenderFullDiff={true} unifiedDiffText={props.changedFile.unifiedDiffText} />
       ) : null}
     </box>
   );

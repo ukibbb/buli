@@ -44,4 +44,45 @@ describe("PatchToolCallCard", () => {
     expect(frame).toContain("modified /src/utils.ts (+1 -1)");
     expect(frame).toContain("patchedValue");
   });
+
+  test("completed_patch_diff_is_not_truncated_and_has_no_disclosure", async () => {
+    const addedDiffLines = Array.from({ length: 55 }, (_, index) => `+patch-line-${String(index + 1).padStart(3, "0")}`);
+    const { captureCharFrame, renderOnce } = await testRender(
+      <PatchToolCallCard
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "patch",
+          patchTargetText: "src/generated.ts",
+          changedFileCount: 1,
+          addedLineCount: 55,
+          removedLineCount: 0,
+          changedFiles: [
+            {
+              filePath: "/src/generated.ts",
+              changeKind: "modified",
+              addedLineCount: 55,
+              removedLineCount: 0,
+              unifiedDiffText: [
+                "diff --git a/src/generated.ts b/src/generated.ts",
+                "--- a/src/generated.ts",
+                "+++ b/src/generated.ts",
+                "@@ -0,0 +1,55 @@",
+                ...addedDiffLines,
+                "",
+              ].join("\n"),
+            },
+          ],
+        }}
+      />,
+      { width: 100, height: 80 },
+    );
+
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).not.toContain("[+]");
+    expect(frame).not.toContain("[-]");
+    expect(frame).not.toContain("showing first");
+    expect(frame).toContain("patch-line-050");
+    expect(frame).toContain("patch-line-055");
+  });
 });

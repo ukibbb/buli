@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { act } from "react";
 import { testRender } from "../../testRenderWithCleanup.ts";
 import { BashToolCallCard } from "../../../src/components/toolCalls/BashToolCallCard.tsx";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
@@ -60,8 +59,8 @@ describe("BashToolCallCard (opentui)", () => {
     expect(frame).toContain("/tmp/demo");
   });
 
-  test("completed_with_workspace_patch_expands_output_and_actual_diff", async () => {
-    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+  test("completed_with_small_output_no_longer_includes_workspace_patch_summary", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
       <BashToolCallCard
         toolCallDetail={{
           toolName: "bash",
@@ -71,56 +70,17 @@ describe("BashToolCallCard (opentui)", () => {
         }}
         renderState="completed"
         durationMs={250}
-        workspacePatch={{
-          workspacePatchId: "patch-1",
-          toolCallId: "call-bash-1",
-          capturedAtMs: 1,
-          baselineSnapshotHash: "before",
-          resultingSnapshotHash: "after",
-          changedFileCount: 1,
-          addedLineCount: 1,
-          removedLineCount: 0,
-          changedFiles: [
-            {
-              filePath: "src/generated.ts",
-              changeKind: "added",
-              addedLineCount: 1,
-              removedLineCount: 0,
-              unifiedDiffText: [
-                "diff --git a/src/generated.ts b/src/generated.ts",
-                "--- a/src/generated.ts",
-                "+++ b/src/generated.ts",
-                "@@ -0,0 +1,1 @@",
-                "+export const generated = true;",
-                "",
-              ].join("\n"),
-            },
-          ],
-        }}
       />,
-      { width: 120, height: 20 },
+      { width: 120, height: 10 },
     );
 
     await renderOnce();
-    const collapsedFrame = captureCharFrame();
-    expect(collapsedFrame).toContain("[+]");
-    expect(collapsedFrame).toContain("exit 0");
-    expect(collapsedFrame).toContain("1 file");
-    expect(collapsedFrame).toContain("+1");
-    expect(collapsedFrame).toContain("-0");
-    expect(collapsedFrame).not.toContain("generated files");
-    expect(collapsedFrame).not.toContain("export const generated");
-
-    await act(async () => {
-      await mockMouse.click(3, 0);
-    });
-    await renderOnce();
-
-    const expandedFrame = captureCharFrame();
-    expect(expandedFrame).toContain("[-]");
-    expect(expandedFrame).toContain("generated files");
-    expect(expandedFrame).toContain("A src/generated.ts (+1 -0)");
-    expect(expandedFrame).toContain("export const generated");
+    const frame = captureCharFrame();
+    expect(frame).toContain("[-]");
+    expect(frame).toContain("exit 0");
+    expect(frame).toContain("generated files");
+    expect(frame).not.toContain("workspace patch");
+    expect(frame).not.toContain("export const generated");
   });
 
   test("completed exit 1 uses red accent and shows exit 1 status", async () => {

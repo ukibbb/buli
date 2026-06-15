@@ -167,6 +167,32 @@ describe("DiffBlock", () => {
     expect(frame).not.toContain("diff-line-051");
   });
 
+  test("renders_full_large_diff_blocks_when_requested", async () => {
+    const addedDiffLines = Array.from({ length: 55 }, (_, index) => `+diff-line-${String(index + 1).padStart(3, "0")}`);
+    const { captureCharFrame, renderOnce } = await testRender(
+      <DiffBlock
+        shouldRenderFullDiff={true}
+        unifiedDiffText={
+          joinUnifiedDiffLines([
+            "diff --git a/src/example.ts b/src/example.ts",
+            "--- a/src/example.ts",
+            "+++ b/src/example.ts",
+            "@@ -0,0 +1,55 @@",
+            ...addedDiffLines,
+            "",
+          ])
+        }
+      />,
+      { width: 80, height: 70 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+
+    expect(frame).not.toContain("showing first");
+    expect(frame).toContain("diff-line-050");
+    expect(frame).toContain("diff-line-055");
+  });
+
   test("compact_mode_keeps_change_signs_and_line_numbers_for_visual_diff", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <DiffBlock
