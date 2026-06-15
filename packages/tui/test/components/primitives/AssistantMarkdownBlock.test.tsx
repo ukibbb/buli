@@ -479,7 +479,7 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).not.toContain("[ ]");
   });
 
-  test("renders_markdown_tables_as_compact_visible_grids", async () => {
+  test("renders_markdown_tables_as_opencode_style_grid_defaults", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <AssistantMarkdownBlock
         isStreaming={false}
@@ -502,6 +502,7 @@ describe("AssistantMarkdownBlock", () => {
     const headerRowIndex = renderedRows.findIndex((renderedRow) =>
       renderedRow.includes("Key") && renderedRow.includes("Behavior")
     );
+    const headerRow = renderedRows[headerRowIndex];
     const firstDataRowIndex = renderedRows.findIndex((renderedRow) =>
       renderedRow.includes("Enter") && renderedRow.includes("submit")
     );
@@ -509,6 +510,7 @@ describe("AssistantMarkdownBlock", () => {
     expect(frame).toContain("│");
     expect(frame).toContain("─");
     expect(headerRowIndex).toBeGreaterThanOrEqual(0);
+    expect(headerRow?.lastIndexOf("│") ?? -1).toBeGreaterThanOrEqual(70);
     expect(firstDataRowIndex).toBeGreaterThanOrEqual(0);
     expect(firstDataRowIndex - headerRowIndex).toBeLessThanOrEqual(2);
   });
