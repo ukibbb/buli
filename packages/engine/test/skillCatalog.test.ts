@@ -112,6 +112,54 @@ test("WorkspaceSkillCatalog discovers requested roots and lets disk skills overr
   });
 });
 
+test("WorkspaceSkillCatalog loads Markdown-backed learn-codebase built-in skill content", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-learn-codebase-catalog-"));
+  const skillCatalog = new WorkspaceSkillCatalog({ workspaceRootPath, homeDirectoryPath: workspaceRootPath });
+
+  const availableSkillNames = (await skillCatalog.listAvailableSkills()).map((availableSkill) => availableSkill.name);
+
+  expect(availableSkillNames).toContain("learn-codebase");
+  expect(availableSkillNames).not.toContain("learn-from-source");
+
+  const loadedLearnCodebaseSkill = await skillCatalog.loadSkillByName("learn-codebase");
+
+  expect(loadedLearnCodebaseSkill).toMatchObject({
+    name: "learn-codebase",
+    sourceKind: "built_in",
+  });
+  expect(loadedLearnCodebaseSkill?.description).toContain("learn-codebase");
+  expect(Object.prototype.hasOwnProperty.call(loadedLearnCodebaseSkill, "instructionFilePath")).toBe(false);
+  expect(Object.prototype.hasOwnProperty.call(loadedLearnCodebaseSkill, "baseDirectoryPath")).toBe(false);
+
+  const loadedLearnCodebaseInstructionText = loadedLearnCodebaseSkill?.instructionText;
+  if (typeof loadedLearnCodebaseInstructionText !== "string") {
+    throw new Error("Expected learn-codebase built-in instruction text to be loaded as a string.");
+  }
+  expect(loadedLearnCodebaseInstructionText.startsWith("# Learn Codebase")).toBe(true);
+  expect(loadedLearnCodebaseInstructionText).toContain("learning/<project-slug>/progress.md");
+  expect(loadedLearnCodebaseInstructionText).toContain(
+    "packages/engine/src/skills/builtInSkillInstructions/learn-codebase.md",
+  );
+
+  const toolCallOutcome = await runSkillToolCall({
+    skillCatalog,
+    skillToolCallRequest: { toolName: "skill", skillName: "learn-codebase" },
+  });
+
+  expect(toolCallOutcome).toMatchObject({
+    outcomeKind: "completed",
+    toolCallDetail: {
+      toolName: "skill",
+      skillName: "learn-codebase",
+      skillSourceKind: "built_in",
+    },
+  });
+  expect(Object.prototype.hasOwnProperty.call(toolCallOutcome.toolCallDetail, "skillInstructionFilePath")).toBe(false);
+  expect(toolCallOutcome.toolResultText).toContain('<skill_content name="learn-codebase">');
+  expect(toolCallOutcome.toolResultText).toContain("# Learn Codebase");
+  expect(toolCallOutcome.toolResultText).toContain("learning/&lt;project-slug&gt;/progress.md");
+});
+
 test("runSkillToolCall returns model-facing skill content and typed skill detail", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-skill-tool-"));
   const instructionFilePath = await writeSkillFile({
