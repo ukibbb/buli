@@ -393,7 +393,16 @@ test("UserPromptImageAttachmentSchema parses a base64 image data URL", () => {
   });
 });
 
-test("ToolCallRequestSchema rejects bash timeouts above the safety cap", () => {
+test("ToolCallRequestSchema accepts ten-minute bash timeout cap and rejects values above it", () => {
+  expect(MAX_BASH_TOOL_TIMEOUT_MILLISECONDS).toBe(600_000);
+  expect(() =>
+    ToolCallRequestSchema.parse({
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+      timeoutMilliseconds: MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
+    }),
+  ).not.toThrow();
   expect(() =>
     ToolCallRequestSchema.parse({
       toolName: "bash",

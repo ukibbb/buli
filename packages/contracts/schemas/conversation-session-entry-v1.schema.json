@@ -333,7 +333,7 @@
                 "timeoutMilliseconds": {
                   "type": "integer",
                   "exclusiveMinimum": 0,
-                  "maximum": 300000
+                  "maximum": 600000
                 }
               },
               "required": [

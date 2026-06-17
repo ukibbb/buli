@@ -10,7 +10,7 @@ import { logEngineDiagnosticEvent } from "../runtimeDiagnostics.ts";
 import { WorkspaceShellCommandExecutor } from "./workspaceShellCommandExecutor.ts";
 import { resolveExistingWorkspacePath } from "./workspacePath.ts";
 
-const DEFAULT_BASH_TIMEOUT_MILLISECONDS = 120_000;
+const DEFAULT_BASH_TIMEOUT_MILLISECONDS = 600_000;
 const DEFAULT_BASH_CAPTURED_OUTPUT_CHARACTER_COUNT = 100_000;
 
 export type CompletedBashToolCallOutcome = {

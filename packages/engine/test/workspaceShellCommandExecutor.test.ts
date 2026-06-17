@@ -109,6 +109,32 @@ test("runApprovedBashToolCall rejects working directories that resolve outside t
   expect(bashToolCallOutcome.toolResultText).toContain("Path must stay inside the workspace root");
 });
 
+test("runApprovedBashToolCall uses ten-minute default timeout when request omits timeout", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-shell-timeout-default-"));
+  let receivedTimeoutMilliseconds: number | undefined;
+  const workspaceShellCommandExecutor = {
+    workspaceRootPath,
+    shellExecutablePath: process.env["SHELL"] ?? "/bin/zsh",
+    async runShellCommand(input) {
+      receivedTimeoutMilliseconds = input.timeoutMilliseconds;
+      return { exitCode: 0, stdoutText: "ok\n", stderrText: "" };
+    },
+  } satisfies WorkspaceShellCommandExecutor;
+
+  const bashToolCallOutcome = await runApprovedBashToolCall({
+    workspaceRootPath,
+    workspaceShellCommandExecutor,
+    bashToolCallRequest: {
+      toolName: "bash",
+      shellCommand: "pwd",
+      commandDescription: "Print working directory",
+    },
+  });
+
+  expect(bashToolCallOutcome.outcomeKind).toBe("completed");
+  expect(receivedTimeoutMilliseconds).toBe(600_000);
+});
+
 test("runApprovedBashToolCall clamps provider-requested timeout to the safety cap", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-shell-timeout-cap-"));
   let receivedTimeoutMilliseconds: number | undefined;

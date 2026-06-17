@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
 import { WorkflowHandoffSchema } from "./workflowHandoff.ts";
 
-export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 300_000;
+export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 600_000;
 export const MAX_TOOL_CALL_PATH_LENGTH = 4_096;
 export const MAX_READ_TOOL_LINE_COUNT = 600;
 export const MAX_BASH_TOOL_COMMAND_LENGTH = 20_000;
