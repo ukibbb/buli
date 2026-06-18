@@ -814,6 +814,78 @@ test("hydrateConversationTranscriptFromSessionEntries restores assistant text se
   ]);
 });
 
+test("hydrateConversationTranscriptFromSessionEntries restores hosted web search cards between assistant text segments", () => {
+  const chatSessionState = hydrateConversationTranscriptFromSessionEntries(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    [
+      {
+        entryKind: "user_prompt",
+        promptText: "Search the web",
+        modelFacingPromptText: "Search the web",
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "I will search first. ",
+      },
+      {
+        entryKind: "hosted_web_search_call",
+        hostedWebSearchCallId: "ws_1",
+        hostedWebSearchCallStartedAtMs: 1_234,
+        hostedWebSearchCallStatus: "completed",
+        hostedWebSearchCallDurationMs: 56,
+        hostedWebSearchCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "completed",
+          webSearchActionKind: "search",
+          searchQueryTexts: ["OpenTUI release notes"],
+          sourceCount: 2,
+        },
+      },
+      {
+        entryKind: "assistant_text_segment",
+        assistantTextSegmentText: "The web search is complete.",
+      },
+      {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "I will search first. The web search is complete.",
+      },
+    ],
+  );
+
+  const assistantConversationMessage = listOrderedConversationMessages(chatSessionState).find(
+    (conversationMessage) => conversationMessage.role === "assistant",
+  );
+  if (!assistantConversationMessage) {
+    throw new Error("expected assistant message");
+  }
+
+  const assistantConversationMessageParts = listOrderedConversationMessageParts(chatSessionState, assistantConversationMessage.id);
+  expect(assistantConversationMessageParts.map((conversationMessagePart) => conversationMessagePart.partKind)).toEqual([
+    "assistant_text",
+    "assistant_tool_call",
+    "assistant_text",
+  ]);
+  expect(assistantConversationMessageParts).toMatchObject([
+    { partKind: "assistant_text", rawMarkdownText: "I will search first. " },
+    {
+      partKind: "assistant_tool_call",
+      toolCallId: "ws_1",
+      toolCallStatus: "completed",
+      toolCallStartedAtMs: 1_234,
+      durationMs: 56,
+      toolCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "completed",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["OpenTUI release notes"],
+        sourceCount: 2,
+      },
+    },
+    { partKind: "assistant_text", rawMarkdownText: "The web search is complete." },
+  ]);
+});
+
 test("hydrateConversationTranscriptFromSessionEntries restores persisted BuliStickyNotes audit parts before assistant text", () => {
   const buliStickyNotesContextText = [
     "BuliStickyNotes:",

@@ -4,6 +4,7 @@ import type {
   SubagentChildToolCallDetail,
   ToolCallDetail,
   ToolCallRequest,
+  ToolCallWebSearchResult,
 } from "@buli/contracts";
 import { formatDurationMs } from "./formatting.ts";
 import { escapeHtml } from "./htmlEscaping.ts";
@@ -12,6 +13,11 @@ import { renderToolIcon } from "./svgIcons.ts";
 type ToolResultConversationSessionEntry = Extract<
   ConversationSessionEntry,
   { entryKind: "completed_tool_result" | "failed_tool_result" | "denied_tool_result" }
+>;
+
+type HostedWebSearchCallConversationSessionEntry = Extract<
+  ConversationSessionEntry,
+  { entryKind: "hosted_web_search_call" }
 >;
 
 export type RenderToolResultBlockInput = {
@@ -66,6 +72,33 @@ export function renderToolResultBlock(input: RenderToolResultBlockInput): string
     purposeHtml: renderToolResultPurpose(toolCallDetail),
     statusHtml,
     bodyHtml: [taskDetailHtml, outputHtml, failureNoticeHtml, denialNoticeHtml].filter((s) => s.length > 0).join("\n"),
+  });
+}
+
+export function renderHostedWebSearchCallBlock(
+  conversationSessionEntry: HostedWebSearchCallConversationSessionEntry,
+): string {
+  const toolCallDetail = conversationSessionEntry.hostedWebSearchCallDetail;
+  const isCompleted = conversationSessionEntry.hostedWebSearchCallStatus === "completed";
+  const resultCountHtml = renderWebSearchResultCountSummary(toolCallDetail);
+  const durationHtml = conversationSessionEntry.hostedWebSearchCallDurationMs === undefined
+    ? ""
+    : `<span class="panel-purpose">${formatDurationMs(conversationSessionEntry.hostedWebSearchCallDurationMs)}</span>`;
+  const statusHtml = isCompleted
+    ? `<span class="panel-status ok">done${resultCountHtml}</span>`
+    : `<span class="panel-status fail">${escapeHtml(conversationSessionEntry.hostedWebSearchCallStatus)}</span>`;
+  const sourcesHtml = renderWebSearchSourcesBlock(toolCallDetail);
+  const resultsHtml = renderWebSearchResultsBlock(toolCallDetail.results ?? []);
+  const failureNoticeHtml = conversationSessionEntry.hostedWebSearchCallErrorText
+    ? `<p class="panel-notice fail">${escapeHtml(conversationSessionEntry.hostedWebSearchCallErrorText)}</p>`
+    : "";
+
+  return renderPanel({
+    panelModifier: isCompleted ? "panel--result" : "panel--failed",
+    toolName: toolCallDetail.toolName,
+    purposeHtml: renderWebSearchToolResultPurpose(toolCallDetail),
+    statusHtml: [durationHtml, statusHtml].filter((html) => html.length > 0).join("\n"),
+    bodyHtml: [sourcesHtml, resultsHtml, failureNoticeHtml].filter((html) => html.length > 0).join("\n"),
   });
 }
 
@@ -279,6 +312,7 @@ const toolCallDetailExportRendererByName: {
   skill: { renderPurpose: renderSkillToolResultPurpose },
   record_workflow_handoff: { renderPurpose: renderRecordWorkflowHandoffToolResultPurpose },
   todowrite: { renderPurpose: renderTodoWriteToolResultPurpose },
+  web_search: { renderPurpose: renderWebSearchToolResultPurpose },
 };
 
 function resolveToolCallDetailExportRenderer<ToolName extends ToolCallDetailName>(
@@ -373,7 +407,77 @@ function renderTodoWriteToolResultPurpose(toolCallDetail: ToolCallDetailByName<"
   return `<span class="panel-purpose">${toolCallDetail.todoItems.length} items</span>`;
 }
 
+function renderWebSearchToolResultPurpose(toolCallDetail: ToolCallDetailByName<"web_search">): string {
+  return `<span class="panel-purpose">${escapeHtml(formatWebSearchTargetText(toolCallDetail))}</span>`;
+}
+
+function formatWebSearchTargetText(toolCallDetail: ToolCallDetailByName<"web_search">): string {
+  if (toolCallDetail.searchQueryTexts && toolCallDetail.searchQueryTexts.length > 0) {
+    return toolCallDetail.searchQueryTexts.join("; ");
+  }
+  if (toolCallDetail.openedPageUrl !== undefined && toolCallDetail.findPattern !== undefined) {
+    return `${toolCallDetail.openedPageUrl} · ${toolCallDetail.findPattern}`;
+  }
+  if (toolCallDetail.openedPageUrl !== undefined) {
+    return toolCallDetail.openedPageUrl;
+  }
+  if (toolCallDetail.findPattern !== undefined) {
+    return toolCallDetail.findPattern;
+  }
+  return "provider-hosted web";
+}
+
+function renderWebSearchResultCountSummary(toolCallDetail: ToolCallDetailByName<"web_search">): string {
+  const resultLabels = [
+    toolCallDetail.sourceCount !== undefined
+      ? `${toolCallDetail.sourceCount} ${toolCallDetail.sourceCount === 1 ? "source" : "sources"}`
+      : undefined,
+    toolCallDetail.resultCount !== undefined
+      ? `${toolCallDetail.resultCount} ${toolCallDetail.resultCount === 1 ? "result" : "results"}`
+      : undefined,
+    toolCallDetail.imageResultCount !== undefined
+      ? `${toolCallDetail.imageResultCount} ${toolCallDetail.imageResultCount === 1 ? "image" : "images"}`
+      : undefined,
+  ].filter((resultLabel): resultLabel is string => resultLabel !== undefined);
+
+  return resultLabels.length > 0 ? ` · ${escapeHtml(resultLabels.join(" · "))}` : "";
+}
+
+function renderWebSearchSourcesBlock(toolCallDetail: ToolCallDetailByName<"web_search">): string {
+  const sources = toolCallDetail.sources ?? [];
+  return sources.length > 0
+    ? `<div class="panel-section"><div class="panel-section-label">Sources</div><ul class="subagent-list">${sources.map((source) => `<li>${escapeHtml(source.sourceTitle ? `${source.sourceTitle} · ${source.sourceUrl}` : source.sourceUrl)}</li>`).join("\n")}</ul></div>`
+    : "";
+}
+
+function renderWebSearchResultsBlock(webSearchResults: readonly ToolCallWebSearchResult[]): string {
+  if (webSearchResults.length === 0) {
+    return "";
+  }
+
+  return `<div class="panel-section"><div class="panel-section-label">Search results</div><ul class="subagent-list">${webSearchResults.map(renderWebSearchResultListItem).join("\n")}</ul></div>`;
+}
+
+function renderWebSearchResultListItem(webSearchResult: ToolCallWebSearchResult): string {
+  if (webSearchResult.resultKind === "image") {
+    const imageTargetText = webSearchResult.resultSourceUrl ?? webSearchResult.resultImageUrl ?? webSearchResult.resultThumbnailUrl ?? "image result";
+    const imageTitleText = webSearchResult.resultTitle ? `${webSearchResult.resultTitle} · ` : "Image · ";
+    return `<li>${escapeHtml(`${imageTitleText}${imageTargetText}`)}</li>`;
+  }
+
+  const resultTitleAndUrl = webSearchResult.resultTitle
+    ? `${webSearchResult.resultTitle} · ${webSearchResult.resultUrl}`
+    : webSearchResult.resultUrl;
+  const resultSnippetHtml = webSearchResult.resultSnippet
+    ? `<div class="panel-notice">${escapeHtml(webSearchResult.resultSnippet)}</div>`
+    : "";
+  return `<li>${escapeHtml(resultTitleAndUrl)}${resultSnippetHtml}</li>`;
+}
+
 function formatToolDisplayName(toolName: string): string {
+  if (toolName === "web_search") {
+    return "WebSearch";
+  }
   if (toolName === "edit_many") {
     return "EditMany";
   }

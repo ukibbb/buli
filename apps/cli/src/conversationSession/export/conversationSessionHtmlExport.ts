@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
+  AssistantMessageUrlCitation,
   AssistantOperatingMode,
   ConversationSessionEntry,
 } from "@buli/contracts";
@@ -28,6 +29,7 @@ import {
   renderCodeWrap,
 } from "./syntaxHighlight.ts";
 import {
+  renderHostedWebSearchCallBlock,
   renderToolCallRequestBlock,
   renderToolResultBlock,
 } from "./toolBlocks.ts";
@@ -346,6 +348,9 @@ function renderConversationSessionTranscriptEntry(
       : conversationSessionEntry.assistantMessageText.length > 0
         ? `<div class="prose">${renderAssistantMarkdownText(conversationSessionEntry.assistantMessageText)}</div>`
         : '<p class="panel-notice">No assistant text was recorded.</p>';
+    const assistantUrlCitationsHtml = renderAssistantMessageUrlCitationsBlock(
+      conversationSessionEntry.assistantMessageUrlCitations ?? [],
+    );
 
     const assistantStatusNoticeHtml =
       conversationSessionEntry.assistantMessageStatus === "incomplete"
@@ -356,7 +361,7 @@ function renderConversationSessionTranscriptEntry(
             ? renderAlert({ alertKind: "fail", title: "Interrupted", description: conversationSessionEntry.interruptionReason })
             : "";
 
-    if (assistantTextHtml.length === 0 && assistantStatusNoticeHtml.length === 0) {
+    if (assistantTextHtml.length === 0 && assistantStatusNoticeHtml.length === 0 && assistantUrlCitationsHtml.length === 0) {
       return undefined;
     }
 
@@ -369,7 +374,7 @@ function renderConversationSessionTranscriptEntry(
       indexNumberLabel,
       roleKind: isFailedOrInterrupted ? "failed" : "assistant",
       roleLabel: isFailedOrInterrupted ? "Failed" : "Assistant",
-      bodyHtml: assistantTextHtml + assistantStatusNoticeHtml,
+      bodyHtml: assistantTextHtml + assistantUrlCitationsHtml + assistantStatusNoticeHtml,
       traceLabel: isFailedOrInterrupted ? "Assistant failed" : "Assistant reply",
     });
   }
@@ -418,6 +423,18 @@ function renderConversationSessionTranscriptEntry(
     });
   }
 
+  if (conversationSessionEntry.entryKind === "hosted_web_search_call") {
+    const isFailedOrInterrupted = conversationSessionEntry.hostedWebSearchCallStatus !== "completed";
+    return buildRenderedEntry({
+      entryAnchorId,
+      indexNumberLabel,
+      roleKind: isFailedOrInterrupted ? "failed" : "result",
+      roleLabel: isFailedOrInterrupted ? "Web search failed" : "Web search",
+      bodyHtml: renderHostedWebSearchCallBlock(conversationSessionEntry),
+      traceLabel: `web_search ${conversationSessionEntry.hostedWebSearchCallStatus}`,
+    });
+  }
+
   const isFailedToolResult = conversationSessionEntry.entryKind === "failed_tool_result";
   const isDeniedToolResult = conversationSessionEntry.entryKind === "denied_tool_result";
   const roleKind: EntryRoleKind = isFailedToolResult || isDeniedToolResult ? "failed" : "result";
@@ -432,6 +449,29 @@ function renderConversationSessionTranscriptEntry(
     bodyHtml: renderToolResultBlock({ conversationSessionEntry, renderAssistantMarkdownText }),
     traceLabel,
   });
+}
+
+function renderAssistantMessageUrlCitationsBlock(
+  assistantMessageUrlCitations: readonly AssistantMessageUrlCitation[],
+): string {
+  if (assistantMessageUrlCitations.length === 0) {
+    return "";
+  }
+
+  return `<div class="panel-section"><div class="panel-section-label">Citations</div><ul class="subagent-list">${assistantMessageUrlCitations.map(renderAssistantMessageUrlCitationListItem).join("\n")}</ul></div>`;
+}
+
+function renderAssistantMessageUrlCitationListItem(
+  assistantMessageUrlCitation: AssistantMessageUrlCitation,
+): string {
+  const citationLabel = assistantMessageUrlCitation.citedTitle
+    ? `${assistantMessageUrlCitation.citedTitle} · ${assistantMessageUrlCitation.citedUrl}`
+    : assistantMessageUrlCitation.citedUrl;
+  const citationRange = assistantMessageUrlCitation.startIndex !== undefined || assistantMessageUrlCitation.endIndex !== undefined
+    ? ` [${assistantMessageUrlCitation.startIndex ?? "?"}-${assistantMessageUrlCitation.endIndex ?? "?"}]`
+    : "";
+
+  return `<li>${escapeHtml(`${citationLabel}${citationRange}`)}</li>`;
 }
 
 function buildRenderedEntry(input: {

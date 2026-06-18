@@ -79,6 +79,24 @@ export function summarizeProviderStreamEventForDiagnostics(
     };
   }
 
+  if (providerStreamEvent.type === "hosted_web_search_call_updated") {
+    return {
+      hostedWebSearchCallId: providerStreamEvent.hostedWebSearchCallId,
+      hostedWebSearchStatus: providerStreamEvent.hostedWebSearchStatus,
+      webSearchActionKind: providerStreamEvent.hostedWebSearchCallDetail.webSearchActionKind ?? null,
+      searchQueryCount: providerStreamEvent.hostedWebSearchCallDetail.searchQueryTexts?.length ?? 0,
+      sourceCount: providerStreamEvent.hostedWebSearchCallDetail.sourceCount ?? 0,
+      resultCount: providerStreamEvent.hostedWebSearchCallDetail.resultCount ?? 0,
+      imageResultCount: providerStreamEvent.hostedWebSearchCallDetail.imageResultCount ?? 0,
+    };
+  }
+
+  if (providerStreamEvent.type === "assistant_message_url_citations_observed") {
+    return {
+      assistantMessageUrlCitationCount: providerStreamEvent.assistantMessageUrlCitations.length,
+    };
+  }
+
   if (providerStreamEvent.type === "rate_limit_pending") {
     return {
       retryAfterSeconds: providerStreamEvent.retryAfterSeconds,

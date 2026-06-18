@@ -72,6 +72,148 @@
       "properties": {
         "toolName": {
           "type": "string",
+          "const": "web_search"
+        },
+        "webSearchStatus": {
+          "type": "string",
+          "enum": [
+            "in_progress",
+            "searching",
+            "completed"
+          ]
+        },
+        "webSearchActionKind": {
+          "type": "string",
+          "enum": [
+            "search",
+            "open_page",
+            "find_in_page"
+          ]
+        },
+        "searchQueryTexts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "openedPageUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "findPattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sourceUrl": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sourceTitle": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "sourceUrl"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "resultCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "resultKind": {
+                    "type": "string",
+                    "const": "text"
+                  },
+                  "resultUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resultTitle": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resultSnippet": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "resultKind",
+                  "resultUrl"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "resultKind": {
+                    "type": "string",
+                    "const": "image"
+                  },
+                  "resultImageUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resultSourceUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resultThumbnailUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resultTitle": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "resultKind"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "imageResultCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "toolName",
+        "webSearchStatus"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
           "const": "task"
         },
         "subagentName": {

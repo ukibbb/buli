@@ -18,6 +18,11 @@ type ToolResultConversationSessionEntry = Extract<
   { entryKind: "completed_tool_result" | "failed_tool_result" | "denied_tool_result" }
 >;
 
+type HostedWebSearchCallConversationSessionEntry = Extract<
+  ConversationSessionEntry,
+  { entryKind: "hosted_web_search_call" }
+>;
+
 type HydratedConversationTranscript = {
   conversationMessagesById: Record<string, ConversationMessage>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
@@ -459,6 +464,19 @@ function buildHydratedConversationTranscript(
       return;
     }
 
+    if (conversationSessionEntry.entryKind === "hosted_web_search_call") {
+      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      appendConversationMessagePart(
+        assistantMessageId,
+        buildHydratedHostedWebSearchCallConversationMessagePart({
+          conversationSessionEntry,
+          entryIndex,
+          hydratedIdScope,
+        }),
+      );
+      return;
+    }
+
     if (isToolResultConversationSessionEntry(conversationSessionEntry)) {
       const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
       upsertHydratedToolResultPart({
@@ -662,6 +680,38 @@ function buildHydratedToolResultConversationMessagePart(input: {
     toolCallStatus: "denied",
     denialText: input.conversationSessionEntry.denialExplanation,
     durationMs: Math.max(0, input.durationMs),
+  };
+}
+
+function buildHydratedHostedWebSearchCallConversationMessagePart(input: {
+  conversationSessionEntry: HostedWebSearchCallConversationSessionEntry;
+  entryIndex: number;
+  hydratedIdScope: string;
+}): AssistantToolCallConversationMessagePart {
+  const commonHydratedHostedWebSearchCallPartFields = {
+    id: `${input.hydratedIdScope}-entry-${input.entryIndex}-hosted-web-search-call`,
+    partKind: "assistant_tool_call" as const,
+    toolCallId: input.conversationSessionEntry.hostedWebSearchCallId,
+    toolCallStartedAtMs: input.conversationSessionEntry.hostedWebSearchCallStartedAtMs,
+    toolCallDetail: input.conversationSessionEntry.hostedWebSearchCallDetail,
+  };
+
+  if (input.conversationSessionEntry.hostedWebSearchCallStatus === "completed") {
+    return {
+      ...commonHydratedHostedWebSearchCallPartFields,
+      toolCallStatus: "completed",
+      durationMs: input.conversationSessionEntry.hostedWebSearchCallDurationMs ?? 0,
+    };
+  }
+
+  return {
+    ...commonHydratedHostedWebSearchCallPartFields,
+    toolCallStatus: input.conversationSessionEntry.hostedWebSearchCallStatus,
+    errorText: input.conversationSessionEntry.hostedWebSearchCallErrorText ??
+      `Hosted web search was ${input.conversationSessionEntry.hostedWebSearchCallStatus}.`,
+    ...(input.conversationSessionEntry.hostedWebSearchCallDurationMs !== undefined
+      ? { durationMs: input.conversationSessionEntry.hostedWebSearchCallDurationMs }
+      : {}),
   };
 }
 

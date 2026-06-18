@@ -200,6 +200,64 @@ export const ToolCallTodoWriteDetailSchema = z
   .strict();
 export type ToolCallTodoWriteDetail = z.infer<typeof ToolCallTodoWriteDetailSchema>;
 
+export const ToolCallWebSearchStatusSchema = z.enum(["in_progress", "searching", "completed"]);
+export type ToolCallWebSearchStatus = z.infer<typeof ToolCallWebSearchStatusSchema>;
+
+export const ToolCallWebSearchActionKindSchema = z.enum(["search", "open_page", "find_in_page"]);
+export type ToolCallWebSearchActionKind = z.infer<typeof ToolCallWebSearchActionKindSchema>;
+
+export const ToolCallWebSearchSourceSchema = z
+  .object({
+    sourceUrl: z.string().min(1),
+    sourceTitle: z.string().min(1).optional(),
+  })
+  .strict();
+export type ToolCallWebSearchSource = z.infer<typeof ToolCallWebSearchSourceSchema>;
+
+export const ToolCallWebSearchTextResultSchema = z
+  .object({
+    resultKind: z.literal("text"),
+    resultUrl: z.string().min(1),
+    resultTitle: z.string().min(1).optional(),
+    resultSnippet: z.string().min(1).optional(),
+  })
+  .strict();
+export type ToolCallWebSearchTextResult = z.infer<typeof ToolCallWebSearchTextResultSchema>;
+
+export const ToolCallWebSearchImageResultSchema = z
+  .object({
+    resultKind: z.literal("image"),
+    resultImageUrl: z.string().min(1).optional(),
+    resultSourceUrl: z.string().min(1).optional(),
+    resultThumbnailUrl: z.string().min(1).optional(),
+    resultTitle: z.string().min(1).optional(),
+  })
+  .strict();
+export type ToolCallWebSearchImageResult = z.infer<typeof ToolCallWebSearchImageResultSchema>;
+
+export const ToolCallWebSearchResultSchema = z.discriminatedUnion("resultKind", [
+  ToolCallWebSearchTextResultSchema,
+  ToolCallWebSearchImageResultSchema,
+]);
+export type ToolCallWebSearchResult = z.infer<typeof ToolCallWebSearchResultSchema>;
+
+export const ToolCallWebSearchDetailSchema = z
+  .object({
+    toolName: z.literal("web_search"),
+    webSearchStatus: ToolCallWebSearchStatusSchema,
+    webSearchActionKind: ToolCallWebSearchActionKindSchema.optional(),
+    searchQueryTexts: z.array(z.string().min(1)).optional(),
+    openedPageUrl: z.string().min(1).optional(),
+    findPattern: z.string().min(1).optional(),
+    sourceCount: z.number().int().nonnegative().optional(),
+    sources: z.array(ToolCallWebSearchSourceSchema).optional(),
+    resultCount: z.number().int().nonnegative().optional(),
+    results: z.array(ToolCallWebSearchResultSchema).optional(),
+    imageResultCount: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export type ToolCallWebSearchDetail = z.infer<typeof ToolCallWebSearchDetailSchema>;
+
 export const ToolCallSkillSourceKindSchema = z.enum(["built_in", "buli", "claude", "agents"]);
 export type ToolCallSkillSourceKind = z.infer<typeof ToolCallSkillSourceKindSchema>;
 
@@ -321,6 +379,7 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallWriteDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallTodoWriteDetailSchema,
+  ToolCallWebSearchDetailSchema,
   ToolCallTaskDetailSchema,
   ToolCallSkillDetailSchema,
   ToolCallRecordWorkflowHandoffDetailSchema,

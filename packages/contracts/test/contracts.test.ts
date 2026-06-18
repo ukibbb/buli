@@ -576,6 +576,86 @@ test("AssistantToolCallConversationMessagePartSchema parses a write tool call wi
   });
 });
 
+test("AssistantToolCallConversationMessagePartSchema parses a hosted web search render-only tool call", () => {
+  expect(
+    AssistantToolCallConversationMessagePartSchema.parse({
+      id: "web-search-part-1",
+      partKind: "assistant_tool_call",
+      toolCallId: "ws_1",
+      toolCallStatus: "completed",
+      toolCallStartedAtMs: 10,
+      durationMs: 25,
+      toolCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "completed",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["OpenTUI docs"],
+        sourceCount: 1,
+        sources: [{ sourceUrl: "https://opentui.com/", sourceTitle: "OpenTUI" }],
+        resultCount: 1,
+        results: [
+          {
+            resultKind: "text",
+            resultUrl: "https://opentui.com/docs",
+            resultTitle: "OpenTUI docs",
+            resultSnippet: "OpenTUI documentation and examples.",
+          },
+        ],
+        imageResultCount: 0,
+      },
+    }).toolCallDetail,
+  ).toMatchObject({
+    toolName: "web_search",
+    webSearchStatus: "completed",
+    searchQueryTexts: ["OpenTUI docs"],
+  });
+});
+
+test("ConversationSessionEntrySchema parses assistant message URL citations", () => {
+  const parsedEntry = ConversationSessionEntrySchema.parse({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageText: "OpenTUI docs explain the renderer.",
+    assistantMessageUrlCitations: [
+      {
+        citedUrl: "https://example.test/docs",
+        citedTitle: "OpenTUI docs",
+        startIndex: 0,
+        endIndex: 12,
+      },
+    ],
+  });
+
+  expect(parsedEntry).toMatchObject({
+    entryKind: "assistant_message",
+    assistantMessageUrlCitations: [
+      {
+        citedUrl: "https://example.test/docs",
+        citedTitle: "OpenTUI docs",
+      },
+    ],
+  });
+});
+
+test("ProviderStreamEventSchema parses assistant URL citation observation events", () => {
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "assistant_message_url_citations_observed",
+      assistantMessageUrlCitations: [
+        {
+          citedUrl: "https://example.test/docs",
+          citedTitle: "OpenTUI docs",
+          startIndex: 0,
+          endIndex: 12,
+        },
+      ],
+    }),
+  ).toMatchObject({
+    type: "assistant_message_url_citations_observed",
+    assistantMessageUrlCitations: [{ citedUrl: "https://example.test/docs" }],
+  });
+});
+
 test("ConversationSessionEntrySchema parses a workspace patch entry", () => {
   const parsedEntry = ConversationSessionEntrySchema.parse({
     entryKind: "workspace_patch",
@@ -1222,7 +1302,7 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
   expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "edit_many", "patch", "patch_many", "write"]);
   expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"]);
-  expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite"]);
+  expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite", "web_search"]);
 });
 
 test("tool catalog classifies typed tool requests", () => {
@@ -1230,6 +1310,7 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("task")).toBe(true);
   expect(isAssistantToolRequestName("skill")).toBe(true);
   expect(isAssistantToolRequestName("locate_codebase_symbols")).toBe(true);
+  expect(isAssistantToolRequestName("web_search")).toBe(false);
   expect(isAssistantToolRequestName("explore")).toBe(false);
   expect(isAssistantToolRequestName("general")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
@@ -1427,6 +1508,32 @@ test("ProviderStreamEventSchema parses ordered batched tool-call requests", () =
   ).toBe("tool_calls_requested");
 });
 
+test("ProviderStreamEventSchema parses hosted web search updates without making them executable tool calls", () => {
+  expect(
+    ProviderStreamEventSchema.parse({
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "searching",
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "searching",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["OpenTUI docs"],
+      },
+    }),
+  ).toEqual({
+    type: "hosted_web_search_call_updated",
+    hostedWebSearchCallId: "ws_1",
+    hostedWebSearchStatus: "searching",
+    hostedWebSearchCallDetail: {
+      toolName: "web_search",
+      webSearchStatus: "searching",
+      webSearchActionKind: "search",
+      searchQueryTexts: ["OpenTUI docs"],
+    },
+  });
+});
+
 test("AssistantResponseEventSchema parses assistant_message_interrupted", () => {
   expect(
     AssistantResponseEventSchema.parse({
@@ -1488,6 +1595,38 @@ test("ConversationSessionEntrySchema parses assistant text segment history entri
   ).toEqual({
     entryKind: "assistant_text_segment",
     assistantTextSegmentText: "I will inspect the file first.",
+  });
+});
+
+test("ConversationSessionEntrySchema parses hosted web search card history entries", () => {
+  expect(
+    ConversationSessionEntrySchema.parse({
+      entryKind: "hosted_web_search_call",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchCallStartedAtMs: 100,
+      hostedWebSearchCallStatus: "completed",
+      hostedWebSearchCallDurationMs: 25,
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "completed",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["OpenTUI docs"],
+        sourceCount: 1,
+      },
+    }),
+  ).toEqual({
+    entryKind: "hosted_web_search_call",
+    hostedWebSearchCallId: "ws_1",
+    hostedWebSearchCallStartedAtMs: 100,
+    hostedWebSearchCallStatus: "completed",
+    hostedWebSearchCallDurationMs: 25,
+    hostedWebSearchCallDetail: {
+      toolName: "web_search",
+      webSearchStatus: "completed",
+      webSearchActionKind: "search",
+      searchQueryTexts: ["OpenTUI docs"],
+      sourceCount: 1,
+    },
   });
 });
 

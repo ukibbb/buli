@@ -133,6 +133,9 @@ export async function* streamAssistantResponseEventsFromProviderStream(
           for (const assistantSegmentSessionEntry of providerStreamEventTranslation.assistantSegmentSessionEntries ?? []) {
             input.conversationTurnSessionRecorder.appendAssistantSegmentSessionEntry(assistantSegmentSessionEntry);
           }
+          for (const hostedWebSearchCallSessionEntry of providerStreamEventTranslation.hostedWebSearchCallSessionEntries ?? []) {
+            input.conversationTurnSessionRecorder.appendHostedWebSearchCallSessionEntry(hostedWebSearchCallSessionEntry);
+          }
           break;
         }
 

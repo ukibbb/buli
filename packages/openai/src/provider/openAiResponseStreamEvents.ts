@@ -72,6 +72,14 @@ export type OpenAiFunctionCallArgumentsDoneChunk = OpenAiStreamChunkObject & {
   readonly item_id: string;
   readonly arguments: string;
 };
+export type OpenAiWebSearchCallLifecycleEventType =
+  | "response.web_search_call.in_progress"
+  | "response.web_search_call.searching"
+  | "response.web_search_call.completed";
+export type OpenAiWebSearchCallLifecycleChunk = OpenAiStreamChunkObject & {
+  readonly type: OpenAiWebSearchCallLifecycleEventType;
+  readonly item_id: string;
+};
 export type OpenAiOutputItemAddedChunk = z.infer<typeof OutputItemAddedChunkSchema>;
 export type OpenAiOutputItemDoneChunk = z.infer<typeof OutputItemDoneChunkSchema>;
 export type OpenAiErrorChunk = {
@@ -130,6 +138,18 @@ export function readOpenAiFunctionCallArgumentsDoneChunk(value: unknown): OpenAi
   }
 
   return value as OpenAiFunctionCallArgumentsDoneChunk;
+}
+
+export function readOpenAiWebSearchCallInProgressChunk(value: unknown): OpenAiWebSearchCallLifecycleChunk | undefined {
+  return readOpenAiWebSearchCallLifecycleChunk(value, "response.web_search_call.in_progress");
+}
+
+export function readOpenAiWebSearchCallSearchingChunk(value: unknown): OpenAiWebSearchCallLifecycleChunk | undefined {
+  return readOpenAiWebSearchCallLifecycleChunk(value, "response.web_search_call.searching");
+}
+
+export function readOpenAiWebSearchCallCompletedChunk(value: unknown): OpenAiWebSearchCallLifecycleChunk | undefined {
+  return readOpenAiWebSearchCallLifecycleChunk(value, "response.web_search_call.completed");
 }
 
 export function readOpenAiOutputItemAddedChunk(value: unknown): OpenAiOutputItemAddedChunk | undefined {
@@ -201,6 +221,17 @@ function readOpenAiStringDeltaChunk<EventType extends OpenAiStringDeltaChunkEven
   }
 
   return value as OpenAiStringDeltaChunk<EventType>;
+}
+
+function readOpenAiWebSearchCallLifecycleChunk(
+  value: unknown,
+  eventType: OpenAiWebSearchCallLifecycleEventType,
+): OpenAiWebSearchCallLifecycleChunk | undefined {
+  if (!isOpenAiChunkObject(value, eventType) || typeof value["item_id"] !== "string") {
+    return undefined;
+  }
+
+  return value as OpenAiWebSearchCallLifecycleChunk;
 }
 
 function isOpenAiChunkObject(value: unknown, eventType: string): value is OpenAiStreamChunkObject {

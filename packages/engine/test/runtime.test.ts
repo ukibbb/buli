@@ -868,6 +868,123 @@ test("AssistantConversationRuntime emits a message-part turn for streamed text",
   );
 });
 
+test("AssistantConversationRuntime emits and persists hosted web search cards without submitting tool results", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "I will check the web. " },
+      {
+        type: "hosted_web_search_call_updated",
+        hostedWebSearchCallId: "ws_1",
+        hostedWebSearchStatus: "in_progress",
+        hostedWebSearchCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "in_progress",
+        },
+      },
+      {
+        type: "hosted_web_search_call_updated",
+        hostedWebSearchCallId: "ws_1",
+        hostedWebSearchStatus: "searching",
+        hostedWebSearchCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "searching",
+          webSearchActionKind: "search",
+          searchQueryTexts: ["latest OpenTUI release notes"],
+        },
+      },
+      {
+        type: "hosted_web_search_call_updated",
+        hostedWebSearchCallId: "ws_1",
+        hostedWebSearchStatus: "completed",
+        hostedWebSearchCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "completed",
+          sourceCount: 2,
+        },
+      },
+      { type: "text_chunk", text: "The search is done." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new RecordingConversationTurnProvider([providerTurn]),
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Search for OpenTUI release notes",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+
+  const emittedHostedWebSearchToolParts = emittedAssistantEvents.flatMap((assistantResponseEvent) => {
+    if (
+      (assistantResponseEvent.type === "assistant_message_part_added" ||
+        assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call" &&
+      assistantResponseEvent.part.toolCallDetail.toolName === "web_search"
+    ) {
+      return [assistantResponseEvent.part];
+    }
+
+    return [];
+  });
+
+  expect(providerTurn.submittedToolResults).toEqual([]);
+  expect(emittedHostedWebSearchToolParts).toMatchObject([
+    {
+      toolCallId: "ws_1",
+      toolCallStatus: "running",
+      toolCallDetail: { toolName: "web_search", webSearchStatus: "in_progress" },
+    },
+    {
+      toolCallId: "ws_1",
+      toolCallStatus: "running",
+      toolCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "searching",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["latest OpenTUI release notes"],
+      },
+    },
+    {
+      toolCallId: "ws_1",
+      toolCallStatus: "completed",
+      toolCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "completed",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["latest OpenTUI release notes"],
+        sourceCount: 2,
+      },
+    },
+  ]);
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toMatchObject([
+    { entryKind: "user_prompt", promptText: "Search for OpenTUI release notes" },
+    { entryKind: "assistant_text_segment", assistantTextSegmentText: "I will check the web. " },
+    {
+      entryKind: "hosted_web_search_call",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchCallStatus: "completed",
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "completed",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["latest OpenTUI release notes"],
+        sourceCount: 2,
+      },
+    },
+    { entryKind: "assistant_text_segment", assistantTextSegmentText: "The search is done." },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "I will check the web. The search is done.",
+    },
+  ]);
+});
+
 test("AssistantConversationRuntime emits and persists the exact BuliStickyNotes context text loaded into the provider prompt", async () => {
   const providerTurn = new ScriptedProviderTurn({
     beforeToolResultEvents: [

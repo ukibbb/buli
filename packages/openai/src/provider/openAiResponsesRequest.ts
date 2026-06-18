@@ -4,6 +4,10 @@ import type {
   ReasoningEffort,
 } from "@buli/contracts";
 import type { OpenAiConversationInputItem } from "./request.ts";
+import {
+  createOpenAiHostedWebSearchToolDefinition,
+  type OpenAiHostedWebSearchConfiguration,
+} from "./openAiHostedWebSearchTool.ts";
 import { createOpenAiToolDefinitions, type OpenAiToolDefinition } from "./toolDefinitions.ts";
 
 type OpenAiReasoningRequest = {
@@ -16,12 +20,17 @@ type OpenAiTextRequest = {
 };
 
 type OpenAiReasoningEncryptedContentInclusionPolicy = "always" | "never" | "when_input_contains_reasoning";
+type OpenAiResponseInclude =
+  | "reasoning.encrypted_content"
+  | "web_search_call.action.sources"
+  | "web_search_call.results";
 
 export type CreateOpenAiResponsesHttpRequestBodyInput = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+  hostedWebSearch?: OpenAiHostedWebSearchConfiguration | undefined;
   systemPromptText: string;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 };
@@ -39,7 +48,7 @@ export type OpenAiResponsesHttpRequestBody = {
   input: ReadonlyArray<OpenAiConversationInputItem>;
   tools?: OpenAiToolDefinition[];
   parallel_tool_calls?: true;
-  include?: readonly ["reasoning.encrypted_content"];
+  include?: readonly OpenAiResponseInclude[];
   reasoning?: OpenAiReasoningRequest;
   text?: OpenAiTextRequest;
   stream: true;
@@ -75,6 +84,7 @@ const textEncoder = new TextEncoder();
 
 export type OpenAiResponsesHttpRequestTemplate = Readonly<{
   stableRequestFields: StableOpenAiResponsesHttpRequestFields;
+  baseResponseIncludes: readonly OpenAiResponseInclude[];
   reasoningEncryptedContentInclusionPolicy: OpenAiReasoningEncryptedContentInclusionPolicy;
 }>;
 
@@ -91,9 +101,13 @@ export function createOpenAiResponsesHttpRequestTemplate(
   input: CreateOpenAiResponsesHttpRequestTemplateInput,
 ): OpenAiResponsesHttpRequestTemplate {
   const reasoningRequest = createReasoningRequest(input);
-  const toolDefinitions = createOpenAiToolDefinitions({
+  const functionToolDefinitions = createOpenAiToolDefinitions({
     availableToolNames: input.availableToolNames,
   });
+  const hostedWebSearchToolDefinition = createOpenAiHostedWebSearchToolDefinition(input.hostedWebSearch);
+  const toolDefinitions: OpenAiToolDefinition[] = hostedWebSearchToolDefinition
+    ? [...functionToolDefinitions, hostedWebSearchToolDefinition]
+    : functionToolDefinitions;
   return {
     stableRequestFields: {
       model: input.selectedModelId,
@@ -105,6 +119,7 @@ export function createOpenAiResponsesHttpRequestTemplate(
       ...(shouldRequestLowTextVerbosity(input.selectedModelId) ? { text: { verbosity: "low" as const } } : {}),
       stream: true,
     },
+    baseResponseIncludes: listHostedWebSearchResponseIncludes(input.hostedWebSearch),
     reasoningEncryptedContentInclusionPolicy: createReasoningEncryptedContentInclusionPolicy(input),
   };
 }
@@ -113,14 +128,27 @@ export function createOpenAiResponsesHttpRequestBodyFromTemplate(input: {
   requestTemplate: OpenAiResponsesHttpRequestTemplate;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
 }): OpenAiResponsesHttpRequestBody {
+  const responseIncludes = listResponseIncludesForRequestBody({
+    baseResponseIncludes: input.requestTemplate.baseResponseIncludes,
+    shouldIncludeReasoningEncryptedContent: shouldIncludeReasoningEncryptedContent({
+      inclusionPolicy: input.requestTemplate.reasoningEncryptedContentInclusionPolicy,
+      openAiInputItems: input.openAiInputItems,
+    }),
+  });
+
   return {
     ...input.requestTemplate.stableRequestFields,
     input: input.openAiInputItems,
-    ...(shouldIncludeReasoningEncryptedContent({
-      inclusionPolicy: input.requestTemplate.reasoningEncryptedContentInclusionPolicy,
-      openAiInputItems: input.openAiInputItems,
-    }) ? { include: ["reasoning.encrypted_content"] as const } : {}),
+    ...(responseIncludes.length > 0 ? { include: responseIncludes } : {}),
   };
+}
+
+function formatOpenAiToolDefinitionNameForDiagnostics(toolDefinition: OpenAiToolDefinition): string {
+  if (toolDefinition.type === "function") {
+    return toolDefinition.name;
+  }
+
+  return toolDefinition.type;
 }
 
 export function summarizeOpenAiResponsesRequestForDiagnostics(input: {
@@ -135,9 +163,11 @@ export function summarizeOpenAiResponsesRequestForDiagnostics(input: {
     reasoningSummary: input.requestBody.reasoning?.summary ?? null,
     textVerbosity: input.requestBody.text?.verbosity ?? null,
     includesReasoningEncryptedContent: input.requestBody.include?.includes("reasoning.encrypted_content") ?? false,
+    includesHostedWebSearchSources: input.requestBody.include?.includes("web_search_call.action.sources") ?? false,
+    includesHostedWebSearchResults: input.requestBody.include?.includes("web_search_call.results") ?? false,
     hasPromptCacheKey: input.requestBody.prompt_cache_key !== undefined,
     toolDefinitionCount: input.requestBody.tools?.length ?? 0,
-    toolNames: input.requestBody.tools?.map((toolDefinition) => toolDefinition.name) ?? [],
+    toolNames: input.requestBody.tools?.map(formatOpenAiToolDefinitionNameForDiagnostics) ?? [],
     parallelToolCalls: input.requestBody.parallel_tool_calls ?? false,
     stream: input.requestBody.stream,
     ...inputItemSummary,
@@ -202,6 +232,46 @@ function shouldIncludeReasoningEncryptedContent(input: {
     return true;
   }
   return false;
+}
+
+function listHostedWebSearchResponseIncludes(
+  hostedWebSearchConfiguration: OpenAiHostedWebSearchConfiguration | undefined,
+): readonly OpenAiResponseInclude[] {
+  if (!hostedWebSearchConfiguration || hostedWebSearchConfiguration.mode === "disabled") {
+    return [];
+  }
+
+  return [
+    ...(hostedWebSearchConfiguration.includeSources !== false
+      ? ["web_search_call.action.sources" as const]
+      : []),
+    ...(hostedWebSearchConfiguration.includeResults !== false ? ["web_search_call.results" as const] : []),
+  ];
+}
+
+function listResponseIncludesForRequestBody(input: {
+  baseResponseIncludes: readonly OpenAiResponseInclude[];
+  shouldIncludeReasoningEncryptedContent: boolean;
+}): readonly OpenAiResponseInclude[] {
+  const responseIncludes: OpenAiResponseInclude[] = [];
+  const seenResponseIncludes = new Set<OpenAiResponseInclude>();
+  const appendResponseInclude = (responseInclude: OpenAiResponseInclude): void => {
+    if (seenResponseIncludes.has(responseInclude)) {
+      return;
+    }
+
+    seenResponseIncludes.add(responseInclude);
+    responseIncludes.push(responseInclude);
+  };
+
+  for (const baseResponseInclude of input.baseResponseIncludes) {
+    appendResponseInclude(baseResponseInclude);
+  }
+  if (input.shouldIncludeReasoningEncryptedContent) {
+    appendResponseInclude("reasoning.encrypted_content");
+  }
+
+  return responseIncludes;
 }
 
 function createReasoningRequest(input: {

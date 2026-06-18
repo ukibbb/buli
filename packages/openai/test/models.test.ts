@@ -163,7 +163,7 @@ test("deriveOpenAiModelListEndpoint preserves an explicit client_version query p
   ).toBe("https://chatgpt.com/backend-api/codex/models?client_version=0.200.0&foo=bar");
 });
 
-test("parseAvailableAssistantModelsFromOpenAiResponse keeps visible api models and maps reasoning metadata", () => {
+test("parseAvailableAssistantModelsFromOpenAiResponse keeps visible api models and maps model metadata", () => {
   expect(
     parseAvailableAssistantModelsFromOpenAiResponse({
       models: [
@@ -172,6 +172,7 @@ test("parseAvailableAssistantModelsFromOpenAiResponse keeps visible api models a
           display_name: "GPT-5.4",
           visibility: "list",
           supported_in_api: true,
+          supports_search_tool: true,
           default_reasoning_level: "medium",
           supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }],
         },
@@ -193,6 +194,7 @@ test("parseAvailableAssistantModelsFromOpenAiResponse keeps visible api models a
           slug: "gpt-4.1-mini",
           visibility: "list",
           supported_in_api: true,
+          supports_search_tool: false,
           supported_reasoning_levels: [],
         },
       ],
@@ -203,11 +205,13 @@ test("parseAvailableAssistantModelsFromOpenAiResponse keeps visible api models a
       displayName: "GPT-5.4",
       defaultReasoningEffort: "medium",
       supportedReasoningEfforts: ["low", "high"],
+      supportsHostedWebSearchTool: true,
     },
     {
       id: "gpt-4.1-mini",
       displayName: "gpt-4.1-mini",
       supportedReasoningEfforts: [],
+      supportsHostedWebSearchTool: false,
     },
   ]);
 });

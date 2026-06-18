@@ -48,6 +48,74 @@ test("OpenAiProvider applies default hard turn limits", () => {
   expect(provider.rateLimitCoordinator.maximumConcurrentResponseStepStreams).toBe(8);
 });
 
+test("OpenAiProvider enables hosted web search by default", () => {
+  const provider = new OpenAiProvider({ endpoint: "https://example.test/v1/responses" });
+
+  const providerTurn = provider.startConversationTurn({
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Search current docs",
+        modelFacingPromptText: "Search current docs",
+      },
+    ],
+    selectedModelId: "gpt-5.4-mini",
+    availableToolNames: [],
+  });
+
+  expect(providerTurn.openAiResponsesRequestTemplate.stableRequestFields.tools).toEqual([
+    {
+      type: "web_search",
+      external_web_access: true,
+      search_content_types: ["text", "image"],
+      search_context_size: "high",
+    },
+  ]);
+});
+
+test("OpenAiProvider keeps hosted web search out of compaction turns", () => {
+  const provider = new OpenAiProvider({ endpoint: "https://example.test/v1/responses" });
+
+  const providerTurn = provider.startConversationTurn({
+    providerTurnKind: "conversation_compaction",
+    systemPromptText: "Summarize the existing conversation.",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Earlier prompt",
+        modelFacingPromptText: "Earlier prompt",
+      },
+    ],
+    selectedModelId: "gpt-5.4-mini",
+    availableToolNames: [],
+  });
+
+  expect(providerTurn.openAiResponsesRequestTemplate.stableRequestFields.tools).toBeUndefined();
+});
+
+test("OpenAiProvider can disable hosted web search", () => {
+  const provider = new OpenAiProvider({
+    endpoint: "https://example.test/v1/responses",
+    hostedWebSearch: { mode: "disabled" },
+  });
+
+  const providerTurn = provider.startConversationTurn({
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Do not search",
+        modelFacingPromptText: "Do not search",
+      },
+    ],
+    selectedModelId: "gpt-5.4-mini",
+    availableToolNames: [],
+  });
+
+  expect(providerTurn.openAiResponsesRequestTemplate.stableRequestFields.tools).toBeUndefined();
+});
+
 test("OpenAiProvider applies configured response-step stream concurrency", () => {
   const provider = new OpenAiProvider({
     endpoint: "https://example.test/v1/responses",

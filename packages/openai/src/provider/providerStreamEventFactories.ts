@@ -3,6 +3,9 @@ import type {
   ProviderStreamEvent,
   TokenUsage,
   AssistantToolCallRequest,
+  AssistantMessageUrlCitation,
+  ToolCallWebSearchDetail,
+  ToolCallWebSearchStatus,
 } from "@buli/contracts";
 import { classifyOpenAiProviderFunctionCallIntents } from "./openAiProviderFunctionCallIntentClassification.ts";
 import type { OpenAiProviderFunctionCallIntent } from "./toolDefinitions.ts";
@@ -43,6 +46,28 @@ export function createProviderFunctionCallIntentEvents(
       ? [createProviderToolCallsRequestedEvent(providerFunctionCallIntentClassification.requestedToolCalls)]
       : []),
   ];
+}
+
+export function createProviderHostedWebSearchCallUpdatedEvent(input: {
+  hostedWebSearchCallId: string;
+  hostedWebSearchStatus: ToolCallWebSearchStatus;
+  hostedWebSearchCallDetail: ToolCallWebSearchDetail;
+}): ProviderStreamEvent {
+  return {
+    type: "hosted_web_search_call_updated",
+    hostedWebSearchCallId: input.hostedWebSearchCallId,
+    hostedWebSearchStatus: input.hostedWebSearchStatus,
+    hostedWebSearchCallDetail: input.hostedWebSearchCallDetail,
+  };
+}
+
+export function createProviderAssistantMessageUrlCitationsObservedEvent(
+  assistantMessageUrlCitations: readonly AssistantMessageUrlCitation[],
+): ProviderStreamEvent {
+  return {
+    type: "assistant_message_url_citations_observed",
+    assistantMessageUrlCitations: [...assistantMessageUrlCitations],
+  };
 }
 
 export function createProviderCompletedEvent(usage: TokenUsage): ProviderStreamEvent {

@@ -570,3 +570,219 @@ test("RuntimeProviderStreamEventTranslator segments assistant text around tool c
     assistantMessageText: "Before tool. After tool.",
   });
 });
+
+test("RuntimeProviderStreamEventTranslator renders hosted web search as a provider-hosted tool card", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 2_000 });
+
+  providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "I will search first. " },
+  });
+  const startedSearchTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: {
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "in_progress",
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "in_progress",
+      },
+    },
+  });
+  const searchingTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: {
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "searching",
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "searching",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["OpenTUI release notes"],
+      },
+    },
+  });
+  const completedSearchTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+      providerStreamEvent: {
+        type: "hosted_web_search_call_updated",
+        hostedWebSearchCallId: "ws_1",
+        hostedWebSearchStatus: "completed",
+        hostedWebSearchCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "completed",
+          sourceCount: 2,
+          resultCount: 1,
+          results: [
+            {
+              resultKind: "text",
+              resultTitle: "OpenTUI release guide",
+              resultUrl: "https://example.test/releases/guide",
+              resultSnippet: "Release notes and migration details for OpenTUI.",
+            },
+          ],
+        },
+      },
+    });
+
+  if (startedSearchTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (searchingTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (completedSearchTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+
+  expect(startedSearchTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_updated",
+      messageId: "assistant-message-1",
+      part: {
+        id: "assistant-text-1",
+        partKind: "assistant_text",
+        partStatus: "completed",
+        rawMarkdownText: "I will search first. ",
+      },
+    },
+    {
+      type: "assistant_message_part_added",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-1",
+        partKind: "assistant_tool_call",
+        toolCallId: "ws_1",
+        toolCallStatus: "running",
+        toolCallStartedAtMs: 2_000,
+        toolCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "in_progress",
+        },
+      },
+    },
+  ]);
+  expect(startedSearchTranslation.assistantSegmentSessionEntries).toEqual([
+    {
+      entryKind: "assistant_text_segment",
+      assistantTextSegmentText: "I will search first. ",
+    },
+  ]);
+  expect(searchingTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_updated",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-1",
+        partKind: "assistant_tool_call",
+        toolCallId: "ws_1",
+        toolCallStatus: "running",
+        toolCallStartedAtMs: 2_000,
+        toolCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "searching",
+          webSearchActionKind: "search",
+          searchQueryTexts: ["OpenTUI release notes"],
+        },
+      },
+    },
+  ]);
+  expect(completedSearchTranslation.assistantResponseEvents).toEqual([
+    {
+      type: "assistant_message_part_updated",
+      messageId: "assistant-message-1",
+      part: {
+        id: "generated-part-1",
+        partKind: "assistant_tool_call",
+        toolCallId: "ws_1",
+        toolCallStatus: "completed",
+        toolCallStartedAtMs: 2_000,
+        toolCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: "completed",
+          webSearchActionKind: "search",
+          searchQueryTexts: ["OpenTUI release notes"],
+          sourceCount: 2,
+          resultCount: 1,
+          results: [
+            {
+              resultKind: "text",
+              resultTitle: "OpenTUI release guide",
+              resultUrl: "https://example.test/releases/guide",
+              resultSnippet: "Release notes and migration details for OpenTUI.",
+            },
+          ],
+        },
+        durationMs: 0,
+      },
+    },
+  ]);
+  expect(completedSearchTranslation.hostedWebSearchCallSessionEntries).toEqual([
+    {
+      entryKind: "hosted_web_search_call",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchCallStartedAtMs: 2_000,
+      hostedWebSearchCallStatus: "completed",
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "completed",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["OpenTUI release notes"],
+        sourceCount: 2,
+        resultCount: 1,
+        results: [
+          {
+            resultKind: "text",
+            resultTitle: "OpenTUI release guide",
+            resultUrl: "https://example.test/releases/guide",
+            resultSnippet: "Release notes and migration details for OpenTUI.",
+          },
+        ],
+      },
+      hostedWebSearchCallDurationMs: 0,
+    },
+  ]);
+});
+
+test("RuntimeProviderStreamEventTranslator attaches observed assistant URL citations to the terminal assistant message", () => {
+  const providerStreamEventTranslator = createRuntimeProviderStreamEventTranslator({ currentTimeInMilliseconds: 1_500 });
+
+  providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "text_chunk", text: "OpenTUI docs explain it." },
+  });
+  const citationTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: {
+      type: "assistant_message_url_citations_observed",
+      assistantMessageUrlCitations: [
+        {
+          citedUrl: "https://example.test/docs",
+          citedTitle: "OpenTUI docs",
+          startIndex: 0,
+          endIndex: 12,
+        },
+      ],
+    },
+  });
+  const terminalTranslation = providerStreamEventTranslator.translateProviderStreamEvent({
+    providerStreamEvent: { type: "completed", usage: completedTokenUsage },
+  });
+
+  if (citationTranslation.translationKind !== "assistant_response_events") {
+    throw new Error("expected assistant response events");
+  }
+  if (terminalTranslation.translationKind !== "terminal_assistant_response") {
+    throw new Error("expected terminal assistant response");
+  }
+
+  expect(citationTranslation.assistantResponseEvents).toEqual([]);
+  expect(terminalTranslation.terminalAssistantMessageSessionEntry).toMatchObject({
+    entryKind: "assistant_message",
+    assistantMessageStatus: "completed",
+    assistantMessageUrlCitations: [
+      {
+        citedUrl: "https://example.test/docs",
+        citedTitle: "OpenTUI docs",
+        startIndex: 0,
+        endIndex: 12,
+      },
+    ],
+  });
+});

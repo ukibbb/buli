@@ -8,6 +8,9 @@ import {
   readOpenAiReasoningSummaryTextDeltaChunk,
   readOpenAiReasoningSummaryTextDoneChunk,
   readOpenAiResponseFailedChunk,
+  readOpenAiWebSearchCallCompletedChunk,
+  readOpenAiWebSearchCallInProgressChunk,
+  readOpenAiWebSearchCallSearchingChunk,
 } from "../src/provider/openAiResponseStreamEvents.ts";
 
 test("readOpenAiOutputItemAddedChunk returns parsed added chunks", () => {
@@ -95,6 +98,37 @@ test("readOpenAiFunctionCallArgumentsDeltaChunk rejects malformed argument delta
     type: "response.function_call_arguments.delta",
     item_id: "fc_1",
     delta: null,
+  })).toBeUndefined();
+});
+
+test("readOpenAiWebSearchCallLifecycleChunk parses hosted web search lifecycle events", () => {
+  expect(readOpenAiWebSearchCallInProgressChunk({
+    type: "response.web_search_call.in_progress",
+    item_id: "ws_1",
+  })).toEqual({
+    type: "response.web_search_call.in_progress",
+    item_id: "ws_1",
+  });
+  expect(readOpenAiWebSearchCallSearchingChunk({
+    type: "response.web_search_call.searching",
+    item_id: "ws_1",
+  })).toEqual({
+    type: "response.web_search_call.searching",
+    item_id: "ws_1",
+  });
+  expect(readOpenAiWebSearchCallCompletedChunk({
+    type: "response.web_search_call.completed",
+    item_id: "ws_1",
+  })).toEqual({
+    type: "response.web_search_call.completed",
+    item_id: "ws_1",
+  });
+});
+
+test("readOpenAiWebSearchCallLifecycleChunk rejects malformed hosted web search lifecycle events", () => {
+  expect(readOpenAiWebSearchCallInProgressChunk({
+    type: "response.web_search_call.in_progress",
+    item_id: null,
   })).toBeUndefined();
 });
 

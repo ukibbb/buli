@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { PlanStepSchema } from "./planProposal.ts";
 import type { AssistantToolRequestName } from "./toolCatalog.ts";
+import { AssistantMessageUrlCitationSchema } from "./assistantMessageCitation.ts";
+import { ToolCallWebSearchDetailSchema, ToolCallWebSearchStatusSchema } from "./toolCallDetail.ts";
 import { AssistantToolCallRequestSchema } from "./toolCallRequest.ts";
 
 export const ReasoningEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]);
@@ -12,6 +14,7 @@ export const AvailableAssistantModelSchema = z
     displayName: z.string().min(1),
     defaultReasoningEffort: ReasoningEffortSchema.optional(),
     supportedReasoningEfforts: z.array(ReasoningEffortSchema),
+    supportsHostedWebSearchTool: z.boolean().optional(),
   })
   .strict();
 
@@ -101,6 +104,22 @@ export const ProviderToolCallsRequestedEventSchema = z
   })
   .strict();
 
+export const ProviderHostedWebSearchCallUpdatedEventSchema = z
+  .object({
+    type: z.literal("hosted_web_search_call_updated"),
+    hostedWebSearchCallId: z.string().min(1),
+    hostedWebSearchStatus: ToolCallWebSearchStatusSchema,
+    hostedWebSearchCallDetail: ToolCallWebSearchDetailSchema,
+  })
+  .strict();
+
+export const ProviderAssistantMessageUrlCitationsObservedEventSchema = z
+  .object({
+    type: z.literal("assistant_message_url_citations_observed"),
+    assistantMessageUrlCitations: z.array(AssistantMessageUrlCitationSchema).min(1),
+  })
+  .strict();
+
 export const ProviderRetryPendingReasonSchema = z.enum([
   "rate_limit",
   "transient_http_response",
@@ -135,6 +154,8 @@ export const ProviderStreamEventSchema = z.discriminatedUnion("type", [
   ProviderReasoningSummaryCompletedEventSchema,
   ProviderToolCallRequestedEventSchema,
   ProviderToolCallsRequestedEventSchema,
+  ProviderHostedWebSearchCallUpdatedEventSchema,
+  ProviderAssistantMessageUrlCitationsObservedEventSchema,
   ProviderRateLimitPendingEventSchema,
   ProviderPlanProposedEventSchema,
 ]);
@@ -151,6 +172,10 @@ export type ProviderReasoningSummaryCompletedEvent = z.infer<typeof ProviderReas
 export type ProviderRequestedToolCall = z.infer<typeof ProviderRequestedToolCallSchema>;
 export type ProviderToolCallRequestedEvent = z.infer<typeof ProviderToolCallRequestedEventSchema>;
 export type ProviderToolCallsRequestedEvent = z.infer<typeof ProviderToolCallsRequestedEventSchema>;
+export type ProviderHostedWebSearchCallUpdatedEvent = z.infer<typeof ProviderHostedWebSearchCallUpdatedEventSchema>;
+export type ProviderAssistantMessageUrlCitationsObservedEvent = z.infer<
+  typeof ProviderAssistantMessageUrlCitationsObservedEventSchema
+>;
 export type ProviderRetryPendingReason = z.infer<typeof ProviderRetryPendingReasonSchema>;
 export type ProviderRateLimitPendingEvent = z.infer<typeof ProviderRateLimitPendingEventSchema>;
 export type ProviderPlanProposedEvent = z.infer<typeof ProviderPlanProposedEventSchema>;

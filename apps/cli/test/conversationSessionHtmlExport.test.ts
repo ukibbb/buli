@@ -58,6 +58,14 @@ const conversationSessionEntries = [
       "const safe = true;",
       "```",
     ].join("\n"),
+    assistantMessageUrlCitations: [
+      {
+        citedUrl: "https://example.com/docs",
+        citedTitle: "Example docs",
+        startIndex: 0,
+        endIndex: 6,
+      },
+    ],
   },
   {
     entryKind: "conversation_compaction_summary",
@@ -122,6 +130,40 @@ const conversationSessionEntries = [
       contextLineCount: 2,
     },
     toolResultText: "Found 3 matches for ToolCallRequest",
+  },
+  {
+    entryKind: "hosted_web_search_call",
+    hostedWebSearchCallId: "ws-1",
+    hostedWebSearchCallStartedAtMs: 1_000,
+    hostedWebSearchCallStatus: "completed",
+    hostedWebSearchCallDurationMs: 250,
+    hostedWebSearchCallDetail: {
+      toolName: "web_search",
+      webSearchStatus: "completed",
+      webSearchActionKind: "search",
+      searchQueryTexts: ["OpenTUI release notes"],
+      sourceCount: 2,
+      sources: [
+        { sourceTitle: "OpenTUI releases", sourceUrl: "https://example.test/releases" },
+        { sourceTitle: "OpenTUI docs", sourceUrl: "https://example.test/docs" },
+      ],
+      resultCount: 2,
+      results: [
+        {
+          resultKind: "text",
+          resultTitle: "OpenTUI release guide",
+          resultUrl: "https://example.test/releases/guide",
+          resultSnippet: "Release notes and migration details for OpenTUI.",
+        },
+        {
+          resultKind: "image",
+          resultTitle: "OpenTUI screenshot",
+          resultImageUrl: "https://example.test/images/screenshot.png",
+          resultSourceUrl: "https://example.test/releases",
+        },
+      ],
+      imageResultCount: 1,
+    },
   },
   {
     entryKind: "tool_call",
@@ -338,6 +380,16 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("ToolCallRequest");
   expect(html).toContain("<b>context</b> 2");
   expect(html).toContain("3 matches");
+  expect(html).toContain("Web search");
+  expect(html).toContain("WebSearch");
+  expect(html).toContain("OpenTUI release notes");
+  expect(html).toContain("2 sources · 2 results · 1 image");
+  expect(html).toContain("OpenTUI releases · https://example.test/releases");
+  expect(html).toContain("Search results");
+  expect(html).toContain("OpenTUI release guide");
+  expect(html).toContain("Release notes and migration details for OpenTUI.");
+  expect(html).toContain("Citations");
+  expect(html).toContain("Example docs · https://example.com/docs");
   expect(html).toContain("LocateCodebaseSymbols");
   expect(html).toContain("files");
   expect(html).toContain("streamAssistantResponseEventsForRequestedToolCalls");

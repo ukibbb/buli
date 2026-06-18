@@ -13,6 +13,7 @@ import { ReadToolCallCard } from "./ReadToolCallCard.tsx";
 import { SkillToolCallCard } from "./SkillToolCallCard.tsx";
 import { TaskToolCallCard } from "./TaskToolCallCard.tsx";
 import { TodoWriteToolCallCard } from "./TodoWriteToolCallCard.tsx";
+import { WebSearchToolCallCard } from "./WebSearchToolCallCard.tsx";
 import { WorkflowHandoffToolCallCard } from "./WorkflowHandoffToolCallCard.tsx";
 import { WriteToolCallCard } from "./WriteToolCallCard.tsx";
 
@@ -84,6 +85,7 @@ const toolCallEntryRendererByName: {
   write: renderWriteToolCallEntry,
   bash: renderBashToolCallEntry,
   todowrite: renderTodoWriteToolCallEntry,
+  web_search: renderWebSearchToolCallEntry,
   task: renderTaskToolCallEntry,
   skill: renderSkillToolCallEntry,
   record_workflow_handoff: renderWorkflowHandoffToolCallEntry,
@@ -180,6 +182,10 @@ function renderBashToolCallEntry(props: ToolCallEntryRendererProps<"bash">): Rea
 
 function renderTodoWriteToolCallEntry(props: ToolCallEntryRendererProps<"todowrite">): ReactNode {
   return <TodoWriteToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
+}
+
+function renderWebSearchToolCallEntry(props: ToolCallEntryRendererProps<"web_search">): ReactNode {
+  return <WebSearchToolCallCard {...buildSharedToolCallCardProps(props)} toolCallDetail={props.toolCallDetail} />;
 }
 
 function renderTaskToolCallEntry(props: ToolCallEntryRendererProps<"task">): ReactNode {

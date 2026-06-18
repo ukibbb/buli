@@ -7,13 +7,18 @@ import {
   AssistantPlanProposalConversationMessagePartSchema,
   AssistantRateLimitNoticeConversationMessagePartSchema,
   AssistantReasoningConversationMessagePartSchema,
+  AssistantToolCallConversationMessagePartSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
+  type AssistantMessageUrlCitation,
   type AssistantOperatingMode,
   type AssistantTurnSummaryConversationMessagePart,
   type AssistantTextPartStatus,
   type AssistantSegmentConversationSessionEntry,
   type AssistantMessageConversationSessionEntry,
   type AssistantResponseEvent,
+  type HostedWebSearchCallConversationSessionEntry,
+  type ProviderAssistantMessageUrlCitationsObservedEvent,
+  type ProviderHostedWebSearchCallUpdatedEvent,
   type ProviderPlanProposedEvent,
   type ProviderRetryPendingReason,
   type ProviderStreamEvent,
@@ -35,6 +40,7 @@ export type RuntimeProviderStreamAssistantEventsTranslation = {
   translationKind: "assistant_response_events";
   assistantResponseEvents: readonly AssistantResponseEvent[];
   assistantSegmentSessionEntries?: readonly AssistantSegmentConversationSessionEntry[];
+  hostedWebSearchCallSessionEntries?: readonly HostedWebSearchCallConversationSessionEntry[];
 };
 
 export type RuntimeProviderStreamToolCallRequestedTranslation = {
@@ -80,6 +86,13 @@ type RuntimeProviderStreamEventTranslatorInput = {
   readCurrentTimeInMilliseconds?: (() => number) | undefined;
 };
 
+type RuntimeHostedWebSearchCallState = {
+  assistantToolCallPartId: string;
+  hostedWebSearchCallStartedAtMs: number;
+  latestHostedWebSearchCallDetail: ProviderHostedWebSearchCallUpdatedEvent["hostedWebSearchCallDetail"];
+  hasRecordedTerminalHostedWebSearchCallSessionEntry: boolean;
+};
+
 const streamedAssistantTextUpdateChunkThreshold = 12;
 const streamedAssistantTextUpdateCharacterThreshold = 96;
 const streamedReasoningSummaryUpdateChunkThreshold = 1;
@@ -105,6 +118,8 @@ export class RuntimeProviderStreamEventTranslator {
   private currentReasoningStartedAtMs: number | undefined;
   private pendingReasoningSummaryUpdateChunkCount = 0;
   private pendingReasoningSummaryUpdateCharacterCount = 0;
+  private readonly hostedWebSearchCallStateById = new Map<string, RuntimeHostedWebSearchCallState>();
+  private readonly assistantMessageUrlCitationByKey = new Map<string, AssistantMessageUrlCitation>();
 
   constructor(input: RuntimeProviderStreamEventTranslatorInput) {
     this.assistantResponseMessageId = input.assistantResponseMessageId;
@@ -195,6 +210,14 @@ export class RuntimeProviderStreamEventTranslator {
         planTitle: input.providerStreamEvent.planTitle,
         planSteps: input.providerStreamEvent.planSteps,
       });
+    }
+
+    if (input.providerStreamEvent.type === "hosted_web_search_call_updated") {
+      return this.translateHostedWebSearchCallUpdatedProviderStreamEvent(input.providerStreamEvent);
+    }
+
+    if (input.providerStreamEvent.type === "assistant_message_url_citations_observed") {
+      return this.translateAssistantMessageUrlCitationsObservedProviderStreamEvent(input.providerStreamEvent);
     }
 
     if (input.providerStreamEvent.type === "incomplete") {
@@ -530,6 +553,117 @@ export class RuntimeProviderStreamEventTranslator {
     };
   }
 
+  private translateHostedWebSearchCallUpdatedProviderStreamEvent(
+    hostedWebSearchCallUpdatedEvent: ProviderHostedWebSearchCallUpdatedEvent,
+  ): RuntimeProviderStreamAssistantEventsTranslation {
+    const existingHostedWebSearchCallState = this.hostedWebSearchCallStateById.get(
+      hostedWebSearchCallUpdatedEvent.hostedWebSearchCallId,
+    );
+    const hostedWebSearchCallState = existingHostedWebSearchCallState ?? this.createHostedWebSearchCallState(
+      hostedWebSearchCallUpdatedEvent,
+    );
+    const nextHostedWebSearchCallDetail = mergeHostedWebSearchCallDetail({
+      previousHostedWebSearchCallDetail: hostedWebSearchCallState.latestHostedWebSearchCallDetail,
+      nextHostedWebSearchCallDetail: hostedWebSearchCallUpdatedEvent.hostedWebSearchCallDetail,
+    });
+    hostedWebSearchCallState.latestHostedWebSearchCallDetail = nextHostedWebSearchCallDetail;
+
+    const assistantSegmentFlush = existingHostedWebSearchCallState
+      ? undefined
+      : this.flushCurrentAssistantTextSegmentForBoundary({
+          partStatus: "completed",
+          shouldEmitPartUpdatedEvent: true,
+          shouldRecordSessionEntry: true,
+        });
+    const assistantResponseEvents: AssistantResponseEvent[] = [
+      ...(assistantSegmentFlush?.assistantResponseEvents ?? []),
+      (existingHostedWebSearchCallState ? AssistantMessagePartUpdatedEventSchema : AssistantMessagePartAddedEventSchema).parse({
+        type: existingHostedWebSearchCallState ? "assistant_message_part_updated" : "assistant_message_part_added",
+        messageId: this.assistantResponseMessageId,
+        part: AssistantToolCallConversationMessagePartSchema.parse({
+          id: hostedWebSearchCallState.assistantToolCallPartId,
+          partKind: "assistant_tool_call",
+          toolCallId: hostedWebSearchCallUpdatedEvent.hostedWebSearchCallId,
+          toolCallStatus: hostedWebSearchCallUpdatedEvent.hostedWebSearchStatus === "completed" ? "completed" : "running",
+          toolCallStartedAtMs: hostedWebSearchCallState.hostedWebSearchCallStartedAtMs,
+          toolCallDetail: nextHostedWebSearchCallDetail,
+          ...(hostedWebSearchCallUpdatedEvent.hostedWebSearchStatus === "completed"
+            ? { durationMs: this.readCurrentTimeInMilliseconds() - hostedWebSearchCallState.hostedWebSearchCallStartedAtMs }
+            : {}),
+        }),
+      }),
+    ];
+
+    const hostedWebSearchCallSessionEntry = hostedWebSearchCallUpdatedEvent.hostedWebSearchStatus === "completed" &&
+        !hostedWebSearchCallState.hasRecordedTerminalHostedWebSearchCallSessionEntry
+      ? this.createCompletedHostedWebSearchCallSessionEntry({
+          hostedWebSearchCallId: hostedWebSearchCallUpdatedEvent.hostedWebSearchCallId,
+          hostedWebSearchCallState,
+          hostedWebSearchCallDetail: nextHostedWebSearchCallDetail,
+        })
+      : undefined;
+    if (hostedWebSearchCallSessionEntry) {
+      hostedWebSearchCallState.hasRecordedTerminalHostedWebSearchCallSessionEntry = true;
+    }
+
+    this.hasObservedAssistantSegmentBoundary = true;
+    return {
+      translationKind: "assistant_response_events",
+      assistantResponseEvents,
+      ...(assistantSegmentFlush?.assistantSegmentSessionEntries && assistantSegmentFlush.assistantSegmentSessionEntries.length > 0
+        ? { assistantSegmentSessionEntries: assistantSegmentFlush.assistantSegmentSessionEntries }
+        : {}),
+      ...(hostedWebSearchCallSessionEntry
+        ? { hostedWebSearchCallSessionEntries: [hostedWebSearchCallSessionEntry] }
+        : {}),
+    };
+  }
+
+  private translateAssistantMessageUrlCitationsObservedProviderStreamEvent(
+    providerStreamEvent: ProviderAssistantMessageUrlCitationsObservedEvent,
+  ): RuntimeProviderStreamAssistantEventsTranslation {
+    for (const assistantMessageUrlCitation of providerStreamEvent.assistantMessageUrlCitations) {
+      this.assistantMessageUrlCitationByKey.set(
+        createAssistantMessageUrlCitationKey(assistantMessageUrlCitation),
+        assistantMessageUrlCitation,
+      );
+    }
+
+    return {
+      translationKind: "assistant_response_events",
+      assistantResponseEvents: [],
+    };
+  }
+
+  private createHostedWebSearchCallState(
+    hostedWebSearchCallUpdatedEvent: ProviderHostedWebSearchCallUpdatedEvent,
+  ): RuntimeHostedWebSearchCallState {
+    const hostedWebSearchCallState: RuntimeHostedWebSearchCallState = {
+      assistantToolCallPartId: this.createConversationMessagePartId(),
+      hostedWebSearchCallStartedAtMs: this.readCurrentTimeInMilliseconds(),
+      latestHostedWebSearchCallDetail: hostedWebSearchCallUpdatedEvent.hostedWebSearchCallDetail,
+      hasRecordedTerminalHostedWebSearchCallSessionEntry: false,
+    };
+    this.hostedWebSearchCallStateById.set(hostedWebSearchCallUpdatedEvent.hostedWebSearchCallId, hostedWebSearchCallState);
+    return hostedWebSearchCallState;
+  }
+
+  private createCompletedHostedWebSearchCallSessionEntry(input: {
+    hostedWebSearchCallId: string;
+    hostedWebSearchCallState: RuntimeHostedWebSearchCallState;
+    hostedWebSearchCallDetail: ProviderHostedWebSearchCallUpdatedEvent["hostedWebSearchCallDetail"];
+  }): HostedWebSearchCallConversationSessionEntry {
+    return {
+      entryKind: "hosted_web_search_call",
+      hostedWebSearchCallId: input.hostedWebSearchCallId,
+      hostedWebSearchCallStartedAtMs: input.hostedWebSearchCallState.hostedWebSearchCallStartedAtMs,
+      hostedWebSearchCallStatus: "completed",
+      hostedWebSearchCallDetail: input.hostedWebSearchCallDetail,
+      hostedWebSearchCallDurationMs: this.readCurrentTimeInMilliseconds() -
+        input.hostedWebSearchCallState.hostedWebSearchCallStartedAtMs,
+    };
+  }
+
   private translateIncompleteProviderStreamEvent(input: {
     incompleteReason: string;
     usage: TokenUsage;
@@ -563,6 +697,7 @@ export class RuntimeProviderStreamEventTranslator {
         turnDurationMs: assistantTurnSummaryPart.turnDurationMs,
         usage: input.usage,
         incompleteReason: input.incompleteReason,
+        ...this.createAssistantMessageUrlCitationsSessionEntryField(),
         ...(input.providerTurnReplay ? { providerTurnReplay: input.providerTurnReplay } : {}),
       },
       terminalAssistantResponseEvent: AssistantMessageIncompleteEventSchema.parse({
@@ -607,6 +742,7 @@ export class RuntimeProviderStreamEventTranslator {
         assistantOperatingMode: this.assistantOperatingMode,
         turnDurationMs: assistantTurnSummaryPart.turnDurationMs,
         usage: input.usage,
+        ...this.createAssistantMessageUrlCitationsSessionEntryField(),
         ...(input.providerTurnReplay ? { providerTurnReplay: input.providerTurnReplay } : {}),
       },
       terminalAssistantResponseEvent: AssistantMessageCompletedEventSchema.parse({
@@ -638,4 +774,56 @@ export class RuntimeProviderStreamEventTranslator {
       part: assistantTurnSummaryPart,
     });
   }
+
+  private createAssistantMessageUrlCitationsSessionEntryField(): {
+    assistantMessageUrlCitations?: AssistantMessageUrlCitation[];
+  } {
+    const assistantMessageUrlCitations = [...this.assistantMessageUrlCitationByKey.values()];
+    return assistantMessageUrlCitations.length > 0 ? { assistantMessageUrlCitations } : {};
+  }
+}
+
+function mergeHostedWebSearchCallDetail(input: {
+  previousHostedWebSearchCallDetail: ProviderHostedWebSearchCallUpdatedEvent["hostedWebSearchCallDetail"];
+  nextHostedWebSearchCallDetail: ProviderHostedWebSearchCallUpdatedEvent["hostedWebSearchCallDetail"];
+}): ProviderHostedWebSearchCallUpdatedEvent["hostedWebSearchCallDetail"] {
+  const webSearchActionKind = input.nextHostedWebSearchCallDetail.webSearchActionKind ??
+    input.previousHostedWebSearchCallDetail.webSearchActionKind;
+  const searchQueryTexts = input.nextHostedWebSearchCallDetail.searchQueryTexts ??
+    input.previousHostedWebSearchCallDetail.searchQueryTexts;
+  const openedPageUrl = input.nextHostedWebSearchCallDetail.openedPageUrl ??
+    input.previousHostedWebSearchCallDetail.openedPageUrl;
+  const findPattern = input.nextHostedWebSearchCallDetail.findPattern ??
+    input.previousHostedWebSearchCallDetail.findPattern;
+  const sourceCount = input.nextHostedWebSearchCallDetail.sourceCount ??
+    input.previousHostedWebSearchCallDetail.sourceCount;
+  const sources = input.nextHostedWebSearchCallDetail.sources ?? input.previousHostedWebSearchCallDetail.sources;
+  const resultCount = input.nextHostedWebSearchCallDetail.resultCount ??
+    input.previousHostedWebSearchCallDetail.resultCount;
+  const results = input.nextHostedWebSearchCallDetail.results ?? input.previousHostedWebSearchCallDetail.results;
+  const imageResultCount = input.nextHostedWebSearchCallDetail.imageResultCount ??
+    input.previousHostedWebSearchCallDetail.imageResultCount;
+
+  return {
+    toolName: "web_search",
+    webSearchStatus: input.nextHostedWebSearchCallDetail.webSearchStatus,
+    ...(webSearchActionKind !== undefined ? { webSearchActionKind } : {}),
+    ...(searchQueryTexts !== undefined ? { searchQueryTexts: [...searchQueryTexts] } : {}),
+    ...(openedPageUrl !== undefined ? { openedPageUrl } : {}),
+    ...(findPattern !== undefined ? { findPattern } : {}),
+    ...(sourceCount !== undefined ? { sourceCount } : {}),
+    ...(sources !== undefined ? { sources: [...sources] } : {}),
+    ...(resultCount !== undefined ? { resultCount } : {}),
+    ...(results !== undefined ? { results: [...results] } : {}),
+    ...(imageResultCount !== undefined ? { imageResultCount } : {}),
+  };
+}
+
+function createAssistantMessageUrlCitationKey(assistantMessageUrlCitation: AssistantMessageUrlCitation): string {
+  return [
+    assistantMessageUrlCitation.citedUrl,
+    assistantMessageUrlCitation.citedTitle ?? "",
+    assistantMessageUrlCitation.startIndex ?? "",
+    assistantMessageUrlCitation.endIndex ?? "",
+  ].join("\u0000");
 }

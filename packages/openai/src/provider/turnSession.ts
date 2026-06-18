@@ -35,6 +35,7 @@ import {
   type OpenAiHttpErrorResponse,
 } from "./httpResponseDiagnostics.ts";
 import { fetchWithTimeout } from "../fetchWithTimeout.ts";
+import type { OpenAiHostedWebSearchConfiguration } from "./openAiHostedWebSearchTool.ts";
 import { requestOpenAiHttpResponseWithRetries, type OpenAiHttpRetryPolicy } from "./openAiHttpRetry.ts";
 import {
   createOpenAiResponsesHttpRequestBodyFromTemplate,
@@ -198,6 +199,7 @@ export class OpenAiProviderConversationTurn {
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
+  readonly hostedWebSearch: OpenAiHostedWebSearchConfiguration | undefined;
   readonly abortSignal: AbortSignal | undefined;
   readonly systemPromptText: string;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
@@ -234,6 +236,7 @@ export class OpenAiProviderConversationTurn {
     selectedReasoningEffort?: ReasoningEffort;
     promptCacheKey?: string;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+    hostedWebSearch?: OpenAiHostedWebSearchConfiguration | undefined;
     abortSignal?: AbortSignal;
     systemPromptText: string;
     conversationSessionEntries: readonly ConversationSessionEntry[];
@@ -262,6 +265,7 @@ export class OpenAiProviderConversationTurn {
     this.selectedReasoningEffort = input.selectedReasoningEffort;
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
+    this.hostedWebSearch = input.hostedWebSearch;
     this.abortSignal = input.abortSignal;
     this.systemPromptText = input.systemPromptText;
     this.diagnosticLogger = input.diagnosticLogger;
@@ -295,6 +299,7 @@ export class OpenAiProviderConversationTurn {
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
       ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),
+      ...(input.hostedWebSearch ? { hostedWebSearch: input.hostedWebSearch } : {}),
       systemPromptText: input.systemPromptText,
     });
     this.openAiConversationInputItems = createOpenAiResponsesInputItems(input.conversationSessionEntries);
@@ -1371,6 +1376,24 @@ function summarizeProviderStreamEventForDiagnostics(providerStreamEvent: Provide
       toolCallCount: providerStreamEvent.requestedToolCalls.length,
       toolCallIds: providerStreamEvent.requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallId),
       toolNames: providerStreamEvent.requestedToolCalls.map((requestedToolCall) => requestedToolCall.toolCallRequest.toolName),
+    };
+  }
+
+  if (providerStreamEvent.type === "hosted_web_search_call_updated") {
+    return {
+      hostedWebSearchCallId: providerStreamEvent.hostedWebSearchCallId,
+      hostedWebSearchStatus: providerStreamEvent.hostedWebSearchStatus,
+      webSearchActionKind: providerStreamEvent.hostedWebSearchCallDetail.webSearchActionKind ?? null,
+      searchQueryCount: providerStreamEvent.hostedWebSearchCallDetail.searchQueryTexts?.length ?? 0,
+      sourceCount: providerStreamEvent.hostedWebSearchCallDetail.sourceCount ?? 0,
+      resultCount: providerStreamEvent.hostedWebSearchCallDetail.resultCount ?? 0,
+      imageResultCount: providerStreamEvent.hostedWebSearchCallDetail.imageResultCount ?? 0,
+    };
+  }
+
+  if (providerStreamEvent.type === "assistant_message_url_citations_observed") {
+    return {
+      assistantMessageUrlCitationCount: providerStreamEvent.assistantMessageUrlCitations.length,
     };
   }
 

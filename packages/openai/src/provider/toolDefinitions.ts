@@ -24,6 +24,7 @@ import {
   type ToolCallRequestByName,
 } from "@buli/contracts";
 import type { ZodIssue } from "zod";
+import type { OpenAiHostedWebSearchToolDefinition } from "./openAiHostedWebSearchTool.ts";
 
 type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boolean" | "null";
 
@@ -53,13 +54,15 @@ type OpenAiToolParameters = {
   readonly additionalProperties: false;
 };
 
-export type OpenAiToolDefinition<FunctionName extends OpenAiProviderFunctionName = OpenAiProviderFunctionName> = {
+export type OpenAiFunctionToolDefinition<FunctionName extends OpenAiProviderFunctionName = OpenAiProviderFunctionName> = {
   readonly type: "function";
   readonly name: FunctionName;
   readonly description: string;
   readonly parameters: OpenAiToolParameters;
   readonly strict: true;
 };
+
+export type OpenAiToolDefinition = OpenAiFunctionToolDefinition | OpenAiHostedWebSearchToolDefinition;
 
 type JsonObjectRecord = {
   readonly [fieldName: string]: unknown;
@@ -84,11 +87,11 @@ export type OpenAiProviderFunctionCallIntent =
 
 type OpenAiToolAdapter<ToolName extends AssistantToolRequestName> = {
   readonly toolName: ToolName;
-  readonly definition: OpenAiToolDefinition<ToolName>;
+  readonly definition: OpenAiFunctionToolDefinition<ToolName>;
   parseToolCallRequest(parsedArguments: JsonObjectRecord): ToolCallRequestByName<ToolName>;
 };
 
-export function createBashToolDefinition(): OpenAiToolDefinition<"bash"> {
+export function createBashToolDefinition(): OpenAiFunctionToolDefinition<"bash"> {
   return {
     type: "function",
     name: "bash",
@@ -122,7 +125,7 @@ export function createBashToolDefinition(): OpenAiToolDefinition<"bash"> {
   };
 }
 
-export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
+export function createReadToolDefinition(): OpenAiFunctionToolDefinition<"read"> {
   return {
     type: "function",
     name: "read",
@@ -158,7 +161,7 @@ export function createReadToolDefinition(): OpenAiToolDefinition<"read"> {
   };
 }
 
-export function createGlobToolDefinition(): OpenAiToolDefinition<"glob"> {
+export function createGlobToolDefinition(): OpenAiFunctionToolDefinition<"glob"> {
   return {
     type: "function",
     name: "glob",
@@ -187,7 +190,7 @@ export function createGlobToolDefinition(): OpenAiToolDefinition<"glob"> {
   };
 }
 
-export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
+export function createGrepToolDefinition(): OpenAiFunctionToolDefinition<"grep"> {
   return {
     type: "function",
     name: "grep",
@@ -226,7 +229,7 @@ export function createGrepToolDefinition(): OpenAiToolDefinition<"grep"> {
   };
 }
 
-export function createLocateCodebaseSymbolsToolDefinition(): OpenAiToolDefinition<"locate_codebase_symbols"> {
+export function createLocateCodebaseSymbolsToolDefinition(): OpenAiFunctionToolDefinition<"locate_codebase_symbols"> {
   return {
     type: "function",
     name: "locate_codebase_symbols",
@@ -261,7 +264,7 @@ export function createLocateCodebaseSymbolsToolDefinition(): OpenAiToolDefinitio
   };
 }
 
-export function createEditToolDefinition(): OpenAiToolDefinition<"edit"> {
+export function createEditToolDefinition(): OpenAiFunctionToolDefinition<"edit"> {
   return {
     type: "function",
     name: "edit",
@@ -293,7 +296,7 @@ export function createEditToolDefinition(): OpenAiToolDefinition<"edit"> {
   };
 }
 
-export function createEditManyToolDefinition(): OpenAiToolDefinition<"edit_many"> {
+export function createEditManyToolDefinition(): OpenAiFunctionToolDefinition<"edit_many"> {
   return {
     type: "function",
     name: "edit_many",
@@ -339,7 +342,7 @@ export function createEditManyToolDefinition(): OpenAiToolDefinition<"edit_many"
   };
 }
 
-export function createPatchToolDefinition(): OpenAiToolDefinition<"patch"> {
+export function createPatchToolDefinition(): OpenAiFunctionToolDefinition<"patch"> {
   return {
     type: "function",
     name: "patch",
@@ -360,7 +363,7 @@ export function createPatchToolDefinition(): OpenAiToolDefinition<"patch"> {
   };
 }
 
-export function createPatchManyToolDefinition(): OpenAiToolDefinition<"patch_many"> {
+export function createPatchManyToolDefinition(): OpenAiFunctionToolDefinition<"patch_many"> {
   return {
     type: "function",
     name: "patch_many",
@@ -381,7 +384,7 @@ export function createPatchManyToolDefinition(): OpenAiToolDefinition<"patch_man
   };
 }
 
-export function createWriteToolDefinition(): OpenAiToolDefinition<"write"> {
+export function createWriteToolDefinition(): OpenAiFunctionToolDefinition<"write"> {
   return {
     type: "function",
     name: "write",
@@ -405,7 +408,7 @@ export function createWriteToolDefinition(): OpenAiToolDefinition<"write"> {
   };
 }
 
-export function createTaskToolDefinition(): OpenAiToolDefinition<"task"> {
+export function createTaskToolDefinition(): OpenAiFunctionToolDefinition<"task"> {
   return {
     type: "function",
     name: "task",
@@ -433,7 +436,7 @@ export function createTaskToolDefinition(): OpenAiToolDefinition<"task"> {
   };
 }
 
-export function createSkillToolDefinition(): OpenAiToolDefinition<"skill"> {
+export function createSkillToolDefinition(): OpenAiFunctionToolDefinition<"skill"> {
   return {
     type: "function",
     name: "skill",
@@ -683,7 +686,7 @@ function createWorkflowHandoffVerificationResultsProperty(): OpenAiToolParameter
   };
 }
 
-export function createRecordWorkflowHandoffToolDefinition(): OpenAiToolDefinition<"record_workflow_handoff"> {
+export function createRecordWorkflowHandoffToolDefinition(): OpenAiFunctionToolDefinition<"record_workflow_handoff"> {
   return {
     type: "function",
     name: "record_workflow_handoff",
@@ -770,7 +773,7 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
 
 export function createOpenAiToolDefinitions(input: {
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
-} = {}): OpenAiToolDefinition[] {
+} = {}): OpenAiFunctionToolDefinition[] {
   const toolNamesInProviderOrder = input.availableToolNames ?? ASSISTANT_TOOL_REQUEST_NAMES;
 
   return toolNamesInProviderOrder

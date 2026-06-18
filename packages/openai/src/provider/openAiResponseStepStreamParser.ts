@@ -1,4 +1,11 @@
-import { ContextWindowOverflowError, type BuliDiagnosticLogger, type ProviderStreamEvent, type TokenUsage } from "@buli/contracts";
+import {
+  ContextWindowOverflowError,
+  type BuliDiagnosticLogger,
+  type ProviderStreamEvent,
+  type TokenUsage,
+  type ToolCallWebSearchDetail,
+  type ToolCallWebSearchStatus,
+} from "@buli/contracts";
 import {
   logOpenAiDiagnosticEvent,
   summarizeTokenUsageForDiagnostics,
@@ -6,9 +13,12 @@ import {
 import {
   isOpenAiOutputTextContentPart,
   isOpenAiResponseObject,
+  listOpenAiAssistantMessageUrlCitationsFromOutputItem,
   readOpenAiFunctionCallOutputItem,
   readOpenAiResponseObjectArrayField,
   readOpenAiResponseObjectStringField,
+  readOpenAiWebSearchCallOutputItem,
+  type OpenAiWebSearchCallOutputItem,
   type OpenAiResponseObject,
 } from "./openAiResponseObjects.ts";
 import { OpenAiResponseOutputItemTracker } from "./openAiResponseOutputItemTracker.ts";
@@ -30,6 +40,10 @@ import {
   readOpenAiReasoningSummaryTextDeltaChunk,
   readOpenAiReasoningSummaryTextDoneChunk,
   readOpenAiResponseFailedChunk,
+  readOpenAiWebSearchCallCompletedChunk,
+  readOpenAiWebSearchCallInProgressChunk,
+  readOpenAiWebSearchCallSearchingChunk,
+  type OpenAiWebSearchCallLifecycleChunk,
 } from "./openAiResponseStreamEvents.ts";
 import {
   chooseOpenAiResponseStepTerminalKind,
@@ -37,8 +51,10 @@ import {
   type OpenAiResponseStepTerminalState,
 } from "./openAiResponseStepTerminalStateBuilder.ts";
 import {
+  createProviderAssistantMessageUrlCitationsObservedEvent,
   createProviderCompletedEvent,
   createProviderFunctionCallIntentEvents,
+  createProviderHostedWebSearchCallUpdatedEvent,
   createProviderIncompleteEvent,
   createProviderTextChunkEvent,
 } from "./providerStreamEventFactories.ts";
@@ -67,6 +83,8 @@ export class OpenAiResponseStepStreamParser {
   private finished = false;
   private terminalState: OpenAiResponseStepTerminalState | undefined;
   private readonly outputItemTracker = new OpenAiResponseOutputItemTracker();
+  private readonly webSearchCallIdsCompletedFromOutputItem = new Set<string>();
+  private readonly emittedAssistantMessageUrlCitationKeys = new Set<string>();
   private sseFrameCount = 0;
   private ignoredSseEventCount = 0;
   private textDeltaEventCount = 0;
@@ -84,6 +102,9 @@ export class OpenAiResponseStepStreamParser {
     "response.output_item.added": (value) => this.parseOutputItemAddedSseFrame(value),
     "response.function_call_arguments.done": (value) => this.parseFunctionCallArgumentsDoneSseFrame(value),
     "response.output_item.done": (value) => this.parseOutputItemDoneSseFrame(value),
+    "response.web_search_call.in_progress": (value) => this.parseWebSearchCallInProgressSseFrame(value),
+    "response.web_search_call.searching": (value) => this.parseWebSearchCallSearchingSseFrame(value),
+    "response.web_search_call.completed": (value) => this.parseWebSearchCallCompletedSseFrame(value),
     "response.completed": (value) => this.parseCompletedResponseSseFrame(value),
     "response.incomplete": (value) => this.parseIncompleteResponseSseFrame(value),
     "response.failed": (value) => this.parseFailedResponseSseFrame(value),
@@ -294,6 +315,7 @@ export class OpenAiResponseStepStreamParser {
       outputIndex: outputItemAdded.output_index,
       outputItem: outputItemAdded.item,
     }));
+    providerEvents.push(...this.createAssistantMessageUrlCitationEventsFromOutputItem(outputItemAdded.item));
     const functionCallItem = readOpenAiFunctionCallOutputItem(outputItemAdded.item);
     if (functionCallItem) {
       if (functionCallItem.argumentsText && functionCallItem.argumentsText.length > 0) {
@@ -303,6 +325,13 @@ export class OpenAiResponseStepStreamParser {
         functionCallItem,
         shouldRecordRequestedToolCallIfReady: false,
       });
+    }
+    const webSearchCallItem = readOpenAiWebSearchCallOutputItem(outputItemAdded.item);
+    if (webSearchCallItem) {
+      providerEvents.push(this.createHostedWebSearchCallUpdatedEventFromOutputItem({
+        webSearchCallItem,
+        fallbackStatus: "in_progress",
+      }));
     }
     return providerEvents;
   }
@@ -361,10 +390,83 @@ export class OpenAiResponseStepStreamParser {
       });
       providerEvents.push(...this.createNewExecutableToolCallEvents());
     }
+    const assistantMessageUrlCitationEvents = this.createAssistantMessageUrlCitationEventsFromOutputItem(outputItemDone.item);
+    if (assistantMessageUrlCitationEvents.length > 0) {
+      if (providerEvents.length === 0) {
+        providerEvents.push(...this.createPendingReasoningCompletedEvents());
+      }
+      providerEvents.push(...assistantMessageUrlCitationEvents);
+    }
+    const webSearchCallItem = readOpenAiWebSearchCallOutputItem(outputItemDone.item);
+    if (webSearchCallItem) {
+      if (providerEvents.length === 0) {
+        providerEvents.push(...this.createPendingReasoningCompletedEvents());
+      }
+      providerEvents.push(this.createHostedWebSearchCallUpdatedEventFromOutputItem({
+        webSearchCallItem,
+        fallbackStatus: "completed",
+      }));
+      this.recordWebSearchCallCompletedFromOutputItemIfTerminal({
+        webSearchCallItem,
+        fallbackStatus: "completed",
+      });
+    }
     if (isOpenAiReasoningOutputItem(outputItemDone.item)) {
       providerEvents.push(...this.createPendingReasoningCompletedEvents());
     }
     return providerEvents;
+  }
+
+  private parseWebSearchCallInProgressSseFrame(value: OpenAiResponseObject): ProviderStreamEvent[] {
+    return this.parseWebSearchCallLifecycleSseFrame({
+      value,
+      hostedWebSearchStatus: "in_progress",
+      readLifecycleChunk: readOpenAiWebSearchCallInProgressChunk,
+      ignoredReason: "malformed_web_search_call_in_progress",
+    });
+  }
+
+  private parseWebSearchCallSearchingSseFrame(value: OpenAiResponseObject): ProviderStreamEvent[] {
+    return this.parseWebSearchCallLifecycleSseFrame({
+      value,
+      hostedWebSearchStatus: "searching",
+      readLifecycleChunk: readOpenAiWebSearchCallSearchingChunk,
+      ignoredReason: "malformed_web_search_call_searching",
+    });
+  }
+
+  private parseWebSearchCallCompletedSseFrame(value: OpenAiResponseObject): ProviderStreamEvent[] {
+    return this.parseWebSearchCallLifecycleSseFrame({
+      value,
+      hostedWebSearchStatus: "completed",
+      readLifecycleChunk: readOpenAiWebSearchCallCompletedChunk,
+      ignoredReason: "malformed_web_search_call_completed",
+    });
+  }
+
+  private parseWebSearchCallLifecycleSseFrame(input: {
+    value: OpenAiResponseObject;
+    hostedWebSearchStatus: ToolCallWebSearchStatus;
+    readLifecycleChunk: (value: unknown) => OpenAiWebSearchCallLifecycleChunk | undefined;
+    ignoredReason: string;
+  }): ProviderStreamEvent[] {
+    const lifecycleChunk = input.readLifecycleChunk(input.value);
+    if (!lifecycleChunk) {
+      this.ignoreSseEvent(input.ignoredReason, input.value.type);
+      return [];
+    }
+
+    return [
+      ...this.createPendingReasoningCompletedEvents(),
+      createProviderHostedWebSearchCallUpdatedEvent({
+        hostedWebSearchCallId: lifecycleChunk.item_id,
+        hostedWebSearchStatus: input.hostedWebSearchStatus,
+        hostedWebSearchCallDetail: {
+          toolName: "web_search",
+          webSearchStatus: input.hostedWebSearchStatus,
+        },
+      }),
+    ];
   }
 
   private parseCompletedResponseSseFrame(value: OpenAiResponseObject): ProviderStreamEvent[] {
@@ -464,6 +566,15 @@ export class OpenAiResponseStepStreamParser {
       input.responseOutputItemsFromTerminalEvent,
     );
     const terminalAssistantTextChunks = this.outputItemTracker.listUnemittedAssistantOutputTextChunks(responseOutputItems);
+    for (const responseOutputItem of responseOutputItems) {
+      const webSearchCallItem = readOpenAiWebSearchCallOutputItem(responseOutputItem);
+      if (webSearchCallItem && !this.webSearchCallIdsCompletedFromOutputItem.has(webSearchCallItem.itemId)) {
+        providerEvents.push(this.createHostedWebSearchCallUpdatedEventFromOutputItem({
+          webSearchCallItem,
+          fallbackStatus: "completed",
+        }));
+      }
+    }
     this.functionCallStreamAccumulator.recordProviderFunctionCallIntentsFromResponseOutputItems(responseOutputItems);
     const pendingProviderFunctionCallIntents = this.functionCallStreamAccumulator.listPendingProviderFunctionCallIntents();
     const pendingProviderFunctionCallIntentClassification = classifyOpenAiProviderFunctionCallIntents(
@@ -489,6 +600,9 @@ export class OpenAiResponseStepStreamParser {
         ),
       });
       providerEvents.push(...terminalAssistantTextChunks.map(createProviderTextChunkEvent));
+    }
+    for (const responseOutputItem of responseOutputItems) {
+      providerEvents.push(...this.createAssistantMessageUrlCitationEventsFromOutputItem(responseOutputItem));
     }
     if (pendingProviderFunctionCallIntents.length > 0) {
       this.terminalState = createOpenAiResponseStepProviderFunctionCallTerminalState({
@@ -521,6 +635,52 @@ export class OpenAiResponseStepStreamParser {
       ...this.createPendingReasoningCompletedEvents(),
       ...createProviderFunctionCallIntentEvents(this.functionCallStreamAccumulator.drainNewExecutableToolCallIntents()),
     ];
+  }
+
+  private createHostedWebSearchCallUpdatedEventFromOutputItem(input: {
+    webSearchCallItem: OpenAiWebSearchCallOutputItem;
+    fallbackStatus: ToolCallWebSearchStatus;
+  }): ProviderStreamEvent {
+    const hostedWebSearchStatus = input.webSearchCallItem.webSearchStatus ?? input.fallbackStatus;
+    const hostedWebSearchCallDetail = createToolCallWebSearchDetailFromOpenAiOutputItem({
+      webSearchCallItem: input.webSearchCallItem,
+      hostedWebSearchStatus,
+    });
+    return createProviderHostedWebSearchCallUpdatedEvent({
+      hostedWebSearchCallId: input.webSearchCallItem.itemId,
+      hostedWebSearchStatus,
+      hostedWebSearchCallDetail,
+    });
+  }
+
+  private createAssistantMessageUrlCitationEventsFromOutputItem(outputItem: unknown): ProviderStreamEvent[] {
+    const newAssistantMessageUrlCitations = listOpenAiAssistantMessageUrlCitationsFromOutputItem(outputItem).filter(
+      (assistantMessageUrlCitation) => {
+        const citationKey = createAssistantMessageUrlCitationKey(assistantMessageUrlCitation);
+        if (this.emittedAssistantMessageUrlCitationKeys.has(citationKey)) {
+          return false;
+        }
+
+        this.emittedAssistantMessageUrlCitationKeys.add(citationKey);
+        return true;
+      },
+    );
+
+    return newAssistantMessageUrlCitations.length > 0
+      ? [createProviderAssistantMessageUrlCitationsObservedEvent(newAssistantMessageUrlCitations)]
+      : [];
+  }
+
+  private recordWebSearchCallCompletedFromOutputItemIfTerminal(input: {
+    webSearchCallItem: OpenAiWebSearchCallOutputItem;
+    fallbackStatus: ToolCallWebSearchStatus;
+  }): void {
+    const hostedWebSearchStatus = input.webSearchCallItem.webSearchStatus ?? input.fallbackStatus;
+    if (hostedWebSearchStatus !== "completed") {
+      return;
+    }
+
+    this.webSearchCallIdsCompletedFromOutputItem.add(input.webSearchCallItem.itemId);
   }
 
   private createCompletedAssistantMessageOutputItemTextEvents(input: {
@@ -559,6 +719,49 @@ export class OpenAiResponseStepStreamParser {
 
     return providerEvents;
   }
+}
+
+function createToolCallWebSearchDetailFromOpenAiOutputItem(input: {
+  webSearchCallItem: OpenAiWebSearchCallOutputItem;
+  hostedWebSearchStatus: ToolCallWebSearchStatus;
+}): ToolCallWebSearchDetail {
+  return {
+    toolName: "web_search",
+    webSearchStatus: input.hostedWebSearchStatus,
+    ...(input.webSearchCallItem.webSearchActionKind !== undefined
+      ? { webSearchActionKind: input.webSearchCallItem.webSearchActionKind }
+      : {}),
+    ...(input.webSearchCallItem.searchQueryTexts !== undefined
+      ? { searchQueryTexts: [...input.webSearchCallItem.searchQueryTexts] }
+      : {}),
+    ...(input.webSearchCallItem.openedPageUrl !== undefined
+      ? { openedPageUrl: input.webSearchCallItem.openedPageUrl }
+      : {}),
+    ...(input.webSearchCallItem.findPattern !== undefined ? { findPattern: input.webSearchCallItem.findPattern } : {}),
+    ...(input.webSearchCallItem.sourceCount !== undefined ? { sourceCount: input.webSearchCallItem.sourceCount } : {}),
+    ...(input.webSearchCallItem.sources !== undefined ? { sources: [...input.webSearchCallItem.sources] } : {}),
+    ...(input.webSearchCallItem.resultCount !== undefined ? { resultCount: input.webSearchCallItem.resultCount } : {}),
+    ...(input.webSearchCallItem.results !== undefined ? { results: [...input.webSearchCallItem.results] } : {}),
+    ...(input.webSearchCallItem.imageResultCount !== undefined
+      ? { imageResultCount: input.webSearchCallItem.imageResultCount }
+      : {}),
+  };
+}
+
+function createAssistantMessageUrlCitationKey(
+  assistantMessageUrlCitation: {
+    citedUrl: string;
+    citedTitle?: string | undefined;
+    startIndex?: number | undefined;
+    endIndex?: number | undefined;
+  },
+): string {
+  return [
+    assistantMessageUrlCitation.citedUrl,
+    assistantMessageUrlCitation.citedTitle ?? "",
+    assistantMessageUrlCitation.startIndex ?? "",
+    assistantMessageUrlCitation.endIndex ?? "",
+  ].join("\u0000");
 }
 
 function isNonNegativeInteger(value: unknown): value is number {

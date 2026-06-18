@@ -11,6 +11,10 @@ import type { OpenAiAuthInfo } from "../auth/schema.ts";
 import { OpenAiAuthStore } from "../auth/store.ts";
 import { fetchWithTimeout } from "../fetchWithTimeout.ts";
 import { logOpenAiDiagnosticEvent } from "./diagnostics.ts";
+import {
+  DEFAULT_OPENAI_HOSTED_WEB_SEARCH_CONFIGURATION,
+  type OpenAiHostedWebSearchConfiguration,
+} from "./openAiHostedWebSearchTool.ts";
 import { createOpenAiHttpRequestError, getOpenAiRequestId } from "./httpResponseDiagnostics.ts";
 import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
 import { OpenAiRateLimitCoordinator } from "./openAiRateLimitCoordinator.ts";
@@ -76,6 +80,7 @@ export class OpenAiProvider {
   readonly store: OpenAiAuthStore;
   readonly fetchImpl: typeof fetch;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
+  readonly hostedWebSearch: OpenAiHostedWebSearchConfiguration | undefined;
   readonly rateLimitCoordinator: OpenAiRateLimitCoordinator;
   private cachedOpenAiAuth: OpenAiAuthInfo | undefined;
   private pendingOpenAiAuthLoad: Promise<OpenAiAuthInfo> | undefined;
@@ -85,6 +90,7 @@ export class OpenAiProvider {
     store?: OpenAiAuthStore;
     fetchImpl?: typeof fetch;
     maximumConcurrentResponseStepStreams?: number | undefined;
+    hostedWebSearch?: OpenAiHostedWebSearchConfiguration | undefined;
     rateLimitCoordinator?: OpenAiRateLimitCoordinator | undefined;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   } = {}) {
@@ -92,6 +98,7 @@ export class OpenAiProvider {
     this.store = input.store ?? new OpenAiAuthStore();
     this.fetchImpl = input.fetchImpl ?? fetch;
     this.diagnosticLogger = input.diagnosticLogger;
+    this.hostedWebSearch = input.hostedWebSearch ?? DEFAULT_OPENAI_HOSTED_WEB_SEARCH_CONFIGURATION;
     this.rateLimitCoordinator = input.rateLimitCoordinator ?? new OpenAiRateLimitCoordinator({
       maximumConcurrentResponseStepStreams: input.maximumConcurrentResponseStepStreams,
       diagnosticLogger: this.diagnosticLogger,
@@ -154,6 +161,10 @@ export class OpenAiProvider {
   }
 
   startConversationTurn(input: OpenAiConversationTurnRequest): OpenAiProviderConversationTurn {
+    const hostedWebSearchForTurn = input.providerTurnKind === "conversation_compaction"
+      ? undefined
+      : this.hostedWebSearch;
+
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.created", {
       conversationTurnId: input.conversationTurnId ?? null,
       providerTurnKind: input.providerTurnKind ?? null,
@@ -206,6 +217,7 @@ export class OpenAiProvider {
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
       ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),
+      ...(hostedWebSearchForTurn ? { hostedWebSearch: hostedWebSearchForTurn } : {}),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       maxResponseStepsPerTurn: DEFAULT_OPENAI_MAX_RESPONSE_STEPS_PER_TURN,
       maxToolCallsPerTurn: DEFAULT_OPENAI_MAX_TOOL_CALLS_PER_TURN,

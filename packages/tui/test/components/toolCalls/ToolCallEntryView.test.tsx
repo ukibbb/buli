@@ -221,6 +221,27 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("Step two");
   });
 
+  test("dispatches_web_search", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        toolCallDetail={{
+          toolName: "web_search",
+          webSearchStatus: "completed",
+          webSearchActionKind: "search",
+          searchQueryTexts: ["OpenTUI release notes"],
+          sourceCount: 2,
+        }}
+      />,
+      { width: 90, height: 12 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("WebSearch");
+    expect(frame).toContain("OpenTUI release notes");
+    expect(frame).toContain("2 sources");
+  });
+
   test("dispatches_task", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView

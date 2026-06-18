@@ -5,6 +5,12 @@ import {
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "../src/provider/openAiResponsesRequest.ts";
 
+type TestOpenAiToolDefinition = Readonly<{ type: string; name?: string }>;
+
+function listDiagnosticToolNames(toolDefinitions: readonly TestOpenAiToolDefinition[] | undefined): string[] {
+  return toolDefinitions?.map((toolDefinition) => toolDefinition.name ?? toolDefinition.type) ?? [];
+}
+
 test("createOpenAiResponsesHttpRequestBody builds a streaming reasoning-model request", () => {
   expect(
     createOpenAiResponsesHttpRequestBody({
@@ -54,7 +60,63 @@ test("createOpenAiResponsesHttpRequestBody disables encrypted reasoning include 
   expect(requestBody.include).toBeUndefined();
   expect(requestBody.reasoning).toEqual({ effort: "none" });
   expect(requestBody.prompt_cache_key).toBe("buli:test-session");
-  expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep"]);
+  expect(listDiagnosticToolNames(requestBody.tools)).toEqual(["read", "glob", "grep"]);
+});
+
+test("createOpenAiResponsesHttpRequestBody includes hosted web search when configured live", () => {
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.4-mini",
+    selectedReasoningEffort: "none",
+    availableToolNames: ["read"],
+    hostedWebSearch: { mode: "live", searchContentTypes: ["text", "image"] },
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Search the web" }],
+  });
+
+  expect(listDiagnosticToolNames(requestBody.tools)).toEqual(["read", "web_search"]);
+  expect(requestBody.tools?.at(-1)).toEqual({
+    type: "web_search",
+    external_web_access: true,
+    search_content_types: ["text", "image"],
+    search_context_size: "high",
+  });
+  expect(requestBody.include).toEqual(["web_search_call.action.sources", "web_search_call.results"]);
+  expect(requestBody.parallel_tool_calls).toBe(true);
+  expect(summarizeOpenAiResponsesRequestForDiagnostics({ requestBody, responseStepIndex: 1 })).toMatchObject({
+    toolDefinitionCount: 2,
+    toolNames: ["read", "web_search"],
+    parallelToolCalls: true,
+    includesHostedWebSearchSources: true,
+    includesHostedWebSearchResults: true,
+  });
+});
+
+test("createOpenAiResponsesHttpRequestBody merges reasoning and hosted web search includes without duplicates", () => {
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.4",
+    hostedWebSearch: { mode: "live", includeSources: true, includeResults: true },
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Search current docs" }],
+  });
+
+  expect(requestBody.include).toEqual([
+    "web_search_call.action.sources",
+    "web_search_call.results",
+    "reasoning.encrypted_content",
+  ]);
+});
+
+test("createOpenAiResponsesHttpRequestBody omits hosted web search when configured disabled", () => {
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.4-mini",
+    availableToolNames: [],
+    hostedWebSearch: { mode: "disabled" },
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "No web access" }],
+  });
+
+  expect(requestBody.tools).toBeUndefined();
+  expect(requestBody.parallel_tool_calls).toBeUndefined();
 });
 
 test("createOpenAiResponsesHttpRequestBody omits tool fields when no tools are available", () => {

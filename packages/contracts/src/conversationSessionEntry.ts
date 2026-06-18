@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { TokenUsageSchema } from "./provider.ts";
 import { ProviderTurnReplaySchema } from "./providerTurnReplay.ts";
-import { ToolCallDetailSchema } from "./toolCallDetail.ts";
+import { ToolCallDetailSchema, ToolCallWebSearchDetailSchema } from "./toolCallDetail.ts";
 import { ToolCallRequestSchema } from "./toolCallRequest.ts";
 import { UserPromptImageAttachmentSchema } from "./userPromptImageAttachment.ts";
 import { AssistantOperatingModeSchema } from "./assistantOperatingMode.ts";
+import { AssistantMessageUrlCitationSchema } from "./assistantMessageCitation.ts";
 import { ContextWindowOverflowFailureKindSchema } from "./contextWindowOverflow.ts";
 import {
   ImplementationWorkflowHandoffSchema,
@@ -51,6 +52,7 @@ const AssistantMessageConversationSessionEntryBaseSchema = z
     assistantMessageText: z.string(),
     selectedModelId: z.string().min(1).optional(),
     assistantOperatingMode: AssistantOperatingModeSchema.optional(),
+    assistantMessageUrlCitations: z.array(AssistantMessageUrlCitationSchema).optional(),
     turnDurationMs: z.number().int().nonnegative().optional(),
     usage: TokenUsageSchema.optional(),
   })
@@ -88,6 +90,20 @@ export const AssistantTextSegmentConversationSessionEntrySchema = z
   .object({
     entryKind: z.literal("assistant_text_segment"),
     assistantTextSegmentText: z.string().min(1),
+  })
+  .strict();
+
+export const HostedWebSearchCallConversationSessionEntryStatusSchema = z.enum(["completed", "failed", "interrupted"]);
+
+export const HostedWebSearchCallConversationSessionEntrySchema = z
+  .object({
+    entryKind: z.literal("hosted_web_search_call"),
+    hostedWebSearchCallId: z.string().min(1),
+    hostedWebSearchCallStartedAtMs: z.number().int().nonnegative(),
+    hostedWebSearchCallStatus: HostedWebSearchCallConversationSessionEntryStatusSchema,
+    hostedWebSearchCallDetail: ToolCallWebSearchDetailSchema,
+    hostedWebSearchCallDurationMs: z.number().int().nonnegative().optional(),
+    hostedWebSearchCallErrorText: z.string().min(1).optional(),
   })
   .strict();
 
@@ -152,6 +168,7 @@ export const WorkspacePatchConversationSessionEntrySchema = z
 export const ConversationSessionEntrySchema = z.union([
   UserPromptConversationSessionEntrySchema,
   AssistantTextSegmentConversationSessionEntrySchema,
+  HostedWebSearchCallConversationSessionEntrySchema,
   BuliStickyNotesConversationSessionEntrySchema,
   AssistantMessageConversationSessionEntrySchema,
   ToolCallConversationSessionEntrySchema,
@@ -186,6 +203,12 @@ export type InterruptedAssistantMessageConversationSessionEntry = z.infer<
 >;
 export type AssistantMessageConversationSessionEntry = z.infer<typeof AssistantMessageConversationSessionEntrySchema>;
 export type AssistantTextSegmentConversationSessionEntry = z.infer<typeof AssistantTextSegmentConversationSessionEntrySchema>;
+export type HostedWebSearchCallConversationSessionEntryStatus = z.infer<
+  typeof HostedWebSearchCallConversationSessionEntryStatusSchema
+>;
+export type HostedWebSearchCallConversationSessionEntry = z.infer<
+  typeof HostedWebSearchCallConversationSessionEntrySchema
+>;
 export type AssistantSegmentConversationSessionEntry = AssistantTextSegmentConversationSessionEntry;
 export type BuliStickyNotesConversationSessionEntry = z.infer<typeof BuliStickyNotesConversationSessionEntrySchema>;
 export type ToolCallConversationSessionEntry = z.infer<typeof ToolCallConversationSessionEntrySchema>;

@@ -30,3 +30,13 @@ export type {
   RunOpenAiProviderProtocolJsonLineHostInput,
 } from "./provider/providerProtocolHost.ts";
 export { deriveOpenAiModelListEndpoint, parseAvailableAssistantModelsFromOpenAiResponse } from "./provider/models.ts";
+export {
+  DEFAULT_OPENAI_HOSTED_WEB_SEARCH_CONFIGURATION,
+  createOpenAiHostedWebSearchToolDefinition,
+} from "./provider/openAiHostedWebSearchTool.ts";
+export type {
+  OpenAiHostedWebSearchConfiguration,
+  OpenAiHostedWebSearchContentType,
+  OpenAiHostedWebSearchMode,
+  OpenAiHostedWebSearchToolDefinition,
+} from "./provider/openAiHostedWebSearchTool.ts";

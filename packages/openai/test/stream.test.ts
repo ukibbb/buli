@@ -212,6 +212,262 @@ test("parseOpenAiStream re-emits reasoning summary chunks in order", async () =>
   expect(emittedEventTypes).toContain("reasoning_summary_completed");
 });
 
+test("parseOpenAiStream emits hosted web search lifecycle events", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.web_search_call.in_progress",
+        item_id: "ws_1",
+      }),
+      createSseDataFrame({
+        type: "response.web_search_call.searching",
+        item_id: "ws_1",
+      }),
+      createSseDataFrame({
+        type: "response.output_text.delta",
+        item_id: "msg_1",
+        delta: "Searched result",
+      }),
+      createSseDataFrame({
+        type: "response.web_search_call.completed",
+        item_id: "ws_1",
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: {
+          usage: {
+            input_tokens: 20,
+            output_tokens: 10,
+            output_tokens_details: { reasoning_tokens: 2 },
+          },
+        },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect(await collectParsedEvents(response)).toEqual([
+    {
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "in_progress",
+      hostedWebSearchCallDetail: { toolName: "web_search", webSearchStatus: "in_progress" },
+    },
+    {
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "searching",
+      hostedWebSearchCallDetail: { toolName: "web_search", webSearchStatus: "searching" },
+    },
+    { type: "text_chunk", text: "Searched result" },
+    {
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "completed",
+      hostedWebSearchCallDetail: { toolName: "web_search", webSearchStatus: "completed" },
+    },
+    {
+      type: "completed",
+      usage: {
+        total: 30,
+        input: 20,
+        output: 8,
+        reasoning: 2,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
+test("parseOpenAiStream emits hosted web search output item metadata", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          id: "ws_1",
+          type: "web_search_call",
+          status: "in_progress",
+          action: {
+            type: "search",
+            query: "latest OpenTUI release notes",
+          },
+        },
+      }),
+      createSseDataFrame({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: {
+          id: "ws_1",
+          type: "web_search_call",
+          status: "completed",
+          action: {
+            type: "search",
+            query: "latest OpenTUI release notes",
+            sources: [
+              { title: "OpenTUI releases", url: "https://example.test/releases" },
+              { title: "OpenTUI docs", url: "https://example.test/docs" },
+            ],
+          },
+          results: [
+            {
+              type: "search_result",
+              title: "OpenTUI release guide",
+              url: "https://example.test/releases/guide",
+              snippet: "Release notes and migration details for OpenTUI.",
+            },
+            {
+              type: "image_result",
+              title: "OpenTUI screenshot",
+              image_url: "https://example.test/images/screenshot.png",
+              source_url: "https://example.test/releases",
+              thumbnail_url: "https://example.test/images/screenshot-thumb.png",
+            },
+          ],
+        },
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: {
+          usage: {
+            input_tokens: 20,
+            output_tokens: 8,
+          },
+        },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect(await collectParsedEvents(response)).toEqual([
+    {
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "in_progress",
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "in_progress",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["latest OpenTUI release notes"],
+      },
+    },
+    {
+      type: "hosted_web_search_call_updated",
+      hostedWebSearchCallId: "ws_1",
+      hostedWebSearchStatus: "completed",
+      hostedWebSearchCallDetail: {
+        toolName: "web_search",
+        webSearchStatus: "completed",
+        webSearchActionKind: "search",
+        searchQueryTexts: ["latest OpenTUI release notes"],
+        sourceCount: 2,
+        sources: [
+          { sourceTitle: "OpenTUI releases", sourceUrl: "https://example.test/releases" },
+          { sourceTitle: "OpenTUI docs", sourceUrl: "https://example.test/docs" },
+        ],
+        resultCount: 2,
+        results: [
+          {
+            resultKind: "text",
+            resultTitle: "OpenTUI release guide",
+            resultUrl: "https://example.test/releases/guide",
+            resultSnippet: "Release notes and migration details for OpenTUI.",
+          },
+          {
+            resultKind: "image",
+            resultTitle: "OpenTUI screenshot",
+            resultImageUrl: "https://example.test/images/screenshot.png",
+            resultSourceUrl: "https://example.test/releases",
+            resultThumbnailUrl: "https://example.test/images/screenshot-thumb.png",
+          },
+        ],
+        imageResultCount: 1,
+      },
+    },
+    {
+      type: "completed",
+      usage: {
+        total: 28,
+        input: 20,
+        output: 8,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
+test("parseOpenAiStream emits assistant URL citations from output text annotations", async () => {
+  const response = new Response(
+    [
+      createSseDataFrame({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          id: "msg_1",
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          content: [
+            {
+              type: "output_text",
+              text: "OpenTUI docs explain the new renderer.",
+              annotations: [
+                {
+                  type: "url_citation",
+                  url: "https://example.test/docs",
+                  title: "OpenTUI docs",
+                  start_index: 0,
+                  end_index: 12,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      createSseDataFrame({
+        type: "response.completed",
+        response: {
+          usage: {
+            input_tokens: 20,
+            output_tokens: 8,
+          },
+        },
+      }),
+    ].join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+  expect(await collectParsedEvents(response)).toEqual([
+    {
+      type: "text_chunk",
+      text: "OpenTUI docs explain the new renderer.",
+    },
+    {
+      type: "assistant_message_url_citations_observed",
+      assistantMessageUrlCitations: [
+        {
+          citedUrl: "https://example.test/docs",
+          citedTitle: "OpenTUI docs",
+          startIndex: 0,
+          endIndex: 12,
+        },
+      ],
+    },
+    {
+      type: "completed",
+      usage: {
+        total: 28,
+        input: 20,
+        output: 8,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    },
+  ]);
+});
+
 test("parseOpenAiStream ignores unknown SSE event types and malformed hot delta payloads", async () => {
   const response = new Response(
     [
@@ -1768,13 +2024,17 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
     expect(requests[0]?.headers.get("authorization")).toBe("Bearer access-token");
     expect(requests[0]?.headers.get("chatgpt-account-id")).toBe("acct_123");
     const requestBody = JSON.parse(requests[0]?.body ?? "{}") as {
-      tools?: Array<{ name?: string }>;
+      tools?: Array<{ type: string; name?: string }>;
     };
     expect(requestBody).toMatchObject({
       model: "gpt-5.4",
       instructions: "You are buli.",
       store: false,
-      include: ["reasoning.encrypted_content"],
+      include: [
+        "web_search_call.action.sources",
+        "web_search_call.results",
+        "reasoning.encrypted_content",
+      ],
       input: [
         {
           role: "user",
@@ -1785,7 +2045,10 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
       reasoning: { summary: "auto" },
       stream: true,
     });
-    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name)).toEqual([...ASSISTANT_TOOL_REQUEST_NAMES]);
+    expect(requestBody.tools?.map((toolDefinition) => toolDefinition.name ?? toolDefinition.type)).toEqual([
+      ...ASSISTANT_TOOL_REQUEST_NAMES,
+      "web_search",
+    ]);
     expect(emittedEvents).toEqual([
       { type: "text_chunk", text: "Hello from server" },
       {
@@ -1873,7 +2136,11 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
 
     expect(JSON.parse(requests[0] ?? "{}")).toMatchObject({
       instructions: "You are buli.",
-      include: ["reasoning.encrypted_content"],
+      include: [
+        "web_search_call.action.sources",
+        "web_search_call.results",
+        "reasoning.encrypted_content",
+      ],
       reasoning: { effort: "high" },
     });
   } finally {
@@ -1995,7 +2262,11 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
           output: "Command: pwd\nWorking directory: /tmp\nExit code: 0",
         },
       ],
-      include: ["reasoning.encrypted_content"],
+      include: [
+        "web_search_call.action.sources",
+        "web_search_call.results",
+        "reasoning.encrypted_content",
+      ],
     });
   } finally {
     await new Promise<void>((resolve, reject) => {

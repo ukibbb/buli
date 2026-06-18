@@ -14,6 +14,8 @@ export {
   DEFAULT_ASSISTANT_OPERATING_MODE,
 } from "./assistantOperatingMode.ts";
 export type { AssistantOperatingMode } from "./assistantOperatingMode.ts";
+export { AssistantMessageUrlCitationSchema } from "./assistantMessageCitation.ts";
+export type { AssistantMessageUrlCitation } from "./assistantMessageCitation.ts";
 export {
   readTrailingPossibleInternalModeScopeTagFragment,
   removeInternalModeScopeTagsFromAssistantTranscriptText,
@@ -118,6 +120,8 @@ export {
   DeniedToolResultConversationSessionEntrySchema,
   FailedAssistantMessageConversationSessionEntrySchema,
   FailedToolResultConversationSessionEntrySchema,
+  HostedWebSearchCallConversationSessionEntrySchema,
+  HostedWebSearchCallConversationSessionEntryStatusSchema,
   IncompleteAssistantMessageConversationSessionEntrySchema,
   InterruptedAssistantMessageConversationSessionEntrySchema,
   ProjectInstructionFileNameSchema,
@@ -153,6 +157,8 @@ export type {
   DeniedToolResultConversationSessionEntry,
   FailedAssistantMessageConversationSessionEntry,
   FailedToolResultConversationSessionEntry,
+  HostedWebSearchCallConversationSessionEntry,
+  HostedWebSearchCallConversationSessionEntryStatus,
   IncompleteAssistantMessageConversationSessionEntry,
   InterruptedAssistantMessageConversationSessionEntry,
   ProjectInstructionFileName,
@@ -298,8 +304,10 @@ export { PlanStepSchema, PlanStepStatusSchema } from "./planProposal.ts";
 export type { PlanStep, PlanStepStatus } from "./planProposal.ts";
 export {
   AvailableAssistantModelSchema,
+  ProviderAssistantMessageUrlCitationsObservedEventSchema,
   ProviderCompletedEventSchema,
   ProviderIncompleteEventSchema,
+  ProviderHostedWebSearchCallUpdatedEventSchema,
   ProviderPlanProposedEventSchema,
   ProviderRateLimitPendingEventSchema,
   ProviderReasoningSummaryCompletedEventSchema,
@@ -316,7 +324,9 @@ export {
 } from "./provider.ts";
 export type {
   AvailableAssistantModel,
+  ProviderAssistantMessageUrlCitationsObservedEvent,
   ProviderCompletedEvent,
+  ProviderHostedWebSearchCallUpdatedEvent,
   ProviderIncompleteEvent,
   ProviderPlanProposedEvent,
   ProviderRateLimitPendingEvent,
@@ -434,6 +444,13 @@ export {
   ToolCallTodoItemSchema,
   ToolCallTodoItemStatusSchema,
   ToolCallTodoWriteDetailSchema,
+  ToolCallWebSearchActionKindSchema,
+  ToolCallWebSearchDetailSchema,
+  ToolCallWebSearchImageResultSchema,
+  ToolCallWebSearchResultSchema,
+  ToolCallWebSearchSourceSchema,
+  ToolCallWebSearchStatusSchema,
+  ToolCallWebSearchTextResultSchema,
   ToolCallWriteDetailSchema,
   UnifiedDiffTextSchema,
 } from "./toolCallDetail.ts";
@@ -468,6 +485,13 @@ export type {
   ToolCallTodoItem,
   ToolCallTodoItemStatus,
   ToolCallTodoWriteDetail,
+  ToolCallWebSearchActionKind,
+  ToolCallWebSearchDetail,
+  ToolCallWebSearchImageResult,
+  ToolCallWebSearchResult,
+  ToolCallWebSearchSource,
+  ToolCallWebSearchStatus,
+  ToolCallWebSearchTextResult,
   ToolCallWriteDetail,
   UnifiedDiffText,
 } from "./toolCallDetail.ts";

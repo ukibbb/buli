@@ -4,6 +4,7 @@ import type {
   AssistantSegmentConversationSessionEntry,
   BuliStickyNotesConversationSessionEntry,
   BuliDiagnosticLogger,
+  HostedWebSearchCallConversationSessionEntry,
   ProjectInstructionSnapshot,
   UserPromptImageAttachment,
   UserPromptSource,
@@ -134,6 +135,19 @@ export class RuntimeConversationTurnSessionRecorder {
       conversationTurnId: this.conversationTurnId ?? null,
       entryKind: "assistant_text_segment",
       assistantTextSegmentTextLength: assistantSegmentConversationSessionEntry.assistantTextSegmentText.length,
+      conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
+    });
+  }
+
+  appendHostedWebSearchCallSessionEntry(
+    hostedWebSearchCallConversationSessionEntry: HostedWebSearchCallConversationSessionEntry,
+  ): void {
+    this.conversationHistory.appendConversationSessionEntry(hostedWebSearchCallConversationSessionEntry);
+
+    logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_history.entry_appended", {
+      conversationTurnId: this.conversationTurnId ?? null,
+      entryKind: "hosted_web_search_call",
+      hostedWebSearchCallStatus: hostedWebSearchCallConversationSessionEntry.hostedWebSearchCallStatus,
       conversationSessionEntryCount: this.conversationHistory.countConversationSessionEntries(),
     });
   }
