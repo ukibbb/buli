@@ -3,6 +3,8 @@ import {
   AssistantMessagePartAddedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
+  isAssistantToolRequestName,
+  isCustomToolCallRequest,
   isFileMutationToolCallRequest,
   isRecordWorkflowHandoffToolCallRequest,
   isSkillToolCallRequest,
@@ -11,16 +13,17 @@ import {
   type AssistantOperatingMode,
   type AssistantResponseEvent,
   type AssistantToolRequestName,
+  type BashToolCallRequest,
   type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
   type ProviderAvailableToolName,
   type ProviderRequestedToolCall,
   type ReasoningEffort,
-  type AssistantToolCallRequest,
+  type ToolCallRequest,
   type WorkflowHandoff,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
-import { resolveAssistantOperatingModeToolAccess } from "./assistantOperatingModePolicy.ts";
+import { resolvePrimaryAssistantAgentToolAccess } from "./assistantOperatingModePolicy.ts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
@@ -36,6 +39,7 @@ import { streamAssistantResponseEventsForSkillToolCall } from "./runtimeSkillToo
 import { streamAssistantResponseEventsForTaskToolCall } from "./runtimeTaskToolCallExecution.ts";
 import { streamAssistantResponseEventsForFileMutationToolCall } from "./runtimeFileMutationToolCallExecution.ts";
 import { streamAssistantResponseEventsForWorkflowHandoffToolCall } from "./runtimeWorkflowHandoffToolCallExecution.ts";
+import { streamAssistantResponseEventsForCustomToolCall } from "./runtimeCustomToolCallExecution.ts";
 import {
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall,
   streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls,
@@ -55,7 +59,11 @@ import type { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
 import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 import type { AssistantProviderModelPromptProfile } from "./assistantProviderModelPromptProfile.ts";
+import type { BuiltInToolDescriptionOverlayResolver } from "./assistantModelOverlay.ts";
+import type { TaskSubagentCompositionResolver } from "./assistantSubagentComposition.ts";
 import type { TaskSubagentProviderModelSelection } from "./taskSubagentProviderModelSelection.ts";
+import type { AssistantAgentRegistry, PrimaryAssistantAgentDefinition } from "./assistantAgentRegistry.ts";
+import type { AssistantToolRegistry } from "./assistantToolRegistry.ts";
 
 export type {
   RuntimePendingToolApproval,
@@ -74,7 +82,12 @@ export type RuntimeToolCallExecutionContext = {
   parentSelectedReasoningEffort?: ReasoningEffort;
   taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
   taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  taskSubagentCompositionResolver: TaskSubagentCompositionResolver;
+  builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
   assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
+  assistantAgentRegistry: AssistantAgentRegistry;
+  assistantToolRegistry: AssistantToolRegistry;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
@@ -104,7 +117,7 @@ export type StreamAssistantResponseEventsForRequestedToolCallsInput = RuntimeToo
 
 type RuntimeRequestedToolCallExecutorInput = RuntimeToolCallExecutionContext & {
   toolCallId: string;
-  toolCallRequest: AssistantToolCallRequest;
+  toolCallRequest: ToolCallRequest;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
 };
 
@@ -146,7 +159,7 @@ export async function* streamAssistantResponseEventsForRequestedToolCalls(
     diagnosticLogger: input.diagnosticLogger,
   });
 
-  for (const requestedToolCallExecutionGroup of groupRequestedToolCallsForExecution(input.requestedToolCalls)) {
+  for (const requestedToolCallExecutionGroup of groupRequestedToolCallsForExecution(input.requestedToolCalls, input.assistantToolRegistry)) {
     if (requestedToolCallExecutionGroup.groupKind === "auto_concurrent") {
       for (const requestedToolCall of requestedToolCallExecutionGroup.requestedToolCalls) {
         appendStartedRequestedToolCallSessionEntry(input, requestedToolCall);
@@ -192,23 +205,24 @@ function logRequestedToolCall(
   input: StreamAssistantResponseEventsForRequestedToolCallsInput,
   requestedToolCall: ProviderRequestedToolCall,
 ): void {
+  const toolCallRequest = requestedToolCall.toolCallRequest;
   logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.requested", {
     conversationTurnId: input.conversationTurnId,
     toolCallId: requestedToolCall.toolCallId,
-    toolName: requestedToolCall.toolCallRequest.toolName,
-    ...(requestedToolCall.toolCallRequest.toolName === "bash"
+    toolName: toolCallRequest.toolName,
+    ...(!isCustomToolCallRequest(toolCallRequest) && toolCallRequest.toolName === "bash"
       ? {
-          shellCommandLength: requestedToolCall.toolCallRequest.shellCommand.length,
-          commandDescriptionLength: requestedToolCall.toolCallRequest.commandDescription.length,
-          hasRequestedWorkingDirectoryPath: requestedToolCall.toolCallRequest.workingDirectoryPath !== undefined,
-          hasRequestedTimeoutMilliseconds: requestedToolCall.toolCallRequest.timeoutMilliseconds !== undefined,
+          shellCommandLength: toolCallRequest.shellCommand.length,
+          commandDescriptionLength: toolCallRequest.commandDescription.length,
+          hasRequestedWorkingDirectoryPath: toolCallRequest.workingDirectoryPath !== undefined,
+          hasRequestedTimeoutMilliseconds: toolCallRequest.timeoutMilliseconds !== undefined,
         }
       : {}),
-    ...(requestedToolCall.toolCallRequest.toolName === "task"
+    ...(!isCustomToolCallRequest(toolCallRequest) && toolCallRequest.toolName === "task"
       ? {
-          subagentName: requestedToolCall.toolCallRequest.subagentName,
-          subagentDescriptionLength: requestedToolCall.toolCallRequest.subagentDescription.length,
-          subagentPromptLength: requestedToolCall.toolCallRequest.subagentPrompt.length,
+          subagentName: toolCallRequest.subagentName,
+          subagentDescriptionLength: toolCallRequest.subagentDescription.length,
+          subagentPromptLength: toolCallRequest.subagentPrompt.length,
         }
       : {}),
   });
@@ -230,7 +244,10 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
 
   let concurrentGroupOutcomeKind: "completed" | "failed" = "completed";
   try {
-    if (areAllRequestedToolCallsAllowedForRuntimeContext(input) && areAllAutoApprovedReadOnlyToolCalls(input.requestedToolCalls)) {
+    if (
+      areAllRequestedToolCallsAllowedForRuntimeContext(input) &&
+      areAllAutoApprovedReadOnlyToolCalls(input.requestedToolCalls, input.assistantToolRegistry)
+    ) {
       yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
         assistantResponseMessageId: input.assistantResponseMessageId,
         providerConversationTurn: input.providerConversationTurn,
@@ -250,7 +267,10 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
       return;
     }
 
-    const autoApprovedReadOnlyToolCalls = listAutoApprovedReadOnlyToolCalls(input.requestedToolCalls);
+    const autoApprovedReadOnlyToolCalls = listAutoApprovedReadOnlyToolCalls({
+      requestedToolCalls: input.requestedToolCalls,
+      assistantToolRegistry: input.assistantToolRegistry,
+    });
     if (areAllRequestedToolCallsAllowedForRuntimeContext(input) && autoApprovedReadOnlyToolCalls.length > 0) {
       yield* mergeAssistantResponseEventStreams({
         assistantResponseEventStreams: [
@@ -271,7 +291,9 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
             diagnosticLogger: input.diagnosticLogger,
           }),
           ...input.requestedToolCalls
-            .filter((requestedToolCall) => !isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest))
+            .filter((requestedToolCall) =>
+              !input.assistantToolRegistry.isAutoApprovedReadOnlyToolCallRequest(requestedToolCall.toolCallRequest)
+            )
             .map((requestedToolCall) =>
               streamAssistantResponseEventsForPolicyCheckedRequestedToolCall({
                 ...input,
@@ -308,14 +330,16 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
   }
 }
 
-function listAutoApprovedReadOnlyToolCalls(
-  requestedToolCalls: readonly AutoConcurrentRequestedToolCall[],
+function listAutoApprovedReadOnlyToolCalls(input: {
+  requestedToolCalls: readonly AutoConcurrentRequestedToolCall[];
+  assistantToolRegistry: AssistantToolRegistry;
+},
 ): Array<{
   toolCallId: string;
   toolCallRequest: WorkspaceInspectionToolCallRequest;
 }> {
-  return requestedToolCalls.flatMap((requestedToolCall) => {
-    if (!isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest)) {
+  return input.requestedToolCalls.flatMap((requestedToolCall) => {
+    if (!input.assistantToolRegistry.isAutoApprovedReadOnlyToolCallRequest(requestedToolCall.toolCallRequest)) {
       return [];
     }
 
@@ -327,13 +351,13 @@ function listAutoApprovedReadOnlyToolCalls(
 }
 
 function areAllRequestedToolCallsAllowedForRuntimeContext(input: {
-  assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
   requestedToolCalls: readonly ProviderRequestedToolCall[];
 }): boolean {
   return input.requestedToolCalls.every((requestedToolCall) =>
-    resolveAssistantOperatingModeToolAccess({
-      assistantOperatingMode: input.assistantOperatingMode,
+    resolvePrimaryAssistantAgentToolAccess({
+      primaryAssistantAgent: input.primaryAssistantAgent,
       requestedAvailableToolNames: input.availableToolNames,
       requestedToolName: requestedToolCall.toolCallRequest.toolName,
     }).accessKind === "allowed"
@@ -345,8 +369,8 @@ async function* streamAssistantResponseEventsForPolicyCheckedRequestedToolCall(
 ): AsyncGenerator<AssistantResponseEvent> {
   const toolCallExecutionStartedAtMs = Date.now();
   let toolCallExecutionOutcomeKind: "completed" | "failed" = "completed";
-  const toolAccessDecision = resolveAssistantOperatingModeToolAccess({
-    assistantOperatingMode: input.assistantOperatingMode,
+  const toolAccessDecision = resolvePrimaryAssistantAgentToolAccess({
+    primaryAssistantAgent: input.primaryAssistantAgent,
     requestedAvailableToolNames: input.availableToolNames,
     requestedToolName: input.toolCallRequest.toolName,
   });
@@ -371,7 +395,7 @@ async function* streamAssistantResponseEventsForPolicyCheckedRequestedToolCall(
       conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
       toolName: input.toolCallRequest.toolName,
-      ...(input.toolCallRequest.toolName === "task" ? { subagentName: input.toolCallRequest.subagentName } : {}),
+      ...(isTaskToolCallRequest(input.toolCallRequest) ? { subagentName: input.toolCallRequest.subagentName } : {}),
       outcomeKind: toolCallExecutionOutcomeKind,
       durationMs: Date.now() - toolCallExecutionStartedAtMs,
     });
@@ -480,6 +504,11 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
       : {}),
     taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
     taskSubagentAssistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
+    taskSubagentCompositionResolver: input.taskSubagentCompositionResolver,
+    builtInToolDescriptionOverlayResolver: input.builtInToolDescriptionOverlayResolver,
+    parentPrimaryAssistantAgent: input.primaryAssistantAgent,
+    assistantAgentRegistry: input.assistantAgentRegistry,
+    assistantToolRegistry: input.assistantToolRegistry,
     workspaceRootPath: input.workspaceRootPath,
     workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,
@@ -530,6 +559,7 @@ async function* streamAssistantResponseEventsForWorkflowHandoffRequestedToolCall
     toolCallId: input.toolCallId,
     recordWorkflowHandoffToolCallRequest: input.toolCallRequest,
     assistantOperatingMode: input.assistantOperatingMode,
+    primaryAssistantAgent: input.primaryAssistantAgent,
     recordWorkflowHandoff: input.recordWorkflowHandoff,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
@@ -551,6 +581,7 @@ async function* streamAssistantResponseEventsForFileMutationRequestedToolCall(
     toolCallId: input.toolCallId,
     fileMutationToolCallRequest: input.toolCallRequest,
     assistantOperatingMode: input.assistantOperatingMode,
+    primaryAssistantAgent: input.primaryAssistantAgent,
     workspaceRootPath: input.workspaceRootPath,
     workspaceSnapshotStore: input.workspaceSnapshotStore,
     workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
@@ -564,7 +595,7 @@ async function* streamAssistantResponseEventsForFileMutationRequestedToolCall(
 async function* streamAssistantResponseEventsForBashRequestedToolCall(
   input: RuntimeRequestedToolCallExecutorInput,
 ): AsyncGenerator<AssistantResponseEvent> {
-  if (input.toolCallRequest.toolName !== "bash") {
+  if (!isBashToolCallRequest(input.toolCallRequest)) {
     throw new Error(`Bash tool executor received unsupported tool: ${input.toolCallRequest.toolName}`);
   }
 
@@ -575,6 +606,7 @@ async function* streamAssistantResponseEventsForBashRequestedToolCall(
     toolCallId: input.toolCallId,
     bashToolCallRequest: input.toolCallRequest,
     assistantOperatingMode: input.assistantOperatingMode,
+    primaryAssistantAgent: input.primaryAssistantAgent,
     bashToolApprovalMode: input.bashToolApprovalMode,
     workspaceRootPath: input.workspaceRootPath,
     workspaceSnapshotStore: input.workspaceSnapshotStore,
@@ -587,16 +619,52 @@ async function* streamAssistantResponseEventsForBashRequestedToolCall(
   });
 }
 
-function resolveRequestedToolCallExecutor(toolCallRequest: AssistantToolCallRequest): RuntimeRequestedToolCallExecutor {
-  return requestedToolCallExecutorByName[toolCallRequest.toolName];
+function resolveRequestedToolCallExecutor(toolCallRequest: ToolCallRequest): RuntimeRequestedToolCallExecutor {
+  if (isCustomToolCallRequest(toolCallRequest)) {
+    return streamAssistantResponseEventsForCustomRequestedToolCall;
+  }
+
+  if (isAssistantToolRequestName(toolCallRequest.toolName)) {
+    return requestedToolCallExecutorByName[toolCallRequest.toolName];
+  }
+
+  throw new Error(`Unhandled tool call request: ${JSON.stringify(toolCallRequest)}`);
 }
+
+function isBashToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is BashToolCallRequest {
+  return toolCallRequest.toolName === "bash";
+}
+
+async function* streamAssistantResponseEventsForCustomRequestedToolCall(
+  input: RuntimeRequestedToolCallExecutorInput,
+): AsyncGenerator<AssistantResponseEvent> {
+  if (!isCustomToolCallRequest(input.toolCallRequest)) {
+    throw new Error(`Custom tool executor received built-in tool: ${input.toolCallRequest.toolName}`);
+  }
+
+  yield* streamAssistantResponseEventsForCustomToolCall({
+    assistantResponseMessageId: input.assistantResponseMessageId,
+    providerConversationTurn: input.providerConversationTurn,
+    conversationTurnId: input.conversationTurnId,
+    toolCallId: input.toolCallId,
+    customToolCallRequest: input.toolCallRequest,
+    assistantToolRegistry: input.assistantToolRegistry,
+    workspaceRootPath: input.workspaceRootPath,
+    toolResultSessionRecorder: input.toolResultSessionRecorder,
+    abortSignal: input.abortSignal,
+    createPendingToolApproval: input.createPendingToolApproval,
+    throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
+    diagnosticLogger: input.diagnosticLogger,
+  });
+}
+
 
 function clearSameTurnReadCoverageBeforeWorkspaceChangingToolCall(input: RuntimeRequestedToolCallExecutorInput): void {
   if (!input.sameTurnReadCoverageTracker) {
     return;
   }
 
-  if (input.toolCallRequest.toolName !== "bash" && !isFileMutationToolCallRequest(input.toolCallRequest)) {
+  if (!input.assistantToolRegistry.shouldClearSameTurnReadCoverageBeforeExecution(input.toolCallRequest)) {
     return;
   }
 

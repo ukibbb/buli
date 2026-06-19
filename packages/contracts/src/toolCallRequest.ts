@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
+import { JsonObjectSchema } from "./jsonValue.ts";
 import { WorkflowHandoffSchema } from "./workflowHandoff.ts";
 
 export const MAX_BASH_TOOL_TIMEOUT_MILLISECONDS = 600_000;
@@ -27,6 +28,32 @@ const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
 const InspectionQuestionSchema = z.string().min(1).max(MAX_INSPECTION_QUESTION_LENGTH);
 const PATCH_FILE_SECTION_HEADER_PREFIXES = ["*** Add File:", "*** Update File:", "*** Delete File:"] as const;
 const PATCH_TEXT_WITH_ONE_OR_MORE_FILE_SECTIONS_PATTERN = /^\s*\*\*\* Begin Patch\n[\s\S]*\*\*\* (?:Add File|Update File|Delete File): [^\n]+[\s\S]*\n\*\*\* End Patch\s*$/;
+
+const BUILT_IN_ASSISTANT_TOOL_REQUEST_NAMES = [
+  "bash",
+  "read",
+  "glob",
+  "grep",
+  "locate_codebase_symbols",
+  "edit",
+  "edit_many",
+  "patch",
+  "patch_many",
+  "write",
+  "task",
+  "skill",
+  "record_workflow_handoff",
+] as const;
+const BUILT_IN_ASSISTANT_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(BUILT_IN_ASSISTANT_TOOL_REQUEST_NAMES);
+
+export const CustomToolNameSchema = z.string().min(1).superRefine((toolName, context) => {
+  if (BUILT_IN_ASSISTANT_TOOL_REQUEST_NAME_SET.has(toolName)) {
+    context.addIssue({
+      code: "custom",
+      message: `Custom tool name cannot collide with built-in tool: ${toolName}`,
+    });
+  }
+});
 
 type PatchTextStructure = {
   hasValidEnvelope: boolean;
@@ -202,20 +229,16 @@ export const AssistantToolCallRequestSchema = z.discriminatedUnion("toolName", [
   LocateCodebaseSymbolsToolCallRequestSchema,
 ]);
 
-export const ToolCallRequestSchema = z.discriminatedUnion("toolName", [
-  BashToolCallRequestSchema,
-  ReadToolCallRequestSchema,
-  GlobToolCallRequestSchema,
-  GrepToolCallRequestSchema,
-  EditToolCallRequestSchema,
-  EditManyToolCallRequestSchema,
-  PatchToolCallRequestSchema,
-  PatchManyToolCallRequestSchema,
-  WriteToolCallRequestSchema,
-  TaskToolCallRequestSchema,
-  SkillToolCallRequestSchema,
-  RecordWorkflowHandoffToolCallRequestSchema,
-  LocateCodebaseSymbolsToolCallRequestSchema,
+export const CustomToolCallRequestSchema = z
+  .object({
+    toolName: CustomToolNameSchema,
+    toolArgumentsJson: JsonObjectSchema,
+  })
+  .strict();
+
+export const ToolCallRequestSchema = z.union([
+  AssistantToolCallRequestSchema,
+  CustomToolCallRequestSchema,
 ]);
 
 export type BashToolCallRequest = z.infer<typeof BashToolCallRequestSchema>;
@@ -233,6 +256,8 @@ export type SkillToolCallRequest = z.infer<typeof SkillToolCallRequestSchema>;
 export type RecordWorkflowHandoffToolCallRequest = z.infer<typeof RecordWorkflowHandoffToolCallRequestSchema>;
 export type LocateCodebaseSymbolsToolCallRequest = z.infer<typeof LocateCodebaseSymbolsToolCallRequestSchema>;
 export type AssistantToolCallRequest = z.infer<typeof AssistantToolCallRequestSchema>;
+export type CustomToolName = z.infer<typeof CustomToolNameSchema>;
+export type CustomToolCallRequest = z.infer<typeof CustomToolCallRequestSchema>;
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
 function inspectPatchTextStructure(patchText: string): PatchTextStructure {

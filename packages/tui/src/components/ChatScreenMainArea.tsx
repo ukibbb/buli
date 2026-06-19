@@ -1,6 +1,6 @@
 import type { ChatSlashCommand, ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { ChatAppRenderStore, ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
-import type { ChatScreenTheme, TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
+import type { TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo, type ReactNode, type RefObject } from "react";
 import { CommandHelpModal } from "./CommandHelpModal.tsx";
@@ -10,7 +10,7 @@ import type { PendingToolApprovalDecision } from "./ConversationMessageRow.tsx";
 export type ChatScreenMainAreaProps = {
   isCommandHelpModalVisible: boolean;
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
-  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  inputPanelAccentColor: string;
   availableCommandHelpModalRowCount: number;
   terminalSizeTierForChatScreen: TerminalSizeTierForChatScreen;
   availableChatSlashCommands: readonly ChatSlashCommand[];

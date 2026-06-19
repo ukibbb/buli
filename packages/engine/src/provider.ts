@@ -1,9 +1,12 @@
 import type {
   AssistantOperatingMode,
+  AssistantPrimaryAgentDisplayMetadata,
   AssistantResponseEvent,
   ConversationSessionEntry,
   ProviderAvailableToolName,
+  ProviderBuiltInToolDescriptionOverlay,
   ProviderStreamEvent,
+  ProviderToolDefinition,
   ProviderTurnReplay,
   ReasoningEffort,
   UserPromptImageAttachment,
@@ -54,6 +57,8 @@ export type ProviderConversationTurnRequest = {
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
   availableToolNames?: readonly ProviderAvailableToolName[];
+  availableToolDefinitions?: readonly ProviderToolDefinition[];
+  builtInToolDescriptionOverlays?: readonly ProviderBuiltInToolDescriptionOverlay[];
   abortSignal?: AbortSignal;
 };
 
@@ -94,4 +99,5 @@ export type ConversationTurnRuntimeStatus =
 export interface AssistantConversationRunner {
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn;
   readConversationTurnRuntimeStatus?(): ConversationTurnRuntimeStatus;
+  listPrimaryAgentDisplayMetadata?(): readonly AssistantPrimaryAgentDisplayMetadata[];
 }

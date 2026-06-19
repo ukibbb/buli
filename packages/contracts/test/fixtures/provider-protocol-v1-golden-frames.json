@@ -41,7 +41,32 @@
       "selectedModelId": "gpt-5.5",
       "selectedReasoningEffort": "medium",
       "promptCacheKey": "workspace-cache-key",
-      "availableToolNames": ["read", "glob", "grep"]
+      "availableToolNames": ["read", "glob", "grep", "workspace_summary"],
+      "availableToolDefinitions": [
+        {
+          "toolName": "workspace_summary",
+          "description": "Summarize a workspace topic.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "topic": {
+                "type": "string",
+                "description": "The exact workspace topic to summarize."
+              }
+            },
+            "required": ["topic"],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "builtInToolDescriptionOverlays": [
+        {
+          "toolName": "read",
+          "additionalDescriptionParagraphs": [
+            "Small-model guidance: read one narrow file window at a time and do not infer paths."
+          ]
+        }
+      ]
     }
   },
   {

@@ -13,6 +13,7 @@ import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from
 import { RuntimeToolResultSessionRecorder } from "../src/runtimeToolResultSessionRecorder.ts";
 import type { BashToolApprovalMode } from "../src/tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "../src/tools/workspaceShellCommandExecutor.ts";
+import { createDefaultAssistantAgentRegistry } from "../src/assistantAgentRegistry.ts";
 import { PrivateGitWorkspaceSnapshotStore } from "../src/workspaceSnapshot/privateGitWorkspaceSnapshotStore.ts";
 import type { WorkspaceSnapshotStore } from "../src/workspaceSnapshot/workspaceSnapshotStore.ts";
 
@@ -73,6 +74,8 @@ async function collectBashToolCallEvents(input: {
   const workspaceShellCommandExecutor = input.workspaceShellCommandExecutor ?? createSuccessfulWorkspaceShellCommandExecutor("ok\n");
   const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
   const assistantResponseEvents: AssistantResponseEvent[] = [];
+  const assistantOperatingMode = input.assistantOperatingMode ?? "implementation";
+  const primaryAssistantAgent = createDefaultAssistantAgentRegistry().resolvePrimaryAgentDefinition(assistantOperatingMode);
 
   for await (const assistantResponseEvent of streamAssistantResponseEventsForBashToolCall({
     assistantResponseMessageId: "assistant-message-1",
@@ -84,7 +87,8 @@ async function collectBashToolCallEvents(input: {
       shellCommand: input.shellCommand,
       commandDescription: "Run command",
     },
-    assistantOperatingMode: input.assistantOperatingMode ?? "implementation",
+    assistantOperatingMode,
+    primaryAssistantAgent,
     bashToolApprovalMode: input.bashToolApprovalMode ?? "trusted",
     workspaceRootPath,
     workspaceSnapshotStore: input.workspaceSnapshotStore,

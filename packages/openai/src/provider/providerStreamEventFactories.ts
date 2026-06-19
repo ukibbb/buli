@@ -2,8 +2,8 @@ import type {
   ProviderRequestedToolCall,
   ProviderStreamEvent,
   TokenUsage,
-  AssistantToolCallRequest,
   AssistantMessageUrlCitation,
+  ToolCallRequest,
   ToolCallWebSearchDetail,
   ToolCallWebSearchStatus,
 } from "@buli/contracts";
@@ -14,7 +14,7 @@ export function createProviderTextChunkEvent(text: string): ProviderStreamEvent 
   return { type: "text_chunk", text };
 }
 
-export function createProviderToolCallRequestedEvent(toolCallId: string, toolCallRequest: AssistantToolCallRequest): ProviderStreamEvent {
+export function createProviderToolCallRequestedEvent(toolCallId: string, toolCallRequest: ToolCallRequest): ProviderStreamEvent {
   return { type: "tool_call_requested", toolCallId, toolCallRequest };
 }
 

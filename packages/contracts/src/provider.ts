@@ -1,12 +1,88 @@
 import { z } from "zod";
 import { PlanStepSchema } from "./planProposal.ts";
-import type { AssistantToolRequestName } from "./toolCatalog.ts";
 import { AssistantMessageUrlCitationSchema } from "./assistantMessageCitation.ts";
 import { ToolCallWebSearchDetailSchema, ToolCallWebSearchStatusSchema } from "./toolCallDetail.ts";
-import { AssistantToolCallRequestSchema } from "./toolCallRequest.ts";
+import { CustomToolNameSchema, ToolCallRequestSchema } from "./toolCallRequest.ts";
+import { ASSISTANT_TOOL_REQUEST_NAMES } from "./toolCatalog.ts";
 
 export const ReasoningEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]);
-export type ProviderAvailableToolName = AssistantToolRequestName;
+export type ProviderAvailableToolName = string;
+
+export type ProviderToolJsonSchemaTypeName = "string" | "integer" | "number" | "object" | "array" | "boolean" | "null";
+
+export type ProviderToolParameterProperty = {
+  readonly type?: ProviderToolJsonSchemaTypeName | readonly ProviderToolJsonSchemaTypeName[] | undefined;
+  readonly description?: string | undefined;
+  readonly minimum?: number | undefined;
+  readonly maximum?: number | undefined;
+  readonly maxItems?: number | undefined;
+  readonly maxLength?: number | undefined;
+  readonly minItems?: number | undefined;
+  readonly enum?: readonly string[] | undefined;
+  readonly pattern?: string | undefined;
+  readonly items?: ProviderToolParameterProperty | undefined;
+  readonly properties?: Readonly<Record<string, ProviderToolParameterProperty>> | undefined;
+  readonly required?: readonly string[] | undefined;
+  readonly additionalProperties?: false | undefined;
+  readonly anyOf?: readonly ProviderToolParameterProperty[] | undefined;
+};
+
+export type ProviderToolParameters = {
+  readonly type: "object";
+  readonly properties: Readonly<Record<string, ProviderToolParameterProperty>>;
+  readonly required: readonly string[];
+  readonly additionalProperties: false;
+};
+
+export const ProviderToolJsonSchemaTypeNameSchema = z.enum(["string", "integer", "number", "object", "array", "boolean", "null"]);
+
+export const ProviderToolParameterPropertySchema: z.ZodType<ProviderToolParameterProperty> = z.lazy(() =>
+  z
+    .object({
+      type: z.union([
+        ProviderToolJsonSchemaTypeNameSchema,
+        z.array(ProviderToolJsonSchemaTypeNameSchema).min(1),
+      ]).optional(),
+      description: z.string().min(1).optional(),
+      minimum: z.number().optional(),
+      maximum: z.number().optional(),
+      maxItems: z.number().int().nonnegative().optional(),
+      maxLength: z.number().int().nonnegative().optional(),
+      minItems: z.number().int().nonnegative().optional(),
+      enum: z.array(z.string()).min(1).optional(),
+      pattern: z.string().min(1).optional(),
+      items: ProviderToolParameterPropertySchema.optional(),
+      properties: z.record(z.string().min(1), ProviderToolParameterPropertySchema).optional(),
+      required: z.array(z.string().min(1)).optional(),
+      additionalProperties: z.literal(false).optional(),
+      anyOf: z.array(ProviderToolParameterPropertySchema).min(1).optional(),
+    })
+    .strict()
+);
+
+export const ProviderToolParametersSchema = z
+  .object({
+    type: z.literal("object"),
+    properties: z.record(z.string().min(1), ProviderToolParameterPropertySchema),
+    required: z.array(z.string().min(1)),
+    additionalProperties: z.literal(false),
+  })
+  .strict();
+
+export const ProviderToolDefinitionSchema = z
+  .object({
+    toolName: CustomToolNameSchema,
+    description: z.string().min(1),
+    parameters: ProviderToolParametersSchema,
+  })
+  .strict();
+
+export const ProviderBuiltInToolDescriptionOverlaySchema = z
+  .object({
+    toolName: z.enum(ASSISTANT_TOOL_REQUEST_NAMES),
+    additionalDescriptionParagraphs: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
 
 export const AvailableAssistantModelSchema = z
   .object({
@@ -86,14 +162,14 @@ export const ProviderToolCallRequestedEventSchema = z
   .object({
     type: z.literal("tool_call_requested"),
     toolCallId: z.string().min(1),
-    toolCallRequest: AssistantToolCallRequestSchema,
+    toolCallRequest: ToolCallRequestSchema,
   })
   .strict();
 
 export const ProviderRequestedToolCallSchema = z
   .object({
     toolCallId: z.string().min(1),
-    toolCallRequest: AssistantToolCallRequestSchema,
+    toolCallRequest: ToolCallRequestSchema,
   })
   .strict();
 
@@ -161,6 +237,8 @@ export const ProviderStreamEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
+export type ProviderToolDefinition = z.infer<typeof ProviderToolDefinitionSchema>;
+export type ProviderBuiltInToolDescriptionOverlay = z.infer<typeof ProviderBuiltInToolDescriptionOverlaySchema>;
 export type AvailableAssistantModel = z.infer<typeof AvailableAssistantModelSchema>;
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type ProviderTextChunkEvent = z.infer<typeof ProviderTextChunkEventSchema>;

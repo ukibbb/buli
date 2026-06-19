@@ -4,6 +4,7 @@ import {
   AssistantMessagePartUpdatedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
+  isCustomToolCallDetail,
   isFileMutationToolCallRequest as isContractFileMutationToolCallRequest,
   type AssistantOperatingMode,
   type AssistantResponseEvent,
@@ -14,7 +15,7 @@ import {
 } from "@buli/contracts";
 import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { ProviderConversationTurn } from "./provider.ts";
-import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
+import type { PrimaryAssistantAgentDefinition } from "./assistantAgentRegistry.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
@@ -97,6 +98,7 @@ export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   toolCallId: string;
   fileMutationToolCallRequest: FileMutationToolCallRequest;
   assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
   workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
@@ -113,8 +115,8 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
 
-  if (isReadOnlyAssistantOperatingMode(input.assistantOperatingMode)) {
-    const denialText = `${formatAssistantOperatingModeName(input.assistantOperatingMode)} is read-only, so this ${input.fileMutationToolCallRequest.toolName} tool call was not applied.`;
+  if (input.primaryAssistantAgent.isReadOnly) {
+    const denialText = `${input.primaryAssistantAgent.displayName} is read-only, so this ${input.fileMutationToolCallRequest.toolName} tool call was not applied.`;
     input.toolResultSessionRecorder.appendDeniedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: startedToolCallDetail,
@@ -405,6 +407,10 @@ function createFileMutationCodebaseRefreshMemoryDiagnosticFields(input: {
 }
 
 function listChangedFilePathsFromFileMutationToolCallDetail(toolCallDetail: ToolCallDetail): readonly string[] {
+  if (isCustomToolCallDetail(toolCallDetail)) {
+    return [];
+  }
+
   switch (toolCallDetail.toolName) {
     case "edit":
       return [toolCallDetail.editedFilePath];

@@ -5,8 +5,37 @@
 // rendering affordances the design depends on.
 import { z } from "zod";
 import { AssistantSubagentNameSchema } from "./assistantAgent.ts";
+import { JsonObjectSchema, JsonValueSchema } from "./jsonValue.ts";
 import { WorkflowHandoffKindSchema } from "./workflowHandoff.ts";
 import { WorkspacePatchFileDiffSchema } from "./workspacePatch.ts";
+
+const BUILT_IN_TOOL_CALL_DETAIL_NAMES = [
+  "bash",
+  "read",
+  "glob",
+  "grep",
+  "locate_codebase_symbols",
+  "edit",
+  "edit_many",
+  "patch",
+  "patch_many",
+  "write",
+  "task",
+  "skill",
+  "record_workflow_handoff",
+  "todowrite",
+  "web_search",
+] as const;
+const BUILT_IN_TOOL_CALL_DETAIL_NAME_SET: ReadonlySet<string> = new Set(BUILT_IN_TOOL_CALL_DETAIL_NAMES);
+
+export const CustomToolCallDetailNameSchema = z.string().min(1).superRefine((toolName, context) => {
+  if (BUILT_IN_TOOL_CALL_DETAIL_NAME_SET.has(toolName)) {
+    context.addIssue({
+      code: "custom",
+      message: `Custom tool detail name cannot collide with built-in detail: ${toolName}`,
+    });
+  }
+});
 
 export const SyntaxHighlightSpanStyleSchema = z.enum([
   "keyword",
@@ -294,6 +323,18 @@ export const ToolCallLocateCodebaseSymbolsDetailSchema = z
   .strict();
 export type ToolCallLocateCodebaseSymbolsDetail = z.infer<typeof ToolCallLocateCodebaseSymbolsDetailSchema>;
 
+export const CustomToolCallDetailSchema = z
+  .object({
+    toolName: CustomToolCallDetailNameSchema,
+    toolDisplayName: z.string().min(1).optional(),
+    toolArgumentsJson: JsonObjectSchema.optional(),
+    toolResultJson: JsonValueSchema.optional(),
+    toolResultSummary: z.string().min(1).optional(),
+  })
+  .strict();
+export type CustomToolCallDetailName = z.infer<typeof CustomToolCallDetailNameSchema>;
+export type CustomToolCallDetail = z.infer<typeof CustomToolCallDetailSchema>;
+
 export const SubagentChildTaskToolCallDetailSchema = z
   .object({
     toolName: z.literal("task"),
@@ -307,7 +348,7 @@ export type SubagentChildTaskToolCallDetail = z.infer<typeof SubagentChildTaskTo
 export const SubagentChildToolCallStatusSchema = z.enum(["running", "completed", "failed", "denied", "interrupted"]);
 export type SubagentChildToolCallStatus = z.infer<typeof SubagentChildToolCallStatusSchema>;
 
-export const SubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName", [
+export const BuiltInSubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
@@ -320,6 +361,10 @@ export const SubagentChildToolCallDetailSchema = z.discriminatedUnion("toolName"
   ToolCallWriteDetailSchema,
   ToolCallSkillDetailSchema,
   SubagentChildTaskToolCallDetailSchema,
+]);
+export const SubagentChildToolCallDetailSchema = z.union([
+  BuiltInSubagentChildToolCallDetailSchema,
+  CustomToolCallDetailSchema,
 ]);
 export type SubagentChildToolCallDetail = z.infer<typeof SubagentChildToolCallDetailSchema>;
 
@@ -368,7 +413,7 @@ export const ToolCallTaskDetailSchema = z
   .strict();
 export type ToolCallTaskDetail = z.infer<typeof ToolCallTaskDetailSchema>;
 
-export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
+export const BuiltInToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallReadDetailSchema,
   ToolCallGrepDetailSchema,
   ToolCallGlobDetailSchema,
@@ -384,5 +429,10 @@ export const ToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallSkillDetailSchema,
   ToolCallRecordWorkflowHandoffDetailSchema,
   ToolCallLocateCodebaseSymbolsDetailSchema,
+]);
+export type BuiltInToolCallDetail = z.infer<typeof BuiltInToolCallDetailSchema>;
+export const ToolCallDetailSchema = z.union([
+  BuiltInToolCallDetailSchema,
+  CustomToolCallDetailSchema,
 ]);
 export type ToolCallDetail = z.infer<typeof ToolCallDetailSchema>;

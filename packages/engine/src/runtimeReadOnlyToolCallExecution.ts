@@ -4,6 +4,7 @@ import {
   AssistantMessagePartUpdatedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
+  isCustomToolCallDetail,
   isWorkspaceInspectionToolCallRequest,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
@@ -111,7 +112,7 @@ export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallsInput =
 type PendingAutoApprovedReadOnlyToolCallExecution = AutoApprovedReadOnlyRequestedToolCall & {
   toolCallPartId: string;
   toolCallStartedAtMs: number;
-  startedToolCallDetail: ReturnType<typeof createStartedToolCallDetailFromRequest>;
+  startedToolCallDetail: ToolCallDetail;
 };
 
 type FulfilledAutoApprovedReadOnlyToolCallExecution = {
@@ -546,10 +547,12 @@ function appendSameTurnReadOverlapAdvisoryForProviderVisibleReadEvidence(input: 
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
   sameTurnReadCoverageTracker?: SameTurnReadCoverageTracker | undefined;
 }): string {
+  const toolCallDetail = input.toolCallOutcome.toolCallDetail;
   if (
     !input.sameTurnReadCoverageTracker ||
     input.toolCallOutcome.outcomeKind !== "completed" ||
-    input.toolCallOutcome.toolCallDetail.toolName !== "read" ||
+    isCustomToolCallDetail(toolCallDetail) ||
+    toolCallDetail.toolName !== "read" ||
     input.providerVisibleBaseToolResultText !== input.toolCallOutcome.toolResultText ||
     isDuplicateReadOnlyToolResultText(input.toolCallOutcome.toolResultText)
   ) {
@@ -558,11 +561,11 @@ function appendSameTurnReadOverlapAdvisoryForProviderVisibleReadEvidence(input: 
 
   const readOverlapAdvisory = input.sameTurnReadCoverageTracker.createReadOverlapAdvisory({
     toolCallId: input.pendingToolCallExecution.toolCallId,
-    toolCallDetail: input.toolCallOutcome.toolCallDetail,
+    toolCallDetail,
   });
   input.sameTurnReadCoverageTracker.recordProviderVisibleReadCoverage({
     toolCallId: input.pendingToolCallExecution.toolCallId,
-    toolCallDetail: input.toolCallOutcome.toolCallDetail,
+    toolCallDetail,
   });
 
   if (!readOverlapAdvisory) {
@@ -628,6 +631,10 @@ function formatReadOnlyToolRequestMetadataLines(toolCallRequest: AutoApprovedRea
 }
 
 function formatReadOnlyToolDetailMetadataLines(toolCallDetail: ToolCallDetail): string[] {
+  if (isCustomToolCallDetail(toolCallDetail)) {
+    return [`tool_name: ${toolCallDetail.toolName}`];
+  }
+
   switch (toolCallDetail.toolName) {
     case "read":
       return [

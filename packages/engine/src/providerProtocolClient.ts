@@ -613,6 +613,12 @@ function createProviderProtocolTurnRequest(input: ProviderConversationTurnReques
     ...(input.selectedReasoningEffort !== undefined ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
     ...(input.promptCacheKey !== undefined ? { promptCacheKey: input.promptCacheKey } : {}),
     ...(input.availableToolNames !== undefined ? { availableToolNames: [...input.availableToolNames] } : {}),
+    ...(input.availableToolDefinitions !== undefined
+      ? { availableToolDefinitions: [...input.availableToolDefinitions] }
+      : {}),
+    ...(input.builtInToolDescriptionOverlays !== undefined
+      ? { builtInToolDescriptionOverlays: [...input.builtInToolDescriptionOverlays] }
+      : {}),
   };
 }
 

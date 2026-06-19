@@ -7,12 +7,15 @@ import type {
   ProviderAvailableToolName,
   ProviderRequestedToolCall,
   ProviderStreamEvent,
+  ProviderBuiltInToolDescriptionOverlay,
+  ProviderToolDefinition,
   ReasoningEffort,
   TokenUsage,
   ToolCallRequest,
 } from "@buli/contracts";
 import {
   calculateContextTokensUsedFromTokenUsage,
+  isCustomToolCallRequest,
   lookupModelContextWindowTokenLimitsForModel,
   summarizeWorkflowHandoff,
 } from "@buli/contracts";
@@ -45,6 +48,7 @@ import {
   type OpenAiResponsesHttpRequestTemplate,
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "./openAiResponsesRequest.ts";
+import type { OpenAiModelBehaviorProfile } from "./openAiModelBehaviorProfile.ts";
 import { summarizeOpenAiWorkingSetVisibilityForDiagnostics } from "./openAiWorkingSetVisibilityDiagnostics.ts";
 import {
   OPENAI_CROSS_STEP_TOOL_RESULT_REFERENCES_ENV_VAR,
@@ -197,8 +201,11 @@ export class OpenAiProviderConversationTurn {
   readonly loadRequestHeaders: () => Promise<Headers>;
   readonly selectedModelId: string;
   readonly selectedReasoningEffort: ReasoningEffort | undefined;
+  readonly modelBehaviorProfile: OpenAiModelBehaviorProfile | undefined;
   readonly promptCacheKey: string | undefined;
   readonly availableToolNames: readonly ProviderAvailableToolName[] | undefined;
+  readonly availableToolDefinitions: readonly ProviderToolDefinition[] | undefined;
+  readonly builtInToolDescriptionOverlays: readonly ProviderBuiltInToolDescriptionOverlay[] | undefined;
   readonly hostedWebSearch: OpenAiHostedWebSearchConfiguration | undefined;
   readonly abortSignal: AbortSignal | undefined;
   readonly systemPromptText: string;
@@ -234,8 +241,11 @@ export class OpenAiProviderConversationTurn {
     loadRequestHeaders: () => Promise<Headers>;
     selectedModelId: string;
     selectedReasoningEffort?: ReasoningEffort;
+    modelBehaviorProfile?: OpenAiModelBehaviorProfile | undefined;
     promptCacheKey?: string;
     availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+    availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
+    builtInToolDescriptionOverlays?: readonly ProviderBuiltInToolDescriptionOverlay[] | undefined;
     hostedWebSearch?: OpenAiHostedWebSearchConfiguration | undefined;
     abortSignal?: AbortSignal;
     systemPromptText: string;
@@ -263,8 +273,11 @@ export class OpenAiProviderConversationTurn {
     this.loadRequestHeaders = input.loadRequestHeaders;
     this.selectedModelId = input.selectedModelId;
     this.selectedReasoningEffort = input.selectedReasoningEffort;
+    this.modelBehaviorProfile = input.modelBehaviorProfile;
     this.promptCacheKey = input.promptCacheKey;
     this.availableToolNames = input.availableToolNames;
+    this.availableToolDefinitions = input.availableToolDefinitions;
+    this.builtInToolDescriptionOverlays = input.builtInToolDescriptionOverlays;
     this.hostedWebSearch = input.hostedWebSearch;
     this.abortSignal = input.abortSignal;
     this.systemPromptText = input.systemPromptText;
@@ -297,8 +310,13 @@ export class OpenAiProviderConversationTurn {
     this.openAiResponsesRequestTemplate = createOpenAiResponsesHttpRequestTemplate({
       selectedModelId: input.selectedModelId,
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      ...(input.modelBehaviorProfile ? { modelBehaviorProfile: input.modelBehaviorProfile } : {}),
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
       ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),
+      ...(input.availableToolDefinitions ? { availableToolDefinitions: input.availableToolDefinitions } : {}),
+      ...(input.builtInToolDescriptionOverlays
+        ? { builtInToolDescriptionOverlays: input.builtInToolDescriptionOverlays }
+        : {}),
       ...(input.hostedWebSearch ? { hostedWebSearch: input.hostedWebSearch } : {}),
       systemPromptText: input.systemPromptText,
     });
@@ -579,6 +597,7 @@ export class OpenAiProviderConversationTurn {
           diagnosticLogger: this.diagnosticLogger,
           abortSignal: this.abortSignal,
           idleTimeoutMilliseconds: this.responseStepStreamIdleTimeoutMilliseconds,
+          availableToolDefinitions: this.availableToolDefinitions,
         })[Symbol.asyncIterator]();
         while (true) {
           const nextStepItem = await openAiStepEventIterator.next();
@@ -1206,6 +1225,13 @@ function appendRepeatedExactToolCallFeedbackToToolResultText(input: Readonly<{
 }
 
 function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest): BuliDiagnosticLogFields {
+  if (isCustomToolCallRequest(toolCallRequest)) {
+    return {
+      toolName: toolCallRequest.toolName,
+      customArgumentKeyCount: Object.keys(toolCallRequest.toolArgumentsJson).length,
+    };
+  }
+
   switch (toolCallRequest.toolName) {
     case "bash":
       return summarizeOpenAiToolCallRequestForDiagnostics(toolCallRequest);

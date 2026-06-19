@@ -1,6 +1,8 @@
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
   AssistantToolCallRequestSchema,
+  CustomToolCallRequestSchema,
+  JsonObjectSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
   MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
@@ -13,6 +15,7 @@ import {
   MAX_WORKFLOW_HANDOFF_LIST_ITEM_COUNT,
   MAX_WORKFLOW_HANDOFF_TEXT_LENGTH,
   MAX_WORKFLOW_HANDOFF_VERIFICATION_COMMAND_COUNT,
+  ProviderToolDefinitionSchema,
   isAssistantSubagentName,
   isAssistantToolRequestName,
   SKILL_NAME_PATTERN_TEXT,
@@ -20,39 +23,22 @@ import {
   type AssistantToolCallRequest,
   type AssistantSubagentName,
   type AssistantToolRequestName,
+  type ProviderToolDefinition,
+  type ProviderToolParameterProperty,
+  type ProviderToolParameters,
   type ProviderAvailableToolName,
+  type ProviderBuiltInToolDescriptionOverlay,
+  type ToolCallRequest,
   type ToolCallRequestByName,
 } from "@buli/contracts";
 import type { ZodIssue } from "zod";
 import type { OpenAiHostedWebSearchToolDefinition } from "./openAiHostedWebSearchTool.ts";
 
-type OpenAiJsonSchemaTypeName = "string" | "integer" | "object" | "array" | "boolean" | "null";
+type OpenAiProviderFunctionName = string;
 
-type OpenAiProviderFunctionName = AssistantToolRequestName;
+type OpenAiToolParameterProperty = ProviderToolParameterProperty;
 
-type OpenAiToolParameterProperty = {
-  readonly type?: OpenAiJsonSchemaTypeName | readonly OpenAiJsonSchemaTypeName[];
-  readonly description: string;
-  readonly minimum?: number;
-  readonly maximum?: number;
-  readonly maxItems?: number;
-  readonly maxLength?: number;
-  readonly minItems?: number;
-  readonly enum?: readonly string[];
-  readonly pattern?: string;
-  readonly items?: OpenAiToolParameterProperty;
-  readonly properties?: Record<string, OpenAiToolParameterProperty>;
-  readonly required?: readonly string[];
-  readonly additionalProperties?: false;
-  readonly anyOf?: readonly OpenAiToolParameterProperty[];
-};
-
-type OpenAiToolParameters = {
-  readonly type: "object";
-  readonly properties: Record<string, OpenAiToolParameterProperty>;
-  readonly required: readonly string[];
-  readonly additionalProperties: false;
-};
+type OpenAiToolParameters = ProviderToolParameters;
 
 export type OpenAiFunctionToolDefinition<FunctionName extends OpenAiProviderFunctionName = OpenAiProviderFunctionName> = {
   readonly type: "function";
@@ -71,7 +57,7 @@ type JsonObjectRecord = {
 export type OpenAiExecutableToolCallIntent = {
   readonly intentKind: "executable_tool";
   readonly functionCallId: string;
-  readonly toolCallRequest: AssistantToolCallRequest;
+  readonly toolCallRequest: ToolCallRequest;
 };
 
 export type OpenAiInvalidFunctionCallIntent = {
@@ -773,17 +759,58 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
 
 export function createOpenAiToolDefinitions(input: {
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
+  builtInToolDescriptionOverlays?: readonly ProviderBuiltInToolDescriptionOverlay[] | undefined;
 } = {}): OpenAiFunctionToolDefinition[] {
   const toolNamesInProviderOrder = input.availableToolNames ?? ASSISTANT_TOOL_REQUEST_NAMES;
 
-  return toolNamesInProviderOrder
-    .map((toolName) => openAiToolAdapterByName[toolName].definition);
+  const builtInToolDefinitions = toolNamesInProviderOrder.flatMap((toolName) =>
+    isAssistantToolRequestName(toolName)
+      ? [applyBuiltInToolDescriptionOverlays({
+        definition: openAiToolAdapterByName[toolName].definition,
+        builtInToolDescriptionOverlays: input.builtInToolDescriptionOverlays,
+      })]
+      : []
+  );
+  const customToolDefinitions = (input.availableToolDefinitions ?? []).map(
+    createOpenAiFunctionToolDefinitionFromProviderToolDefinition,
+  );
+
+  return [...builtInToolDefinitions, ...customToolDefinitions];
+}
+
+function applyBuiltInToolDescriptionOverlays<ToolName extends AssistantToolRequestName>(input: {
+  definition: OpenAiFunctionToolDefinition<ToolName>;
+  builtInToolDescriptionOverlays?: readonly ProviderBuiltInToolDescriptionOverlay[] | undefined;
+}): OpenAiFunctionToolDefinition<ToolName> {
+  const additionalDescriptionParagraphs = (input.builtInToolDescriptionOverlays ?? [])
+    .filter((builtInToolDescriptionOverlay) => builtInToolDescriptionOverlay.toolName === input.definition.name)
+    .flatMap((builtInToolDescriptionOverlay) => builtInToolDescriptionOverlay.additionalDescriptionParagraphs);
+  if (additionalDescriptionParagraphs.length === 0) {
+    return input.definition;
+  }
+
+  return {
+    ...input.definition,
+    description: appendDescriptionParagraphs({
+      description: input.definition.description,
+      additionalDescriptionParagraphs,
+    }),
+  };
+}
+
+function appendDescriptionParagraphs(input: {
+  description: string;
+  additionalDescriptionParagraphs: readonly string[];
+}): string {
+  return [input.description, ...input.additionalDescriptionParagraphs].join("\n\n");
 }
 
 export function createOpenAiProviderFunctionCallIntent(input: {
   functionCallId: string;
   functionName: string;
   argumentsText: string;
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
 }): OpenAiProviderFunctionCallIntent {
   try {
     return createValidOpenAiProviderFunctionCallIntent(input);
@@ -801,6 +828,7 @@ function createValidOpenAiProviderFunctionCallIntent(input: {
   functionCallId: string;
   functionName: string;
   argumentsText: string;
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
 }): OpenAiProviderFunctionCallIntent {
   const parsedArguments = parseOpenAiFunctionArguments({
     functionName: input.functionName,
@@ -817,25 +845,63 @@ function createValidOpenAiProviderFunctionCallIntent(input: {
     };
   }
 
+  const customProviderToolDefinition = input.availableToolDefinitions?.find(
+    (providerToolDefinition) => providerToolDefinition.toolName === input.functionName,
+  );
+  if (customProviderToolDefinition) {
+    return {
+      intentKind: "executable_tool",
+      functionCallId: input.functionCallId,
+      toolCallRequest: CustomToolCallRequestSchema.parse({
+        toolName: customProviderToolDefinition.toolName,
+        toolArgumentsJson: JsonObjectSchema.parse(parsedArguments),
+      }),
+    };
+  }
+
   throw new Error(`Unsupported function requested by OpenAI: ${input.functionName}`);
 }
 
 export function createOpenAiToolCallRequest(input: {
   toolName: string;
   argumentsText: string;
-}): AssistantToolCallRequest {
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
+}): ToolCallRequest {
   const parsedArguments = parseOpenAiFunctionArguments({
     functionName: input.toolName,
     argumentsText: input.argumentsText,
   });
-  if (!isAssistantToolRequestName(input.toolName)) {
+  if (isAssistantToolRequestName(input.toolName)) {
+    return parseOpenAiToolCallRequestContract({
+      toolName: input.toolName,
+      toolCallRequest: openAiToolAdapterByName[input.toolName].parseToolCallRequest(parsedArguments),
+    });
+  }
+
+  const customProviderToolDefinition = input.availableToolDefinitions?.find(
+    (providerToolDefinition) => providerToolDefinition.toolName === input.toolName,
+  );
+  if (!customProviderToolDefinition) {
     throw new Error(`Unsupported tool requested by OpenAI: ${input.toolName}`);
   }
 
-  return parseOpenAiToolCallRequestContract({
-    toolName: input.toolName,
-    toolCallRequest: openAiToolAdapterByName[input.toolName].parseToolCallRequest(parsedArguments),
+  return CustomToolCallRequestSchema.parse({
+    toolName: customProviderToolDefinition.toolName,
+    toolArgumentsJson: JsonObjectSchema.parse(parsedArguments),
   });
+}
+
+function createOpenAiFunctionToolDefinitionFromProviderToolDefinition(
+  providerToolDefinition: ProviderToolDefinition,
+): OpenAiFunctionToolDefinition {
+  const parsedProviderToolDefinition = ProviderToolDefinitionSchema.parse(providerToolDefinition);
+  return {
+    type: "function",
+    name: parsedProviderToolDefinition.toolName,
+    description: parsedProviderToolDefinition.description,
+    parameters: parsedProviderToolDefinition.parameters,
+    strict: true,
+  };
 }
 
 function parseOpenAiToolCallRequestContract(input: {

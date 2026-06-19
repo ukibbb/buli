@@ -3,6 +3,8 @@ import type {
   BuliDiagnosticLogger,
   ConversationSessionEntry,
   ProviderAvailableToolName,
+  ProviderBuiltInToolDescriptionOverlay,
+  ProviderToolDefinition,
   ReasoningEffort,
 } from "@buli/contracts";
 import { OPENAI_CODEX_API_ENDPOINT } from "../auth/constants.ts";
@@ -15,6 +17,10 @@ import {
   DEFAULT_OPENAI_HOSTED_WEB_SEARCH_CONFIGURATION,
   type OpenAiHostedWebSearchConfiguration,
 } from "./openAiHostedWebSearchTool.ts";
+import {
+  type OpenAiModelBehaviorProfileResolver,
+  resolveDefaultOpenAiModelBehaviorProfile,
+} from "./openAiModelBehaviorProfile.ts";
 import { createOpenAiHttpRequestError, getOpenAiRequestId } from "./httpResponseDiagnostics.ts";
 import { requestOpenAiHttpResponseWithRetries } from "./openAiHttpRetry.ts";
 import { OpenAiRateLimitCoordinator } from "./openAiRateLimitCoordinator.ts";
@@ -33,6 +39,8 @@ export type OpenAiConversationTurnRequest = {
   selectedReasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
+  builtInToolDescriptionOverlays?: readonly ProviderBuiltInToolDescriptionOverlay[] | undefined;
   abortSignal?: AbortSignal;
 };
 
@@ -81,6 +89,7 @@ export class OpenAiProvider {
   readonly fetchImpl: typeof fetch;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly hostedWebSearch: OpenAiHostedWebSearchConfiguration | undefined;
+  readonly modelBehaviorProfileResolver: OpenAiModelBehaviorProfileResolver;
   readonly rateLimitCoordinator: OpenAiRateLimitCoordinator;
   private cachedOpenAiAuth: OpenAiAuthInfo | undefined;
   private pendingOpenAiAuthLoad: Promise<OpenAiAuthInfo> | undefined;
@@ -91,6 +100,7 @@ export class OpenAiProvider {
     fetchImpl?: typeof fetch;
     maximumConcurrentResponseStepStreams?: number | undefined;
     hostedWebSearch?: OpenAiHostedWebSearchConfiguration | undefined;
+    modelBehaviorProfileResolver?: OpenAiModelBehaviorProfileResolver | undefined;
     rateLimitCoordinator?: OpenAiRateLimitCoordinator | undefined;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   } = {}) {
@@ -99,6 +109,7 @@ export class OpenAiProvider {
     this.fetchImpl = input.fetchImpl ?? fetch;
     this.diagnosticLogger = input.diagnosticLogger;
     this.hostedWebSearch = input.hostedWebSearch ?? DEFAULT_OPENAI_HOSTED_WEB_SEARCH_CONFIGURATION;
+    this.modelBehaviorProfileResolver = input.modelBehaviorProfileResolver ?? resolveDefaultOpenAiModelBehaviorProfile;
     this.rateLimitCoordinator = input.rateLimitCoordinator ?? new OpenAiRateLimitCoordinator({
       maximumConcurrentResponseStepStreams: input.maximumConcurrentResponseStepStreams,
       diagnosticLogger: this.diagnosticLogger,
@@ -164,6 +175,7 @@ export class OpenAiProvider {
     const hostedWebSearchForTurn = input.providerTurnKind === "conversation_compaction"
       ? undefined
       : this.hostedWebSearch;
+    const modelBehaviorProfile = this.modelBehaviorProfileResolver({ selectedModelId: input.selectedModelId });
 
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "provider_turn.created", {
       conversationTurnId: input.conversationTurnId ?? null,
@@ -215,8 +227,13 @@ export class OpenAiProvider {
       ...(input.compactionSource ? { compactionSource: input.compactionSource } : {}),
       ...(input.conversationTurnId ? { conversationTurnId: input.conversationTurnId } : {}),
       ...(input.selectedReasoningEffort ? { selectedReasoningEffort: input.selectedReasoningEffort } : {}),
+      modelBehaviorProfile,
       ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
       ...(input.availableToolNames ? { availableToolNames: input.availableToolNames } : {}),
+      ...(input.availableToolDefinitions ? { availableToolDefinitions: input.availableToolDefinitions } : {}),
+      ...(input.builtInToolDescriptionOverlays
+        ? { builtInToolDescriptionOverlays: input.builtInToolDescriptionOverlays }
+        : {}),
       ...(hostedWebSearchForTurn ? { hostedWebSearch: hostedWebSearchForTurn } : {}),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       maxResponseStepsPerTurn: DEFAULT_OPENAI_MAX_RESPONSE_STEPS_PER_TURN,

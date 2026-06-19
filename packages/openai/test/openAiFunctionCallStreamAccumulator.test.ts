@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { ProviderToolDefinition } from "@buli/contracts";
 import { OpenAiFunctionCallStreamAccumulator } from "../src/provider/openAiFunctionCallStreamAccumulator.ts";
 import { readOpenAiFunctionCallOutputItem } from "../src/provider/openAiResponseObjects.ts";
 
@@ -21,6 +22,17 @@ function readFunctionCallItem(input: {
 
   return functionCallItem;
 }
+
+const workspaceSummaryProviderToolDefinition = {
+  toolName: "workspace_summary",
+  description: "Summarize a workspace topic.",
+  parameters: {
+    type: "object",
+    properties: { topic: { type: "string" } },
+    required: ["topic"],
+    additionalProperties: false,
+  },
+} satisfies ProviderToolDefinition;
 
 test("OpenAiFunctionCallStreamAccumulator waits for output item metadata before recording buffered deltas", () => {
   const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator();
@@ -117,6 +129,58 @@ test("OpenAiFunctionCallStreamAccumulator records malformed tool calls as invali
       functionCallId: "call_1",
       functionName: "read",
       invalidCallExplanation: expect.stringContaining("OpenAI function call for read has malformed JSON arguments"),
+    },
+  ]);
+});
+
+test("OpenAiFunctionCallStreamAccumulator records registered custom tool calls", () => {
+  const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator({
+    availableToolDefinitions: [workspaceSummaryProviderToolDefinition],
+  });
+
+  functionCallStreamAccumulator.observeFunctionCallOutputItem({
+    functionCallItem: readFunctionCallItem({
+      itemId: "fc_custom_1",
+      toolCallId: "call_custom_1",
+      functionName: "workspace_summary",
+      argumentsText: '{"topic":"runtime","includeTests":true}',
+    }),
+    shouldRecordRequestedToolCallIfReady: true,
+  });
+
+  expect(functionCallStreamAccumulator.listPendingRequestedToolCalls()).toEqual([
+    {
+      toolCallId: "call_custom_1",
+      toolCallRequest: {
+        toolName: "workspace_summary",
+        toolArgumentsJson: { topic: "runtime", includeTests: true },
+      },
+    },
+  ]);
+});
+
+test("OpenAiFunctionCallStreamAccumulator rejects unknown custom function calls", () => {
+  const functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator({
+    availableToolDefinitions: [workspaceSummaryProviderToolDefinition],
+  });
+
+  functionCallStreamAccumulator.observeFunctionCallOutputItem({
+    functionCallItem: readFunctionCallItem({
+      itemId: "fc_custom_unknown",
+      toolCallId: "call_custom_unknown",
+      functionName: "unknown_custom_tool",
+      argumentsText: '{"topic":"runtime"}',
+    }),
+    shouldRecordRequestedToolCallIfReady: true,
+  });
+
+  expect(functionCallStreamAccumulator.listPendingRequestedToolCalls()).toEqual([]);
+  expect(functionCallStreamAccumulator.listPendingProviderFunctionCallIntents()).toEqual([
+    {
+      intentKind: "invalid_function_call",
+      functionCallId: "call_custom_unknown",
+      functionName: "unknown_custom_tool",
+      invalidCallExplanation: "Unsupported function requested by OpenAI: unknown_custom_tool",
     },
   ]);
 });

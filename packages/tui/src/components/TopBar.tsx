@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { glyphs } from "./glyphs.ts";
 import { ChatScreenSlot } from "../slots/chatScreenSlots.tsx";
 
@@ -13,7 +13,7 @@ export const TOP_BAR_NATURAL_ROW_COUNT = 1;
 
 export type TopBarProps = {
   workingDirectoryPath: string;
-  accentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  accentColor: string;
 };
 
 export function TopBar(props: TopBarProps): ReactNode {

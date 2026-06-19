@@ -1,483 +1,510 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "oneOf": [
+  "anyOf": [
     {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "bash"
-        },
-        "shellCommand": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 20000
-        },
-        "commandDescription": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2000
-        },
-        "workingDirectoryPath": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "timeoutMilliseconds": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 600000
-        }
-      },
-      "required": [
-        "toolName",
-        "shellCommand",
-        "commandDescription"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "read"
-        },
-        "readTargetPath": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "offsetLineNumber": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
-        },
-        "maximumLineCount": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 600
-        },
-        "inspectionQuestion": {
-          "$ref": "#/$defs/__schema1"
-        }
-      },
-      "required": [
-        "toolName",
-        "readTargetPath"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "glob"
-        },
-        "globPattern": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "searchDirectoryPath": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "inspectionQuestion": {
-          "$ref": "#/$defs/__schema1"
-        }
-      },
-      "required": [
-        "toolName",
-        "globPattern"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "grep"
-        },
-        "regexPattern": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "searchPath": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "includeGlobPattern": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "contextLineCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 5
-        },
-        "inspectionQuestion": {
-          "$ref": "#/$defs/__schema1"
-        }
-      },
-      "required": [
-        "toolName",
-        "regexPattern"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "edit"
-        },
-        "editTargetPath": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "oldString": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000000
-        },
-        "newString": {
-          "type": "string",
-          "maxLength": 1000000
-        },
-        "replaceAll": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "toolName",
-        "editTargetPath",
-        "oldString",
-        "newString"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "edit_many"
-        },
-        "edits": {
-          "minItems": 1,
-          "maxItems": 100,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema2"
-          }
-        }
-      },
-      "required": [
-        "toolName",
-        "edits"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "patch"
-        },
-        "patchText": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000000,
-          "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
-        }
-      },
-      "required": [
-        "toolName",
-        "patchText"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "patch_many"
-        },
-        "patchText": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000000,
-          "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
-        }
-      },
-      "required": [
-        "toolName",
-        "patchText"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "write"
-        },
-        "writeTargetPath": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "fileContent": {
-          "type": "string",
-          "maxLength": 1000000
-        }
-      },
-      "required": [
-        "toolName",
-        "writeTargetPath",
-        "fileContent"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "task"
-        },
-        "subagentName": {
-          "type": "string",
-          "enum": [
-            "explore"
-          ]
-        },
-        "subagentDescription": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2000
-        },
-        "subagentPrompt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100000
-        }
-      },
-      "required": [
-        "toolName",
-        "subagentName",
-        "subagentDescription",
-        "subagentPrompt"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "skill"
-        },
-        "skillName": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64,
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-        }
-      },
-      "required": [
-        "toolName",
-        "skillName"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "record_workflow_handoff"
-        },
-        "workflowHandoff": {
-          "oneOf": [
-            {
-              "type": "object",
-              "properties": {
-                "handoffKind": {
-                  "type": "string",
-                  "const": "understanding"
-                },
-                "userGoal": {
-                  "$ref": "#/$defs/__schema3"
-                },
-                "currentUnderstanding": {
-                  "$ref": "#/$defs/__schema3"
-                },
-                "importantFindings": {
-                  "$ref": "#/$defs/__schema4"
-                },
-                "evidenceReferences": {
-                  "maxItems": 50,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/__schema5"
-                  }
-                },
-                "constraints": {
-                  "$ref": "#/$defs/__schema4"
-                },
-                "openQuestions": {
-                  "$ref": "#/$defs/__schema4"
-                },
-                "recommendedNextStep": {
-                  "$ref": "#/$defs/__schema3"
-                }
-              },
-              "required": [
-                "handoffKind",
-                "userGoal",
-                "currentUnderstanding",
-                "importantFindings",
-                "evidenceReferences",
-                "constraints",
-                "openQuestions",
-                "recommendedNextStep"
-              ],
-              "additionalProperties": false
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "bash"
             },
-            {
-              "type": "object",
-              "properties": {
-                "handoffKind": {
-                  "type": "string",
-                  "const": "plan"
-                },
-                "agreedGoal": {
-                  "$ref": "#/$defs/__schema3"
-                },
-                "currentStateSummary": {
-                  "$ref": "#/$defs/__schema3"
-                },
-                "chosenApproach": {
-                  "$ref": "#/$defs/__schema3"
-                },
-                "targetFiles": {
-                  "maxItems": 100,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/__schema6"
-                  }
-                },
-                "implementationSteps": {
-                  "$ref": "#/$defs/__schema4"
-                },
-                "verificationCommands": {
-                  "maxItems": 20,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/__schema7"
-                  }
-                },
-                "risks": {
-                  "$ref": "#/$defs/__schema4"
-                },
-                "isReadyForImplementation": {
-                  "type": "boolean"
-                },
-                "requiredPreApplyReads": {
-                  "$ref": "#/$defs/__schema4"
-                }
-              },
-              "required": [
-                "handoffKind",
-                "agreedGoal",
-                "currentStateSummary",
-                "chosenApproach",
-                "targetFiles",
-                "implementationSteps",
-                "verificationCommands",
-                "risks",
-                "isReadyForImplementation",
-                "requiredPreApplyReads"
-              ],
-              "additionalProperties": false
+            "shellCommand": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000
             },
-            {
-              "type": "object",
-              "properties": {
-                "handoffKind": {
-                  "type": "string",
-                  "const": "implementation"
-                },
-                "implementedOutcome": {
-                  "$ref": "#/$defs/__schema3"
-                },
-                "changedFiles": {
-                  "maxItems": 100,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/__schema8"
-                  }
-                },
-                "verificationResults": {
-                  "maxItems": 20,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/__schema9"
-                  }
-                },
-                "remainingIssues": {
-                  "$ref": "#/$defs/__schema4"
-                },
-                "recommendedNextStep": {
-                  "$ref": "#/$defs/__schema3"
-                }
-              },
-              "required": [
-                "handoffKind",
-                "implementedOutcome",
-                "changedFiles",
-                "verificationResults",
-                "remainingIssues",
-                "recommendedNextStep"
-              ],
-              "additionalProperties": false
+            "commandDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "workingDirectoryPath": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "timeoutMilliseconds": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 600000
             }
-          ]
+          },
+          "required": [
+            "toolName",
+            "shellCommand",
+            "commandDescription"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "read"
+            },
+            "readTargetPath": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "offsetLineNumber": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maximumLineCount": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 600
+            },
+            "inspectionQuestion": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
+          "required": [
+            "toolName",
+            "readTargetPath"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "glob"
+            },
+            "globPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "searchDirectoryPath": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "inspectionQuestion": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
+          "required": [
+            "toolName",
+            "globPattern"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "grep"
+            },
+            "regexPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "searchPath": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "includeGlobPattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "contextLineCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "inspectionQuestion": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
+          "required": [
+            "toolName",
+            "regexPattern"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "edit"
+            },
+            "editTargetPath": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "oldString": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000
+            },
+            "newString": {
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "replaceAll": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "toolName",
+            "editTargetPath",
+            "oldString",
+            "newString"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "edit_many"
+            },
+            "edits": {
+              "minItems": 1,
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema2"
+              }
+            }
+          },
+          "required": [
+            "toolName",
+            "edits"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "patch"
+            },
+            "patchText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000,
+              "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
+            }
+          },
+          "required": [
+            "toolName",
+            "patchText"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "patch_many"
+            },
+            "patchText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000000,
+              "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
+            }
+          },
+          "required": [
+            "toolName",
+            "patchText"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "write"
+            },
+            "writeTargetPath": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "fileContent": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "required": [
+            "toolName",
+            "writeTargetPath",
+            "fileContent"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "task"
+            },
+            "subagentName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+            },
+            "subagentDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "subagentPrompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000
+            }
+          },
+          "required": [
+            "toolName",
+            "subagentName",
+            "subagentDescription",
+            "subagentPrompt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "skill"
+            },
+            "skillName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            }
+          },
+          "required": [
+            "toolName",
+            "skillName"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "record_workflow_handoff"
+            },
+            "workflowHandoff": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "handoffKind": {
+                      "type": "string",
+                      "const": "understanding"
+                    },
+                    "userGoal": {
+                      "$ref": "#/$defs/__schema3"
+                    },
+                    "currentUnderstanding": {
+                      "$ref": "#/$defs/__schema3"
+                    },
+                    "importantFindings": {
+                      "$ref": "#/$defs/__schema4"
+                    },
+                    "evidenceReferences": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema5"
+                      }
+                    },
+                    "constraints": {
+                      "$ref": "#/$defs/__schema4"
+                    },
+                    "openQuestions": {
+                      "$ref": "#/$defs/__schema4"
+                    },
+                    "recommendedNextStep": {
+                      "$ref": "#/$defs/__schema3"
+                    }
+                  },
+                  "required": [
+                    "handoffKind",
+                    "userGoal",
+                    "currentUnderstanding",
+                    "importantFindings",
+                    "evidenceReferences",
+                    "constraints",
+                    "openQuestions",
+                    "recommendedNextStep"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "handoffKind": {
+                      "type": "string",
+                      "const": "plan"
+                    },
+                    "agreedGoal": {
+                      "$ref": "#/$defs/__schema3"
+                    },
+                    "currentStateSummary": {
+                      "$ref": "#/$defs/__schema3"
+                    },
+                    "chosenApproach": {
+                      "$ref": "#/$defs/__schema3"
+                    },
+                    "targetFiles": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema6"
+                      }
+                    },
+                    "implementationSteps": {
+                      "$ref": "#/$defs/__schema4"
+                    },
+                    "verificationCommands": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema7"
+                      }
+                    },
+                    "risks": {
+                      "$ref": "#/$defs/__schema4"
+                    },
+                    "isReadyForImplementation": {
+                      "type": "boolean"
+                    },
+                    "requiredPreApplyReads": {
+                      "$ref": "#/$defs/__schema4"
+                    }
+                  },
+                  "required": [
+                    "handoffKind",
+                    "agreedGoal",
+                    "currentStateSummary",
+                    "chosenApproach",
+                    "targetFiles",
+                    "implementationSteps",
+                    "verificationCommands",
+                    "risks",
+                    "isReadyForImplementation",
+                    "requiredPreApplyReads"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "handoffKind": {
+                      "type": "string",
+                      "const": "implementation"
+                    },
+                    "implementedOutcome": {
+                      "$ref": "#/$defs/__schema3"
+                    },
+                    "changedFiles": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema8"
+                      }
+                    },
+                    "verificationResults": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema9"
+                      }
+                    },
+                    "remainingIssues": {
+                      "$ref": "#/$defs/__schema4"
+                    },
+                    "recommendedNextStep": {
+                      "$ref": "#/$defs/__schema3"
+                    }
+                  },
+                  "required": [
+                    "handoffKind",
+                    "implementedOutcome",
+                    "changedFiles",
+                    "verificationResults",
+                    "remainingIssues",
+                    "recommendedNextStep"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "toolName",
+            "workflowHandoff"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "const": "locate_codebase_symbols"
+            },
+            "symbolNames": {
+              "minItems": 1,
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema10"
+              }
+            },
+            "filePaths": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          },
+          "required": [
+            "toolName",
+            "symbolNames"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "toolName",
-        "workflowHandoff"
-      ],
-      "additionalProperties": false
+      ]
     },
     {
       "type": "object",
       "properties": {
         "toolName": {
           "type": "string",
-          "const": "locate_codebase_symbols"
+          "minLength": 1
         },
-        "symbolNames": {
-          "minItems": 1,
-          "maxItems": 50,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema10"
-          }
-        },
-        "filePaths": {
-          "maxItems": 50,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema0"
+        "toolArgumentsJson": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema11"
           }
         }
       },
       "required": [
         "toolName",
-        "symbolNames"
+        "toolArgumentsJson"
       ],
       "additionalProperties": false
     }
@@ -647,6 +674,37 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 512
+    },
+    "__schema11": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema11"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema11"
+          }
+        }
+      ]
     }
   },
   "$id": "https://buli.dev/schemas/tool-call-request/v1.json",

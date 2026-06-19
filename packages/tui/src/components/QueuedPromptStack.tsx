@@ -1,5 +1,5 @@
 import type { QueuedChatAppPromptPreview } from "@buli/chat-app-controller";
-import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import type { ReactNode } from "react";
 
 const QUEUED_PROMPT_PREVIEW_LIMIT = 3;
@@ -20,7 +20,7 @@ const queuedPromptFrameBorderChars = {
 
 export type QueuedPromptStackProps = {
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
-  accentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  accentColor: string;
 };
 
 export function QueuedPromptStack(props: QueuedPromptStackProps): ReactNode {

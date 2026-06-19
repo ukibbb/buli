@@ -5,6 +5,7 @@ import {
   EXTERNAL_PROVIDER_PROTOCOL_CURRENT_PROMPT_PROFILE_ID,
   OPENAI_DEFAULT_CURRENT_PROMPT_PROFILE_ID,
   OPENAI_GPT_5_5_CURRENT_PROMPT_PROFILE_ID,
+  appendAssistantProviderModelPromptFragments,
   formatAssistantProviderModelPromptProfileFragmentBlock,
   resolveDefaultAssistantProviderModelPromptProfile,
   type AssistantProviderModelPromptProfile,
@@ -80,4 +81,58 @@ test("formats additive profile fragments with provider model metadata and escape
   expect(promptProfileFragmentBlock).toContain('provider="openai"');
   expect(promptProfileFragmentBlock).toContain('model="gpt-5.5"');
   expect(promptProfileFragmentBlock).toContain("Prefer concise output for &lt;small&gt; contexts &amp; keep safety.");
+});
+
+test("appends provider/model prompt fragments without mutating existing profile fields", () => {
+  const baselinePromptProfile = resolveDefaultAssistantProviderModelPromptProfile({
+    providerName: "openai",
+    selectedModelId: "small-local-model",
+  });
+  const promptProfile: AssistantProviderModelPromptProfile = {
+    ...baselinePromptProfile,
+    profileId: "small-model-overlay",
+    promptFragments: {
+      ...baselinePromptProfile.promptFragments,
+      primaryAssistantSystemPrompt: ["Existing primary fragment."],
+      explorerSystemPrompt: ["Existing explorer fragment."],
+    },
+  };
+
+  const appendedPromptProfile = appendAssistantProviderModelPromptFragments({
+    assistantProviderModelPromptProfile: promptProfile,
+    promptFragments: {
+      primaryAssistantSystemPrompt: ["Appended primary fragment."],
+      taskSubagentPrompt: ["Appended task fragment."],
+      conversationCompactionPrompt: ["Appended compaction prompt fragment."],
+    },
+  });
+
+  expect(appendedPromptProfile).not.toBe(promptProfile);
+  expect(appendedPromptProfile.profileId).toBe("small-model-overlay");
+  expect(appendedPromptProfile.providerName).toBe(promptProfile.providerName);
+  expect(appendedPromptProfile.selectedModelId).toBe(promptProfile.selectedModelId);
+  expect(appendedPromptProfile.stickyNotes).toBe(promptProfile.stickyNotes);
+  expect(appendedPromptProfile.workflowHandoff).toBe(promptProfile.workflowHandoff);
+  expect(appendedPromptProfile.promptFragments).toEqual({
+    primaryAssistantSystemPrompt: ["Existing primary fragment.", "Appended primary fragment."],
+    explorerSystemPrompt: ["Existing explorer fragment."],
+    taskSubagentPrompt: ["Appended task fragment."],
+    conversationCompactionSystemPrompt: [],
+    conversationCompactionPrompt: ["Appended compaction prompt fragment."],
+  });
+  expect(promptProfile.promptFragments.taskSubagentPrompt).toEqual([]);
+});
+
+test("keeps prompt profile reference when no provider/model prompt fragments are appended", () => {
+  const promptProfile = resolveDefaultAssistantProviderModelPromptProfile({
+    providerName: "openai",
+    selectedModelId: "gpt-5.5",
+  });
+
+  const appendedPromptProfile = appendAssistantProviderModelPromptFragments({
+    assistantProviderModelPromptProfile: promptProfile,
+    promptFragments: {},
+  });
+
+  expect(appendedPromptProfile).toBe(promptProfile);
 });

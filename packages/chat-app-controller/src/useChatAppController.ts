@@ -1,4 +1,5 @@
 import type {
+  AssistantPrimaryAgentDisplayMetadata,
   AvailableAssistantModel,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
@@ -55,6 +56,7 @@ import {
 export type ChatAppConversationTranscriptScrollDirection = "up" | "down";
 
 export type UseChatAppControllerInput = {
+  primaryAgentDisplayMetadata?: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined;
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort | undefined;
   selectedReasoningEffort?: ReasoningEffort | undefined;
@@ -536,6 +538,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     applyPromptDraftEditToChatApp,
     insertSummarizedPastedTextIntoChatAppPrompt,
   } = useChatAppKeyboardActions({
+    primaryAgentDisplayMetadata: input.primaryAgentDisplayMetadata,
     availableSkills: input.availableSkills,
     conversationSessionCompactionStatus,
     loadAvailableAssistantModels: input.loadAvailableAssistantModels,

@@ -1,7 +1,12 @@
 import { z } from "zod";
-import { ASSISTANT_TOOL_REQUEST_NAMES } from "./toolCatalog.ts";
 import { ConversationSessionEntrySchema } from "./conversationSessionEntry.ts";
-import { AvailableAssistantModelSchema, ProviderStreamEventSchema, ReasoningEffortSchema } from "./provider.ts";
+import {
+  AvailableAssistantModelSchema,
+  ProviderBuiltInToolDescriptionOverlaySchema,
+  ProviderStreamEventSchema,
+  ProviderToolDefinitionSchema,
+  ReasoningEffortSchema,
+} from "./provider.ts";
 import { ProviderTurnReplaySchema } from "./providerTurnReplay.ts";
 
 export const PROVIDER_PROTOCOL_VERSION = "buli.provider.v1";
@@ -64,7 +69,9 @@ export const ProviderProtocolTurnRequestSchema = z.strictObject({
   selectedModelId: z.string().min(1),
   selectedReasoningEffort: ReasoningEffortSchema.optional(),
   promptCacheKey: z.string().min(1).optional(),
-  availableToolNames: z.array(z.enum(ASSISTANT_TOOL_REQUEST_NAMES)).optional(),
+  availableToolNames: z.array(z.string().min(1)).optional(),
+  availableToolDefinitions: z.array(ProviderToolDefinitionSchema).optional(),
+  builtInToolDescriptionOverlays: z.array(ProviderBuiltInToolDescriptionOverlaySchema).optional(),
 });
 
 export const ProviderProtocolHostListModelsFrameSchema = z.strictObject({

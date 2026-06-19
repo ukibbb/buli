@@ -1,5 +1,6 @@
 import {
   emitBuliDiagnosticLogEvent,
+  isCustomToolCallRequest,
   type BuliDiagnosticLogFields,
   type BuliDiagnosticLogger,
   type ToolCallRequest,
@@ -21,7 +22,7 @@ export function logOpenAiDiagnosticEvent(
 export function summarizeOpenAiToolCallRequestForDiagnostics(
   toolCallRequest: ToolCallRequest,
 ): BuliDiagnosticLogFields {
-  if (toolCallRequest.toolName !== "bash") {
+  if (isCustomToolCallRequest(toolCallRequest) || toolCallRequest.toolName !== "bash") {
     return {
       toolName: toolCallRequest.toolName,
     };

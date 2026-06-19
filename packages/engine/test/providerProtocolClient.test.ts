@@ -7,6 +7,8 @@ import {
   type ProviderProtocolRequestId,
   type ProviderProtocolTurnId,
   type ProviderStreamEvent,
+  type ProviderBuiltInToolDescriptionOverlay,
+  type ProviderToolDefinition,
 } from "@buli/contracts";
 import {
   ProviderProtocolConversationTurnProvider,
@@ -19,6 +21,26 @@ const completedUsage = {
   output: 4,
   reasoning: 0,
   cache: { read: 0, write: 0 },
+};
+
+const workspaceSummaryProviderToolDefinition: ProviderToolDefinition = {
+  toolName: "workspace_summary",
+  description: "Summarize a workspace topic.",
+  parameters: {
+    type: "object",
+    properties: {
+      topic: { type: "string", description: "The exact workspace topic to summarize." },
+    },
+    required: ["topic"],
+    additionalProperties: false,
+  },
+};
+
+const smallModelReadDescriptionOverlay: ProviderBuiltInToolDescriptionOverlay = {
+  toolName: "read",
+  additionalDescriptionParagraphs: [
+    "Small-model guidance: read one narrow file window at a time and do not infer paths.",
+  ],
 };
 
 class RecordingProviderProtocolClientTransport implements ProviderProtocolClientTransport {
@@ -133,7 +155,9 @@ test("ProviderProtocolConversationTurnProvider sends start frames and streams or
     conversationSessionEntries: [{ entryKind: "user_prompt", promptText: "Say hi", modelFacingPromptText: "Say hi" }],
     selectedModelId: "gpt-5.5",
     selectedReasoningEffort: "medium",
-    availableToolNames: ["read"],
+    availableToolNames: ["read", "workspace_summary"],
+    availableToolDefinitions: [workspaceSummaryProviderToolDefinition],
+    builtInToolDescriptionOverlays: [smallModelReadDescriptionOverlay],
   });
 
   expect(transport.sentHostFrames[0]).toEqual({
@@ -146,7 +170,9 @@ test("ProviderProtocolConversationTurnProvider sends start frames and streams or
       conversationSessionEntries: [{ entryKind: "user_prompt", promptText: "Say hi", modelFacingPromptText: "Say hi" }],
       selectedModelId: "gpt-5.5",
       selectedReasoningEffort: "medium",
-      availableToolNames: ["read"],
+      availableToolNames: ["read", "workspace_summary"],
+      availableToolDefinitions: [workspaceSummaryProviderToolDefinition],
+      builtInToolDescriptionOverlays: [smallModelReadDescriptionOverlay],
     },
   });
 

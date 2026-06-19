@@ -8,6 +8,7 @@ import type {
 import {
   HISTORICAL_TOOL_RESULT_TEXT_PER_OUTPUT_MAX_CHARACTER_COUNT,
   HISTORICAL_TOOL_TRANSCRIPT_TURN_MAX_CHARACTER_COUNT,
+  isCustomToolCallRequest,
   listModelVisibleConversationSessionEntries,
   projectHistoricalToolResultTextForModelContext,
   projectHistoricalToolTranscriptTextForModelContext,
@@ -425,141 +426,151 @@ function createLegacyToolTranscriptSegment(conversationSessionEntry: ToolCallCon
 }
 
 function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCallConversationSessionEntry): string {
-  if (conversationSessionEntry.toolCallRequest.toolName === "bash") {
+  const { toolCallRequest } = conversationSessionEntry;
+
+  if (isCustomToolCallRequest(toolCallRequest)) {
+    return [
+      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
+      `Tool: ${toolCallRequest.toolName}`,
+      `Arguments JSON: ${JSON.stringify(toolCallRequest.toolArgumentsJson)}`,
+    ].join("\n");
+  }
+
+  if (toolCallRequest.toolName === "bash") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: bash",
-      `Command: ${conversationSessionEntry.toolCallRequest.shellCommand}`,
-      `Description: ${conversationSessionEntry.toolCallRequest.commandDescription}`,
+      `Command: ${toolCallRequest.shellCommand}`,
+      `Description: ${toolCallRequest.commandDescription}`,
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "read") {
+  if (toolCallRequest.toolName === "read") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: read",
-      `Path: ${conversationSessionEntry.toolCallRequest.readTargetPath}`,
-      ...(conversationSessionEntry.toolCallRequest.offsetLineNumber !== undefined
-        ? [`Offset line: ${conversationSessionEntry.toolCallRequest.offsetLineNumber}`]
+      `Path: ${toolCallRequest.readTargetPath}`,
+      ...(toolCallRequest.offsetLineNumber !== undefined
+        ? [`Offset line: ${toolCallRequest.offsetLineNumber}`]
         : []),
-      ...(conversationSessionEntry.toolCallRequest.maximumLineCount !== undefined
-        ? [`Line limit: ${conversationSessionEntry.toolCallRequest.maximumLineCount}`]
+      ...(toolCallRequest.maximumLineCount !== undefined
+        ? [`Line limit: ${toolCallRequest.maximumLineCount}`]
         : []),
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "glob") {
+  if (toolCallRequest.toolName === "glob") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: glob",
-      `Pattern: ${conversationSessionEntry.toolCallRequest.globPattern}`,
-      ...(conversationSessionEntry.toolCallRequest.searchDirectoryPath !== undefined
-        ? [`Directory: ${conversationSessionEntry.toolCallRequest.searchDirectoryPath}`]
+      `Pattern: ${toolCallRequest.globPattern}`,
+      ...(toolCallRequest.searchDirectoryPath !== undefined
+        ? [`Directory: ${toolCallRequest.searchDirectoryPath}`]
         : []),
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "grep") {
+  if (toolCallRequest.toolName === "grep") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: grep",
-      `Pattern: ${conversationSessionEntry.toolCallRequest.regexPattern}`,
-      ...(conversationSessionEntry.toolCallRequest.searchPath !== undefined
-        ? [`Path: ${conversationSessionEntry.toolCallRequest.searchPath}`]
+      `Pattern: ${toolCallRequest.regexPattern}`,
+      ...(toolCallRequest.searchPath !== undefined
+        ? [`Path: ${toolCallRequest.searchPath}`]
         : []),
-      ...(conversationSessionEntry.toolCallRequest.includeGlobPattern !== undefined
-        ? [`Include: ${conversationSessionEntry.toolCallRequest.includeGlobPattern}`]
+      ...(toolCallRequest.includeGlobPattern !== undefined
+        ? [`Include: ${toolCallRequest.includeGlobPattern}`]
       : []),
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "locate_codebase_symbols") {
+  if (toolCallRequest.toolName === "locate_codebase_symbols") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: locate_codebase_symbols",
-      ...(conversationSessionEntry.toolCallRequest.symbolNames !== undefined
-        ? [`Symbols: ${conversationSessionEntry.toolCallRequest.symbolNames.join(", ")}`]
+      ...(toolCallRequest.symbolNames !== undefined
+        ? [`Symbols: ${toolCallRequest.symbolNames.join(", ")}`]
         : []),
-      ...(conversationSessionEntry.toolCallRequest.filePaths !== undefined
-        ? [`Files: ${conversationSessionEntry.toolCallRequest.filePaths.join(", ")}`]
+      ...(toolCallRequest.filePaths !== undefined
+        ? [`Files: ${toolCallRequest.filePaths.join(", ")}`]
         : []),
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "edit") {
+  if (toolCallRequest.toolName === "edit") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: edit",
-      `Path: ${conversationSessionEntry.toolCallRequest.editTargetPath}`,
-      `Old string length: ${conversationSessionEntry.toolCallRequest.oldString.length}`,
-      `New string length: ${conversationSessionEntry.toolCallRequest.newString.length}`,
+      `Path: ${toolCallRequest.editTargetPath}`,
+      `Old string length: ${toolCallRequest.oldString.length}`,
+      `New string length: ${toolCallRequest.newString.length}`,
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "edit_many") {
+  if (toolCallRequest.toolName === "edit_many") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: edit_many",
-      `Edit count: ${conversationSessionEntry.toolCallRequest.edits.length}`,
-      ...conversationSessionEntry.toolCallRequest.edits.map((edit, editIndex) =>
+      `Edit count: ${toolCallRequest.edits.length}`,
+      ...toolCallRequest.edits.map((edit, editIndex) =>
         `Edit ${editIndex + 1}: ${edit.editTargetPath} old=${edit.oldString.length} new=${edit.newString.length}`
       ),
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "patch") {
+  if (toolCallRequest.toolName === "patch") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: patch",
-      `Patch length: ${conversationSessionEntry.toolCallRequest.patchText.length}`,
+      `Patch length: ${toolCallRequest.patchText.length}`,
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "patch_many") {
+  if (toolCallRequest.toolName === "patch_many") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: patch_many",
-      `Patch length: ${conversationSessionEntry.toolCallRequest.patchText.length}`,
+      `Patch length: ${toolCallRequest.patchText.length}`,
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "write") {
+  if (toolCallRequest.toolName === "write") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: write",
-      `Path: ${conversationSessionEntry.toolCallRequest.writeTargetPath}`,
-      `Content length: ${conversationSessionEntry.toolCallRequest.fileContent.length}`,
+      `Path: ${toolCallRequest.writeTargetPath}`,
+      `Content length: ${toolCallRequest.fileContent.length}`,
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "task") {
+  if (toolCallRequest.toolName === "task") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: task",
-      `Subagent: ${conversationSessionEntry.toolCallRequest.subagentName}`,
-      `Description: ${conversationSessionEntry.toolCallRequest.subagentDescription}`,
-      `Prompt: ${conversationSessionEntry.toolCallRequest.subagentPrompt}`,
+      `Subagent: ${toolCallRequest.subagentName}`,
+      `Description: ${toolCallRequest.subagentDescription}`,
+      `Prompt: ${toolCallRequest.subagentPrompt}`,
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "skill") {
+  if (toolCallRequest.toolName === "skill") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: skill",
-      `Skill: ${conversationSessionEntry.toolCallRequest.skillName}`,
+      `Skill: ${toolCallRequest.skillName}`,
     ].join("\n");
   }
 
-  if (conversationSessionEntry.toolCallRequest.toolName === "record_workflow_handoff") {
+  if (toolCallRequest.toolName === "record_workflow_handoff") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
       "Tool: record_workflow_handoff",
-      `Handoff kind: ${conversationSessionEntry.toolCallRequest.workflowHandoff.handoffKind}`,
-      `Handoff summary: ${summarizeWorkflowHandoff(conversationSessionEntry.toolCallRequest.workflowHandoff)}`,
+      `Handoff kind: ${toolCallRequest.workflowHandoff.handoffKind}`,
+      `Handoff summary: ${summarizeWorkflowHandoff(toolCallRequest.workflowHandoff)}`,
     ].join("\n");
   }
 
-  return assertUnhandledToolCallRequest(conversationSessionEntry.toolCallRequest);
+  return assertUnhandledToolCallRequest(toolCallRequest);
 }
 
 function assertUnhandledToolCallRequest(toolCallRequest: never): never {

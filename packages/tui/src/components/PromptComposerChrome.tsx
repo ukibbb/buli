@@ -4,7 +4,6 @@ import type {
   ChatAppRenderStore,
   ConversationSessionCompactionStatus,
 } from "@buli/chat-app-controller";
-import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
 import { memo, useCallback, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { InputPanel } from "./InputPanel.tsx";
 import { InputStatusStrip } from "./InputStatusStrip.tsx";
@@ -22,11 +21,11 @@ type PromptComposerChromeCommonProps = {
   isPromptInputDisabled: boolean;
   queuedPromptCount: number;
   isActiveTurnInterruptConfirmationArmed: boolean;
-  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  inputPanelAccentColor: string;
   promptInputHintOverride: string | undefined;
   shortModeLabel: string;
   nextShortModeLabel: string;
-  nextModeAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  nextModeAccentColor: string;
   reasoningEffortLabel: string;
   totalContextTokensUsed: number | undefined;
   contextMeterTokenLimit: number | undefined;

@@ -10,11 +10,20 @@ import type {
 } from "@buli/contracts";
 import {
   AssistantConversationRuntime,
+  EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
   type ConversationAutoCompactionRequest,
   type ConversationAutoCompactionResult,
   type ConversationCompactionRequest,
+  createDefaultAssistantAgentRegistry,
+  createDefaultAssistantToolRegistry,
+  type AssistantProviderModelPromptProfileResolver,
+  type BuiltInToolDescriptionOverlayResolver,
+  type PrimaryAssistantAgentCompositionResolver,
+  type TaskSubagentCompositionResolver,
+  type CustomAssistantToolDefinition,
+  type PrimaryAssistantAgentDefinition,
 } from "@buli/engine";
-import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
+import { OpenAiAuthStore, OpenAiProvider, type OpenAiModelBehaviorProfileResolver } from "@buli/openai";
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
 import { runLogin } from "../src/commands/login.ts";
@@ -286,6 +295,268 @@ test("runInteractiveChat applies concurrency and task subagent environment overr
     throw new Error("expected direct OpenAI provider");
   }
   expect(conversationTurnProvider.rateLimitCoordinator.maximumConcurrentResponseStepStreams).toBe(7);
+});
+
+test("runInteractiveChat applies code-provided registries and model profile resolvers", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-code-config-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
+  const customToolName = "project_status";
+  const customAssistantToolDefinition = {
+    toolName: customToolName,
+    providerToolDefinition: {
+      toolName: customToolName,
+      description: "Summarize the current project status.",
+      parameters: {
+        type: "object",
+        properties: {
+          includeRisks: {
+            type: "boolean",
+            description: "Whether to include known risks in the summary.",
+          },
+        },
+        required: ["includeRisks"],
+        additionalProperties: false,
+      },
+    },
+    executionPolicy: {
+      workspaceEffectKind: "read_only",
+      isAutoConcurrent: false,
+      isAutoApprovedReadOnly: false,
+      clearsSameTurnReadCoverageBeforeExecution: false,
+    },
+    executor: async () => ({
+      outcomeKind: "completed",
+      toolResultText: "Project status is available.",
+    }),
+  } satisfies CustomAssistantToolDefinition;
+  const customPrimaryAgentDefinition = {
+    agentName: "status",
+    displayName: "Status Agent",
+    shortLabel: "Status",
+    description: "Uses a code-registered status tool.",
+    accentColorName: "cyan",
+    isReadOnly: true,
+    availableToolNames: [customToolName],
+    systemPromptConfiguration: {
+      promptConfigurationKind: "custom",
+      systemReminderText: "Use the project status tool when status is requested.",
+    },
+  } satisfies PrimaryAssistantAgentDefinition;
+  const assistantToolRegistry = createDefaultAssistantToolRegistry({
+    additionalCustomTools: [customAssistantToolDefinition],
+  });
+  const assistantAgentRegistry = createDefaultAssistantAgentRegistry({
+    additionalPrimaryAgents: [customPrimaryAgentDefinition],
+  });
+  const assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver = (resolverInput) => ({
+    profileId: `test-prompt-profile:${resolverInput.providerName}:${resolverInput.selectedModelId}`,
+    providerName: resolverInput.providerName,
+    selectedModelId: resolverInput.selectedModelId,
+    promptFragments: EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
+    stickyNotes: {
+      maximumRelevantEvidenceNoteCount: 1,
+      maximumPromptNoteTextCharacterCount: 2,
+      maximumObservationTextCharacterCount: 3,
+    },
+    workflowHandoff: {
+      renderingDetail: "compact",
+      maximumListItemCount: 4,
+      maximumTextCharacterCount: 5,
+    },
+  });
+  const primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver = (resolverInput) => ({
+    primaryAssistantAgent: resolverInput.registeredPrimaryAssistantAgent,
+    assistantProviderModelPromptProfile: {
+      profileId: `test-composed-profile:${resolverInput.providerName}:${resolverInput.selectedModelId}`,
+      providerName: resolverInput.providerName,
+      selectedModelId: resolverInput.selectedModelId,
+      promptFragments: EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
+      stickyNotes: {
+        maximumRelevantEvidenceNoteCount: 6,
+        maximumPromptNoteTextCharacterCount: 7,
+        maximumObservationTextCharacterCount: 8,
+      },
+      workflowHandoff: {
+        renderingDetail: "compact",
+        maximumListItemCount: 9,
+        maximumTextCharacterCount: 10,
+      },
+    },
+  });
+  const taskSubagentCompositionResolver: TaskSubagentCompositionResolver = (resolverInput) => ({
+    taskSubagent: resolverInput.registeredSubagent,
+    assistantProviderModelPromptProfile: {
+      ...resolverInput.defaultTaskSubagentAssistantProviderModelPromptProfile,
+      profileId:
+        `test-task-subagent-profile:${resolverInput.providerName}:${resolverInput.taskSubagentProviderModelSelection.taskSubagentSelectedModelId}`,
+    },
+  });
+  const builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver = (resolverInput) => [
+    {
+      toolName: "read",
+      additionalDescriptionParagraphs: [
+        `test-built-in-tool-description:${resolverInput.providerName}:${resolverInput.selectedModelId}`,
+      ],
+    },
+  ];
+  const openAiModelBehaviorProfileResolver: OpenAiModelBehaviorProfileResolver = (resolverInput) => ({
+    profileId: `test-openai-profile:${resolverInput.selectedModelId}`,
+    requestReasoningSummary: false,
+    requestLowTextVerbosity: true,
+    allowParallelToolCalls: false,
+    defaultReasoningEncryptedContentInclusionPolicy: "when_input_contains_reasoning",
+  });
+  let capturedConversationRuntime: AssistantConversationRuntime | undefined;
+  let capturedPrimaryAgentDisplayMetadata:
+    | ReturnType<AssistantConversationRuntime["listPrimaryAgentDisplayMetadata"]>
+    | undefined;
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {},
+    assistantAgentRegistry,
+    assistantToolRegistry,
+    assistantProviderModelPromptProfileResolver,
+    primaryAssistantAgentCompositionResolver,
+    taskSubagentCompositionResolver,
+    builtInToolDescriptionOverlayResolver,
+    openAiModelBehaviorProfileResolver,
+    renderChatScreen: async (renderInput) => {
+      capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      capturedPrimaryAgentDisplayMetadata = renderInput.primaryAgentDisplayMetadata;
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(capturedConversationRuntime?.assistantAgentRegistry).toBe(assistantAgentRegistry);
+  expect(capturedConversationRuntime?.assistantToolRegistry).toBe(assistantToolRegistry);
+  expect(capturedConversationRuntime?.assistantToolRegistry.resolveCustomToolDefinition(customToolName)).toBe(
+    customAssistantToolDefinition,
+  );
+  expect(capturedConversationRuntime?.assistantProviderModelPromptProfileResolver({
+    providerName: "openai",
+    selectedModelId: "custom-prompt-model",
+  })).toEqual({
+    profileId: "test-prompt-profile:openai:custom-prompt-model",
+    providerName: "openai",
+    selectedModelId: "custom-prompt-model",
+    promptFragments: EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
+    stickyNotes: {
+      maximumRelevantEvidenceNoteCount: 1,
+      maximumPromptNoteTextCharacterCount: 2,
+      maximumObservationTextCharacterCount: 3,
+    },
+    workflowHandoff: {
+      renderingDetail: "compact",
+      maximumListItemCount: 4,
+      maximumTextCharacterCount: 5,
+    },
+  });
+  expect(capturedConversationRuntime?.primaryAssistantAgentCompositionResolver).toBe(
+    primaryAssistantAgentCompositionResolver,
+  );
+  expect(capturedConversationRuntime?.primaryAssistantAgentCompositionResolver({
+    registeredPrimaryAssistantAgent: customPrimaryAgentDefinition,
+    providerName: "openai",
+    selectedModelId: "custom-composed-model",
+    selectedReasoningEffort: "high",
+  })).toEqual({
+    primaryAssistantAgent: customPrimaryAgentDefinition,
+    assistantProviderModelPromptProfile: {
+      profileId: "test-composed-profile:openai:custom-composed-model",
+      providerName: "openai",
+      selectedModelId: "custom-composed-model",
+      promptFragments: EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
+      stickyNotes: {
+        maximumRelevantEvidenceNoteCount: 6,
+        maximumPromptNoteTextCharacterCount: 7,
+        maximumObservationTextCharacterCount: 8,
+      },
+      workflowHandoff: {
+        renderingDetail: "compact",
+        maximumListItemCount: 9,
+        maximumTextCharacterCount: 10,
+      },
+    },
+  });
+  expect(capturedConversationRuntime?.taskSubagentCompositionResolver).toBe(taskSubagentCompositionResolver);
+  expect(capturedConversationRuntime?.taskSubagentCompositionResolver({
+    registeredSubagent: assistantAgentRegistry.resolveSubagentDefinition("explore"),
+    parentPrimaryAssistantAgent: customPrimaryAgentDefinition,
+    providerName: "openai",
+    parentSelectedModelId: "custom-parent-model",
+    parentSelectedReasoningEffort: "high",
+    taskSubagentProviderModelSelection: {
+      taskSubagentSelectedModelId: "custom-subagent-model",
+      taskSubagentSelectedReasoningEffort: "low",
+      modelSelectionReason: "policy_model_override",
+      reasoningEffortSelectionReason: "clamped_to_policy_maximum",
+    },
+    defaultTaskSubagentAssistantProviderModelPromptProfile: {
+      profileId: "default-task-subagent-profile",
+      providerName: "openai",
+      selectedModelId: "custom-subagent-model",
+      promptFragments: EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
+      stickyNotes: {
+        maximumRelevantEvidenceNoteCount: 1,
+        maximumPromptNoteTextCharacterCount: 2,
+        maximumObservationTextCharacterCount: 3,
+      },
+      workflowHandoff: {
+        renderingDetail: "compact",
+        maximumListItemCount: 4,
+        maximumTextCharacterCount: 5,
+      },
+    },
+  }).assistantProviderModelPromptProfile.profileId).toBe(
+    "test-task-subagent-profile:openai:custom-subagent-model",
+  );
+  expect(capturedConversationRuntime?.builtInToolDescriptionOverlayResolver).toBe(
+    builtInToolDescriptionOverlayResolver,
+  );
+  expect(capturedConversationRuntime?.builtInToolDescriptionOverlayResolver({
+    providerName: "openai",
+    selectedModelId: "custom-built-in-tool-model",
+    assistantTurnKind: "primary_assistant_agent",
+    assistantAgentName: "status",
+    availableToolNames: ["read"],
+  })).toEqual([
+    {
+      toolName: "read",
+      additionalDescriptionParagraphs: ["test-built-in-tool-description:openai:custom-built-in-tool-model"],
+    },
+  ]);
+  expect(capturedPrimaryAgentDisplayMetadata).toContainEqual({
+    agentName: "status",
+    displayName: "Status Agent",
+    shortLabel: "Status",
+    description: "Uses a code-registered status tool.",
+    accentColorName: "cyan",
+  });
+  const conversationTurnProvider = capturedConversationRuntime?.conversationTurnProvider;
+  if (!(conversationTurnProvider instanceof OpenAiProvider)) {
+    throw new Error("expected direct OpenAI provider");
+  }
+  expect(conversationTurnProvider.modelBehaviorProfileResolver({ selectedModelId: "custom-openai-model" })).toEqual({
+    profileId: "test-openai-profile:custom-openai-model",
+    requestReasoningSummary: false,
+    requestLowTextVerbosity: true,
+    allowParallelToolCalls: false,
+    defaultReasoningEncryptedContentInclusionPolicy: "when_input_contains_reasoning",
+  });
 });
 
 test("runInteractiveChat uses the prompt-context root environment override", async () => {

@@ -1,10 +1,19 @@
 import type {
+  AssistantToolRequestName,
   ConversationSessionEntry,
+  BuiltInToolCallDetailName,
+  CustomToolCallDetail,
+  CustomToolCallRequest,
   SubagentChildToolCall,
   SubagentChildToolCallDetail,
   ToolCallDetail,
   ToolCallRequest,
   ToolCallWebSearchResult,
+} from "@buli/contracts";
+import {
+  isBuiltInToolCallDetailName,
+  isCustomToolCallDetail,
+  isCustomToolCallRequest,
 } from "@buli/contracts";
 import { formatDurationMs } from "./formatting.ts";
 import { escapeHtml } from "./htmlEscaping.ts";
@@ -50,11 +59,15 @@ export function renderToolResultBlock(input: RenderToolResultBlockInput): string
       ? `<span class="panel-status warn">denied</span>`
       : `<span class="panel-status ok">ok</span>`;
 
-  const taskDetailHtml = toolCallDetail.toolName === "task"
+  const isCustomToolCallResultDetail = isCustomToolCallDetail(toolCallDetail);
+  const taskDetailHtml = !isCustomToolCallResultDetail && toolCallDetail.toolName === "task"
     ? renderTaskToolDetailBlock({
         renderAssistantMarkdownText: input.renderAssistantMarkdownText,
         taskToolCallDetail: toolCallDetail,
       })
+    : "";
+  const customDetailHtml = isCustomToolCallResultDetail
+    ? renderCustomToolResultDetailBlock(toolCallDetail)
     : "";
   const outputHtml = conversationSessionEntry.toolResultText.length > 0
     ? `<div class="panel-section"><div class="panel-section-label">Output</div><pre class="output">${escapeHtml(conversationSessionEntry.toolResultText)}</pre></div>`
@@ -71,7 +84,7 @@ export function renderToolResultBlock(input: RenderToolResultBlockInput): string
     toolName: toolCallDetail.toolName,
     purposeHtml: renderToolResultPurpose(toolCallDetail),
     statusHtml,
-    bodyHtml: [taskDetailHtml, outputHtml, failureNoticeHtml, denialNoticeHtml].filter((s) => s.length > 0).join("\n"),
+    bodyHtml: [taskDetailHtml, customDetailHtml, outputHtml, failureNoticeHtml, denialNoticeHtml].filter((s) => s.length > 0).join("\n"),
   });
 }
 
@@ -122,16 +135,15 @@ function renderPanel(input: {
 </div>`;
 }
 
-type ToolCallRequestName = ToolCallRequest["toolName"];
-type ToolCallRequestByName<ToolName extends ToolCallRequestName> = Extract<ToolCallRequest, { toolName: ToolName }>;
+type ToolCallRequestByName<ToolName extends AssistantToolRequestName> = Extract<ToolCallRequest, { toolName: ToolName }>;
 
-type ToolCallRequestExportRenderer<ToolName extends ToolCallRequestName> = {
+type ToolCallRequestExportRenderer<ToolName extends AssistantToolRequestName> = {
   renderPurpose(toolCallRequest: ToolCallRequestByName<ToolName>): string;
   renderBody(toolCallRequest: ToolCallRequestByName<ToolName>): string;
 };
 
 const toolCallRequestExportRendererByName: {
-  readonly [ToolName in ToolCallRequestName]: ToolCallRequestExportRenderer<ToolName>;
+  readonly [ToolName in AssistantToolRequestName]: ToolCallRequestExportRenderer<ToolName>;
 } = {
   bash: { renderPurpose: renderBashToolCallRequestPurpose, renderBody: renderBashToolCallRequestBody },
   read: { renderPurpose: renderReadToolCallRequestPurpose, renderBody: renderReadToolCallRequestBody },
@@ -148,18 +160,34 @@ const toolCallRequestExportRendererByName: {
   record_workflow_handoff: { renderPurpose: renderRecordWorkflowHandoffToolCallRequestPurpose, renderBody: renderRecordWorkflowHandoffToolCallRequestBody },
 };
 
-function resolveToolCallRequestExportRenderer<ToolName extends ToolCallRequestName>(
+function resolveToolCallRequestExportRenderer<ToolName extends AssistantToolRequestName>(
   toolCallRequest: ToolCallRequestByName<ToolName>,
 ): ToolCallRequestExportRenderer<ToolName> {
   return toolCallRequestExportRendererByName[toolCallRequest.toolName] as ToolCallRequestExportRenderer<ToolName>;
 }
 
 function renderToolCallRequestPurpose(toolCallRequest: ToolCallRequest): string {
+  if (isCustomToolCallRequest(toolCallRequest)) {
+    return renderCustomToolCallRequestPurpose(toolCallRequest);
+  }
+
   return resolveToolCallRequestExportRenderer(toolCallRequest).renderPurpose(toolCallRequest);
 }
 
 function renderToolCallRequestBody(toolCallRequest: ToolCallRequest): string {
+  if (isCustomToolCallRequest(toolCallRequest)) {
+    return renderCustomToolCallRequestBody(toolCallRequest);
+  }
+
   return resolveToolCallRequestExportRenderer(toolCallRequest).renderBody(toolCallRequest);
+}
+
+function renderCustomToolCallRequestPurpose(_toolCallRequest: CustomToolCallRequest): string {
+  return `<span class="panel-purpose">custom tool</span>`;
+}
+
+function renderCustomToolCallRequestBody(toolCallRequest: CustomToolCallRequest): string {
+  return renderJsonPanelSection("Arguments", toolCallRequest.toolArgumentsJson);
 }
 
 function renderBashToolCallRequestPurpose(toolCallRequest: ToolCallRequestByName<"bash">): string {
@@ -288,15 +316,14 @@ function renderRecordWorkflowHandoffToolCallRequestBody(
   return `<div class="panel-section"><div class="panel-section-label">Workflow handoff</div><pre class="output">${escapeHtml(JSON.stringify(toolCallRequest.workflowHandoff, null, 2))}</pre></div>`;
 }
 
-type ToolCallDetailName = ToolCallDetail["toolName"];
-type ToolCallDetailByName<ToolName extends ToolCallDetailName> = Extract<ToolCallDetail, { toolName: ToolName }>;
+type ToolCallDetailByName<ToolName extends BuiltInToolCallDetailName> = Extract<ToolCallDetail, { toolName: ToolName }>;
 
-type ToolCallDetailExportRenderer<ToolName extends ToolCallDetailName> = {
+type ToolCallDetailExportRenderer<ToolName extends BuiltInToolCallDetailName> = {
   renderPurpose(toolCallDetail: ToolCallDetailByName<ToolName>): string;
 };
 
 const toolCallDetailExportRendererByName: {
-  readonly [ToolName in ToolCallDetailName]: ToolCallDetailExportRenderer<ToolName>;
+  readonly [ToolName in BuiltInToolCallDetailName]: ToolCallDetailExportRenderer<ToolName>;
 } = {
   bash: { renderPurpose: renderBashToolResultPurpose },
   read: { renderPurpose: renderReadToolResultPurpose },
@@ -315,14 +342,36 @@ const toolCallDetailExportRendererByName: {
   web_search: { renderPurpose: renderWebSearchToolResultPurpose },
 };
 
-function resolveToolCallDetailExportRenderer<ToolName extends ToolCallDetailName>(
+function resolveToolCallDetailExportRenderer<ToolName extends BuiltInToolCallDetailName>(
   toolCallDetail: ToolCallDetailByName<ToolName>,
 ): ToolCallDetailExportRenderer<ToolName> {
   return toolCallDetailExportRendererByName[toolCallDetail.toolName] as ToolCallDetailExportRenderer<ToolName>;
 }
 
 function renderToolResultPurpose(toolCallDetail: ToolCallDetail): string {
+  if (isCustomToolCallDetail(toolCallDetail)) {
+    return renderCustomToolResultPurpose(toolCallDetail);
+  }
+
   return resolveToolCallDetailExportRenderer(toolCallDetail).renderPurpose(toolCallDetail);
+}
+
+function renderCustomToolResultPurpose(toolCallDetail: CustomToolCallDetail): string {
+  const purposeText = toolCallDetail.toolResultSummary ?? toolCallDetail.toolDisplayName ?? "custom tool";
+  return `<span class="panel-purpose">${escapeHtml(purposeText)}</span>`;
+}
+
+function renderCustomToolResultDetailBlock(toolCallDetail: CustomToolCallDetail): string {
+  const summaryHtml = toolCallDetail.toolResultSummary
+    ? `<p class="panel-notice">${escapeHtml(toolCallDetail.toolResultSummary)}</p>`
+    : "";
+  const argumentsHtml = toolCallDetail.toolArgumentsJson === undefined
+    ? ""
+    : renderJsonPanelSection("Arguments", toolCallDetail.toolArgumentsJson);
+  const resultJsonHtml = toolCallDetail.toolResultJson === undefined
+    ? ""
+    : renderJsonPanelSection("Result JSON", toolCallDetail.toolResultJson);
+  return [summaryHtml, argumentsHtml, resultJsonHtml].filter((html) => html.length > 0).join("\n");
 }
 
 function renderBashToolResultPurpose(toolCallDetail: ToolCallDetailByName<"bash">): string {
@@ -554,17 +603,29 @@ function renderSubagentChildToolCallsBlock(subagentChildToolCalls: readonly Suba
   return `<ul class="subagent-list">${childToolCallsHtml}</ul>`;
 }
 
-type SubagentChildToolCallDetailName = SubagentChildToolCallDetail["toolName"];
-type SubagentChildToolCallDetailByName<ToolName extends SubagentChildToolCallDetailName> = Extract<
+type BuiltInSubagentChildToolCallDetailName =
+  | "read"
+  | "glob"
+  | "grep"
+  | "locate_codebase_symbols"
+  | "bash"
+  | "edit"
+  | "edit_many"
+  | "patch"
+  | "patch_many"
+  | "write"
+  | "skill"
+  | "task";
+type SubagentChildToolCallDetailByName<ToolName extends BuiltInSubagentChildToolCallDetailName> = Extract<
   SubagentChildToolCallDetail,
   { toolName: ToolName }
 >;
-type SubagentChildToolCallDetailSummaryRenderer<ToolName extends SubagentChildToolCallDetailName> = (
+type SubagentChildToolCallDetailSummaryRenderer<ToolName extends BuiltInSubagentChildToolCallDetailName> = (
   subagentChildToolCallDetail: SubagentChildToolCallDetailByName<ToolName>,
 ) => string;
 
 const subagentChildToolCallDetailSummaryRendererByName: {
-  readonly [ToolName in SubagentChildToolCallDetailName]: SubagentChildToolCallDetailSummaryRenderer<ToolName>;
+  readonly [ToolName in BuiltInSubagentChildToolCallDetailName]: SubagentChildToolCallDetailSummaryRenderer<ToolName>;
 } = {
   read: renderReadSubagentChildToolCallDetailSummary,
   glob: renderGlobSubagentChildToolCallDetailSummary,
@@ -580,14 +641,31 @@ const subagentChildToolCallDetailSummaryRendererByName: {
   task: renderTaskSubagentChildToolCallDetailSummary,
 };
 
-function resolveSubagentChildToolCallDetailSummaryRenderer<ToolName extends SubagentChildToolCallDetailName>(
+function resolveSubagentChildToolCallDetailSummaryRenderer<ToolName extends BuiltInSubagentChildToolCallDetailName>(
   subagentChildToolCallDetail: SubagentChildToolCallDetailByName<ToolName>,
 ): SubagentChildToolCallDetailSummaryRenderer<ToolName> {
   return subagentChildToolCallDetailSummaryRendererByName[subagentChildToolCallDetail.toolName] as SubagentChildToolCallDetailSummaryRenderer<ToolName>;
 }
 
 function renderSubagentChildToolCallDetailSummary(subagentChildToolCallDetail: SubagentChildToolCallDetail): string {
+  if (isCustomSubagentChildToolCallDetail(subagentChildToolCallDetail)) {
+    return renderCustomSubagentChildToolCallDetailSummary(subagentChildToolCallDetail);
+  }
+
   return resolveSubagentChildToolCallDetailSummaryRenderer(subagentChildToolCallDetail)(subagentChildToolCallDetail);
+}
+
+function isCustomSubagentChildToolCallDetail(
+  subagentChildToolCallDetail: SubagentChildToolCallDetail,
+): subagentChildToolCallDetail is CustomToolCallDetail {
+  return !isBuiltInToolCallDetailName(subagentChildToolCallDetail.toolName);
+}
+
+function renderCustomSubagentChildToolCallDetailSummary(
+  subagentChildToolCallDetail: CustomToolCallDetail,
+): string {
+  const targetText = subagentChildToolCallDetail.toolResultSummary ?? subagentChildToolCallDetail.toolDisplayName ?? "custom tool";
+  return `<div class="arg"><b>${escapeHtml(formatToolDisplayName(subagentChildToolCallDetail.toolName))}</b> ${escapeHtml(targetText)}</div>`;
 }
 
 function renderReadSubagentChildToolCallDetailSummary(
@@ -664,4 +742,8 @@ function renderTaskSubagentChildToolCallDetailSummary(
   subagentChildToolCallDetail: SubagentChildToolCallDetailByName<"task">,
 ): string {
   return `<div class="arg"><b>task</b> ${escapeHtml(`${subagentChildToolCallDetail.subagentName}: ${subagentChildToolCallDetail.subagentDescription}`)}</div>`;
+}
+
+function renderJsonPanelSection(sectionLabel: string, jsonValue: unknown): string {
+  return `<div class="panel-section"><div class="panel-section-label">${escapeHtml(sectionLabel)}</div><pre class="output">${escapeHtml(JSON.stringify(jsonValue, null, 2))}</pre></div>`;
 }

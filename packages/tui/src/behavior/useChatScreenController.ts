@@ -60,6 +60,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   } = useConversationTranscriptViewport();
 
   const chatAppController = useChatAppController({
+    primaryAgentDisplayMetadata: chatScreenProps.primaryAgentDisplayMetadata,
     selectedModelId: chatScreenProps.selectedModelId,
     selectedModelDefaultReasoningEffort: chatScreenProps.selectedModelDefaultReasoningEffort,
     selectedReasoningEffort: chatScreenProps.selectedReasoningEffort,
@@ -145,6 +146,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     promptState: chatAppController.promptComposerState,
     selectionState: chatAppController.selectionState,
     conversationSessionCompactionStatus: chatAppController.interactionStatusState.conversationSessionCompactionStatus,
+    primaryAgentDisplayMetadata: chatScreenProps.primaryAgentDisplayMetadata,
     reasoningSummaryDisplayMode: chatAppController.transcriptState.reasoningSummaryDisplayMode,
     availableSkills: chatScreenProps.availableSkills,
     terminalRowCount,

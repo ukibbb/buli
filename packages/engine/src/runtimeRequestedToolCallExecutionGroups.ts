@@ -1,11 +1,11 @@
 import {
   isTaskToolCallRequest,
-  isWorkspaceInspectionToolCallRequest,
   type ProviderRequestedToolCall,
   type TaskToolCallRequest,
   type ToolCallRequest,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
+import { createDefaultAssistantToolRegistry, type AssistantToolRegistry } from "./assistantToolRegistry.ts";
 
 export type AutoApprovedReadOnlyRequestedToolCall = {
   toolCallId: string;
@@ -29,20 +29,26 @@ export type RequestedToolCallExecutionGroup =
     requestedToolCall: ProviderRequestedToolCall;
   };
 
+const defaultAssistantToolRegistry = createDefaultAssistantToolRegistry();
+
 export function areAllAutoApprovedReadOnlyToolCalls(
   requestedToolCalls: readonly ProviderRequestedToolCall[],
+  assistantToolRegistry: AssistantToolRegistry = defaultAssistantToolRegistry,
 ): requestedToolCalls is readonly AutoApprovedReadOnlyRequestedToolCall[] {
-  return requestedToolCalls.every((requestedToolCall) => isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest));
+  return requestedToolCalls.every((requestedToolCall) =>
+    assistantToolRegistry.isAutoApprovedReadOnlyToolCallRequest(requestedToolCall.toolCallRequest)
+  );
 }
 
 export function groupRequestedToolCallsForExecution(
   requestedToolCalls: readonly ProviderRequestedToolCall[],
+  assistantToolRegistry: AssistantToolRegistry = defaultAssistantToolRegistry,
 ): RequestedToolCallExecutionGroup[] {
   const requestedToolCallExecutionGroups: RequestedToolCallExecutionGroup[] = [];
   let currentAutoConcurrentRequestedToolCalls: AutoConcurrentRequestedToolCall[] = [];
 
   for (const requestedToolCall of requestedToolCalls) {
-    if (isAutoConcurrentToolCallRequest(requestedToolCall.toolCallRequest)) {
+    if (isAutoConcurrentToolCallRequest(requestedToolCall.toolCallRequest, assistantToolRegistry)) {
       currentAutoConcurrentRequestedToolCalls.push({
         toolCallId: requestedToolCall.toolCallId,
         toolCallRequest: requestedToolCall.toolCallRequest,
@@ -91,6 +97,10 @@ function appendAutoConcurrentRequestedToolCallGroup(
   });
 }
 
-export function isAutoConcurrentToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is AutoConcurrentToolCallRequest {
-  return isWorkspaceInspectionToolCallRequest(toolCallRequest) || isTaskToolCallRequest(toolCallRequest);
+export function isAutoConcurrentToolCallRequest(
+  toolCallRequest: ToolCallRequest,
+  assistantToolRegistry: AssistantToolRegistry = defaultAssistantToolRegistry,
+): toolCallRequest is AutoConcurrentToolCallRequest {
+  return assistantToolRegistry.isAutoConcurrentToolCallRequest(toolCallRequest) &&
+    (assistantToolRegistry.isAutoApprovedReadOnlyToolCallRequest(toolCallRequest) || isTaskToolCallRequest(toolCallRequest));
 }

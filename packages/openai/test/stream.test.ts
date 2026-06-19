@@ -1269,6 +1269,38 @@ test("createOpenAiToolDefinitions preserves explicit available tool order", () =
   ]);
 });
 
+test("createOpenAiToolDefinitions appends built-in descriptions without mutating base definitions", () => {
+  const defaultReadToolDefinition = createOpenAiToolDefinitions({
+    availableToolNames: ["read"],
+  })[0];
+  const overlaidToolDefinitions = createOpenAiToolDefinitions({
+    availableToolNames: ["read", "grep"],
+    builtInToolDescriptionOverlays: [
+      {
+        toolName: "read",
+        additionalDescriptionParagraphs: ["First small read paragraph.", "Second small read paragraph."],
+      },
+      {
+        toolName: "bash",
+        additionalDescriptionParagraphs: ["Unavailable bash paragraph."],
+      },
+    ],
+  });
+  const overlaidReadToolDefinition = overlaidToolDefinitions[0];
+  const overlaidGrepToolDefinition = overlaidToolDefinitions[1];
+
+  expect(overlaidToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "grep"]);
+  expect(overlaidReadToolDefinition?.description).toBe(
+    `${defaultReadToolDefinition?.description}\n\nFirst small read paragraph.\n\nSecond small read paragraph.`,
+  );
+  expect(overlaidReadToolDefinition?.parameters).toBe(defaultReadToolDefinition?.parameters);
+  expect(overlaidReadToolDefinition?.strict).toBe(true);
+  expect(overlaidGrepToolDefinition?.description).not.toContain("Unavailable bash paragraph.");
+  expect(createOpenAiToolDefinitions({ availableToolNames: ["read"] })[0]?.description).toBe(
+    defaultReadToolDefinition?.description,
+  );
+});
+
 test("parseOpenAiStream reports malformed typed tool JSON arguments as invalid function calls", async () => {
   const response = new Response(
     [

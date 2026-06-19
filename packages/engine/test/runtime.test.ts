@@ -14,6 +14,8 @@ import type {
   ProviderStreamEvent,
   LocateCodebaseSymbolsToolCallRequest,
   TokenUsage,
+  ToolCallDetail,
+  ToolCallTaskDetail,
   ProviderTurnReplay,
 } from "@buli/contracts";
 import { ContextWindowOverflowError, listModelVisibleConversationSessionEntries } from "@buli/contracts";
@@ -24,12 +26,27 @@ import type {
   AssistantProviderModelPromptFragments,
   AssistantProviderModelPromptProfile,
   ResolveAssistantProviderModelPromptProfileInput,
+  PrimaryAssistantAgentCompositionResolver,
+  ResolvePrimaryAssistantAgentCompositionInput,
+  CustomAssistantToolDefinition,
+  ResolveCustomAssistantToolProviderDefinitionInput,
+  ResolveTaskSubagentCompositionInput,
   WorkspaceCodebaseKnowledgeIndex,
   WorkspaceShellCommandExecutor,
 } from "../src/index.ts";
 import {
   AssistantConversationRuntime,
   InMemoryConversationHistory,
+  appendAssistantProviderModelPromptFragments,
+  appendPrimaryAssistantAgentPromptSections,
+  appendProviderToolDefinitionDescription,
+  appendSubagentPromptSections,
+  applyAssistantModelOverlayResolverToCustomToolDefinition,
+  createDefaultAssistantAgentRegistry,
+  createDefaultAssistantToolRegistry,
+  createAssistantModelOverlayResolvers,
+  createModelAwarePrimaryAssistantAgentCompositionResolver,
+  createModelAwareTaskSubagentCompositionResolver,
   resolveDefaultAssistantProviderModelPromptProfile,
 } from "../src/index.ts";
 
@@ -40,6 +57,13 @@ const completedUsage: TokenUsage = {
   reasoning: 0,
   cache: { read: 0, write: 0 },
 };
+
+function expectTaskToolCallDetail(toolCallDetail: ToolCallDetail): asserts toolCallDetail is ToolCallTaskDetail {
+  expect(toolCallDetail.toolName).toBe("task");
+  if (toolCallDetail.toolName !== "task") {
+    throw new Error(`Expected task tool-call detail, received ${toolCallDetail.toolName}`);
+  }
+}
 
 class ScriptedProviderTurn implements ProviderConversationTurn {
   readonly beforeToolResultEvents: ProviderStreamEvent[];
@@ -1102,6 +1126,440 @@ test("AssistantConversationRuntime applies the provider/model prompt profile to 
   expect(stickyNotesPartEvent.part.buliStickyNotesContextText).toContain("…");
   expect(stickyNotesPartEvent.part.buliStickyNotesContextText).not.toContain(
     "Where is providerTurnReplay projected into requests?",
+  );
+});
+
+test("AssistantConversationRuntime composes the primary agent from the selected provider, model, and reasoning effort", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Using a model-aware agent." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const compositionInputs: ResolvePrimaryAssistantAgentCompositionInput[] = [];
+  const primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver = (compositionInput) => {
+    compositionInputs.push(compositionInput);
+    const baselinePromptProfile = resolveDefaultAssistantProviderModelPromptProfile({
+      providerName: compositionInput.providerName,
+      selectedModelId: compositionInput.selectedModelId,
+    });
+
+    return {
+      primaryAssistantAgent: {
+        ...compositionInput.registeredPrimaryAssistantAgent,
+        availableToolNames: ["read"],
+        systemPromptConfiguration: {
+          promptConfigurationKind: "custom",
+          systemReminderText: `Model-aware ${compositionInput.registeredPrimaryAssistantAgent.agentName} reminder for ${compositionInput.selectedModelId}.`,
+          additionalPromptSections: ["Use the compact model-aware reasoning path."],
+        },
+      },
+      assistantProviderModelPromptProfile: {
+        ...baselinePromptProfile,
+        profileId: `model-aware:${compositionInput.providerName}:${compositionInput.selectedModelId}`,
+        promptFragments: {
+          ...baselinePromptProfile.promptFragments,
+          primaryAssistantSystemPrompt: ["Model-aware primary prompt profile fragment."],
+        },
+      },
+    };
+  };
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    assistantProviderName: "external_provider_protocol",
+    primaryAssistantAgentCompositionResolver,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Use the model-aware agent",
+      selectedModelId: "gpt-5.5",
+      selectedReasoningEffort: "xhigh",
+    }),
+  );
+
+  expect(compositionInputs).toHaveLength(1);
+  expect(compositionInputs[0]).toMatchObject({
+    providerName: "external_provider_protocol",
+    selectedModelId: "gpt-5.5",
+    selectedReasoningEffort: "xhigh",
+    registeredPrimaryAssistantAgent: { agentName: "understand" },
+  });
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Model-aware understand reminder for gpt-5.5.");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Use the compact model-aware reasoning path.");
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Model-aware primary prompt profile fragment.");
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read"]);
+});
+
+test("AssistantConversationRuntime applies ergonomic model-aware primary agent overlays without changing strong-model defaults", async () => {
+  const provider = new RecordingConversationTurnProvider([
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Using a small-model overlay." },
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Using the strong-model default." },
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+  ]);
+  const primaryAssistantAgentCompositionResolver = createModelAwarePrimaryAssistantAgentCompositionResolver({
+    composePrimaryAssistantAgentForModel: (compositionInput) => {
+      if (compositionInput.selectedModelId !== "small-local-model") {
+        return undefined;
+      }
+
+      const smallModelPrimaryAssistantAgent = appendPrimaryAssistantAgentPromptSections({
+        primaryAssistantAgent: compositionInput.defaultPrimaryAssistantAgent,
+        additionalPromptSections: ["Small local model guidance: use read before summarizing workspace facts."],
+      });
+
+      return {
+        primaryAssistantAgent: {
+          ...smallModelPrimaryAssistantAgent,
+          availableToolNames: ["read"],
+        },
+        assistantProviderModelPromptProfile: appendAssistantProviderModelPromptFragments({
+          assistantProviderModelPromptProfile: compositionInput.defaultAssistantProviderModelPromptProfile,
+          promptFragments: {
+            primaryAssistantSystemPrompt: ["Small local model provider guidance: prefer explicit step-by-step tool use."],
+          },
+        }),
+      };
+    },
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    primaryAssistantAgentCompositionResolver,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Use the small model overlay",
+      selectedModelId: "small-local-model",
+    }),
+  );
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Use the strong model default",
+      selectedModelId: "gpt-5.5",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "Small local model guidance: use read before summarizing workspace facts.",
+  );
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "Small local model provider guidance: prefer explicit step-by-step tool use.",
+  );
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read"]);
+  expect(provider.startedTurnRequests[1]?.systemPromptText).not.toContain(
+    "Small local model guidance: use read before summarizing workspace facts.",
+  );
+  expect(provider.startedTurnRequests[1]?.systemPromptText).not.toContain(
+    "Small local model provider guidance: prefer explicit step-by-step tool use.",
+  );
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toContain("grep");
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toContain("task");
+});
+
+test("AssistantConversationRuntime advertises model-composed custom tools after explicit tool overrides are intersected", async () => {
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Using a model-composed tool." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const providerDefinitionResolverInputs: ResolveCustomAssistantToolProviderDefinitionInput[] = [];
+  const modelProbeToolDefinition = {
+    toolName: "model_probe",
+    providerToolDefinition: {
+      toolName: "model_probe",
+      description: "Inspect which model-aware agent composition was selected.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    resolveProviderToolDefinitionForTurn: (resolverInput) => {
+      providerDefinitionResolverInputs.push(resolverInput);
+      return appendProviderToolDefinitionDescription({
+        providerToolDefinition: resolverInput.defaultProviderToolDefinition,
+        additionalDescriptionParagraphs: [
+          `Model-specific provider guidance for ${resolverInput.selectedModelId}.`,
+        ],
+      });
+    },
+    executionPolicy: {
+      workspaceEffectKind: "read_only",
+      isAutoConcurrent: false,
+      isAutoApprovedReadOnly: false,
+      clearsSameTurnReadCoverageBeforeExecution: false,
+    },
+    executor: async () => ({
+      outcomeKind: "completed",
+      toolResultText: "Model probe completed.",
+    }),
+  } satisfies CustomAssistantToolDefinition;
+  const primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver = (compositionInput) => ({
+    primaryAssistantAgent: {
+      ...compositionInput.registeredPrimaryAssistantAgent,
+      availableToolNames: ["read", "model_probe"],
+    },
+    assistantProviderModelPromptProfile: resolveDefaultAssistantProviderModelPromptProfile({
+      providerName: compositionInput.providerName,
+      selectedModelId: compositionInput.selectedModelId,
+    }),
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    primaryAssistantAgentCompositionResolver,
+    assistantToolRegistry: createDefaultAssistantToolRegistry({
+      additionalCustomTools: [modelProbeToolDefinition],
+    }),
+    availableToolNames: ["bash", "model_probe"],
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Use the model probe",
+      selectedModelId: "small-local-model",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["model_probe"]);
+  expect(provider.startedTurnRequests[0]?.availableToolDefinitions).toEqual([
+    {
+      ...modelProbeToolDefinition.providerToolDefinition,
+      description:
+        "Inspect which model-aware agent composition was selected.\n\nModel-specific provider guidance for small-local-model.",
+    },
+  ]);
+  expect(providerDefinitionResolverInputs).toEqual([
+    {
+      providerName: "openai",
+      selectedModelId: "small-local-model",
+      assistantTurnKind: "primary_assistant_agent",
+      assistantAgentName: "understand",
+      toolName: "model_probe",
+      defaultProviderToolDefinition: modelProbeToolDefinition.providerToolDefinition,
+    },
+  ]);
+  expect(modelProbeToolDefinition.providerToolDefinition.description).toBe(
+    "Inspect which model-aware agent composition was selected.",
+  );
+});
+
+test("AssistantConversationRuntime applies shared model overlays to primary, task subagent, and custom tool provider definitions", async () => {
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_shared_overlay_task_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "inspect shared model overlay behavior",
+          subagentPrompt: "Confirm the shared model overlay behavior.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Shared overlay task result acknowledged." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const taskSubagentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Shared overlay subagent completed." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, taskSubagentProviderTurn]);
+  const modelOverlayResolvers = createAssistantModelOverlayResolvers({
+    modelOverlays: [
+      {
+        overlayName: "small-local-model",
+        matchesTurn: (matcherInput) => matcherInput.selectedModelId === "small-local-model",
+        primaryAgentOverlays: [
+          {
+            agentName: "understand",
+            additionalPromptSections: ["Shared small primary guidance: verify paths before summarizing."],
+            availableToolNames: ["task", "workspace_summary"],
+            promptFragments: {
+              primaryAssistantSystemPrompt: ["Shared small primary prompt fragment: use explicit tool steps."],
+            },
+          },
+        ],
+        taskSubagentOverlays: [
+          {
+            subagentName: "explore",
+            additionalPromptSections: ["Shared small subagent guidance: use one narrow read or search."],
+            availableToolNames: ["read", "workspace_summary"],
+            promptFragments: {
+              explorerSystemPrompt: ["Shared small Explorer fragment: stay evidence-led."],
+              taskSubagentPrompt: ["Shared small task prompt fragment: return an evidence map."],
+            },
+          },
+        ],
+        customToolProviderDefinitionOverlays: [
+          {
+            toolName: "workspace_summary",
+            additionalDescriptionParagraphs: ["Shared small tool guidance: use one exact topic at a time."],
+          },
+        ],
+        builtInToolDescriptionOverlays: [
+          {
+            toolName: "task",
+            additionalDescriptionParagraphs: ["Shared small task guidance: delegate only one focused question."],
+          },
+          {
+            toolName: "read",
+            additionalDescriptionParagraphs: ["Shared small read guidance: read one narrow line window."],
+          },
+          {
+            toolName: "grep",
+            additionalDescriptionParagraphs: ["This unavailable grep guidance should not be forwarded."],
+          },
+        ],
+      },
+    ],
+  });
+  const workspaceSummaryToolDefinition = applyAssistantModelOverlayResolverToCustomToolDefinition({
+    customToolDefinition: {
+      toolName: "workspace_summary",
+      providerToolDefinition: {
+        toolName: "workspace_summary",
+        description: "Summarize a workspace topic.",
+        parameters: {
+          type: "object",
+          properties: { topic: { type: "string" } },
+          required: ["topic"],
+          additionalProperties: false,
+        },
+      },
+      executionPolicy: {
+        workspaceEffectKind: "read_only",
+        isAutoConcurrent: false,
+        isAutoApprovedReadOnly: false,
+        clearsSameTurnReadCoverageBeforeExecution: false,
+      },
+      executor: async () => ({
+        outcomeKind: "completed",
+        toolResultText: "Workspace summary complete.",
+      }),
+    } satisfies CustomAssistantToolDefinition,
+    customAssistantToolProviderDefinitionResolver: modelOverlayResolvers.customAssistantToolProviderDefinitionResolver,
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    ...modelOverlayResolvers.assistantRuntimeResolverInput,
+    assistantToolRegistry: createDefaultAssistantToolRegistry({
+      additionalCustomTools: [workspaceSummaryToolDefinition],
+    }),
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Use the shared model overlay",
+      selectedModelId: "small-local-model",
+      selectedReasoningEffort: "low",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[0]?.providerTurnKind).toBe("assistant");
+  expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["task", "workspace_summary"]);
+  expect(provider.startedTurnRequests[0]?.availableToolDefinitions).toEqual([
+    {
+      ...workspaceSummaryToolDefinition.providerToolDefinition,
+      description: "Summarize a workspace topic.\n\nShared small tool guidance: use one exact topic at a time.",
+    },
+  ]);
+  expect(provider.startedTurnRequests[0]?.builtInToolDescriptionOverlays).toEqual([
+    {
+      toolName: "task",
+      additionalDescriptionParagraphs: ["Shared small task guidance: delegate only one focused question."],
+    },
+  ]);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "Shared small primary guidance: verify paths before summarizing.",
+  );
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain(
+    "Shared small primary prompt fragment: use explicit tool steps.",
+  );
+  expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read", "workspace_summary"]);
+  expect(provider.startedTurnRequests[1]?.availableToolDefinitions).toEqual([
+    {
+      ...workspaceSummaryToolDefinition.providerToolDefinition,
+      description: "Summarize a workspace topic.\n\nShared small tool guidance: use one exact topic at a time.",
+    },
+  ]);
+  expect(provider.startedTurnRequests[1]?.builtInToolDescriptionOverlays).toEqual([
+    {
+      toolName: "read",
+      additionalDescriptionParagraphs: ["Shared small read guidance: read one narrow line window."],
+    },
+  ]);
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain(
+    "Shared small subagent guidance: use one narrow read or search.",
+  );
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain(
+    "Shared small Explorer fragment: stay evidence-led.",
+  );
+  expect(JSON.stringify(provider.startedTurnRequests[1]?.conversationSessionEntries)).toContain(
+    "Shared small task prompt fragment: return an evidence map.",
+  );
+  expect(workspaceSummaryToolDefinition.providerToolDefinition.description).toBe("Summarize a workspace topic.");
+});
+
+test("AssistantConversationRuntime rejects primary agent composition that changes the selected agent identity", () => {
+  const provider = new RecordingConversationTurnProvider([
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "completed", usage: completedUsage },
+      ],
+    }),
+  ]);
+  const primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver = (compositionInput) => ({
+    primaryAssistantAgent: {
+      ...compositionInput.registeredPrimaryAssistantAgent,
+      agentName: "plan",
+    },
+    assistantProviderModelPromptProfile: resolveDefaultAssistantProviderModelPromptProfile({
+      providerName: compositionInput.providerName,
+      selectedModelId: compositionInput.selectedModelId,
+    }),
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    primaryAssistantAgentCompositionResolver,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  expect(() =>
+    runtime.startConversationTurn({
+      userPromptText: "Try to switch agent identity",
+      selectedModelId: "gpt-5.4",
+    })
+  ).toThrow(
+    'Primary assistant agent composition returned agentName "plan" for selected agent "understand".',
   );
 });
 
@@ -4530,6 +4988,287 @@ test("AssistantConversationRuntime runs task as an isolated read-only child turn
   );
 });
 
+test("AssistantConversationRuntime resolves custom provider definitions for task subagent model turns", async () => {
+  const parentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_probe_task_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "probe_subagent",
+          subagentDescription: "inspect model-specific custom tool definitions",
+          subagentPrompt: "Run the model probe subagent.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Probe subagent acknowledged." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const subagentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Probe subagent completed." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([parentProviderTurn, subagentProviderTurn]);
+  const providerDefinitionResolverInputs: ResolveCustomAssistantToolProviderDefinitionInput[] = [];
+  const modelProbeToolDefinition = {
+    toolName: "model_probe",
+    providerToolDefinition: {
+      toolName: "model_probe",
+      description: "Inspect the task subagent model context.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    resolveProviderToolDefinitionForTurn: (resolverInput) => {
+      providerDefinitionResolverInputs.push(resolverInput);
+      return appendProviderToolDefinitionDescription({
+        providerToolDefinition: resolverInput.defaultProviderToolDefinition,
+        additionalDescriptionParagraphs: [
+          `Subagent provider guidance for ${resolverInput.selectedModelId} at ${resolverInput.selectedReasoningEffort}.`,
+        ],
+      });
+    },
+    executionPolicy: {
+      workspaceEffectKind: "read_only",
+      isAutoConcurrent: false,
+      isAutoApprovedReadOnly: false,
+      clearsSameTurnReadCoverageBeforeExecution: false,
+    },
+    executor: async () => ({
+      outcomeKind: "completed",
+      toolResultText: "Model probe completed.",
+    }),
+  } satisfies CustomAssistantToolDefinition;
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    assistantAgentRegistry: createDefaultAssistantAgentRegistry({
+      additionalSubagents: [
+        {
+          subagentName: "probe_subagent",
+          displayName: "Probe Subagent",
+          availableToolNames: ["model_probe"],
+          systemPromptConfiguration: {
+            promptConfigurationKind: "custom",
+            systemPromptText: "You are a probe subagent.",
+          },
+          conversationSessionAssistantOperatingMode: "understand",
+        },
+      ],
+    }),
+    assistantToolRegistry: createDefaultAssistantToolRegistry({
+      additionalCustomTools: [modelProbeToolDefinition],
+    }),
+    taskSubagentProviderModelSelectionPolicy: {
+      selectedModelIdOverride: "small-subagent-model",
+      maximumReasoningEffort: "low",
+    },
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Run the probe subagent",
+      selectedModelId: "gpt-5.5",
+      selectedReasoningEffort: "high",
+    }),
+  );
+
+  expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["model_probe"]);
+  expect(provider.startedTurnRequests[1]?.selectedModelId).toBe("small-subagent-model");
+  expect(provider.startedTurnRequests[1]?.selectedReasoningEffort).toBe("low");
+  expect(provider.startedTurnRequests[1]?.availableToolDefinitions).toEqual([
+    {
+      ...modelProbeToolDefinition.providerToolDefinition,
+      description:
+        "Inspect the task subagent model context.\n\nSubagent provider guidance for small-subagent-model at low.",
+    },
+  ]);
+  expect(providerDefinitionResolverInputs).toEqual([
+    {
+      providerName: "openai",
+      selectedModelId: "small-subagent-model",
+      selectedReasoningEffort: "low",
+      assistantTurnKind: "task_subagent",
+      assistantAgentName: "probe_subagent",
+      toolName: "model_probe",
+      defaultProviderToolDefinition: modelProbeToolDefinition.providerToolDefinition,
+    },
+  ]);
+});
+
+test("AssistantConversationRuntime applies model-aware task subagent overlays without changing default subagent behavior", async () => {
+  const smallModelParentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_small_task_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "inspect small subagent composition",
+          subagentPrompt: "Run the small subagent overlay.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Small subagent result acknowledged." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const smallModelSubagentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Small subagent completed." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const defaultParentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_call_requested",
+        toolCallId: "call_default_task_1",
+        toolCallRequest: {
+          toolName: "task",
+          subagentName: "explore",
+          subagentDescription: "inspect default subagent composition",
+          subagentPrompt: "Run the default subagent path.",
+        },
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Default subagent result acknowledged." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const defaultSubagentProviderTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      { type: "text_chunk", text: "Default subagent completed." },
+      { type: "completed", usage: completedUsage },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([
+    smallModelParentProviderTurn,
+    smallModelSubagentProviderTurn,
+    defaultParentProviderTurn,
+    defaultSubagentProviderTurn,
+  ]);
+  const compositionInputs: ResolveTaskSubagentCompositionInput[] = [];
+  const taskSubagentCompositionResolver = createModelAwareTaskSubagentCompositionResolver({
+    composeTaskSubagentForModel: (compositionInput) => {
+      compositionInputs.push(compositionInput);
+      if (compositionInput.taskSubagentProviderModelSelection.taskSubagentSelectedModelId !== "small-subagent-model") {
+        return undefined;
+      }
+
+      const smallModelTaskSubagent = appendSubagentPromptSections({
+        subagent: compositionInput.defaultTaskSubagent,
+        additionalPromptSections: ["Small subagent system guidance: use one narrow read or search at a time."],
+      });
+
+      return {
+        taskSubagent: {
+          ...smallModelTaskSubagent,
+          availableToolNames: ["read"],
+        },
+        assistantProviderModelPromptProfile: appendAssistantProviderModelPromptFragments({
+          assistantProviderModelPromptProfile:
+            compositionInput.defaultTaskSubagentAssistantProviderModelPromptProfile,
+          promptFragments: {
+            explorerSystemPrompt: ["Small subagent Explorer prompt fragment: prefer exact paths."],
+            taskSubagentPrompt: ["Small subagent task prompt fragment: return a concise evidence map."],
+          },
+        }),
+      };
+    },
+  });
+  const smallModelRuntime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    taskSubagentCompositionResolver,
+    taskSubagentProviderModelSelectionPolicy: {
+      selectedModelIdOverride: "small-subagent-model",
+      maximumReasoningEffort: "low",
+    },
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+  const defaultRuntime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    taskSubagentCompositionResolver,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(
+    smallModelRuntime.startConversationTurn({
+      userPromptText: "Run the small subagent overlay",
+      selectedModelId: "gpt-5.5",
+      selectedReasoningEffort: "high",
+    }),
+  );
+  await collectAssistantEvents(
+    defaultRuntime.startConversationTurn({
+      userPromptText: "Run the default subagent path",
+      selectedModelId: "gpt-5.5",
+      selectedReasoningEffort: "high",
+    }),
+  );
+
+  expect(compositionInputs).toHaveLength(2);
+  expect(compositionInputs[0]).toMatchObject({
+    providerName: "openai",
+    parentSelectedModelId: "gpt-5.5",
+    parentSelectedReasoningEffort: "high",
+    registeredSubagent: { subagentName: "explore" },
+    parentPrimaryAssistantAgent: { agentName: "understand" },
+    taskSubagentProviderModelSelection: {
+      taskSubagentSelectedModelId: "small-subagent-model",
+      taskSubagentSelectedReasoningEffort: "low",
+    },
+  });
+  expect(provider.startedTurnRequests[1]?.providerTurnKind).toBe("task_subagent");
+  expect(provider.startedTurnRequests[1]?.selectedModelId).toBe("small-subagent-model");
+  expect(provider.startedTurnRequests[1]?.selectedReasoningEffort).toBe("low");
+  expect(provider.startedTurnRequests[1]?.availableToolNames).toEqual(["read"]);
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain(
+    "Small subagent system guidance: use one narrow read or search at a time.",
+  );
+  expect(provider.startedTurnRequests[1]?.systemPromptText).toContain(
+    "Small subagent Explorer prompt fragment: prefer exact paths.",
+  );
+  expect(JSON.stringify(provider.startedTurnRequests[1]?.conversationSessionEntries)).toContain(
+    "Small subagent task prompt fragment: return a concise evidence map.",
+  );
+
+  expect(compositionInputs[1]).toMatchObject({
+    taskSubagentProviderModelSelection: {
+      taskSubagentSelectedModelId: "gpt-5.4",
+      taskSubagentSelectedReasoningEffort: "medium",
+    },
+  });
+  expect(provider.startedTurnRequests[3]?.providerTurnKind).toBe("task_subagent");
+  expect(provider.startedTurnRequests[3]?.selectedModelId).toBe("gpt-5.4");
+  expect(provider.startedTurnRequests[3]?.selectedReasoningEffort).toBe("medium");
+  expect(provider.startedTurnRequests[3]?.availableToolNames).toContain("grep");
+  expect(provider.startedTurnRequests[3]?.systemPromptText).not.toContain(
+    "Small subagent system guidance: use one narrow read or search at a time.",
+  );
+  expect(provider.startedTurnRequests[3]?.systemPromptText).not.toContain(
+    "Small subagent Explorer prompt fragment: prefer exact paths.",
+  );
+  expect(JSON.stringify(provider.startedTurnRequests[3]?.conversationSessionEntries)).not.toContain(
+    "Small subagent task prompt fragment: return a concise evidence map.",
+  );
+});
+
 test("AssistantConversationRuntime runs task as a built-in Explorer subagent", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-task-tool-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nTask target\n", "utf8");
@@ -4971,9 +5710,10 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
     (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
       conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
   );
-  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+  if (!completedTaskToolResult) {
     throw new Error("Expected completed Explorer task tool result");
   }
+  expectTaskToolCallDetail(completedTaskToolResult.toolCallDetail);
   expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toMatchObject({
     checkpointReason: "child_tool_call_count",
     childToolCallCount: 192,
@@ -5053,9 +5793,10 @@ test("AssistantConversationRuntime preserves uncapped checkpoint reports after t
     (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
       conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
   );
-  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+  if (!completedTaskToolResult) {
     throw new Error("Expected completed Explorer task tool result");
   }
+  expectTaskToolCallDetail(completedTaskToolResult.toolCallDetail);
   expect(completedTaskToolResult.toolCallDetail.subagentResultSummary).toContain(completeCheckpointReportSuffix);
   expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls).toHaveLength(192);
   const recordedChildToolCallIds = completedTaskToolResult.toolCallDetail.subagentChildToolCalls?.map(
@@ -5125,9 +5866,10 @@ test("AssistantConversationRuntime asks task subagents for a checkpoint after th
     (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
       conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
   );
-  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+  if (!completedTaskToolResult) {
     throw new Error("Expected completed Explorer task tool result");
   }
+  expectTaskToolCallDetail(completedTaskToolResult.toolCallDetail);
   expect(completedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toMatchObject({
     checkpointReason: "elapsed_time",
     childToolCallCount: 1,
@@ -5279,9 +6021,10 @@ test("AssistantConversationRuntime bounds default Explorer reads", async () => {
     (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "completed_tool_result" }> =>
       conversationSessionEntry.entryKind === "completed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
   );
-  if (!completedTaskToolResult || completedTaskToolResult.toolCallDetail.toolName !== "task") {
+  if (!completedTaskToolResult) {
     throw new Error("Expected completed Explorer task tool result");
   }
+  expectTaskToolCallDetail(completedTaskToolResult.toolCallDetail);
   expect(completedTaskToolResult.toolCallDetail.subagentChildToolCalls?.[0]?.subagentChildToolCallDetail).toMatchObject({
     toolName: "read",
     readFilePath: "long.txt",
@@ -5345,9 +6088,10 @@ test("AssistantConversationRuntime fails Explorer clearly when it keeps requesti
     (conversationSessionEntry): conversationSessionEntry is Extract<ConversationSessionEntry, { entryKind: "failed_tool_result" }> =>
       conversationSessionEntry.entryKind === "failed_tool_result" && conversationSessionEntry.toolCallId === "call_explore_1",
   );
-  if (!failedTaskToolResult || failedTaskToolResult.toolCallDetail.toolName !== "task") {
+  if (!failedTaskToolResult) {
     throw new Error("Expected failed Explorer task tool result");
   }
+  expectTaskToolCallDetail(failedTaskToolResult.toolCallDetail);
   expect(failedTaskToolResult.failureExplanation).toContain("Explorer continued requesting tools after the research checkpoint");
   expect(failedTaskToolResult.toolCallDetail.subagentResearchCheckpoint).toMatchObject({
     checkpointReason: "child_tool_call_count",

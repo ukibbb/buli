@@ -224,6 +224,116 @@ Buli has three primary modes. They are workflow posture, not separate products.
 
 Use `Tab` in the prompt to cycle modes.
 
+### Code-only model-aware agent overlays
+
+Primary agents, task subagents, and custom tools can keep stable base definitions while a shared model overlay adjusts the effective prompt, tools, prompt-profile fragments, and custom-tool provider descriptions for the current turn.
+
+```ts
+import {
+  applyAssistantModelOverlayResolverToCustomToolDefinition,
+  createAssistantModelOverlayResolvers,
+  createDefaultAssistantToolRegistry,
+  type CustomAssistantToolDefinition,
+} from "@buli/engine";
+
+const modelOverlayResolvers = createAssistantModelOverlayResolvers({
+  modelOverlays: [
+    {
+      overlayName: "small-local-model",
+      matchesTurn: ({ selectedModelId }) => selectedModelId === "small-local-model",
+      primaryAgentOverlays: [
+        {
+          agentName: "understand",
+          additionalPromptSections: [
+            "Small-model guidance: use tools one step at a time and verify file paths before editing.",
+          ],
+          availableToolNames: ["read", "glob", "grep", "task", "workspace_summary"],
+          promptFragments: {
+            primaryAssistantSystemPrompt: ["Prefer explicit, simple tool-use instructions for this model."],
+          },
+        },
+      ],
+      taskSubagentOverlays: [
+        {
+          subagentName: "explore",
+          additionalPromptSections: [
+            "Small-model Explorer guidance: prefer one narrow read/search at a time and report uncertainty early.",
+          ],
+          availableToolNames: ["read", "glob", "grep", "workspace_summary"],
+          promptFragments: {
+            explorerSystemPrompt: ["Keep the exploration strategy simple and evidence-led for this model."],
+            taskSubagentPrompt: ["Return a concise evidence map before broad conclusions."],
+          },
+        },
+      ],
+      customToolProviderDefinitionOverlays: [
+        {
+          toolName: "workspace_summary",
+          additionalDescriptionParagraphs: [
+            "Small-model guidance: use one exact topic at a time and do not infer missing files.",
+          ],
+        },
+      ],
+      builtInToolDescriptionOverlays: [
+        {
+          toolName: "read",
+          additionalDescriptionParagraphs: [
+            "Small-model guidance: read one narrow file window at a time and do not infer paths.",
+          ],
+        },
+        {
+          toolName: "grep",
+          additionalDescriptionParagraphs: [
+            "Small-model guidance: prefer exact simple patterns before broad regexes.",
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const baseWorkspaceSummaryTool = {
+  toolName: "workspace_summary",
+  providerToolDefinition: {
+    toolName: "workspace_summary",
+    description: "Summarize a workspace topic.",
+    parameters: {
+      type: "object",
+      properties: { topic: { type: "string" } },
+      required: ["topic"],
+      additionalProperties: false,
+    },
+  },
+  executionPolicy: {
+    workspaceEffectKind: "read_only",
+    isAutoConcurrent: false,
+    isAutoApprovedReadOnly: false,
+    clearsSameTurnReadCoverageBeforeExecution: false,
+  },
+  executor: async () => ({
+    outcomeKind: "completed",
+    toolResultText: "Workspace summary complete.",
+  }),
+} satisfies CustomAssistantToolDefinition;
+
+const workspaceSummaryTool = applyAssistantModelOverlayResolverToCustomToolDefinition({
+  customToolDefinition: baseWorkspaceSummaryTool,
+  customAssistantToolProviderDefinitionResolver: modelOverlayResolvers.customAssistantToolProviderDefinitionResolver,
+});
+
+const assistantToolRegistry = createDefaultAssistantToolRegistry({
+  additionalCustomTools: [workspaceSummaryTool],
+});
+
+// Pass this object to your code-owned chat launcher.
+const runInteractiveChatInput = {
+  assistantToolRegistry,
+  ...modelOverlayResolvers.assistantRuntimeResolverInput,
+};
+```
+
+This is code registration, not config-file loading. Matching overlays apply in list order. Prompt sections, prompt-profile fragments, custom-tool description paragraphs, and built-in tool description paragraphs append; `availableToolNames` replaces the effective tool list for that model. `assistantRuntimeResolverInput` is the ready-to-spread runtime wiring, and `applyAssistantModelOverlayResolverToCustomToolDefinition` preserves any tool-specific provider-definition resolver before applying overlay descriptions. Unmatched strong/default models keep the registered base agent, subagent, custom tool definition, and built-in tool descriptions unchanged. Built-in overlays are description-only: they do not change tool names, argument schemas, parsers, or execution behavior.
+
 ## Codebase Knowledge Indexing
 
 Buli builds a workspace-local codebase knowledge index so `locate_codebase_symbols` can resolve known exact symbol names to definition files and start/end line ranges without repeatedly scanning files from scratch.

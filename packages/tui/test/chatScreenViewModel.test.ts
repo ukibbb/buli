@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ConversationMessage, ConversationMessagePart } from "@buli/contracts";
+import type { AssistantPrimaryAgentDisplayMetadata, ConversationMessage, ConversationMessagePart } from "@buli/contracts";
 import { chatScreenTheme, minimumTerminalSizeTier } from "@buli/assistant-design-tokens";
 import {
   createInitialChatSessionState,
@@ -185,6 +185,63 @@ test("buildChatScreenViewModel derives footer mode transition labels", () => {
   expect(viewModel.nextShortModeLabel).toBe("Plan");
   expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentAmber);
   expect(viewModel.promptInputHintOverride).toBeUndefined();
+});
+
+test("buildChatScreenViewModel derives footer labels and colors from configured primary agents", () => {
+  const primaryAgentDisplayMetadata = [
+    {
+      agentName: "understand",
+      displayName: "Understand Agent",
+      shortLabel: "Understand",
+      accentColorName: "pink",
+    },
+    {
+      agentName: "review",
+      displayName: "Review Agent",
+      shortLabel: "Review",
+      accentColorName: "purple",
+    },
+    {
+      agentName: "implementation",
+      displayName: "Implementation Agent",
+      shortLabel: "Implementation",
+      accentColorName: "green",
+    },
+  ] as const satisfies readonly AssistantPrimaryAgentDisplayMetadata[];
+
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "review",
+    },
+    conversationSessionCompactionStatus: { step: "idle" },
+    primaryAgentDisplayMetadata,
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.shortModeLabel).toBe("Review");
+  expect(viewModel.nextShortModeLabel).toBe("Implementation");
+  expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentPurple);
+  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentGreen);
+});
+
+test("buildChatScreenViewModel safely labels unknown custom agents by id", () => {
+  const viewModel = buildChatScreenViewModel({
+    chatSessionState: {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "unknown-agent",
+    },
+    conversationSessionCompactionStatus: { step: "idle" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.shortModeLabel).toBe("unknown-agent");
+  expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.textMuted);
+  expect(viewModel.nextShortModeLabel).toBe("Understand");
 });
 
 test("buildChatScreenViewModel derives footer reasoning effort label", () => {

@@ -78,6 +78,31 @@ test("cycleAssistantOperatingMode switches from understand to plan to implementa
   expect(understandAgainChatSessionState.selectedAssistantOperatingMode).toBe("understand");
 });
 
+test("cycleAssistantOperatingMode can use configured primary agent metadata", () => {
+  const reviewChatSessionState = cycleAssistantOperatingMode(
+    {
+      ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+      selectedAssistantOperatingMode: "understand",
+    },
+    [
+      {
+        agentName: "understand",
+        displayName: "Understand Agent",
+        shortLabel: "Understand",
+        accentColorName: "pink",
+      },
+      {
+        agentName: "review",
+        displayName: "Review Agent",
+        shortLabel: "Review",
+        accentColorName: "purple",
+      },
+    ],
+  );
+
+  expect(reviewChatSessionState.selectedAssistantOperatingMode).toBe("review");
+});
+
 test("selectAssistantOperatingMode sets a specific mode", () => {
   const chatSessionState = selectAssistantOperatingMode(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),

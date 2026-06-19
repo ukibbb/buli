@@ -11,7 +11,7 @@ import type {
   ConversationSessionExportStatus,
   QueuedChatAppPromptPreview,
 } from "@buli/chat-app-controller";
-import { chatScreenTheme, type ChatScreenTheme } from "@buli/assistant-design-tokens";
+import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { memo, useCallback, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { ConversationSessionSelectionPane } from "./ConversationSessionSelectionPane.tsx";
 import { ModelAndReasoningSelectionPane } from "./ModelAndReasoningSelectionPane.tsx";
@@ -27,7 +27,7 @@ export type LiveInteractionStatusStackProps = LiveInteractionStatusStackCommonPr
 );
 
 type LiveInteractionStatusStackCommonProps = {
-  inputPanelAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  inputPanelAccentColor: string;
   shouldHideQueuedPromptPreviews?: boolean | undefined;
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };

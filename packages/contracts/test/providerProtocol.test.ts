@@ -13,11 +13,33 @@ import {
   decodeProviderProtocolHostFrameFromJsonLine,
   encodeProviderProtocolFrameAsJsonLine,
   streamProviderProtocolHostFramesFromJsonLines,
+  type ProviderBuiltInToolDescriptionOverlay,
+  type ProviderToolDefinition,
 } from "../src/index.ts";
 import {
   providerProtocolJsonSchemaArtifactUrl,
   serializeProviderProtocolJsonSchema,
 } from "../scripts/writeProviderProtocolJsonSchema.ts";
+
+const workspaceSummaryProviderToolDefinition: ProviderToolDefinition = {
+  toolName: "workspace_summary",
+  description: "Summarize a workspace topic.",
+  parameters: {
+    type: "object",
+    properties: {
+      topic: { type: "string", description: "The exact workspace topic to summarize." },
+    },
+    required: ["topic"],
+    additionalProperties: false,
+  },
+};
+
+const smallModelReadDescriptionOverlay: ProviderBuiltInToolDescriptionOverlay = {
+  toolName: "read",
+  additionalDescriptionParagraphs: [
+    "Small-model guidance: read one narrow file window at a time and do not infer paths.",
+  ],
+};
 
 const validHostStartTurnFrame = {
   protocol: PROVIDER_PROTOCOL_VERSION,
@@ -37,7 +59,9 @@ const validHostStartTurnFrame = {
     selectedModelId: "gpt-5.5",
     selectedReasoningEffort: "medium",
     promptCacheKey: "workspace-cache-key",
-    availableToolNames: ["read", "glob", "grep"],
+    availableToolNames: ["read", "glob", "grep", "workspace_summary"],
+    availableToolDefinitions: [workspaceSummaryProviderToolDefinition],
+    builtInToolDescriptionOverlays: [smallModelReadDescriptionOverlay],
   },
 } as const;
 
@@ -76,7 +100,9 @@ test("ProviderProtocolHostStartTurnFrameSchema parses a provider turn request wi
 
   expect(parsedFrame.frameKind).toBe("host_start_turn");
   expect(parsedFrame.turnRequest.conversationSessionEntries).toHaveLength(1);
-  expect(parsedFrame.turnRequest.availableToolNames).toEqual(["read", "glob", "grep"]);
+  expect(parsedFrame.turnRequest.availableToolNames).toEqual(["read", "glob", "grep", "workspace_summary"]);
+  expect(parsedFrame.turnRequest.availableToolDefinitions).toEqual([workspaceSummaryProviderToolDefinition]);
+  expect(parsedFrame.turnRequest.builtInToolDescriptionOverlays).toEqual([smallModelReadDescriptionOverlay]);
 });
 
 test("ProviderProtocolHostStartTurnFrameSchema rejects AbortSignal-shaped runtime fields", () => {

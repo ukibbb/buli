@@ -441,47 +441,7 @@
                         "minLength": 1
                       },
                       "toolCallRequest": {
-                        "oneOf": [
-                          {
-                            "$ref": "#/$defs/__schema32"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema34"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema36"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema37"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema38"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema39"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema41"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema42"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema43"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema44"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema46"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema47"
-                          },
-                          {
-                            "$ref": "#/$defs/__schema48"
-                          }
-                        ]
+                        "$ref": "#/$defs/__schema32"
                       }
                     },
                     "required": [
@@ -545,13 +505,13 @@
                     "type": "object",
                     "properties": {
                       "toolCallId": {
-                        "$ref": "#/$defs/__schema50"
+                        "$ref": "#/$defs/__schema40"
                       },
                       "toolCallDetail": {
-                        "$ref": "#/$defs/__schema51"
+                        "$ref": "#/$defs/__schema41"
                       },
                       "toolResultText": {
-                        "$ref": "#/$defs/__schema66"
+                        "$ref": "#/$defs/__schema57"
                       },
                       "entryKind": {
                         "type": "string",
@@ -570,13 +530,13 @@
                     "type": "object",
                     "properties": {
                       "toolCallId": {
-                        "$ref": "#/$defs/__schema50"
+                        "$ref": "#/$defs/__schema40"
                       },
                       "toolCallDetail": {
-                        "$ref": "#/$defs/__schema51"
+                        "$ref": "#/$defs/__schema41"
                       },
                       "toolResultText": {
-                        "$ref": "#/$defs/__schema66"
+                        "$ref": "#/$defs/__schema57"
                       },
                       "entryKind": {
                         "type": "string",
@@ -600,13 +560,13 @@
                     "type": "object",
                     "properties": {
                       "toolCallId": {
-                        "$ref": "#/$defs/__schema50"
+                        "$ref": "#/$defs/__schema40"
                       },
                       "toolCallDetail": {
-                        "$ref": "#/$defs/__schema51"
+                        "$ref": "#/$defs/__schema41"
                       },
                       "toolResultText": {
-                        "$ref": "#/$defs/__schema66"
+                        "$ref": "#/$defs/__schema57"
                       },
                       "entryKind": {
                         "type": "string",
@@ -675,7 +635,7 @@
                           "changedFiles": {
                             "type": "array",
                             "items": {
-                              "$ref": "#/$defs/__schema59"
+                              "$ref": "#/$defs/__schema49"
                             }
                           }
                         },
@@ -707,7 +667,7 @@
               "minLength": 1
             },
             "selectedReasoningEffort": {
-              "$ref": "#/$defs/__schema67"
+              "$ref": "#/$defs/__schema58"
             },
             "promptCacheKey": {
               "type": "string",
@@ -717,21 +677,103 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": [
-                  "bash",
-                  "read",
-                  "glob",
-                  "grep",
-                  "locate_codebase_symbols",
-                  "edit",
-                  "edit_many",
-                  "patch",
-                  "patch_many",
-                  "write",
-                  "task",
-                  "skill",
-                  "record_workflow_handoff"
-                ]
+                "minLength": 1
+              }
+            },
+            "availableToolDefinitions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "toolName": {
+                    "$ref": "#/$defs/__schema37"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "object"
+                      },
+                      "properties": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema59"
+                        }
+                      },
+                      "required": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "boolean",
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "properties",
+                      "required",
+                      "additionalProperties"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "toolName",
+                  "description",
+                  "parameters"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "builtInToolDescriptionOverlays": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "toolName": {
+                    "type": "string",
+                    "enum": [
+                      "bash",
+                      "read",
+                      "glob",
+                      "grep",
+                      "locate_codebase_symbols",
+                      "edit",
+                      "edit_many",
+                      "patch",
+                      "patch_many",
+                      "write",
+                      "task",
+                      "skill",
+                      "record_workflow_handoff"
+                    ]
+                  },
+                  "additionalDescriptionParagraphs": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/__schema62"
+                    }
+                  }
+                },
+                "required": [
+                  "toolName",
+                  "additionalDescriptionParagraphs"
+                ],
+                "additionalProperties": false
               }
             }
           },
@@ -883,12 +925,12 @@
                 "minLength": 1
               },
               "defaultReasoningEffort": {
-                "$ref": "#/$defs/__schema67"
+                "$ref": "#/$defs/__schema58"
               },
               "supportedReasoningEfforts": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema67"
+                  "$ref": "#/$defs/__schema58"
                 }
               },
               "supportsHostedWebSearchTool": {
@@ -926,7 +968,7 @@
           "$ref": "#/$defs/__schema2"
         },
         "sequenceNumber": {
-          "$ref": "#/$defs/__schema68"
+          "$ref": "#/$defs/__schema63"
         },
         "providerStreamEvent": {
           "oneOf": [
@@ -1053,7 +1095,7 @@
                   "minLength": 1
                 },
                 "toolCallRequest": {
-                  "$ref": "#/$defs/__schema69"
+                  "$ref": "#/$defs/__schema32"
                 }
               },
               "required": [
@@ -1074,7 +1116,7 @@
                   "minItems": 1,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema70"
+                    "$ref": "#/$defs/__schema64"
                   }
                 }
               },
@@ -1187,7 +1229,7 @@
                   "minItems": 1,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema71"
+                    "$ref": "#/$defs/__schema65"
                   }
                 }
               },
@@ -1254,12 +1296,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/__schema72"
+                    "$ref": "#/$defs/__schema66"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "$ref": "#/$defs/__schema72"
+                      "$ref": "#/$defs/__schema66"
                     }
                   }
                 ]
@@ -1303,7 +1345,7 @@
           ]
         },
         "finalSequenceNumber": {
-          "$ref": "#/$defs/__schema68"
+          "$ref": "#/$defs/__schema63"
         },
         "providerTurnReplay": {
           "$ref": "#/$defs/__schema12"
@@ -1333,11 +1375,9 @@
     },
     "__schema3": {
       "type": "string",
-      "enum": [
-        "understand",
-        "plan",
-        "implementation"
-      ]
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
     },
     "__schema4": {
       "type": "string",
@@ -2025,37 +2065,361 @@
       "additionalProperties": false
     },
     "__schema32": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "bash"
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "bash"
+                },
+                "shellCommand": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20000
+                },
+                "commandDescription": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "workingDirectoryPath": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "timeoutMilliseconds": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 600000
+                }
+              },
+              "required": [
+                "toolName",
+                "shellCommand",
+                "commandDescription"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "read"
+                },
+                "readTargetPath": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "offsetLineNumber": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maximumLineCount": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 600
+                },
+                "inspectionQuestion": {
+                  "$ref": "#/$defs/__schema34"
+                }
+              },
+              "required": [
+                "toolName",
+                "readTargetPath"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "glob"
+                },
+                "globPattern": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "searchDirectoryPath": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "inspectionQuestion": {
+                  "$ref": "#/$defs/__schema34"
+                }
+              },
+              "required": [
+                "toolName",
+                "globPattern"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "grep"
+                },
+                "regexPattern": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "searchPath": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "includeGlobPattern": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "contextLineCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5
+                },
+                "inspectionQuestion": {
+                  "$ref": "#/$defs/__schema34"
+                }
+              },
+              "required": [
+                "toolName",
+                "regexPattern"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "edit"
+                },
+                "editTargetPath": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "oldString": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000
+                },
+                "newString": {
+                  "type": "string",
+                  "maxLength": 1000000
+                },
+                "replaceAll": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "toolName",
+                "editTargetPath",
+                "oldString",
+                "newString"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "edit_many"
+                },
+                "edits": {
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema35"
+                  }
+                }
+              },
+              "required": [
+                "toolName",
+                "edits"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "patch"
+                },
+                "patchText": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000,
+                  "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
+                }
+              },
+              "required": [
+                "toolName",
+                "patchText"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "patch_many"
+                },
+                "patchText": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000,
+                  "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
+                }
+              },
+              "required": [
+                "toolName",
+                "patchText"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "write"
+                },
+                "writeTargetPath": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "fileContent": {
+                  "type": "string",
+                  "maxLength": 1000000
+                }
+              },
+              "required": [
+                "toolName",
+                "writeTargetPath",
+                "fileContent"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "task"
+                },
+                "subagentName": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "subagentDescription": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "subagentPrompt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100000
+                }
+              },
+              "required": [
+                "toolName",
+                "subagentName",
+                "subagentDescription",
+                "subagentPrompt"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "skill"
+                },
+                "skillName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                }
+              },
+              "required": [
+                "toolName",
+                "skillName"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "record_workflow_handoff"
+                },
+                "workflowHandoff": {
+                  "$ref": "#/$defs/__schema21"
+                }
+              },
+              "required": [
+                "toolName",
+                "workflowHandoff"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "locate_codebase_symbols"
+                },
+                "symbolNames": {
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema36"
+                  }
+                },
+                "filePaths": {
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema33"
+                  }
+                }
+              },
+              "required": [
+                "toolName",
+                "symbolNames"
+              ],
+              "additionalProperties": false
+            }
+          ]
         },
-        "shellCommand": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 20000
-        },
-        "commandDescription": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2000
-        },
-        "workingDirectoryPath": {
-          "$ref": "#/$defs/__schema33"
-        },
-        "timeoutMilliseconds": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 600000
+        {
+          "type": "object",
+          "properties": {
+            "toolName": {
+              "$ref": "#/$defs/__schema37"
+            },
+            "toolArgumentsJson": {
+              "$ref": "#/$defs/__schema38"
+            }
+          },
+          "required": [
+            "toolName",
+            "toolArgumentsJson"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "toolName",
-        "shellCommand",
-        "commandDescription"
-      ],
-      "additionalProperties": false
+      ]
     },
     "__schema33": {
       "type": "string",
@@ -2063,640 +2427,392 @@
       "maxLength": 4096
     },
     "__schema34": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "read"
-        },
-        "readTargetPath": {
-          "$ref": "#/$defs/__schema33"
-        },
-        "offsetLineNumber": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
-        },
-        "maximumLineCount": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 600
-        },
-        "inspectionQuestion": {
-          "$ref": "#/$defs/__schema35"
-        }
-      },
-      "required": [
-        "toolName",
-        "readTargetPath"
-      ],
-      "additionalProperties": false
-    },
-    "__schema35": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2000
     },
+    "__schema35": {
+      "type": "object",
+      "properties": {
+        "editTargetPath": {
+          "$ref": "#/$defs/__schema33"
+        },
+        "oldString": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000000
+        },
+        "newString": {
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "replaceAll": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "editTargetPath",
+        "oldString",
+        "newString"
+      ],
+      "additionalProperties": false
+    },
     "__schema36": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "glob"
-        },
-        "globPattern": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "searchDirectoryPath": {
-          "$ref": "#/$defs/__schema33"
-        },
-        "inspectionQuestion": {
-          "$ref": "#/$defs/__schema35"
-        }
-      },
-      "required": [
-        "toolName",
-        "globPattern"
-      ],
-      "additionalProperties": false
-    },
-    "__schema37": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "grep"
-        },
-        "regexPattern": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "searchPath": {
-          "$ref": "#/$defs/__schema33"
-        },
-        "includeGlobPattern": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "contextLineCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 5
-        },
-        "inspectionQuestion": {
-          "$ref": "#/$defs/__schema35"
-        }
-      },
-      "required": [
-        "toolName",
-        "regexPattern"
-      ],
-      "additionalProperties": false
-    },
-    "__schema38": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "edit"
-        },
-        "editTargetPath": {
-          "$ref": "#/$defs/__schema33"
-        },
-        "oldString": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000000
-        },
-        "newString": {
-          "type": "string",
-          "maxLength": 1000000
-        },
-        "replaceAll": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "toolName",
-        "editTargetPath",
-        "oldString",
-        "newString"
-      ],
-      "additionalProperties": false
-    },
-    "__schema39": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "edit_many"
-        },
-        "edits": {
-          "minItems": 1,
-          "maxItems": 100,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema40"
-          }
-        }
-      },
-      "required": [
-        "toolName",
-        "edits"
-      ],
-      "additionalProperties": false
-    },
-    "__schema40": {
-      "type": "object",
-      "properties": {
-        "editTargetPath": {
-          "$ref": "#/$defs/__schema33"
-        },
-        "oldString": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000000
-        },
-        "newString": {
-          "type": "string",
-          "maxLength": 1000000
-        },
-        "replaceAll": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "editTargetPath",
-        "oldString",
-        "newString"
-      ],
-      "additionalProperties": false
-    },
-    "__schema41": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "patch"
-        },
-        "patchText": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000000,
-          "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
-        }
-      },
-      "required": [
-        "toolName",
-        "patchText"
-      ],
-      "additionalProperties": false
-    },
-    "__schema42": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "patch_many"
-        },
-        "patchText": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000000,
-          "pattern": "^\\s*\\*\\*\\* Begin Patch\\n[\\s\\S]*\\*\\*\\* (?:Add File|Update File|Delete File): [^\\n]+[\\s\\S]*\\n\\*\\*\\* End Patch\\s*$"
-        }
-      },
-      "required": [
-        "toolName",
-        "patchText"
-      ],
-      "additionalProperties": false
-    },
-    "__schema43": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "write"
-        },
-        "writeTargetPath": {
-          "$ref": "#/$defs/__schema33"
-        },
-        "fileContent": {
-          "type": "string",
-          "maxLength": 1000000
-        }
-      },
-      "required": [
-        "toolName",
-        "writeTargetPath",
-        "fileContent"
-      ],
-      "additionalProperties": false
-    },
-    "__schema44": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "task"
-        },
-        "subagentName": {
-          "$ref": "#/$defs/__schema45"
-        },
-        "subagentDescription": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2000
-        },
-        "subagentPrompt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100000
-        }
-      },
-      "required": [
-        "toolName",
-        "subagentName",
-        "subagentDescription",
-        "subagentPrompt"
-      ],
-      "additionalProperties": false
-    },
-    "__schema45": {
-      "type": "string",
-      "enum": [
-        "explore"
-      ]
-    },
-    "__schema46": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "skill"
-        },
-        "skillName": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64,
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-        }
-      },
-      "required": [
-        "toolName",
-        "skillName"
-      ],
-      "additionalProperties": false
-    },
-    "__schema47": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "record_workflow_handoff"
-        },
-        "workflowHandoff": {
-          "$ref": "#/$defs/__schema21"
-        }
-      },
-      "required": [
-        "toolName",
-        "workflowHandoff"
-      ],
-      "additionalProperties": false
-    },
-    "__schema48": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
-          "const": "locate_codebase_symbols"
-        },
-        "symbolNames": {
-          "minItems": 1,
-          "maxItems": 50,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema49"
-          }
-        },
-        "filePaths": {
-          "maxItems": 50,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema33"
-          }
-        }
-      },
-      "required": [
-        "toolName",
-        "symbolNames"
-      ],
-      "additionalProperties": false
-    },
-    "__schema49": {
       "type": "string",
       "minLength": 1,
       "maxLength": 512
     },
-    "__schema50": {
+    "__schema37": {
       "type": "string",
       "minLength": 1
     },
-    "__schema51": {
-      "oneOf": [
+    "__schema38": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema39"
+      }
+    },
+    "__schema39": {
+      "anyOf": [
         {
-          "$ref": "#/$defs/__schema52"
+          "type": "string"
         },
         {
-          "$ref": "#/$defs/__schema53"
+          "type": "number"
         },
         {
-          "$ref": "#/$defs/__schema55"
+          "type": "boolean"
         },
         {
-          "$ref": "#/$defs/__schema56"
+          "type": "null"
         },
         {
-          "$ref": "#/$defs/__schema58"
-        },
-        {
-          "$ref": "#/$defs/__schema60"
-        },
-        {
-          "$ref": "#/$defs/__schema61"
-        },
-        {
-          "$ref": "#/$defs/__schema62"
-        },
-        {
-          "$ref": "#/$defs/__schema63"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "toolName": {
-              "type": "string",
-              "const": "todowrite"
-            },
-            "todoItems": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "todoItemTitle": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "todoItemStatus": {
-                    "type": "string",
-                    "enum": [
-                      "pending",
-                      "in_progress",
-                      "completed"
-                    ]
-                  }
-                },
-                "required": [
-                  "todoItemTitle",
-                  "todoItemStatus"
-                ],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": [
-            "toolName",
-            "todoItems"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "$ref": "#/$defs/__schema8"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema39"
+          }
         },
         {
           "type": "object",
-          "properties": {
-            "toolName": {
-              "type": "string",
-              "const": "task"
-            },
-            "subagentName": {
-              "$ref": "#/$defs/__schema45"
-            },
-            "subagentDescription": {
-              "type": "string",
-              "minLength": 1
-            },
-            "subagentPrompt": {
-              "type": "string"
-            },
-            "subagentChildToolCalls": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "subagentChildToolCallId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "subagentChildToolCallStatus": {
-                    "type": "string",
-                    "enum": [
-                      "running",
-                      "completed",
-                      "failed",
-                      "denied",
-                      "interrupted"
-                    ]
-                  },
-                  "subagentChildToolCallStartedAtMs": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "subagentChildToolCallDetail": {
-                    "oneOf": [
-                      {
-                        "$ref": "#/$defs/__schema52"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema55"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema53"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema64"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema63"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema56"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema58"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema60"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema61"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema62"
-                      },
-                      {
-                        "$ref": "#/$defs/__schema65"
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "toolName": {
-                            "type": "string",
-                            "const": "task"
-                          },
-                          "subagentName": {
-                            "$ref": "#/$defs/__schema45"
-                          },
-                          "subagentDescription": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "subagentPrompt": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "toolName",
-                          "subagentName",
-                          "subagentDescription"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  },
-                  "subagentChildToolCallDurationMs": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "subagentChildToolCallErrorText": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "subagentChildToolCallDenialText": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "subagentChildToolCallId",
-                  "subagentChildToolCallStatus",
-                  "subagentChildToolCallStartedAtMs",
-                  "subagentChildToolCallDetail"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "subagentResearchCheckpoint": {
-              "type": "object",
-              "properties": {
-                "checkpointReason": {
-                  "type": "string",
-                  "enum": [
-                    "child_tool_call_count",
-                    "child_tool_result_text_length",
-                    "elapsed_time"
-                  ]
-                },
-                "childToolCallCount": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "childToolResultTextLength": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "skippedChildToolCallCount": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "elapsedMilliseconds": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "softElapsedTimeCheckpointMilliseconds": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": [
-                "checkpointReason",
-                "childToolCallCount",
-                "childToolResultTextLength",
-                "skippedChildToolCallCount"
-              ],
-              "additionalProperties": false
-            },
-            "subagentResultSummary": {
-              "type": "string"
-            }
+          "propertyNames": {
+            "type": "string"
           },
-          "required": [
-            "toolName",
-            "subagentName",
-            "subagentDescription"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "$ref": "#/$defs/__schema65"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "toolName": {
-              "type": "string",
-              "const": "record_workflow_handoff"
-            },
-            "handoffKind": {
-              "type": "string",
-              "enum": [
-                "understanding",
-                "plan",
-                "implementation"
-              ]
-            },
-            "handoffSummary": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "toolName",
-            "handoffKind",
-            "handoffSummary"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "$ref": "#/$defs/__schema64"
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema39"
+          }
         }
       ]
     },
-    "__schema52": {
+    "__schema40": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema41": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/__schema42"
+            },
+            {
+              "$ref": "#/$defs/__schema43"
+            },
+            {
+              "$ref": "#/$defs/__schema45"
+            },
+            {
+              "$ref": "#/$defs/__schema46"
+            },
+            {
+              "$ref": "#/$defs/__schema48"
+            },
+            {
+              "$ref": "#/$defs/__schema50"
+            },
+            {
+              "$ref": "#/$defs/__schema51"
+            },
+            {
+              "$ref": "#/$defs/__schema52"
+            },
+            {
+              "$ref": "#/$defs/__schema53"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "todowrite"
+                },
+                "todoItems": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "todoItemTitle": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "todoItemStatus": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "in_progress",
+                          "completed"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "todoItemTitle",
+                      "todoItemStatus"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "toolName",
+                "todoItems"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema8"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "task"
+                },
+                "subagentName": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "subagentDescription": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "subagentPrompt": {
+                  "type": "string"
+                },
+                "subagentChildToolCalls": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "subagentChildToolCallId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "subagentChildToolCallStatus": {
+                        "type": "string",
+                        "enum": [
+                          "running",
+                          "completed",
+                          "failed",
+                          "denied",
+                          "interrupted"
+                        ]
+                      },
+                      "subagentChildToolCallStartedAtMs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "subagentChildToolCallDetail": {
+                        "anyOf": [
+                          {
+                            "oneOf": [
+                              {
+                                "$ref": "#/$defs/__schema42"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema45"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema43"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema54"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema53"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema46"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema48"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema50"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema51"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema52"
+                              },
+                              {
+                                "$ref": "#/$defs/__schema55"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "toolName": {
+                                    "type": "string",
+                                    "const": "task"
+                                  },
+                                  "subagentName": {
+                                    "$ref": "#/$defs/__schema3"
+                                  },
+                                  "subagentDescription": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "subagentPrompt": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "toolName",
+                                  "subagentName",
+                                  "subagentDescription"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/__schema56"
+                          }
+                        ]
+                      },
+                      "subagentChildToolCallDurationMs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "subagentChildToolCallErrorText": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "subagentChildToolCallDenialText": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "subagentChildToolCallId",
+                      "subagentChildToolCallStatus",
+                      "subagentChildToolCallStartedAtMs",
+                      "subagentChildToolCallDetail"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "subagentResearchCheckpoint": {
+                  "type": "object",
+                  "properties": {
+                    "checkpointReason": {
+                      "type": "string",
+                      "enum": [
+                        "child_tool_call_count",
+                        "child_tool_result_text_length",
+                        "elapsed_time"
+                      ]
+                    },
+                    "childToolCallCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "childToolResultTextLength": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "skippedChildToolCallCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "elapsedMilliseconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "softElapsedTimeCheckpointMilliseconds": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "checkpointReason",
+                    "childToolCallCount",
+                    "childToolResultTextLength",
+                    "skippedChildToolCallCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "subagentResultSummary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "toolName",
+                "subagentName",
+                "subagentDescription"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema55"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "toolName": {
+                  "type": "string",
+                  "const": "record_workflow_handoff"
+                },
+                "handoffKind": {
+                  "type": "string",
+                  "enum": [
+                    "understanding",
+                    "plan",
+                    "implementation"
+                  ]
+                },
+                "handoffSummary": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "toolName",
+                "handoffKind",
+                "handoffSummary"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema54"
+            }
+          ]
+        },
+        {
+          "$ref": "#/$defs/__schema56"
+        }
+      ]
+    },
+    "__schema42": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2784,7 +2900,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema53": {
+    "__schema43": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2834,13 +2950,13 @@
               "contextBeforeLines": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema54"
+                  "$ref": "#/$defs/__schema44"
                 }
               },
               "contextAfterLines": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema54"
+                  "$ref": "#/$defs/__schema44"
                 }
               }
             },
@@ -2859,7 +2975,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema54": {
+    "__schema44": {
       "type": "object",
       "properties": {
         "lineNumber": {
@@ -2877,7 +2993,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema55": {
+    "__schema45": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2916,7 +3032,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema56": {
+    "__schema46": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2938,7 +3054,7 @@
           "maximum": 9007199254740991
         },
         "unifiedDiffText": {
-          "$ref": "#/$defs/__schema57"
+          "$ref": "#/$defs/__schema47"
         }
       },
       "required": [
@@ -2947,11 +3063,11 @@
       ],
       "additionalProperties": false
     },
-    "__schema57": {
+    "__schema47": {
       "type": "string",
       "minLength": 1
     },
-    "__schema58": {
+    "__schema48": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -2981,7 +3097,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema59"
+            "$ref": "#/$defs/__schema49"
           }
         }
       },
@@ -2991,7 +3107,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema59": {
+    "__schema49": {
       "type": "object",
       "properties": {
         "filePath": {
@@ -3028,7 +3144,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema60": {
+    "__schema50": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -3057,7 +3173,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema59"
+            "$ref": "#/$defs/__schema49"
           }
         }
       },
@@ -3067,7 +3183,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema61": {
+    "__schema51": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -3096,7 +3212,7 @@
         "changedFiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema59"
+            "$ref": "#/$defs/__schema49"
           }
         }
       },
@@ -3106,7 +3222,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema62": {
+    "__schema52": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -3128,7 +3244,7 @@
           "maximum": 9007199254740991
         },
         "unifiedDiffText": {
-          "$ref": "#/$defs/__schema57"
+          "$ref": "#/$defs/__schema47"
         }
       },
       "required": [
@@ -3137,7 +3253,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema63": {
+    "__schema53": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -3197,7 +3313,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema64": {
+    "__schema54": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -3244,7 +3360,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema65": {
+    "__schema55": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -3279,10 +3395,37 @@
       ],
       "additionalProperties": false
     },
-    "__schema66": {
+    "__schema56": {
+      "type": "object",
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolDisplayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolArgumentsJson": {
+          "$ref": "#/$defs/__schema38"
+        },
+        "toolResultJson": {
+          "$ref": "#/$defs/__schema39"
+        },
+        "toolResultSummary": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "toolName"
+      ],
+      "additionalProperties": false
+    },
+    "__schema57": {
       "type": "string"
     },
-    "__schema67": {
+    "__schema58": {
       "type": "string",
       "enum": [
         "none",
@@ -3293,55 +3436,118 @@
         "xhigh"
       ]
     },
-    "__schema68": {
+    "__schema59": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema60"
+            },
+            {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema60"
+              }
+            }
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "enum": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema61"
+          }
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "items": {
+          "$ref": "#/$defs/__schema59"
+        },
+        "properties": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema59"
+          }
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean",
+          "const": false
+        },
+        "anyOf": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema59"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema60": {
+      "type": "string",
+      "enum": [
+        "string",
+        "integer",
+        "number",
+        "object",
+        "array",
+        "boolean",
+        "null"
+      ]
+    },
+    "__schema61": {
+      "type": "string"
+    },
+    "__schema62": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema63": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema69": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/__schema32"
-        },
-        {
-          "$ref": "#/$defs/__schema34"
-        },
-        {
-          "$ref": "#/$defs/__schema36"
-        },
-        {
-          "$ref": "#/$defs/__schema37"
-        },
-        {
-          "$ref": "#/$defs/__schema38"
-        },
-        {
-          "$ref": "#/$defs/__schema39"
-        },
-        {
-          "$ref": "#/$defs/__schema41"
-        },
-        {
-          "$ref": "#/$defs/__schema42"
-        },
-        {
-          "$ref": "#/$defs/__schema43"
-        },
-        {
-          "$ref": "#/$defs/__schema44"
-        },
-        {
-          "$ref": "#/$defs/__schema46"
-        },
-        {
-          "$ref": "#/$defs/__schema47"
-        },
-        {
-          "$ref": "#/$defs/__schema48"
-        }
-      ]
-    },
-    "__schema70": {
+    "__schema64": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -3349,7 +3555,7 @@
           "minLength": 1
         },
         "toolCallRequest": {
-          "$ref": "#/$defs/__schema69"
+          "$ref": "#/$defs/__schema32"
         }
       },
       "required": [
@@ -3358,7 +3564,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema71": {
+    "__schema65": {
       "type": "object",
       "properties": {
         "stepIndex": {
@@ -3389,7 +3595,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema72": {
+    "__schema66": {
       "anyOf": [
         {
           "type": "string"

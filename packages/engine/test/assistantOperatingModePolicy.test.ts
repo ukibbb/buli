@@ -3,6 +3,7 @@ import {
   resolveAssistantOperatingModeToolAccess,
   resolveAvailableToolNamesForAssistantOperatingMode,
 } from "../src/assistantOperatingModePolicy.ts";
+import { createDefaultAssistantAgentRegistry } from "../src/assistantAgentRegistry.ts";
 
 test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools by default in understand mode", () => {
   expect(
@@ -92,5 +93,37 @@ test("resolveAssistantOperatingModeToolAccess enforces explicit implementation t
     accessKind: "denied",
     effectiveAvailableToolNames: ["read"],
     denialText: "Implementation Agent cannot use write in this turn. Available tools: read.",
+  });
+});
+
+test("resolveAssistantOperatingModeToolAccess uses code-registered custom primary agent policy", () => {
+  const assistantAgentRegistry = createDefaultAssistantAgentRegistry({
+    additionalPrimaryAgents: [
+      {
+        agentName: "review",
+        displayName: "Review Agent",
+        shortLabel: "Review",
+        accentColorName: "blue",
+        isReadOnly: true,
+        availableToolNames: ["read"],
+        systemPromptConfiguration: {
+          promptConfigurationKind: "custom",
+          systemReminderText: "Review code without changing files.",
+        },
+      },
+    ],
+  });
+
+  expect(
+    resolveAssistantOperatingModeToolAccess({
+      assistantOperatingMode: "review",
+      requestedAvailableToolNames: undefined,
+      requestedToolName: "write",
+      assistantAgentRegistry,
+    }),
+  ).toEqual({
+    accessKind: "denied",
+    effectiveAvailableToolNames: ["read"],
+    denialText: "Review Agent is read-only, so this write tool call was not applied.",
   });
 });

@@ -8,6 +8,7 @@ import {
   type UnderstandingWorkflowHandoff,
   type WorkflowHandoff,
 } from "@buli/contracts";
+import type { PrimaryAssistantAgentDefinition } from "./assistantAgentRegistry.ts";
 import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 import type { AssistantWorkflowHandoffPromptRenderingProfile } from "./assistantProviderModelPromptProfile.ts";
 
@@ -17,6 +18,7 @@ const DEFAULT_ASSISTANT_WORKFLOW_HANDOFF_PROMPT_RENDERING_PROFILE = {
 
 export type AssistantWorkflowHandoffContext = {
   currentAssistantOperatingMode: AssistantOperatingMode;
+  currentPrimaryAssistantAgent?: PrimaryAssistantAgentDefinition | undefined;
   latestCompletedAssistantOperatingMode?: AssistantOperatingMode | undefined;
   latestUnderstandingWorkflowHandoff?: UnderstandingWorkflowHandoff | undefined;
   latestPlanWorkflowHandoff?: PlanWorkflowHandoff | undefined;
@@ -25,12 +27,14 @@ export type AssistantWorkflowHandoffContext = {
 
 export function buildAssistantWorkflowHandoffContext(input: {
   currentAssistantOperatingMode: AssistantOperatingMode;
+  currentPrimaryAssistantAgent?: PrimaryAssistantAgentDefinition | undefined;
   conversationSessionEntries: readonly ConversationSessionEntry[];
 }): AssistantWorkflowHandoffContext {
   const latestCompletedAssistantOperatingMode = findLatestVisibleCompletedAssistantOperatingMode(input.conversationSessionEntries);
   const latestVisibleWorkflowHandoffCheckpoint = findLatestVisibleWorkflowHandoffCheckpoint(input.conversationSessionEntries);
   return {
     currentAssistantOperatingMode: input.currentAssistantOperatingMode,
+    ...(input.currentPrimaryAssistantAgent !== undefined ? { currentPrimaryAssistantAgent: input.currentPrimaryAssistantAgent } : {}),
     ...(latestCompletedAssistantOperatingMode !== undefined
       ? { latestCompletedAssistantOperatingMode }
       : {}),
@@ -40,6 +44,7 @@ export function buildAssistantWorkflowHandoffContext(input: {
 
 export function buildAssistantWorkflowHandoffPromptBlock(input: {
   currentAssistantOperatingMode: AssistantOperatingMode;
+  currentPrimaryAssistantAgent?: PrimaryAssistantAgentDefinition | undefined;
   conversationSessionEntries: readonly ConversationSessionEntry[];
   renderingProfile?: AssistantWorkflowHandoffPromptRenderingProfile | undefined;
 }): string {
@@ -58,7 +63,7 @@ export function formatAssistantWorkflowHandoffContextPromptBlock(
     "Workflow handoff system:",
     "- Workflow order is guidance, not a hard runtime gate: any mode may start.",
     "- Use the record_workflow_handoff tool to save a durable typed artifact when this turn establishes useful understanding, a concrete plan, or an implementation result.",
-    "- Match handoff kind to the current mode: understand -> understanding, plan -> plan, implementation -> implementation.",
+    "- Match handoff kind to the current registered agent workflow metadata. Default mappings are: understand -> understanding, plan -> plan, implementation -> implementation.",
     "- Treat the latest relevant handoff as context, not as unquestionable truth. If the user changed direction, say so and update the handoff.",
     "- If the expected previous handoff is missing, recover safely instead of pretending it exists.",
     "<workflow_handoff_context>",
@@ -83,12 +88,20 @@ export function formatAssistantWorkflowHandoffContextPromptBlock(
 }
 
 function formatExpectedHandoffGuidanceLines(workflowHandoffContext: AssistantWorkflowHandoffContext): string[] {
-  if (workflowHandoffContext.currentAssistantOperatingMode === "understand") {
+  const currentWorkflowHandoffKind = workflowHandoffContext.currentPrimaryAssistantAgent?.workflowHandoffKind ??
+    resolveLegacyWorkflowHandoffKind(workflowHandoffContext.currentAssistantOperatingMode);
+  if (currentWorkflowHandoffKind === undefined) {
+    return [
+      "  <current_mode_guidance>This registered agent has no workflow handoff kind. Use prior handoffs as context when helpful, but do not call record_workflow_handoff unless the agent metadata maps this turn to a supported handoff kind.</current_mode_guidance>",
+    ];
+  }
+
+  if (currentWorkflowHandoffKind === "understanding") {
     return [
       "  <current_mode_guidance>Understand mode may use prior handoffs for continuity, but its main job is to clarify what is known, unknown, and worth planning next.</current_mode_guidance>",
     ];
   }
-  if (workflowHandoffContext.currentAssistantOperatingMode === "plan") {
+  if (currentWorkflowHandoffKind === "plan") {
     return [workflowHandoffContext.latestUnderstandingWorkflowHandoff
       ? "  <current_mode_guidance>Use the latest understanding handoff as planning input unless the user's new request changes the goal.</current_mode_guidance>"
       : "  <current_mode_guidance>No understanding handoff is available. Gather only the missing context needed before making a concrete plan.</current_mode_guidance>"];
@@ -97,6 +110,22 @@ function formatExpectedHandoffGuidanceLines(workflowHandoffContext: AssistantWor
   return [workflowHandoffContext.latestPlanWorkflowHandoff
     ? "  <current_mode_guidance>Use the latest plan handoff as the implementation contract unless the user's new request changes or rejects that plan.</current_mode_guidance>"
     : "  <current_mode_guidance>No plan handoff is available. For non-trivial changes, produce or request the minimal plan/approval needed before mutating files.</current_mode_guidance>"];
+}
+
+function resolveLegacyWorkflowHandoffKind(
+  assistantOperatingMode: AssistantOperatingMode,
+): PrimaryAssistantAgentDefinition["workflowHandoffKind"] {
+  if (assistantOperatingMode === "understand") {
+    return "understanding";
+  }
+  if (assistantOperatingMode === "plan") {
+    return "plan";
+  }
+  if (assistantOperatingMode === "implementation") {
+    return "implementation";
+  }
+
+  return undefined;
 }
 
 function formatWorkflowHandoffSectionLines(

@@ -50,6 +50,7 @@ export type TuiChatScreenInstance = {
 };
 
 export type RenderChatScreenInTerminalInput = {
+  primaryAgentDisplayMetadata?: ChatScreenProps["primaryAgentDisplayMetadata"];
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];
@@ -207,6 +208,8 @@ export async function renderChatScreenInTerminalWithRuntime<
     rendererCreateDurationMs: Math.max(0, Date.now() - terminalRendererCreateStartedAtMs),
     renderTerminalElapsedMs: Math.max(0, Date.now() - terminalRenderStartedAtMs),
   });
+  const primaryAgentDisplayMetadata = input.primaryAgentDisplayMetadata ??
+    input.assistantConversationRunner.listPrimaryAgentDisplayMetadata?.();
   try {
     const chatScreenRootRenderStartedAtMs = Date.now();
     root.render(
@@ -253,6 +256,9 @@ export async function renderChatScreenInTerminalWithRuntime<
           : {}),
         ...(input.selectedReasoningEffort !== undefined
           ? { selectedReasoningEffort: input.selectedReasoningEffort }
+          : {}),
+        ...(primaryAgentDisplayMetadata !== undefined
+          ? { primaryAgentDisplayMetadata }
           : {}),
         ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
       }),

@@ -1,13 +1,26 @@
 export {
+  ASSISTANT_AGENT_NAME_PATTERN_TEXT,
+  AssistantAgentAccentColorNameSchema,
   AssistantPrimaryAgentNameSchema,
+  AssistantPrimaryAgentDisplayMetadataSchema,
   AssistantSubagentNameSchema,
+  BUILT_IN_ASSISTANT_PRIMARY_AGENT_NAMES,
   BUILT_IN_ASSISTANT_SUBAGENT_NAMES,
+  DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA,
   DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME,
+  MAX_ASSISTANT_AGENT_NAME_LENGTH,
+  isAssistantPrimaryAgentName,
+  isBuiltInAssistantPrimaryAgentName,
+  isBuiltInAssistantSubagentName,
   isAssistantSubagentName,
 } from "./assistantAgent.ts";
 export type {
+  AssistantAgentAccentColorName,
   AssistantPrimaryAgentName,
+  AssistantPrimaryAgentDisplayMetadata,
   AssistantSubagentName,
+  BuiltInAssistantPrimaryAgentName,
+  BuiltInAssistantSubagentName,
 } from "./assistantAgent.ts";
 export {
   AssistantOperatingModeSchema,
@@ -91,6 +104,8 @@ export {
   redactSensitiveText,
 } from "./sensitiveTextRedaction.ts";
 export type { SensitiveTextRedactionOptions } from "./sensitiveTextRedaction.ts";
+export { JsonObjectSchema, JsonValueSchema } from "./jsonValue.ts";
+export type { JsonArray, JsonObject, JsonPrimitive, JsonValue } from "./jsonValue.ts";
 export {
   summarizeContextWindowUsageForDiagnostics,
   summarizeTokenUsageForDiagnostics,
@@ -205,9 +220,14 @@ export {
   WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
   createStartedToolCallDetailFromRequest,
   isAssistantToolRequestName,
+  isBuiltInToolCallDetailName,
+  isCustomToolCallDetail,
+  isCustomToolCallRequest,
+  isCustomToolName,
   isFileMutationToolCallRequest,
   isLocateCodebaseSymbolsToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
+  isRenderOnlyToolDetailName,
   isRecordWorkflowHandoffToolCallRequest,
   isSkillToolCallRequest,
   isTaskToolCallRequest,
@@ -216,6 +236,7 @@ export {
 export type {
   AssistantToolCallDetail,
   AssistantToolRequestName,
+  BuiltInToolCallDetailName,
   FileMutationToolCallRequest,
   FileMutationToolRequestName,
   ReadOnlyAssistantModeToolRequestName,
@@ -304,6 +325,7 @@ export { PlanStepSchema, PlanStepStatusSchema } from "./planProposal.ts";
 export type { PlanStep, PlanStepStatus } from "./planProposal.ts";
 export {
   AvailableAssistantModelSchema,
+  ProviderBuiltInToolDescriptionOverlaySchema,
   ProviderAssistantMessageUrlCitationsObservedEventSchema,
   ProviderCompletedEventSchema,
   ProviderIncompleteEventSchema,
@@ -317,6 +339,10 @@ export {
   ProviderRetryPendingReasonSchema,
   ProviderStreamEventSchema,
   ProviderTextChunkEventSchema,
+  ProviderToolDefinitionSchema,
+  ProviderToolJsonSchemaTypeNameSchema,
+  ProviderToolParameterPropertySchema,
+  ProviderToolParametersSchema,
   ProviderToolCallRequestedEventSchema,
   ProviderToolCallsRequestedEventSchema,
   ReasoningEffortSchema,
@@ -324,6 +350,7 @@ export {
 } from "./provider.ts";
 export type {
   AvailableAssistantModel,
+  ProviderBuiltInToolDescriptionOverlay,
   ProviderAssistantMessageUrlCitationsObservedEvent,
   ProviderCompletedEvent,
   ProviderHostedWebSearchCallUpdatedEvent,
@@ -338,6 +365,10 @@ export type {
   ProviderAvailableToolName,
   ProviderStreamEvent,
   ProviderTextChunkEvent,
+  ProviderToolDefinition,
+  ProviderToolJsonSchemaTypeName,
+  ProviderToolParameterProperty,
+  ProviderToolParameters,
   ProviderToolCallRequestedEvent,
   ProviderToolCallsRequestedEvent,
   ReasoningEffort,
@@ -425,6 +456,10 @@ export {
   ToolCallBashDetailSchema,
   ToolCallBashOutputLineKindSchema,
   ToolCallBashOutputLineSchema,
+  BuiltInSubagentChildToolCallDetailSchema,
+  BuiltInToolCallDetailSchema,
+  CustomToolCallDetailNameSchema,
+  CustomToolCallDetailSchema,
   ToolCallDetailSchema,
   ToolCallEditDetailSchema,
   ToolCallEditManyDetailSchema,
@@ -466,6 +501,9 @@ export type {
   ToolCallBashDetail,
   ToolCallBashOutputLine,
   ToolCallBashOutputLineKind,
+  BuiltInToolCallDetail,
+  CustomToolCallDetail,
+  CustomToolCallDetailName,
   ToolCallDetail,
   ToolCallEditDetail,
   ToolCallEditManyDetail,
@@ -498,6 +536,8 @@ export type {
 export {
   AssistantToolCallRequestSchema,
   BashToolCallRequestSchema,
+  CustomToolNameSchema,
+  CustomToolCallRequestSchema,
   EditManyToolCallEditSchema,
   EditManyToolCallRequestSchema,
   EditToolCallRequestSchema,
@@ -536,6 +576,8 @@ export {
 export type {
   AssistantToolCallRequest,
   BashToolCallRequest,
+  CustomToolName,
+  CustomToolCallRequest,
   EditManyToolCallEdit,
   EditManyToolCallRequest,
   EditToolCallRequest,

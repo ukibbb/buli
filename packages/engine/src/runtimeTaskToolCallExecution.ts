@@ -4,6 +4,7 @@ import {
   AssistantMessagePartUpdatedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
+  isCustomToolCallDetail,
   type CompletedToolResultConversationSessionEntry,
   type ConversationSessionEntry,
   type DeniedToolResultConversationSessionEntry,
@@ -15,6 +16,9 @@ import {
   type BuliDiagnosticLogger,
   type ProviderRequestedToolCall,
   type ProviderStreamEvent,
+  type ProviderBuiltInToolDescriptionOverlay,
+  type ProviderToolDefinition,
+  type ReadToolCallRequest,
   type ReasoningEffort,
   type SubagentChildToolCall,
   type SubagentChildToolCallDetail,
@@ -42,12 +46,18 @@ import {
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
-import { buildBuliExplorerSystemPrompt } from "./systemPrompt.ts";
-import { resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
+import { buildSubagentSystemPrompt } from "./systemPrompt.ts";
+import type { AssistantAgentRegistry, PrimaryAssistantAgentDefinition, SubagentDefinition } from "./assistantAgentRegistry.ts";
+import type { AssistantToolRegistry } from "./assistantToolRegistry.ts";
 import {
   formatAssistantProviderModelPromptProfileFragmentBlock,
   type AssistantProviderModelPromptProfile,
 } from "./assistantProviderModelPromptProfile.ts";
+import type { BuiltInToolDescriptionOverlayResolver } from "./assistantModelOverlay.ts";
+import {
+  assertResolvedTaskSubagentMatchesRegisteredSubagent,
+  type TaskSubagentCompositionResolver,
+} from "./assistantSubagentComposition.ts";
 import type { TaskSubagentProviderModelSelection } from "./taskSubagentProviderModelSelection.ts";
 
 const NESTED_SUBAGENT_DENIAL_TEXT = "Subagents cannot spawn another subagent. Continue with read, glob, grep, and locate_codebase_symbols instead.";
@@ -107,6 +117,11 @@ export type StreamAssistantResponseEventsForTaskToolCallInput = {
   parentSelectedReasoningEffort?: ReasoningEffort;
   taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
   taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  taskSubagentCompositionResolver: TaskSubagentCompositionResolver;
+  builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
+  parentPrimaryAssistantAgent: PrimaryAssistantAgentDefinition;
+  assistantAgentRegistry: AssistantAgentRegistry;
+  assistantToolRegistry: AssistantToolRegistry;
   workspaceRootPath: string;
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
@@ -197,8 +212,17 @@ export async function* streamAssistantResponseEventsForTaskToolCall(
           conversationTurnId: input.conversationTurnId,
           parentTaskToolCallId: input.toolCallId,
           taskToolCallRequest: input.taskToolCallRequest,
+          parentSelectedModelId: input.parentSelectedModelId,
+          ...(input.parentSelectedReasoningEffort !== undefined
+            ? { parentSelectedReasoningEffort: input.parentSelectedReasoningEffort }
+            : {}),
           taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
           taskSubagentAssistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
+          taskSubagentCompositionResolver: input.taskSubagentCompositionResolver,
+          builtInToolDescriptionOverlayResolver: input.builtInToolDescriptionOverlayResolver,
+          parentPrimaryAssistantAgent: input.parentPrimaryAssistantAgent,
+          assistantAgentRegistry: input.assistantAgentRegistry,
+          assistantToolRegistry: input.assistantToolRegistry,
           workspaceRootPath: input.workspaceRootPath,
           workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
           projectInstructionTracker: input.projectInstructionTracker,
@@ -410,8 +434,15 @@ async function* streamTaskSubagentConversationProgress(input: {
   conversationTurnId: string;
   parentTaskToolCallId: string;
   taskToolCallRequest: TaskToolCallRequest;
+  parentSelectedModelId: string;
+  parentSelectedReasoningEffort?: ReasoningEffort;
   taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
   taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  taskSubagentCompositionResolver: TaskSubagentCompositionResolver;
+  builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
+  parentPrimaryAssistantAgent: PrimaryAssistantAgentDefinition;
+  assistantAgentRegistry: AssistantAgentRegistry;
+  assistantToolRegistry: AssistantToolRegistry;
   workspaceRootPath: string;
   workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
@@ -422,16 +453,34 @@ async function* streamTaskSubagentConversationProgress(input: {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): AsyncGenerator<TaskSubagentConversationProgress> {
   const subagentConversationStartedAtMs = Date.now();
+  const registeredSubagentDefinition = input.assistantAgentRegistry.resolveSubagentDefinition(input.taskToolCallRequest.subagentName);
+  const taskSubagentComposition = input.taskSubagentCompositionResolver({
+    registeredSubagent: registeredSubagentDefinition,
+    parentPrimaryAssistantAgent: input.parentPrimaryAssistantAgent,
+    providerName: input.taskSubagentAssistantProviderModelPromptProfile.providerName,
+    parentSelectedModelId: input.parentSelectedModelId,
+    ...(input.parentSelectedReasoningEffort !== undefined
+      ? { parentSelectedReasoningEffort: input.parentSelectedReasoningEffort }
+      : {}),
+    taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
+    defaultTaskSubagentAssistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
+  });
+  assertResolvedTaskSubagentMatchesRegisteredSubagent({
+    registeredSubagent: registeredSubagentDefinition,
+    resolvedSubagent: taskSubagentComposition.taskSubagent,
+  });
+  const subagentDefinition = taskSubagentComposition.taskSubagent;
+  const taskSubagentAssistantProviderModelPromptProfile = taskSubagentComposition.assistantProviderModelPromptProfile;
   const subagentPromptText = buildTaskSubagentPromptText({
     taskToolCallRequest: input.taskToolCallRequest,
-    assistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
+    assistantProviderModelPromptProfile: taskSubagentAssistantProviderModelPromptProfile,
   });
   const subagentConversationHistory = new InMemoryConversationHistory();
   const subagentConversationSessionRecorder = new RuntimeConversationTurnSessionRecorder({
     conversationTurnId: input.conversationTurnId,
     conversationHistory: subagentConversationHistory,
     userPromptText: subagentPromptText,
-    assistantOperatingMode: "understand",
+    assistantOperatingMode: subagentDefinition.conversationSessionAssistantOperatingMode,
     diagnosticLogger: input.diagnosticLogger,
   });
   const subagentToolResultSessionRecorder = new RuntimeToolResultSessionRecorder({
@@ -453,16 +502,16 @@ async function* streamTaskSubagentConversationProgress(input: {
   try {
     subagentConversationSessionRecorder.appendAcceptedUserPromptSessionEntry(subagentPromptText);
     nextResearchBudgetScanEntryIndex = subagentConversationHistory.conversationSessionEntries.length;
-    const subagentDefinition = resolveBuiltInSubagentDefinition(input.taskToolCallRequest.subagentName);
     const subagentProviderConversationTurn = input.conversationTurnProvider.startConversationTurn({
       conversationTurnId: input.conversationTurnId,
       providerTurnKind: "task_subagent",
       parentTaskToolCallId: input.parentTaskToolCallId,
       subagentName: input.taskToolCallRequest.subagentName,
-      systemPromptText: buildBuliExplorerSystemPrompt({
+      systemPromptText: buildSubagentSystemPrompt({
+        subagentDefinition,
         workspaceRootPath: input.workspaceRootPath,
         projectInstructionSnapshots: toProjectInstructionSnapshots(input.projectInstructionTracker.listProjectInstructionFiles()),
-        assistantProviderModelPromptProfile: input.taskSubagentAssistantProviderModelPromptProfile,
+        assistantProviderModelPromptProfile: taskSubagentAssistantProviderModelPromptProfile,
       }),
       conversationSessionEntries: subagentConversationHistory.listConversationSessionEntries(),
       selectedModelId: input.taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
@@ -470,6 +519,18 @@ async function* streamTaskSubagentConversationProgress(input: {
         ? { selectedReasoningEffort: input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort }
         : {}),
       availableToolNames: subagentDefinition.availableToolNames,
+      ...listSubagentCustomProviderToolDefinitions({
+        assistantToolRegistry: input.assistantToolRegistry,
+        subagentDefinition,
+        taskSubagentAssistantProviderModelPromptProfile,
+        taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
+      }),
+      ...listSubagentBuiltInToolDescriptionOverlays({
+        builtInToolDescriptionOverlayResolver: input.builtInToolDescriptionOverlayResolver,
+        subagentDefinition,
+        taskSubagentAssistantProviderModelPromptProfile,
+        taskSubagentProviderModelSelection: input.taskSubagentProviderModelSelection,
+      }),
       abortSignal: input.abortSignal,
     });
 
@@ -972,20 +1033,25 @@ async function* streamTaskSubagentChildToolCallActivity(input: {
 function createEffectiveTaskSubagentRequestedToolCall(
   requestedToolCall: ProviderRequestedToolCall,
 ): ProviderRequestedToolCall {
-  if (
-    requestedToolCall.toolCallRequest.toolName !== "read" ||
-    requestedToolCall.toolCallRequest.maximumLineCount !== undefined
-  ) {
+  const toolCallRequest = requestedToolCall.toolCallRequest;
+  if (!isReadToolCallRequest(toolCallRequest)) {
+    return requestedToolCall;
+  }
+  if (toolCallRequest.maximumLineCount !== undefined) {
     return requestedToolCall;
   }
 
   return {
     ...requestedToolCall,
     toolCallRequest: {
-      ...requestedToolCall.toolCallRequest,
+      ...toolCallRequest,
       maximumLineCount: MAX_READ_TOOL_LINE_COUNT,
     },
   };
+}
+
+function isReadToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is ReadToolCallRequest {
+  return toolCallRequest.toolName === "read";
 }
 
 async function* streamSingleTaskSubagentReadOnlyChildToolCall(input: {
@@ -1116,32 +1182,33 @@ function createSubagentChildToolCallFromPart(input: {
 function createSubagentChildToolCallDetailFromToolCallDetail(
   toolCallDetail: ToolCallDetail,
 ): SubagentChildToolCallDetail | undefined {
-  if (
-    toolCallDetail.toolName === "read" ||
-    toolCallDetail.toolName === "glob" ||
-    toolCallDetail.toolName === "grep" ||
-    toolCallDetail.toolName === "locate_codebase_symbols" ||
-    toolCallDetail.toolName === "bash" ||
-    toolCallDetail.toolName === "edit" ||
-    toolCallDetail.toolName === "edit_many" ||
-    toolCallDetail.toolName === "patch" ||
-    toolCallDetail.toolName === "patch_many" ||
-    toolCallDetail.toolName === "write" ||
-    toolCallDetail.toolName === "skill"
-  ) {
+  if (isCustomToolCallDetail(toolCallDetail)) {
     return toolCallDetail;
   }
 
-  if (toolCallDetail.toolName === "task") {
-    return {
-      toolName: "task",
-      subagentName: toolCallDetail.subagentName,
-      subagentDescription: toolCallDetail.subagentDescription,
-      ...(toolCallDetail.subagentPrompt !== undefined ? { subagentPrompt: toolCallDetail.subagentPrompt } : {}),
-    };
+  switch (toolCallDetail.toolName) {
+    case "read":
+    case "glob":
+    case "grep":
+    case "locate_codebase_symbols":
+    case "bash":
+    case "edit":
+    case "edit_many":
+    case "patch":
+    case "patch_many":
+    case "write":
+    case "skill":
+      return toolCallDetail;
+    case "task":
+      return {
+        toolName: "task",
+        subagentName: toolCallDetail.subagentName,
+        subagentDescription: toolCallDetail.subagentDescription,
+        ...(toolCallDetail.subagentPrompt !== undefined ? { subagentPrompt: toolCallDetail.subagentPrompt } : {}),
+      };
+    default:
+      return undefined;
   }
-
-  return undefined;
 }
 
 function mapSubagentChildToolCallStatus(
@@ -1409,6 +1476,10 @@ function formatSubagentChildToolCall(subagentChildToolCall: SubagentChildToolCal
 }
 
 function formatSubagentChildToolCallDetail(subagentChildToolCallDetail: SubagentChildToolCallDetail): string {
+  if (isCustomToolCallDetail(subagentChildToolCallDetail)) {
+    return `custom ${subagentChildToolCallDetail.toolName}`;
+  }
+
   switch (subagentChildToolCallDetail.toolName) {
     case "read":
       return `read ${subagentChildToolCallDetail.readFilePath}`;
@@ -1501,4 +1572,44 @@ function buildSubagentDisallowedToolDenialText(toolCallRequest: ToolCallRequest)
   }
 
   return `Subagent is read-only and cannot use ${toolCallRequest.toolName}. Use read, glob, grep, or locate_codebase_symbols instead.`;
+}
+
+function listSubagentCustomProviderToolDefinitions(input: {
+  assistantToolRegistry: AssistantToolRegistry;
+  subagentDefinition: SubagentDefinition;
+  taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
+}): { availableToolDefinitions?: readonly ProviderToolDefinition[] } {
+  const availableToolDefinitions = input.assistantToolRegistry.resolveProviderToolDefinitionsForTurn({
+    availableToolNames: input.subagentDefinition.availableToolNames,
+    turnContext: {
+      providerName: input.taskSubagentAssistantProviderModelPromptProfile.providerName,
+      selectedModelId: input.taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
+      ...(input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort !== undefined
+        ? { selectedReasoningEffort: input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort }
+        : {}),
+      assistantTurnKind: "task_subagent",
+      assistantAgentName: input.subagentDefinition.subagentName,
+    },
+  });
+  return availableToolDefinitions.length > 0 ? { availableToolDefinitions } : {};
+}
+
+function listSubagentBuiltInToolDescriptionOverlays(input: {
+  builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
+  subagentDefinition: SubagentDefinition;
+  taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  taskSubagentProviderModelSelection: TaskSubagentProviderModelSelection;
+}): { builtInToolDescriptionOverlays?: readonly ProviderBuiltInToolDescriptionOverlay[] } {
+  const builtInToolDescriptionOverlays = input.builtInToolDescriptionOverlayResolver({
+    availableToolNames: input.subagentDefinition.availableToolNames,
+    providerName: input.taskSubagentAssistantProviderModelPromptProfile.providerName,
+    selectedModelId: input.taskSubagentProviderModelSelection.taskSubagentSelectedModelId,
+    ...(input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort !== undefined
+      ? { selectedReasoningEffort: input.taskSubagentProviderModelSelection.taskSubagentSelectedReasoningEffort }
+      : {}),
+    assistantTurnKind: "task_subagent",
+    assistantAgentName: input.subagentDefinition.subagentName,
+  });
+  return builtInToolDescriptionOverlays.length > 0 ? { builtInToolDescriptionOverlays } : {};
 }

@@ -1,4 +1,4 @@
-import type { BuliDiagnosticLogger, ProviderStreamEvent } from "@buli/contracts";
+import type { BuliDiagnosticLogger, ProviderStreamEvent, ProviderToolDefinition } from "@buli/contracts";
 import {
   OpenAiResponseStepStreamParser,
   type OpenAiResponseStepTerminalState,
@@ -15,6 +15,7 @@ type OpenAiSseReadOptions = Readonly<{
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
   abortSignal?: AbortSignal | undefined;
   idleTimeoutMilliseconds?: number | undefined;
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
 }>;
 
 type OpenAiSseTextReader = Readonly<{

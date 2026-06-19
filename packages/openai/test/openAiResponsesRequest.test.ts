@@ -1,15 +1,28 @@
 import { expect, test } from "bun:test";
+import type { ProviderToolDefinition } from "@buli/contracts";
 import {
   createOpenAiResponsesHttpRequestBody,
   summarizeOpenAiRequestSizeContributorsForDiagnostics,
   summarizeOpenAiResponsesRequestForDiagnostics,
 } from "../src/provider/openAiResponsesRequest.ts";
+import type { OpenAiModelBehaviorProfile } from "../src/provider/openAiModelBehaviorProfile.ts";
 
 type TestOpenAiToolDefinition = Readonly<{ type: string; name?: string }>;
 
 function listDiagnosticToolNames(toolDefinitions: readonly TestOpenAiToolDefinition[] | undefined): string[] {
   return toolDefinitions?.map((toolDefinition) => toolDefinition.name ?? toolDefinition.type) ?? [];
 }
+
+const workspaceSummaryProviderToolDefinition = {
+  toolName: "workspace_summary",
+  description: "Summarize a workspace topic.",
+  parameters: {
+    type: "object",
+    properties: { topic: { type: "string" } },
+    required: ["topic"],
+    additionalProperties: false,
+  },
+} satisfies ProviderToolDefinition;
 
 test("createOpenAiResponsesHttpRequestBody builds a streaming reasoning-model request", () => {
   expect(
@@ -134,6 +147,114 @@ test("createOpenAiResponsesHttpRequestBody omits tool fields when no tools are a
     toolNames: [],
     parallelToolCalls: false,
   });
+});
+
+test("createOpenAiResponsesHttpRequestBody appends custom provider tool definitions", () => {
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.4",
+    availableToolNames: ["read", "workspace_summary"],
+    availableToolDefinitions: [workspaceSummaryProviderToolDefinition],
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Summarize runtime" }],
+  });
+
+  expect(listDiagnosticToolNames(requestBody.tools)).toEqual(["read", "workspace_summary"]);
+  expect(requestBody.tools?.at(-1)).toEqual({
+    type: "function",
+    name: "workspace_summary",
+    description: "Summarize a workspace topic.",
+    parameters: workspaceSummaryProviderToolDefinition.parameters,
+    strict: true,
+  });
+  expect(summarizeOpenAiResponsesRequestForDiagnostics({ requestBody, responseStepIndex: 1 })).toMatchObject({
+    toolDefinitionCount: 2,
+    toolNames: ["read", "workspace_summary"],
+  });
+});
+
+test("createOpenAiResponsesHttpRequestBody uses resolved custom provider tool definition text", () => {
+  const modelTunedProviderToolDefinition = {
+    ...workspaceSummaryProviderToolDefinition,
+    description: "Small-model summary tool instructions: use one exact topic at a time.",
+  } satisfies ProviderToolDefinition;
+
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "small-local-model",
+    availableToolNames: ["workspace_summary"],
+    availableToolDefinitions: [modelTunedProviderToolDefinition],
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Summarize runtime" }],
+  });
+
+  expect(requestBody.tools?.[0]).toMatchObject({
+    type: "function",
+    name: "workspace_summary",
+    description: "Small-model summary tool instructions: use one exact topic at a time.",
+  });
+});
+
+test("createOpenAiResponsesHttpRequestBody appends built-in tool description overlays", () => {
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "small-local-model",
+    availableToolNames: ["read", "grep"],
+    builtInToolDescriptionOverlays: [
+      {
+        toolName: "read",
+        additionalDescriptionParagraphs: [
+          "Small-model guidance: read one narrow file window at a time and do not infer paths.",
+        ],
+      },
+      {
+        toolName: "bash",
+        additionalDescriptionParagraphs: ["Unavailable bash guidance should not appear."],
+      },
+    ],
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Read README" }],
+  });
+
+  const readToolDefinition = requestBody.tools?.find((toolDefinition) =>
+    toolDefinition.type === "function" && toolDefinition.name === "read"
+  );
+  const grepToolDefinition = requestBody.tools?.find((toolDefinition) =>
+    toolDefinition.type === "function" && toolDefinition.name === "grep"
+  );
+
+  expect(listDiagnosticToolNames(requestBody.tools)).toEqual(["read", "grep"]);
+  expect(readToolDefinition?.type).toBe("function");
+  expect(grepToolDefinition?.type).toBe("function");
+  if (readToolDefinition?.type !== "function" || grepToolDefinition?.type !== "function") {
+    throw new Error("Expected read and grep to be OpenAI function tools.");
+  }
+  expect(readToolDefinition.description).toContain("Read an exact evidenced workspace file");
+  expect(readToolDefinition.description).toContain(
+    "Small-model guidance: read one narrow file window at a time and do not infer paths.",
+  );
+  expect(grepToolDefinition.description).not.toContain("Unavailable bash guidance should not appear.");
+});
+
+test("createOpenAiResponsesHttpRequestBody uses an explicit model behavior profile", () => {
+  const modelBehaviorProfile = {
+    profileId: "test:serial-low-verbosity-no-summary",
+    requestReasoningSummary: false,
+    requestLowTextVerbosity: true,
+    allowParallelToolCalls: false,
+    defaultReasoningEncryptedContentInclusionPolicy: "when_input_contains_reasoning",
+  } as const satisfies OpenAiModelBehaviorProfile;
+
+  const requestBody = createOpenAiResponsesHttpRequestBody({
+    selectedModelId: "gpt-5.4",
+    modelBehaviorProfile,
+    availableToolNames: ["read"],
+    systemPromptText: "You are buli.",
+    openAiInputItems: [{ role: "user", content: "Read README" }],
+  });
+
+  expect(listDiagnosticToolNames(requestBody.tools)).toEqual(["read"]);
+  expect(requestBody.parallel_tool_calls).toBeUndefined();
+  expect(requestBody.reasoning).toBeUndefined();
+  expect(requestBody.text).toEqual({ verbosity: "low" });
+  expect(requestBody.include).toBeUndefined();
 });
 
 test("summarizeOpenAiResponsesRequestForDiagnostics reports counts without raw content", () => {

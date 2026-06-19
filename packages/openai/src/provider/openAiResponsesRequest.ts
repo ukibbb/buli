@@ -1,6 +1,8 @@
 import type {
   BuliDiagnosticLogFields,
   ProviderAvailableToolName,
+  ProviderBuiltInToolDescriptionOverlay,
+  ProviderToolDefinition,
   ReasoningEffort,
 } from "@buli/contracts";
 import type { OpenAiConversationInputItem } from "./request.ts";
@@ -8,6 +10,12 @@ import {
   createOpenAiHostedWebSearchToolDefinition,
   type OpenAiHostedWebSearchConfiguration,
 } from "./openAiHostedWebSearchTool.ts";
+import {
+  type OpenAiModelBehaviorProfile,
+  type OpenAiReasoningEncryptedContentInclusionPolicy,
+  resolveDefaultOpenAiModelBehaviorProfile,
+  resolveOpenAiReasoningEncryptedContentInclusionPolicy,
+} from "./openAiModelBehaviorProfile.ts";
 import { createOpenAiToolDefinitions, type OpenAiToolDefinition } from "./toolDefinitions.ts";
 
 type OpenAiReasoningRequest = {
@@ -19,7 +27,6 @@ type OpenAiTextRequest = {
   verbosity: "low";
 };
 
-type OpenAiReasoningEncryptedContentInclusionPolicy = "always" | "never" | "when_input_contains_reasoning";
 type OpenAiResponseInclude =
   | "reasoning.encrypted_content"
   | "web_search_call.action.sources"
@@ -28,8 +35,11 @@ type OpenAiResponseInclude =
 export type CreateOpenAiResponsesHttpRequestBodyInput = {
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;
+  modelBehaviorProfile?: OpenAiModelBehaviorProfile | undefined;
   promptCacheKey?: string;
   availableToolNames?: readonly ProviderAvailableToolName[] | undefined;
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
+  builtInToolDescriptionOverlays?: readonly ProviderBuiltInToolDescriptionOverlay[] | undefined;
   hostedWebSearch?: OpenAiHostedWebSearchConfiguration | undefined;
   systemPromptText: string;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
@@ -100,9 +110,17 @@ export function createOpenAiResponsesHttpRequestBody(
 export function createOpenAiResponsesHttpRequestTemplate(
   input: CreateOpenAiResponsesHttpRequestTemplateInput,
 ): OpenAiResponsesHttpRequestTemplate {
-  const reasoningRequest = createReasoningRequest(input);
+  const modelBehaviorProfile = input.modelBehaviorProfile ?? resolveDefaultOpenAiModelBehaviorProfile({
+    selectedModelId: input.selectedModelId,
+  });
+  const reasoningRequest = createReasoningRequest({
+    selectedReasoningEffort: input.selectedReasoningEffort,
+    modelBehaviorProfile,
+  });
   const functionToolDefinitions = createOpenAiToolDefinitions({
     availableToolNames: input.availableToolNames,
+    availableToolDefinitions: input.availableToolDefinitions,
+    builtInToolDescriptionOverlays: input.builtInToolDescriptionOverlays,
   });
   const hostedWebSearchToolDefinition = createOpenAiHostedWebSearchToolDefinition(input.hostedWebSearch);
   const toolDefinitions: OpenAiToolDefinition[] = hostedWebSearchToolDefinition
@@ -114,13 +132,21 @@ export function createOpenAiResponsesHttpRequestTemplate(
       instructions: input.systemPromptText,
       store: false,
       ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
-      ...(toolDefinitions.length > 0 ? { tools: toolDefinitions, parallel_tool_calls: true as const } : {}),
+      ...(toolDefinitions.length > 0
+        ? {
+            tools: toolDefinitions,
+            ...(modelBehaviorProfile.allowParallelToolCalls ? { parallel_tool_calls: true as const } : {}),
+          }
+        : {}),
       ...(reasoningRequest ? { reasoning: reasoningRequest } : {}),
-      ...(shouldRequestLowTextVerbosity(input.selectedModelId) ? { text: { verbosity: "low" as const } } : {}),
+      ...(modelBehaviorProfile.requestLowTextVerbosity ? { text: { verbosity: "low" as const } } : {}),
       stream: true,
     },
     baseResponseIncludes: listHostedWebSearchResponseIncludes(input.hostedWebSearch),
-    reasoningEncryptedContentInclusionPolicy: createReasoningEncryptedContentInclusionPolicy(input),
+    reasoningEncryptedContentInclusionPolicy: resolveOpenAiReasoningEncryptedContentInclusionPolicy({
+      selectedReasoningEffort: input.selectedReasoningEffort,
+      modelBehaviorProfile,
+    }),
   };
 }
 
@@ -201,21 +227,6 @@ export function summarizeOpenAiRequestSizeContributorsForDiagnostics(input: {
   };
 }
 
-function createReasoningEncryptedContentInclusionPolicy(input: {
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
-}): OpenAiReasoningEncryptedContentInclusionPolicy {
-  if (input.selectedReasoningEffort === "none") {
-    return "never";
-  }
-
-  if (input.selectedReasoningEffort) {
-    return "always";
-  }
-
-  return isOpenAiReasoningModel(input.selectedModelId) ? "always" : "when_input_contains_reasoning";
-}
-
 function shouldIncludeReasoningEncryptedContent(input: {
   inclusionPolicy: OpenAiReasoningEncryptedContentInclusionPolicy;
   openAiInputItems: ReadonlyArray<OpenAiConversationInputItem>;
@@ -275,8 +286,8 @@ function listResponseIncludesForRequestBody(input: {
 }
 
 function createReasoningRequest(input: {
-  selectedModelId: string;
-  selectedReasoningEffort?: ReasoningEffort;
+  selectedReasoningEffort: ReasoningEffort | undefined;
+  modelBehaviorProfile: OpenAiModelBehaviorProfile;
 }): OpenAiReasoningRequest | undefined {
   if (input.selectedReasoningEffort === "none") {
     return { effort: "none" };
@@ -286,32 +297,11 @@ function createReasoningRequest(input: {
   if (input.selectedReasoningEffort) {
     reasoningRequest.effort = input.selectedReasoningEffort;
   }
-  if (shouldRequestReasoningSummary(input.selectedModelId)) {
+  if (input.modelBehaviorProfile.requestReasoningSummary) {
     reasoningRequest.summary = "auto";
   }
 
   return reasoningRequest.effort || reasoningRequest.summary ? reasoningRequest : undefined;
-}
-
-function shouldRequestReasoningSummary(selectedModelId: string): boolean {
-  return isOpenAiReasoningModel(selectedModelId);
-}
-
-function shouldRequestLowTextVerbosity(selectedModelId: string): boolean {
-  const normalizedSelectedModelId = selectedModelId.toLowerCase();
-  return (
-    normalizedSelectedModelId.includes("gpt-5.") &&
-    !normalizedSelectedModelId.includes("codex") &&
-    !normalizedSelectedModelId.includes("-chat")
-  );
-}
-
-function isOpenAiReasoningModel(selectedModelId: string): boolean {
-  const normalizedSelectedModelId = selectedModelId.toLowerCase();
-  return (
-    (normalizedSelectedModelId.includes("gpt-5") || normalizedSelectedModelId.includes("codex")) &&
-    !normalizedSelectedModelId.includes("chat")
-  );
 }
 
 function isOpenAiReasoningInputItem(

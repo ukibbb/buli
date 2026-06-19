@@ -53,7 +53,10 @@ export {
   resolveChatSessionInteractionScope,
 } from "./chatSessionInteractionScope.ts";
 export { cycleAssistantOperatingMode, selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
-export { resolveNextAssistantOperatingMode } from "./resolveNextAssistantOperatingMode.ts";
+export {
+  type AssistantOperatingModeCycleMetadata,
+  resolveNextAssistantOperatingMode,
+} from "./resolveNextAssistantOperatingMode.ts";
 export {
   type AssistantResponseEventsChatSessionStateApplication,
   type AssistantResponseEventsChatSessionStateChangeSet,

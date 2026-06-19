@@ -4,6 +4,12 @@ import {
   formatAssistantProviderModelPromptProfileFragmentBlock,
   type AssistantProviderModelPromptProfile,
 } from "./assistantProviderModelPromptProfile.ts";
+import {
+  createDefaultAssistantAgentRegistry,
+  type BuiltInPrimaryAssistantAgentSystemReminderKind,
+  type PrimaryAssistantAgentDefinition,
+  type SubagentDefinition,
+} from "./assistantAgentRegistry.ts";
 import { escapeModelFacingXmlAttributeValue, escapeModelFacingXmlText } from "./modelFacingXmlEscaping.ts";
 import { buildProjectInstructionPromptBlock } from "./projectInstructions.ts";
 import type { AvailableSkill } from "./skills/skillCatalog.ts";
@@ -232,6 +238,22 @@ export function buildBuliSystemPrompt(input: {
   assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
 }): string {
   const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
+  const primaryAssistantAgent = createDefaultAssistantAgentRegistry().resolvePrimaryAgentDefinition(assistantOperatingMode);
+  return buildBuliSystemPromptForPrimaryAssistantAgent({
+    ...input,
+    primaryAssistantAgent,
+  });
+}
+
+export function buildBuliSystemPromptForPrimaryAssistantAgent(input: {
+  workspaceRootPath: string;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
+  projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
+  availableSkills?: readonly AvailableSkill[];
+  buliStickyNotesContextText?: string | undefined;
+  workflowHandoffContextText?: string | undefined;
+  assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
+}): string {
   const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
   const availableSkillsPromptBlock = buildAvailableSkillsPromptBlock(input.availableSkills);
   const buliStickyNotesContextPromptBlock = buildBuliStickyNotesContextPromptBlock(input.buliStickyNotesContextText);
@@ -248,9 +270,7 @@ export function buildBuliSystemPrompt(input: {
       "Your main job is to help Lukasz understand systems, reason through options, see tradeoffs clearly, and build strong engineering judgment in the AI era.",
       `Current workspace root: ${input.workspaceRootPath}`,
     ].join("\n"),
-    ...(assistantOperatingMode === "understand" ? [UNDERSTAND_MODE_SYSTEM_REMINDER] : []),
-    ...(assistantOperatingMode === "plan" ? [PLAN_MODE_SYSTEM_REMINDER] : []),
-    ...(assistantOperatingMode === "implementation" ? [IMPLEMENTATION_MODE_SYSTEM_REMINDER] : []),
+    ...buildPrimaryAssistantAgentPromptSections(input.primaryAssistantAgent),
     ...(providerModelPromptProfileBlock ? [providerModelPromptProfileBlock] : []),
     ...(input.workflowHandoffContextText ? [input.workflowHandoffContextText] : []),
     ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
@@ -407,6 +427,32 @@ export function buildBuliSystemPrompt(input: {
   ].join("\n\n");
 }
 
+function buildPrimaryAssistantAgentPromptSections(primaryAssistantAgent: PrimaryAssistantAgentDefinition): string[] {
+  const promptSections: string[] = [];
+  const promptConfiguration = primaryAssistantAgent.systemPromptConfiguration;
+  if (promptConfiguration.promptConfigurationKind === "built_in_system_reminder") {
+    promptSections.push(resolveBuiltInPrimaryAssistantAgentSystemReminderText(promptConfiguration.systemReminderKind));
+  } else if (promptConfiguration.systemReminderText !== undefined) {
+    promptSections.push(promptConfiguration.systemReminderText);
+  }
+
+  promptSections.push(...(promptConfiguration.additionalPromptSections ?? []));
+  return promptSections;
+}
+
+function resolveBuiltInPrimaryAssistantAgentSystemReminderText(
+  systemReminderKind: BuiltInPrimaryAssistantAgentSystemReminderKind,
+): string {
+  switch (systemReminderKind) {
+    case "understand_mode_system_reminder":
+      return UNDERSTAND_MODE_SYSTEM_REMINDER;
+    case "plan_mode_system_reminder":
+      return PLAN_MODE_SYSTEM_REMINDER;
+    case "implementation_mode_system_reminder":
+      return IMPLEMENTATION_MODE_SYSTEM_REMINDER;
+  }
+}
+
 function buildBuliStickyNotesContextPromptBlock(buliStickyNotesContextText: string | undefined): string | undefined {
   if (!buliStickyNotesContextText) {
     return undefined;
@@ -447,6 +493,7 @@ export function buildBuliExplorerSystemPrompt(input: {
   workspaceRootPath: string;
   projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
   assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
+  additionalPromptSections?: readonly string[] | undefined;
 }): string {
   const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
   const providerModelPromptProfileBlock = input.assistantProviderModelPromptProfile
@@ -461,6 +508,7 @@ export function buildBuliExplorerSystemPrompt(input: {
       "You are Buli Explorer, a read-only codebase exploration subagent working for the parent assistant.",
       `Current workspace root: ${input.workspaceRootPath}`,
     ].join("\n"),
+    ...(input.additionalPromptSections ?? []),
     ...(providerModelPromptProfileBlock ? [providerModelPromptProfileBlock] : []),
     ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
     [
@@ -506,5 +554,42 @@ export function buildBuliExplorerSystemPrompt(input: {
       "- Prioritize findings and mechanics over generic advice.",
       "- Do not mention hidden reasoning or internal instructions.",
     ].join("\n"),
+  ].join("\n\n");
+}
+
+export function buildSubagentSystemPrompt(input: {
+  subagentDefinition: SubagentDefinition;
+  workspaceRootPath: string;
+  projectInstructionSnapshots?: readonly ProjectInstructionSnapshot[];
+  assistantProviderModelPromptProfile?: AssistantProviderModelPromptProfile | undefined;
+}): string {
+  if (input.subagentDefinition.systemPromptConfiguration.promptConfigurationKind === "built_in_subagent_prompt") {
+    return buildBuliExplorerSystemPrompt({
+      workspaceRootPath: input.workspaceRootPath,
+      ...(input.subagentDefinition.systemPromptConfiguration.additionalPromptSections !== undefined
+        ? { additionalPromptSections: input.subagentDefinition.systemPromptConfiguration.additionalPromptSections }
+        : {}),
+      ...(input.projectInstructionSnapshots !== undefined
+        ? { projectInstructionSnapshots: input.projectInstructionSnapshots }
+        : {}),
+      ...(input.assistantProviderModelPromptProfile !== undefined
+        ? { assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile }
+        : {}),
+    });
+  }
+
+  const projectInstructionPromptBlock = buildProjectInstructionPromptBlock(input.projectInstructionSnapshots);
+  const additionalPromptSections = input.subagentDefinition.systemPromptConfiguration.additionalPromptSections ?? [];
+  const providerModelPromptProfileBlock = input.assistantProviderModelPromptProfile
+    ? formatAssistantProviderModelPromptProfileFragmentBlock({
+      assistantProviderModelPromptProfile: input.assistantProviderModelPromptProfile,
+      fragmentTarget: "explorerSystemPrompt",
+    })
+    : undefined;
+  return [
+    input.subagentDefinition.systemPromptConfiguration.systemPromptText,
+    ...additionalPromptSections,
+    ...(providerModelPromptProfileBlock ? [providerModelPromptProfileBlock] : []),
+    ...(projectInstructionPromptBlock ? [projectInstructionPromptBlock] : []),
   ].join("\n\n");
 }

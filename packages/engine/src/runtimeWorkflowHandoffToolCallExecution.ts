@@ -9,8 +9,8 @@ import {
   type BuliDiagnosticLogger,
   type RecordWorkflowHandoffToolCallRequest,
   type WorkflowHandoff,
-  type WorkflowHandoffKind,
 } from "@buli/contracts";
+import type { PrimaryAssistantAgentDefinition } from "./assistantAgentRegistry.ts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
@@ -22,6 +22,7 @@ export type StreamAssistantResponseEventsForWorkflowHandoffToolCallInput = {
   toolCallId: string;
   recordWorkflowHandoffToolCallRequest: RecordWorkflowHandoffToolCallRequest;
   assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   recordWorkflowHandoff: (workflowHandoff: WorkflowHandoff) => void;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   throwIfConversationTurnInterrupted: () => void;
@@ -126,9 +127,18 @@ export async function* streamAssistantResponseEventsForWorkflowHandoffToolCall(
 function recordWorkflowHandoffForCurrentMode(
   input: StreamAssistantResponseEventsForWorkflowHandoffToolCallInput,
 ): WorkflowHandoffToolCallOutcome {
-  const expectedWorkflowHandoffKind = resolveExpectedWorkflowHandoffKind(input.assistantOperatingMode);
+  const expectedWorkflowHandoffKind = input.primaryAssistantAgent.workflowHandoffKind;
+  if (expectedWorkflowHandoffKind === undefined) {
+    const failureExplanation = `${input.primaryAssistantAgent.displayName} is not configured to record workflow handoffs.`;
+    return {
+      outcomeKind: "failed",
+      failureExplanation,
+      toolResultText: failureExplanation,
+    };
+  }
+
   if (input.recordWorkflowHandoffToolCallRequest.workflowHandoff.handoffKind !== expectedWorkflowHandoffKind) {
-    const failureExplanation = `${formatAssistantOperatingMode(input.assistantOperatingMode)} mode must record a ${expectedWorkflowHandoffKind} workflow handoff, received ${input.recordWorkflowHandoffToolCallRequest.workflowHandoff.handoffKind}.`;
+    const failureExplanation = `${input.primaryAssistantAgent.shortLabel} mode must record a ${expectedWorkflowHandoffKind} workflow handoff, received ${input.recordWorkflowHandoffToolCallRequest.workflowHandoff.handoffKind}.`;
     return {
       outcomeKind: "failed",
       failureExplanation,
@@ -141,26 +151,4 @@ function recordWorkflowHandoffForCurrentMode(
     outcomeKind: "completed",
     toolResultText: `Recorded ${expectedWorkflowHandoffKind} workflow handoff.`,
   };
-}
-
-function resolveExpectedWorkflowHandoffKind(assistantOperatingMode: AssistantOperatingMode): WorkflowHandoffKind {
-  if (assistantOperatingMode === "understand") {
-    return "understanding";
-  }
-  if (assistantOperatingMode === "plan") {
-    return "plan";
-  }
-
-  return "implementation";
-}
-
-function formatAssistantOperatingMode(assistantOperatingMode: AssistantOperatingMode): string {
-  if (assistantOperatingMode === "understand") {
-    return "Understand";
-  }
-  if (assistantOperatingMode === "plan") {
-    return "Plan";
-  }
-
-  return "Implementation";
 }

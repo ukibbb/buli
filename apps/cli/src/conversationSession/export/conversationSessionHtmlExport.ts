@@ -2,10 +2,12 @@ import { chmodSync, closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type {
-  AssistantMessageUrlCitation,
-  AssistantOperatingMode,
-  ConversationSessionEntry,
+import {
+  DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA,
+  type AssistantPrimaryAgentDisplayMetadata,
+  type AssistantMessageUrlCitation,
+  type AssistantOperatingMode,
+  type ConversationSessionEntry,
 } from "@buli/contracts";
 import { marked, Renderer, type Tokens } from "marked";
 import { parseConversationExportCodeFenceInfo } from "./codeFenceInfo.ts";
@@ -568,19 +570,20 @@ function isSafeConversationSessionExportImageAttachment(
 }
 
 function formatAssistantOperatingModeDisplayName(assistantOperatingMode: AssistantOperatingMode): string {
-  return assistantOperatingMode === "understand"
-    ? "Understand Agent"
-    : assistantOperatingMode === "plan"
-      ? "Plan Agent"
-      : "Implementation Agent";
+  return resolveDefaultAssistantOperatingModeDisplayMetadata(assistantOperatingMode)?.displayName ?? assistantOperatingMode;
 }
 
 function formatAssistantOperatingModeDescription(assistantOperatingMode: AssistantOperatingMode): string {
-  return assistantOperatingMode === "understand"
-    ? "Read-only agent. Will only inspect files, list directories, and search."
-    : assistantOperatingMode === "plan"
-      ? "Planning agent. Outlines steps before any modifying tools run."
-      : "Implementation agent. May edit files and run shell commands.";
+  return resolveDefaultAssistantOperatingModeDisplayMetadata(assistantOperatingMode)?.description ??
+    `Custom agent id: ${assistantOperatingMode}`;
+}
+
+function resolveDefaultAssistantOperatingModeDisplayMetadata(
+  assistantOperatingMode: AssistantOperatingMode,
+): AssistantPrimaryAgentDisplayMetadata | undefined {
+  return DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA.find((agentMetadata) =>
+    agentMetadata.agentName === assistantOperatingMode
+  );
 }
 
 function renderConversationCompactionSummaryBlock(

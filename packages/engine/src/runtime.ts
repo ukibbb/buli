@@ -4,6 +4,7 @@ import {
   AssistantMessagePartAddedEventSchema,
   AssistantTurnStartedEventSchema,
   type AssistantOperatingMode,
+  type AssistantPrimaryAgentDisplayMetadata,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
   type ProviderAvailableToolName,
@@ -78,11 +79,35 @@ import {
   finalizeProviderStreamEndedBeforeCompletion,
 } from "./runtimeConversationTurnTerminalFinalizer.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
+import {
+  createDefaultAssistantAgentRegistry,
+  type AssistantAgentRegistry,
+  type PrimaryAssistantAgentDefinition,
+} from "./assistantAgentRegistry.ts";
+import { createDefaultAssistantToolRegistry, type AssistantToolRegistry } from "./assistantToolRegistry.ts";
+import {
+  assertResolvedPrimaryAssistantAgentMatchesRegisteredAgent,
+  createDefaultPrimaryAssistantAgentCompositionResolver,
+  type PrimaryAssistantAgentCompositionResolver,
+} from "./assistantPrimaryAgentComposition.ts";
+import {
+  createDefaultTaskSubagentCompositionResolver,
+  type TaskSubagentCompositionResolver,
+} from "./assistantSubagentComposition.ts";
+import {
+  createDefaultBuiltInToolDescriptionOverlayResolver,
+  type BuiltInToolDescriptionOverlayResolver,
+} from "./assistantModelOverlay.ts";
 
 export class AssistantConversationRuntime implements AssistantConversationRunner {
   readonly conversationTurnProvider: ConversationTurnProvider;
   readonly assistantProviderName: AssistantProviderName;
   readonly assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
+  readonly primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver;
+  readonly taskSubagentCompositionResolver: TaskSubagentCompositionResolver;
+  readonly builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
+  readonly assistantAgentRegistry: AssistantAgentRegistry;
+  readonly assistantToolRegistry: AssistantToolRegistry;
   readonly workspaceRootPath: string;
   readonly promptContextBrowseRootPath: string;
   readonly promptContextStartingDirectoryPath: string;
@@ -109,6 +134,11 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     conversationTurnProvider: ConversationTurnProvider;
     assistantProviderName?: AssistantProviderName | undefined;
     assistantProviderModelPromptProfileResolver?: AssistantProviderModelPromptProfileResolver | undefined;
+    primaryAssistantAgentCompositionResolver?: PrimaryAssistantAgentCompositionResolver | undefined;
+    taskSubagentCompositionResolver?: TaskSubagentCompositionResolver | undefined;
+    builtInToolDescriptionOverlayResolver?: BuiltInToolDescriptionOverlayResolver | undefined;
+    assistantAgentRegistry?: AssistantAgentRegistry | undefined;
+    assistantToolRegistry?: AssistantToolRegistry | undefined;
     workspaceRootPath: string;
     promptContextBrowseRootPath: string;
     promptContextStartingDirectoryPath?: string;
@@ -135,6 +165,16 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.assistantProviderName = input.assistantProviderName ?? DEFAULT_ASSISTANT_PROVIDER_NAME;
     this.assistantProviderModelPromptProfileResolver = input.assistantProviderModelPromptProfileResolver ??
       resolveDefaultAssistantProviderModelPromptProfile;
+    this.primaryAssistantAgentCompositionResolver = input.primaryAssistantAgentCompositionResolver ??
+      createDefaultPrimaryAssistantAgentCompositionResolver({
+        assistantProviderModelPromptProfileResolver: this.assistantProviderModelPromptProfileResolver,
+      });
+    this.taskSubagentCompositionResolver = input.taskSubagentCompositionResolver ??
+      createDefaultTaskSubagentCompositionResolver();
+    this.builtInToolDescriptionOverlayResolver = input.builtInToolDescriptionOverlayResolver ??
+      createDefaultBuiltInToolDescriptionOverlayResolver();
+    this.assistantAgentRegistry = input.assistantAgentRegistry ?? createDefaultAssistantAgentRegistry();
+    this.assistantToolRegistry = input.assistantToolRegistry ?? createDefaultAssistantToolRegistry();
     this.workspaceRootPath = input.workspaceRootPath;
     this.promptContextBrowseRootPath = input.promptContextBrowseRootPath;
     this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath ?? input.promptContextBrowseRootPath;
@@ -182,6 +222,10 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     });
   }
 
+  listPrimaryAgentDisplayMetadata(): readonly AssistantPrimaryAgentDisplayMetadata[] {
+    return this.assistantAgentRegistry.listPrimaryAgentDisplayMetadata();
+  }
+
   startWorkspaceCodebaseKnowledgeIndexing(): void {
     if (this.#hasStartedWorkspaceCodebaseKnowledgeIndexing) {
       return;
@@ -209,6 +253,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
     const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
+    const registeredPrimaryAssistantAgent = this.assistantAgentRegistry.resolvePrimaryAgentDefinition(assistantOperatingMode);
     const conversationTurnInput: ConversationTurnRequest = {
       ...input,
       conversationTurnId: input.conversationTurnId ?? randomUUID(),
@@ -243,9 +288,15 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     const runtimeConversationTurn = new RuntimeConversationTurn({
       conversationTurnInput,
       assistantOperatingMode,
+      registeredPrimaryAssistantAgent,
       conversationTurnProvider: this.conversationTurnProvider,
       assistantProviderName: this.assistantProviderName,
       assistantProviderModelPromptProfileResolver: this.assistantProviderModelPromptProfileResolver,
+      primaryAssistantAgentCompositionResolver: this.primaryAssistantAgentCompositionResolver,
+      taskSubagentCompositionResolver: this.taskSubagentCompositionResolver,
+      builtInToolDescriptionOverlayResolver: this.builtInToolDescriptionOverlayResolver,
+      assistantAgentRegistry: this.assistantAgentRegistry,
+      assistantToolRegistry: this.assistantToolRegistry,
       conversationSessionCompactor: this.conversationSessionCompactor,
       conversationHistory: this.conversationHistory,
       workspaceRootPath: this.workspaceRootPath,
@@ -316,9 +367,14 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly conversationTurnId: string;
   readonly conversationTurnInput: ConversationTurnRequest;
   readonly assistantOperatingMode: AssistantOperatingMode;
+  readonly primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   readonly conversationTurnProvider: ConversationTurnProvider;
   readonly assistantProviderName: AssistantProviderName;
   readonly assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
+  readonly taskSubagentCompositionResolver: TaskSubagentCompositionResolver;
+  readonly builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
+  readonly assistantAgentRegistry: AssistantAgentRegistry;
+  readonly assistantToolRegistry: AssistantToolRegistry;
   readonly assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
   readonly conversationHistory: InMemoryConversationHistory;
@@ -349,9 +405,15 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   constructor(input: {
     conversationTurnInput: ConversationTurnRequest;
     assistantOperatingMode: AssistantOperatingMode;
+    registeredPrimaryAssistantAgent: PrimaryAssistantAgentDefinition;
     conversationTurnProvider: ConversationTurnProvider;
     assistantProviderName: AssistantProviderName;
     assistantProviderModelPromptProfileResolver: AssistantProviderModelPromptProfileResolver;
+    primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver;
+    taskSubagentCompositionResolver: TaskSubagentCompositionResolver;
+    builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
+    assistantAgentRegistry: AssistantAgentRegistry;
+    assistantToolRegistry: AssistantToolRegistry;
     conversationSessionCompactor: ConversationSessionCompactor;
     conversationHistory: InMemoryConversationHistory;
     workspaceRootPath: string;
@@ -379,10 +441,24 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.assistantProviderName = input.assistantProviderName;
     this.assistantProviderModelPromptProfileResolver = input.assistantProviderModelPromptProfileResolver;
-    this.assistantProviderModelPromptProfile = input.assistantProviderModelPromptProfileResolver({
+    this.taskSubagentCompositionResolver = input.taskSubagentCompositionResolver;
+    this.builtInToolDescriptionOverlayResolver = input.builtInToolDescriptionOverlayResolver;
+    this.assistantAgentRegistry = input.assistantAgentRegistry;
+    this.assistantToolRegistry = input.assistantToolRegistry;
+    const primaryAssistantAgentComposition = input.primaryAssistantAgentCompositionResolver({
+      registeredPrimaryAssistantAgent: input.registeredPrimaryAssistantAgent,
       providerName: input.assistantProviderName,
       selectedModelId: input.conversationTurnInput.selectedModelId,
+      ...(input.conversationTurnInput.selectedReasoningEffort !== undefined
+        ? { selectedReasoningEffort: input.conversationTurnInput.selectedReasoningEffort }
+        : {}),
     });
+    assertResolvedPrimaryAssistantAgentMatchesRegisteredAgent({
+      registeredPrimaryAssistantAgent: input.registeredPrimaryAssistantAgent,
+      resolvedPrimaryAssistantAgent: primaryAssistantAgentComposition.primaryAssistantAgent,
+    });
+    this.primaryAssistantAgent = primaryAssistantAgentComposition.primaryAssistantAgent;
+    this.assistantProviderModelPromptProfile = primaryAssistantAgentComposition.assistantProviderModelPromptProfile;
     this.conversationSessionCompactor = input.conversationSessionCompactor;
     this.conversationHistory = input.conversationHistory;
     this.workspaceRootPath = input.workspaceRootPath;
@@ -520,6 +596,10 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
           const startedRuntimeConversationTurn = await startAcceptedRuntimeConversationTurn({
             conversationTurnInput: this.conversationTurnInput,
             assistantOperatingMode: this.assistantOperatingMode,
+            primaryAssistantAgent: this.primaryAssistantAgent,
+            assistantProviderName: this.assistantProviderName,
+            assistantToolRegistry: this.assistantToolRegistry,
+            builtInToolDescriptionOverlayResolver: this.builtInToolDescriptionOverlayResolver,
             conversationTurnProvider: this.conversationTurnProvider,
             assistantProviderModelPromptProfile: this.assistantProviderModelPromptProfile,
             conversationHistory: this.conversationHistory,
@@ -723,7 +803,12 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         : {}),
       taskSubagentProviderModelSelection,
       taskSubagentAssistantProviderModelPromptProfile,
+      taskSubagentCompositionResolver: this.taskSubagentCompositionResolver,
+      builtInToolDescriptionOverlayResolver: this.builtInToolDescriptionOverlayResolver,
       assistantOperatingMode: this.assistantOperatingMode,
+      primaryAssistantAgent: this.primaryAssistantAgent,
+      assistantAgentRegistry: this.assistantAgentRegistry,
+      assistantToolRegistry: this.assistantToolRegistry,
       ...(this.availableToolNames ? { availableToolNames: this.availableToolNames } : {}),
       bashToolApprovalMode: this.bashToolApprovalMode,
       workspaceRootPath: this.workspaceRootPath,

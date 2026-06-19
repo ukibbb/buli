@@ -4,7 +4,12 @@ import {
   type AssistantProviderModelPromptProfile,
   type AssistantProviderModelPromptFragments,
 } from "../src/assistantProviderModelPromptProfile.ts";
-import { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "../src/systemPrompt.ts";
+import {
+  buildBuliExplorerSystemPrompt,
+  buildBuliSystemPrompt,
+  buildBuliSystemPromptForPrimaryAssistantAgent,
+  buildSubagentSystemPrompt,
+} from "../src/systemPrompt.ts";
 
 test("describes buli as Lukasz Bulinski's learning-first software engineering partner", () => {
   const systemPromptText = buildBuliSystemPrompt({ workspaceRootPath: "/workspace/demo" });
@@ -767,6 +772,76 @@ test("buildBuliExplorerSystemPrompt includes additive provider/model Explorer pr
   expect(systemPromptText).toContain("Use only read-only inspection capabilities.");
   expect(systemPromptText).toContain("Provider/model prompt profile:");
   expect(systemPromptText).toContain("Keep Explorer summaries short for the compact provider profile.");
+});
+
+test("buildSubagentSystemPrompt includes additional prompt sections for the built-in Explorer prompt", () => {
+  const systemPromptText = buildSubagentSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    subagentDefinition: {
+      subagentName: "explore",
+      displayName: "Explorer",
+      availableToolNames: ["read"],
+      systemPromptConfiguration: {
+        promptConfigurationKind: "built_in_subagent_prompt",
+        systemPromptKind: "explorer_system_prompt",
+        additionalPromptSections: ["Small Explorer model guidance: use one narrow search at a time."],
+      },
+      conversationSessionAssistantOperatingMode: "understand",
+    },
+  });
+
+  expect(systemPromptText).toContain("Buli Explorer");
+  expect(systemPromptText).toContain("Small Explorer model guidance: use one narrow search at a time.");
+  expect(systemPromptText).toContain("Use only read-only inspection capabilities.");
+});
+
+test("buildSubagentSystemPrompt includes additional prompt sections for custom subagent prompts", () => {
+  const systemPromptText = buildSubagentSystemPrompt({
+    workspaceRootPath: "/workspace/demo",
+    subagentDefinition: {
+      subagentName: "review_probe",
+      displayName: "Review Probe",
+      availableToolNames: ["read"],
+      systemPromptConfiguration: {
+        promptConfigurationKind: "custom",
+        systemPromptText: "Base custom subagent prompt.",
+        additionalPromptSections: ["Small custom subagent guidance: cite exact paths."],
+      },
+      conversationSessionAssistantOperatingMode: "understand",
+    },
+    assistantProviderModelPromptProfile: createTestPromptProfile({
+      explorerSystemPrompt: ["Provider profile guidance for this subagent model."],
+    }),
+  });
+
+  expect(systemPromptText).toContain("Base custom subagent prompt.");
+  expect(systemPromptText).toContain("Small custom subagent guidance: cite exact paths.");
+  expect(systemPromptText).toContain("Provider profile guidance for this subagent model.");
+});
+
+test("buildBuliSystemPromptForPrimaryAssistantAgent includes registered custom agent prompt sections", () => {
+  const systemPromptText = buildBuliSystemPromptForPrimaryAssistantAgent({
+    workspaceRootPath: "/workspace/demo",
+    primaryAssistantAgent: {
+      agentName: "review",
+      displayName: "Review Agent",
+      shortLabel: "Review",
+      accentColorName: "blue",
+      isReadOnly: true,
+      availableToolNames: ["read"],
+      systemPromptConfiguration: {
+        promptConfigurationKind: "custom",
+        systemReminderText: "Review Agent ACTIVE - inspect code and report issues only.",
+        additionalPromptSections: ["Custom review rubric: correctness before style."],
+      },
+    },
+  });
+
+  expect(systemPromptText).toContain("Review Agent ACTIVE - inspect code and report issues only.");
+  expect(systemPromptText).toContain("Custom review rubric: correctness before style.");
+  expect(systemPromptText).not.toContain("Understand Agent - System Reminder");
+  expect(systemPromptText).not.toContain("Plan Agent - System Reminder");
+  expect(systemPromptText).not.toContain("Implementation Agent - System Reminder");
 });
 
 function createTestPromptProfile(

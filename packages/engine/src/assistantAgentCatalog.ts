@@ -1,10 +1,9 @@
+import type { AssistantOperatingMode, AssistantSubagentName, ProviderAvailableToolName } from "@buli/contracts";
 import {
-  READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
-  WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
-  type AssistantOperatingMode,
-  type AssistantSubagentName,
-  type ProviderAvailableToolName,
-} from "@buli/contracts";
+  createDefaultAssistantAgentRegistry,
+  type PrimaryAssistantAgentDefinition,
+  type SubagentDefinition,
+} from "./assistantAgentRegistry.ts";
 
 export type BuiltInPrimaryAssistantAgent = {
   agentName: AssistantOperatingMode;
@@ -19,53 +18,29 @@ export type BuiltInSubagentDefinition = {
   availableToolNames: readonly ProviderAvailableToolName[];
 };
 
-const IMPLEMENTATION_ASSISTANT_MODE_TOOL_REQUEST_NAMES = [
-  "bash",
-  "read",
-  "glob",
-  "grep",
-  "locate_codebase_symbols",
-  "edit",
-  "patch",
-  "write",
-  "task",
-  "skill",
-  "record_workflow_handoff",
-] as const satisfies readonly ProviderAvailableToolName[];
-
-const PRIMARY_ASSISTANT_AGENT_BY_NAME = {
-  understand: {
-    agentName: "understand",
-    displayName: "Understand Agent",
-    isReadOnly: true,
-    availableToolNames: READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
-  },
-  plan: {
-    agentName: "plan",
-    displayName: "Plan Agent",
-    isReadOnly: true,
-    availableToolNames: READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
-  },
-  implementation: {
-    agentName: "implementation",
-    displayName: "Implementation Agent",
-    isReadOnly: false,
-    availableToolNames: IMPLEMENTATION_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
-  },
-} as const satisfies Record<AssistantOperatingMode, BuiltInPrimaryAssistantAgent>;
-
-const SUBAGENT_DEFINITION_BY_NAME = {
-  explore: {
-    subagentName: "explore",
-    displayName: "Explorer",
-    availableToolNames: WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
-  },
-} as const satisfies Record<AssistantSubagentName, BuiltInSubagentDefinition>;
+const defaultAssistantAgentRegistry = createDefaultAssistantAgentRegistry();
 
 export function resolveBuiltInPrimaryAssistantAgent(agentName: AssistantOperatingMode): BuiltInPrimaryAssistantAgent {
-  return PRIMARY_ASSISTANT_AGENT_BY_NAME[agentName];
+  return toBuiltInPrimaryAssistantAgent(defaultAssistantAgentRegistry.resolvePrimaryAgentDefinition(agentName));
 }
 
 export function resolveBuiltInSubagentDefinition(subagentName: AssistantSubagentName): BuiltInSubagentDefinition {
-  return SUBAGENT_DEFINITION_BY_NAME[subagentName];
+  return toBuiltInSubagentDefinition(defaultAssistantAgentRegistry.resolveSubagentDefinition(subagentName));
+}
+
+function toBuiltInPrimaryAssistantAgent(primaryAgent: PrimaryAssistantAgentDefinition): BuiltInPrimaryAssistantAgent {
+  return {
+    agentName: primaryAgent.agentName,
+    displayName: primaryAgent.displayName,
+    isReadOnly: primaryAgent.isReadOnly,
+    availableToolNames: primaryAgent.availableToolNames,
+  };
+}
+
+function toBuiltInSubagentDefinition(subagent: SubagentDefinition): BuiltInSubagentDefinition {
+  return {
+    subagentName: subagent.subagentName,
+    displayName: subagent.displayName,
+    availableToolNames: subagent.availableToolNames,
+  };
 }

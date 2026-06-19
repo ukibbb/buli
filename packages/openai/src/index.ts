@@ -40,3 +40,19 @@ export type {
   OpenAiHostedWebSearchMode,
   OpenAiHostedWebSearchToolDefinition,
 } from "./provider/openAiHostedWebSearchTool.ts";
+export {
+  DEFAULT_OPENAI_LOW_VERBOSITY_REASONING_MODEL_BEHAVIOR_PROFILE,
+  DEFAULT_OPENAI_NON_REASONING_MODEL_BEHAVIOR_PROFILE,
+  DEFAULT_OPENAI_REASONING_MODEL_BEHAVIOR_PROFILE,
+  OpenAiModelBehaviorProfileRegistry,
+  createDefaultOpenAiModelBehaviorProfileRegistry,
+  resolveDefaultOpenAiModelBehaviorProfile,
+  resolveOpenAiReasoningEncryptedContentInclusionPolicy,
+} from "./provider/openAiModelBehaviorProfile.ts";
+export type {
+  OpenAiModelBehaviorProfile,
+  OpenAiModelBehaviorProfileRegistration,
+  OpenAiModelBehaviorProfileResolver,
+  OpenAiReasoningEncryptedContentInclusionPolicy,
+  ResolveOpenAiModelBehaviorProfileInput,
+} from "./provider/openAiModelBehaviorProfile.ts";

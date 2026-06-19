@@ -1,4 +1,5 @@
 import {
+  isCustomToolCallDetail,
   isWorkspaceInspectionToolCallRequest,
   listModelVisibleConversationSessionEntries,
   type ConversationSessionEntry,
@@ -247,6 +248,10 @@ function createReadOnlyToolEvidenceNote(input: {
   if (!isWorkspaceInspectionToolCallRequest(toolCallRequest)) {
     return undefined;
   }
+  const toolCallDetail = input.toolResultEntry.toolCallDetail;
+  if (isCustomToolCallDetail(toolCallDetail)) {
+    return undefined;
+  }
 
   const baseEvidenceNoteFields = {
     priorToolCallId: input.toolCallEntry.toolCallId,
@@ -255,41 +260,41 @@ function createReadOnlyToolEvidenceNote(input: {
     freshness: "fresh" as const,
   };
 
-  if (toolCallRequest.toolName === "read" && input.toolResultEntry.toolCallDetail.toolName === "read") {
+  if (toolCallRequest.toolName === "read" && toolCallDetail.toolName === "read") {
     return {
       ...baseEvidenceNoteFields,
       sourceKind: "read",
-      readFilePath: input.toolResultEntry.toolCallDetail.readFilePath,
-      sourceDescription: describeReadSource(input.toolResultEntry.toolCallDetail),
-      observedSummary: summarizeReadObservation(input.toolResultEntry.toolCallDetail, input.toolResultEntry.toolResultText),
+      readFilePath: toolCallDetail.readFilePath,
+      sourceDescription: describeReadSource(toolCallDetail),
+      observedSummary: summarizeReadObservation(toolCallDetail, input.toolResultEntry.toolResultText),
     };
   }
 
-  if (toolCallRequest.toolName === "glob" && input.toolResultEntry.toolCallDetail.toolName === "glob") {
+  if (toolCallRequest.toolName === "glob" && toolCallDetail.toolName === "glob") {
     return {
       ...baseEvidenceNoteFields,
       sourceKind: "search",
-      sourceDescription: describeGlobSource(input.toolResultEntry.toolCallDetail),
-      observedSummary: summarizeGlobObservation(input.toolResultEntry.toolCallDetail),
+      sourceDescription: describeGlobSource(toolCallDetail),
+      observedSummary: summarizeGlobObservation(toolCallDetail),
     };
   }
 
-  if (toolCallRequest.toolName === "grep" && input.toolResultEntry.toolCallDetail.toolName === "grep") {
+  if (toolCallRequest.toolName === "grep" && toolCallDetail.toolName === "grep") {
     return {
       ...baseEvidenceNoteFields,
       sourceKind: "search",
-      sourceDescription: describeGrepSource(toolCallRequest, input.toolResultEntry.toolCallDetail),
-      observedSummary: summarizeGrepObservation(input.toolResultEntry.toolCallDetail),
+      sourceDescription: describeGrepSource(toolCallRequest, toolCallDetail),
+      observedSummary: summarizeGrepObservation(toolCallDetail),
     };
   }
 
-  if (toolCallRequest.toolName === "locate_codebase_symbols" && input.toolResultEntry.toolCallDetail.toolName === "locate_codebase_symbols") {
+  if (toolCallRequest.toolName === "locate_codebase_symbols" && toolCallDetail.toolName === "locate_codebase_symbols") {
     return {
       ...baseEvidenceNoteFields,
       sourceKind: "knowledge",
       sourceDescription: describeCodebaseKnowledgeSource(toolCallRequest),
       observedSummary: summarizeCodebaseKnowledgeObservation(
-        input.toolResultEntry.toolCallDetail,
+        toolCallDetail,
         input.toolResultEntry.toolResultText,
       ),
     };
@@ -598,6 +603,10 @@ function invalidateEvidenceNotesAfterChangedPaths(
 }
 
 function describeToolResultMutationEvidence(toolCallDetail: ToolCallDetail): ToolResultMutationEvidence {
+  if (isCustomToolCallDetail(toolCallDetail)) {
+    return { mutationKind: "unknown_paths" };
+  }
+
   if (toolCallDetail.toolName === "edit") {
     return { mutationKind: "known_paths", changedFilePaths: [toolCallDetail.editedFilePath] };
   }

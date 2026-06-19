@@ -12,7 +12,7 @@ import {
   type WorkspacePatch,
 } from "@buli/contracts";
 import type { ProviderConversationTurn } from "./provider.ts";
-import { formatAssistantOperatingModeName, isReadOnlyAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
+import type { PrimaryAssistantAgentDefinition } from "./assistantAgentRegistry.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
@@ -44,6 +44,7 @@ export type StreamAssistantResponseEventsForBashToolCallInput = {
   toolCallId: string;
   bashToolCallRequest: BashToolCallRequest;
   assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
@@ -56,7 +57,7 @@ export type StreamAssistantResponseEventsForBashToolCallInput = {
 };
 
 function resolveBashApprovalRiskExplanation(input: {
-  assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   isReadOnlyAssistantMode: boolean;
   bashToolApprovalDecision: BashToolApprovalDecision;
 }): string | undefined {
@@ -65,21 +66,21 @@ function resolveBashApprovalRiskExplanation(input: {
   }
 
   if (input.isReadOnlyAssistantMode) {
-    return formatReadOnlyModeClassifiedBashApprovalRiskExplanation(input.assistantOperatingMode);
+    return formatReadOnlyModeClassifiedBashApprovalRiskExplanation(input.primaryAssistantAgent.displayName);
   }
 
   return undefined;
 }
 
-function formatReadOnlyModeClassifiedBashApprovalRiskExplanation(assistantOperatingMode: AssistantOperatingMode): string {
-  return `${formatAssistantOperatingModeName(assistantOperatingMode)} is read-only. This bash command is classified as read/inspect-only, but shell commands can access local files or external account data, so it requires explicit approval before running.`;
+function formatReadOnlyModeClassifiedBashApprovalRiskExplanation(primaryAssistantAgentDisplayName: string): string {
+  return `${primaryAssistantAgentDisplayName} is read-only. This bash command is classified as read/inspect-only, but shell commands can access local files or external account data, so it requires explicit approval before running.`;
 }
 
 function formatReadOnlyModeRiskyBashDenialText(input: {
-  assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgentDisplayName: string;
   riskExplanation: string;
 }): string {
-  return `${formatAssistantOperatingModeName(input.assistantOperatingMode)} is read-only, so this bash command was not executed. ${input.riskExplanation}`;
+  return `${input.primaryAssistantAgentDisplayName} is read-only, so this bash command was not executed. ${input.riskExplanation}`;
 }
 
 export async function* streamAssistantResponseEventsForBashToolCall(
@@ -89,7 +90,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   const toolCallPartId = randomUUID();
   const toolCallStartedAtMs = Date.now();
 
-  const isReadOnlyAssistantMode = isReadOnlyAssistantOperatingMode(input.assistantOperatingMode);
+  const isReadOnlyAssistantMode = input.primaryAssistantAgent.isReadOnly;
   const effectiveBashToolApprovalMode: BashToolApprovalMode = isReadOnlyAssistantMode
     ? "risk_based"
     : input.bashToolApprovalMode;
@@ -113,7 +114,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
 
   if (isReadOnlyAssistantMode && bashToolApprovalDecision.approvalPolicy === "requires_user_approval") {
     const denialText = formatReadOnlyModeRiskyBashDenialText({
-      assistantOperatingMode: input.assistantOperatingMode,
+      primaryAssistantAgentDisplayName: input.primaryAssistantAgent.displayName,
       riskExplanation: bashToolApprovalDecision.riskExplanation,
     });
     input.toolResultSessionRecorder.appendDeniedToolResultSessionEntry({
@@ -154,7 +155,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
   }
 
   const approvalRiskExplanation = resolveBashApprovalRiskExplanation({
-    assistantOperatingMode: input.assistantOperatingMode,
+    primaryAssistantAgent: input.primaryAssistantAgent,
     isReadOnlyAssistantMode,
     bashToolApprovalDecision,
   });

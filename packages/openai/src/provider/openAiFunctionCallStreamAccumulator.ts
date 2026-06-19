@@ -1,6 +1,7 @@
 import type {
   BuliDiagnosticLogger,
   ProviderRequestedToolCall,
+  ProviderToolDefinition,
 } from "@buli/contracts";
 import {
   logOpenAiDiagnosticEvent,
@@ -27,6 +28,7 @@ type PendingFunctionCallState = {
 
 export class OpenAiFunctionCallStreamAccumulator {
   private readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
+  private readonly availableToolDefinitions: readonly ProviderToolDefinition[] | undefined;
   private readonly pendingProviderFunctionCallIntents: OpenAiProviderFunctionCallIntent[] = [];
   private readonly pendingProviderFunctionCallIntentIndexByFunctionCallId = new Map<string, number>();
   private readonly emittedExecutableToolCallIntentByFunctionCallId = new Map<string, OpenAiExecutableToolCallIntent>();
@@ -36,8 +38,12 @@ export class OpenAiFunctionCallStreamAccumulator {
   private readonly pendingFunctionCallArgumentChunksByItemId = new Map<string, string[]>();
   private readonly completedPendingFunctionCallArgumentsTextByItemId = new Map<string, string>();
 
-  constructor(input: { diagnosticLogger?: BuliDiagnosticLogger | undefined } = {}) {
+  constructor(input: {
+    diagnosticLogger?: BuliDiagnosticLogger | undefined;
+    availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
+  } = {}) {
     this.diagnosticLogger = input.diagnosticLogger;
+    this.availableToolDefinitions = input.availableToolDefinitions;
   }
 
   appendFunctionCallArgumentsDelta(input: { itemId: string; deltaText: string }): void {
@@ -148,6 +154,7 @@ export class OpenAiFunctionCallStreamAccumulator {
       functionCallId: input.functionCallId,
       functionName: input.functionName,
       argumentsText: input.argumentsText,
+      availableToolDefinitions: this.availableToolDefinitions,
     });
     const existingProviderFunctionCallIndex = this.pendingProviderFunctionCallIntentIndexByFunctionCallId.get(input.functionCallId);
     if (existingProviderFunctionCallIndex !== undefined) {

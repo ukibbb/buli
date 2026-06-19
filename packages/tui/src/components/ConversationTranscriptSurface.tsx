@@ -1,4 +1,3 @@
-import type { ChatScreenTheme } from "@buli/assistant-design-tokens";
 import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { ChatAppRenderStore, ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import type { ScrollBoxRenderable } from "@opentui/core";
@@ -19,7 +18,7 @@ export type ConversationTranscriptSurfaceProps = {
     PendingToolApprovalDecision,
     "onPendingToolApprovalApproved" | "onPendingToolApprovalDenied"
   > | undefined;
-  transcriptAccentColor: ChatScreenTheme["accentAmber"] | ChatScreenTheme["accentGreen"] | ChatScreenTheme["accentPink"];
+  transcriptAccentColor: string;
   conversationSessionCompactionStatus?: ConversationSessionCompactionStatus | undefined;
   queuedPromptCount?: number | undefined;
   totalContextTokensUsed?: number | undefined;

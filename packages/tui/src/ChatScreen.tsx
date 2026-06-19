@@ -1,6 +1,7 @@
 import os from "node:os";
 import type {
   AvailableAssistantModel,
+  AssistantPrimaryAgentDisplayMetadata,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
   ConversationSessionModelSelection,
@@ -32,6 +33,7 @@ import { useChatScreenController } from "./behavior/useChatScreenController.ts";
 import { ChatScreenSlot, ChatScreenSlotsProvider, type ChatScreenSlotPlugin } from "./slots/chatScreenSlots.tsx";
 
 export type ChatScreenProps = {
+  primaryAgentDisplayMetadata?: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined;
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort;
   selectedReasoningEffort?: ReasoningEffort;

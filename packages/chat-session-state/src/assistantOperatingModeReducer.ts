@@ -1,6 +1,9 @@
 import type { AssistantOperatingMode } from "@buli/contracts";
 import type { ChatSessionState } from "./chatSessionState.ts";
-import { resolveNextAssistantOperatingMode } from "./resolveNextAssistantOperatingMode.ts";
+import {
+  resolveNextAssistantOperatingMode,
+  type AssistantOperatingModeCycleMetadata,
+} from "./resolveNextAssistantOperatingMode.ts";
 
 export function selectAssistantOperatingMode(
   chatSessionState: ChatSessionState,
@@ -16,9 +19,12 @@ export function selectAssistantOperatingMode(
   };
 }
 
-export function cycleAssistantOperatingMode(chatSessionState: ChatSessionState): ChatSessionState {
+export function cycleAssistantOperatingMode(
+  chatSessionState: ChatSessionState,
+  assistantOperatingModeCycleMetadata?: AssistantOperatingModeCycleMetadata | undefined,
+): ChatSessionState {
   return selectAssistantOperatingMode(
     chatSessionState,
-    resolveNextAssistantOperatingMode(chatSessionState.selectedAssistantOperatingMode),
+    resolveNextAssistantOperatingMode(chatSessionState.selectedAssistantOperatingMode, assistantOperatingModeCycleMetadata),
   );
 }

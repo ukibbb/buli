@@ -35,11 +35,32 @@ export type {
   TaskSubagentReasoningEffortSelectionReason,
 } from "./taskSubagentProviderModelSelection.ts";
 export {
+  applyAssistantModelOverlayResolverToCustomToolDefinition,
+  createAssistantModelOverlayResolvers,
+  createDefaultBuiltInToolDescriptionOverlayResolver,
+} from "./assistantModelOverlay.ts";
+export type {
+  ApplyAssistantModelOverlayResolverToCustomToolDefinitionInput,
+  AssistantModelOverlay,
+  AssistantModelOverlayBuiltInToolDescriptionEntry,
+  AssistantModelOverlayCustomToolProviderDefinitionEntry,
+  AssistantModelOverlayPrimaryAgentEntry,
+  AssistantModelOverlayResolvers,
+  AssistantModelOverlayRuntimeResolverInput,
+  AssistantModelOverlayTaskSubagentEntry,
+  AssistantModelOverlayTurnMatcher,
+  AssistantModelOverlayTurnMatcherInput,
+  BuiltInToolDescriptionOverlayResolver,
+  CreateAssistantModelOverlayResolversInput,
+  ResolveBuiltInToolDescriptionOverlaysForTurnInput,
+} from "./assistantModelOverlay.ts";
+export {
   CURRENT_DEFAULT_STICKY_NOTES_PROMPT_RENDERING_PROFILE,
   CURRENT_DEFAULT_WORKFLOW_HANDOFF_PROMPT_RENDERING_PROFILE,
   DEFAULT_ASSISTANT_PROVIDER_NAME,
   EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
   EXTERNAL_PROVIDER_PROTOCOL_CURRENT_PROMPT_PROFILE_ID,
+  appendAssistantProviderModelPromptFragments,
   OPENAI_DEFAULT_CURRENT_PROMPT_PROFILE_ID,
   OPENAI_GPT_5_5_CURRENT_PROMPT_PROFILE_ID,
   formatAssistantProviderModelPromptProfileFragmentBlock,
@@ -48,6 +69,7 @@ export {
 export type {
   AssistantProviderModelPromptFragmentTarget,
   AssistantProviderModelPromptFragments,
+  AssistantProviderModelPromptFragmentsToAppend,
   AssistantProviderModelPromptProfile,
   AssistantProviderModelPromptProfileResolver,
   AssistantProviderName,
@@ -56,6 +78,35 @@ export type {
   AssistantWorkflowHandoffPromptRenderingProfile,
   ResolveAssistantProviderModelPromptProfileInput,
 } from "./assistantProviderModelPromptProfile.ts";
+export {
+  assertResolvedPrimaryAssistantAgentMatchesRegisteredAgent,
+  appendPrimaryAssistantAgentPromptSections,
+  createDefaultPrimaryAssistantAgentCompositionResolver,
+  createModelAwarePrimaryAssistantAgentCompositionResolver,
+  createPrimaryAssistantAgentCompositionResolverFromPromptProfileResolver,
+} from "./assistantPrimaryAgentComposition.ts";
+export type {
+  ComposePrimaryAssistantAgentForModel,
+  ComposePrimaryAssistantAgentForModelInput,
+  ComposePrimaryAssistantAgentForModelResult,
+  PrimaryAssistantAgentCompositionResolver,
+  ResolvedPrimaryAssistantAgentComposition,
+  ResolvePrimaryAssistantAgentCompositionInput,
+} from "./assistantPrimaryAgentComposition.ts";
+export {
+  appendSubagentPromptSections,
+  assertResolvedTaskSubagentMatchesRegisteredSubagent,
+  createDefaultTaskSubagentCompositionResolver,
+  createModelAwareTaskSubagentCompositionResolver,
+} from "./assistantSubagentComposition.ts";
+export type {
+  ComposeTaskSubagentForModel,
+  ComposeTaskSubagentForModelInput,
+  ComposeTaskSubagentForModelResult,
+  ResolvedTaskSubagentComposition,
+  ResolveTaskSubagentCompositionInput,
+  TaskSubagentCompositionResolver,
+} from "./assistantSubagentComposition.ts";
 export {
   createDefaultWorkspaceCodebaseKnowledgeIndex,
   defaultWorkspaceCodebaseKnowledgeDatabaseFilePath,
@@ -73,6 +124,45 @@ export type {
 } from "./providerProtocolClient.ts";
 export { resolveBuiltInPrimaryAssistantAgent, resolveBuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
 export type { BuiltInPrimaryAssistantAgent, BuiltInSubagentDefinition } from "./assistantAgentCatalog.ts";
+export {
+  DEFAULT_ASSISTANT_SUBAGENT_DEFINITIONS,
+  DEFAULT_PRIMARY_ASSISTANT_AGENT_DEFINITIONS,
+  DEFAULT_PRIMARY_ASSISTANT_AGENT_DISPLAY_METADATA,
+  IMPLEMENTATION_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
+  AssistantAgentRegistry,
+  createDefaultAssistantAgentRegistry,
+} from "./assistantAgentRegistry.ts";
+export type {
+  AssistantAgentRegistryInput,
+  BuiltInPrimaryAssistantAgentSystemReminderKind,
+  BuiltInSubagentSystemPromptKind,
+  PrimaryAssistantAgentDefinition,
+  PrimaryAssistantAgentSystemPromptConfiguration,
+  SubagentDefinition,
+  SubagentSystemPromptConfiguration,
+} from "./assistantAgentRegistry.ts";
+export {
+  DEFAULT_ASSISTANT_TOOL_DEFINITIONS,
+  AssistantToolRegistry,
+  appendProviderToolDefinitionDescription,
+  createDefaultAssistantToolRegistry,
+} from "./assistantToolRegistry.ts";
+export type {
+  AssistantToolDefinition,
+  AssistantToolExecutionPolicy,
+  AssistantToolRegistryInput,
+  AssistantToolWorkspaceEffectKind,
+  CustomAssistantToolApprovalPolicy,
+  CustomAssistantToolDefinition,
+  CustomAssistantToolExecutionInput,
+  CustomAssistantToolExecutionOutcome,
+  CustomAssistantToolExecutor,
+  CustomAssistantToolProviderDefinitionResolver,
+  CustomAssistantToolProviderDefinitionTurnContext,
+  CustomAssistantToolProviderDefinitionTurnKind,
+  ResolveCustomAssistantToolProviderDefinitionInput,
+  ResolveCustomAssistantToolProviderDefinitionsForTurnInput,
+} from "./assistantToolRegistry.ts";
 export {
   buildAssistantWorkflowHandoffContext,
   buildAssistantWorkflowHandoffPromptBlock,
@@ -118,7 +208,7 @@ export {
   ProjectInstructionTracker,
   toProjectInstructionSnapshots,
 } from "./projectInstructions.ts";
-export { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt } from "./systemPrompt.ts";
+export { buildBuliExplorerSystemPrompt, buildBuliSystemPrompt, buildBuliSystemPromptForPrimaryAssistantAgent, buildSubagentSystemPrompt } from "./systemPrompt.ts";
 export {
   formatSkillContentForModel,
   formatUserSelectedSkillPromptForModel,

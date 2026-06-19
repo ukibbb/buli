@@ -9,10 +9,16 @@ import {
   InMemoryConversationHistory,
   PrivateGitWorkspaceSnapshotStore,
   PromptContextCandidateCatalog,
+  type AssistantAgentRegistry,
+  type AssistantProviderModelPromptProfileResolver,
+  type AssistantToolRegistry,
   type BashToolApprovalMode,
+  type BuiltInToolDescriptionOverlayResolver,
+  type PrimaryAssistantAgentCompositionResolver,
+  type TaskSubagentCompositionResolver,
   type TaskSubagentProviderModelSelectionPolicy,
 } from "@buli/engine";
-import { OpenAiAuthStore, OpenAiProvider } from "@buli/openai";
+import { OpenAiAuthStore, OpenAiProvider, type OpenAiModelBehaviorProfileResolver } from "@buli/openai";
 import type { RenderChatScreenInTerminalInput, TuiChatScreenInstance } from "@buli/tui";
 import { type BrowserUrlLauncher } from "../browserLauncher.ts";
 import { installConsoleFileLogger } from "../diagnostics/consoleFileLogger.ts";
@@ -86,10 +92,17 @@ type InteractiveChatStartupConfigurationResolution =
     message: string;
   };
 
-export async function runInteractiveChat(input: {
+export type RunInteractiveChatInput = {
   selectedModelId?: string;
   selectedReasoningEffort?: ReasoningEffort;
   bashToolApprovalMode?: BashToolApprovalMode;
+  assistantAgentRegistry?: AssistantAgentRegistry;
+  assistantToolRegistry?: AssistantToolRegistry;
+  assistantProviderModelPromptProfileResolver?: AssistantProviderModelPromptProfileResolver;
+  primaryAssistantAgentCompositionResolver?: PrimaryAssistantAgentCompositionResolver;
+  taskSubagentCompositionResolver?: TaskSubagentCompositionResolver;
+  builtInToolDescriptionOverlayResolver?: BuiltInToolDescriptionOverlayResolver;
+  openAiModelBehaviorProfileResolver?: OpenAiModelBehaviorProfileResolver;
   store?: OpenAiAuthStore;
   conversationSessionStore?: ConversationSessionStore;
   conversationSessionExportDirectoryPath?: string;
@@ -101,7 +114,9 @@ export async function runInteractiveChat(input: {
   createProviderProtocolTransport?: (
     input: CreateInteractiveChatProviderProtocolTransportInput,
   ) => DisposableProviderProtocolClientTransport;
-} = {}): Promise<string> {
+};
+
+export async function runInteractiveChat(input: RunInteractiveChatInput = {}): Promise<string> {
   const startupStartedAtMs = Date.now();
   const environment = input.environment ?? process.env;
   const workspaceRootPath = process.cwd();
@@ -219,6 +234,9 @@ export async function runInteractiveChat(input: {
       : new OpenAiProvider({
         store,
         ...(maximumConcurrentResponseStepStreams !== undefined ? { maximumConcurrentResponseStepStreams } : {}),
+        ...(input.openAiModelBehaviorProfileResolver !== undefined
+          ? { modelBehaviorProfileResolver: input.openAiModelBehaviorProfileResolver }
+          : {}),
         diagnosticLogger,
       });
     conversationTurnProviderResolution = resolveInteractiveChatConversationTurnProvider({
@@ -287,6 +305,20 @@ export async function runInteractiveChat(input: {
     const assistantConversationRunner = new AssistantConversationRuntime({
       conversationTurnProvider: conversationTurnProviderResolution.conversationTurnProvider,
       assistantProviderName: conversationTurnProviderResolution.assistantProviderName,
+      ...(input.assistantProviderModelPromptProfileResolver !== undefined
+        ? { assistantProviderModelPromptProfileResolver: input.assistantProviderModelPromptProfileResolver }
+        : {}),
+      ...(input.primaryAssistantAgentCompositionResolver !== undefined
+        ? { primaryAssistantAgentCompositionResolver: input.primaryAssistantAgentCompositionResolver }
+        : {}),
+      ...(input.taskSubagentCompositionResolver !== undefined
+        ? { taskSubagentCompositionResolver: input.taskSubagentCompositionResolver }
+        : {}),
+      ...(input.builtInToolDescriptionOverlayResolver !== undefined
+        ? { builtInToolDescriptionOverlayResolver: input.builtInToolDescriptionOverlayResolver }
+        : {}),
+      ...(input.assistantAgentRegistry !== undefined ? { assistantAgentRegistry: input.assistantAgentRegistry } : {}),
+      ...(input.assistantToolRegistry !== undefined ? { assistantToolRegistry: input.assistantToolRegistry } : {}),
       workspaceRootPath,
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
@@ -322,6 +354,7 @@ export async function runInteractiveChat(input: {
 
     const renderArgs: RenderChatScreenInTerminalInput = {
       assistantConversationRunner,
+      primaryAgentDisplayMetadata: assistantConversationRunner.listPrimaryAgentDisplayMetadata(),
       availableSkills,
       loadAvailableAssistantModels: async () => [...await resolvedConversationTurnProvider.listAvailableAssistantModels()],
       loadPromptContextCandidates: (promptContextQueryText: string) =>

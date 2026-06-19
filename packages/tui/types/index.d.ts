@@ -1,5 +1,6 @@
 import type {
   AssistantResponseEvent,
+  AssistantPrimaryAgentDisplayMetadata,
   AvailableAssistantModel,
   BuliDiagnosticLogger,
   ConversationSessionEntry,
@@ -21,6 +22,7 @@ import type { ChatSlashCommandSkill } from "@buli/chat-session-state";
 import type { ReactNode } from "react";
 
 export type ChatScreenProps = {
+  primaryAgentDisplayMetadata?: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined;
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort;
   selectedReasoningEffort?: ReasoningEffort;
@@ -97,6 +99,7 @@ export declare class ActiveConversationTurnShutdownCoordinator {
 }
 
 export type RenderChatScreenInTerminalInput = {
+  primaryAgentDisplayMetadata?: ChatScreenProps["primaryAgentDisplayMetadata"];
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ChatScreenProps["selectedModelDefaultReasoningEffort"];
   selectedReasoningEffort?: ChatScreenProps["selectedReasoningEffort"];

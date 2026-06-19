@@ -1,8 +1,14 @@
 import type { ReactNode } from "react";
-import type { ToolCallDetail, WorkspacePatch } from "@buli/contracts";
+import {
+  isCustomToolCallDetail,
+  type BuiltInToolCallDetailName,
+  type ToolCallDetail,
+  type WorkspacePatch,
+} from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
 import { ApprovalDecisionControl } from "../primitives/ApprovalDecisionControl.tsx";
 import { BashToolCallCard } from "./BashToolCallCard.tsx";
+import { CustomToolCallCard } from "./CustomToolCallCard.tsx";
 import { EditManyToolCallCard } from "./EditManyToolCallCard.tsx";
 import { EditToolCallCard } from "./EditToolCallCard.tsx";
 import { GlobToolCallCard } from "./GlobToolCallCard.tsx";
@@ -37,8 +43,7 @@ export type PendingToolCallApprovalDecisionActions = {
   approvalRiskExplanation: string;
 };
 
-type ToolCallDetailName = ToolCallDetail["toolName"];
-type ToolCallDetailByName<ToolName extends ToolCallDetailName> = Extract<ToolCallDetail, { toolName: ToolName }>;
+type ToolCallDetailByName<ToolName extends BuiltInToolCallDetailName> = Extract<ToolCallDetail, { toolName: ToolName }>;
 
 type ToolCallCardSharedInput = {
   renderState: ToolCallEntryViewProps["renderState"];
@@ -62,17 +67,17 @@ type ToolCallCardWorkspacePatchProps = ToolCallCardSharedProps & {
   workspacePatch?: WorkspacePatch;
 };
 
-type ToolCallEntryRendererProps<ToolName extends ToolCallDetailName> = Omit<ToolCallEntryViewProps, "toolCallDetail"> & {
+type ToolCallEntryRendererProps<ToolName extends BuiltInToolCallDetailName> = Omit<ToolCallEntryViewProps, "toolCallDetail"> & {
   toolCallDetail: ToolCallDetailByName<ToolName>;
   approvalDecisionControl: ReactNode | undefined;
 };
 
-type ToolCallEntryRenderer<ToolName extends ToolCallDetailName> = (
+type ToolCallEntryRenderer<ToolName extends BuiltInToolCallDetailName> = (
   props: ToolCallEntryRendererProps<ToolName>,
 ) => ReactNode;
 
 const toolCallEntryRendererByName: {
-  readonly [ToolName in ToolCallDetailName]: ToolCallEntryRenderer<ToolName>;
+  readonly [ToolName in BuiltInToolCallDetailName]: ToolCallEntryRenderer<ToolName>;
 } = {
   read: renderReadToolCallEntry,
   grep: renderGrepToolCallEntry,
@@ -100,12 +105,18 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
     />
   ) : undefined;
 
-  const renderToolCallEntry = resolveToolCallEntryRenderer(toolCallDetail);
-  const renderedToolCallEntry = renderToolCallEntry({
-    ...props,
-    toolCallDetail,
-    approvalDecisionControl,
-  });
+  const renderedToolCallEntry = isCustomToolCallDetail(toolCallDetail)
+    ? (
+        <CustomToolCallCard
+          {...buildSharedToolCallCardProps({ ...props, approvalDecisionControl })}
+          toolCallDetail={toolCallDetail}
+        />
+      )
+    : renderBuiltInToolCallEntry({
+        ...props,
+        toolCallDetail,
+        approvalDecisionControl,
+      });
   const approvalRiskExplanation = props.pendingToolCallApprovalDecisionActions?.approvalRiskExplanation;
 
   return (
@@ -122,10 +133,17 @@ export function ToolCallEntryView(props: ToolCallEntryViewProps): ReactNode {
   );
 }
 
-function resolveToolCallEntryRenderer<ToolName extends ToolCallDetailName>(
+function resolveToolCallEntryRenderer<ToolName extends BuiltInToolCallDetailName>(
   toolCallDetail: ToolCallDetailByName<ToolName>,
 ): ToolCallEntryRenderer<ToolName> {
   return toolCallEntryRendererByName[toolCallDetail.toolName] as ToolCallEntryRenderer<ToolName>;
+}
+
+function renderBuiltInToolCallEntry<ToolName extends BuiltInToolCallDetailName>(
+  props: ToolCallEntryRendererProps<ToolName>,
+): ReactNode {
+  const renderToolCallEntry = resolveToolCallEntryRenderer(props.toolCallDetail);
+  return renderToolCallEntry(props);
 }
 
 function buildSharedToolCallCardProps(props: ToolCallCardSharedInput): ToolCallCardSharedProps {

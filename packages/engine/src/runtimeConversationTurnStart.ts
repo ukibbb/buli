@@ -10,13 +10,16 @@ import type {
   ProviderConversationTurn,
 } from "./provider.ts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
-import { buildBuliSystemPrompt } from "./systemPrompt.ts";
+import type { PrimaryAssistantAgentDefinition } from "./assistantAgentRegistry.ts";
+import type { AssistantToolRegistry } from "./assistantToolRegistry.ts";
+import { buildBuliSystemPromptForPrimaryAssistantAgent } from "./systemPrompt.ts";
 import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
 import { buildRelevantBuliStickyNotesContextText } from "./readOnlyToolEvidenceNotebook.ts";
-import { resolveAvailableToolNamesForAssistantOperatingMode } from "./assistantOperatingModePolicy.ts";
+import { resolveAvailableToolNamesForPrimaryAssistantAgent } from "./assistantOperatingModePolicy.ts";
 import { buildAssistantWorkflowHandoffPromptBlock } from "./assistantWorkflowHandoffContext.ts";
-import type { AssistantProviderModelPromptProfile } from "./assistantProviderModelPromptProfile.ts";
+import type { AssistantProviderModelPromptProfile, AssistantProviderName } from "./assistantProviderModelPromptProfile.ts";
+import type { BuiltInToolDescriptionOverlayResolver } from "./assistantModelOverlay.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { RuntimeConversationTurnSessionRecorder } from "./runtimeConversationTurnSessionRecorder.ts";
 import { formatUserSelectedSkillPromptForModel, type WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
@@ -31,6 +34,10 @@ export type StartedRuntimeConversationTurn = {
 export async function startAcceptedRuntimeConversationTurn(input: {
   conversationTurnInput: ConversationTurnRequest;
   assistantOperatingMode: AssistantOperatingMode;
+  primaryAssistantAgent: PrimaryAssistantAgentDefinition;
+  assistantProviderName: AssistantProviderName;
+  assistantToolRegistry: AssistantToolRegistry;
+  builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
   conversationTurnProvider: ConversationTurnProvider;
   assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   conversationHistory: InMemoryConversationHistory;
@@ -68,9 +75,31 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       abortSignal: input.abortSignal,
     }),
   );
-  const effectiveToolAvailability = resolveAvailableToolNamesForAssistantOperatingMode({
-    assistantOperatingMode: input.assistantOperatingMode,
+  const effectiveToolAvailability = resolveAvailableToolNamesForPrimaryAssistantAgent({
+    primaryAssistantAgent: input.primaryAssistantAgent,
     requestedAvailableToolNames: input.availableToolNames,
+  });
+  const effectiveCustomProviderToolDefinitions = input.assistantToolRegistry.resolveProviderToolDefinitionsForTurn({
+    availableToolNames: effectiveToolAvailability.availableToolNames,
+    turnContext: {
+      providerName: input.assistantProviderName,
+      selectedModelId: input.conversationTurnInput.selectedModelId,
+      ...(input.conversationTurnInput.selectedReasoningEffort !== undefined
+        ? { selectedReasoningEffort: input.conversationTurnInput.selectedReasoningEffort }
+        : {}),
+      assistantTurnKind: "primary_assistant_agent",
+      assistantAgentName: input.primaryAssistantAgent.agentName,
+    },
+  });
+  const effectiveBuiltInToolDescriptionOverlays = input.builtInToolDescriptionOverlayResolver({
+    providerName: input.assistantProviderName,
+    selectedModelId: input.conversationTurnInput.selectedModelId,
+    ...(input.conversationTurnInput.selectedReasoningEffort !== undefined
+      ? { selectedReasoningEffort: input.conversationTurnInput.selectedReasoningEffort }
+      : {}),
+    assistantTurnKind: "primary_assistant_agent",
+    assistantAgentName: input.primaryAssistantAgent.agentName,
+    availableToolNames: effectiveToolAvailability.availableToolNames,
   });
   const availableSkillsForAcceptedTurn = effectiveToolAvailability.availableToolNames?.includes("skill")
     ? await input.skillCatalog.listAvailableSkills()
@@ -91,6 +120,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
   });
   const workflowHandoffContextText = buildAssistantWorkflowHandoffPromptBlock({
     currentAssistantOperatingMode: input.assistantOperatingMode,
+    currentPrimaryAssistantAgent: input.primaryAssistantAgent,
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     renderingProfile: input.assistantProviderModelPromptProfile.workflowHandoff,
   });
@@ -108,9 +138,9 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       ? { conversationTurnId: input.conversationTurnInput.conversationTurnId }
       : {}),
     providerTurnKind: "assistant",
-    systemPromptText: buildBuliSystemPrompt({
+    systemPromptText: buildBuliSystemPromptForPrimaryAssistantAgent({
       workspaceRootPath: input.workspaceRootPath,
-      assistantOperatingMode: input.assistantOperatingMode,
+      primaryAssistantAgent: input.primaryAssistantAgent,
       projectInstructionSnapshots: projectInstructionSnapshotsForAcceptedTurn,
       availableSkills: availableSkillsForAcceptedTurn,
       ...(buliStickyNotesContextText ? { buliStickyNotesContextText } : {}),
@@ -124,6 +154,12 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       : {}),
     ...(input.promptCacheKey ? { promptCacheKey: input.promptCacheKey } : {}),
     ...effectiveToolAvailability,
+    ...(effectiveCustomProviderToolDefinitions.length > 0
+      ? { availableToolDefinitions: effectiveCustomProviderToolDefinitions }
+      : {}),
+    ...(effectiveBuiltInToolDescriptionOverlays.length > 0
+      ? { builtInToolDescriptionOverlays: effectiveBuiltInToolDescriptionOverlays }
+      : {}),
     abortSignal: input.abortSignal,
   });
   logEngineDiagnosticEvent(input.diagnosticLogger, "provider_turn.started", {

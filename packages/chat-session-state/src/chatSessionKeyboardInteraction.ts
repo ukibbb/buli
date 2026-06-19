@@ -2,6 +2,7 @@ import { extractActivePromptContextQueryFromPromptDraft } from "@buli/prompt-con
 import type { AssistantOperatingMode, UserPromptImageAttachment } from "@buli/contracts";
 import type { ChatSessionState, SlashCommand } from "./chatSessionState.ts";
 import { cycleAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
+import type { AssistantOperatingModeCycleMetadata } from "./resolveNextAssistantOperatingMode.ts";
 import { hideCommandHelpModal } from "./commandHelpModalReducer.ts";
 import {
   hideConversationSessionSelection,
@@ -163,6 +164,7 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
   chatSessionKeyboardInput: ChatSessionKeyboardInput;
   isPromptSubmissionInFlight: boolean;
   shouldQueueSubmittedPrompt?: boolean | undefined;
+  assistantOperatingModeCycleMetadata?: AssistantOperatingModeCycleMetadata | undefined;
 }): ChatSessionKeyboardInteraction {
   const interactionScope = resolveChatSessionInteractionScope(input.chatSessionState);
 
@@ -182,7 +184,10 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
     interactionScope,
   })) {
     return createChatSessionKeyboardInteraction({
-      nextChatSessionState: cycleAssistantOperatingMode(input.chatSessionState),
+      nextChatSessionState: cycleAssistantOperatingMode(
+        input.chatSessionState,
+        input.assistantOperatingModeCycleMetadata,
+      ),
       shouldConsumeKeyboardInput: true,
     });
   }

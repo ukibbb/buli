@@ -1,4 +1,5 @@
 import type {
+  AssistantPrimaryAgentDisplayMetadata,
   AvailableAssistantModel,
   ConversationSessionModelSelection,
 } from "@buli/contracts";
@@ -48,6 +49,7 @@ export type ChatAppKeyboardInputApplication = {
 };
 
 export type UseChatAppKeyboardActionsInput = {
+  primaryAgentDisplayMetadata?: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined;
   availableSkills?: readonly ChatSlashCommandSkill[] | undefined;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
@@ -206,6 +208,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
       isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || isPromptInputBlockedByCompaction,
       shouldQueueSubmittedPrompt: isAutoConversationSessionCompactionRunning(input.conversationSessionCompactionStatus),
+      assistantOperatingModeCycleMetadata: input.primaryAgentDisplayMetadata,
     });
 
     const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(

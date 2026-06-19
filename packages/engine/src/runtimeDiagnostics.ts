@@ -6,6 +6,7 @@ import type {
 } from "@buli/contracts";
 import {
   emitBuliDiagnosticLogEvent,
+  isCustomToolCallRequest,
   summarizeContextWindowUsageForDiagnostics,
   summarizeTokenUsageForDiagnostics,
 } from "@buli/contracts";
@@ -59,13 +60,14 @@ export function summarizeProviderStreamEventForDiagnostics(
   }
 
   if (providerStreamEvent.type === "tool_call_requested") {
+    const toolCallRequest = providerStreamEvent.toolCallRequest;
     return {
       toolCallId: providerStreamEvent.toolCallId,
-      toolName: providerStreamEvent.toolCallRequest.toolName,
-      ...(providerStreamEvent.toolCallRequest.toolName === "bash"
+      toolName: toolCallRequest.toolName,
+      ...(!isCustomToolCallRequest(toolCallRequest) && toolCallRequest.toolName === "bash"
         ? {
-            shellCommandLength: providerStreamEvent.toolCallRequest.shellCommand.length,
-            commandDescriptionLength: providerStreamEvent.toolCallRequest.commandDescription.length,
+            shellCommandLength: toolCallRequest.shellCommand.length,
+            commandDescriptionLength: toolCallRequest.commandDescription.length,
           }
       : {}),
     };

@@ -2,8 +2,11 @@ import { readFile } from "node:fs/promises";
 import { expect, test } from "bun:test";
 import {
   ASSISTANT_TOOL_REQUEST_NAMES,
+  BUILT_IN_ASSISTANT_PRIMARY_AGENT_NAMES,
+  BUILT_IN_ASSISTANT_SUBAGENT_NAMES,
   AssistantOperatingModeSchema,
   AssistantPrimaryAgentNameSchema,
+  DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA,
   AssistantResponseEventSchema,
   AssistantSubagentNameSchema,
   ConversationSessionEntrySchema,
@@ -30,6 +33,8 @@ import {
   MAX_WRITE_TOOL_FILE_CONTENT_LENGTH,
   ModelContextItemSchema,
   PendingToolApprovalRequestSchema,
+  ProviderBuiltInToolDescriptionOverlaySchema,
+  ProviderToolDefinitionSchema,
   ProviderStreamEventSchema,
   READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES,
   RENDER_ONLY_TOOL_DETAIL_NAMES,
@@ -41,8 +46,14 @@ import {
   WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
   createStartedToolCallDetailFromRequest,
   emitBuliDiagnosticLogEvent,
+  isAssistantPrimaryAgentName,
   isAssistantToolRequestName,
   isAssistantSubagentName,
+  isBuiltInAssistantPrimaryAgentName,
+  isBuiltInAssistantSubagentName,
+  isCustomToolCallDetail,
+  isCustomToolCallRequest,
+  isCustomToolName,
   isFileMutationToolCallRequest,
   isLocateCodebaseSymbolsToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
@@ -213,15 +224,34 @@ test("summarizeContextWindowUsageForDiagnostics reports prefixed token counts", 
   expect(summarizeContextWindowUsageForDiagnostics(undefined)).toEqual({});
 });
 
-test("AssistantOperatingModeSchema parses understand, plan, and implementation modes", () => {
-  expect(AssistantPrimaryAgentNameSchema.options).toEqual(["understand", "plan", "implementation"]);
-  expect(AssistantOperatingModeSchema.options).toEqual(["understand", "plan", "implementation"]);
+test("AssistantOperatingModeSchema parses built-in and custom primary agent ids", () => {
+  expect(BUILT_IN_ASSISTANT_PRIMARY_AGENT_NAMES).toEqual(["understand", "plan", "implementation"]);
+  expect(DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA.map((agentMetadata) => agentMetadata.agentName)).toEqual(
+    [...BUILT_IN_ASSISTANT_PRIMARY_AGENT_NAMES],
+  );
+  expect(DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA.map((agentMetadata) => agentMetadata.shortLabel)).toEqual([
+    "Understand",
+    "Plan",
+    "Implementation",
+  ]);
   expect(AssistantOperatingModeSchema.parse("understand")).toBe("understand");
   expect(AssistantOperatingModeSchema.parse("plan")).toBe("plan");
   expect(AssistantOperatingModeSchema.parse("implementation")).toBe("implementation");
-  expect(AssistantSubagentNameSchema.options).toEqual(["explore"]);
+  expect(AssistantPrimaryAgentNameSchema.parse("code-reviewer")).toBe("code-reviewer");
+  expect(AssistantOperatingModeSchema.parse("security.audit")).toBe("security.audit");
+  expect(AssistantOperatingModeSchema.safeParse("Bad Agent").success).toBe(false);
+  expect(isAssistantPrimaryAgentName("code-reviewer")).toBe(true);
+  expect(isBuiltInAssistantPrimaryAgentName("code-reviewer")).toBe(false);
+  expect(isBuiltInAssistantPrimaryAgentName("understand")).toBe(true);
+});
+
+test("AssistantSubagentNameSchema parses built-in and custom subagent ids", () => {
+  expect(BUILT_IN_ASSISTANT_SUBAGENT_NAMES).toEqual(["explore"]);
   expect(isAssistantSubagentName("explore")).toBe(true);
-  expect(isAssistantSubagentName("general")).toBe(false);
+  expect(isAssistantSubagentName("general")).toBe(true);
+  expect(isBuiltInAssistantSubagentName("explore")).toBe(true);
+  expect(isBuiltInAssistantSubagentName("general")).toBe(false);
+  expect(AssistantSubagentNameSchema.safeParse("Bad Subagent").success).toBe(false);
 });
 
 test("WorkflowHandoffSchema parses typed workflow handoff artifacts", () => {
@@ -1313,6 +1343,8 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("web_search")).toBe(false);
   expect(isAssistantToolRequestName("explore")).toBe(false);
   expect(isAssistantToolRequestName("general")).toBe(false);
+  expect(isCustomToolName("workspace_summary")).toBe(true);
+  expect(isCustomToolName("bash")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "locate_codebase_symbols", symbolNames: ["runDispatch"] })).toBe(true);
@@ -1345,6 +1377,79 @@ test("tool catalog classifies typed tool requests", () => {
       recommendedNextStep: "Run full tests.",
     },
   })).toBe(true);
+  expect(isCustomToolCallRequest({
+    toolName: "workspace_summary",
+    toolArgumentsJson: { topic: "contracts" },
+  })).toBe(true);
+  expect(isCustomToolCallDetail({
+    toolName: "workspace_summary",
+    toolResultSummary: "Summarized contracts.",
+  })).toBe(true);
+});
+
+test("custom tool contracts accept JSON arguments and reject built-in collisions", () => {
+  expect(ToolCallRequestSchema.parse({
+    toolName: "workspace_summary",
+    toolArgumentsJson: {
+      topic: "contracts",
+      includeTests: true,
+      tags: ["provider", "engine"],
+    },
+  })).toEqual({
+    toolName: "workspace_summary",
+    toolArgumentsJson: {
+      topic: "contracts",
+      includeTests: true,
+      tags: ["provider", "engine"],
+    },
+  });
+  expect(ToolCallDetailSchema.parse({
+    toolName: "workspace_summary",
+    toolDisplayName: "Workspace Summary",
+    toolArgumentsJson: { topic: "contracts" },
+    toolResultJson: { fileCount: 3 },
+    toolResultSummary: "Found 3 relevant files.",
+  })).toMatchObject({
+    toolName: "workspace_summary",
+    toolResultSummary: "Found 3 relevant files.",
+  });
+  expect(ProviderToolDefinitionSchema.parse({
+    toolName: "workspace_summary",
+    description: "Summarize a workspace topic.",
+    parameters: {
+      type: "object",
+      properties: { topic: { type: "string" } },
+      required: ["topic"],
+      additionalProperties: false,
+    },
+  })).toMatchObject({ toolName: "workspace_summary" });
+  expect(ProviderBuiltInToolDescriptionOverlaySchema.parse({
+    toolName: "read",
+    additionalDescriptionParagraphs: ["Read only a narrow evidenced line window for this model."],
+  })).toMatchObject({ toolName: "read" });
+
+  expect(ToolCallRequestSchema.safeParse({
+    toolName: "bash",
+    toolArgumentsJson: { command: "pwd" },
+  }).success).toBe(false);
+  expect(ToolCallDetailSchema.safeParse({
+    toolName: "read",
+    toolArgumentsJson: { filePath: "README.md" },
+  }).success).toBe(false);
+  expect(ProviderToolDefinitionSchema.safeParse({
+    toolName: "read",
+    description: "Collides with a built-in tool.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+  }).success).toBe(false);
+  expect(ProviderBuiltInToolDescriptionOverlaySchema.safeParse({
+    toolName: "workspace_summary",
+    additionalDescriptionParagraphs: ["Custom tool names are not valid built-in description overlays."],
+  }).success).toBe(false);
 });
 
 test("createStartedToolCallDetailFromRequest maps requests to render details", () => {
@@ -1437,6 +1542,13 @@ test("createStartedToolCallDetailFromRequest maps requests to render details", (
     toolName: "record_workflow_handoff",
     handoffKind: "plan",
     handoffSummary: "Add typed handoffs.",
+  });
+  expect(createStartedToolCallDetailFromRequest({
+    toolName: "workspace_summary",
+    toolArgumentsJson: { topic: "runtime" },
+  })).toEqual({
+    toolName: "workspace_summary",
+    toolArgumentsJson: { topic: "runtime" },
   });
 });
 

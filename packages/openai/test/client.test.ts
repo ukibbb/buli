@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OpenAiAuthStore } from "../src/auth/store.ts";
 import { OpenAiProvider } from "../src/provider/client.ts";
+import type { OpenAiModelBehaviorProfile } from "../src/provider/openAiModelBehaviorProfile.ts";
 
 class CountingOpenAiAuthStore extends OpenAiAuthStore {
   loadOpenAiCallCount = 0;
@@ -114,6 +115,39 @@ test("OpenAiProvider can disable hosted web search", () => {
   });
 
   expect(providerTurn.openAiResponsesRequestTemplate.stableRequestFields.tools).toBeUndefined();
+});
+
+test("OpenAiProvider applies configured model behavior profile resolver", () => {
+  const customModelBehaviorProfile = {
+    profileId: "test:client-model-profile",
+    requestReasoningSummary: false,
+    requestLowTextVerbosity: true,
+    allowParallelToolCalls: false,
+    defaultReasoningEncryptedContentInclusionPolicy: "when_input_contains_reasoning",
+  } as const satisfies OpenAiModelBehaviorProfile;
+  const provider = new OpenAiProvider({
+    endpoint: "https://example.test/v1/responses",
+    hostedWebSearch: { mode: "disabled" },
+    modelBehaviorProfileResolver: () => customModelBehaviorProfile,
+  });
+
+  const providerTurn = provider.startConversationTurn({
+    systemPromptText: "You are buli.",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Read README",
+        modelFacingPromptText: "Read README",
+      },
+    ],
+    selectedModelId: "gpt-5.4",
+    availableToolNames: ["read"],
+  });
+
+  expect(providerTurn.modelBehaviorProfile).toBe(customModelBehaviorProfile);
+  expect(providerTurn.openAiResponsesRequestTemplate.stableRequestFields.reasoning).toBeUndefined();
+  expect(providerTurn.openAiResponsesRequestTemplate.stableRequestFields.text).toEqual({ verbosity: "low" });
+  expect(providerTurn.openAiResponsesRequestTemplate.stableRequestFields.parallel_tool_calls).toBeUndefined();
 });
 
 test("OpenAiProvider applies configured response-step stream concurrency", () => {

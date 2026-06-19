@@ -2,8 +2,22 @@ import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_READ_TOOL_LINE_COUNT } from "@buli/contracts";
+import { MAX_READ_TOOL_LINE_COUNT, type ToolCallDetail, type ToolCallGlobDetail, type ToolCallGrepDetail } from "@buli/contracts";
 import { ProjectInstructionTracker, runGlobToolCall, runGrepToolCall, runReadToolCall } from "../src/index.ts";
+
+function expectGlobToolCallDetail(toolCallDetail: ToolCallDetail): asserts toolCallDetail is ToolCallGlobDetail {
+  expect(toolCallDetail.toolName).toBe("glob");
+  if (toolCallDetail.toolName !== "glob") {
+    throw new Error(`Expected glob tool-call detail, received ${toolCallDetail.toolName}`);
+  }
+}
+
+function expectGrepToolCallDetail(toolCallDetail: ToolCallDetail): asserts toolCallDetail is ToolCallGrepDetail {
+  expect(toolCallDetail.toolName).toBe("grep");
+  if (toolCallDetail.toolName !== "grep") {
+    throw new Error(`Expected grep tool-call detail, received ${toolCallDetail.toolName}`);
+  }
+}
 
 async function writeFakeRipgrepExecutable(workspaceRootPath: string, scriptBody: string): Promise<string> {
   const fakeRipgrepPath = join(workspaceRootPath, "fake-rg");
@@ -522,10 +536,8 @@ test("runGlobToolCall caps returned matched paths while keeping the total count"
     matchedPathCount: 1_005,
     returnedPathCount: 1_000,
   });
-  expect(globToolCallOutcome.toolCallDetail.toolName).toBe("glob");
-  if (globToolCallOutcome.toolCallDetail.toolName === "glob") {
-    expect(globToolCallOutcome.toolCallDetail.matchedPaths).toHaveLength(1_000);
-  }
+  expectGlobToolCallDetail(globToolCallOutcome.toolCallDetail);
+  expect(globToolCallOutcome.toolCallDetail.matchedPaths).toHaveLength(1_000);
   expect(globToolCallOutcome.toolResultText).toContain("Found 1005 files");
   expect(globToolCallOutcome.toolResultText).toContain("Results too broad/incomplete: showing first 1000 of 1005 files");
   expect(globToolCallOutcome.toolResultText).toContain(
@@ -880,10 +892,8 @@ test("runGrepToolCall returns all match hits", async () => {
     totalMatchCount: 105,
     returnedMatchHitCount: 105,
   });
-  expect(grepToolCallOutcome.toolCallDetail.toolName).toBe("grep");
-  if (grepToolCallOutcome.toolCallDetail.toolName === "grep") {
-    expect(grepToolCallOutcome.toolCallDetail.matchHits).toHaveLength(105);
-  }
+  expectGrepToolCallDetail(grepToolCallOutcome.toolCallDetail);
+  expect(grepToolCallOutcome.toolCallDetail.matchHits).toHaveLength(105);
   expect(grepToolCallOutcome.toolResultText).toContain("Line 105: match 104");
   expect(grepToolCallOutcome.toolResultText).not.toContain("Results truncated");
 });
@@ -912,10 +922,8 @@ test("runGrepToolCall caps returned match hits while keeping the total count", a
     totalMatchCount: 1_005,
     returnedMatchHitCount: 1_000,
   });
-  expect(grepToolCallOutcome.toolCallDetail.toolName).toBe("grep");
-  if (grepToolCallOutcome.toolCallDetail.toolName === "grep") {
-    expect(grepToolCallOutcome.toolCallDetail.matchHits).toHaveLength(1_000);
-  }
+  expectGrepToolCallDetail(grepToolCallOutcome.toolCallDetail);
+  expect(grepToolCallOutcome.toolCallDetail.matchHits).toHaveLength(1_000);
   expect(grepToolCallOutcome.toolResultText).toContain("Found 1005 matches in 1 files");
   expect(grepToolCallOutcome.toolResultText).toContain("Results too broad/incomplete: showing first 1000 of 1005 matches");
   expect(grepToolCallOutcome.toolResultText).toContain(

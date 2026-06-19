@@ -2,6 +2,7 @@ import {
   ContextWindowOverflowError,
   type BuliDiagnosticLogger,
   type ProviderStreamEvent,
+  type ProviderToolDefinition,
   type TokenUsage,
   type ToolCallWebSearchDetail,
   type ToolCallWebSearchStatus,
@@ -66,6 +67,7 @@ export type OpenAiStreamParserOptions = {
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
   abortSignal?: AbortSignal | undefined;
   idleTimeoutMilliseconds?: number | undefined;
+  availableToolDefinitions?: readonly ProviderToolDefinition[] | undefined;
 };
 
 // Reasoning summary timing is captured provider-side because the provider is
@@ -116,6 +118,7 @@ export class OpenAiResponseStepStreamParser {
     this.conversationTurnId = options.conversationTurnId;
     this.functionCallStreamAccumulator = new OpenAiFunctionCallStreamAccumulator({
       diagnosticLogger: options.diagnosticLogger,
+      availableToolDefinitions: options.availableToolDefinitions,
     });
     this.streamStartedAtMs = Date.now();
   }

@@ -22,6 +22,14 @@ export type AssistantProviderModelPromptFragments = Readonly<{
   conversationCompactionPrompt: readonly string[];
 }>;
 
+export type AssistantProviderModelPromptFragmentsToAppend = Readonly<{
+  primaryAssistantSystemPrompt?: readonly string[] | undefined;
+  explorerSystemPrompt?: readonly string[] | undefined;
+  taskSubagentPrompt?: readonly string[] | undefined;
+  conversationCompactionSystemPrompt?: readonly string[] | undefined;
+  conversationCompactionPrompt?: readonly string[] | undefined;
+}>;
+
 export type AssistantStickyNotesPromptRenderingProfile = Readonly<{
   maximumRelevantEvidenceNoteCount: number;
   maximumPromptNoteTextCharacterCount: number;
@@ -87,6 +95,42 @@ export function resolveDefaultAssistantProviderModelPromptProfile(
   });
 }
 
+export function appendAssistantProviderModelPromptFragments(input: {
+  assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
+  promptFragments: AssistantProviderModelPromptFragmentsToAppend;
+}): AssistantProviderModelPromptProfile {
+  if (!hasPromptFragmentsToAppend(input.promptFragments)) {
+    return input.assistantProviderModelPromptProfile;
+  }
+
+  const currentPromptFragments = input.assistantProviderModelPromptProfile.promptFragments;
+  return {
+    ...input.assistantProviderModelPromptProfile,
+    promptFragments: {
+      primaryAssistantSystemPrompt: appendPromptFragmentsForTarget({
+        existingPromptFragments: currentPromptFragments.primaryAssistantSystemPrompt,
+        promptFragmentsToAppend: input.promptFragments.primaryAssistantSystemPrompt,
+      }),
+      explorerSystemPrompt: appendPromptFragmentsForTarget({
+        existingPromptFragments: currentPromptFragments.explorerSystemPrompt,
+        promptFragmentsToAppend: input.promptFragments.explorerSystemPrompt,
+      }),
+      taskSubagentPrompt: appendPromptFragmentsForTarget({
+        existingPromptFragments: currentPromptFragments.taskSubagentPrompt,
+        promptFragmentsToAppend: input.promptFragments.taskSubagentPrompt,
+      }),
+      conversationCompactionSystemPrompt: appendPromptFragmentsForTarget({
+        existingPromptFragments: currentPromptFragments.conversationCompactionSystemPrompt,
+        promptFragmentsToAppend: input.promptFragments.conversationCompactionSystemPrompt,
+      }),
+      conversationCompactionPrompt: appendPromptFragmentsForTarget({
+        existingPromptFragments: currentPromptFragments.conversationCompactionPrompt,
+        promptFragmentsToAppend: input.promptFragments.conversationCompactionPrompt,
+      }),
+    },
+  };
+}
+
 export function formatAssistantProviderModelPromptProfileFragmentBlock(input: {
   assistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   fragmentTarget: AssistantProviderModelPromptFragmentTarget;
@@ -130,4 +174,23 @@ function resolveCurrentPromptBehaviorProfileId(input: ResolveAssistantProviderMo
   }
 
   return EXTERNAL_PROVIDER_PROTOCOL_CURRENT_PROMPT_PROFILE_ID;
+}
+
+function appendPromptFragmentsForTarget(input: {
+  existingPromptFragments: readonly string[];
+  promptFragmentsToAppend?: readonly string[] | undefined;
+}): readonly string[] {
+  if (!input.promptFragmentsToAppend || input.promptFragmentsToAppend.length === 0) {
+    return input.existingPromptFragments;
+  }
+
+  return [...input.existingPromptFragments, ...input.promptFragmentsToAppend];
+}
+
+function hasPromptFragmentsToAppend(promptFragments: AssistantProviderModelPromptFragmentsToAppend): boolean {
+  return (promptFragments.primaryAssistantSystemPrompt?.length ?? 0) > 0 ||
+    (promptFragments.explorerSystemPrompt?.length ?? 0) > 0 ||
+    (promptFragments.taskSubagentPrompt?.length ?? 0) > 0 ||
+    (promptFragments.conversationCompactionSystemPrompt?.length ?? 0) > 0 ||
+    (promptFragments.conversationCompactionPrompt?.length ?? 0) > 0;
 }

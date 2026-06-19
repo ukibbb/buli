@@ -1,4 +1,6 @@
 import type {
+  BuiltInToolCallDetail,
+  CustomToolCallDetail,
   ToolCallBashDetail,
   ToolCallDetail,
   ToolCallEditDetail,
@@ -14,7 +16,7 @@ import type {
   ToolCallTaskDetail,
   ToolCallWriteDetail,
 } from "./toolCallDetail.ts";
-import type { AssistantToolCallRequest, ToolCallRequest } from "./toolCallRequest.ts";
+import type { AssistantToolCallRequest, CustomToolCallRequest, ToolCallRequest } from "./toolCallRequest.ts";
 import { summarizeWorkflowHandoff } from "./workflowHandoff.ts";
 
 type CompleteAssistantToolRequestNameList<ToolNames extends readonly AssistantToolCallRequest["toolName"][]> = ToolNames & (
@@ -52,16 +54,19 @@ export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite", "web_search"] as cons
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
 export type ToolCallRequestName = ToolCallRequest["toolName"];
 export type ToolCallDetailName = ToolCallDetail["toolName"];
-export type ToolCallRequestByName<ToolName extends ToolCallRequestName> = Extract<
-  ToolCallRequest,
-  { toolName: ToolName }
->;
-export type ToolCallDetailByName<ToolName extends ToolCallDetailName> = Extract<
-  ToolCallDetail,
-  { toolName: ToolName }
->;
+export type BuiltInToolCallDetailName = AssistantToolRequestName | RenderOnlyToolDetailName;
+export type ToolCallRequestByName<ToolName extends ToolCallRequestName> = ToolName extends AssistantToolRequestName ? Extract<
+    AssistantToolCallRequest,
+    { toolName: ToolName }
+  >
+  : CustomToolCallRequest;
+export type ToolCallDetailByName<ToolName extends ToolCallDetailName> = ToolName extends BuiltInToolCallDetailName ? Extract<
+    BuiltInToolCallDetail,
+    { toolName: ToolName }
+  >
+  : CustomToolCallDetail;
 export type StartedToolCallDetailByRequestName<ToolName extends AssistantToolRequestName> = Extract<
-  ToolCallDetail,
+  BuiltInToolCallDetail,
   { toolName: ToolName }
 >;
 export type AssistantToolCallDetail = StartedToolCallDetailByRequestName<AssistantToolRequestName>;
@@ -73,12 +78,33 @@ export type ReadOnlyAssistantModeToolRequestName = (typeof READ_ONLY_ASSISTANT_M
 export type RenderOnlyToolDetailName = (typeof RENDER_ONLY_TOOL_DETAIL_NAMES)[number];
 
 const ASSISTANT_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(ASSISTANT_TOOL_REQUEST_NAMES);
+const RENDER_ONLY_TOOL_DETAIL_NAME_SET: ReadonlySet<string> = new Set(RENDER_ONLY_TOOL_DETAIL_NAMES);
 const WORKSPACE_INSPECTION_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES);
 const FILE_MUTATION_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(FILE_MUTATION_TOOL_REQUEST_NAMES);
 const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAME_SET: ReadonlySet<string> = new Set(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES);
 
 export function isAssistantToolRequestName(toolName: string): toolName is AssistantToolRequestName {
   return ASSISTANT_TOOL_REQUEST_NAME_SET.has(toolName);
+}
+
+export function isRenderOnlyToolDetailName(toolName: string): toolName is RenderOnlyToolDetailName {
+  return RENDER_ONLY_TOOL_DETAIL_NAME_SET.has(toolName);
+}
+
+export function isBuiltInToolCallDetailName(toolName: string): toolName is BuiltInToolCallDetailName {
+  return isAssistantToolRequestName(toolName) || isRenderOnlyToolDetailName(toolName);
+}
+
+export function isCustomToolName(toolName: string): boolean {
+  return !isAssistantToolRequestName(toolName);
+}
+
+export function isCustomToolCallRequest(toolCallRequest: ToolCallRequest): toolCallRequest is CustomToolCallRequest {
+  return !isAssistantToolRequestName(toolCallRequest.toolName);
+}
+
+export function isCustomToolCallDetail(toolCallDetail: ToolCallDetail): toolCallDetail is CustomToolCallDetail {
+  return !isBuiltInToolCallDetailName(toolCallDetail.toolName);
 }
 
 export function isWorkspaceInspectionToolCallRequest(
@@ -123,10 +149,16 @@ export function isReadOnlyAssistantModeToolRequestName(
   return READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAME_SET.has(toolName);
 }
 
-export function createStartedToolCallDetailFromRequest<ToolName extends ToolCallRequestName>(
+export function createStartedToolCallDetailFromRequest<ToolName extends AssistantToolRequestName>(
   toolCallRequest: ToolCallRequestByName<ToolName>,
-): ToolCallDetailByName<ToolName>;
+): StartedToolCallDetailByRequestName<ToolName>;
+export function createStartedToolCallDetailFromRequest(toolCallRequest: CustomToolCallRequest): CustomToolCallDetail;
+export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): ToolCallDetail;
 export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCallRequest): ToolCallDetail {
+  if (isCustomToolCallRequest(toolCallRequest)) {
+    return createStartedCustomToolCallDetail(toolCallRequest);
+  }
+
   if (toolCallRequest.toolName === "bash") {
     return createStartedBashToolCallDetail(toolCallRequest);
   }
@@ -274,6 +306,13 @@ function createStartedRecordWorkflowHandoffToolCallDetail(
     toolName: "record_workflow_handoff",
     handoffKind: toolCallRequest.workflowHandoff.handoffKind,
     handoffSummary: summarizeWorkflowHandoff(toolCallRequest.workflowHandoff),
+  };
+}
+
+function createStartedCustomToolCallDetail(toolCallRequest: CustomToolCallRequest): CustomToolCallDetail {
+  return {
+    toolName: toolCallRequest.toolName,
+    toolArgumentsJson: toolCallRequest.toolArgumentsJson,
   };
 }
 

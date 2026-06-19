@@ -326,6 +326,17 @@ const conversationSessionEntries = [
             patchTargetText: "2 files",
           },
         },
+        {
+          subagentChildToolCallId: "call-child-custom-1",
+          subagentChildToolCallStatus: "completed",
+          subagentChildToolCallStartedAtMs: 4,
+          subagentChildToolCallDurationMs: 11,
+          subagentChildToolCallDetail: {
+            toolName: "workspace_summary",
+            toolDisplayName: "Workspace Summary",
+            toolResultSummary: "Child custom summary.",
+          },
+        },
       ],
       subagentResultSummary: "Runtime dispatches tool calls.",
     },
@@ -351,6 +362,29 @@ const conversationSessionEntries = [
       subagentResultSummary: "Contracts expose task requests.",
     },
     toolResultText: "Contracts expose task requests.",
+  },
+  {
+    entryKind: "tool_call",
+    toolCallId: "call-custom-1",
+    toolCallRequest: {
+      toolName: "workspace_summary",
+      toolArgumentsJson: {
+        topic: "runtime",
+        includeTests: true,
+      },
+    },
+  },
+  {
+    entryKind: "completed_tool_result",
+    toolCallId: "call-custom-1",
+    toolCallDetail: {
+      toolName: "workspace_summary",
+      toolDisplayName: "Workspace Summary",
+      toolArgumentsJson: { topic: "runtime", includeTests: true },
+      toolResultJson: { fileCount: 3 },
+      toolResultSummary: "Custom summary complete.",
+    },
+    toolResultText: "Summary for runtime",
   },
 ] satisfies ConversationSessionEntry[];
 
@@ -410,10 +444,15 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("packages/engine/src/runtime.ts");
   expect(html).toContain("<b>EditMany</b> 2 edits");
   expect(html).toContain("<b>PatchMany</b> 2 files");
+  expect(html).toContain("Child custom summary.");
   expect(html).toContain("Runtime dispatches tool calls.");
   expect(html).toContain("explore: map contracts");
   expect(html).toContain("Inspect contract files.");
   expect(html).toContain("Contracts expose task requests.");
+  expect(html).toContain("workspace_summary");
+  expect(html).toContain("Custom summary complete.");
+  expect(html).toContain("Summary for runtime");
+  expect(html).toContain("&quot;fileCount&quot;: 3");
   expect(html).toContain("<h1>Done</h1>");
   expect(html).toContain("&lt;script&gt;alert(&#39;assistant&#39;)&lt;/script&gt;");
   expect(html).not.toContain("<script>alert('assistant')</script>");
@@ -463,6 +502,25 @@ test("renderConversationSessionHtmlDocument renders image-only user prompts with
 
   expect(html).toContain('src="data:image/jpeg;base64,aW1hZ2U="');
   expect(html).not.toContain("No prompt text was recorded.");
+});
+
+test("renderConversationSessionHtmlDocument renders unknown custom agent ids safely", () => {
+  const html = renderConversationSessionHtmlDocument({
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Review this patch",
+        modelFacingPromptText: "Review this patch",
+        assistantOperatingMode: "review",
+      },
+    ],
+    exportedAtMs: 1700000000000,
+    workspaceRootPath: "/tmp/project",
+    conversationSessionId: "session-custom-agent",
+  });
+
+  expect(html).toContain("Agent: review");
+  expect(html).toContain("Custom agent id: review");
 });
 
 test("renderConversationSessionHtmlDocument parses code fence title labels like the TUI", () => {

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ProviderRequestedToolCall } from "@buli/contracts";
+import { createDefaultAssistantToolRegistry, type CustomAssistantToolDefinition } from "../src/assistantToolRegistry.ts";
 import { groupRequestedToolCallsForExecution } from "../src/runtimeRequestedToolCallExecutionGroups.ts";
 
 const readRequestedToolCall = {
@@ -58,6 +59,35 @@ const secondTaskRequestedToolCall = {
     subagentPrompt: "Inspect TUI rendering flow.",
   },
 } as const satisfies ProviderRequestedToolCall;
+
+const customRequestedToolCall = {
+  toolCallId: "call_workspace_summary_1",
+  toolCallRequest: {
+    toolName: "workspace_summary",
+    toolArgumentsJson: { topic: "runtime" },
+  },
+} as const satisfies ProviderRequestedToolCall;
+
+const customToolDefinition = {
+  toolName: "workspace_summary",
+  providerToolDefinition: {
+    toolName: "workspace_summary",
+    description: "Summarize a workspace topic.",
+    parameters: {
+      type: "object",
+      properties: { topic: { type: "string" } },
+      required: ["topic"],
+      additionalProperties: false,
+    },
+  },
+  executionPolicy: {
+    workspaceEffectKind: "read_only",
+    isAutoConcurrent: false,
+    isAutoApprovedReadOnly: false,
+    clearsSameTurnReadCoverageBeforeExecution: false,
+  },
+  executor: async () => ({ outcomeKind: "completed", toolResultText: "done" }),
+} satisfies CustomAssistantToolDefinition;
 
 test("groupRequestedToolCallsForExecution groups adjacent read-only calls", () => {
   expect(groupRequestedToolCallsForExecution([readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall])).toEqual([
@@ -131,4 +161,18 @@ test("groupRequestedToolCallsForExecution groups exact symbol lookups with read-
 
 test("groupRequestedToolCallsForExecution returns no groups for an empty batch", () => {
   expect(groupRequestedToolCallsForExecution([])).toEqual([]);
+});
+
+test("groupRequestedToolCallsForExecution keeps registered custom tools serial", () => {
+  const assistantToolRegistry = createDefaultAssistantToolRegistry({ additionalCustomTools: [customToolDefinition] });
+
+  expect(groupRequestedToolCallsForExecution([
+    readRequestedToolCall,
+    customRequestedToolCall,
+    grepRequestedToolCall,
+  ], assistantToolRegistry)).toEqual([
+    { groupKind: "serial", requestedToolCall: readRequestedToolCall },
+    { groupKind: "serial", requestedToolCall: customRequestedToolCall },
+    { groupKind: "serial", requestedToolCall: grepRequestedToolCall },
+  ]);
 });

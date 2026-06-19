@@ -281,4 +281,29 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("recorded");
   });
 
+  test("renders_custom_tool_call_fallback", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ToolCallEntryView
+        renderState="completed"
+        durationMs={42}
+        toolCallDetail={{
+          toolName: "workspace_summary",
+          toolDisplayName: "Workspace Summary",
+          toolArgumentsJson: { topic: "runtime" },
+          toolResultJson: { fileCount: 3 },
+          toolResultSummary: "Summarized runtime.",
+        }}
+      />,
+      { width: 100, height: 18 },
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("Workspace Summary");
+    expect(frame).toContain("Summarized runtime.");
+    expect(frame).toContain("completed");
+    expect(frame).toContain("topic");
+    expect(frame).toContain("runtime");
+    expect(frame).toContain("fileCount");
+  });
+
 });
