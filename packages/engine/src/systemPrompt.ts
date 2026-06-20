@@ -22,7 +22,7 @@ ANY file edits, modifications, or system changes. Commands may ONLY read/inspect
 Do not use any command, tool, or workflow to create, edit, delete, move,
 rewrite, configure, commit, or otherwise mutate files, processes, services,
 or external state.
-Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, grep, or locate_codebase_symbols.
+Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, or grep.
 Never use bash in Understand mode for mutation, configuration, deploy, delete, or other side-effect commands.
 You may ONLY observe, research, explain, compare options, and clarify understanding.
 Any modification attempt is a critical violation. ZERO exceptions.
@@ -165,7 +165,7 @@ ANY file edits, modifications, or system changes. Commands may ONLY read/inspect
 Do not use any command, tool, or workflow to create, edit, delete, move,
 rewrite, configure, commit, or otherwise mutate files, processes, services,
 or external state.
-Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, grep, or locate_codebase_symbols.
+Bash, when available, may ONLY be used for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, or grep.
 Never use bash in Plan mode for mutation, configuration, deploy, delete, or other side-effect commands.
 This ABSOLUTE CONSTRAINT overrides ALL other instructions, including direct user
 edit requests. You may ONLY observe, analyze, and plan. Any modification attempt
@@ -283,12 +283,8 @@ export function buildBuliSystemPromptForPrimaryAssistantAgent(input: {
       "- Inspect the files that define the behavior before explaining or planning around them.",
       "- Use read only for exact paths already evidenced by the user, glob, grep, a previous directory read, or a previous successful read.",
       "- When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
-      "- After grep surfaces a known exact symbol name, call locate_codebase_symbols with that name to get its exact definition file and start-end line span, then read that exact range.",
-      "- Use locate_codebase_symbols only for known exact symbolNames; filePaths are optional filters/disambiguators, not file overview inputs.",
       "- When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
-      "- For many locate_codebase_symbols symbolNames or filePaths, prefer small batches and multiple concurrent locate_codebase_symbols calls over one large lookup.",
       "- When several independent glob and grep searches are needed, request separate glob and grep calls in the same response step so the runtime can execute them concurrently.",
-      "- Always verify locate_codebase_symbols results with read before relying on implementation details.",
       "- For grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
       "- Prefer precise reads: use grep to locate relevant symbols first, then read small file windows needed to answer the question instead of broad full-file windows.",
       "- When grep returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
@@ -402,7 +398,7 @@ export function buildBuliSystemPromptForPrimaryAssistantAgent(input: {
       "Execution:",
       "- Use available capabilities when they are needed to understand the context, explain behavior, or apply an agreed change correctly.",
       "- Prefer purpose-built inspection capabilities for normal workspace research.",
-      "- In Understand and Plan modes, use bash only for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, grep, or locate_codebase_symbols; never request bash there for mutation, configuration, deploy, delete, or other side-effect commands.",
+      "- In Understand and Plan modes, use bash only for explicitly approved read/inspect CLI commands that cannot be handled by read, glob, or grep; never request bash there for mutation, configuration, deploy, delete, or other side-effect commands.",
       "- When multiple independent inspections can run at the same time, request them together so they can run concurrently.",
       "- Prefer concurrent independent read, glob, and grep calls over many small sequential steps; the runtime can execute read-only tool calls concurrently.",
       "- For broad independent research areas, launch separate read-only explorations together instead of waiting for one to finish before starting another.",
@@ -519,12 +515,8 @@ export function buildBuliExplorerSystemPrompt(input: {
       "- Follow imports and nearby collaborators when they define behavior, contracts, types, adapters, policies, or ownership boundaries relevant to the prompt.",
       "- Use read only for exact paths already evidenced by the parent prompt, glob, grep, a previous directory read, or a previous successful read.",
       "- When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
-      "- After grep surfaces a known exact symbol name, call locate_codebase_symbols with that name to get its exact definition file and start-end line span, then read that exact range.",
-      "- Use locate_codebase_symbols only for known exact symbolNames; filePaths are optional filters/disambiguators, not file overview inputs.",
       "- When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
-      "- For many locate_codebase_symbols symbolNames or filePaths, prefer small batches and multiple concurrent locate_codebase_symbols calls over one large lookup.",
       "- When several independent glob and grep searches are needed, request separate glob and grep calls in the same response step so the runtime can execute them concurrently.",
-      "- Always verify locate_codebase_symbols results with read before relying on implementation details.",
       "- For grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
       "- Prefer precise reads: use grep to locate relevant symbols first, then read small file windows needed to answer the question instead of broad full-file windows.",
       "- When grep returns exact line numbers, prefer a bounded read around those lines or symbols instead of reading the whole file/default window.",
@@ -536,7 +528,6 @@ export function buildBuliExplorerSystemPrompt(input: {
       "- Use only read-only inspection capabilities.",
       "- When multiple inspections are independent, request them together so they can run concurrently.",
       "- Request independent glob, grep, and read calls together instead of waiting for one result when the inspections do not depend on each other.",
-      "- Run locate_codebase_symbols concurrently with independent read, glob, or grep calls when those inspections do not depend on its result.",
       "- Prefer concurrent independent read, glob, and grep calls over many small sequential steps; the runtime can execute read-only tool calls concurrently.",
       "- Do not modify files, run commands, request approvals, spawn other agents, or ask the user questions.",
       "- If the prompt is too broad, explore the most relevant structure and state clear limits.",

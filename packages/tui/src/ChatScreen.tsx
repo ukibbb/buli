@@ -15,6 +15,7 @@ import {
   type ConversationSessionDeleteResult,
   type ConversationSessionExportResult,
   type InitialConversationSessionEntriesLoadResult,
+  type LoadConversationTranscriptEntryRecords,
   type ConversationSessionSwitchResult,
 } from "@buli/chat-app-controller";
 import {
@@ -46,6 +47,7 @@ export type ChatScreenProps = {
   onInitialConversationSessionEntriesHydrated?:
     | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void | Promise<void>)
     | undefined;
+  loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords | undefined;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];

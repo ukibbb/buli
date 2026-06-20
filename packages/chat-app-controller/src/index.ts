@@ -26,9 +26,20 @@ export {
   isConversationSessionCompactionBlockingPromptInput,
 } from "./conversationSessionStatus.ts";
 export {
+  DEFAULT_CONVERSATION_TRANSCRIPT_ENTRY_RECORD_CHUNK_COUNT,
+  DEFAULT_CONVERSATION_TRANSCRIPT_PAGE_MESSAGE_COUNT,
+  loadConversationTranscriptPage,
+  type ConversationTranscriptEntryRecordLoadRequest,
+  type ConversationTranscriptEntryRecordLoadResult,
+  type ConversationTranscriptPage,
+  type ConversationTranscriptPageNavigationRequest,
+  type LoadConversationTranscriptEntryRecords,
+} from "./conversationTranscriptPageLoader.ts";
+export {
   useChatAppController,
   type ChatAppInteractionStatusState,
   type ChatAppConversationTranscriptScrollDirection,
+  type ChatAppConversationTranscriptPageState,
   type ChatAppPromptComposerState,
   type QueuedChatAppPromptPreview,
   type ChatAppSelectionState,

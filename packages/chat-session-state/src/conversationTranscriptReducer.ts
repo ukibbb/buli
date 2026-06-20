@@ -1,6 +1,5 @@
 import {
   createStartedToolCallDetailFromRequest,
-  findLatestConversationCompactionBoundary,
   removeInternalModeScopeTagsFromAssistantTranscriptText,
   type AssistantMessageConversationSessionEntry,
   type AssistantToolCallConversationMessagePart,
@@ -28,6 +27,33 @@ type HydratedConversationTranscript = {
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
   orderedConversationMessageIds: string[];
   conversationMessagePartCount: number;
+  conversationMessageSourceEntryRangesById: Record<string, ConversationMessageSourceEntryRange>;
+};
+
+export type ConversationTranscriptEntryRecord = {
+  entrySequence: number;
+  conversationSessionEntry: ConversationSessionEntry;
+};
+
+export type ConversationMessageSourceEntryRange = {
+  firstSourceEntrySequence: number;
+  lastSourceEntrySequence: number;
+};
+
+export type ConversationTranscriptPageRow = ConversationMessageSourceEntryRange & {
+  conversationMessage: ConversationMessage;
+  conversationMessageParts: readonly ConversationMessagePart[];
+};
+
+export type HydratedConversationTranscriptRows = {
+  visibleConversationMessageRows: readonly ConversationTranscriptPageRow[];
+  conversationMessageCount: number;
+  conversationMessagePartCount: number;
+  conversationMessagesById: Record<string, ConversationMessage>;
+  conversationMessagePartsById: Record<string, ConversationMessagePart>;
+  orderedConversationMessageIds: readonly string[];
+  firstSourceEntrySequence: number | undefined;
+  lastSourceEntrySequence: number | undefined;
 };
 
 type HydratedToolResultPartBase = {
@@ -72,13 +98,85 @@ export function hydrateConversationTranscriptFromSessionEntries(
   chatSessionState: ChatSessionState,
   conversationSessionEntries: readonly ConversationSessionEntry[],
 ): ChatSessionState {
-  const hydratedConversationTranscript = buildHydratedConversationTranscript(conversationSessionEntries);
+  const hydratedConversationTranscript = buildHydratedConversationTranscript(
+    conversationSessionEntries.map((conversationSessionEntry, entrySequence) => ({
+      entrySequence,
+      conversationSessionEntry,
+    })),
+  );
   return {
     ...clearConversationTranscript(chatSessionState),
     conversationMessagesById: hydratedConversationTranscript.conversationMessagesById,
     conversationMessagePartsById: hydratedConversationTranscript.conversationMessagePartsById,
     orderedConversationMessageIds: hydratedConversationTranscript.orderedConversationMessageIds,
     conversationMessagePartCount: hydratedConversationTranscript.conversationMessagePartCount,
+  };
+}
+
+export function hydrateConversationTranscriptFromPageRows(
+  chatSessionState: ChatSessionState,
+  visibleConversationMessageRows: readonly ConversationTranscriptPageRow[],
+): ChatSessionState {
+  const conversationMessagesById: Record<string, ConversationMessage> = {};
+  const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
+  const orderedConversationMessageIds: string[] = [];
+
+  for (const visibleConversationMessageRow of visibleConversationMessageRows) {
+    conversationMessagesById[visibleConversationMessageRow.conversationMessage.id] =
+      visibleConversationMessageRow.conversationMessage;
+    orderedConversationMessageIds.push(visibleConversationMessageRow.conversationMessage.id);
+    for (const conversationMessagePart of visibleConversationMessageRow.conversationMessageParts) {
+      conversationMessagePartsById[conversationMessagePart.id] = conversationMessagePart;
+    }
+  }
+
+  return {
+    ...clearConversationTranscript(chatSessionState),
+    conversationMessagesById,
+    conversationMessagePartsById,
+    orderedConversationMessageIds,
+    conversationMessagePartCount: Object.keys(conversationMessagePartsById).length,
+  };
+}
+
+export function hydrateConversationTranscriptRowsFromEntryRecords(input: {
+  conversationTranscriptEntryRecords: readonly ConversationTranscriptEntryRecord[];
+  latestCompactionSummaryEntrySequence?: number | undefined;
+}): HydratedConversationTranscriptRows {
+  const hydratedConversationTranscript = buildHydratedConversationTranscript(
+    input.conversationTranscriptEntryRecords,
+    input.latestCompactionSummaryEntrySequence,
+  );
+  const visibleConversationMessageRows = hydratedConversationTranscript.orderedConversationMessageIds.flatMap(
+    (conversationMessageId): ConversationTranscriptPageRow[] => {
+      const conversationMessage = hydratedConversationTranscript.conversationMessagesById[conversationMessageId];
+      const conversationMessageSourceEntryRange = hydratedConversationTranscript.conversationMessageSourceEntryRangesById[
+        conversationMessageId
+      ];
+      if (!conversationMessage || !conversationMessageSourceEntryRange) {
+        return [];
+      }
+
+      return [{
+        conversationMessage,
+        conversationMessageParts: conversationMessage.partIds.flatMap((conversationMessagePartId) => {
+          const conversationMessagePart = hydratedConversationTranscript.conversationMessagePartsById[conversationMessagePartId];
+          return conversationMessagePart ? [conversationMessagePart] : [];
+        }),
+        ...conversationMessageSourceEntryRange,
+      }];
+    },
+  );
+
+  return {
+    visibleConversationMessageRows,
+    conversationMessageCount: visibleConversationMessageRows.length,
+    conversationMessagePartCount: hydratedConversationTranscript.conversationMessagePartCount,
+    conversationMessagesById: hydratedConversationTranscript.conversationMessagesById,
+    conversationMessagePartsById: hydratedConversationTranscript.conversationMessagePartsById,
+    orderedConversationMessageIds: hydratedConversationTranscript.orderedConversationMessageIds,
+    firstSourceEntrySequence: visibleConversationMessageRows[0]?.firstSourceEntrySequence,
+    lastSourceEntrySequence: visibleConversationMessageRows.at(-1)?.lastSourceEntrySequence,
   };
 }
 
@@ -215,34 +313,54 @@ function omitRecordKeys<T>(record: Record<string, T>, omittedKeys: ReadonlySet<s
 let conversationTranscriptHydrationGeneration = 0;
 
 function buildHydratedConversationTranscript(
-  conversationSessionEntries: readonly ConversationSessionEntry[],
+  conversationTranscriptEntryRecords: readonly ConversationTranscriptEntryRecord[],
+  latestCompactionSummaryEntrySequence = findLatestCompactionSummaryEntrySequence(conversationTranscriptEntryRecords),
 ): HydratedConversationTranscript {
   conversationTranscriptHydrationGeneration += 1;
   const hydratedIdScope = `persisted-${conversationTranscriptHydrationGeneration}`;
-  const latestCompactionBoundary = findLatestConversationCompactionBoundary(conversationSessionEntries);
   const conversationMessagesById: Record<string, ConversationMessage> = {};
   const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
+  const conversationMessageSourceEntryRangesById: Record<string, ConversationMessageSourceEntryRange> = {};
   const orderedConversationMessageIds: string[] = [];
   const toolCallPartIdByToolCallId = new Map<string, string>();
   let currentAssistantMessageId: string | undefined;
   let assistantMessageIndex = 0;
 
-  const appendConversationMessage = (conversationMessage: ConversationMessage): void => {
+  const appendConversationMessage = (conversationMessage: ConversationMessage, sourceEntrySequence: number): void => {
     conversationMessagesById[conversationMessage.id] = conversationMessage;
+    conversationMessageSourceEntryRangesById[conversationMessage.id] = {
+      firstSourceEntrySequence: sourceEntrySequence,
+      lastSourceEntrySequence: sourceEntrySequence,
+    };
     orderedConversationMessageIds.push(conversationMessage.id);
   };
   const createConversationMessageModelContextVisibilityFields = (
-    entryIndex: number,
+    sourceEntrySequence: number,
   ): { modelContextVisibility?: ConversationMessageModelContextVisibility } => {
-    if (!latestCompactionBoundary) {
+    if (latestCompactionSummaryEntrySequence === undefined) {
       return {};
     }
 
-    return entryIndex < latestCompactionBoundary.compactionSummaryEntryIndex
+    return sourceEntrySequence < latestCompactionSummaryEntrySequence
       ? { modelContextVisibility: "compacted_out_of_model_context" }
       : {};
   };
-  const appendConversationMessagePart = (messageId: string, conversationMessagePart: ConversationMessagePart): void => {
+  const extendConversationMessageSourceEntryRange = (messageId: string, sourceEntrySequence: number): void => {
+    const conversationMessageSourceEntryRange = conversationMessageSourceEntryRangesById[messageId];
+    if (!conversationMessageSourceEntryRange) {
+      return;
+    }
+
+    conversationMessageSourceEntryRangesById[messageId] = {
+      firstSourceEntrySequence: Math.min(conversationMessageSourceEntryRange.firstSourceEntrySequence, sourceEntrySequence),
+      lastSourceEntrySequence: Math.max(conversationMessageSourceEntryRange.lastSourceEntrySequence, sourceEntrySequence),
+    };
+  };
+  const appendConversationMessagePart = (
+    messageId: string,
+    conversationMessagePart: ConversationMessagePart,
+    sourceEntrySequence: number,
+  ): void => {
     const conversationMessage = conversationMessagesById[messageId];
     if (!conversationMessage) {
       return;
@@ -251,6 +369,7 @@ function buildHydratedConversationTranscript(
     // This private builder owns draft messages, so local mutation avoids quadratic copies during large-session hydration.
     conversationMessage.partIds.push(conversationMessagePart.id);
     conversationMessagePartsById[conversationMessagePart.id] = conversationMessagePart;
+    extendConversationMessageSourceEntryRange(messageId, sourceEntrySequence);
   };
   const updateAssistantTextPartStatuses = (messageId: string, partStatus: AssistantTextPartStatus): void => {
     const conversationMessage = conversationMessagesById[messageId];
@@ -281,7 +400,7 @@ function buildHydratedConversationTranscript(
       return conversationMessagePart?.partKind === "assistant_text";
     });
   };
-  const ensureAssistantConversationMessage = (entryIndex: number): string => {
+  const ensureAssistantConversationMessage = (sourceEntrySequence: number): string => {
     if (currentAssistantMessageId) {
       return currentAssistantMessageId;
     }
@@ -292,14 +411,14 @@ function buildHydratedConversationTranscript(
       id: assistantMessageId,
       role: "assistant",
       messageStatus: "completed",
-      createdAtMs: entryIndex,
+      createdAtMs: sourceEntrySequence,
       partIds: [],
-      ...createConversationMessageModelContextVisibilityFields(entryIndex),
-    });
+      ...createConversationMessageModelContextVisibilityFields(sourceEntrySequence),
+    }, sourceEntrySequence);
     currentAssistantMessageId = assistantMessageId;
     return assistantMessageId;
   };
-  const markDanglingHydratedToolCallsAsInterrupted = (interruptedAtEntryIndex: number): void => {
+  const markDanglingHydratedToolCallsAsInterrupted = (interruptedAtEntrySequence: number): void => {
     if (!currentAssistantMessageId) {
       return;
     }
@@ -351,15 +470,17 @@ function buildHydratedConversationTranscript(
     }
 
     appendConversationMessagePart(currentAssistantMessageId, {
-      id: `${hydratedIdScope}-entry-${interruptedAtEntryIndex}-assistant-interrupted-tool-call`,
+      id: `${hydratedIdScope}-entry-${interruptedAtEntrySequence}-assistant-interrupted-tool-call`,
       partKind: "assistant_interrupted_notice",
       interruptionReason: INTERRUPTED_TOOL_CALL_ERROR_TEXT,
-    });
+    }, interruptedAtEntrySequence);
   };
 
-  conversationSessionEntries.forEach((conversationSessionEntry, entryIndex) => {
+  conversationTranscriptEntryRecords.forEach((conversationTranscriptEntryRecord) => {
+    const conversationSessionEntry = conversationTranscriptEntryRecord.conversationSessionEntry;
+    const entrySequence = conversationTranscriptEntryRecord.entrySequence;
     if (conversationSessionEntry.entryKind === "user_prompt") {
-      markDanglingHydratedToolCallsAsInterrupted(entryIndex);
+      markDanglingHydratedToolCallsAsInterrupted(entrySequence);
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
       if (
@@ -369,65 +490,65 @@ function buildHydratedConversationTranscript(
         return;
       }
 
-      const userMessageId = `${hydratedIdScope}-entry-${entryIndex}-user`;
-      const userTextPartId = `${hydratedIdScope}-entry-${entryIndex}-user-text`;
+      const userMessageId = `${hydratedIdScope}-entry-${entrySequence}-user`;
+      const userTextPartId = `${hydratedIdScope}-entry-${entrySequence}-user-text`;
       appendConversationMessage({
         id: userMessageId,
         role: "user",
         messageStatus: "completed",
-        createdAtMs: entryIndex,
+        createdAtMs: entrySequence,
         partIds: [],
-        ...createConversationMessageModelContextVisibilityFields(entryIndex),
-      });
+        ...createConversationMessageModelContextVisibilityFields(entrySequence),
+      }, entrySequence);
       if (conversationSessionEntry.promptText.length > 0) {
         appendConversationMessagePart(userMessageId, {
           id: userTextPartId,
           partKind: "user_text",
           text: conversationSessionEntry.promptText,
-        });
+        }, entrySequence);
       }
       for (const [imageAttachmentIndex, imageAttachment] of (conversationSessionEntry.imageAttachments ?? []).entries()) {
         appendConversationMessagePart(userMessageId, {
-          id: `${hydratedIdScope}-entry-${entryIndex}-user-image-${imageAttachmentIndex}`,
+          id: `${hydratedIdScope}-entry-${entrySequence}-user-image-${imageAttachmentIndex}`,
           partKind: "user_image_attachment",
           attachment: imageAttachment,
-        });
+        }, entrySequence);
       }
       return;
     }
 
     if (conversationSessionEntry.entryKind === "conversation_compaction_summary") {
-      markDanglingHydratedToolCallsAsInterrupted(entryIndex);
+      markDanglingHydratedToolCallsAsInterrupted(entrySequence);
       currentAssistantMessageId = undefined;
       toolCallPartIdByToolCallId.clear();
-      const compactionMessageId = `${hydratedIdScope}-entry-${entryIndex}-compaction`;
+      const compactionMessageId = `${hydratedIdScope}-entry-${entrySequence}-compaction`;
       appendConversationMessage({
         id: compactionMessageId,
         role: "assistant",
         messageStatus: "completed",
-        createdAtMs: entryIndex,
-          partIds: [],
-      });
+        createdAtMs: entrySequence,
+        partIds: [],
+      }, entrySequence);
       appendConversationMessagePart(compactionMessageId, createCompactionSeparatorPart({
-        id: `${hydratedIdScope}-entry-${entryIndex}-compaction-separator`,
+        id: `${hydratedIdScope}-entry-${entrySequence}-compaction-separator`,
         source: conversationSessionEntry.compactionSource ?? "manual",
-      }));
+      }), entrySequence);
       appendConversationMessagePart(compactionMessageId, {
-        id: `${hydratedIdScope}-entry-${entryIndex}-compaction-summary`,
+        id: `${hydratedIdScope}-entry-${entrySequence}-compaction-summary`,
         partKind: "assistant_text",
         partStatus: "completed",
         rawMarkdownText: conversationSessionEntry.summaryText,
-      });
+      }, entrySequence);
       return;
     }
 
     if (conversationSessionEntry.entryKind === "buli_sticky_notes") {
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      const assistantMessageId = ensureAssistantConversationMessage(entrySequence);
       appendConversationMessagePart(assistantMessageId, {
-        id: `${hydratedIdScope}-entry-${entryIndex}-buli-sticky-notes`,
+        id: `${hydratedIdScope}-entry-${entrySequence}-buli-sticky-notes`,
         partKind: "assistant_buli_sticky_notes",
         buliStickyNotesContextText: conversationSessionEntry.buliStickyNotesContextText,
-      });
+      }, entrySequence);
       return;
     }
 
@@ -439,70 +560,74 @@ function buildHydratedConversationTranscript(
         return;
       }
 
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      const assistantMessageId = ensureAssistantConversationMessage(entrySequence);
       appendConversationMessagePart(assistantMessageId, {
-        id: `${hydratedIdScope}-entry-${entryIndex}-assistant-text-segment`,
+        id: `${hydratedIdScope}-entry-${entrySequence}-assistant-text-segment`,
         partKind: "assistant_text",
         partStatus: "completed",
         rawMarkdownText: visibleAssistantTextSegmentText,
-      });
+      }, entrySequence);
       return;
     }
 
     if (conversationSessionEntry.entryKind === "tool_call") {
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
-      const toolCallPartId = `${hydratedIdScope}-entry-${entryIndex}-tool-call`;
+      const assistantMessageId = ensureAssistantConversationMessage(entrySequence);
+      const toolCallPartId = `${hydratedIdScope}-entry-${entrySequence}-tool-call`;
       toolCallPartIdByToolCallId.set(conversationSessionEntry.toolCallId, toolCallPartId);
       appendConversationMessagePart(assistantMessageId, {
         id: toolCallPartId,
         partKind: "assistant_tool_call",
         toolCallId: conversationSessionEntry.toolCallId,
         toolCallStatus: "running",
-        toolCallStartedAtMs: entryIndex,
+        toolCallStartedAtMs: entrySequence,
         toolCallDetail: createStartedToolCallDetailFromRequest(conversationSessionEntry.toolCallRequest),
-      });
+      }, entrySequence);
       return;
     }
 
     if (conversationSessionEntry.entryKind === "hosted_web_search_call") {
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      const assistantMessageId = ensureAssistantConversationMessage(entrySequence);
       appendConversationMessagePart(
         assistantMessageId,
         buildHydratedHostedWebSearchCallConversationMessagePart({
           conversationSessionEntry,
-          entryIndex,
+          entryIndex: entrySequence,
           hydratedIdScope,
         }),
+        entrySequence,
       );
       return;
     }
 
     if (isToolResultConversationSessionEntry(conversationSessionEntry)) {
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      const assistantMessageId = ensureAssistantConversationMessage(entrySequence);
       upsertHydratedToolResultPart({
         conversationSessionEntry,
-        entryIndex,
+        entryIndex: entrySequence,
         hydratedIdScope,
         assistantMessageId,
+        sourceEntrySequence: entrySequence,
         toolCallPartIdByToolCallId,
         conversationMessagePartsById,
+        extendConversationMessageSourceEntryRange,
         appendConversationMessagePart,
       });
       return;
     }
 
     if (conversationSessionEntry.entryKind === "workspace_patch") {
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      const assistantMessageId = ensureAssistantConversationMessage(entrySequence);
       appendConversationMessagePart(assistantMessageId, {
-        id: `${hydratedIdScope}-entry-${entryIndex}-workspace-patch`,
+        id: `${hydratedIdScope}-entry-${entrySequence}-workspace-patch`,
         partKind: "assistant_workspace_patch",
         workspacePatch: conversationSessionEntry.workspacePatch,
-      });
+      }, entrySequence);
       return;
     }
 
     if (conversationSessionEntry.entryKind === "assistant_message") {
-      const assistantMessageId = ensureAssistantConversationMessage(entryIndex);
+      const assistantMessageId = ensureAssistantConversationMessage(entrySequence);
+      extendConversationMessageSourceEntryRange(assistantMessageId, entrySequence);
       const existingAssistantMessage = conversationMessagesById[assistantMessageId];
       if (existingAssistantMessage) {
         conversationMessagesById[assistantMessageId] = {
@@ -516,11 +641,11 @@ function buildHydratedConversationTranscript(
       );
       if (visibleAssistantMessageText.length > 0 && !hasAssistantRenderedContentPart(assistantMessageId)) {
         appendConversationMessagePart(assistantMessageId, {
-          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-text`,
+          id: `${hydratedIdScope}-entry-${entrySequence}-assistant-text`,
           partKind: "assistant_text",
           partStatus: conversationSessionEntry.assistantMessageStatus satisfies AssistantTextPartStatus,
           rawMarkdownText: visibleAssistantMessageText,
-        });
+        }, entrySequence);
       }
       updateAssistantTextPartStatuses(
         assistantMessageId,
@@ -529,36 +654,36 @@ function buildHydratedConversationTranscript(
 
       if (conversationSessionEntry.assistantMessageStatus === "incomplete") {
         appendConversationMessagePart(assistantMessageId, {
-          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-incomplete`,
+          id: `${hydratedIdScope}-entry-${entrySequence}-assistant-incomplete`,
           partKind: "assistant_incomplete_notice",
           incompleteReason: conversationSessionEntry.incompleteReason,
-        });
+        }, entrySequence);
       }
 
       if (conversationSessionEntry.assistantMessageStatus === "failed") {
         appendConversationMessagePart(assistantMessageId, {
-          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-error`,
+          id: `${hydratedIdScope}-entry-${entrySequence}-assistant-error`,
           partKind: "assistant_error_notice",
           errorText: conversationSessionEntry.failureExplanation,
-        });
+        }, entrySequence);
       }
 
       if (conversationSessionEntry.assistantMessageStatus === "interrupted") {
-        markDanglingHydratedToolCallsAsInterrupted(entryIndex);
+        markDanglingHydratedToolCallsAsInterrupted(entrySequence);
         appendConversationMessagePart(assistantMessageId, {
-          id: `${hydratedIdScope}-entry-${entryIndex}-assistant-interrupted`,
+          id: `${hydratedIdScope}-entry-${entrySequence}-assistant-interrupted`,
           partKind: "assistant_interrupted_notice",
           interruptionReason: conversationSessionEntry.interruptionReason,
-        });
+        }, entrySequence);
       }
 
       const assistantTurnSummaryPart = createHydratedAssistantTurnSummaryPart({
         conversationSessionEntry,
-        entryIndex,
+        entryIndex: entrySequence,
         hydratedIdScope,
       });
       if (assistantTurnSummaryPart) {
-        appendConversationMessagePart(assistantMessageId, assistantTurnSummaryPart);
+        appendConversationMessagePart(assistantMessageId, assistantTurnSummaryPart, entrySequence);
       }
 
       currentAssistantMessageId = undefined;
@@ -566,14 +691,24 @@ function buildHydratedConversationTranscript(
     }
   });
 
-  markDanglingHydratedToolCallsAsInterrupted(conversationSessionEntries.length);
+  markDanglingHydratedToolCallsAsInterrupted((conversationTranscriptEntryRecords.at(-1)?.entrySequence ?? -1) + 1);
 
   return {
     conversationMessagesById,
     conversationMessagePartsById,
     orderedConversationMessageIds,
     conversationMessagePartCount: Object.keys(conversationMessagePartsById).length,
+    conversationMessageSourceEntryRangesById,
   };
+}
+
+function findLatestCompactionSummaryEntrySequence(
+  conversationTranscriptEntryRecords: readonly ConversationTranscriptEntryRecord[],
+): number | undefined {
+  return conversationTranscriptEntryRecords.findLast(
+    (conversationTranscriptEntryRecord) =>
+      conversationTranscriptEntryRecord.conversationSessionEntry.entryKind === "conversation_compaction_summary",
+  )?.entrySequence;
 }
 
 function createHydratedAssistantTurnSummaryPart(input: {
@@ -605,9 +740,15 @@ function upsertHydratedToolResultPart(input: {
   entryIndex: number;
   hydratedIdScope: string;
   assistantMessageId: string;
+  sourceEntrySequence: number;
   toolCallPartIdByToolCallId: Map<string, string>;
   conversationMessagePartsById: Record<string, ConversationMessagePart>;
-  appendConversationMessagePart: (messageId: string, conversationMessagePart: ConversationMessagePart) => void;
+  extendConversationMessageSourceEntryRange: (messageId: string, sourceEntrySequence: number) => void;
+  appendConversationMessagePart: (
+    messageId: string,
+    conversationMessagePart: ConversationMessagePart,
+    sourceEntrySequence: number,
+  ) => void;
 }): void {
   const existingToolCallPartId = input.toolCallPartIdByToolCallId.get(input.conversationSessionEntry.toolCallId);
   const existingToolCallPart = existingToolCallPartId
@@ -625,6 +766,7 @@ function upsertHydratedToolResultPart(input: {
       },
       durationMs: input.entryIndex - existingToolCallPart.toolCallStartedAtMs,
     });
+    input.extendConversationMessageSourceEntryRange(input.assistantMessageId, input.sourceEntrySequence);
     return;
   }
 
@@ -642,6 +784,7 @@ function upsertHydratedToolResultPart(input: {
       },
       durationMs: 0,
     }),
+    input.sourceEntrySequence,
   );
 }
 

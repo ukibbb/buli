@@ -19,6 +19,7 @@ import type {
   PromptContextCandidate,
 } from "@buli/engine";
 import type { ChatSlashCommandSkill } from "@buli/chat-session-state";
+import type { LoadConversationTranscriptEntryRecords } from "@buli/chat-app-controller";
 import type { ReactNode } from "react";
 
 export type ChatScreenProps = {
@@ -35,6 +36,7 @@ export type ChatScreenProps = {
   onInitialConversationSessionEntriesHydrated?:
     | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void | Promise<void>)
     | undefined;
+  loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords | undefined;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];
@@ -108,6 +110,7 @@ export type RenderChatScreenInTerminalInput = {
   initialConversationSessionEntries?: ChatScreenProps["initialConversationSessionEntries"];
   loadInitialConversationSessionEntries?: ChatScreenProps["loadInitialConversationSessionEntries"];
   onInitialConversationSessionEntriesHydrated?: ChatScreenProps["onInitialConversationSessionEntriesHydrated"];
+  loadConversationTranscriptEntryRecords?: ChatScreenProps["loadConversationTranscriptEntryRecords"];
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
   loadPromptContextCandidates: ChatScreenProps["loadPromptContextCandidates"];
   loadConversationSessions?: ChatScreenProps["loadConversationSessions"];

@@ -30,7 +30,6 @@ import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import { mergeAssistantResponseEventStreams } from "./runtimeAssistantResponseEventStreamMerge.ts";
 import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import {
-  areAllAutoApprovedReadOnlyToolCalls,
   groupRequestedToolCallsForExecution,
   type AutoConcurrentRequestedToolCall,
 } from "./runtimeRequestedToolCallExecutionGroups.ts";
@@ -56,7 +55,6 @@ import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionReco
 import type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 import type { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
-import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { WorkspaceSnapshotStore } from "./workspaceSnapshot/workspaceSnapshotStore.ts";
 import type { AssistantProviderModelPromptProfile } from "./assistantProviderModelPromptProfile.ts";
 import type { BuiltInToolDescriptionOverlayResolver } from "./assistantModelOverlay.ts";
@@ -92,7 +90,6 @@ export type RuntimeToolCallExecutionContext = {
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
-  workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   projectInstructionTracker: ProjectInstructionTracker;
   skillCatalog: WorkspaceSkillCatalog;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
@@ -134,7 +131,6 @@ const requestedToolCallExecutorByName = {
   read: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   glob: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   grep: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
-  locate_codebase_symbols: streamAssistantResponseEventsForReadOnlyRequestedToolCall,
   task: streamAssistantResponseEventsForTaskRequestedToolCall,
   skill: streamAssistantResponseEventsForSkillRequestedToolCall,
   record_workflow_handoff: streamAssistantResponseEventsForWorkflowHandoffRequestedToolCall,
@@ -246,7 +242,7 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
   try {
     if (
       areAllRequestedToolCallsAllowedForRuntimeContext(input) &&
-      areAllAutoApprovedReadOnlyToolCalls(input.requestedToolCalls, input.assistantToolRegistry)
+      areAllBatchableBuiltInReadOnlyToolCalls(input.requestedToolCalls, input.assistantToolRegistry)
     ) {
       yield* streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
         assistantResponseMessageId: input.assistantResponseMessageId,
@@ -254,7 +250,6 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
         conversationTurnId: input.conversationTurnId,
         requestedToolCalls: input.requestedToolCalls,
         workspaceRootPath: input.workspaceRootPath,
-        workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
         projectInstructionTracker: input.projectInstructionTracker,
         conversationHistory: input.conversationHistory,
         toolResultSessionRecorder: input.toolResultSessionRecorder,
@@ -267,20 +262,19 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
       return;
     }
 
-    const autoApprovedReadOnlyToolCalls = listAutoApprovedReadOnlyToolCalls({
+    const batchableBuiltInReadOnlyToolCalls = listBatchableBuiltInReadOnlyToolCalls({
       requestedToolCalls: input.requestedToolCalls,
       assistantToolRegistry: input.assistantToolRegistry,
     });
-    if (areAllRequestedToolCallsAllowedForRuntimeContext(input) && autoApprovedReadOnlyToolCalls.length > 0) {
+    if (areAllRequestedToolCallsAllowedForRuntimeContext(input) && batchableBuiltInReadOnlyToolCalls.length > 0) {
       yield* mergeAssistantResponseEventStreams({
         assistantResponseEventStreams: [
           streamAssistantResponseEventsForAutoApprovedReadOnlyToolCalls({
             assistantResponseMessageId: input.assistantResponseMessageId,
             providerConversationTurn: input.providerConversationTurn,
             conversationTurnId: input.conversationTurnId,
-            requestedToolCalls: autoApprovedReadOnlyToolCalls,
+            requestedToolCalls: batchableBuiltInReadOnlyToolCalls,
             workspaceRootPath: input.workspaceRootPath,
-            workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
             projectInstructionTracker: input.projectInstructionTracker,
             conversationHistory: input.conversationHistory,
             toolResultSessionRecorder: input.toolResultSessionRecorder,
@@ -292,7 +286,10 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
           }),
           ...input.requestedToolCalls
             .filter((requestedToolCall) =>
-              !input.assistantToolRegistry.isAutoApprovedReadOnlyToolCallRequest(requestedToolCall.toolCallRequest)
+              !isBatchableBuiltInReadOnlyToolCall({
+                assistantToolRegistry: input.assistantToolRegistry,
+                requestedToolCall,
+              })
             )
             .map((requestedToolCall) =>
               streamAssistantResponseEventsForPolicyCheckedRequestedToolCall({
@@ -330,16 +327,27 @@ async function* streamAssistantResponseEventsForAutoConcurrentRequestedToolCalls
   }
 }
 
-function listAutoApprovedReadOnlyToolCalls(input: {
+function areAllBatchableBuiltInReadOnlyToolCalls(
+  requestedToolCalls: readonly AutoConcurrentRequestedToolCall[],
+  assistantToolRegistry: AssistantToolRegistry,
+): requestedToolCalls is ReadonlyArray<{
+  toolCallId: string;
+  toolCallRequest: WorkspaceInspectionToolCallRequest;
+}> {
+  return requestedToolCalls.every((requestedToolCall) =>
+    isBatchableBuiltInReadOnlyRequestedToolCall(requestedToolCall, assistantToolRegistry)
+  );
+}
+
+function listBatchableBuiltInReadOnlyToolCalls(input: {
   requestedToolCalls: readonly AutoConcurrentRequestedToolCall[];
   assistantToolRegistry: AssistantToolRegistry;
-},
-): Array<{
+}): Array<{
   toolCallId: string;
   toolCallRequest: WorkspaceInspectionToolCallRequest;
 }> {
   return input.requestedToolCalls.flatMap((requestedToolCall) => {
-    if (!input.assistantToolRegistry.isAutoApprovedReadOnlyToolCallRequest(requestedToolCall.toolCallRequest)) {
+    if (!isBatchableBuiltInReadOnlyRequestedToolCall(requestedToolCall, input.assistantToolRegistry)) {
       return [];
     }
 
@@ -348,6 +356,24 @@ function listAutoApprovedReadOnlyToolCalls(input: {
       toolCallRequest: requestedToolCall.toolCallRequest,
     }];
   });
+}
+
+function isBatchableBuiltInReadOnlyToolCall(input: {
+  requestedToolCall: AutoConcurrentRequestedToolCall;
+  assistantToolRegistry: AssistantToolRegistry;
+}): boolean {
+  return isBatchableBuiltInReadOnlyRequestedToolCall(input.requestedToolCall, input.assistantToolRegistry);
+}
+
+function isBatchableBuiltInReadOnlyRequestedToolCall(
+  requestedToolCall: AutoConcurrentRequestedToolCall,
+  assistantToolRegistry: AssistantToolRegistry,
+): requestedToolCall is {
+  toolCallId: string;
+  toolCallRequest: WorkspaceInspectionToolCallRequest;
+} {
+  return isWorkspaceInspectionToolCallRequest(requestedToolCall.toolCallRequest) &&
+    assistantToolRegistry.isAutoApprovedReadOnlyToolCallRequest(requestedToolCall.toolCallRequest);
 }
 
 function areAllRequestedToolCallsAllowedForRuntimeContext(input: {
@@ -472,7 +498,6 @@ async function* streamAssistantResponseEventsForReadOnlyRequestedToolCall(
     toolCallId: input.toolCallId,
     toolCallRequest: input.toolCallRequest,
     workspaceRootPath: input.workspaceRootPath,
-    workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,
     conversationHistory: input.conversationHistory,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
@@ -510,7 +535,6 @@ async function* streamAssistantResponseEventsForTaskRequestedToolCall(
     assistantAgentRegistry: input.assistantAgentRegistry,
     assistantToolRegistry: input.assistantToolRegistry,
     workspaceRootPath: input.workspaceRootPath,
-    workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     projectInstructionTracker: input.projectInstructionTracker,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
@@ -584,7 +608,6 @@ async function* streamAssistantResponseEventsForFileMutationRequestedToolCall(
     primaryAssistantAgent: input.primaryAssistantAgent,
     workspaceRootPath: input.workspaceRootPath,
     workspaceSnapshotStore: input.workspaceSnapshotStore,
-    workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
     abortSignal: input.abortSignal,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,
@@ -651,6 +674,7 @@ async function* streamAssistantResponseEventsForCustomRequestedToolCall(
     assistantToolRegistry: input.assistantToolRegistry,
     workspaceRootPath: input.workspaceRootPath,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
+    readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
     abortSignal: input.abortSignal,
     createPendingToolApproval: input.createPendingToolApproval,
     throwIfConversationTurnInterrupted: input.throwIfConversationTurnInterrupted,

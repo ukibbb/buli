@@ -3522,6 +3522,241 @@ test("AssistantConversationRuntime denies disallowed tools inside batched read-o
   ]));
 });
 
+test("AssistantConversationRuntime starts safe custom read-only tools concurrently with built-in read-only tools", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-concurrent-custom-read-tools-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nCustom concurrent target\n", "utf8");
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_read_1",
+            toolCallRequest: {
+              toolName: "read",
+              readTargetPath: "README.md",
+            },
+          },
+          {
+            toolCallId: "call_workspace_summary_1",
+            toolCallRequest: {
+              toolName: "workspace_summary",
+              toolArgumentsJson: { topic: "runtime" },
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Custom batch acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const workspaceSummaryToolDefinition = {
+    toolName: "workspace_summary",
+    providerToolDefinition: {
+      toolName: "workspace_summary",
+      description: "Summarize a workspace topic.",
+      parameters: {
+        type: "object",
+        properties: { topic: { type: "string" } },
+        required: ["topic"],
+        additionalProperties: false,
+      },
+    },
+    executionPolicy: {
+      workspaceEffectKind: "read_only",
+      isAutoConcurrent: true,
+      isAutoApprovedReadOnly: true,
+      clearsSameTurnReadCoverageBeforeExecution: false,
+    },
+    executor: async () => ({
+      outcomeKind: "completed",
+      toolResultText: "Workspace summary for runtime.",
+      toolResultSummary: "Runtime workspace summary",
+      toolCallDetail: {
+        toolName: "workspace_summary",
+        toolDisplayName: "Workspace Summary",
+      },
+    }),
+  } satisfies CustomAssistantToolDefinition;
+  const primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver = (compositionInput) => ({
+    primaryAssistantAgent: {
+      ...compositionInput.registeredPrimaryAssistantAgent,
+      availableToolNames: ["read", "workspace_summary"],
+    },
+    assistantProviderModelPromptProfile: resolveDefaultAssistantProviderModelPromptProfile({
+      providerName: compositionInput.providerName,
+      selectedModelId: compositionInput.selectedModelId,
+    }),
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    primaryAssistantAgentCompositionResolver,
+    assistantToolRegistry: createDefaultAssistantToolRegistry({
+      additionalCustomTools: [workspaceSummaryToolDefinition],
+    }),
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect README and summarize workspace",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const toolCallPartStatuses = emittedAssistantEvents.flatMap((assistantResponseEvent) =>
+    (assistantResponseEvent.type === "assistant_message_part_added" || assistantResponseEvent.type === "assistant_message_part_updated") &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call"
+      ? [`${assistantResponseEvent.part.toolCallId}:${assistantResponseEvent.part.toolCallStatus}`]
+      : []
+  );
+  const firstTerminalToolCallPartStatusIndex = toolCallPartStatuses.findIndex((toolCallPartStatus) =>
+    toolCallPartStatus.endsWith(":completed") ||
+    toolCallPartStatus.endsWith(":failed") ||
+    toolCallPartStatus.endsWith(":denied")
+  );
+
+  expect(emittedAssistantEvents.map((assistantResponseEvent) => assistantResponseEvent.type)).not.toContain(
+    "assistant_pending_tool_approval_requested",
+  );
+  expect(firstTerminalToolCallPartStatusIndex).toBeGreaterThan(1);
+  expect(toolCallPartStatuses.slice(0, firstTerminalToolCallPartStatusIndex)).toEqual(
+    expect.arrayContaining(["call_read_1:running", "call_workspace_summary_1:running"]),
+  );
+  expect(providerTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).toSorted()).toEqual([
+    "call_read_1",
+    "call_workspace_summary_1",
+  ].toSorted());
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_read_1")?.toolResultText)
+    .toContain("Custom concurrent target");
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_workspace_summary_1")?.toolResultText)
+    .toBe("Workspace summary for runtime.");
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      entryKind: "completed_tool_result",
+      toolCallId: "call_workspace_summary_1",
+      toolCallDetail: expect.objectContaining({
+        toolName: "workspace_summary",
+        toolDisplayName: "Workspace Summary",
+        toolResultSummary: "Runtime workspace summary",
+      }),
+      toolResultText: "Workspace summary for runtime.",
+    }),
+  ]));
+});
+
+test("AssistantConversationRuntime denies disallowed custom tools inside concurrent groups", async () => {
+  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-concurrent-custom-policy-denial-"));
+  await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nCustom denial target\n", "utf8");
+  const providerTurn = new ScriptedProviderTurn({
+    beforeToolResultEvents: [
+      {
+        type: "tool_calls_requested",
+        requestedToolCalls: [
+          {
+            toolCallId: "call_read_1",
+            toolCallRequest: {
+              toolName: "read",
+              readTargetPath: "README.md",
+            },
+          },
+          {
+            toolCallId: "call_workspace_summary_1",
+            toolCallRequest: {
+              toolName: "workspace_summary",
+              toolArgumentsJson: { topic: "runtime" },
+            },
+          },
+        ],
+      },
+    ],
+    afterToolResultEvents: [
+      { type: "text_chunk", text: "Custom denial acknowledged." },
+      { type: "completed", usage: { total: 20, input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ],
+  });
+  const provider = new RecordingConversationTurnProvider([providerTurn]);
+  const workspaceSummaryToolDefinition = {
+    toolName: "workspace_summary",
+    providerToolDefinition: {
+      toolName: "workspace_summary",
+      description: "Summarize a workspace topic.",
+      parameters: {
+        type: "object",
+        properties: { topic: { type: "string" } },
+        required: ["topic"],
+        additionalProperties: false,
+      },
+    },
+    executionPolicy: {
+      workspaceEffectKind: "read_only",
+      isAutoConcurrent: true,
+      isAutoApprovedReadOnly: true,
+      clearsSameTurnReadCoverageBeforeExecution: false,
+    },
+    executor: async () => ({
+      outcomeKind: "completed",
+      toolResultText: "Workspace summary should not execute.",
+    }),
+  } satisfies CustomAssistantToolDefinition;
+  const primaryAssistantAgentCompositionResolver: PrimaryAssistantAgentCompositionResolver = (compositionInput) => ({
+    primaryAssistantAgent: {
+      ...compositionInput.registeredPrimaryAssistantAgent,
+      availableToolNames: ["read", "workspace_summary"],
+    },
+    assistantProviderModelPromptProfile: resolveDefaultAssistantProviderModelPromptProfile({
+      providerName: compositionInput.providerName,
+      selectedModelId: compositionInput.selectedModelId,
+    }),
+  });
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    primaryAssistantAgentCompositionResolver,
+    assistantToolRegistry: createDefaultAssistantToolRegistry({
+      additionalCustomTools: [workspaceSummaryToolDefinition],
+    }),
+    availableToolNames: ["read"],
+    workspaceRootPath,
+    promptContextBrowseRootPath: workspaceRootPath,
+  });
+
+  const emittedAssistantEvents = await collectAssistantEvents(
+    runtime.startConversationTurn({
+      userPromptText: "Inspect README with limited custom tools",
+      selectedPrimaryAgentName: "implementation",
+      selectedModelId: "gpt-5.4",
+    }),
+  );
+  const deniedToolCallEvent = emittedAssistantEvents.find(
+    (assistantResponseEvent) =>
+      assistantResponseEvent.type === "assistant_message_part_added" &&
+      assistantResponseEvent.part.partKind === "assistant_tool_call" &&
+      assistantResponseEvent.part.toolCallId === "call_workspace_summary_1" &&
+      assistantResponseEvent.part.toolCallStatus === "denied",
+  );
+
+  expect(deniedToolCallEvent).toMatchObject({
+    part: {
+      denialText: "Implementation Agent cannot use workspace_summary in this turn. Available tools: read.",
+    },
+  });
+  expect(providerTurn.submittedToolResults.map((submittedToolResult) => submittedToolResult.toolCallId).toSorted()).toEqual([
+    "call_read_1",
+    "call_workspace_summary_1",
+  ].toSorted());
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_read_1")?.toolResultText)
+    .toContain("Custom denial target");
+  expect(providerTurn.submittedToolResults.find((submittedToolResult) => submittedToolResult.toolCallId === "call_workspace_summary_1")?.toolResultText)
+    .toBe("Understand Agent cannot use workspace_summary in this turn. Available tools: read.");
+  expect(runtime.conversationHistory.listConversationSessionEntries()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ entryKind: "completed_tool_result", toolCallId: "call_read_1" }),
+    expect.objectContaining({ entryKind: "denied_tool_result", toolCallId: "call_workspace_summary_1" }),
+  ]));
+});
+
 test("AssistantConversationRuntime starts mixed read-only and task tool calls concurrently", async () => {
   const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-runtime-mixed-concurrent-tools-"));
   await writeFile(join(workspaceRootPath, "README.md"), "# Demo\nMixed concurrent target\n", "utf8");

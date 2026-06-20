@@ -1,6 +1,9 @@
 export type {
   ActiveConversationSession,
   ActiveConversationSessionMetadata,
+  ConversationSessionEntryRecord,
+  ConversationSessionEntryRecordSlice,
+  ConversationSessionEntryRecordSliceLoadRequest,
   ConversationSessionStore,
   DeleteConversationSessionInput,
   StartNewConversationSessionInput,

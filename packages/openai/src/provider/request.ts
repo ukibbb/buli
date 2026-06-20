@@ -484,19 +484,6 @@ function createLegacyToolCallTranscriptSegment(conversationSessionEntry: ToolCal
     ].join("\n");
   }
 
-  if (toolCallRequest.toolName === "locate_codebase_symbols") {
-    return [
-      `[assistant tool call ${conversationSessionEntry.toolCallId}]`,
-      "Tool: locate_codebase_symbols",
-      ...(toolCallRequest.symbolNames !== undefined
-        ? [`Symbols: ${toolCallRequest.symbolNames.join(", ")}`]
-        : []),
-      ...(toolCallRequest.filePaths !== undefined
-        ? [`Files: ${toolCallRequest.filePaths.join(", ")}`]
-        : []),
-    ].join("\n");
-  }
-
   if (toolCallRequest.toolName === "edit") {
     return [
       `[assistant tool call ${conversationSessionEntry.toolCallId}]`,

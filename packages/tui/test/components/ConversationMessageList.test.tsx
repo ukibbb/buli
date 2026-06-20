@@ -16,15 +16,27 @@ import {
 } from "../../src/components/ConversationMessageList.tsx";
 import type { VisibleConversationMessageRow } from "../../src/behavior/chatScreenViewModel.ts";
 
-type ConversationHistoryRevealTestProps = Pick<
+type ConversationTranscriptPageNavigationTestProps = Pick<
   ConversationMessageListProps,
-  "hiddenOlderConversationMessageCount" | "olderConversationMessageRevealCount" | "onRevealOlderConversationMessages"
+  | "hasOlderConversationTranscriptPage"
+  | "hasNewerConversationTranscriptPage"
+  | "isLatestConversationTranscriptPage"
+  | "isConversationTranscriptPageNavigationDisabled"
+  | "isConversationTranscriptPageNavigationLoading"
+  | "onLoadOlderConversationTranscriptPage"
+  | "onLoadNewerConversationTranscriptPage"
+  | "onJumpToLatestConversationTranscriptPage"
 >;
 
-const noHiddenOlderConversationMessagesProps: ConversationHistoryRevealTestProps = {
-  hiddenOlderConversationMessageCount: 0,
-  olderConversationMessageRevealCount: 0,
-  onRevealOlderConversationMessages: () => {},
+const noConversationTranscriptPageNavigationProps: ConversationTranscriptPageNavigationTestProps = {
+  hasOlderConversationTranscriptPage: false,
+  hasNewerConversationTranscriptPage: false,
+  isLatestConversationTranscriptPage: true,
+  isConversationTranscriptPageNavigationDisabled: false,
+  isConversationTranscriptPageNavigationLoading: false,
+  onLoadOlderConversationTranscriptPage: () => {},
+  onLoadNewerConversationTranscriptPage: () => {},
+  onJumpToLatestConversationTranscriptPage: () => {},
 };
 
 function createSingleFileWorkspacePatch(input: {
@@ -270,7 +282,7 @@ describe("ConversationMessageList", () => {
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
         userMessageBorderColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
       />,
     );
     await renderOnce();
@@ -365,7 +377,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         pendingToolApprovalDecisionCallbacks={{
           onPendingToolApprovalApproved: () => {},
           onPendingToolApprovalDenied: () => {},
@@ -402,16 +414,17 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("Review");
   });
 
-  test("renders show older messages reveal row", async () => {
+  test("renders transcript page navigation rows", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ConversationMessageList
         visibleConversationMessageRows={[]}
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        hiddenOlderConversationMessageCount={42}
-        olderConversationMessageRevealCount={10}
-        onRevealOlderConversationMessages={() => {}}
+        {...noConversationTranscriptPageNavigationProps}
+        hasOlderConversationTranscriptPage={true}
+        hasNewerConversationTranscriptPage={true}
+        isLatestConversationTranscriptPage={false}
         userMessageBorderColor="#10B981"
       />,
       { width: 80, height: 4 },
@@ -420,9 +433,8 @@ describe("ConversationMessageList", () => {
     await renderOnce();
 
     const frame = captureCharFrame();
-    expect(frame).toContain("↑ Show older messages");
-    expect(frame).toContain("10 older");
-    expect(frame).toContain("42 hidden");
+    expect(frame).toContain("↑ Older 100");
+    expect(frame).toContain("↓ Newer 100");
   });
 
   test("renders Thinking for an empty streaming assistant message", async () => {
@@ -445,7 +457,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 80, height: 8 },
@@ -464,7 +476,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
         conversationSessionCompactionStatus={{ step: "compacting", source: "auto" }}
         queuedPromptCount={2}
@@ -515,7 +527,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 90, height: 12 },
@@ -592,7 +604,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 24 },
@@ -675,7 +687,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 16 },
@@ -751,7 +763,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         pendingToolApprovalDecision={{
           pendingToolApprovalRequest,
           onPendingToolApprovalApproved: () => {},
@@ -828,7 +840,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 16 },
@@ -900,7 +912,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 120, height: 90 },
@@ -950,7 +962,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="collapsed"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 8 },
@@ -997,7 +1009,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 100, height: 8 },
@@ -1037,7 +1049,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={conversationMessageScrollBoxRef}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 80, height: 20 },
@@ -1080,7 +1092,7 @@ describe("ConversationMessageList", () => {
         reasoningSummaryDisplayMode="expanded"
         conversationMessageScrollBoxRef={{ current: null }}
         transcriptAccentColor="#10B981"
-        {...noHiddenOlderConversationMessagesProps}
+        {...noConversationTranscriptPageNavigationProps}
         userMessageBorderColor="#10B981"
       />,
       { width: 40, height: 10 },

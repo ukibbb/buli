@@ -14,10 +14,6 @@ import {
   type WorkflowHandoff,
 } from "@buli/contracts";
 import { ConversationSessionCompactor } from "./conversationCompaction/ConversationSessionCompactor.ts";
-import {
-  createDefaultWorkspaceCodebaseKnowledgeIndex,
-  type WorkspaceCodebaseKnowledgeIndex,
-} from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type {
   ConversationAutoCompactionRequest,
   ConversationAutoCompactionResult,
@@ -113,7 +109,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly promptContextStartingDirectoryPath: string;
   readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   readonly workspaceSnapshotStore: WorkspaceSnapshotStore | undefined;
-  readonly workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
@@ -128,7 +123,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   readonly skillCatalog: WorkspaceSkillCatalog;
   readonly conversationSessionCompactor: ConversationSessionCompactor;
   currentPendingConversationTurn: RuntimeConversationTurn | undefined;
-  #hasStartedWorkspaceCodebaseKnowledgeIndexing = false;
 
   constructor(input: {
     conversationTurnProvider: ConversationTurnProvider;
@@ -144,7 +138,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     promptContextStartingDirectoryPath?: string;
     workspaceShellCommandExecutor?: WorkspaceShellCommandExecutor;
     workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
-    workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
     conversationHistory?: InMemoryConversationHistory;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode?: BashToolApprovalMode;
@@ -181,10 +174,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
     this.workspaceShellCommandExecutor =
       input.workspaceShellCommandExecutor ?? new WorkspaceShellCommandExecutor({ workspaceRootPath: input.workspaceRootPath });
     this.workspaceSnapshotStore = input.workspaceSnapshotStore;
-    this.workspaceCodebaseKnowledgeIndex = input.workspaceCodebaseKnowledgeIndex ?? createDefaultWorkspaceCodebaseKnowledgeIndex({
-      workspaceRootPath: input.workspaceRootPath,
-      ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
-    });
     this.conversationHistory = input.conversationHistory ?? new InMemoryConversationHistory();
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode ?? DEFAULT_BASH_TOOL_APPROVAL_MODE;
@@ -224,31 +213,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
 
   listPrimaryAgentDisplayMetadata(): readonly AssistantPrimaryAgentDisplayMetadata[] {
     return this.assistantAgentRegistry.listPrimaryAgentDisplayMetadata();
-  }
-
-  startWorkspaceCodebaseKnowledgeIndexing(): void {
-    if (this.#hasStartedWorkspaceCodebaseKnowledgeIndexing) {
-      return;
-    }
-    this.#hasStartedWorkspaceCodebaseKnowledgeIndexing = true;
-    const indexingStartedAtMs = Date.now();
-    logEngineDiagnosticEvent(this.diagnosticLogger, "codebase_knowledge.indexing_started", {
-      workspaceRootPath: this.workspaceRootPath,
-    });
-
-    void this.workspaceCodebaseKnowledgeIndex.ensureWorkspaceIndexed().then(() => {
-      logEngineDiagnosticEvent(this.diagnosticLogger, "codebase_knowledge.indexing_completed", {
-        workspaceRootPath: this.workspaceRootPath,
-        durationMs: Date.now() - indexingStartedAtMs,
-      });
-    }).catch((error: unknown) => {
-      this.#hasStartedWorkspaceCodebaseKnowledgeIndexing = false;
-      logEngineDiagnosticEvent(this.diagnosticLogger, "codebase_knowledge.indexing_failed", {
-        workspaceRootPath: this.workspaceRootPath,
-        durationMs: Date.now() - indexingStartedAtMs,
-        failureExplanation: error instanceof Error ? error.message : String(error),
-      });
-    });
   }
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
@@ -305,7 +269,6 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       promptContextStartingDirectoryPath: this.promptContextStartingDirectoryPath,
       workspaceShellCommandExecutor: this.workspaceShellCommandExecutor,
       workspaceSnapshotStore: this.workspaceSnapshotStore,
-      workspaceCodebaseKnowledgeIndex: this.workspaceCodebaseKnowledgeIndex,
       diagnosticLogger: this.diagnosticLogger,
       bashToolApprovalMode: this.bashToolApprovalMode,
       promptCacheKey: this.promptCacheKey,
@@ -384,7 +347,6 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly promptContextStartingDirectoryPath: string;
   readonly workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   readonly workspaceSnapshotStore: WorkspaceSnapshotStore | undefined;
-  readonly workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
   readonly bashToolApprovalMode: BashToolApprovalMode;
   readonly promptCacheKey: string | undefined;
@@ -422,7 +384,6 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     promptContextStartingDirectoryPath: string;
     workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
     workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
-    workspaceCodebaseKnowledgeIndex: WorkspaceCodebaseKnowledgeIndex;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
     bashToolApprovalMode: BashToolApprovalMode;
     promptCacheKey?: string | undefined;
@@ -467,7 +428,6 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
     this.promptContextStartingDirectoryPath = input.promptContextStartingDirectoryPath;
     this.workspaceShellCommandExecutor = input.workspaceShellCommandExecutor;
     this.workspaceSnapshotStore = input.workspaceSnapshotStore;
-    this.workspaceCodebaseKnowledgeIndex = input.workspaceCodebaseKnowledgeIndex;
     this.diagnosticLogger = input.diagnosticLogger;
     this.bashToolApprovalMode = input.bashToolApprovalMode;
     this.promptCacheKey = input.promptCacheKey;
@@ -814,7 +774,6 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       bashToolApprovalMode: this.bashToolApprovalMode,
       workspaceRootPath: this.workspaceRootPath,
       workspaceSnapshotStore: this.workspaceSnapshotStore,
-      workspaceCodebaseKnowledgeIndex: this.workspaceCodebaseKnowledgeIndex,
       projectInstructionTracker: this.projectInstructionTracker,
       skillCatalog: this.skillCatalog,
       promptContextBrowseRootPath: this.promptContextBrowseRootPath,

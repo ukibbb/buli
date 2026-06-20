@@ -11,6 +11,8 @@ import type {
 import {
   type ActiveConversationSessionMetadata,
   type ActiveConversationSession,
+  type ConversationSessionEntryRecordSlice,
+  type ConversationSessionEntryRecordSliceLoadRequest,
   type ConversationSessionStore,
   type DeleteConversationSessionInput,
   type StartNewConversationSessionInput,
@@ -41,6 +43,7 @@ type ConversationSessionStorageOperationName =
   | "load_active_metadata"
   | "load_active_session"
   | "load_entries"
+  | "load_entry_records"
   | "append_entry"
   | "save_model_selection"
   | "replace_entries"
@@ -131,6 +134,55 @@ export class SqliteConversationSessionStore implements ConversationSessionStore 
       loadedConversationSessionId = sessionId;
       this.loadConversationSessionMetadataOrThrow(sessionId);
       return this.gateway.loadConversationSessionEntries(sessionId);
+    }));
+  }
+
+  loadConversationSessionEntryRecords(
+    request: ConversationSessionEntryRecordSliceLoadRequest,
+  ): ConversationSessionEntryRecordSlice {
+    let loadedConversationSessionId = request.conversationSessionId;
+    const normalizedLimit = normalizeConversationSessionEntryRecordLimit(request.limit);
+    return this.runMeasuredStorageOperation({
+      operationName: "load_entry_records",
+      transactionKind: "read",
+      fields: {
+        requestedConversationSessionId: request.conversationSessionId ?? null,
+        loadKind: request.loadKind,
+        requestedEntryRecordLimit: request.limit,
+        entryRecordLimit: normalizedLimit,
+      },
+      createCompletedFields: (conversationSessionEntryRecordSlice) => ({
+        conversationSessionId: conversationSessionEntryRecordSlice.conversationSessionId,
+        conversationSessionEntryRecordCount: conversationSessionEntryRecordSlice.entryRecords.length,
+        hasOlderEntries: conversationSessionEntryRecordSlice.hasOlderEntries,
+        hasNewerEntries: conversationSessionEntryRecordSlice.hasNewerEntries,
+        latestCompactionSummaryEntrySequence: conversationSessionEntryRecordSlice.latestCompactionSummaryEntrySequence ?? null,
+      }),
+    }, () => this.runImmediateTransaction(() => {
+      const sessionId = request.conversationSessionId ?? this.loadActiveConversationSessionMetadataInTransaction().sessionId;
+      loadedConversationSessionId = sessionId;
+      this.loadConversationSessionMetadataOrThrow(sessionId);
+      const persistedEntryRecordSlice = request.loadKind === "latest"
+        ? this.gateway.loadLatestConversationSessionEntryRecords({ sessionId, limit: normalizedLimit })
+        : request.loadKind === "before"
+        ? this.gateway.loadConversationSessionEntryRecordsBefore({
+          sessionId,
+          beforeEntrySequence: request.beforeEntrySequence,
+          limit: normalizedLimit,
+        })
+        : this.gateway.loadConversationSessionEntryRecordsAfter({
+          sessionId,
+          afterEntrySequence: request.afterEntrySequence,
+          limit: normalizedLimit,
+        });
+
+      return {
+        conversationSessionId: loadedConversationSessionId,
+        entryRecords: persistedEntryRecordSlice.entryRecords,
+        hasOlderEntries: persistedEntryRecordSlice.hasOlderEntries,
+        hasNewerEntries: persistedEntryRecordSlice.hasNewerEntries,
+        latestCompactionSummaryEntrySequence: this.gateway.loadLatestCompactionSummaryEntrySequence(sessionId),
+      };
     }));
   }
 
@@ -479,6 +531,10 @@ function areConversationSessionModelSelectionsEqual(
 
 function formatUnknownErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeConversationSessionEntryRecordLimit(limit: number): number {
+  return Number.isInteger(limit) && limit > 0 ? limit : 1;
 }
 
 function mapPersistedConversationSessionMetadataToActiveConversationSessionMetadata(

@@ -153,7 +153,7 @@ const conversationSessionEntries = [
           resultKind: "text",
           resultTitle: "OpenTUI release guide",
           resultUrl: "https://example.test/releases/guide",
-          resultSnippet: "Release notes and migration details for OpenTUI.",
+          resultSnippet: "L1602: Hidden page excerpt <cite|42|docs.example> should stay hidden.",
         },
         {
           resultKind: "image",
@@ -421,7 +421,10 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).toContain("OpenTUI releases · https://example.test/releases");
   expect(html).toContain("Search results");
   expect(html).toContain("OpenTUI release guide");
-  expect(html).toContain("Release notes and migration details for OpenTUI.");
+  expect(html).toContain("https://example.test/releases/guide");
+  expect(html).not.toContain("L1602");
+  expect(html).not.toContain("&lt;cite|");
+  expect(html).not.toContain("should stay hidden");
   expect(html).toContain("Citations");
   expect(html).toContain("Example docs · https://example.com/docs");
   expect(html).toContain("LocateCodebaseSymbols");

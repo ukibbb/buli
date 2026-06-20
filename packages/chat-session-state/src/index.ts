@@ -145,8 +145,14 @@ export { hideCommandHelpModal, showCommandHelpModal } from "./commandHelpModalRe
 export { toggleReasoningSummaryDisplayMode } from "./reasoningSummaryVisibilityReducer.ts";
 export {
   clearConversationTranscript,
+  hydrateConversationTranscriptFromPageRows,
   hydrateConversationTranscriptFromSessionEntries,
+  hydrateConversationTranscriptRowsFromEntryRecords,
   removeConversationCompactionProgressFromTranscript,
   upsertConversationCompactionProgressInTranscript,
   type ConversationCompactionProgressSource,
+  type ConversationMessageSourceEntryRange,
+  type ConversationTranscriptEntryRecord,
+  type ConversationTranscriptPageRow,
+  type HydratedConversationTranscriptRows,
 } from "./conversationTranscriptReducer.ts";

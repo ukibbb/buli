@@ -3,11 +3,9 @@ import {
   isWorkspaceInspectionToolCallRequest,
   listModelVisibleConversationSessionEntries,
   type ConversationSessionEntry,
-  type LocateCodebaseSymbolsToolCallRequest,
   type ToolCallDetail,
   type ToolCallGlobDetail,
   type ToolCallGrepDetail,
-  type ToolCallLocateCodebaseSymbolsDetail,
   type ToolCallReadDetail,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
@@ -30,24 +28,11 @@ type ToolResultConversationSessionEntry = Extract<
 type WorkspacePatchConversationSessionEntry = Extract<ConversationSessionEntry, { entryKind: "workspace_patch" }>;
 type GrepWorkspaceInspectionToolCallRequest = Extract<WorkspaceInspectionToolCallRequest, { toolName: "grep" }>;
 
-type EvidenceNoteSourceKind = "read" | "search" | "knowledge";
+type EvidenceNoteSourceKind = "read" | "search";
 
 type BuliStickyNotesEvidenceRenderingLimits = {
   readonly maximumPromptNoteTextCharacterCount: number;
   readonly maximumObservationTextCharacterCount: number;
-};
-
-type CodebaseSymbolLocationExcerpt = {
-  readonly symbolName: string;
-  readonly filePath: string;
-  readonly lineRangeText: string;
-  readonly verificationRead?: CodebaseSymbolVerificationReadExcerpt | undefined;
-};
-
-type CodebaseSymbolVerificationReadExcerpt = {
-  readonly filePath: string;
-  readonly offsetLineText?: string | undefined;
-  readonly lineCountText?: string | undefined;
 };
 
 type ToolResultMutationEvidence =
@@ -288,18 +273,6 @@ function createReadOnlyToolEvidenceNote(input: {
     };
   }
 
-  if (toolCallRequest.toolName === "locate_codebase_symbols" && toolCallDetail.toolName === "locate_codebase_symbols") {
-    return {
-      ...baseEvidenceNoteFields,
-      sourceKind: "knowledge",
-      sourceDescription: describeCodebaseKnowledgeSource(toolCallRequest),
-      observedSummary: summarizeCodebaseKnowledgeObservation(
-        toolCallDetail,
-        input.toolResultEntry.toolResultText,
-      ),
-    };
-  }
-
   return undefined;
 }
 
@@ -324,10 +297,6 @@ function resolveInspectionQuestion(
   toolCallRequest: WorkspaceInspectionToolCallRequest,
   originUserPromptText: string,
 ): string {
-  if (toolCallRequest.toolName === "locate_codebase_symbols") {
-    return `Located ${[...(toolCallRequest.symbolNames ?? []), ...(toolCallRequest.filePaths ?? [])].join(", ")}`;
-  }
-
   if ("inspectionQuestion" in toolCallRequest && toolCallRequest.inspectionQuestion) {
     return toolCallRequest.inspectionQuestion;
   }
@@ -386,28 +355,6 @@ function summarizeGrepObservation(toolCallDetail: ToolCallGrepDetail): string {
   ]);
 }
 
-function summarizeCodebaseKnowledgeObservation(
-  toolCallDetail: ToolCallLocateCodebaseSymbolsDetail,
-  toolResultText: string,
-): string {
-  const firstLocationExcerpt = extractCodebaseSymbolFirstLocationExcerpt(toolResultText);
-  return compactSentenceParts([
-    toolCallDetail.locatedSymbolCount !== undefined
-      ? formatCountedNoun(toolCallDetail.locatedSymbolCount, "located symbol definition", "located symbol definitions")
-      : undefined,
-    toolCallDetail.notFoundSymbolCount !== undefined
-      ? formatCountedNoun(toolCallDetail.notFoundSymbolCount, "not-found symbol name", "not-found symbol names")
-      : undefined,
-    toolCallDetail.ambiguousSymbolNameCount !== undefined
-      ? formatCountedNoun(toolCallDetail.ambiguousSymbolNameCount, "ambiguous symbol name", "ambiguous symbol names")
-      : undefined,
-    toolCallDetail.verificationReadCount !== undefined
-      ? formatCountedNoun(toolCallDetail.verificationReadCount, "verification read", "verification reads")
-      : undefined,
-    firstLocationExcerpt ? formatCodebaseSymbolLocationExcerpt(firstLocationExcerpt) : undefined,
-  ]);
-}
-
 function compactSentenceParts(parts: readonly (string | undefined)[]): string {
   const compactedParts = parts.filter((part): part is string => part !== undefined && part.trim().length > 0);
   return compactedParts.length > 0
@@ -441,99 +388,8 @@ function describeGrepSource(
   ]);
 }
 
-function describeCodebaseKnowledgeSource(toolCallRequest: LocateCodebaseSymbolsToolCallRequest): string {
-  const targetDescriptionText = joinDescriptionParts([
-    `symbols ${quoteNoteText(toolCallRequest.symbolNames.join(", "))}`,
-    toolCallRequest.filePaths && toolCallRequest.filePaths.length > 0
-      ? `files ${quoteNoteText(toolCallRequest.filePaths.join(", "))}`
-      : undefined,
-  ], "; ");
-
-  return `locate_codebase_symbols ${targetDescriptionText}`;
-}
-
 function joinDescriptionParts(parts: readonly (string | undefined)[], separator = " "): string {
   return parts.filter((part): part is string => part !== undefined && part.trim().length > 0).join(separator);
-}
-
-function extractCodebaseSymbolFirstLocationExcerpt(toolResultText: string): CodebaseSymbolLocationExcerpt | undefined {
-  const firstLocationMatch = toolResultText.match(/<location\b([^>]*)>([\s\S]*?)<\/location>/);
-  const locationAttributeText = firstLocationMatch?.[1];
-  const locationBlockText = firstLocationMatch?.[2];
-  if (!locationAttributeText || !locationBlockText) {
-    return undefined;
-  }
-
-  const symbolName = extractXmlAttributeText(locationAttributeText, "name");
-  const filePath = extractXmlAttributeText(locationAttributeText, "file");
-  const lineRangeText = extractXmlAttributeText(locationAttributeText, "lines");
-  if (!symbolName || !filePath || !lineRangeText) {
-    return undefined;
-  }
-
-  return {
-    symbolName,
-    filePath,
-    lineRangeText,
-    verificationRead: extractCodebaseSymbolVerificationRead(locationBlockText),
-  };
-}
-
-function formatCodebaseSymbolLocationExcerpt(locationExcerpt: CodebaseSymbolLocationExcerpt): string {
-  return compactSentenceParts([
-    `first location ${truncateOneLine(locationExcerpt.symbolName, 90)}`,
-    `source ${locationExcerpt.filePath} lines ${locationExcerpt.lineRangeText}`,
-    locationExcerpt.verificationRead
-      ? formatCodebaseSymbolVerificationReadExcerpt(locationExcerpt.verificationRead, locationExcerpt)
-      : undefined,
-  ]);
-}
-
-function formatCodebaseSymbolVerificationReadExcerpt(
-  verificationReadExcerpt: CodebaseSymbolVerificationReadExcerpt,
-  locationExcerpt: CodebaseSymbolLocationExcerpt,
-): string {
-  const verificationReadLocationText = locationExcerpt.filePath === verificationReadExcerpt.filePath
-    ? "same file"
-    : verificationReadExcerpt.filePath;
-
-  return joinDescriptionParts([
-    `verification read ${verificationReadLocationText}`,
-    verificationReadExcerpt.offsetLineText !== undefined ? `offset ${verificationReadExcerpt.offsetLineText}` : undefined,
-    verificationReadExcerpt.lineCountText !== undefined ? `count ${verificationReadExcerpt.lineCountText}` : undefined,
-  ]);
-}
-
-function extractCodebaseSymbolVerificationRead(locationBlockText: string): CodebaseSymbolVerificationReadExcerpt | undefined {
-  const verificationReadAttributeText = locationBlockText.match(/<verification_read\b([^>]*)\/>/)?.[1];
-  if (!verificationReadAttributeText) {
-    return undefined;
-  }
-
-  const filePath = extractXmlAttributeText(verificationReadAttributeText, "file");
-  if (!filePath) {
-    return undefined;
-  }
-
-  return {
-    filePath,
-    offsetLineText: extractXmlAttributeText(verificationReadAttributeText, "offset_line"),
-    lineCountText: extractXmlAttributeText(verificationReadAttributeText, "line_count"),
-  };
-}
-
-function extractXmlAttributeText(attributeText: string, attributeName: string): string | undefined {
-  const attributeValueText = attributeText.match(new RegExp(`${attributeName}="([^"]*)"`))?.[1];
-  return attributeValueText ? decodeXmlText(attributeValueText) : undefined;
-}
-
-function decodeXmlText(encodedText: string): string {
-  return encodedText
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
 }
 
 function formatReturnedReadLineRange(toolCallDetail: ToolCallReadDetail): string | undefined {

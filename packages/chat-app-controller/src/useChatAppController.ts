@@ -15,11 +15,14 @@ import type {
 } from "@buli/engine";
 import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import {
+  applyConversationSessionModelSelectionToChatSessionState,
   createInitialChatSessionState,
   hideCommandHelpModal,
+  hydrateConversationTranscriptFromPageRows,
   hydrateConversationTranscriptFromSessionEntries,
   type ChatSessionState,
   type ChatSlashCommandSkill,
+  type ConversationTranscriptPageRow,
 } from "@buli/chat-session-state";
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { ActiveConversationTurnShutdownCoordinator } from "./activeConversationTurnShutdown.ts";
@@ -52,6 +55,12 @@ import {
   useChatAppPromptImageAttachmentActions,
   type UseChatAppPromptImageAttachmentActionsResult,
 } from "./useChatAppPromptImageAttachmentActions.ts";
+import {
+  loadConversationTranscriptPage,
+  type ConversationTranscriptPage,
+  type ConversationTranscriptPageNavigationRequest,
+  type LoadConversationTranscriptEntryRecords,
+} from "./conversationTranscriptPageLoader.ts";
 
 export type ChatAppConversationTranscriptScrollDirection = "up" | "down";
 
@@ -69,6 +78,7 @@ export type UseChatAppControllerInput = {
   onInitialConversationSessionEntriesHydrated?:
     | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void | Promise<void>)
     | undefined;
+  loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords | undefined;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: (() => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[]) | undefined;
@@ -113,6 +123,10 @@ export type UseChatAppControllerResult = {
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   queuedPromptCount: number;
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
+  conversationTranscriptPageState: ChatAppConversationTranscriptPageState;
+  loadOlderConversationTranscriptPage: () => Promise<void>;
+  loadNewerConversationTranscriptPage: () => Promise<void>;
+  jumpToLatestConversationTranscriptPage: () => Promise<void>;
   isActiveTurnInterruptConfirmationArmed: boolean;
   applyChatAppKeyboardInput: UseChatAppKeyboardActionsResult["applyChatAppKeyboardInput"];
   applyPromptDraftEditToChatApp: UseChatAppKeyboardActionsResult["applyPromptDraftEditToChatApp"];
@@ -166,6 +180,15 @@ export type QueuedChatAppPromptPreview = {
   submittedPromptImageAttachmentCount: number;
 };
 
+export type ChatAppConversationTranscriptPageState = {
+  visibleConversationMessageRows: readonly ConversationTranscriptPageRow[] | undefined;
+  hasOlderPage: boolean;
+  hasNewerPage: boolean;
+  isLatestPage: boolean;
+  isNavigationLoading: boolean;
+  navigationErrorMessage: string | undefined;
+};
+
 type StoredQueuedChatAppPrompt = QueuedChatAppPrompt & {
   queuedPromptId: string;
 };
@@ -188,11 +211,16 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   const shouldLoadInitialConversationSessionEntries = input.initialConversationSessionEntries === undefined &&
     input.initialConversationSessionId !== undefined &&
     input.loadInitialConversationSessionEntries !== undefined;
+  const shouldLoadInitialConversationTranscriptPage = input.initialConversationSessionEntries === undefined &&
+    input.initialConversationSessionId !== undefined &&
+    input.loadConversationTranscriptEntryRecords !== undefined;
+  const shouldBlockPromptInputForInitialConversationSessionLoad = shouldLoadInitialConversationSessionEntries ||
+    shouldLoadInitialConversationTranscriptPage;
   const [activeConversationSessionId, setActiveConversationSessionId] = useState<string | undefined>(
     input.initialConversationSessionId,
   );
   const [isInitialConversationSessionHydrationPending, setIsInitialConversationSessionHydrationPending] = useState(
-    shouldLoadInitialConversationSessionEntries,
+    shouldBlockPromptInputForInitialConversationSessionLoad,
   );
   const [conversationSessionExportStatus, setConversationSessionExportStatus] = useState<ConversationSessionExportStatus>({
     step: "idle",
@@ -202,6 +230,14 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   });
   const [queuedPromptCount, setQueuedPromptCount] = useState(0);
   const [queuedPromptPreviews, setQueuedPromptPreviews] = useState<readonly QueuedChatAppPromptPreview[]>([]);
+  const [conversationTranscriptPageState, setConversationTranscriptPageState] = useState<ChatAppConversationTranscriptPageState>(() => ({
+    visibleConversationMessageRows: undefined,
+    hasOlderPage: false,
+    hasNewerPage: false,
+    isLatestPage: true,
+    isNavigationLoading: false,
+    navigationErrorMessage: undefined,
+  }));
   const [chatSessionState, setChatSessionState] = useState(() => {
     const initialChatSessionState = createInitialChatSessionState({
       selectedModelId: input.selectedModelId,
@@ -230,7 +266,8 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
 
   const latestChatSessionStateRef = useRef<ChatSessionState>(chatSessionState);
   const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
-  const isPromptSubmissionInFlightRef = useRef(shouldLoadInitialConversationSessionEntries);
+  const latestConversationTranscriptPageRef = useRef<ConversationTranscriptPage | undefined>(undefined);
+  const isPromptSubmissionInFlightRef = useRef(shouldBlockPromptInputForInitialConversationSessionLoad);
   const isConversationCompactionInFlightRef = useRef(false);
   const isChatAppControllerMountedRef = useRef(true);
   const hasStartedInitialConversationSessionHydrationRef = useRef(false);
@@ -404,6 +441,149 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     setQueuedPromptPreviews(nextQueuedPromptPreviews);
     return nextQueuedChatAppPrompt;
   });
+  const clearHistoricalConversationTranscriptPage = useEffectEvent((): void => {
+    const latestConversationTranscriptPage = latestConversationTranscriptPageRef.current;
+    setConversationTranscriptPageState((currentConversationTranscriptPageState) => ({
+      ...currentConversationTranscriptPageState,
+      visibleConversationMessageRows: undefined,
+      hasOlderPage: latestConversationTranscriptPage?.hasOlderPage ?? currentConversationTranscriptPageState.hasOlderPage,
+      hasNewerPage: false,
+      isLatestPage: true,
+      navigationErrorMessage: undefined,
+    }));
+  });
+  const applyLoadedConversationTranscriptPageToChatApp = useEffectEvent((input: {
+    conversationTranscriptPage: ConversationTranscriptPage;
+    modelSelection?: ConversationSessionModelSelection | undefined;
+  }): void => {
+    latestConversationTranscriptPageRef.current = input.conversationTranscriptPage;
+    if (!input.conversationTranscriptPage.isLatestPage) {
+      setConversationTranscriptPageState({
+        visibleConversationMessageRows: input.conversationTranscriptPage.visibleConversationMessageRows,
+        hasOlderPage: input.conversationTranscriptPage.hasOlderPage,
+        hasNewerPage: input.conversationTranscriptPage.hasNewerPage,
+        isLatestPage: false,
+        isNavigationLoading: false,
+        navigationErrorMessage: undefined,
+      });
+      return;
+    }
+
+    const hydratedChatSessionState = hydrateConversationTranscriptFromPageRows(
+      latestChatSessionStateRef.current,
+      input.conversationTranscriptPage.visibleConversationMessageRows,
+    );
+    const nextChatSessionState = input.modelSelection
+      ? applyConversationSessionModelSelectionToChatSessionState(hydratedChatSessionState, input.modelSelection)
+      : hydratedChatSessionState;
+    setChatSessionStateAndUpdateRenderStore(nextChatSessionState);
+    setConversationTranscriptPageState({
+      visibleConversationMessageRows: undefined,
+      hasOlderPage: input.conversationTranscriptPage.hasOlderPage,
+      hasNewerPage: false,
+      isLatestPage: true,
+      isNavigationLoading: false,
+      navigationErrorMessage: undefined,
+    });
+  });
+  const loadConversationTranscriptPageIntoChatApp = useEffectEvent(async (pageLoadInput: {
+    conversationSessionId: string;
+    pageNavigationRequest: ConversationTranscriptPageNavigationRequest;
+    modelSelection?: ConversationSessionModelSelection | undefined;
+  }): Promise<void> => {
+    const loadConversationTranscriptEntryRecords = input.loadConversationTranscriptEntryRecords;
+    if (!loadConversationTranscriptEntryRecords) {
+      return;
+    }
+
+    setConversationTranscriptPageState((currentConversationTranscriptPageState) => ({
+      ...currentConversationTranscriptPageState,
+      isNavigationLoading: true,
+      navigationErrorMessage: undefined,
+    }));
+    try {
+      const conversationTranscriptPage = await loadConversationTranscriptPage({
+        conversationSessionId: pageLoadInput.conversationSessionId,
+        loadEntryRecords: loadConversationTranscriptEntryRecords,
+        pageNavigationRequest: pageLoadInput.pageNavigationRequest,
+      });
+      if (latestActiveConversationSessionIdRef.current !== pageLoadInput.conversationSessionId) {
+        return;
+      }
+
+      applyLoadedConversationTranscriptPageToChatApp({
+        conversationTranscriptPage,
+        ...(pageLoadInput.modelSelection ? { modelSelection: pageLoadInput.modelSelection } : {}),
+      });
+    } catch (error) {
+      setConversationTranscriptPageState((currentConversationTranscriptPageState) => ({
+        ...currentConversationTranscriptPageState,
+        isNavigationLoading: false,
+        navigationErrorMessage: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  });
+  const loadLatestConversationTranscriptPageIntoChatApp = useEffectEvent(async (input: {
+    conversationSessionId: string;
+    modelSelection?: ConversationSessionModelSelection | undefined;
+  }): Promise<void> => {
+    await loadConversationTranscriptPageIntoChatApp({
+      conversationSessionId: input.conversationSessionId,
+      pageNavigationRequest: { pageNavigationKind: "latest" },
+      ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+    });
+  });
+  const loadOlderConversationTranscriptPage = useEffectEvent(async (): Promise<void> => {
+    if (isConversationTranscriptPageNavigationBlocked({
+      chatSessionState: latestChatSessionStateRef.current,
+      conversationSessionCompactionStatus,
+      conversationTranscriptPageState,
+    })) {
+      return;
+    }
+
+    const currentConversationTranscriptPage = latestConversationTranscriptPageRef.current;
+    if (!activeConversationSessionId || currentConversationTranscriptPage?.firstSourceEntrySequence === undefined) {
+      return;
+    }
+
+    await loadConversationTranscriptPageIntoChatApp({
+      conversationSessionId: activeConversationSessionId,
+      pageNavigationRequest: {
+        pageNavigationKind: "older",
+        beforeEntrySequence: currentConversationTranscriptPage.firstSourceEntrySequence,
+      },
+    });
+  });
+  const loadNewerConversationTranscriptPage = useEffectEvent(async (): Promise<void> => {
+    if (isConversationTranscriptPageNavigationBlocked({
+      chatSessionState: latestChatSessionStateRef.current,
+      conversationSessionCompactionStatus,
+      conversationTranscriptPageState,
+    })) {
+      return;
+    }
+
+    const currentConversationTranscriptPage = latestConversationTranscriptPageRef.current;
+    if (!activeConversationSessionId || currentConversationTranscriptPage?.lastSourceEntrySequence === undefined) {
+      return;
+    }
+
+    await loadConversationTranscriptPageIntoChatApp({
+      conversationSessionId: activeConversationSessionId,
+      pageNavigationRequest: {
+        pageNavigationKind: "newer",
+        afterEntrySequence: currentConversationTranscriptPage.lastSourceEntrySequence,
+      },
+    });
+  });
+  const jumpToLatestConversationTranscriptPage = useEffectEvent(async (): Promise<void> => {
+    if (!activeConversationSessionId) {
+      return;
+    }
+
+    await loadLatestConversationTranscriptPageIntoChatApp({ conversationSessionId: activeConversationSessionId });
+  });
   const {
     hydrateConversationSessionEntriesIntoChatApp,
     loadConversationSessionsForSelection,
@@ -421,6 +601,10 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     compactCurrentConversationSession: input.compactCurrentConversationSession,
     autoCompactCurrentConversationSession: input.autoCompactCurrentConversationSession,
     onConversationCleared: input.onConversationCleared,
+    loadLatestConversationTranscriptPageIntoChatApp: input.loadConversationTranscriptEntryRecords
+      ? loadLatestConversationTranscriptPageIntoChatApp
+      : undefined,
+    clearHistoricalConversationTranscriptPage,
     latestChatSessionStateRef,
     latestActiveConversationSessionIdRef,
     isPromptSubmissionInFlightRef,
@@ -432,7 +616,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   });
 
   useEffect(() => {
-    if (!shouldLoadInitialConversationSessionEntries) {
+    if (!shouldBlockPromptInputForInitialConversationSessionLoad) {
       return;
     }
 
@@ -442,7 +626,8 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
 
     const initialConversationSessionId = input.initialConversationSessionId;
     const loadInitialConversationSessionEntries = input.loadInitialConversationSessionEntries;
-    if (!initialConversationSessionId || !loadInitialConversationSessionEntries) {
+    const loadConversationTranscriptEntryRecords = input.loadConversationTranscriptEntryRecords;
+    if (!initialConversationSessionId) {
       return;
     }
 
@@ -452,26 +637,47 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     setIsInitialConversationSessionHydrationPendingAndUpdateRenderStore(true);
 
     void Promise.resolve()
-      .then(() => loadInitialConversationSessionEntries(initialConversationSessionId))
-      .then(async (initialConversationSessionEntriesLoadResult) => {
+      .then(async () => {
+        const [initialConversationSessionEntriesLoadResult, initialConversationTranscriptPage] = await Promise.all([
+          loadInitialConversationSessionEntries
+            ? Promise.resolve(loadInitialConversationSessionEntries(initialConversationSessionId))
+            : Promise.resolve(undefined),
+          loadConversationTranscriptEntryRecords
+            ? loadConversationTranscriptPage({
+              conversationSessionId: initialConversationSessionId,
+              loadEntryRecords: loadConversationTranscriptEntryRecords,
+              pageNavigationRequest: { pageNavigationKind: "latest" },
+            })
+            : Promise.resolve(undefined),
+        ]);
+
         if (
           isInitialConversationSessionHydrationCancelled ||
-          latestActiveConversationSessionIdRef.current !== initialConversationSessionEntriesLoadResult.conversationSessionId
+          latestActiveConversationSessionIdRef.current !== initialConversationSessionId
         ) {
           return;
         }
 
-        await input.onInitialConversationSessionEntriesHydrated?.(initialConversationSessionEntriesLoadResult);
+        if (initialConversationSessionEntriesLoadResult) {
+          await input.onInitialConversationSessionEntriesHydrated?.(initialConversationSessionEntriesLoadResult);
+        }
         if (
           isInitialConversationSessionHydrationCancelled ||
-          latestActiveConversationSessionIdRef.current !== initialConversationSessionEntriesLoadResult.conversationSessionId
+          latestActiveConversationSessionIdRef.current !== initialConversationSessionId
         ) {
           return;
         }
 
-        hydrateConversationSessionEntriesIntoChatApp(
-          initialConversationSessionEntriesLoadResult.conversationSessionEntries,
-        );
+        if (initialConversationTranscriptPage) {
+          applyLoadedConversationTranscriptPageToChatApp({ conversationTranscriptPage: initialConversationTranscriptPage });
+          return;
+        }
+
+        if (initialConversationSessionEntriesLoadResult) {
+          hydrateConversationSessionEntriesIntoChatApp(
+            initialConversationSessionEntriesLoadResult.conversationSessionEntries,
+          );
+        }
       })
       .catch((error: unknown) => {
         if (isInitialConversationSessionHydrationCancelled) {
@@ -506,9 +712,12 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
       hasStartedInitialConversationSessionHydrationRef.current = false;
     };
   }, [
-    shouldLoadInitialConversationSessionEntries,
+    shouldBlockPromptInputForInitialConversationSessionLoad,
+    applyLoadedConversationTranscriptPageToChatApp,
+    hydrateConversationSessionEntriesIntoChatApp,
     input.initialConversationSessionId,
     input.loadInitialConversationSessionEntries,
+    input.loadConversationTranscriptEntryRecords,
     input.onInitialConversationSessionEntriesHydrated,
     setIsInitialConversationSessionHydrationPendingAndUpdateRenderStore,
   ]);
@@ -523,6 +732,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     isChatAppControllerMountedRef,
     submittedToolApprovalDecisionApprovalIdRef,
     setChatSessionState: setChatSessionStateAndUpdateRenderStore,
+    clearHistoricalConversationTranscriptPage,
     chatAppRenderStore,
     getActiveConversationTurn,
     registerActiveConversationTurnStarted,
@@ -627,6 +837,10 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     conversationSessionCompactionStatus,
     queuedPromptCount,
     queuedPromptPreviews,
+    conversationTranscriptPageState,
+    loadOlderConversationTranscriptPage,
+    loadNewerConversationTranscriptPage,
+    jumpToLatestConversationTranscriptPage,
     isActiveTurnInterruptConfirmationArmed,
     applyChatAppKeyboardInput,
     applyPromptDraftEditToChatApp,
@@ -649,6 +863,17 @@ function resolveNextChatSessionStateForControllerStateUpdate(input: {
   return typeof input.chatSessionStateUpdate === "function"
     ? input.chatSessionStateUpdate(input.previousChatSessionState)
     : input.chatSessionStateUpdate;
+}
+
+function isConversationTranscriptPageNavigationBlocked(input: {
+  chatSessionState: ChatSessionState;
+  conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+  conversationTranscriptPageState: ChatAppConversationTranscriptPageState;
+}): boolean {
+  return input.conversationTranscriptPageState.isNavigationLoading ||
+    input.chatSessionState.conversationTurnStatus === "streaming_assistant_response" ||
+    input.chatSessionState.conversationTurnStatus === "waiting_for_tool_approval" ||
+    input.conversationSessionCompactionStatus.step === "compacting";
 }
 
 function resolveNextControllerStateValue<T>(input: {

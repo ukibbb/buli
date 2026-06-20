@@ -18,6 +18,7 @@ import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnosti
 import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from "./runtimeToolApproval.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import type { AssistantToolRegistry, CustomAssistantToolDefinition, CustomAssistantToolExecutionOutcome } from "./assistantToolRegistry.ts";
+import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
 
 export type StreamAssistantResponseEventsForCustomToolCallInput = {
   assistantResponseMessageId: string;
@@ -28,6 +29,7 @@ export type StreamAssistantResponseEventsForCustomToolCallInput = {
   assistantToolRegistry: AssistantToolRegistry;
   workspaceRootPath: string;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
+  readOnlyToolCallConcurrencyLimiter?: RuntimeReadOnlyToolCallConcurrencyLimiter | undefined;
   abortSignal: AbortSignal;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
   throwIfConversationTurnInterrupted: () => void;
@@ -154,7 +156,11 @@ export async function* streamAssistantResponseEventsForCustomToolCall(
     customToolDefinition,
     customToolCallRequest: input.customToolCallRequest,
     toolCallId: input.toolCallId,
+    conversationTurnId: input.conversationTurnId,
     workspaceRootPath: input.workspaceRootPath,
+    readOnlyToolCallConcurrencyLimiter: customToolDefinition.executionPolicy.isAutoApprovedReadOnly
+      ? input.readOnlyToolCallConcurrencyLimiter
+      : undefined,
     abortSignal: input.abortSignal,
     diagnosticLogger: input.diagnosticLogger,
   });
@@ -230,17 +236,29 @@ async function runCustomToolExecutor(input: {
   customToolDefinition: CustomAssistantToolDefinition;
   customToolCallRequest: CustomToolCallRequest;
   toolCallId: string;
+  conversationTurnId: string;
   workspaceRootPath: string;
+  readOnlyToolCallConcurrencyLimiter?: RuntimeReadOnlyToolCallConcurrencyLimiter | undefined;
   abortSignal: AbortSignal;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): Promise<CustomAssistantToolExecutionOutcome> {
   try {
-    return await input.customToolDefinition.executor({
+    const runCustomExecutor = () => input.customToolDefinition.executor({
       toolCallId: input.toolCallId,
       toolCallRequest: input.customToolCallRequest,
       workspaceRootPath: input.workspaceRootPath,
       abortSignal: input.abortSignal,
       diagnosticLogger: input.diagnosticLogger,
+    });
+
+    if (!input.readOnlyToolCallConcurrencyLimiter) {
+      return await runCustomExecutor();
+    }
+
+    return await input.readOnlyToolCallConcurrencyLimiter.run(runCustomExecutor, {
+      conversationTurnId: input.conversationTurnId,
+      toolCallId: input.toolCallId,
+      toolName: input.customToolCallRequest.toolName,
     });
   } catch (error) {
     const failureExplanation = formatUnknownCustomToolError(error);

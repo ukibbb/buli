@@ -23,6 +23,17 @@ export type RecordedConversationSessionEntry = {
   recordedAtMs: number;
 };
 
+export type PersistedConversationSessionEntryRecord = {
+  entrySequence: number;
+  conversationSessionEntry: ConversationSessionEntry;
+};
+
+export type PersistedConversationSessionEntryRecordSlice = {
+  entryRecords: readonly PersistedConversationSessionEntryRecord[];
+  hasOlderEntries: boolean;
+  hasNewerEntries: boolean;
+};
+
 type ConversationSessionRow = {
   session_id: string;
   workspace_root_path: string;
@@ -36,6 +47,10 @@ type ConversationSessionRow = {
 type ConversationSessionEntryRow = {
   entry_sequence: number;
   conversation_session_entry_json: string;
+};
+
+type ConversationSessionEntrySequenceRow = {
+  entry_sequence: number;
 };
 
 type ActiveConversationSessionRow = {
@@ -59,6 +74,10 @@ export class ConversationSessionSqliteGateway {
   private readonly loadSessionByIdStmt: Statement<ConversationSessionRow, [string, string]>;
   private readonly listSessionSummariesStmt: Statement<ConversationSessionRow, [string]>;
   private readonly loadEntriesStmt: Statement<ConversationSessionEntryRow, [string]>;
+  private readonly loadLatestEntryRecordsStmt: Statement<ConversationSessionEntryRow, [string, number]>;
+  private readonly loadEntryRecordsBeforeStmt: Statement<ConversationSessionEntryRow, [string, number, number]>;
+  private readonly loadEntryRecordsAfterStmt: Statement<ConversationSessionEntryRow, [string, number, number]>;
+  private readonly loadLatestCompactionSummaryEntrySequenceStmt: Statement<ConversationSessionEntrySequenceRow, [string]>;
 
   constructor(input: { database: Database; workspaceRootPath: string }) {
     this.database = input.database;
@@ -128,6 +147,34 @@ export class ConversationSessionSqliteGateway {
        FROM conversation_session_entry
        WHERE session_id = ?
        ORDER BY entry_sequence ASC`,
+    );
+    this.loadLatestEntryRecordsStmt = this.database.query(
+      `SELECT entry_sequence, conversation_session_entry_json
+       FROM conversation_session_entry
+       WHERE session_id = ?
+       ORDER BY entry_sequence DESC
+       LIMIT ?`,
+    );
+    this.loadEntryRecordsBeforeStmt = this.database.query(
+      `SELECT entry_sequence, conversation_session_entry_json
+       FROM conversation_session_entry
+       WHERE session_id = ? AND entry_sequence < ?
+       ORDER BY entry_sequence DESC
+       LIMIT ?`,
+    );
+    this.loadEntryRecordsAfterStmt = this.database.query(
+      `SELECT entry_sequence, conversation_session_entry_json
+       FROM conversation_session_entry
+       WHERE session_id = ? AND entry_sequence > ?
+       ORDER BY entry_sequence ASC
+       LIMIT ?`,
+    );
+    this.loadLatestCompactionSummaryEntrySequenceStmt = this.database.query(
+      `SELECT entry_sequence
+       FROM conversation_session_entry
+       WHERE session_id = ? AND entry_kind = 'conversation_compaction_summary'
+       ORDER BY entry_sequence DESC
+       LIMIT 1`,
     );
   }
 
@@ -246,6 +293,57 @@ export class ConversationSessionSqliteGateway {
   loadConversationSessionEntries(sessionId: string): readonly ConversationSessionEntry[] {
     return this.loadEntriesStmt.all(sessionId).map((row) => parseConversationSessionEntryJson(row));
   }
+
+  loadLatestConversationSessionEntryRecords(input: {
+    sessionId: string;
+    limit: number;
+  }): PersistedConversationSessionEntryRecordSlice {
+    const rows = this.loadLatestEntryRecordsStmt.all(input.sessionId, input.limit + 1);
+    return {
+      entryRecords: rows.slice(0, input.limit).reverse().map(mapConversationSessionEntryRowToRecord),
+      hasOlderEntries: rows.length > input.limit,
+      hasNewerEntries: false,
+    };
+  }
+
+  loadConversationSessionEntryRecordsBefore(input: {
+    sessionId: string;
+    beforeEntrySequence: number;
+    limit: number;
+  }): PersistedConversationSessionEntryRecordSlice {
+    const rows = this.loadEntryRecordsBeforeStmt.all(input.sessionId, input.beforeEntrySequence, input.limit + 1);
+    return {
+      entryRecords: rows.slice(0, input.limit).reverse().map(mapConversationSessionEntryRowToRecord),
+      hasOlderEntries: rows.length > input.limit,
+      hasNewerEntries: true,
+    };
+  }
+
+  loadConversationSessionEntryRecordsAfter(input: {
+    sessionId: string;
+    afterEntrySequence: number;
+    limit: number;
+  }): PersistedConversationSessionEntryRecordSlice {
+    const rows = this.loadEntryRecordsAfterStmt.all(input.sessionId, input.afterEntrySequence, input.limit + 1);
+    return {
+      entryRecords: rows.slice(0, input.limit).map(mapConversationSessionEntryRowToRecord),
+      hasOlderEntries: true,
+      hasNewerEntries: rows.length > input.limit,
+    };
+  }
+
+  loadLatestCompactionSummaryEntrySequence(sessionId: string): number | undefined {
+    return this.loadLatestCompactionSummaryEntrySequenceStmt.get(sessionId)?.entry_sequence;
+  }
+}
+
+function mapConversationSessionEntryRowToRecord(
+  conversationSessionEntryRow: ConversationSessionEntryRow,
+): PersistedConversationSessionEntryRecord {
+  return {
+    entrySequence: conversationSessionEntryRow.entry_sequence,
+    conversationSessionEntry: parseConversationSessionEntryJson(conversationSessionEntryRow),
+  };
 }
 
 function mapConversationSessionRowToMetadata(

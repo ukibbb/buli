@@ -316,6 +316,9 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
         conversationSessionEntries,
       };
     };
+    const loadConversationTranscriptEntryRecords: RenderChatScreenInTerminalInput["loadConversationTranscriptEntryRecords"] = (
+      request,
+    ) => conversationSessionStore.loadConversationSessionEntryRecords(request);
     const assistantConversationRunner = new AssistantConversationRuntime({
       conversationTurnProvider: conversationTurnProviderResolution.conversationTurnProvider,
       assistantProviderName: conversationTurnProviderResolution.assistantProviderName,
@@ -362,6 +365,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
         promptContextCandidateCatalog.listPromptContextCandidates(promptContextQueryText),
       ...conversationSessionBindings.renderInput,
       initialConversationSessionId: activeConversationSessionMetadata.sessionId,
+      loadConversationTranscriptEntryRecords,
       ...(activeConversationSessionMetadata.conversationSessionEntryCount > 0
         ? {
           loadInitialConversationSessionEntries,

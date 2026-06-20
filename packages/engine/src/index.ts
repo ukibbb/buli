@@ -116,13 +116,6 @@ export type {
   TaskSubagentCompositionResolver,
 } from "./assistantSubagentComposition.ts";
 export {
-  createDefaultWorkspaceCodebaseKnowledgeIndex,
-  defaultWorkspaceCodebaseKnowledgeDatabaseFilePath,
-  defaultWorkspaceCodebaseKnowledgeIndexFilePath,
-  TreeSitterWorkspaceCodebaseKnowledgeIndex,
-} from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
-export type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
-export {
   ProviderProtocolConversationTurnProvider,
   ProviderProtocolRemoteProviderError,
 } from "./providerProtocolClient.ts";
@@ -247,7 +240,6 @@ export type {
 } from "./tools/fileMutationDiff.ts";
 export { createStartedGlobToolCallDetail, runGlobToolCall } from "./tools/globTool.ts";
 export { createStartedGrepToolCallDetail, runGrepToolCall } from "./tools/grepTool.ts";
-export { createStartedLocateCodebaseSymbolsToolCallDetail, runLocateCodebaseSymbolsToolCall } from "./tools/locateCodebaseSymbolsTool.ts";
 export { buildProviderVisibleToolResultBudgetGateText } from "./tools/toolResultTextBudget.ts";
 export { READ_ONLY_PROVIDER_TOOL_RESULT_MAX_CHARACTER_COUNT } from "./runtimeReadOnlyToolCallExecution.ts";
 export {

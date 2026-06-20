@@ -1,7 +1,8 @@
 import type { ConversationMessage } from "@buli/contracts";
 
-export const DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT = 160;
-export const CONVERSATION_MESSAGE_REVEAL_CHUNK_COUNT = 80;
+export const TRANSCRIPT_PAGE_MESSAGE_COUNT = 100;
+export const DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT = TRANSCRIPT_PAGE_MESSAGE_COUNT;
+export const CONVERSATION_MESSAGE_REVEAL_CHUNK_COUNT = TRANSCRIPT_PAGE_MESSAGE_COUNT;
 
 export type ConversationTranscriptWindow = {
   visibleConversationMessages: readonly ConversationMessage[];

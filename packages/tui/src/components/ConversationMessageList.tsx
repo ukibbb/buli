@@ -12,7 +12,7 @@ import {
   type PendingToolApprovalDecision,
   type ConversationMessageRowProps,
 } from "./ConversationMessageRow.tsx";
-import { ConversationHistoryRevealRow } from "./ConversationHistoryRevealRow.tsx";
+import { ConversationTranscriptPageNavigationRow } from "./ConversationTranscriptPageNavigationRow.tsx";
 
 type ConversationMessageListRenderStoreProps = {
   chatAppRenderStore: ChatAppRenderStore;
@@ -30,9 +30,14 @@ type ConversationMessageListCommonProps = {
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
   conversationMessageScrollBoxRef: RefObject<ScrollBoxRenderable | null>;
   transcriptAccentColor: string;
-  hiddenOlderConversationMessageCount: number;
-  olderConversationMessageRevealCount: number;
-  onRevealOlderConversationMessages: () => void;
+  hasOlderConversationTranscriptPage: boolean;
+  hasNewerConversationTranscriptPage: boolean;
+  isLatestConversationTranscriptPage: boolean;
+  isConversationTranscriptPageNavigationDisabled: boolean;
+  isConversationTranscriptPageNavigationLoading: boolean;
+  onLoadOlderConversationTranscriptPage: () => void;
+  onLoadNewerConversationTranscriptPage: () => void;
+  onJumpToLatestConversationTranscriptPage: () => void;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   pendingToolApprovalDecisionCallbacks?: PendingToolApprovalDecisionCallbacks | undefined;
   userMessageBorderColor: string;
@@ -124,8 +129,9 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
         : undefined,
     [props.reasoningSummaryDisplayMode, props.visibleConversationMessageRows],
   );
-  const shouldRenderHistoryRevealRow = props.hiddenOlderConversationMessageCount > 0 &&
-    props.olderConversationMessageRevealCount > 0;
+  const shouldRenderOlderConversationTranscriptPageRow = props.hasOlderConversationTranscriptPage;
+  const shouldRenderNewerConversationTranscriptPageRow = props.hasNewerConversationTranscriptPage ||
+    !props.isLatestConversationTranscriptPage;
   const conversationSessionCompactionStatus = transcriptAuxiliarySnapshot?.conversationSessionCompactionStatus ??
     props.conversationSessionCompactionStatus;
   const queuedPromptCount = transcriptAuxiliarySnapshot?.queuedPromptCount ?? props.queuedPromptCount ?? 0;
@@ -175,11 +181,13 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
         verticalScrollbarOptions={hiddenVerticalScrollbarOptions}
         horizontalScrollbarOptions={hiddenHorizontalScrollbarOptions}
       >
-        {shouldRenderHistoryRevealRow ? (
-          <ConversationHistoryRevealRow
-            hiddenOlderConversationMessageCount={props.hiddenOlderConversationMessageCount}
-            olderConversationMessageRevealCount={props.olderConversationMessageRevealCount}
-            onRevealOlderConversationMessages={props.onRevealOlderConversationMessages}
+        {shouldRenderOlderConversationTranscriptPageRow ? (
+          <ConversationTranscriptPageNavigationRow
+            placement="top"
+            primaryLabel="↑ Older 100"
+            detailLabel={props.isConversationTranscriptPageNavigationLoading ? "loading" : "replace current page"}
+            isDisabled={props.isConversationTranscriptPageNavigationDisabled}
+            onNavigate={props.onLoadOlderConversationTranscriptPage}
           />
         ) : null}
         {props.chatAppRenderStore
@@ -225,6 +233,19 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
               contextMeterTokenLimit={contextMeterTokenLimit}
             />
           </box>
+        ) : null}
+        {shouldRenderNewerConversationTranscriptPageRow ? (
+          <ConversationTranscriptPageNavigationRow
+            placement="bottom"
+            primaryLabel={props.hasNewerConversationTranscriptPage ? "↓ Newer 100" : "↓ Jump to latest"}
+            detailLabel={props.isConversationTranscriptPageNavigationLoading ? "loading" : undefined}
+            isDisabled={props.isConversationTranscriptPageNavigationDisabled}
+            onNavigate={
+              props.hasNewerConversationTranscriptPage
+                ? props.onLoadNewerConversationTranscriptPage
+                : props.onJumpToLatestConversationTranscriptPage
+            }
+          />
         ) : null}
       </scrollbox>
     </box>

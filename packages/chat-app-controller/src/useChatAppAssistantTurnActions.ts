@@ -67,6 +67,7 @@ export type UseChatAppAssistantTurnActionsInput = {
   isChatAppControllerMountedRef: MutableValueRef<boolean>;
   submittedToolApprovalDecisionApprovalIdRef: MutableValueRef<string | undefined>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
+  clearHistoricalConversationTranscriptPage: () => void;
   chatAppRenderStore: ChatAppRenderStore;
   getActiveConversationTurn: () => ActiveConversationTurn | undefined;
   registerActiveConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
@@ -247,6 +248,7 @@ export function useChatAppAssistantTurnActions(
   });
 
   const appendQueuedSubmittedPromptToConversation = useEffectEvent((queuedChatAppPrompt: QueuedChatAppPrompt): SubmittedChatAppPrompt => {
+    input.clearHistoricalConversationTranscriptPage();
     const nextChatSessionState = appendSubmittedUserPromptToConversation({
       chatSessionState: input.latestChatSessionStateRef.current,
       submittedPromptText: queuedChatAppPrompt.submittedPromptText,
@@ -263,6 +265,7 @@ export function useChatAppAssistantTurnActions(
   });
 
   const streamAssistantResponseForSubmittedPrompt = useEffectEvent(async (submittedPrompt: SubmittedChatAppPrompt): Promise<void> => {
+    input.clearHistoricalConversationTranscriptPage();
     let nextSubmittedPrompt: SubmittedChatAppPrompt | undefined = submittedPrompt;
     try {
       while (nextSubmittedPrompt) {

@@ -9,7 +9,7 @@ export const DEFAULT_READ_ONLY_TOOL_CALL_CONCURRENCY_LIMIT = Math.max(
   Math.min(MAXIMUM_DEFAULT_READ_ONLY_TOOL_CALL_CONCURRENCY_LIMIT, availableParallelism() * 4),
 );
 
-export type RuntimeReadOnlyToolCallConcurrencyCategory = "read" | "search" | "knowledge";
+export type RuntimeReadOnlyToolCallConcurrencyCategory = "read" | "search";
 
 type PendingReadOnlyToolCallSlotRequest = {
   readonly category: RuntimeReadOnlyToolCallConcurrencyCategory;
@@ -29,7 +29,6 @@ export class RuntimeReadOnlyToolCallConcurrencyLimiter {
   private readonly activeReadOnlyToolCallCountByCategory: ActiveReadOnlyToolCallCountByCategory = {
     read: 0,
     search: 0,
-    knowledge: 0,
   };
   private readonly pendingReadOnlyToolCallSlotRequests: PendingReadOnlyToolCallSlotRequest[] = [];
 
@@ -37,7 +36,6 @@ export class RuntimeReadOnlyToolCallConcurrencyLimiter {
     maximumConcurrentReadOnlyToolCalls?: number;
     maximumConcurrentReadToolCalls?: number;
     maximumConcurrentSearchToolCalls?: number;
-    maximumConcurrentKnowledgeToolCalls?: number;
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
   } = {}) {
     const maximumConcurrentReadOnlyToolCalls = input.maximumConcurrentReadOnlyToolCalls ?? DEFAULT_READ_ONLY_TOOL_CALL_CONCURRENCY_LIMIT;
@@ -46,7 +44,6 @@ export class RuntimeReadOnlyToolCallConcurrencyLimiter {
     const maximumConcurrentReadOnlyToolCallsByCategory: ReadOnlyToolCallConcurrencyLimitByCategory = {
       read: input.maximumConcurrentReadToolCalls ?? maximumConcurrentReadOnlyToolCalls,
       search: input.maximumConcurrentSearchToolCalls ?? createDefaultMaximumConcurrentSearchToolCalls(maximumConcurrentReadOnlyToolCalls),
-      knowledge: input.maximumConcurrentKnowledgeToolCalls ?? createDefaultMaximumConcurrentKnowledgeToolCalls(maximumConcurrentReadOnlyToolCalls),
     };
     validateReadOnlyToolCallConcurrencyLimit(
       maximumConcurrentReadOnlyToolCallsByCategory.read,
@@ -56,11 +53,6 @@ export class RuntimeReadOnlyToolCallConcurrencyLimiter {
       maximumConcurrentReadOnlyToolCallsByCategory.search,
       "Search tool-call concurrency limit",
     );
-    validateReadOnlyToolCallConcurrencyLimit(
-      maximumConcurrentReadOnlyToolCallsByCategory.knowledge,
-      "Knowledge tool-call concurrency limit",
-    );
-
     this.maximumConcurrentReadOnlyToolCalls = maximumConcurrentReadOnlyToolCalls;
     this.maximumConcurrentReadOnlyToolCallsByCategory = maximumConcurrentReadOnlyToolCallsByCategory;
     this.diagnosticLogger = input.diagnosticLogger;
@@ -168,9 +160,6 @@ export class RuntimeReadOnlyToolCallConcurrencyLimiter {
       activeSearchToolCallCount: this.activeReadOnlyToolCallCountByCategory.search,
       pendingSearchToolCallCount: this.countPendingReadOnlyToolCallSlotsByCategory("search"),
       maximumConcurrentSearchToolCalls: this.maximumConcurrentReadOnlyToolCallsByCategory.search,
-      activeKnowledgeToolCallCount: this.activeReadOnlyToolCallCountByCategory.knowledge,
-      pendingKnowledgeToolCallCount: this.countPendingReadOnlyToolCallSlotsByCategory("knowledge"),
-      maximumConcurrentKnowledgeToolCalls: this.maximumConcurrentReadOnlyToolCallsByCategory.knowledge,
     });
   }
 
@@ -189,18 +178,10 @@ function createDefaultMaximumConcurrentSearchToolCalls(maximumConcurrentReadOnly
   return Math.min(maximumConcurrentReadOnlyToolCalls, Math.max(2, Math.floor(maximumConcurrentReadOnlyToolCalls / 4)));
 }
 
-function createDefaultMaximumConcurrentKnowledgeToolCalls(maximumConcurrentReadOnlyToolCalls: number): number {
-  return Math.min(maximumConcurrentReadOnlyToolCalls, Math.max(2, Math.floor(maximumConcurrentReadOnlyToolCalls / 2)));
-}
-
 function inferReadOnlyToolCallConcurrencyCategory(
   diagnosticFields: BuliDiagnosticLogFields | undefined,
 ): RuntimeReadOnlyToolCallConcurrencyCategory {
   const toolName = diagnosticFields?.["toolName"];
-  if (toolName === "locate_codebase_symbols") {
-    return "knowledge";
-  }
-
   if (toolName === "glob" || toolName === "grep") {
     return "search";
   }

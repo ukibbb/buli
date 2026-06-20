@@ -89,6 +89,16 @@ const customToolDefinition = {
   executor: async () => ({ outcomeKind: "completed", toolResultText: "done" }),
 } satisfies CustomAssistantToolDefinition;
 
+const autoConcurrentCustomToolDefinition = {
+  ...customToolDefinition,
+  executionPolicy: {
+    workspaceEffectKind: "read_only",
+    isAutoConcurrent: true,
+    isAutoApprovedReadOnly: true,
+    clearsSameTurnReadCoverageBeforeExecution: false,
+  },
+} satisfies CustomAssistantToolDefinition;
+
 test("groupRequestedToolCallsForExecution groups adjacent read-only calls", () => {
   expect(groupRequestedToolCallsForExecution([readRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall])).toEqual([
     {
@@ -174,5 +184,33 @@ test("groupRequestedToolCallsForExecution keeps registered custom tools serial",
     { groupKind: "serial", requestedToolCall: readRequestedToolCall },
     { groupKind: "serial", requestedToolCall: customRequestedToolCall },
     { groupKind: "serial", requestedToolCall: grepRequestedToolCall },
+  ]);
+});
+
+test("groupRequestedToolCallsForExecution groups safe auto-concurrent custom tools with adjacent concurrent calls", () => {
+  const assistantToolRegistry = createDefaultAssistantToolRegistry({
+    additionalCustomTools: [autoConcurrentCustomToolDefinition],
+  });
+
+  expect(groupRequestedToolCallsForExecution([
+    readRequestedToolCall,
+    customRequestedToolCall,
+    grepRequestedToolCall,
+    taskRequestedToolCall,
+  ], assistantToolRegistry)).toEqual([
+    {
+      groupKind: "auto_concurrent",
+      requestedToolCalls: [readRequestedToolCall, customRequestedToolCall, grepRequestedToolCall, taskRequestedToolCall],
+    },
+  ]);
+});
+
+test("groupRequestedToolCallsForExecution keeps singleton auto-concurrent custom tool calls serial", () => {
+  const assistantToolRegistry = createDefaultAssistantToolRegistry({
+    additionalCustomTools: [autoConcurrentCustomToolDefinition],
+  });
+
+  expect(groupRequestedToolCallsForExecution([customRequestedToolCall], assistantToolRegistry)).toEqual([
+    { groupKind: "serial", requestedToolCall: customRequestedToolCall },
   ]);
 });

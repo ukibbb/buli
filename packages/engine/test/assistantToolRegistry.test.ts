@@ -26,6 +26,7 @@ function createRegistryTestCustomTool(input: {
   isAutoConcurrent?: boolean;
   isAutoApprovedReadOnly?: boolean;
   workspaceEffectKind?: "read_only" | "workspace_change_possible";
+  approvalPolicy?: CustomAssistantToolDefinition["approvalPolicy"] | undefined;
   resolveProviderToolDefinitionForTurn?: CustomAssistantToolDefinition["resolveProviderToolDefinitionForTurn"] | undefined;
 } = {}): CustomAssistantToolDefinition {
   const toolName = input.toolName ?? "workspace_summary";
@@ -44,6 +45,7 @@ function createRegistryTestCustomTool(input: {
     ...(input.resolveProviderToolDefinitionForTurn
       ? { resolveProviderToolDefinitionForTurn: input.resolveProviderToolDefinitionForTurn }
       : {}),
+    ...(input.approvalPolicy ? { approvalPolicy: input.approvalPolicy } : {}),
     executionPolicy: {
       workspaceEffectKind: input.workspaceEffectKind ?? "read_only",
       isAutoConcurrent: input.isAutoConcurrent ?? false,
@@ -248,14 +250,52 @@ test("assistant tool registry requires approval by default for custom workspace-
   });
 });
 
-test("assistant tool registry rejects custom tool collisions and auto-concurrent custom policies", () => {
+test("assistant tool registry rejects custom tool collisions", () => {
   expect(() => createDefaultAssistantToolRegistry({
     additionalCustomTools: [createRegistryTestCustomTool({ toolName: "read" })],
   })).toThrow("Custom assistant tool cannot use built-in tool name: read");
+});
+
+test("assistant tool registry accepts safe custom auto-concurrent read-only policies", () => {
+  const customTool = createRegistryTestCustomTool({
+    isAutoConcurrent: true,
+    isAutoApprovedReadOnly: true,
+  });
+  const registry = createDefaultAssistantToolRegistry({ additionalCustomTools: [customTool] });
+
+  expect(registry.resolveCustomToolDefinition("workspace_summary").executionPolicy).toEqual({
+    workspaceEffectKind: "read_only",
+    isAutoConcurrent: true,
+    isAutoApprovedReadOnly: true,
+    clearsSameTurnReadCoverageBeforeExecution: false,
+  });
+  expect(registry.resolveCustomToolApprovalPolicy(customTool)).toEqual({ approvalPolicyKind: "auto_approve" });
+});
+
+test("assistant tool registry rejects inconsistent custom execution policy combinations", () => {
   expect(() => createDefaultAssistantToolRegistry({
     additionalCustomTools: [createRegistryTestCustomTool({ isAutoConcurrent: true })],
-  })).toThrow("Custom assistant tool cannot be auto-concurrent in this slice: workspace_summary");
+  })).toThrow(
+    "Custom assistant tool cannot be auto-concurrent unless it is auto-approved read-only: workspace_summary",
+  );
   expect(() => createDefaultAssistantToolRegistry({
-    additionalCustomTools: [createRegistryTestCustomTool({ isAutoApprovedReadOnly: true })],
-  })).toThrow("Custom assistant tool cannot be auto-approved read-only in this slice: workspace_summary");
+    additionalCustomTools: [createRegistryTestCustomTool({
+      isAutoApprovedReadOnly: true,
+      workspaceEffectKind: "workspace_change_possible",
+    })],
+  })).toThrow(
+    "Custom assistant tool cannot be auto-approved read-only unless its workspace effect is read-only: workspace_summary",
+  );
+  expect(() => createDefaultAssistantToolRegistry({
+    additionalCustomTools: [createRegistryTestCustomTool({
+      isAutoConcurrent: true,
+      isAutoApprovedReadOnly: true,
+      approvalPolicy: {
+        approvalPolicyKind: "requires_user_approval",
+        riskExplanation: "External summary lookup requires approval.",
+      },
+    })],
+  })).toThrow(
+    "Custom assistant tool cannot be auto-approved read-only when it requires user approval: workspace_summary",
+  );
 });

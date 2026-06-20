@@ -22,7 +22,6 @@ import {
 } from "./chatScreenViewModel.ts";
 import {
   DEFAULT_VISIBLE_CONVERSATION_MESSAGE_COUNT,
-  revealOlderConversationTranscriptMessages,
 } from "./conversationTranscriptWindow.ts";
 import { useChatScreenKeyboardInputActions } from "./useChatScreenKeyboardInputActions.ts";
 import { useConversationTranscriptViewport } from "./useConversationTranscriptViewport.ts";
@@ -69,6 +68,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     initialConversationSessionEntries: chatScreenProps.initialConversationSessionEntries,
     loadInitialConversationSessionEntries: chatScreenProps.loadInitialConversationSessionEntries,
     onInitialConversationSessionEntriesHydrated: chatScreenProps.onInitialConversationSessionEntriesHydrated,
+    loadConversationTranscriptEntryRecords: chatScreenProps.loadConversationTranscriptEntryRecords,
     loadAvailableAssistantModels: chatScreenProps.loadAvailableAssistantModels,
     loadPromptContextCandidates: chatScreenProps.loadPromptContextCandidates,
     loadConversationSessions: chatScreenProps.loadConversationSessions,
@@ -168,14 +168,6 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     visibleConversationMessageIds,
     visibleConversationMessagePartCount,
   } = stableTranscriptViewModel.transcriptViewModel;
-  const revealOlderConversationMessages = useEffectEvent(() => {
-    setRequestedVisibleConversationMessageCount((currentVisibleConversationMessageCount) =>
-      revealOlderConversationTranscriptMessages({
-        currentVisibleConversationMessageCount,
-        totalConversationMessageCount: conversationTranscriptWindow.totalConversationMessageCount,
-      })
-    );
-  });
   const approvePendingToolApprovalRequest = useEffectEvent((): void => {
     chatAppController.submitPendingToolApprovalDecision({ decision: "approved", source: "button" });
   });
@@ -277,21 +269,34 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     onPendingToolApprovalApproved: approvePendingToolApprovalRequest,
     onPendingToolApprovalDenied: denyPendingToolApprovalRequest,
   };
+  const isConversationTranscriptPageNavigationDisabled = chatAppController.conversationTranscriptPageState.isNavigationLoading ||
+    chatAppController.interactionStatusState.conversationTurnStatus !== "waiting_for_user_input" ||
+    chatAppController.interactionStatusState.conversationSessionCompactionStatus.step === "compacting";
+  const conversationTranscriptRenderSourceProps = chatAppController.conversationTranscriptPageState.visibleConversationMessageRows
+    ? { visibleConversationMessageRows: chatAppController.conversationTranscriptPageState.visibleConversationMessageRows }
+    : {
+      chatAppRenderStore: chatAppController.chatAppRenderStore,
+      visibleConversationMessageIds,
+    };
 
   const currentMainAreaProps: ChatScreenMainAreaProps = {
+    ...conversationTranscriptRenderSourceProps,
     isCommandHelpModalVisible: chatAppController.transcriptState.isCommandHelpModalVisible,
     reasoningSummaryDisplayMode: chatAppController.transcriptState.reasoningSummaryDisplayMode,
     inputPanelAccentColor,
     availableCommandHelpModalRowCount,
     terminalSizeTierForChatScreen,
     availableChatSlashCommands,
-    chatAppRenderStore: chatAppController.chatAppRenderStore,
-    visibleConversationMessageIds,
-    hiddenOlderConversationMessageCount: conversationTranscriptWindow.hiddenOlderConversationMessageCount,
-    olderConversationMessageRevealCount: conversationTranscriptWindow.olderConversationMessageRevealCount,
+    hasOlderConversationTranscriptPage: chatAppController.conversationTranscriptPageState.hasOlderPage,
+    hasNewerConversationTranscriptPage: chatAppController.conversationTranscriptPageState.hasNewerPage,
+    isLatestConversationTranscriptPage: chatAppController.conversationTranscriptPageState.isLatestPage,
+    isConversationTranscriptPageNavigationDisabled,
+    isConversationTranscriptPageNavigationLoading: chatAppController.conversationTranscriptPageState.isNavigationLoading,
     pendingToolApprovalDecisionCallbacks,
     conversationMessageScrollBoxRef,
-    onRevealOlderConversationMessages: revealOlderConversationMessages,
+    onLoadOlderConversationTranscriptPage: chatAppController.loadOlderConversationTranscriptPage,
+    onLoadNewerConversationTranscriptPage: chatAppController.loadNewerConversationTranscriptPage,
+    onJumpToLatestConversationTranscriptPage: chatAppController.jumpToLatestConversationTranscriptPage,
     onCommandHelpCloseRequested: chatAppController.hideCommandHelpModalInChatApp,
   };
   const currentStatusStackProps: LiveInteractionStatusStackProps = {
@@ -308,7 +313,9 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     nextValue: currentMainAreaProps,
     equalityByProperty: {
       pendingToolApprovalDecisionCallbacks: () => true,
-      onRevealOlderConversationMessages: () => true,
+      onLoadOlderConversationTranscriptPage: () => true,
+      onLoadNewerConversationTranscriptPage: () => true,
+      onJumpToLatestConversationTranscriptPage: () => true,
       onCommandHelpCloseRequested: () => true,
     },
   });

@@ -9,7 +9,6 @@ import type {
   ToolCallGrepDetail,
   ToolCallPatchDetail,
   ToolCallPatchManyDetail,
-  ToolCallLocateCodebaseSymbolsDetail,
   ToolCallReadDetail,
   ToolCallRecordWorkflowHandoffDetail,
   ToolCallSkillDetail,
@@ -36,7 +35,6 @@ export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNa
   "read",
   "glob",
   "grep",
-  "locate_codebase_symbols",
   "edit",
   "edit_many",
   "patch",
@@ -46,9 +44,9 @@ export const ASSISTANT_TOOL_REQUEST_NAMES = defineCompleteAssistantToolRequestNa
   "skill",
   "record_workflow_handoff",
 ] as const);
-export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "locate_codebase_symbols"] as const satisfies readonly AssistantToolRequestName[];
+export const WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES = ["read", "glob", "grep"] as const satisfies readonly AssistantToolRequestName[];
 export const FILE_MUTATION_TOOL_REQUEST_NAMES = ["edit", "edit_many", "patch", "patch_many", "write"] as const satisfies readonly AssistantToolRequestName[];
-export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"] as const satisfies readonly AssistantToolRequestName[];
+export const READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES = ["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"] as const satisfies readonly AssistantToolRequestName[];
 export const RENDER_ONLY_TOOL_DETAIL_NAMES = ["todowrite", "web_search"] as const satisfies readonly ToolCallDetailName[];
 
 export type AssistantToolRequestName = (typeof ASSISTANT_TOOL_REQUEST_NAMES)[number];
@@ -131,12 +129,6 @@ export function isSkillToolCallRequest(
   return toolCallRequest.toolName === "skill";
 }
 
-export function isLocateCodebaseSymbolsToolCallRequest(
-  toolCallRequest: ToolCallRequest,
-): toolCallRequest is ToolCallRequestByName<"locate_codebase_symbols"> {
-  return toolCallRequest.toolName === "locate_codebase_symbols";
-}
-
 export function isRecordWorkflowHandoffToolCallRequest(
   toolCallRequest: ToolCallRequest,
 ): toolCallRequest is ToolCallRequestByName<"record_workflow_handoff"> {
@@ -170,9 +162,6 @@ export function createStartedToolCallDetailFromRequest(toolCallRequest: ToolCall
   }
   if (toolCallRequest.toolName === "grep") {
     return createStartedGrepToolCallDetail(toolCallRequest);
-  }
-  if (toolCallRequest.toolName === "locate_codebase_symbols") {
-    return createStartedLocateCodebaseSymbolsToolCallDetail(toolCallRequest);
   }
   if (toolCallRequest.toolName === "edit") {
     return createStartedEditToolCallDetail(toolCallRequest);
@@ -231,20 +220,6 @@ function createStartedGrepToolCallDetail(toolCallRequest: ToolCallRequestByName<
     toolName: "grep",
     searchPattern: toolCallRequest.regexPattern,
     ...(toolCallRequest.contextLineCount !== undefined ? { contextLineCount: toolCallRequest.contextLineCount } : {}),
-  };
-}
-
-function createStartedLocateCodebaseSymbolsToolCallDetail(
-  toolCallRequest: ToolCallRequestByName<"locate_codebase_symbols">,
-): ToolCallLocateCodebaseSymbolsDetail {
-  return {
-    toolName: "locate_codebase_symbols",
-    ...(toolCallRequest.symbolNames !== undefined
-      ? { symbolNames: [...toolCallRequest.symbolNames] }
-      : {}),
-    ...(toolCallRequest.filePaths !== undefined
-      ? { filePaths: [...toolCallRequest.filePaths] }
-      : {}),
   };
 }
 

@@ -53,6 +53,11 @@ type ConversationSessionHydrationInput = {
   modelSelection?: ConversationSessionModelSelection | undefined;
 };
 
+type LoadLatestConversationTranscriptPageIntoChatApp = (input: {
+  conversationSessionId: string;
+  modelSelection?: ConversationSessionModelSelection | undefined;
+}) => Promise<void>;
+
 export type UseChatAppConversationSessionActionsInput = {
   loadConversationSessions?: (() => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[]) | undefined;
   switchConversationSession?:
@@ -69,6 +74,8 @@ export type UseChatAppConversationSessionActionsInput = {
     | ((input: ConversationAutoCompactionRequest) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult)
     | undefined;
   onConversationCleared?: (() => ConversationSessionSwitchResult | void) | undefined;
+  loadLatestConversationTranscriptPageIntoChatApp?: LoadLatestConversationTranscriptPageIntoChatApp | undefined;
+  clearHistoricalConversationTranscriptPage: () => void;
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   latestActiveConversationSessionIdRef: MutableValueRef<string | undefined>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
@@ -200,6 +207,17 @@ export function useChatAppConversationSessionActions(
       }
       input.latestActiveConversationSessionIdRef.current = switchedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(switchedConversationSession.conversationSessionId);
+      input.clearHistoricalConversationTranscriptPage();
+      if (input.loadLatestConversationTranscriptPageIntoChatApp) {
+        await input.loadLatestConversationTranscriptPageIntoChatApp({
+          conversationSessionId: switchedConversationSession.conversationSessionId,
+          ...(switchedConversationSession.modelSelection
+            ? { modelSelection: switchedConversationSession.modelSelection }
+            : {}),
+        });
+        return;
+      }
+
       hydrateConversationSessionIntoChatApp({
         conversationSessionEntries: switchedConversationSession.conversationSessionEntries,
         ...(switchedConversationSession.modelSelection
@@ -262,6 +280,29 @@ export function useChatAppConversationSessionActions(
       );
       input.latestActiveConversationSessionIdRef.current = deletedConversationSession.activeConversationSessionId;
       input.setActiveConversationSessionId(deletedConversationSession.activeConversationSessionId);
+      input.clearHistoricalConversationTranscriptPage();
+      if (input.loadLatestConversationTranscriptPageIntoChatApp) {
+        await input.loadLatestConversationTranscriptPageIntoChatApp({
+          conversationSessionId: deletedConversationSession.activeConversationSessionId,
+          ...(deletedConversationSession.activeConversationSessionModelSelection
+            ? { modelSelection: deletedConversationSession.activeConversationSessionModelSelection }
+            : {}),
+        });
+        startTransition(() => {
+          input.setChatSessionState((currentChatSessionState) => {
+            const nextChatSessionState = showAvailableConversationSessionsForSelection(
+              currentChatSessionState,
+              deletedConversationSession.conversationSessions,
+              deletedConversationSession.activeConversationSessionId,
+              { highlightedConversationSessionIndex: nextHighlightedConversationSessionIndex },
+            );
+            input.latestChatSessionStateRef.current = nextChatSessionState;
+            return nextChatSessionState;
+          });
+        });
+        return;
+      }
+
       startTransition(() => {
         input.setChatSessionState((currentChatSessionState) => {
           const hydratedChatSessionState = hydrateConversationTranscriptFromSessionEntries(
@@ -352,7 +393,14 @@ export function useChatAppConversationSessionActions(
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
         return;
       }
-      hydrateConversationSessionEntriesIntoChatApp(compactedConversationSession.conversationSessionEntries);
+      input.clearHistoricalConversationTranscriptPage();
+      if (input.loadLatestConversationTranscriptPageIntoChatApp && input.latestActiveConversationSessionIdRef.current) {
+        await input.loadLatestConversationTranscriptPageIntoChatApp({
+          conversationSessionId: input.latestActiveConversationSessionIdRef.current,
+        });
+      } else {
+        hydrateConversationSessionEntriesIntoChatApp(compactedConversationSession.conversationSessionEntries);
+      }
       input.setConversationSessionCompactionStatus({ step: "idle" });
     } catch (error) {
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
@@ -416,7 +464,14 @@ export function useChatAppConversationSessionActions(
         return undefined;
       }
       if (autoCompactionResult.didCompact) {
-        hydrateConversationSessionEntriesIntoChatApp(autoCompactionResult.conversationSessionEntries);
+        input.clearHistoricalConversationTranscriptPage();
+        if (input.loadLatestConversationTranscriptPageIntoChatApp && input.latestActiveConversationSessionIdRef.current) {
+          await input.loadLatestConversationTranscriptPageIntoChatApp({
+            conversationSessionId: input.latestActiveConversationSessionIdRef.current,
+          });
+        } else {
+          hydrateConversationSessionEntriesIntoChatApp(autoCompactionResult.conversationSessionEntries);
+        }
       } else {
         removeConversationCompactionProgressFromChatApp();
       }
@@ -441,6 +496,7 @@ export function useChatAppConversationSessionActions(
     latestConversationSessionMutationRequestSequenceRef.current += 1;
     input.setConversationSessionCompactionStatus({ step: "idle" });
     const clearedConversationSession = input.onConversationCleared?.();
+    input.clearHistoricalConversationTranscriptPage();
     if (clearedConversationSession) {
       input.latestActiveConversationSessionIdRef.current = clearedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(clearedConversationSession.conversationSessionId);

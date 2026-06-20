@@ -7,7 +7,6 @@
   },
   "dependencies": {
     "@buli/chat-session-state": "workspace:*",
-    "@buli/codebase-knowledge": "workspace:*",
     "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
     "@buli/openai": "workspace:*"

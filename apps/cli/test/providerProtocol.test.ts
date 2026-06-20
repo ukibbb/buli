@@ -477,6 +477,16 @@ function createConversationSessionStoreStub(input: {
       conversationSessionEntries: initialConversationSessionEntries,
     }),
     loadConversationSessionEntries: () => initialConversationSessionEntries,
+    loadConversationSessionEntryRecords: (request) => ({
+      conversationSessionId: request.conversationSessionId ?? "session-a",
+      entryRecords: initialConversationSessionEntries.map((conversationSessionEntry, entrySequence) => ({
+        entrySequence,
+        conversationSessionEntry,
+      })),
+      hasOlderEntries: false,
+      hasNewerEntries: false,
+      latestCompactionSummaryEntrySequence: undefined,
+    }),
     appendConversationSessionEntry: () => {},
     saveActiveConversationSessionModelSelection: (modelSelection) => {
       activeModelSelection = modelSelection;

@@ -21,8 +21,6 @@ export const MAX_TASK_TOOL_DESCRIPTION_LENGTH = 2_000;
 export const MAX_TASK_TOOL_PROMPT_LENGTH = 100_000;
 export const MAX_SKILL_NAME_LENGTH = 64;
 export const SKILL_NAME_PATTERN_TEXT = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
-export const MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT = 50;
-export const MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH = 512;
 
 const WorkspacePathSchema = z.string().min(1).max(MAX_TOOL_CALL_PATH_LENGTH);
 const InspectionQuestionSchema = z.string().min(1).max(MAX_INSPECTION_QUESTION_LENGTH);
@@ -34,7 +32,6 @@ const BUILT_IN_ASSISTANT_TOOL_REQUEST_NAMES = [
   "read",
   "glob",
   "grep",
-  "locate_codebase_symbols",
   "edit",
   "edit_many",
   "patch",
@@ -202,17 +199,6 @@ export const RecordWorkflowHandoffToolCallRequestSchema = z
   })
   .strict();
 
-export const LocateCodebaseSymbolsToolCallRequestSchema = z
-  .object({
-    toolName: z.literal("locate_codebase_symbols"),
-    symbolNames: z
-      .array(z.string().min(1).max(MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH))
-      .min(1)
-      .max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT),
-    filePaths: z.array(WorkspacePathSchema).max(MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT).optional(),
-  })
-  .strict();
-
 export const AssistantToolCallRequestSchema = z.discriminatedUnion("toolName", [
   BashToolCallRequestSchema,
   ReadToolCallRequestSchema,
@@ -226,7 +212,6 @@ export const AssistantToolCallRequestSchema = z.discriminatedUnion("toolName", [
   TaskToolCallRequestSchema,
   SkillToolCallRequestSchema,
   RecordWorkflowHandoffToolCallRequestSchema,
-  LocateCodebaseSymbolsToolCallRequestSchema,
 ]);
 
 export const CustomToolCallRequestSchema = z
@@ -254,7 +239,6 @@ export type WriteToolCallRequest = z.infer<typeof WriteToolCallRequestSchema>;
 export type TaskToolCallRequest = z.infer<typeof TaskToolCallRequestSchema>;
 export type SkillToolCallRequest = z.infer<typeof SkillToolCallRequestSchema>;
 export type RecordWorkflowHandoffToolCallRequest = z.infer<typeof RecordWorkflowHandoffToolCallRequestSchema>;
-export type LocateCodebaseSymbolsToolCallRequest = z.infer<typeof LocateCodebaseSymbolsToolCallRequestSchema>;
 export type AssistantToolCallRequest = z.infer<typeof AssistantToolCallRequestSchema>;
 export type CustomToolName = z.infer<typeof CustomToolNameSchema>;
 export type CustomToolCallRequest = z.infer<typeof CustomToolCallRequestSchema>;

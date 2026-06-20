@@ -1255,12 +1255,6 @@ function summarizeToolCallPatternForDiagnostics(toolCallRequest: ToolCallRequest
         hasSearchPath: toolCallRequest.searchPath !== undefined,
         hasIncludeGlobPattern: toolCallRequest.includeGlobPattern !== undefined,
       };
-    case "locate_codebase_symbols":
-      return {
-        toolName: toolCallRequest.toolName,
-        symbolNameCount: toolCallRequest.symbolNames.length,
-        filePathCount: toolCallRequest.filePaths?.length ?? 0,
-      };
     case "edit":
       return {
         toolName: toolCallRequest.toolName,

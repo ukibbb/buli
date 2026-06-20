@@ -4,6 +4,7 @@ import {
   WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES,
   ProviderToolDefinitionSchema,
   isAssistantToolRequestName,
+  isCustomToolCallRequest,
   isFileMutationToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
   type AssistantToolRequestName,
@@ -108,6 +109,8 @@ export type CustomAssistantToolDefinition = {
 
 export type RegisteredAssistantToolDefinition = AssistantToolDefinition | CustomAssistantToolDefinition;
 
+export type AutoApprovedReadOnlyToolCallRequest = WorkspaceInspectionToolCallRequest | CustomToolCallRequest;
+
 export type AssistantToolRegistryInput = {
   tools?: readonly AssistantToolDefinition[] | undefined;
   customTools?: readonly CustomAssistantToolDefinition[] | undefined;
@@ -133,6 +136,12 @@ export class AssistantToolRegistry {
     if (this.hasRegisteredToolName(tool.toolName)) {
       throw new Error(`Assistant tool is already registered: ${tool.toolName}`);
     }
+
+    assertAssistantToolExecutionPolicyIsValid({
+      toolName: tool.toolName,
+      toolKind: "built-in",
+      executionPolicy: tool.executionPolicy,
+    });
 
     this.#builtInToolByName.set(tool.toolName, tool);
   }
@@ -204,9 +213,13 @@ export class AssistantToolRegistry {
 
   isAutoApprovedReadOnlyToolCallRequest(
     toolCallRequest: ToolCallRequest,
-  ): toolCallRequest is WorkspaceInspectionToolCallRequest {
-    return (this.#resolveToolDefinitionIfRegistered(toolCallRequest.toolName)?.executionPolicy.isAutoApprovedReadOnly ?? false) &&
-      isWorkspaceInspectionToolCallRequest(toolCallRequest);
+  ): toolCallRequest is AutoApprovedReadOnlyToolCallRequest {
+    const registeredToolDefinition = this.#resolveToolDefinitionIfRegistered(toolCallRequest.toolName);
+    if (!registeredToolDefinition?.executionPolicy.isAutoApprovedReadOnly) {
+      return false;
+    }
+
+    return isWorkspaceInspectionToolCallRequest(toolCallRequest) || isCustomToolCallRequest(toolCallRequest);
   }
 
   shouldClearSameTurnReadCoverageBeforeExecution(toolCallRequest: ToolCallRequest): boolean {
@@ -249,17 +262,32 @@ export class AssistantToolRegistry {
       throw new Error(`Assistant tool is already registered: ${customTool.toolName}`);
     }
 
+    assertAssistantToolExecutionPolicyIsValid({
+      toolName: customTool.toolName,
+      toolKind: "custom",
+      executionPolicy: customTool.executionPolicy,
+    });
+
+    if (customTool.executionPolicy.isAutoConcurrent && !customTool.executionPolicy.isAutoApprovedReadOnly) {
+      throw new Error(
+        `Custom assistant tool cannot be auto-concurrent unless it is auto-approved read-only: ${customTool.toolName}`,
+      );
+    }
+
+    if (
+      customTool.executionPolicy.isAutoApprovedReadOnly &&
+      this.resolveCustomToolApprovalPolicy(customTool).approvalPolicyKind === "requires_user_approval"
+    ) {
+      throw new Error(
+        `Custom assistant tool cannot be auto-approved read-only when it requires user approval: ${customTool.toolName}`,
+      );
+    }
+
     const parsedProviderToolDefinition = ProviderToolDefinitionSchema.parse(customTool.providerToolDefinition);
     if (parsedProviderToolDefinition.toolName !== customTool.toolName) {
       throw new Error(
         `Custom assistant tool provider definition name must match tool name: ${customTool.toolName}`,
       );
-    }
-    if (customTool.executionPolicy.isAutoConcurrent) {
-      throw new Error(`Custom assistant tool cannot be auto-concurrent in this slice: ${customTool.toolName}`);
-    }
-    if (customTool.executionPolicy.isAutoApprovedReadOnly) {
-      throw new Error(`Custom assistant tool cannot be auto-approved read-only in this slice: ${customTool.toolName}`);
     }
   }
 
@@ -303,6 +331,32 @@ export class AssistantToolRegistry {
         `Custom assistant tool provider definition name must match tool name: ${input.customToolName}`,
       );
     }
+  }
+}
+
+function assertAssistantToolExecutionPolicyIsValid(input: {
+  toolName: string;
+  toolKind: "built-in" | "custom";
+  executionPolicy: AssistantToolExecutionPolicy;
+}): void {
+  const toolLabel = input.toolKind === "custom" ? "Custom assistant tool" : "Assistant tool";
+
+  if (
+    input.executionPolicy.isAutoApprovedReadOnly &&
+    input.executionPolicy.workspaceEffectKind !== "read_only"
+  ) {
+    throw new Error(
+      `${toolLabel} cannot be auto-approved read-only unless its workspace effect is read-only: ${input.toolName}`,
+    );
+  }
+
+  if (
+    input.executionPolicy.isAutoApprovedReadOnly &&
+    input.executionPolicy.clearsSameTurnReadCoverageBeforeExecution
+  ) {
+    throw new Error(
+      `${toolLabel} cannot be auto-approved read-only and clear same-turn read coverage: ${input.toolName}`,
+    );
   }
 }
 
@@ -356,7 +410,8 @@ export function createDefaultAssistantToolRegistry(input: {
 export function isToolCallRequestAutoApprovedReadOnlyWithDefaultRegistry(
   toolCallRequest: ToolCallRequest,
 ): toolCallRequest is WorkspaceInspectionToolCallRequest {
-  return createDefaultAssistantToolRegistry().isAutoApprovedReadOnlyToolCallRequest(toolCallRequest);
+  return createDefaultAssistantToolRegistry().isAutoApprovedReadOnlyToolCallRequest(toolCallRequest) &&
+    isWorkspaceInspectionToolCallRequest(toolCallRequest);
 }
 
 export function isToolCallRequestWorkspaceChangingWithDefaultRegistry(toolCallRequest: ToolCallRequest): boolean {

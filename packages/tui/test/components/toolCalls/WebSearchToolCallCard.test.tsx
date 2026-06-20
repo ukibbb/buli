@@ -25,7 +25,7 @@ describe("WebSearchToolCallCard", () => {
     expect(frame).toContain("searching");
   });
 
-  test("completed_shows_source_and_image_counts", async () => {
+  test("completed_shows_sources_results_counts_without_snippet_artifacts", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <WebSearchToolCallCard
         renderState="completed"
@@ -45,7 +45,7 @@ describe("WebSearchToolCallCard", () => {
               resultKind: "text",
               resultTitle: "OpenTUI release guide",
               resultUrl: "https://example.test/releases/guide",
-              resultSnippet: "Release notes and migration details for OpenTUI.",
+              resultSnippet: "L1602: Hidden page excerpt <cite|42|docs.example> should stay hidden.",
             },
           ],
           imageResultCount: 1,
@@ -66,7 +66,10 @@ describe("WebSearchToolCallCard", () => {
     expect(frame).toContain("OpenTUI docs");
     expect(frame).toContain("https://example.test/releases");
     expect(frame).toContain("OpenTUI release guide");
-    expect(frame).toContain("Release notes and migration details");
+    expect(frame).toContain("https://example.test/releases/guide");
+    expect(frame).not.toContain("L1602");
+    expect(frame).not.toContain("<cite|");
+    expect(frame).not.toContain("should stay hidden");
   });
 
   test("failed_shows_error_text", async () => {

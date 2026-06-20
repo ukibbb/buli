@@ -137,7 +137,6 @@ export const IMPLEMENTATION_ASSISTANT_MODE_TOOL_REQUEST_NAMES = [
   "read",
   "glob",
   "grep",
-  "locate_codebase_symbols",
   "edit",
   "patch",
   "write",

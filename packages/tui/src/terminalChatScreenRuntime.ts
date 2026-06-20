@@ -59,6 +59,7 @@ export type RenderChatScreenInTerminalInput = {
   initialConversationSessionEntries?: ChatScreenProps["initialConversationSessionEntries"];
   loadInitialConversationSessionEntries?: ChatScreenProps["loadInitialConversationSessionEntries"];
   onInitialConversationSessionEntriesHydrated?: ChatScreenProps["onInitialConversationSessionEntriesHydrated"];
+  loadConversationTranscriptEntryRecords?: ChatScreenProps["loadConversationTranscriptEntryRecords"];
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
   loadPromptContextCandidates: ChatScreenProps["loadPromptContextCandidates"];
   loadConversationSessions?: ChatScreenProps["loadConversationSessions"];
@@ -250,6 +251,9 @@ export async function renderChatScreenInTerminalWithRuntime<
           : {}),
         ...(input.onInitialConversationSessionEntriesHydrated !== undefined
           ? { onInitialConversationSessionEntriesHydrated: input.onInitialConversationSessionEntriesHydrated }
+          : {}),
+        ...(input.loadConversationTranscriptEntryRecords !== undefined
+          ? { loadConversationTranscriptEntryRecords: input.loadConversationTranscriptEntryRecords }
           : {}),
         ...(input.selectedModelDefaultReasoningEffort !== undefined
           ? { selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort }

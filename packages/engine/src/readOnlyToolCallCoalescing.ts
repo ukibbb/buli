@@ -1,7 +1,6 @@
 import {
   type GlobToolCallRequest,
   type GrepToolCallRequest,
-  type LocateCodebaseSymbolsToolCallRequest,
   type ReadToolCallRequest,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
@@ -41,10 +40,6 @@ export function createReadOnlyToolCallExecutionKey(toolCallRequest: WorkspaceIns
     return createGrepToolCallExecutionKey(toolCallRequest);
   }
 
-  if (toolCallRequest.toolName === "locate_codebase_symbols") {
-    return createLocateCodebaseSymbolsToolCallExecutionKey(toolCallRequest);
-  }
-
   return assertUnhandledWorkspaceInspectionToolCallRequest(toolCallRequest);
 }
 
@@ -73,24 +68,6 @@ function createGrepToolCallExecutionKey(grepToolCallRequest: GrepToolCallRequest
     grepToolCallRequest.includeGlobPattern ?? null,
     grepToolCallRequest.contextLineCount ?? null,
   ]);
-}
-
-function createLocateCodebaseSymbolsToolCallExecutionKey(
-  locateCodebaseSymbolsToolCallRequest: LocateCodebaseSymbolsToolCallRequest,
-): string {
-  return JSON.stringify([
-    "locate_codebase_symbols",
-    normalizeExactSymbolLocatorHints(locateCodebaseSymbolsToolCallRequest.symbolNames),
-    normalizeExactSymbolLocatorHints(locateCodebaseSymbolsToolCallRequest.filePaths),
-  ]);
-}
-
-function normalizeExactSymbolLocatorHints(hintValues: readonly string[] | undefined): string[] {
-  if (!hintValues || hintValues.length === 0) {
-    return [];
-  }
-
-  return [...new Set(hintValues.map((hintValue) => hintValue.trim()).filter((hintValue) => hintValue.length > 0))].sort();
 }
 
 function assertUnhandledWorkspaceInspectionToolCallRequest(toolCallRequest: never): never {

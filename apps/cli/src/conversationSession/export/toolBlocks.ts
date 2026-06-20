@@ -517,10 +517,7 @@ function renderWebSearchResultListItem(webSearchResult: ToolCallWebSearchResult)
   const resultTitleAndUrl = webSearchResult.resultTitle
     ? `${webSearchResult.resultTitle} · ${webSearchResult.resultUrl}`
     : webSearchResult.resultUrl;
-  const resultSnippetHtml = webSearchResult.resultSnippet
-    ? `<div class="panel-notice">${escapeHtml(webSearchResult.resultSnippet)}</div>`
-    : "";
-  return `<li>${escapeHtml(resultTitleAndUrl)}${resultSnippetHtml}</li>`;
+  return `<li>${escapeHtml(resultTitleAndUrl)}</li>`;
 }
 
 function formatToolDisplayName(toolName: string): string {

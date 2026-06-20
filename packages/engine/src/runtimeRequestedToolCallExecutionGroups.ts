@@ -1,5 +1,6 @@
 import {
   isTaskToolCallRequest,
+  type CustomToolCallRequest,
   type ProviderRequestedToolCall,
   type TaskToolCallRequest,
   type ToolCallRequest,
@@ -9,10 +10,10 @@ import { createDefaultAssistantToolRegistry, type AssistantToolRegistry } from "
 
 export type AutoApprovedReadOnlyRequestedToolCall = {
   toolCallId: string;
-  toolCallRequest: WorkspaceInspectionToolCallRequest;
+  toolCallRequest: WorkspaceInspectionToolCallRequest | CustomToolCallRequest;
 };
 
-export type AutoConcurrentToolCallRequest = WorkspaceInspectionToolCallRequest | TaskToolCallRequest;
+export type AutoConcurrentToolCallRequest = WorkspaceInspectionToolCallRequest | TaskToolCallRequest | CustomToolCallRequest;
 
 export type AutoConcurrentRequestedToolCall = {
   toolCallId: string;

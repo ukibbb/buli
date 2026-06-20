@@ -4,7 +4,6 @@ import {
   CustomToolCallRequestSchema,
   JsonObjectSchema,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
-  MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_GREP_CONTEXT_LINE_COUNT,
   MAX_INSPECTION_QUESTION_LENGTH,
@@ -209,41 +208,6 @@ export function createGrepToolDefinition(): OpenAiFunctionToolDefinition<"grep">
         },
       },
       required: ["pattern", "path", "include", "contextLineCount", "inspectionQuestion"],
-      additionalProperties: false,
-    },
-    strict: true,
-  };
-}
-
-export function createLocateCodebaseSymbolsToolDefinition(): OpenAiFunctionToolDefinition<"locate_codebase_symbols"> {
-  return {
-    type: "function",
-    name: "locate_codebase_symbols",
-    description: "Resolve known exact symbol names to definition locations: file, kind, exported flag, start-end line span, and a precise read target. Use grep/glob for discovery first, then locate_codebase_symbols for exact definitions, then read to verify current source. filePaths are optional filters only, not file overview queries. For many names, split symbolNames into small batches and make multiple concurrent locate_codebase_symbols calls instead of one large lookup.",
-    parameters: {
-      type: "object",
-      properties: {
-        symbolNames: {
-          type: "array",
-          minItems: 1,
-          maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
-          description: "Exact function, class, type, interface, enum, or variable names to locate. Required and non-empty.",
-          items: {
-            type: "string",
-            description: "Known exact symbol name. Use grep or glob first when unsure of the spelling or case.",
-          },
-        },
-        filePaths: {
-          type: ["array", "null"],
-          maxItems: MAX_CODEBASE_KNOWLEDGE_REFERENCE_COUNT,
-          description: "Optional workspace file paths used only to filter/disambiguate symbol definitions, or null for no file filter.",
-          items: {
-            type: "string",
-            description: "Workspace-relative file path filter.",
-          },
-        },
-      },
-      required: ["symbolNames", "filePaths"],
       additionalProperties: false,
     },
     strict: true,
@@ -710,11 +674,6 @@ const openAiToolAdapterByName: { readonly [ToolName in AssistantToolRequestName]
     definition: createGrepToolDefinition(),
     parseToolCallRequest: parseGrepOpenAiToolCallRequest,
   },
-  locate_codebase_symbols: {
-    toolName: "locate_codebase_symbols",
-    definition: createLocateCodebaseSymbolsToolDefinition(),
-    parseToolCallRequest: parseLocateCodebaseSymbolsOpenAiToolCallRequest,
-  },
   edit: {
     toolName: "edit",
     definition: createEditToolDefinition(),
@@ -970,33 +929,6 @@ function parseGrepOpenAiToolCallRequest(parsedArguments: JsonObjectRecord): Tool
     ...(includeGlobPattern !== undefined ? { includeGlobPattern } : {}),
     ...(contextLineCount !== undefined ? { contextLineCount } : {}),
     ...(inspectionQuestion !== undefined ? { inspectionQuestion } : {}),
-  };
-}
-
-function parseLocateCodebaseSymbolsOpenAiToolCallRequest(
-  parsedArguments: JsonObjectRecord,
-): ToolCallRequestByName<"locate_codebase_symbols"> {
-  const symbolNames = readOptionalStringArrayToolArgument(
-    parsedArguments,
-    "symbolNames",
-    "locate_codebase_symbols",
-  );
-  const filePaths = readOptionalStringArrayToolArgument(
-    parsedArguments,
-    "filePaths",
-    "locate_codebase_symbols",
-  );
-
-  if (!symbolNames || symbolNames.length === 0) {
-    throw new Error(
-      "OpenAI function call for locate_codebase_symbols requires a non-empty symbolNames array",
-    );
-  }
-
-  return {
-    toolName: "locate_codebase_symbols",
-    symbolNames,
-    ...(filePaths !== undefined ? { filePaths } : {}),
   };
 }
 

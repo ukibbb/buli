@@ -4,7 +4,6 @@ import {
   AssistantMessagePartUpdatedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
-  isCustomToolCallDetail,
   isFileMutationToolCallRequest as isContractFileMutationToolCallRequest,
   type AssistantPrimaryAgentName,
   type AssistantResponseEvent,
@@ -13,10 +12,8 @@ import {
   type ToolCallDetail,
   type ToolCallRequest,
 } from "@buli/contracts";
-import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import type { PrimaryAssistantAgentDefinition } from "./assistantAgentRegistry.ts";
-import { logEngineDiagnosticEvent } from "./runtimeDiagnostics.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import {
@@ -63,14 +60,6 @@ type FileMutationToolCallRequestByName<ToolName extends FileMutationToolName> = 
   { toolName: ToolName }
 >;
 
-type FileMutationCodebaseRefreshMemorySnapshot = Readonly<{
-  rssBytes: number;
-  heapTotalBytes: number;
-  heapUsedBytes: number;
-  externalBytes: number;
-  arrayBuffersBytes: number;
-}>;
-
 type PrepareFileMutationToolCallInput<ToolName extends FileMutationToolName> = {
   fileMutationToolCallRequest: FileMutationToolCallRequestByName<ToolName>;
   workspaceRootPath: string;
@@ -101,7 +90,6 @@ export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;
-  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   abortSignal: AbortSignal;
   throwIfConversationTurnInterrupted: () => void;
@@ -215,12 +203,6 @@ export async function* streamAssistantResponseEventsForFileMutationToolCall(
   input.throwIfConversationTurnInterrupted();
 
   if (toolCallOutcome.outcomeKind === "completed") {
-    await refreshCodebaseKnowledgeForCompletedFileMutation({
-      workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
-      toolCallDetail: toolCallOutcome.toolCallDetail,
-      abortSignal: input.abortSignal,
-      diagnosticLogger: input.diagnosticLogger,
-    });
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: toolCallOutcome.toolCallDetail,
@@ -315,115 +297,6 @@ function resolveFileMutationToolCallPreparer<ToolName extends FileMutationToolNa
   fileMutationToolCallRequest: FileMutationToolCallRequestByName<ToolName>,
 ): FileMutationToolCallPreparer<ToolName> {
   return fileMutationToolCallPreparerByName[fileMutationToolCallRequest.toolName] as FileMutationToolCallPreparer<ToolName>;
-}
-
-async function refreshCodebaseKnowledgeForCompletedFileMutation(input: {
-  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
-  toolCallDetail: ToolCallDetail;
-  abortSignal: AbortSignal;
-  diagnosticLogger?: BuliDiagnosticLogger | undefined;
-}): Promise<void> {
-  const changedFilePaths = listChangedFilePathsFromFileMutationToolCallDetail(input.toolCallDetail);
-  if (!input.workspaceCodebaseKnowledgeIndex || changedFilePaths.length === 0) {
-    return;
-  }
-
-  try {
-    const refreshStartedAtMs = performance.now();
-    const memoryBefore = readFileMutationCodebaseRefreshMemorySnapshot();
-    await input.workspaceCodebaseKnowledgeIndex.refreshChangedFilePaths({
-      changedFilePaths,
-      abortSignal: input.abortSignal,
-    });
-    logEngineDiagnosticEvent(input.diagnosticLogger, "codebase_knowledge.file_mutation_refresh_completed", {
-      toolName: input.toolCallDetail.toolName,
-      changedFileCount: changedFilePaths.length,
-      changedFilePaths,
-      durationMs: performance.now() - refreshStartedAtMs,
-      ...createFileMutationCodebaseRefreshMemoryDiagnosticFields({
-        memoryBefore,
-        memoryAfter: readFileMutationCodebaseRefreshMemorySnapshot(),
-      }),
-    });
-  } catch (error) {
-    if (input.abortSignal.aborted) {
-      throw error;
-    }
-    logEngineDiagnosticEvent(input.diagnosticLogger, "codebase_knowledge.refresh_failed", {
-      changedFileCount: changedFilePaths.length,
-      failureExplanation: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function readFileMutationCodebaseRefreshMemorySnapshot(): FileMutationCodebaseRefreshMemorySnapshot {
-  const memoryUsage = process.memoryUsage();
-  return {
-    rssBytes: memoryUsage.rss,
-    heapTotalBytes: memoryUsage.heapTotal,
-    heapUsedBytes: memoryUsage.heapUsed,
-    externalBytes: memoryUsage.external,
-    arrayBuffersBytes: memoryUsage.arrayBuffers,
-  };
-}
-
-function createFileMutationCodebaseRefreshMemoryDiagnosticFields(input: {
-  memoryBefore: FileMutationCodebaseRefreshMemorySnapshot;
-  memoryAfter: FileMutationCodebaseRefreshMemorySnapshot;
-}): Readonly<{
-  memoryBeforeRssBytes: number;
-  memoryAfterRssBytes: number;
-  memoryDeltaRssBytes: number;
-  memoryBeforeHeapTotalBytes: number;
-  memoryAfterHeapTotalBytes: number;
-  memoryDeltaHeapTotalBytes: number;
-  memoryBeforeHeapUsedBytes: number;
-  memoryAfterHeapUsedBytes: number;
-  memoryDeltaHeapUsedBytes: number;
-  memoryBeforeExternalBytes: number;
-  memoryAfterExternalBytes: number;
-  memoryDeltaExternalBytes: number;
-  memoryBeforeArrayBuffersBytes: number;
-  memoryAfterArrayBuffersBytes: number;
-  memoryDeltaArrayBuffersBytes: number;
-}> {
-  return {
-    memoryBeforeRssBytes: input.memoryBefore.rssBytes,
-    memoryAfterRssBytes: input.memoryAfter.rssBytes,
-    memoryDeltaRssBytes: input.memoryAfter.rssBytes - input.memoryBefore.rssBytes,
-    memoryBeforeHeapTotalBytes: input.memoryBefore.heapTotalBytes,
-    memoryAfterHeapTotalBytes: input.memoryAfter.heapTotalBytes,
-    memoryDeltaHeapTotalBytes: input.memoryAfter.heapTotalBytes - input.memoryBefore.heapTotalBytes,
-    memoryBeforeHeapUsedBytes: input.memoryBefore.heapUsedBytes,
-    memoryAfterHeapUsedBytes: input.memoryAfter.heapUsedBytes,
-    memoryDeltaHeapUsedBytes: input.memoryAfter.heapUsedBytes - input.memoryBefore.heapUsedBytes,
-    memoryBeforeExternalBytes: input.memoryBefore.externalBytes,
-    memoryAfterExternalBytes: input.memoryAfter.externalBytes,
-    memoryDeltaExternalBytes: input.memoryAfter.externalBytes - input.memoryBefore.externalBytes,
-    memoryBeforeArrayBuffersBytes: input.memoryBefore.arrayBuffersBytes,
-    memoryAfterArrayBuffersBytes: input.memoryAfter.arrayBuffersBytes,
-    memoryDeltaArrayBuffersBytes: input.memoryAfter.arrayBuffersBytes - input.memoryBefore.arrayBuffersBytes,
-  };
-}
-
-function listChangedFilePathsFromFileMutationToolCallDetail(toolCallDetail: ToolCallDetail): readonly string[] {
-  if (isCustomToolCallDetail(toolCallDetail)) {
-    return [];
-  }
-
-  switch (toolCallDetail.toolName) {
-    case "edit":
-      return [toolCallDetail.editedFilePath];
-    case "edit_many":
-      return toolCallDetail.changedFiles?.map((changedFile) => changedFile.filePath) ?? [];
-    case "patch":
-    case "patch_many":
-      return toolCallDetail.changedFiles?.map((changedFile) => changedFile.filePath) ?? [];
-    case "write":
-      return [toolCallDetail.writtenFilePath];
-    default:
-      return [];
-  }
 }
 
 async function prepareEditFileMutationToolCall(

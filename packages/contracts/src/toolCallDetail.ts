@@ -14,7 +14,6 @@ const BUILT_IN_TOOL_CALL_DETAIL_NAMES = [
   "read",
   "glob",
   "grep",
-  "locate_codebase_symbols",
   "edit",
   "edit_many",
   "patch",
@@ -310,19 +309,6 @@ export const ToolCallRecordWorkflowHandoffDetailSchema = z
   .strict();
 export type ToolCallRecordWorkflowHandoffDetail = z.infer<typeof ToolCallRecordWorkflowHandoffDetailSchema>;
 
-export const ToolCallLocateCodebaseSymbolsDetailSchema = z
-  .object({
-    toolName: z.literal("locate_codebase_symbols"),
-    symbolNames: z.array(z.string().min(1)).optional(),
-    filePaths: z.array(z.string().min(1)).optional(),
-    locatedSymbolCount: z.number().int().nonnegative().optional(),
-    notFoundSymbolCount: z.number().int().nonnegative().optional(),
-    ambiguousSymbolNameCount: z.number().int().nonnegative().optional(),
-    verificationReadCount: z.number().int().nonnegative().optional(),
-  })
-  .strict();
-export type ToolCallLocateCodebaseSymbolsDetail = z.infer<typeof ToolCallLocateCodebaseSymbolsDetailSchema>;
-
 export const CustomToolCallDetailSchema = z
   .object({
     toolName: CustomToolCallDetailNameSchema,
@@ -352,7 +338,6 @@ export const BuiltInSubagentChildToolCallDetailSchema = z.discriminatedUnion("to
   ToolCallReadDetailSchema,
   ToolCallGlobDetailSchema,
   ToolCallGrepDetailSchema,
-  ToolCallLocateCodebaseSymbolsDetailSchema,
   ToolCallBashDetailSchema,
   ToolCallEditDetailSchema,
   ToolCallEditManyDetailSchema,
@@ -428,7 +413,6 @@ export const BuiltInToolCallDetailSchema = z.discriminatedUnion("toolName", [
   ToolCallTaskDetailSchema,
   ToolCallSkillDetailSchema,
   ToolCallRecordWorkflowHandoffDetailSchema,
-  ToolCallLocateCodebaseSymbolsDetailSchema,
 ]);
 export type BuiltInToolCallDetail = z.infer<typeof BuiltInToolCallDetailSchema>;
 export const ToolCallDetailSchema = z.union([

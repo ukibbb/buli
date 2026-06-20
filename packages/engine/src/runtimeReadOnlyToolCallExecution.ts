@@ -14,7 +14,6 @@ import {
   type WorkspaceInspectionToolRequestName,
 } from "@buli/contracts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
-import type { WorkspaceCodebaseKnowledgeIndex } from "./codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import type { ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
 import {
@@ -32,7 +31,6 @@ import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnosti
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import { runGlobToolCall } from "./tools/globTool.ts";
 import { runGrepToolCall } from "./tools/grepTool.ts";
-import { runLocateCodebaseSymbolsToolCall } from "./tools/locateCodebaseSymbolsTool.ts";
 import { runReadToolCall } from "./tools/readTool.ts";
 import type { ToolCallOutcome } from "./tools/toolCallOutcome.ts";
 import { buildProviderVisibleToolResultBudgetGateText } from "./tools/toolResultTextBudget.ts";
@@ -54,7 +52,6 @@ type AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName extends AutoApprovedR
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
-  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   abortSignal: AbortSignal;
 };
 
@@ -74,9 +71,6 @@ const autoApprovedReadOnlyToolCallExecutorByName: {
   grep: {
     runToolCall: runGrepAutoApprovedReadOnlyToolCall,
   },
-  locate_codebase_symbols: {
-    runToolCall: runLocateCodebaseSymbolsAutoApprovedReadOnlyToolCall,
-  },
 };
 
 export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = {
@@ -88,7 +82,6 @@ export type StreamAssistantResponseEventsForAutoApprovedReadOnlyToolCallInput = 
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   conversationHistory?: InMemoryConversationHistory | undefined;
-  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
   readOnlyToolCallConcurrencyLimiter?: RuntimeReadOnlyToolCallConcurrencyLimiter;
   abortSignal: AbortSignal;
@@ -221,7 +214,6 @@ export async function* streamAssistantResponseEventsForAutoApprovedReadOnlyToolC
       runPendingAutoApprovedReadOnlyToolCallExecution({
         pendingToolCallExecution: pendingToolCallExecutionGroup.canonicalPendingToolCallExecution,
         readOnlyToolCallConcurrencyLimiter,
-        workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex,
         workspaceRootPath: input.workspaceRootPath,
         ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
         abortSignal: input.abortSignal,
@@ -406,7 +398,6 @@ function createSameStepDuplicateReadOnlyToolCallOutcome(input: {
 async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
   pendingToolCallExecution: PendingAutoApprovedReadOnlyToolCallExecution;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
-  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
@@ -419,7 +410,6 @@ async function runPendingAutoApprovedReadOnlyToolCallExecution(input: {
         toolCallRequest: input.pendingToolCallExecution.toolCallRequest,
         toolCallId: input.pendingToolCallExecution.toolCallId,
         readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
-        ...(input.workspaceCodebaseKnowledgeIndex ? { workspaceCodebaseKnowledgeIndex: input.workspaceCodebaseKnowledgeIndex } : {}),
         workspaceRootPath: input.workspaceRootPath,
         ...(input.projectInstructionTracker ? { projectInstructionTracker: input.projectInstructionTracker } : {}),
         abortSignal: input.abortSignal,
@@ -622,11 +612,6 @@ function formatReadOnlyToolRequestMetadataLines(toolCallRequest: AutoApprovedRea
           ? [`inspection_question_length: ${toolCallRequest.inspectionQuestion.length}`]
           : []),
       ];
-    case "locate_codebase_symbols":
-      return [
-        `symbol_names: ${formatShortList(toolCallRequest.symbolNames)}`,
-        `file_paths: ${formatShortList(toolCallRequest.filePaths)}`,
-      ];
   }
 }
 
@@ -656,13 +641,6 @@ function formatReadOnlyToolDetailMetadataLines(toolCallDetail: ToolCallDetail): 
         `returned_match_hit_count: ${toolCallDetail.returnedMatchHitCount ?? "unknown"}`,
         `context_line_count: ${toolCallDetail.contextLineCount ?? "default"}`,
       ];
-    case "locate_codebase_symbols":
-      return [
-        `located_symbol_count: ${toolCallDetail.locatedSymbolCount ?? "unknown"}`,
-        `not_found_symbol_count: ${toolCallDetail.notFoundSymbolCount ?? "unknown"}`,
-        `ambiguous_symbol_name_count: ${toolCallDetail.ambiguousSymbolNameCount ?? "unknown"}`,
-        `verification_read_count: ${toolCallDetail.verificationReadCount ?? "unknown"}`,
-      ];
     default:
       return [`tool_name: ${toolCallDetail.toolName}`];
   }
@@ -685,21 +663,7 @@ function formatReadOnlyProviderBudgetGateGuidanceLines(toolName: AutoApprovedRea
         "Narrow searchPath, regexPattern, includeGlobPattern, or contextLineCount before retrying.",
         "Split broad searches into batched grep calls before making absence or coverage claims.",
       ];
-    case "locate_codebase_symbols":
-      return [
-        "Use fewer exact symbolNames or narrower filePaths before retrying.",
-        "After locating definitions, read exact source ranges before relying on indexed locations.",
-      ];
   }
-}
-
-function formatShortList(values: readonly string[] | undefined): string {
-  if (!values || values.length === 0) {
-    return "<none>";
-  }
-
-  const visibleValues = values.slice(0, 5).join(", ");
-  return values.length > 5 ? `${visibleValues}, ... (${values.length} total)` : visibleValues;
 }
 
 export function isAutoApprovedReadOnlyToolCallRequest(
@@ -712,7 +676,6 @@ function runAutoApprovedReadOnlyToolCall(input: {
   toolCallRequest: AutoApprovedReadOnlyToolCallRequest;
   toolCallId: string;
   readOnlyToolCallConcurrencyLimiter: RuntimeReadOnlyToolCallConcurrencyLimiter;
-  workspaceCodebaseKnowledgeIndex?: WorkspaceCodebaseKnowledgeIndex | undefined;
   workspaceRootPath: string;
   projectInstructionTracker?: ProjectInstructionTracker;
   abortSignal: AbortSignal;
@@ -764,23 +727,6 @@ function runGrepAutoApprovedReadOnlyToolCall(
   );
 }
 
-function runLocateCodebaseSymbolsAutoApprovedReadOnlyToolCall(
-  input: AutoApprovedReadOnlyToolCallExecutorRunInput<"locate_codebase_symbols">,
-): Promise<ToolCallOutcome> {
-  if (!input.workspaceCodebaseKnowledgeIndex) {
-    throw new Error("Codebase knowledge index is not available for locate_codebase_symbols.");
-  }
-  const workspaceCodebaseKnowledgeIndex = input.workspaceCodebaseKnowledgeIndex;
-
-  return runSingleAutoApprovedReadOnlyToolCall(input, "locate_codebase_symbols", () =>
-    runLocateCodebaseSymbolsToolCall({
-      locateCodebaseSymbolsToolCallRequest: input.toolCallRequest,
-      workspaceCodebaseKnowledgeIndex,
-      abortSignal: input.abortSignal,
-    })
-  );
-}
-
 function runSingleAutoApprovedReadOnlyToolCall<ToolName extends SingleReadOnlyToolName>(
   input: AutoApprovedReadOnlyToolCallExecutorRunInput<ToolName>,
   toolName: ToolName,
@@ -802,10 +748,6 @@ function resolveReadOnlyToolCallConcurrencyCategory(
 ): RuntimeReadOnlyToolCallConcurrencyCategory {
   if (toolName === "read") {
     return "read";
-  }
-
-  if (toolName === "locate_codebase_symbols") {
-    return "knowledge";
   }
 
   return "search";

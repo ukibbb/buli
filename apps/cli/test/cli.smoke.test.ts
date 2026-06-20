@@ -1035,6 +1035,16 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       expect(conversationSessionId).toBe("session-a");
       return initialConversationSessionEntries;
     },
+    loadConversationSessionEntryRecords: (request) => ({
+      conversationSessionId: request.conversationSessionId ?? "session-a",
+      entryRecords: initialConversationSessionEntries.map((conversationSessionEntry, entrySequence) => ({
+        entrySequence,
+        conversationSessionEntry,
+      })),
+      hasOlderEntries: false,
+      hasNewerEntries: false,
+      latestCompactionSummaryEntrySequence: undefined,
+    }),
     appendConversationSessionEntry: (conversationSessionEntry) => {
       savedConversationSessionEntries.push([...initialConversationSessionEntries, conversationSessionEntry]);
     },
@@ -1402,6 +1412,16 @@ function createConversationSessionStoreStub(input: {
       conversationSessionEntries: initialConversationSessionEntries,
     }),
     loadConversationSessionEntries: () => initialConversationSessionEntries,
+    loadConversationSessionEntryRecords: (request) => ({
+      conversationSessionId: request.conversationSessionId ?? "session-a",
+      entryRecords: initialConversationSessionEntries.map((conversationSessionEntry, entrySequence) => ({
+        entrySequence,
+        conversationSessionEntry,
+      })),
+      hasOlderEntries: false,
+      hasNewerEntries: false,
+      latestCompactionSummaryEntrySequence: undefined,
+    }),
     appendConversationSessionEntry: () => {},
     saveActiveConversationSessionModelSelection: (modelSelection) => {
       activeModelSelection = modelSelection;

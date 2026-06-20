@@ -104,13 +104,6 @@ function buildWebSearchBodyContent(toolCallDetail: ToolCallWebSearchDetail): Rea
           <text fg={chatScreenTheme.textDim} wrapMode="word" width="100%">
             {formatWebSearchResultTitle(searchResult)}
           </text>
-          {searchResult.resultKind === "text" && searchResult.resultSnippet !== undefined
-            ? (
-              <text fg={chatScreenTheme.textMuted} wrapMode="word" width="100%">
-                {searchResult.resultSnippet}
-              </text>
-            )
-            : null}
         </box>
       ))}
     </box>
