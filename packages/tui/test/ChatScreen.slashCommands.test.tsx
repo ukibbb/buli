@@ -321,7 +321,7 @@ test("ChatScreen shows and submits available skills as deterministic slash comma
     userPromptText: "/code-review",
     userSelectedSkillName: "code-review",
     selectedModelId: "gpt-5.4",
-    assistantOperatingMode: "understand",
+    selectedPrimaryAgentName: "understand",
   });
 });
 
@@ -819,17 +819,17 @@ test("ChatScreen auto-retries successful overflow compaction in implementation m
   ]);
   expect(conversationTurnRequests.map((conversationTurnRequest) => ({
     userPromptText: conversationTurnRequest.userPromptText,
-    assistantOperatingMode: conversationTurnRequest.assistantOperatingMode,
+    selectedPrimaryAgentName: conversationTurnRequest.selectedPrimaryAgentName,
     promptSource: conversationTurnRequest.promptSource,
   }))).toEqual([
     {
       userPromptText: "Apply huge task",
-      assistantOperatingMode: "implementation",
+      selectedPrimaryAgentName: "implementation",
       promptSource: undefined,
     },
     {
       userPromptText: "Apply huge task",
-      assistantOperatingMode: "implementation",
+      selectedPrimaryAgentName: "implementation",
       promptSource: "auto_compaction_retry",
     },
   ]);

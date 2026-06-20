@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
-  DEFAULT_ASSISTANT_OPERATING_MODE,
+  DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME,
   AssistantMessagePartAddedEventSchema,
   AssistantTurnStartedEventSchema,
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantPrimaryAgentDisplayMetadata,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
@@ -252,10 +252,11 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
   }
 
   startConversationTurn(input: ConversationTurnRequest): ActiveConversationTurn {
-    const assistantOperatingMode = input.assistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE;
-    const registeredPrimaryAssistantAgent = this.assistantAgentRegistry.resolvePrimaryAgentDefinition(assistantOperatingMode);
+    const selectedPrimaryAgentName = resolveSelectedPrimaryAgentNameFromConversationTurnRequest(input);
+    const registeredPrimaryAssistantAgent = this.assistantAgentRegistry.resolvePrimaryAgentDefinition(selectedPrimaryAgentName);
     const conversationTurnInput: ConversationTurnRequest = {
       ...input,
+      selectedPrimaryAgentName,
       conversationTurnId: input.conversationTurnId ?? randomUUID(),
     };
     if (this.conversationSessionCompactor.isCompactingCurrentConversationSession()) {
@@ -282,12 +283,12 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
       conversationSessionEntryCount: this.conversationHistory.listConversationSessionEntries().length,
       modelContextItemCount: this.conversationHistory.listModelContextItems().length,
       bashToolApprovalMode: this.bashToolApprovalMode,
-      assistantOperatingMode,
+      selectedPrimaryAgentName,
     });
 
     const runtimeConversationTurn = new RuntimeConversationTurn({
       conversationTurnInput,
-      assistantOperatingMode,
+      selectedPrimaryAgentName,
       registeredPrimaryAssistantAgent,
       conversationTurnProvider: this.conversationTurnProvider,
       assistantProviderName: this.assistantProviderName,
@@ -366,7 +367,7 @@ export class AssistantConversationRuntime implements AssistantConversationRunner
 class RuntimeConversationTurn implements ActiveConversationTurn {
   readonly conversationTurnId: string;
   readonly conversationTurnInput: ConversationTurnRequest;
-  readonly assistantOperatingMode: AssistantOperatingMode;
+  readonly selectedPrimaryAgentName: AssistantPrimaryAgentName;
   readonly primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   readonly conversationTurnProvider: ConversationTurnProvider;
   readonly assistantProviderName: AssistantProviderName;
@@ -404,7 +405,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
 
   constructor(input: {
     conversationTurnInput: ConversationTurnRequest;
-    assistantOperatingMode: AssistantOperatingMode;
+    selectedPrimaryAgentName: AssistantPrimaryAgentName;
     registeredPrimaryAssistantAgent: PrimaryAssistantAgentDefinition;
     conversationTurnProvider: ConversationTurnProvider;
     assistantProviderName: AssistantProviderName;
@@ -437,7 +438,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
   }) {
     this.conversationTurnInput = input.conversationTurnInput;
     this.conversationTurnId = input.conversationTurnInput.conversationTurnId ?? randomUUID();
-    this.assistantOperatingMode = input.assistantOperatingMode;
+    this.selectedPrimaryAgentName = input.selectedPrimaryAgentName;
     this.conversationTurnProvider = input.conversationTurnProvider;
     this.assistantProviderName = input.assistantProviderName;
     this.assistantProviderModelPromptProfileResolver = input.assistantProviderModelPromptProfileResolver;
@@ -534,7 +535,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         conversationTurnId: this.conversationTurnId,
         conversationHistory: this.conversationHistory,
         userPromptText: this.conversationTurnInput.userPromptText,
-        assistantOperatingMode: this.assistantOperatingMode,
+        selectedPrimaryAgentName: this.selectedPrimaryAgentName,
         ...(this.conversationTurnInput.promptSource ? { promptSource: this.conversationTurnInput.promptSource } : {}),
         ...(this.conversationTurnInput.userPromptImageAttachments
           ? { userPromptImageAttachments: this.conversationTurnInput.userPromptImageAttachments }
@@ -546,7 +547,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         assistantResponseMessageId,
         assistantTextPartId,
         conversationTurnStartedAtMilliseconds,
-        assistantOperatingMode: this.assistantOperatingMode,
+        selectedPrimaryAgentName: this.selectedPrimaryAgentName,
         selectedModelId: this.conversationTurnInput.selectedModelId,
       });
     let conversationTurnSessionRecorder = createConversationTurnSessionRecorder();
@@ -572,7 +573,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort ?? null,
         userPromptLength: this.conversationTurnInput.userPromptText.length,
         userPromptImageAttachmentCount: this.conversationTurnInput.userPromptImageAttachments?.length ?? 0,
-        assistantOperatingMode: this.assistantOperatingMode,
+        selectedPrimaryAgentName: this.selectedPrimaryAgentName,
       });
       logEngineDiagnosticEvent(this.diagnosticLogger, "conversation_turn.context_snapshot", {
         conversationTurnId: this.conversationTurnId,
@@ -595,7 +596,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         try {
           const startedRuntimeConversationTurn = await startAcceptedRuntimeConversationTurn({
             conversationTurnInput: this.conversationTurnInput,
-            assistantOperatingMode: this.assistantOperatingMode,
+            selectedPrimaryAgentName: this.selectedPrimaryAgentName,
             primaryAssistantAgent: this.primaryAssistantAgent,
             assistantProviderName: this.assistantProviderName,
             assistantToolRegistry: this.assistantToolRegistry,
@@ -766,7 +767,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
         conversationTurnId: this.conversationTurnId,
         selectedModelId: this.conversationTurnInput.selectedModelId,
         selectedReasoningEffort: this.conversationTurnInput.selectedReasoningEffort ?? null,
-        assistantOperatingMode: this.assistantOperatingMode,
+        selectedPrimaryAgentName: this.selectedPrimaryAgentName,
         outcomeKind: conversationTurnOutcomeKind,
         assistantResponseEventCount,
         turnDurationMs: Date.now() - conversationTurnStartedAtMilliseconds,
@@ -805,7 +806,7 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
       taskSubagentAssistantProviderModelPromptProfile,
       taskSubagentCompositionResolver: this.taskSubagentCompositionResolver,
       builtInToolDescriptionOverlayResolver: this.builtInToolDescriptionOverlayResolver,
-      assistantOperatingMode: this.assistantOperatingMode,
+      selectedPrimaryAgentName: this.selectedPrimaryAgentName,
       primaryAssistantAgent: this.primaryAssistantAgent,
       assistantAgentRegistry: this.assistantAgentRegistry,
       assistantToolRegistry: this.assistantToolRegistry,
@@ -872,6 +873,24 @@ class RuntimeConversationTurn implements ActiveConversationTurn {
 
 function sanitizeRuntimeFailureExplanation(failureExplanation: string): string {
   return redactSensitiveText(failureExplanation);
+}
+
+function resolveSelectedPrimaryAgentNameFromConversationTurnRequest(
+  conversationTurnRequest: ConversationTurnRequest,
+): AssistantPrimaryAgentName {
+  if (
+    conversationTurnRequest.selectedPrimaryAgentName !== undefined &&
+    conversationTurnRequest.assistantOperatingMode !== undefined &&
+    conversationTurnRequest.selectedPrimaryAgentName !== conversationTurnRequest.assistantOperatingMode
+  ) {
+    throw new Error(
+      `Conversation turn request selectedPrimaryAgentName (${conversationTurnRequest.selectedPrimaryAgentName}) conflicts with legacy assistantOperatingMode (${conversationTurnRequest.assistantOperatingMode}).`,
+    );
+  }
+
+  return conversationTurnRequest.selectedPrimaryAgentName ??
+    conversationTurnRequest.assistantOperatingMode ??
+    DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME;
 }
 
 function validateTaskSubagentSoftElapsedTimeCheckpointMilliseconds(

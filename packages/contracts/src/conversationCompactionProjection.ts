@@ -1,3 +1,4 @@
+import type { AssistantPrimaryAgentName } from "./assistantAgent.ts";
 import type { AssistantOperatingMode } from "./assistantOperatingMode.ts";
 import type { ConversationCompactionSummaryConversationSessionEntry, ConversationSessionEntry } from "./conversationSessionEntry.ts";
 import type {
@@ -52,9 +53,9 @@ export function listModelVisibleConversationSessionEntries(
   ];
 }
 
-export function findLatestVisibleCompletedAssistantOperatingMode(
+export function findLatestVisibleCompletedAssistantPrimaryAgentName(
   conversationSessionEntries: readonly ConversationSessionEntry[],
-): AssistantOperatingMode | undefined {
+): AssistantPrimaryAgentName | undefined {
   const visibleConversationSessionEntries = listModelVisibleConversationSessionEntries(conversationSessionEntries);
 
   for (let entryIndex = visibleConversationSessionEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
@@ -74,6 +75,16 @@ export function findLatestVisibleCompletedAssistantOperatingMode(
   );
 
   return latestVisibleCompactionSummaryEntry?.latestCompletedAssistantOperatingMode;
+}
+
+/**
+ * @deprecated Use findLatestVisibleCompletedAssistantPrimaryAgentName. This
+ * alias still reads the legacy persisted assistantOperatingMode fields.
+ */
+export function findLatestVisibleCompletedAssistantOperatingMode(
+  conversationSessionEntries: readonly ConversationSessionEntry[],
+): AssistantOperatingMode | undefined {
+  return findLatestVisibleCompletedAssistantPrimaryAgentName(conversationSessionEntries);
 }
 
 export function findLatestVisibleWorkflowHandoffCheckpoint(

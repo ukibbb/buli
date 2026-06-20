@@ -1,5 +1,5 @@
 import type {
-  AssistantOperatingMode,
+  AssistantPrimaryAgentName,
   BuliDiagnosticLogger,
   ProviderAvailableToolName,
   ProjectInstructionSnapshot,
@@ -16,7 +16,7 @@ import { buildBuliSystemPromptForPrimaryAssistantAgent } from "./systemPrompt.ts
 import { buildModelFacingPromptTextFromPromptContextReferences } from "./prompt-context/buildModelFacingPromptTextFromPromptContextReferences.ts";
 import { ProjectInstructionTracker, toProjectInstructionSnapshots } from "./projectInstructions.ts";
 import { buildRelevantBuliStickyNotesContextText } from "./readOnlyToolEvidenceNotebook.ts";
-import { resolveAvailableToolNamesForPrimaryAssistantAgent } from "./assistantOperatingModePolicy.ts";
+import { resolveAvailableToolNamesForPrimaryAssistantAgent } from "./primaryAssistantAgentToolPolicy.ts";
 import { buildAssistantWorkflowHandoffPromptBlock } from "./assistantWorkflowHandoffContext.ts";
 import type { AssistantProviderModelPromptProfile, AssistantProviderName } from "./assistantProviderModelPromptProfile.ts";
 import type { BuiltInToolDescriptionOverlayResolver } from "./assistantModelOverlay.ts";
@@ -33,7 +33,7 @@ export type StartedRuntimeConversationTurn = {
 
 export async function startAcceptedRuntimeConversationTurn(input: {
   conversationTurnInput: ConversationTurnRequest;
-  assistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   assistantProviderName: AssistantProviderName;
   assistantToolRegistry: AssistantToolRegistry;
@@ -119,7 +119,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
       input.assistantProviderModelPromptProfile.stickyNotes.maximumObservationTextCharacterCount,
   });
   const workflowHandoffContextText = buildAssistantWorkflowHandoffPromptBlock({
-    currentAssistantOperatingMode: input.assistantOperatingMode,
+    currentAssistantOperatingMode: input.selectedPrimaryAgentName,
     currentPrimaryAssistantAgent: input.primaryAssistantAgent,
     conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
     renderingProfile: input.assistantProviderModelPromptProfile.workflowHandoff,
@@ -131,7 +131,7 @@ export async function startAcceptedRuntimeConversationTurn(input: {
     selectedReasoningEffort: input.conversationTurnInput.selectedReasoningEffort ?? null,
     conversationSessionEntryCount: input.conversationHistory.listConversationSessionEntries().length,
     modelContextItemCount: input.conversationHistory.listModelContextItems().length,
-    assistantOperatingMode: input.assistantOperatingMode,
+    selectedPrimaryAgentName: input.selectedPrimaryAgentName,
   });
   const providerConversationTurn = input.conversationTurnProvider.startConversationTurn({
     ...(input.conversationTurnInput.conversationTurnId !== undefined

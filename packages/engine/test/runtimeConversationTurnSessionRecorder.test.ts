@@ -15,7 +15,7 @@ test("RuntimeConversationTurnSessionRecorder records an accepted user prompt onc
     conversationTurnId: "conversation-turn-1",
     conversationHistory,
     userPromptText: "Use @notes.txt in the answer",
-    assistantOperatingMode: "understand",
+    selectedPrimaryAgentName: "understand",
     userPromptImageAttachments: [imageAttachment],
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
@@ -53,7 +53,7 @@ test("RuntimeConversationTurnSessionRecorder records a terminal assistant messag
     conversationTurnId: "conversation-turn-1",
     conversationHistory,
     userPromptText: "Summarize the change",
-    assistantOperatingMode: "understand",
+    selectedPrimaryAgentName: "understand",
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
 
@@ -119,7 +119,7 @@ test("RuntimeConversationTurnSessionRecorder preserves an explicit terminal assi
   const conversationTurnSessionRecorder = new RuntimeConversationTurnSessionRecorder({
     conversationHistory,
     userPromptText: "Execute the plan",
-    assistantOperatingMode: "implementation",
+    selectedPrimaryAgentName: "implementation",
   });
 
   conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry({
@@ -146,7 +146,7 @@ test("RuntimeConversationTurnSessionRecorder records BuliStickyNotes context onc
     conversationTurnId: "conversation-turn-1",
     conversationHistory,
     userPromptText: "Continue",
-    assistantOperatingMode: "implementation",
+    selectedPrimaryAgentName: "implementation",
     diagnosticLogger: (diagnosticEvent) => diagnosticEvents.push(diagnosticEvent),
   });
   const buliStickyNotesContextText = [

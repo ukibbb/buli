@@ -52,11 +52,18 @@ export {
   canChatSessionShowSlashCommandSelectionForPromptDraft,
   resolveChatSessionInteractionScope,
 } from "./chatSessionInteractionScope.ts";
-export { cycleAssistantOperatingMode, selectAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
 export {
+  cycleSelectedPrimaryAgentName,
+  selectPrimaryAgentName,
+  cycleAssistantOperatingMode,
+  selectAssistantOperatingMode,
+} from "./primaryAgentSelectionReducer.ts";
+export {
+  type PrimaryAgentCycleMetadata,
+  resolveNextPrimaryAgentName,
   type AssistantOperatingModeCycleMetadata,
   resolveNextAssistantOperatingMode,
-} from "./resolveNextAssistantOperatingMode.ts";
+} from "./resolveNextPrimaryAgentName.ts";
 export {
   type AssistantResponseEventsChatSessionStateApplication,
   type AssistantResponseEventsChatSessionStateChangeSet,

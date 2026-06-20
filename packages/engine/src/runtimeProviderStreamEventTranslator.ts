@@ -10,7 +10,7 @@ import {
   AssistantToolCallConversationMessagePartSchema,
   AssistantTurnSummaryConversationMessagePartSchema,
   type AssistantMessageUrlCitation,
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantTurnSummaryConversationMessagePart,
   type AssistantTextPartStatus,
   type AssistantSegmentConversationSessionEntry,
@@ -80,7 +80,7 @@ type RuntimeProviderStreamEventTranslatorInput = {
   assistantResponseMessageId: string;
   assistantTextPartId: string;
   conversationTurnStartedAtMilliseconds: number;
-  assistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   selectedModelId: string;
   createConversationMessagePartId?: (() => string) | undefined;
   readCurrentTimeInMilliseconds?: (() => number) | undefined;
@@ -101,7 +101,7 @@ const streamedReasoningSummaryUpdateCharacterThreshold = 96;
 export class RuntimeProviderStreamEventTranslator {
   readonly assistantResponseMessageId: string;
   readonly conversationTurnStartedAtMilliseconds: number;
-  readonly assistantOperatingMode: AssistantOperatingMode;
+  readonly selectedPrimaryAgentName: AssistantPrimaryAgentName;
   readonly selectedModelId: string;
   readonly createConversationMessagePartId: () => string;
   readonly readCurrentTimeInMilliseconds: () => number;
@@ -124,7 +124,7 @@ export class RuntimeProviderStreamEventTranslator {
   constructor(input: RuntimeProviderStreamEventTranslatorInput) {
     this.assistantResponseMessageId = input.assistantResponseMessageId;
     this.conversationTurnStartedAtMilliseconds = input.conversationTurnStartedAtMilliseconds;
-    this.assistantOperatingMode = input.assistantOperatingMode;
+    this.selectedPrimaryAgentName = input.selectedPrimaryAgentName;
     this.selectedModelId = input.selectedModelId;
     this.createConversationMessagePartId = input.createConversationMessagePartId ?? randomUUID;
     this.readCurrentTimeInMilliseconds = input.readCurrentTimeInMilliseconds ?? Date.now;
@@ -693,7 +693,7 @@ export class RuntimeProviderStreamEventTranslator {
         assistantMessageStatus: "incomplete",
         assistantMessageText: this.assistantMessageText,
         selectedModelId: this.selectedModelId,
-        assistantOperatingMode: this.assistantOperatingMode,
+        assistantOperatingMode: this.selectedPrimaryAgentName,
         turnDurationMs: assistantTurnSummaryPart.turnDurationMs,
         usage: input.usage,
         incompleteReason: input.incompleteReason,
@@ -739,7 +739,7 @@ export class RuntimeProviderStreamEventTranslator {
         assistantMessageStatus: "completed",
         assistantMessageText: this.assistantMessageText,
         selectedModelId: this.selectedModelId,
-        assistantOperatingMode: this.assistantOperatingMode,
+        assistantOperatingMode: this.selectedPrimaryAgentName,
         turnDurationMs: assistantTurnSummaryPart.turnDurationMs,
         usage: input.usage,
         ...this.createAssistantMessageUrlCitationsSessionEntryField(),
@@ -760,7 +760,7 @@ export class RuntimeProviderStreamEventTranslator {
       partKind: "assistant_turn_summary",
       turnDurationMs: this.readCurrentTimeInMilliseconds() - this.conversationTurnStartedAtMilliseconds,
       modelDisplayName: this.selectedModelId,
-      assistantOperatingMode: this.assistantOperatingMode,
+      assistantOperatingMode: this.selectedPrimaryAgentName,
       usage: input.usage,
     });
   }

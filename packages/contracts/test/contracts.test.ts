@@ -61,6 +61,7 @@ import {
   isSkillToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
   findLatestVisibleWorkflowHandoffCheckpoint,
+  findLatestVisibleCompletedAssistantPrimaryAgentName,
   findLatestVisibleCompletedAssistantOperatingMode,
   listModelVisibleConversationSessionEntries,
   UserPromptImageAttachmentSchema,
@@ -224,7 +225,7 @@ test("summarizeContextWindowUsageForDiagnostics reports prefixed token counts", 
   expect(summarizeContextWindowUsageForDiagnostics(undefined)).toEqual({});
 });
 
-test("AssistantOperatingModeSchema parses built-in and custom primary agent ids", () => {
+test("primary agent schema and legacy operating mode alias parse built-in and custom primary agent ids", () => {
   expect(BUILT_IN_ASSISTANT_PRIMARY_AGENT_NAMES).toEqual(["understand", "plan", "implementation"]);
   expect(DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA.map((agentMetadata) => agentMetadata.agentName)).toEqual(
     [...BUILT_IN_ASSISTANT_PRIMARY_AGENT_NAMES],
@@ -1904,7 +1905,7 @@ test("listModelVisibleConversationSessionEntries keeps only latest summary and n
   ).toEqual([compactionSummary, nextPrompt]);
 });
 
-test("findLatestVisibleCompletedAssistantOperatingMode prefers newer completed turns after compaction summaries", () => {
+test("findLatestVisibleCompletedAssistantPrimaryAgentName prefers newer completed turns after compaction summaries", () => {
   const conversationSessionEntries = [
     {
       entryKind: "assistant_message",
@@ -1927,10 +1928,11 @@ test("findLatestVisibleCompletedAssistantOperatingMode prefers newer completed t
     },
   ] as const;
 
+  expect(findLatestVisibleCompletedAssistantPrimaryAgentName(conversationSessionEntries)).toBe("implementation");
   expect(findLatestVisibleCompletedAssistantOperatingMode(conversationSessionEntries)).toBe("implementation");
 });
 
-test("findLatestVisibleCompletedAssistantOperatingMode falls back to compaction summary metadata", () => {
+test("findLatestVisibleCompletedAssistantPrimaryAgentName falls back to legacy compaction summary metadata", () => {
   const conversationSessionEntries = [
     {
       entryKind: "assistant_message",
@@ -1953,6 +1955,7 @@ test("findLatestVisibleCompletedAssistantOperatingMode falls back to compaction 
     },
   ] as const;
 
+  expect(findLatestVisibleCompletedAssistantPrimaryAgentName(conversationSessionEntries)).toBe("plan");
   expect(findLatestVisibleCompletedAssistantOperatingMode(conversationSessionEntries)).toBe("plan");
 });
 

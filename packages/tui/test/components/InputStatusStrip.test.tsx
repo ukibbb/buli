@@ -4,16 +4,16 @@ import { testRender } from "../testRenderWithCleanup.ts";
 import { InputStatusStrip } from "../../src/components/InputStatusStrip.tsx";
 import { readChatScreenKeyboardShortcutCatalogEntry } from "../../src/keyboard/chatScreenKeyboardShortcutCatalog.ts";
 
-test("idle strip shows the mode word, model id, effort, destination keycap and context meter", async () => {
+test("idle strip shows the primary-agent word, model id, effort, destination keycap and context meter", async () => {
   const { captureCharFrame, renderOnce } = await testRender(
     <InputStatusStrip
       assistantResponseStatus="waiting_for_user_input"
       conversationSessionCompactionStatus={{ step: "idle" }}
       queuedPromptCount={0}
       accentColor={chatScreenTheme.accentPink}
-      shortModeLabel="Understand"
-      nextShortModeLabel="Plan"
-      nextModeAccentColor={chatScreenTheme.accentAmber}
+      currentPrimaryAgentShortLabel="Understand"
+      nextPrimaryAgentShortLabel="Plan"
+      nextPrimaryAgentAccentColor={chatScreenTheme.accentAmber}
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
@@ -34,16 +34,16 @@ test("idle strip shows the mode word, model id, effort, destination keycap and c
   expect(frame).toContain("22.9k");
 });
 
-test("streaming state renders the snake indicator and the meter, omits mode chips", async () => {
+test("streaming state renders the snake indicator and the meter, omits primary-agent chips", async () => {
   const { captureCharFrame, renderOnce } = await testRender(
     <InputStatusStrip
       assistantResponseStatus="streaming_assistant_response"
       conversationSessionCompactionStatus={{ step: "idle" }}
       queuedPromptCount={0}
       accentColor={chatScreenTheme.accentPink}
-      shortModeLabel="Understand"
-      nextShortModeLabel="Plan"
-      nextModeAccentColor={chatScreenTheme.accentAmber}
+      currentPrimaryAgentShortLabel="Understand"
+      nextPrimaryAgentShortLabel="Plan"
+      nextPrimaryAgentAccentColor={chatScreenTheme.accentAmber}
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
@@ -67,9 +67,9 @@ test("streaming state shows queued prompt count", async () => {
       conversationSessionCompactionStatus={{ step: "idle" }}
       queuedPromptCount={2}
       accentColor={chatScreenTheme.accentPink}
-      shortModeLabel="Understand"
-      nextShortModeLabel="Plan"
-      nextModeAccentColor={chatScreenTheme.accentAmber}
+      currentPrimaryAgentShortLabel="Understand"
+      nextPrimaryAgentShortLabel="Plan"
+      nextPrimaryAgentAccentColor={chatScreenTheme.accentAmber}
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
@@ -90,9 +90,9 @@ test("auto-compaction state leaves progress text out of the footer", async () =>
       conversationSessionCompactionStatus={{ step: "compacting", source: "auto" }}
       queuedPromptCount={2}
       accentColor={chatScreenTheme.accentPink}
-      shortModeLabel="Understand"
-      nextShortModeLabel="Plan"
-      nextModeAccentColor={chatScreenTheme.accentAmber}
+      currentPrimaryAgentShortLabel="Understand"
+      nextPrimaryAgentShortLabel="Plan"
+      nextPrimaryAgentAccentColor={chatScreenTheme.accentAmber}
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}
@@ -109,7 +109,7 @@ test("auto-compaction state leaves progress text out of the footer", async () =>
   expect(frame).toContain("Understand");
 });
 
-test("hint override replaces the mode cluster without rendering attachment status", async () => {
+test("hint override replaces the primary-agent cluster without rendering attachment status", async () => {
   const { captureCharFrame, renderOnce } = await testRender(
     <InputStatusStrip
       assistantResponseStatus="waiting_for_user_input"
@@ -117,9 +117,9 @@ test("hint override replaces the mode cluster without rendering attachment statu
       queuedPromptCount={0}
       promptInputHintOverride="press enter again to confirm"
       accentColor={chatScreenTheme.accentPink}
-      shortModeLabel="Understand"
-      nextShortModeLabel="Plan"
-      nextModeAccentColor={chatScreenTheme.accentAmber}
+      currentPrimaryAgentShortLabel="Understand"
+      nextPrimaryAgentShortLabel="Plan"
+      nextPrimaryAgentAccentColor={chatScreenTheme.accentAmber}
       modelIdentifier="gpt-5.5"
       reasoningEffortLabel="xhigh"
       totalContextTokensUsed={22_900}

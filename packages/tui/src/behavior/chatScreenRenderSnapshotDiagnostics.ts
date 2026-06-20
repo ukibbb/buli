@@ -2,7 +2,7 @@ import type { BuliDiagnosticLogFields } from "@buli/contracts";
 import type { ConversationSessionCompactionStatus } from "@buli/chat-app-controller";
 import type { ChatSessionState, ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import type { TerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
-import type { AssistantOperatingMode, ConversationTurnStatus, ReasoningEffort } from "@buli/contracts";
+import type { AssistantPrimaryAgentName, ConversationTurnStatus, ReasoningEffort } from "@buli/contracts";
 
 type ChatScreenSelectionDiagnosticState = Pick<
   ChatSessionState,
@@ -38,7 +38,7 @@ export function buildChatScreenRenderSnapshotDiagnosticFields(input: {
     conversationCompactionSource: input.conversationSessionCompactionStatus.step === "compacting"
       ? input.conversationSessionCompactionStatus.source
       : null,
-    selectedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
+    selectedPrimaryAgentName: input.chatSessionState.selectedPrimaryAgentName,
     selectedModelId: input.chatSessionState.selectedModelId,
     selectedModelDefaultReasoningEffort: input.chatSessionState.selectedModelDefaultReasoningEffort ?? null,
     selectedReasoningEffort: input.chatSessionState.selectedReasoningEffort ?? null,
@@ -93,7 +93,7 @@ export function buildChatScreenTranscriptRenderDiagnosticFields(input: {
 
 export function buildChatScreenPromptRenderDiagnosticFields(input: {
   conversationTurnStatus: ConversationTurnStatus;
-  selectedAssistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   selectedModelId: string;
   selectedModelDefaultReasoningEffort: ReasoningEffort | undefined;
   selectedReasoningEffort: ReasoningEffort | undefined;
@@ -106,7 +106,7 @@ export function buildChatScreenPromptRenderDiagnosticFields(input: {
 }): BuliDiagnosticLogFields {
   return {
     conversationTurnStatus: input.conversationTurnStatus,
-    selectedAssistantOperatingMode: input.selectedAssistantOperatingMode,
+    selectedPrimaryAgentName: input.selectedPrimaryAgentName,
     selectedModelId: input.selectedModelId,
     selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort ?? null,
     selectedReasoningEffort: input.selectedReasoningEffort ?? null,

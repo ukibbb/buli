@@ -87,7 +87,7 @@ async function collectBashToolCallEvents(input: {
       shellCommand: input.shellCommand,
       commandDescription: "Run command",
     },
-    assistantOperatingMode,
+    selectedPrimaryAgentName: assistantOperatingMode,
     primaryAssistantAgent,
     bashToolApprovalMode: input.bashToolApprovalMode ?? "trusted",
     workspaceRootPath,

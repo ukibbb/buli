@@ -1632,6 +1632,54 @@ test("AssistantConversationRuntime defaults to understand mode with read-only to
   expect(provider.startedTurnRequests[0]?.availableToolNames).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"]);
 });
 
+test("AssistantConversationRuntime accepts selectedPrimaryAgentName as the canonical request field", async () => {
+  const provider = new RecordingConversationTurnProvider([
+    new ScriptedProviderTurn({
+      beforeToolResultEvents: [
+        { type: "text_chunk", text: "Plan from canonical request field." },
+        { type: "completed", usage: { total: 10, input: 5, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+      ],
+    }),
+  ]);
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: provider,
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  await collectAssistantEvents(runtime.startConversationTurn({
+    userPromptText: "Create a plan",
+    selectedPrimaryAgentName: "plan",
+    selectedModelId: "gpt-5.4",
+  }));
+
+  expect(provider.startedTurnRequests).toHaveLength(1);
+  expect(provider.startedTurnRequests[0]?.systemPromptText).toContain("Plan Agent - System Reminder");
+  expect(provider.startedTurnRequests[0]?.conversationSessionEntries[0]).toMatchObject({
+    entryKind: "user_prompt",
+    assistantOperatingMode: "plan",
+  });
+});
+
+test("AssistantConversationRuntime rejects conflicting selectedPrimaryAgentName and legacy assistantOperatingMode", () => {
+  const runtime = new AssistantConversationRuntime({
+    conversationTurnProvider: new RecordingConversationTurnProvider([]),
+    workspaceRootPath: process.cwd(),
+    promptContextBrowseRootPath: process.cwd(),
+  });
+
+  expect(() =>
+    runtime.startConversationTurn({
+      userPromptText: "Conflicting request",
+      selectedPrimaryAgentName: "plan",
+      assistantOperatingMode: "understand",
+      selectedModelId: "gpt-5.4",
+    })
+  ).toThrow(
+    "Conversation turn request selectedPrimaryAgentName (plan) conflicts with legacy assistantOperatingMode (understand).",
+  );
+});
+
 test("AssistantConversationRuntime allows plan mode without a completed understand turn", async () => {
   const provider = new RecordingConversationTurnProvider([
     new ScriptedProviderTurn({

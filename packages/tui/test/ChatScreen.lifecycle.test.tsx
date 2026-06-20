@@ -449,7 +449,7 @@ test("ChatScreen ignores a same-tick duplicate Enter submission", async () => {
   expect(countingRunner.getStartedTurnCount()).toBe(1);
 });
 
-test("ChatScreen cycles to plan mode with Tab and submits that mode", async () => {
+test("ChatScreen cycles to plan primary agent with Tab and submits that agent", async () => {
   const recordingRunner = createRecordingEmptyStreamAssistantConversationRunner();
   const renderedChatScreen = await renderChatScreen({
     assistantConversationRunner: recordingRunner.assistantConversationRunner,
@@ -461,10 +461,10 @@ test("ChatScreen cycles to plan mode with Tab and submits that mode", async () =
   await renderedChatScreen.pressEnter();
   await renderedChatScreen.waitForFrame(25);
 
-  expect(recordingRunner.listStartedTurnRequests()[0]?.assistantOperatingMode).toBe("plan");
+  expect(recordingRunner.listStartedTurnRequests()[0]?.selectedPrimaryAgentName).toBe("plan");
 });
 
-test("ChatScreen cycles from plan to implementation with Tab and submits that mode", async () => {
+test("ChatScreen cycles from plan to implementation with Tab and submits that primary agent", async () => {
   const recordingRunner = createRecordingEmptyStreamAssistantConversationRunner();
   const renderedChatScreen = await renderChatScreen({
     assistantConversationRunner: recordingRunner.assistantConversationRunner,
@@ -476,7 +476,7 @@ test("ChatScreen cycles from plan to implementation with Tab and submits that mo
   await renderedChatScreen.pressEnter();
   await renderedChatScreen.waitForFrame(25);
 
-  expect(recordingRunner.listStartedTurnRequests()[0]?.assistantOperatingMode).toBe("implementation");
+  expect(recordingRunner.listStartedTurnRequests()[0]?.selectedPrimaryAgentName).toBe("implementation");
 });
 
 test("ChatScreen cycles mode with Tab while assistant response is streaming", async () => {

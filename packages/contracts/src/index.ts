@@ -198,6 +198,7 @@ export type {
 } from "./conversationSessionRecord.ts";
 export {
   findLatestConversationCompactionBoundary,
+  findLatestVisibleCompletedAssistantPrimaryAgentName,
   findLatestVisibleCompletedAssistantOperatingMode,
   findLatestVisibleWorkflowHandoffCheckpoint,
   listModelVisibleConversationSessionEntries,

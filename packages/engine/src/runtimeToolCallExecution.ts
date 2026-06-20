@@ -10,7 +10,7 @@ import {
   isSkillToolCallRequest,
   isTaskToolCallRequest,
   isWorkspaceInspectionToolCallRequest,
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantResponseEvent,
   type AssistantToolRequestName,
   type BashToolCallRequest,
@@ -23,7 +23,7 @@ import {
   type WorkflowHandoff,
   type WorkspaceInspectionToolCallRequest,
 } from "@buli/contracts";
-import { resolvePrimaryAssistantAgentToolAccess } from "./assistantOperatingModePolicy.ts";
+import { resolvePrimaryAssistantAgentToolAccess } from "./primaryAssistantAgentToolPolicy.ts";
 import type { InMemoryConversationHistory } from "./conversationHistory.ts";
 import type { ConversationTurnProvider, ProviderConversationTurn } from "./provider.ts";
 import type { ProjectInstructionTracker } from "./projectInstructions.ts";
@@ -84,7 +84,7 @@ export type RuntimeToolCallExecutionContext = {
   taskSubagentAssistantProviderModelPromptProfile: AssistantProviderModelPromptProfile;
   taskSubagentCompositionResolver: TaskSubagentCompositionResolver;
   builtInToolDescriptionOverlayResolver: BuiltInToolDescriptionOverlayResolver;
-  assistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   assistantAgentRegistry: AssistantAgentRegistry;
   assistantToolRegistry: AssistantToolRegistry;
@@ -422,7 +422,7 @@ async function* streamAssistantResponseEventsForDeniedByPolicyRequestedToolCall(
     conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     toolName: input.toolCallRequest.toolName,
-    assistantOperatingMode: input.assistantOperatingMode,
+    selectedPrimaryAgentName: input.selectedPrimaryAgentName,
     effectiveAvailableToolNames: [...input.effectiveAvailableToolNames],
   });
   yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartAddedEventSchema.parse({
@@ -558,7 +558,7 @@ async function* streamAssistantResponseEventsForWorkflowHandoffRequestedToolCall
     conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     recordWorkflowHandoffToolCallRequest: input.toolCallRequest,
-    assistantOperatingMode: input.assistantOperatingMode,
+    selectedPrimaryAgentName: input.selectedPrimaryAgentName,
     primaryAssistantAgent: input.primaryAssistantAgent,
     recordWorkflowHandoff: input.recordWorkflowHandoff,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
@@ -580,7 +580,7 @@ async function* streamAssistantResponseEventsForFileMutationRequestedToolCall(
     conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     fileMutationToolCallRequest: input.toolCallRequest,
-    assistantOperatingMode: input.assistantOperatingMode,
+    selectedPrimaryAgentName: input.selectedPrimaryAgentName,
     primaryAssistantAgent: input.primaryAssistantAgent,
     workspaceRootPath: input.workspaceRootPath,
     workspaceSnapshotStore: input.workspaceSnapshotStore,
@@ -605,7 +605,7 @@ async function* streamAssistantResponseEventsForBashRequestedToolCall(
     conversationTurnId: input.conversationTurnId,
     toolCallId: input.toolCallId,
     bashToolCallRequest: input.toolCallRequest,
-    assistantOperatingMode: input.assistantOperatingMode,
+    selectedPrimaryAgentName: input.selectedPrimaryAgentName,
     primaryAssistantAgent: input.primaryAssistantAgent,
     bashToolApprovalMode: input.bashToolApprovalMode,
     workspaceRootPath: input.workspaceRootPath,

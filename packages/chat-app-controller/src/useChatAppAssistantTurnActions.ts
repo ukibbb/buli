@@ -1,5 +1,5 @@
 import {
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
   type UserPromptSource,
@@ -86,7 +86,7 @@ export type UseChatAppAssistantTurnActionsInput = {
 export type SubmittedChatAppPrompt = {
   submittedPromptText: string;
   submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
-  submittedAssistantOperatingMode: AssistantOperatingMode;
+  submittedPrimaryAgentName: AssistantPrimaryAgentName;
   submittedUserSelectedSkillName?: string | undefined;
   submittedPromptSource?: UserPromptSource | undefined;
   autoCompactionContinuationDepth?: number | undefined;
@@ -96,7 +96,7 @@ export type SubmittedChatAppPrompt = {
 export type QueuedChatAppPrompt = {
   submittedPromptText: string;
   submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
-  submittedAssistantOperatingMode: AssistantOperatingMode;
+  submittedPrimaryAgentName: AssistantPrimaryAgentName;
 };
 
 export type PendingToolApprovalDecisionSubmission = {
@@ -130,7 +130,7 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
     return {
       submittedPromptText: input.activeSubmittedPrompt.submittedPromptText,
       submittedPromptImageAttachments: input.activeSubmittedPrompt.submittedPromptImageAttachments,
-      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
+      submittedPrimaryAgentName: input.activeSubmittedPrompt.submittedPrimaryAgentName,
       ...(input.activeSubmittedPrompt.submittedUserSelectedSkillName !== undefined
         ? { submittedUserSelectedSkillName: input.activeSubmittedPrompt.submittedUserSelectedSkillName }
         : {}),
@@ -150,7 +150,7 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
     return {
       submittedPromptText: AUTO_COMPACTION_INCOMPLETE_CONTINUATION_PROMPT_TEXT,
       submittedPromptImageAttachments: [],
-      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
+      submittedPrimaryAgentName: input.activeSubmittedPrompt.submittedPrimaryAgentName,
       submittedPromptSource: "auto_compaction_continue",
       autoCompactionContinuationDepth: resolveNextAutoCompactionContinuationDepth(input.activeSubmittedPrompt),
       autoCompactionOriginalUserPromptText: originalUserPromptText,
@@ -177,7 +177,7 @@ export function resolveAutoCompactionFollowUpPromptAfterAssistantTurn(input: {
     return {
       submittedPromptText: buildAutoCompactionContinuationPromptText({ originalUserPromptText }),
       submittedPromptImageAttachments: [],
-      submittedAssistantOperatingMode: input.activeSubmittedPrompt.submittedAssistantOperatingMode,
+      submittedPrimaryAgentName: input.activeSubmittedPrompt.submittedPrimaryAgentName,
       submittedPromptSource: "auto_compaction_continue",
       autoCompactionContinuationDepth: nextAutoCompactionContinuationDepth,
       autoCompactionOriginalUserPromptText: originalUserPromptText,
@@ -258,7 +258,7 @@ export function useChatAppAssistantTurnActions(
     return {
       submittedPromptText: queuedChatAppPrompt.submittedPromptText,
       submittedPromptImageAttachments: queuedChatAppPrompt.submittedPromptImageAttachments,
-      submittedAssistantOperatingMode: queuedChatAppPrompt.submittedAssistantOperatingMode,
+      submittedPrimaryAgentName: queuedChatAppPrompt.submittedPrimaryAgentName,
     };
   });
 
@@ -276,7 +276,7 @@ export function useChatAppAssistantTurnActions(
           ...(activeSubmittedPrompt.submittedUserSelectedSkillName !== undefined
             ? { userSelectedSkillName: activeSubmittedPrompt.submittedUserSelectedSkillName }
             : {}),
-          assistantOperatingMode: activeSubmittedPrompt.submittedAssistantOperatingMode,
+          selectedPrimaryAgentName: activeSubmittedPrompt.submittedPrimaryAgentName,
           selectedModelId: input.latestChatSessionStateRef.current.selectedModelId,
           ...(input.latestChatSessionStateRef.current.selectedReasoningEffort
             ? { selectedReasoningEffort: input.latestChatSessionStateRef.current.selectedReasoningEffort }

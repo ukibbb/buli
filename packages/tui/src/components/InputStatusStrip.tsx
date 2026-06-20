@@ -19,9 +19,9 @@ export type InputStatusStripProps = {
   queuedPromptCount: number;
   promptInputHintOverride?: string | undefined;
   accentColor: string;
-  shortModeLabel: string;
-  nextShortModeLabel: string;
-  nextModeAccentColor: string;
+  currentPrimaryAgentShortLabel: string;
+  nextPrimaryAgentShortLabel: string;
+  nextPrimaryAgentAccentColor: string;
   modelIdentifier: string;
   reasoningEffortLabel: string;
   totalContextTokensUsed: number | undefined;
@@ -60,9 +60,9 @@ function areInputStatusStripPropsEqual(previousProps: InputStatusStripProps, nex
     previousProps.queuedPromptCount === nextProps.queuedPromptCount &&
     previousProps.promptInputHintOverride === nextProps.promptInputHintOverride &&
     previousProps.accentColor === nextProps.accentColor &&
-    previousProps.shortModeLabel === nextProps.shortModeLabel &&
-    previousProps.nextShortModeLabel === nextProps.nextShortModeLabel &&
-    previousProps.nextModeAccentColor === nextProps.nextModeAccentColor &&
+    previousProps.currentPrimaryAgentShortLabel === nextProps.currentPrimaryAgentShortLabel &&
+    previousProps.nextPrimaryAgentShortLabel === nextProps.nextPrimaryAgentShortLabel &&
+    previousProps.nextPrimaryAgentAccentColor === nextProps.nextPrimaryAgentAccentColor &&
     previousProps.modelIdentifier === nextProps.modelIdentifier &&
     previousProps.reasoningEffortLabel === nextProps.reasoningEffortLabel &&
     previousProps.totalContextTokensUsed === nextProps.totalContextTokensUsed &&
@@ -149,14 +149,14 @@ function renderIdleLeftCluster(props: InputStatusStripProps): ReactNode {
 
   return (
     <text wrapMode="none" truncate={true}>
-      <span fg={props.accentColor} attributes={TextAttributes.UNDERLINE}>{props.shortModeLabel}</span>
+      <span fg={props.accentColor} attributes={TextAttributes.UNDERLINE}>{props.currentPrimaryAgentShortLabel}</span>
       <span fg={chatScreenTheme.textDim}>{"  "}</span>
       <span fg={chatScreenTheme.accentCyan}>{props.modelIdentifier}</span>
       <span fg={chatScreenTheme.textDim}>{" / "}</span>
       <span fg={resolveReasoningEffortColor(props.reasoningEffortLabel)}>{props.reasoningEffortLabel}</span>
       <span fg={chatScreenTheme.textDim}>{"   "}</span>
-      <span fg={chatScreenTheme.bg} bg={props.nextModeAccentColor}>{` ${assistantModeCycleKeycapLabel} `}</span>
-      <span fg={chatScreenTheme.textMuted}>{` ${props.nextShortModeLabel}`}</span>
+      <span fg={chatScreenTheme.bg} bg={props.nextPrimaryAgentAccentColor}>{` ${assistantModeCycleKeycapLabel} `}</span>
+      <span fg={chatScreenTheme.textMuted}>{` ${props.nextPrimaryAgentShortLabel}`}</span>
     </text>
   );
 }

@@ -1,5 +1,5 @@
 import type {
-  AssistantOperatingMode,
+  AssistantPrimaryAgentName,
   AvailableAssistantModel,
   ConversationMessage,
   ConversationMessagePart,
@@ -10,7 +10,7 @@ import type {
   TokenUsage,
   UserPromptImageAttachment,
 } from "@buli/contracts";
-import { DEFAULT_ASSISTANT_OPERATING_MODE } from "@buli/contracts";
+import { DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME } from "@buli/contracts";
 import type { PromptContextCandidate } from "@buli/prompt-context-core";
 
 export type ReasoningEffortChoice = {
@@ -91,7 +91,7 @@ export type ConversationSessionSelectionState =
     };
 
 export type ChatSessionState = {
-  selectedAssistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   selectedModelId: string;
   selectedModelDefaultReasoningEffort: ReasoningEffort | undefined;
   selectedReasoningEffort: ReasoningEffort | undefined;
@@ -127,13 +127,17 @@ export type PendingPromptTextPaste = {
 };
 
 export function createInitialChatSessionState(input: {
-  selectedAssistantOperatingMode?: AssistantOperatingMode;
+  selectedPrimaryAgentName?: AssistantPrimaryAgentName;
+  /** @deprecated Use selectedPrimaryAgentName. */
+  selectedAssistantOperatingMode?: AssistantPrimaryAgentName;
   selectedModelId: string;
   selectedModelDefaultReasoningEffort?: ReasoningEffort;
   selectedReasoningEffort?: ReasoningEffort;
 }): ChatSessionState {
   return {
-    selectedAssistantOperatingMode: input.selectedAssistantOperatingMode ?? DEFAULT_ASSISTANT_OPERATING_MODE,
+    selectedPrimaryAgentName: input.selectedPrimaryAgentName ??
+      input.selectedAssistantOperatingMode ??
+      DEFAULT_ASSISTANT_PRIMARY_AGENT_NAME,
     selectedModelId: input.selectedModelId,
     selectedModelDefaultReasoningEffort: input.selectedModelDefaultReasoningEffort,
     selectedReasoningEffort: input.selectedReasoningEffort,

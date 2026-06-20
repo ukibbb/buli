@@ -48,8 +48,8 @@ Buli's default workflow is:
 - Startup model selection with `--model`.
 - Startup reasoning-effort selection with `--reasoning`.
 - Runtime model and reasoning selection with `/model`.
-- Three assistant operating modes: Understand, Plan, and Implementation.
-- `Tab` cycles the active operating mode in the prompt.
+- Configurable primary assistant agents, with Understand, Plan, and Implementation registered by default.
+- `Tab` cycles the selected primary agent in the prompt.
 - Streaming assistant responses with reasoning-summary display.
 - Local workspace tools for `read`, `glob`, `grep`, `edit`, `write`, and `bash`.
 - Tree-sitter-backed exact symbol-definition lookup for indexed TypeScript, TSX, and Python files.
@@ -133,7 +133,7 @@ buli --bash-approval risk_based
 buli --bash-approval trusted
 ```
 
-Plain `buli` defaults to `trusted`. In `trusted`, Buli auto-runs every Bash command when the active operating mode allows Bash execution. Read-only operating modes still block Bash execution. Use `risk_based` when you want Buli to auto-run clearly non-destructive inspection and local verification commands such as `bun --filter @buli/engine test`, `bun run typecheck`, and `tsc --noEmit -p tsconfig.json`, while still asking before package installs, build/dev scripts, file-system mutations, git/GitHub mutations, network side effects, and ambiguous shell syntax.
+Plain `buli` defaults to `trusted`. In `trusted`, Buli auto-runs every Bash command when the selected primary agent allows Bash execution. Read-only primary agents still block Bash execution. Use `risk_based` when you want Buli to auto-run clearly non-destructive inspection and local verification commands such as `bun --filter @buli/engine test`, `bun run typecheck`, and `tsc --noEmit -p tsconfig.json`, while still asking before package installs, build/dev scripts, file-system mutations, git/GitHub mutations, network side effects, and ambiguous shell syntax.
 
 Show CLI help:
 
@@ -204,7 +204,7 @@ Type these in the prompt:
 
 ## Keyboard Shortcuts
 
-- `Tab` cycles the active operating mode in the prompt.
+- `Tab` cycles the selected primary agent in the prompt.
 - `Enter` submits the prompt or confirms the highlighted item in an open picker.
 - `Shift+Enter` or `Ctrl+Enter` inserts a newline in the prompt.
 - `Esc` closes an open panel or picker; during an active assistant turn it requests interruption.
@@ -214,15 +214,15 @@ Type these in the prompt:
 - `Y` approves and `N` denies a pending tool request.
 - `Ctrl+V` pastes a clipboard image into the prompt when the prompt is editable.
 
-## Operating Modes
+## Primary Agents
 
-Buli has three primary modes. They are workflow posture, not separate products.
+Buli has three default primary agents. They are workflow posture, not separate products, and the code registration layer can add or override primary agents.
 
 - Understand Agent is read-only and discussion-first. It researches and explains how the system works before planning or applying code.
 - Plan Agent is read-only and produces an executable implementation plan grounded in inspected files.
 - Implementation Agent applies the agreed direction, keeps the slice small, and verifies important behavior.
 
-Use `Tab` in the prompt to cycle modes.
+Use `Tab` in the prompt to cycle primary agents.
 
 ### Code-only model-aware agent overlays
 
@@ -400,7 +400,7 @@ Current packages:
 - `packages/contracts`: shared schemas and types for assistant events, messages, sessions, tools, providers, models, token usage, and plans.
 - `packages/engine`: UI-agnostic assistant runtime, conversation history, tool execution, approvals, prompt context expansion, compaction, and system prompts.
 - `packages/openai`: browser OAuth, auth storage, token refresh, Responses API transport, model discovery, streaming parsing, and tool-call continuation.
-- `packages/chat-app-controller`: renderer-neutral chat actions for assistant turns, mode-sensitive UI effects, session operations, model loading, prompt context, compaction, export, and interruption.
+- `packages/chat-app-controller`: renderer-neutral chat actions for assistant turns, primary-agent-sensitive UI effects, session operations, model loading, prompt context, compaction, export, and interruption.
 - `packages/chat-session-state`: reducer and selector state for conversation messages, prompt drafts, model selection, slash commands, prompt context, sessions, reasoning visibility, and approvals.
 - `packages/prompt-context-core`: parsing and replacement logic for `@...` prompt-context references.
 - `packages/tui`: OpenTUI React renderer, chat screen, keyboard and paste behavior, transcript rendering, selection panes, and terminal-specific integration.

@@ -1,8 +1,8 @@
 import { extractActivePromptContextQueryFromPromptDraft } from "@buli/prompt-context-core";
-import type { AssistantOperatingMode, UserPromptImageAttachment } from "@buli/contracts";
+import type { AssistantPrimaryAgentName, UserPromptImageAttachment } from "@buli/contracts";
 import type { ChatSessionState, SlashCommand } from "./chatSessionState.ts";
-import { cycleAssistantOperatingMode } from "./assistantOperatingModeReducer.ts";
-import type { AssistantOperatingModeCycleMetadata } from "./resolveNextAssistantOperatingMode.ts";
+import { cycleSelectedPrimaryAgentName } from "./primaryAgentSelectionReducer.ts";
+import type { PrimaryAgentCycleMetadata } from "./resolveNextPrimaryAgentName.ts";
 import { hideCommandHelpModal } from "./commandHelpModalReducer.ts";
 import {
   hideConversationSessionSelection,
@@ -91,13 +91,13 @@ export type ChatSessionKeyboardEffect =
       effectType: "stream_assistant_response_for_submitted_prompt";
       submittedPromptText: string;
       submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
-      submittedAssistantOperatingMode: AssistantOperatingMode;
+      submittedPrimaryAgentName: AssistantPrimaryAgentName;
     }
   | {
       effectType: "enqueue_submitted_prompt";
       submittedPromptText: string;
       submittedPromptImageAttachments: readonly UserPromptImageAttachment[];
-      submittedAssistantOperatingMode: AssistantOperatingMode;
+      submittedPrimaryAgentName: AssistantPrimaryAgentName;
     }
   | {
       effectType: "submit_pending_tool_approval_decision";
@@ -164,7 +164,7 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
   chatSessionKeyboardInput: ChatSessionKeyboardInput;
   isPromptSubmissionInFlight: boolean;
   shouldQueueSubmittedPrompt?: boolean | undefined;
-  assistantOperatingModeCycleMetadata?: AssistantOperatingModeCycleMetadata | undefined;
+  primaryAgentCycleMetadata?: PrimaryAgentCycleMetadata | undefined;
 }): ChatSessionKeyboardInteraction {
   const interactionScope = resolveChatSessionInteractionScope(input.chatSessionState);
 
@@ -178,15 +178,15 @@ export function applyChatSessionKeyboardInputToChatSessionState(input: {
     });
   }
 
-  if (shouldCycleAssistantOperatingMode({
+  if (shouldCycleSelectedPrimaryAgentName({
     chatSessionState: input.chatSessionState,
     chatSessionKeyboardInput: input.chatSessionKeyboardInput,
     interactionScope,
   })) {
     return createChatSessionKeyboardInteraction({
-      nextChatSessionState: cycleAssistantOperatingMode(
+      nextChatSessionState: cycleSelectedPrimaryAgentName(
         input.chatSessionState,
-        input.assistantOperatingModeCycleMetadata,
+        input.primaryAgentCycleMetadata,
       ),
       shouldConsumeKeyboardInput: true,
     });
@@ -536,7 +536,7 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
           effectType: "enqueue_submitted_prompt",
           submittedPromptText: queuedPromptDraftSubmission.submittedPromptText,
           submittedPromptImageAttachments: queuedPromptDraftSubmission.submittedPromptImageAttachments,
-          submittedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
+          submittedPrimaryAgentName: input.chatSessionState.selectedPrimaryAgentName,
         },
       });
     }
@@ -565,7 +565,7 @@ function applyKeyboardInputToPromptDraftEditingState(input: {
         effectType: "stream_assistant_response_for_submitted_prompt",
         submittedPromptText: promptDraftSubmission.submittedPromptText,
         submittedPromptImageAttachments: promptDraftSubmission.submittedPromptImageAttachments,
-        submittedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
+        submittedPrimaryAgentName: input.chatSessionState.selectedPrimaryAgentName,
       },
     });
   }
@@ -667,7 +667,7 @@ function applyKeyboardInputToPromptDraftEditingKeys(
   return createUnchangedChatSessionKeyboardInteraction(chatSessionState);
 }
 
-function shouldCycleAssistantOperatingMode(input: {
+function shouldCycleSelectedPrimaryAgentName(input: {
   chatSessionState: ChatSessionState;
   chatSessionKeyboardInput: ChatSessionKeyboardInput;
   interactionScope: ChatSessionInteractionScope;

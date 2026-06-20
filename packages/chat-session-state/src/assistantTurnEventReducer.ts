@@ -977,7 +977,7 @@ function didPromptComposerRelevantStateChange(input: {
     input.previousChatSessionState.pendingPromptImageAttachments !== input.nextChatSessionState.pendingPromptImageAttachments ||
     input.previousChatSessionState.pendingPromptTextPastes !== input.nextChatSessionState.pendingPromptTextPastes ||
     input.previousChatSessionState.selectedPromptContextReferenceTexts !== input.nextChatSessionState.selectedPromptContextReferenceTexts ||
-    input.previousChatSessionState.selectedAssistantOperatingMode !== input.nextChatSessionState.selectedAssistantOperatingMode ||
+    input.previousChatSessionState.selectedPrimaryAgentName !== input.nextChatSessionState.selectedPrimaryAgentName ||
     input.previousChatSessionState.selectedModelId !== input.nextChatSessionState.selectedModelId ||
     input.previousChatSessionState.selectedModelDefaultReasoningEffort !== input.nextChatSessionState.selectedModelDefaultReasoningEffort ||
     input.previousChatSessionState.selectedReasoningEffort !== input.nextChatSessionState.selectedReasoningEffort ||

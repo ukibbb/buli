@@ -9,7 +9,7 @@ import {
   confirmHighlightedModelSelection,
   confirmHighlightedReasoningEffortChoice,
   createInitialChatSessionState,
-  cycleAssistantOperatingMode,
+  cycleSelectedPrimaryAgentName,
   hydrateConversationTranscriptFromSessionEntries,
   insertTextIntoPromptDraftAtCursor,
   listOrderedConversationMessageParts,
@@ -21,7 +21,7 @@ import {
   removePromptImageAttachmentPlaceholderAtCursor,
   removePromptImageAttachmentPlaceholderBeforeCursor,
   removeConversationCompactionProgressFromTranscript,
-  selectAssistantOperatingMode,
+  selectPrimaryAgentName,
   showAvailableAssistantModelsForSelection,
   showModelSelectionLoadingState,
   submitPromptDraft,
@@ -32,7 +32,7 @@ import {
 test("createInitialChatSessionState starts in understand mode", () => {
   const chatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
 
-  expect(chatSessionState.selectedAssistantOperatingMode).toBe("understand");
+  expect(chatSessionState.selectedPrimaryAgentName).toBe("understand");
 });
 
 test("createInitialChatSessionState keeps the selected model default reasoning effort", () => {
@@ -67,22 +67,22 @@ test("model selection keeps the selected model default when the model default ch
   expect(chatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
 });
 
-test("cycleAssistantOperatingMode switches from understand to plan to implementation", () => {
+test("cycleSelectedPrimaryAgentName switches from understand to plan to implementation", () => {
   const understandChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
-  const planChatSessionState = cycleAssistantOperatingMode(understandChatSessionState);
-  const implementationAgainChatSessionState = cycleAssistantOperatingMode(planChatSessionState);
-  const understandAgainChatSessionState = cycleAssistantOperatingMode(implementationAgainChatSessionState);
+  const planChatSessionState = cycleSelectedPrimaryAgentName(understandChatSessionState);
+  const implementationAgainChatSessionState = cycleSelectedPrimaryAgentName(planChatSessionState);
+  const understandAgainChatSessionState = cycleSelectedPrimaryAgentName(implementationAgainChatSessionState);
 
-  expect(planChatSessionState.selectedAssistantOperatingMode).toBe("plan");
-  expect(implementationAgainChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
-  expect(understandAgainChatSessionState.selectedAssistantOperatingMode).toBe("understand");
+  expect(planChatSessionState.selectedPrimaryAgentName).toBe("plan");
+  expect(implementationAgainChatSessionState.selectedPrimaryAgentName).toBe("implementation");
+  expect(understandAgainChatSessionState.selectedPrimaryAgentName).toBe("understand");
 });
 
-test("cycleAssistantOperatingMode can use configured primary agent metadata", () => {
-  const reviewChatSessionState = cycleAssistantOperatingMode(
+test("cycleSelectedPrimaryAgentName can use configured primary agent metadata", () => {
+  const reviewChatSessionState = cycleSelectedPrimaryAgentName(
     {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "understand",
+      selectedPrimaryAgentName: "understand",
     },
     [
       {
@@ -100,16 +100,16 @@ test("cycleAssistantOperatingMode can use configured primary agent metadata", ()
     ],
   );
 
-  expect(reviewChatSessionState.selectedAssistantOperatingMode).toBe("review");
+  expect(reviewChatSessionState.selectedPrimaryAgentName).toBe("review");
 });
 
-test("selectAssistantOperatingMode sets a specific mode", () => {
-  const chatSessionState = selectAssistantOperatingMode(
+test("selectPrimaryAgentName sets a specific primary agent", () => {
+  const chatSessionState = selectPrimaryAgentName(
     createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     "plan",
   );
 
-  expect(chatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(chatSessionState.selectedPrimaryAgentName).toBe("plan");
 });
 
 test("createInitialChatSessionState shows reasoning summaries by default", () => {
@@ -506,7 +506,7 @@ test("clearConversationTranscript clears visible conversation while preserving s
     selectedModelDefaultReasoningEffort: "xhigh",
     selectedReasoningEffort: "high",
   });
-  chatSessionState = selectAssistantOperatingMode(chatSessionState, "plan");
+  chatSessionState = selectPrimaryAgentName(chatSessionState, "plan");
   chatSessionState = toggleReasoningSummaryDisplayMode(chatSessionState);
   const promptDraftSubmission = submitPromptDraft(insertTextIntoPromptDraftAtCursor(chatSessionState, "Hello"));
   if (!promptDraftSubmission.submittedPromptText) {
@@ -518,7 +518,7 @@ test("clearConversationTranscript clears visible conversation while preserving s
   expect(clearedChatSessionState.selectedModelId).toBe("gpt-5.5");
   expect(clearedChatSessionState.selectedModelDefaultReasoningEffort).toBe("xhigh");
   expect(clearedChatSessionState.selectedReasoningEffort).toBe("high");
-  expect(clearedChatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(clearedChatSessionState.selectedPrimaryAgentName).toBe("plan");
   expect(clearedChatSessionState.reasoningSummaryDisplayMode).toBe("collapsed");
   expect(clearedChatSessionState.conversationTurnStatus).toBe("waiting_for_user_input");
   expect(listOrderedConversationMessages(clearedChatSessionState)).toEqual([]);

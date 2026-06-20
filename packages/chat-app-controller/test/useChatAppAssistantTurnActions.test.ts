@@ -24,7 +24,7 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn retries the original
     activeSubmittedPrompt: createSubmittedPrompt({
       submittedPromptText: "Apply the approved plan",
       submittedPromptImageAttachments,
-      submittedAssistantOperatingMode: "implementation",
+      submittedPrimaryAgentName: "implementation",
       submittedUserSelectedSkillName: "test-driven-change",
     }),
     terminalAssistantResponseEvent: {
@@ -42,7 +42,7 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn retries the original
   expect(followUpPrompt).toEqual({
     submittedPromptText: "Apply the approved plan",
     submittedPromptImageAttachments,
-    submittedAssistantOperatingMode: "implementation",
+    submittedPrimaryAgentName: "implementation",
     submittedUserSelectedSkillName: "test-driven-change",
     submittedPromptSource: "auto_compaction_retry",
     autoCompactionOriginalUserPromptText: "Apply the approved plan",
@@ -81,7 +81,7 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues after regu
   expect(followUpPrompt).toEqual({
     submittedPromptText: buildAutoCompactionContinuationPromptText({ originalUserPromptText }),
     submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "plan",
+    submittedPrimaryAgentName: "plan",
     submittedPromptSource: "auto_compaction_continue",
     autoCompactionContinuationDepth: 1,
     autoCompactionOriginalUserPromptText: originalUserPromptText,
@@ -102,7 +102,7 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues after near
   expect(followUpPrompt).toEqual({
     submittedPromptText: buildAutoCompactionContinuationPromptText({ originalUserPromptText }),
     submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "plan",
+    submittedPrimaryAgentName: "plan",
     submittedPromptSource: "auto_compaction_continue",
     autoCompactionContinuationDepth: 1,
     autoCompactionOriginalUserPromptText: originalUserPromptText,
@@ -128,7 +128,7 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues a chained 
   expect(followUpPrompt).toEqual({
     submittedPromptText: buildAutoCompactionContinuationPromptText({ originalUserPromptText }),
     submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "plan",
+    submittedPrimaryAgentName: "plan",
     submittedPromptSource: "auto_compaction_continue",
     autoCompactionContinuationDepth: 2,
     autoCompactionOriginalUserPromptText: originalUserPromptText,
@@ -164,7 +164,7 @@ test("resolveAutoCompactionFollowUpPromptAfterAssistantTurn continues after retr
   expect(followUpPrompt).toEqual({
     submittedPromptText: "Continue the previous response from where it stopped. Do not repeat completed content.",
     submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "plan",
+    submittedPrimaryAgentName: "plan",
     submittedPromptSource: "auto_compaction_continue",
     autoCompactionContinuationDepth: 1,
     autoCompactionOriginalUserPromptText: "Explain the failing build",
@@ -217,7 +217,7 @@ test("resolveAutoCompactionRequestAfterAssistantTurn keeps regular compaction re
 function createSubmittedPrompt(input: {
   submittedPromptText?: string | undefined;
   submittedPromptImageAttachments?: SubmittedChatAppPrompt["submittedPromptImageAttachments"] | undefined;
-  submittedAssistantOperatingMode?: SubmittedChatAppPrompt["submittedAssistantOperatingMode"] | undefined;
+  submittedPrimaryAgentName?: SubmittedChatAppPrompt["submittedPrimaryAgentName"] | undefined;
   submittedUserSelectedSkillName?: string | undefined;
   submittedPromptSource?: SubmittedChatAppPrompt["submittedPromptSource"] | undefined;
   autoCompactionContinuationDepth?: number | undefined;
@@ -226,7 +226,7 @@ function createSubmittedPrompt(input: {
   return {
     submittedPromptText: input.submittedPromptText ?? "Explain the failing build",
     submittedPromptImageAttachments: input.submittedPromptImageAttachments ?? [],
-    submittedAssistantOperatingMode: input.submittedAssistantOperatingMode ?? "plan",
+    submittedPrimaryAgentName: input.submittedPrimaryAgentName ?? "plan",
     ...(input.submittedUserSelectedSkillName !== undefined
       ? { submittedUserSelectedSkillName: input.submittedUserSelectedSkillName }
       : {}),

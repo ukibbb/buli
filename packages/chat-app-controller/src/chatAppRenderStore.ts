@@ -63,7 +63,7 @@ export type ChatAppPromptComposerRenderSnapshot = Pick<
   | "pendingPromptImageAttachments"
   | "pendingPromptTextPastes"
   | "selectedPromptContextReferenceTexts"
-  | "selectedAssistantOperatingMode"
+  | "selectedPrimaryAgentName"
   | "selectedModelId"
   | "selectedModelDefaultReasoningEffort"
   | "selectedReasoningEffort"
@@ -382,7 +382,7 @@ function didPromptComposerRenderStateChange(input: {
     input.previousChatSessionState.pendingPromptImageAttachments !== input.nextChatSessionState.pendingPromptImageAttachments ||
     input.previousChatSessionState.pendingPromptTextPastes !== input.nextChatSessionState.pendingPromptTextPastes ||
     input.previousChatSessionState.selectedPromptContextReferenceTexts !== input.nextChatSessionState.selectedPromptContextReferenceTexts ||
-    input.previousChatSessionState.selectedAssistantOperatingMode !== input.nextChatSessionState.selectedAssistantOperatingMode ||
+    input.previousChatSessionState.selectedPrimaryAgentName !== input.nextChatSessionState.selectedPrimaryAgentName ||
     input.previousChatSessionState.selectedModelId !== input.nextChatSessionState.selectedModelId ||
     input.previousChatSessionState.selectedModelDefaultReasoningEffort !== input.nextChatSessionState.selectedModelDefaultReasoningEffort ||
     input.previousChatSessionState.selectedReasoningEffort !== input.nextChatSessionState.selectedReasoningEffort ||
@@ -539,7 +539,7 @@ function buildPromptComposerSnapshot(
     pendingPromptImageAttachments: chatSessionState.pendingPromptImageAttachments,
     pendingPromptTextPastes: chatSessionState.pendingPromptTextPastes,
     selectedPromptContextReferenceTexts: chatSessionState.selectedPromptContextReferenceTexts,
-    selectedAssistantOperatingMode: chatSessionState.selectedAssistantOperatingMode,
+    selectedPrimaryAgentName: chatSessionState.selectedPrimaryAgentName,
     selectedModelId: chatSessionState.selectedModelId,
     selectedModelDefaultReasoningEffort: chatSessionState.selectedModelDefaultReasoningEffort,
     selectedReasoningEffort: chatSessionState.selectedReasoningEffort,
@@ -618,7 +618,7 @@ function selectStablePromptComposerSnapshot(input: {
     input.previousSnapshot.pendingPromptImageAttachments === input.nextSnapshot.pendingPromptImageAttachments &&
     input.previousSnapshot.pendingPromptTextPastes === input.nextSnapshot.pendingPromptTextPastes &&
     input.previousSnapshot.selectedPromptContextReferenceTexts === input.nextSnapshot.selectedPromptContextReferenceTexts &&
-    input.previousSnapshot.selectedAssistantOperatingMode === input.nextSnapshot.selectedAssistantOperatingMode &&
+    input.previousSnapshot.selectedPrimaryAgentName === input.nextSnapshot.selectedPrimaryAgentName &&
     input.previousSnapshot.selectedModelId === input.nextSnapshot.selectedModelId &&
     input.previousSnapshot.selectedModelDefaultReasoningEffort === input.nextSnapshot.selectedModelDefaultReasoningEffort &&
     input.previousSnapshot.selectedReasoningEffort === input.nextSnapshot.selectedReasoningEffort &&

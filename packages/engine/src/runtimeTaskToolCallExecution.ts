@@ -480,7 +480,7 @@ async function* streamTaskSubagentConversationProgress(input: {
     conversationTurnId: input.conversationTurnId,
     conversationHistory: subagentConversationHistory,
     userPromptText: subagentPromptText,
-    assistantOperatingMode: subagentDefinition.conversationSessionAssistantOperatingMode,
+    selectedPrimaryAgentName: subagentDefinition.conversationSessionAssistantOperatingMode,
     diagnosticLogger: input.diagnosticLogger,
   });
   const subagentToolResultSessionRecorder = new RuntimeToolResultSessionRecorder({

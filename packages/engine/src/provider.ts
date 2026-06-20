@@ -1,5 +1,6 @@
 import type {
   AssistantOperatingMode,
+  AssistantPrimaryAgentName,
   AssistantPrimaryAgentDisplayMetadata,
   AssistantResponseEvent,
   ConversationSessionEntry,
@@ -19,6 +20,8 @@ export type ConversationTurnRequest = {
   modelFacingUserPromptText?: string;
   userPromptImageAttachments?: readonly UserPromptImageAttachment[];
   userSelectedSkillName?: string;
+  selectedPrimaryAgentName?: AssistantPrimaryAgentName;
+  /** @deprecated Use selectedPrimaryAgentName. */
   assistantOperatingMode?: AssistantOperatingMode;
   selectedModelId: string;
   selectedReasoningEffort?: ReasoningEffort;

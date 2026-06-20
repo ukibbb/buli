@@ -6,7 +6,7 @@ import {
   createStartedToolCallDetailFromRequest,
   isCustomToolCallDetail,
   isFileMutationToolCallRequest as isContractFileMutationToolCallRequest,
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
   type FileMutationToolCallRequest as ContractFileMutationToolCallRequest,
@@ -97,7 +97,7 @@ export type StreamAssistantResponseEventsForFileMutationToolCallInput = {
   conversationTurnId: string;
   toolCallId: string;
   fileMutationToolCallRequest: FileMutationToolCallRequest;
-  assistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   workspaceRootPath: string;
   workspaceSnapshotStore?: WorkspaceSnapshotStore | undefined;

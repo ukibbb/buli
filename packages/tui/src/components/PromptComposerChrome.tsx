@@ -23,9 +23,9 @@ type PromptComposerChromeCommonProps = {
   isActiveTurnInterruptConfirmationArmed: boolean;
   inputPanelAccentColor: string;
   promptInputHintOverride: string | undefined;
-  shortModeLabel: string;
-  nextShortModeLabel: string;
-  nextModeAccentColor: string;
+  currentPrimaryAgentShortLabel: string;
+  nextPrimaryAgentShortLabel: string;
+  nextPrimaryAgentAccentColor: string;
   reasoningEffortLabel: string;
   totalContextTokensUsed: number | undefined;
   contextMeterTokenLimit: number | undefined;
@@ -149,9 +149,9 @@ function PromptComposerChromeLayout(
             queuedPromptCount={props.queuedPromptCount}
             {...(props.promptInputHintOverride !== undefined ? { promptInputHintOverride: props.promptInputHintOverride } : {})}
             accentColor={props.inputPanelAccentColor}
-            shortModeLabel={props.shortModeLabel}
-            nextShortModeLabel={props.nextShortModeLabel}
-            nextModeAccentColor={props.nextModeAccentColor}
+            currentPrimaryAgentShortLabel={props.currentPrimaryAgentShortLabel}
+            nextPrimaryAgentShortLabel={props.nextPrimaryAgentShortLabel}
+            nextPrimaryAgentAccentColor={props.nextPrimaryAgentAccentColor}
             modelIdentifier={promptComposerRenderState.selectedModelId}
             reasoningEffortLabel={props.reasoningEffortLabel}
             totalContextTokensUsed={props.totalContextTokensUsed}
@@ -195,9 +195,9 @@ function arePromptComposerChromeCommonPropsEqual(
     previousProps.isActiveTurnInterruptConfirmationArmed === nextProps.isActiveTurnInterruptConfirmationArmed &&
     previousProps.inputPanelAccentColor === nextProps.inputPanelAccentColor &&
     previousProps.promptInputHintOverride === nextProps.promptInputHintOverride &&
-    previousProps.shortModeLabel === nextProps.shortModeLabel &&
-    previousProps.nextShortModeLabel === nextProps.nextShortModeLabel &&
-    previousProps.nextModeAccentColor === nextProps.nextModeAccentColor &&
+    previousProps.currentPrimaryAgentShortLabel === nextProps.currentPrimaryAgentShortLabel &&
+    previousProps.nextPrimaryAgentShortLabel === nextProps.nextPrimaryAgentShortLabel &&
+    previousProps.nextPrimaryAgentAccentColor === nextProps.nextPrimaryAgentAccentColor &&
     previousProps.reasoningEffortLabel === nextProps.reasoningEffortLabel &&
     previousProps.totalContextTokensUsed === nextProps.totalContextTokensUsed &&
     previousProps.contextMeterTokenLimit === nextProps.contextMeterTokenLimit &&

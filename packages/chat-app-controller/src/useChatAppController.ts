@@ -148,7 +148,7 @@ export type ChatAppPromptComposerState = Pick<
   | "pendingPromptImageAttachments"
   | "pendingPromptTextPastes"
   | "selectedPromptContextReferenceTexts"
-  | "selectedAssistantOperatingMode"
+  | "selectedPrimaryAgentName"
   | "selectedModelId"
   | "selectedModelDefaultReasoningEffort"
   | "selectedReasoningEffort"
@@ -688,7 +688,7 @@ function buildChatAppPromptComposerState(input: {
     pendingPromptImageAttachments: input.chatSessionState.pendingPromptImageAttachments,
     pendingPromptTextPastes: input.chatSessionState.pendingPromptTextPastes,
     selectedPromptContextReferenceTexts: input.chatSessionState.selectedPromptContextReferenceTexts,
-    selectedAssistantOperatingMode: input.chatSessionState.selectedAssistantOperatingMode,
+    selectedPrimaryAgentName: input.chatSessionState.selectedPrimaryAgentName,
     selectedModelId: input.chatSessionState.selectedModelId,
     selectedModelDefaultReasoningEffort: input.chatSessionState.selectedModelDefaultReasoningEffort,
     selectedReasoningEffort: input.chatSessionState.selectedReasoningEffort,
@@ -764,7 +764,7 @@ function selectStableChatAppPromptComposerState(input: {
     input.previousState.pendingPromptImageAttachments === input.nextState.pendingPromptImageAttachments &&
     input.previousState.pendingPromptTextPastes === input.nextState.pendingPromptTextPastes &&
     input.previousState.selectedPromptContextReferenceTexts === input.nextState.selectedPromptContextReferenceTexts &&
-    input.previousState.selectedAssistantOperatingMode === input.nextState.selectedAssistantOperatingMode &&
+    input.previousState.selectedPrimaryAgentName === input.nextState.selectedPrimaryAgentName &&
     input.previousState.selectedModelId === input.nextState.selectedModelId &&
     input.previousState.selectedModelDefaultReasoningEffort === input.nextState.selectedModelDefaultReasoningEffort &&
     input.previousState.selectedReasoningEffort === input.nextState.selectedReasoningEffort &&

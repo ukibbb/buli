@@ -10,7 +10,7 @@ import {
 function createChatSessionState(overrides: Partial<ChatSessionState> = {}): ChatSessionState {
   return {
     ...createInitialChatSessionState({
-      selectedAssistantOperatingMode: "plan",
+      selectedPrimaryAgentName: "plan",
       selectedModelId: "gpt-5.4",
       selectedModelDefaultReasoningEffort: "medium",
       selectedReasoningEffort: "high",
@@ -68,7 +68,7 @@ test("buildChatScreenRenderSnapshotDiagnosticFields summarizes render state with
     conversationSessionSelectionStep: "hidden",
     conversationCompactionStep: "compacting",
     conversationCompactionSource: "auto",
-    selectedAssistantOperatingMode: "plan",
+    selectedPrimaryAgentName: "plan",
     selectedModelId: "gpt-5.4",
     selectedModelDefaultReasoningEffort: "medium",
     selectedReasoningEffort: "high",
@@ -151,7 +151,7 @@ test("split render diagnostic builders keep transcript, prompt, and status field
   expect(
     buildChatScreenPromptRenderDiagnosticFields({
       conversationTurnStatus: "streaming_assistant_response",
-      selectedAssistantOperatingMode: "implementation",
+      selectedPrimaryAgentName: "implementation",
       selectedModelId: "gpt-5.5",
       selectedModelDefaultReasoningEffort: undefined,
       selectedReasoningEffort: "high",
@@ -164,7 +164,7 @@ test("split render diagnostic builders keep transcript, prompt, and status field
     }),
   ).toMatchObject({
     conversationTurnStatus: "streaming_assistant_response",
-    selectedAssistantOperatingMode: "implementation",
+    selectedPrimaryAgentName: "implementation",
     selectedModelDefaultReasoningEffort: null,
     selectedReasoningEffort: "high",
     queuedPromptCount: 3,

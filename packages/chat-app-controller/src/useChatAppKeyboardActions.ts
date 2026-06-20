@@ -125,7 +125,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         void input.streamAssistantResponseForSubmittedPrompt({
           submittedPromptText: chatSlashCommandApplicationEffect.submittedPromptText,
           submittedPromptImageAttachments: [],
-          submittedAssistantOperatingMode: input.latestChatSessionStateRef.current.selectedAssistantOperatingMode,
+          submittedPrimaryAgentName: input.latestChatSessionStateRef.current.selectedPrimaryAgentName,
           submittedUserSelectedSkillName: chatSlashCommandApplicationEffect.skillName,
         });
         return;
@@ -167,14 +167,14 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
         void input.streamAssistantResponseForSubmittedPrompt({
           submittedPromptText: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText,
           submittedPromptImageAttachments: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments,
-          submittedAssistantOperatingMode: keyboardEffectInput.chatSessionKeyboardEffect.submittedAssistantOperatingMode,
+          submittedPrimaryAgentName: keyboardEffectInput.chatSessionKeyboardEffect.submittedPrimaryAgentName,
         });
         return;
       case "enqueue_submitted_prompt": {
         input.enqueueQueuedSubmittedPrompt({
           submittedPromptText: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptText,
           submittedPromptImageAttachments: keyboardEffectInput.chatSessionKeyboardEffect.submittedPromptImageAttachments,
-          submittedAssistantOperatingMode: keyboardEffectInput.chatSessionKeyboardEffect.submittedAssistantOperatingMode,
+          submittedPrimaryAgentName: keyboardEffectInput.chatSessionKeyboardEffect.submittedPrimaryAgentName,
         });
         return;
       }
@@ -208,7 +208,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
       isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || isPromptInputBlockedByCompaction,
       shouldQueueSubmittedPrompt: isAutoConversationSessionCompactionRunning(input.conversationSessionCompactionStatus),
-      assistantOperatingModeCycleMetadata: input.primaryAgentDisplayMetadata,
+      primaryAgentCycleMetadata: input.primaryAgentDisplayMetadata,
     });
 
     const nextChatSessionState = refreshChatSlashCommandSelectionForCurrentState(

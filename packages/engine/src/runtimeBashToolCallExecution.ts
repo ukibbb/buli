@@ -5,7 +5,7 @@ import {
   AssistantPendingToolApprovalClearedEventSchema,
   AssistantPendingToolApprovalRequestedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantResponseEvent,
   type BashToolCallRequest,
   type BuliDiagnosticLogger,
@@ -43,7 +43,7 @@ export type StreamAssistantResponseEventsForBashToolCallInput = {
   conversationTurnId: string;
   toolCallId: string;
   bashToolCallRequest: BashToolCallRequest;
-  assistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   bashToolApprovalMode: BashToolApprovalMode;
   workspaceRootPath: string;
@@ -126,7 +126,7 @@ export async function* streamAssistantResponseEventsForBashToolCall(
     logEngineDiagnosticEvent(input.diagnosticLogger, "tool_call.read_only_mode_blocked", {
       conversationTurnId: input.conversationTurnId,
       toolCallId: input.toolCallId,
-      assistantOperatingMode: input.assistantOperatingMode,
+      selectedPrimaryAgentName: input.selectedPrimaryAgentName,
       toolName: input.bashToolCallRequest.toolName,
       matchedRiskKind: bashToolApprovalDecision.matchedRiskKind,
     });

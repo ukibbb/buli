@@ -26,7 +26,7 @@ function createRuntimeProviderStreamEventTranslator(input?: {
     assistantResponseMessageId: "assistant-message-1",
     assistantTextPartId: "assistant-text-1",
     conversationTurnStartedAtMilliseconds: 1_000,
-    assistantOperatingMode: "implementation",
+    selectedPrimaryAgentName: "implementation",
     selectedModelId: "gpt-5.4",
     createConversationMessagePartId: () => {
       nextPartNumber += 1;

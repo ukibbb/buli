@@ -65,7 +65,7 @@ test("resolveChatSessionInteractionScope gives command help priority over other 
   expect(canChatSessionShowSlashCommandSelectionForPromptDraft(chatSessionState)).toBe(false);
 });
 
-test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating_mode_with_tab", () => {
+test("applyChatSessionKeyboardInputToChatSessionState_cycles_selected_primary_agent_with_tab", () => {
   const interaction = applyChatSessionKeyboardInputToChatSessionState({
     chatSessionState: createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     chatSessionKeyboardInput: {
@@ -77,16 +77,16 @@ test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating
     isPromptSubmissionInFlight: false,
   });
 
-  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(interaction.nextChatSessionState.selectedPrimaryAgentName).toBe("plan");
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
   expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
 });
 
-test("applyChatSessionKeyboardInputToChatSessionState_cycles_from_plan_to_implementation_with_tab", () => {
+test("applyChatSessionKeyboardInputToChatSessionState_cycles_selected_primary_agent_from_plan_to_implementation_with_tab", () => {
   const interaction = applyChatSessionKeyboardInputToChatSessionState({
     chatSessionState: {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "plan",
+      selectedPrimaryAgentName: "plan",
     },
     chatSessionKeyboardInput: {
       keyName: "tab",
@@ -97,7 +97,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_cycles_from_plan_to_implem
     isPromptSubmissionInFlight: false,
   });
 
-  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("implementation");
+  expect(interaction.nextChatSessionState.selectedPrimaryAgentName).toBe("implementation");
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });
 
@@ -116,7 +116,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_submit_effect_for_
     effectType: "stream_assistant_response_for_submitted_prompt",
     submittedPromptText: "Tell me what changed",
     submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "understand",
+    submittedPrimaryAgentName: "understand",
   });
 });
 
@@ -391,7 +391,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_enqueue_effect_whi
     effectType: "enqueue_submitted_prompt",
     submittedPromptText: "Run this next [Image 1]",
     submittedPromptImageAttachments: [promptImageAttachment],
-    submittedAssistantOperatingMode: "understand",
+    submittedPrimaryAgentName: "understand",
   });
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });
@@ -415,16 +415,16 @@ test("applyChatSessionKeyboardInputToChatSessionState_returns_enqueue_effect_whi
     effectType: "enqueue_submitted_prompt",
     submittedPromptText: "Run this after compaction",
     submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "understand",
+    submittedPrimaryAgentName: "understand",
   });
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });
 
-test("applyChatSessionKeyboardInputToChatSessionState_captures_selected_mode_for_queued_prompt", () => {
+test("applyChatSessionKeyboardInputToChatSessionState_captures_selected_primary_agent_for_queued_prompt", () => {
   const chatSessionState: ChatSessionState = {
     ...insertTextIntoPromptDraftAtCursor(createInitialChatSessionState({ selectedModelId: "gpt-5.4" }), "Plan this next"),
     conversationTurnStatus: "streaming_assistant_response",
-    selectedAssistantOperatingMode: "plan",
+    selectedPrimaryAgentName: "plan",
   };
 
   const interaction = applyChatSessionKeyboardInputToChatSessionState({
@@ -437,11 +437,11 @@ test("applyChatSessionKeyboardInputToChatSessionState_captures_selected_mode_for
     effectType: "enqueue_submitted_prompt",
     submittedPromptText: "Plan this next",
     submittedPromptImageAttachments: [],
-    submittedAssistantOperatingMode: "plan",
+    submittedPrimaryAgentName: "plan",
   });
 });
 
-test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating_mode_while_streaming", () => {
+test("applyChatSessionKeyboardInputToChatSessionState_cycles_selected_primary_agent_while_streaming", () => {
   const chatSessionState: ChatSessionState = {
     ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     conversationTurnStatus: "streaming_assistant_response",
@@ -458,12 +458,12 @@ test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating
     isPromptSubmissionInFlight: false,
   });
 
-  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(interaction.nextChatSessionState.selectedPrimaryAgentName).toBe("plan");
   expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });
 
-test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating_mode_during_tool_approval", () => {
+test("applyChatSessionKeyboardInputToChatSessionState_cycles_selected_primary_agent_during_tool_approval", () => {
   const chatSessionState: ChatSessionState = {
     ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
     conversationTurnStatus: "waiting_for_tool_approval",
@@ -486,7 +486,7 @@ test("applyChatSessionKeyboardInputToChatSessionState_cycles_assistant_operating
     isPromptSubmissionInFlight: false,
   });
 
-  expect(interaction.nextChatSessionState.selectedAssistantOperatingMode).toBe("plan");
+  expect(interaction.nextChatSessionState.selectedPrimaryAgentName).toBe("plan");
   expect(interaction.chatSessionKeyboardEffect).toBeUndefined();
   expect(interaction.shouldConsumeKeyboardInput).toBe(true);
 });

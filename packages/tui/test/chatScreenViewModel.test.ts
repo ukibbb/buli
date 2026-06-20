@@ -100,7 +100,7 @@ test("buildChatScreenViewModel derives plan-mode input copy", () => {
   const viewModel = buildChatScreenViewModel({
     chatSessionState: {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "plan",
+      selectedPrimaryAgentName: "plan",
     },
     conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 32,
@@ -169,11 +169,11 @@ test("buildChatScreenViewModel reserves the full OpenCode-sized input panel at c
   expect(viewModel.inputRegionRowCount).toBe(10);
 });
 
-test("buildChatScreenViewModel derives footer mode transition labels", () => {
+test("buildChatScreenViewModel derives footer primary-agent transition labels", () => {
   const viewModel = buildChatScreenViewModel({
     chatSessionState: {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "understand",
+      selectedPrimaryAgentName: "understand",
     },
     conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 32,
@@ -181,9 +181,9 @@ test("buildChatScreenViewModel derives footer mode transition labels", () => {
     terminalSizeTierForChatScreen: "comfortable",
   });
 
-  expect(viewModel.shortModeLabel).toBe("Understand");
-  expect(viewModel.nextShortModeLabel).toBe("Plan");
-  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentAmber);
+  expect(viewModel.currentPrimaryAgentShortLabel).toBe("Understand");
+  expect(viewModel.nextPrimaryAgentShortLabel).toBe("Plan");
+  expect(viewModel.nextPrimaryAgentAccentColor).toBe(chatScreenTheme.accentAmber);
   expect(viewModel.promptInputHintOverride).toBeUndefined();
 });
 
@@ -212,7 +212,7 @@ test("buildChatScreenViewModel derives footer labels and colors from configured 
   const viewModel = buildChatScreenViewModel({
     chatSessionState: {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "review",
+      selectedPrimaryAgentName: "review",
     },
     conversationSessionCompactionStatus: { step: "idle" },
     primaryAgentDisplayMetadata,
@@ -221,17 +221,17 @@ test("buildChatScreenViewModel derives footer labels and colors from configured 
     terminalSizeTierForChatScreen: "comfortable",
   });
 
-  expect(viewModel.shortModeLabel).toBe("Review");
-  expect(viewModel.nextShortModeLabel).toBe("Implementation");
+  expect(viewModel.currentPrimaryAgentShortLabel).toBe("Review");
+  expect(viewModel.nextPrimaryAgentShortLabel).toBe("Implementation");
   expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.accentPurple);
-  expect(viewModel.nextModeAccentColor).toBe(chatScreenTheme.accentGreen);
+  expect(viewModel.nextPrimaryAgentAccentColor).toBe(chatScreenTheme.accentGreen);
 });
 
 test("buildChatScreenViewModel safely labels unknown custom agents by id", () => {
   const viewModel = buildChatScreenViewModel({
     chatSessionState: {
       ...createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
-      selectedAssistantOperatingMode: "unknown-agent",
+      selectedPrimaryAgentName: "unknown-agent",
     },
     conversationSessionCompactionStatus: { step: "idle" },
     terminalRowCount: 32,
@@ -239,9 +239,9 @@ test("buildChatScreenViewModel safely labels unknown custom agents by id", () =>
     terminalSizeTierForChatScreen: "comfortable",
   });
 
-  expect(viewModel.shortModeLabel).toBe("unknown-agent");
+  expect(viewModel.currentPrimaryAgentShortLabel).toBe("unknown-agent");
   expect(viewModel.inputPanelAccentColor).toBe(chatScreenTheme.textMuted);
-  expect(viewModel.nextShortModeLabel).toBe("Understand");
+  expect(viewModel.nextPrimaryAgentShortLabel).toBe("Understand");
 });
 
 test("buildChatScreenViewModel derives footer reasoning effort label", () => {

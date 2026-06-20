@@ -3,7 +3,7 @@ import {
   DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA,
   type AssistantAgentAccentColorName,
   lookupContextWindowTokenCapacityForModel,
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantPrimaryAgentDisplayMetadata,
   type ConversationMessage,
   type ConversationMessagePart,
@@ -16,7 +16,7 @@ import {
 import {
   buildChatSlashCommands,
   canChatSessionPromptDraftBeEdited,
-  resolveNextAssistantOperatingMode,
+  resolveNextPrimaryAgentName,
   type ChatSessionState,
   type ChatSlashCommand,
   type ChatSlashCommandSkill,
@@ -57,9 +57,9 @@ type ChatScreenAssistantAgentAccentColor =
 export type ChatScreenInteractionViewModel = {
   isPromptInputDisabled: boolean;
   availableChatSlashCommands: readonly ChatSlashCommand[];
-  shortModeLabel: string;
-  nextShortModeLabel: string;
-  nextModeAccentColor: ChatScreenViewModel["inputPanelAccentColor"];
+  currentPrimaryAgentShortLabel: string;
+  nextPrimaryAgentShortLabel: string;
+  nextPrimaryAgentAccentColor: ChatScreenViewModel["inputPanelAccentColor"];
   inputPanelAccentColor: ChatScreenAssistantAgentAccentColor;
   promptInputHintOverride: string | undefined;
   reasoningEffortLabel: string;
@@ -104,7 +104,7 @@ export type ChatScreenTranscriptViewModelCache = {
 type ChatScreenInteractionPromptState = Pick<
   ChatSessionState,
   | "conversationTurnStatus"
-  | "selectedAssistantOperatingMode"
+  | "selectedPrimaryAgentName"
   | "selectedModelId"
   | "selectedModelDefaultReasoningEffort"
   | "selectedReasoningEffort"
@@ -176,22 +176,22 @@ export function buildChatScreenInteractionViewModel(input: {
   const totalContextTokensUsed = input.promptState.latestContextWindowUsage
     ? calculateContextTokensUsedFromTokenUsage(input.promptState.latestContextWindowUsage)
     : undefined;
-  const nextAssistantOperatingMode = resolveNextAssistantOperatingMode(
-    input.promptState.selectedAssistantOperatingMode,
+  const nextPrimaryAgentName = resolveNextPrimaryAgentName(
+    input.promptState.selectedPrimaryAgentName,
     input.primaryAgentDisplayMetadata,
   );
 
   return {
     isPromptInputDisabled,
     availableChatSlashCommands: listStableChatSlashCommands(input.reasoningSummaryDisplayMode, input.availableSkills),
-    shortModeLabel: formatAssistantOperatingModeShortLabel(
-      input.promptState.selectedAssistantOperatingMode,
+    currentPrimaryAgentShortLabel: formatPrimaryAgentShortLabel(
+      input.promptState.selectedPrimaryAgentName,
       input.primaryAgentDisplayMetadata,
     ),
-    nextShortModeLabel: formatAssistantOperatingModeShortLabel(nextAssistantOperatingMode, input.primaryAgentDisplayMetadata),
-    nextModeAccentColor: resolveAssistantOperatingModeAccentColor(nextAssistantOperatingMode, input.primaryAgentDisplayMetadata),
-    inputPanelAccentColor: resolveAssistantOperatingModeAccentColor(
-      input.promptState.selectedAssistantOperatingMode,
+    nextPrimaryAgentShortLabel: formatPrimaryAgentShortLabel(nextPrimaryAgentName, input.primaryAgentDisplayMetadata),
+    nextPrimaryAgentAccentColor: resolvePrimaryAgentAccentColor(nextPrimaryAgentName, input.primaryAgentDisplayMetadata),
+    inputPanelAccentColor: resolvePrimaryAgentAccentColor(
+      input.promptState.selectedPrimaryAgentName,
       input.primaryAgentDisplayMetadata,
     ),
     promptInputHintOverride: undefined,
@@ -380,32 +380,32 @@ function countVisibleConversationMessageParts(input: {
   }, 0);
 }
 
-function formatAssistantOperatingModeShortLabel(
-  assistantOperatingMode: AssistantOperatingMode,
+function formatPrimaryAgentShortLabel(
+  primaryAgentName: AssistantPrimaryAgentName,
   primaryAgentDisplayMetadata: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined,
 ): string {
-  return resolveAssistantOperatingModeDisplayMetadata(assistantOperatingMode, primaryAgentDisplayMetadata)?.shortLabel ??
-    assistantOperatingMode;
+  return resolvePrimaryAgentDisplayMetadata(primaryAgentName, primaryAgentDisplayMetadata)?.shortLabel ??
+    primaryAgentName;
 }
 
-function resolveAssistantOperatingModeAccentColor(
-  assistantOperatingMode: AssistantOperatingMode,
+function resolvePrimaryAgentAccentColor(
+  primaryAgentName: AssistantPrimaryAgentName,
   primaryAgentDisplayMetadata: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined,
 ): ChatScreenViewModel["inputPanelAccentColor"] {
-  const accentColorName = resolveAssistantOperatingModeDisplayMetadata(
-    assistantOperatingMode,
+  const accentColorName = resolvePrimaryAgentDisplayMetadata(
+    primaryAgentName,
     primaryAgentDisplayMetadata,
   )?.accentColorName;
   return resolveAssistantAgentAccentColor(accentColorName);
 }
 
-function resolveAssistantOperatingModeDisplayMetadata(
-  assistantOperatingMode: AssistantOperatingMode,
+function resolvePrimaryAgentDisplayMetadata(
+  primaryAgentName: AssistantPrimaryAgentName,
   primaryAgentDisplayMetadata: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined,
 ): AssistantPrimaryAgentDisplayMetadata | undefined {
-  return primaryAgentDisplayMetadata?.find((agentMetadata) => agentMetadata.agentName === assistantOperatingMode) ??
+  return primaryAgentDisplayMetadata?.find((agentMetadata) => agentMetadata.agentName === primaryAgentName) ??
     DEFAULT_ASSISTANT_PRIMARY_AGENT_DISPLAY_METADATA.find((agentMetadata) =>
-      agentMetadata.agentName === assistantOperatingMode
+      agentMetadata.agentName === primaryAgentName
     );
 }
 

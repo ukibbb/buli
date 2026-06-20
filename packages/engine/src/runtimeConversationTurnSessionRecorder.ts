@@ -1,5 +1,5 @@
 import type {
-  AssistantOperatingMode,
+  AssistantPrimaryAgentName,
   AssistantMessageConversationSessionEntry,
   AssistantSegmentConversationSessionEntry,
   BuliStickyNotesConversationSessionEntry,
@@ -16,7 +16,7 @@ export class RuntimeConversationTurnSessionRecorder {
   readonly conversationTurnId: string | undefined;
   readonly conversationHistory: InMemoryConversationHistory;
   readonly userPromptText: string;
-  readonly assistantOperatingMode: AssistantOperatingMode;
+  readonly selectedPrimaryAgentName: AssistantPrimaryAgentName;
   readonly promptSource: UserPromptSource | undefined;
   readonly userPromptImageAttachments: readonly UserPromptImageAttachment[];
   readonly diagnosticLogger: BuliDiagnosticLogger | undefined;
@@ -28,7 +28,7 @@ export class RuntimeConversationTurnSessionRecorder {
     conversationTurnId?: string | undefined;
     conversationHistory: InMemoryConversationHistory;
     userPromptText: string;
-    assistantOperatingMode: AssistantOperatingMode;
+    selectedPrimaryAgentName: AssistantPrimaryAgentName;
     promptSource?: UserPromptSource | undefined;
     userPromptImageAttachments?: readonly UserPromptImageAttachment[];
     diagnosticLogger?: BuliDiagnosticLogger | undefined;
@@ -36,7 +36,7 @@ export class RuntimeConversationTurnSessionRecorder {
     this.conversationTurnId = input.conversationTurnId;
     this.conversationHistory = input.conversationHistory;
     this.userPromptText = input.userPromptText;
-    this.assistantOperatingMode = input.assistantOperatingMode;
+    this.selectedPrimaryAgentName = input.selectedPrimaryAgentName;
     this.promptSource = input.promptSource;
     this.userPromptImageAttachments = input.userPromptImageAttachments ?? [];
     this.diagnosticLogger = input.diagnosticLogger;
@@ -67,7 +67,7 @@ export class RuntimeConversationTurnSessionRecorder {
       promptText: this.userPromptText,
       modelFacingPromptText,
       ...(this.promptSource ? { promptSource: this.promptSource } : {}),
-      assistantOperatingMode: this.assistantOperatingMode,
+      assistantOperatingMode: this.selectedPrimaryAgentName,
       ...(this.userPromptImageAttachments.length > 0 ? { imageAttachments: [...this.userPromptImageAttachments] } : {}),
       ...(projectInstructionSnapshots && projectInstructionSnapshots.length > 0
         ? { projectInstructionSnapshots: [...projectInstructionSnapshots] }
@@ -91,7 +91,7 @@ export class RuntimeConversationTurnSessionRecorder {
     const modeAwareAssistantMessageConversationSessionEntry = {
       ...assistantMessageConversationSessionEntry,
       ...(assistantMessageConversationSessionEntry.assistantOperatingMode === undefined
-        ? { assistantOperatingMode: this.assistantOperatingMode }
+        ? { assistantOperatingMode: this.selectedPrimaryAgentName }
         : {}),
     } satisfies AssistantMessageConversationSessionEntry;
 

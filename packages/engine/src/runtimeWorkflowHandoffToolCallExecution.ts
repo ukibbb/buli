@@ -4,7 +4,7 @@ import {
   AssistantMessagePartUpdatedEventSchema,
   AssistantToolCallConversationMessagePartSchema,
   createStartedToolCallDetailFromRequest,
-  type AssistantOperatingMode,
+  type AssistantPrimaryAgentName,
   type AssistantResponseEvent,
   type BuliDiagnosticLogger,
   type RecordWorkflowHandoffToolCallRequest,
@@ -21,7 +21,7 @@ export type StreamAssistantResponseEventsForWorkflowHandoffToolCallInput = {
   conversationTurnId: string;
   toolCallId: string;
   recordWorkflowHandoffToolCallRequest: RecordWorkflowHandoffToolCallRequest;
-  assistantOperatingMode: AssistantOperatingMode;
+  selectedPrimaryAgentName: AssistantPrimaryAgentName;
   primaryAssistantAgent: PrimaryAssistantAgentDefinition;
   recordWorkflowHandoff: (workflowHandoff: WorkflowHandoff) => void;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
