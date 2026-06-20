@@ -114,10 +114,11 @@ List available models:
 buli models
 ```
 
-Check the optional local NoVibe MCP setup without starting chat:
+Check configured MCP servers without starting chat:
 
 ```bash
 buli mcp check
+buli mcp check novibe
 ```
 
 Start the fullscreen chat UI from any project directory:
@@ -150,7 +151,7 @@ buli help
 The current CLI shape is:
 
 ```text
-Usage: buli [login|models|mcp check|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]
+Usage: buli [login|models|mcp check [serverName]|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]
 ```
 
 Defaults:
@@ -368,10 +369,21 @@ export BULI_MCP_SERVERS_JSON='{
     "bearerTokenEnv": "DOCS_MCP_TOKEN",
     "timeoutMs": 30000,
     "headers": { "X-Client": "buli" },
-    "toolResultRetention": "summary"
+    "toolResultRetention": "summary",
+    "toolExecutionPolicy": "requires_user_approval"
   }
 }'
 ```
+
+Generic MCP servers default to `toolExecutionPolicy: "requires_user_approval"`. That is intentional: Buli cannot verify that an arbitrary MCP tool is read-only, so the primary assistant must ask before running those tools. Only mark a server as `"read_only_auto_approved"` when you trust the server and its tools are genuinely read-only:
+
+```json
+{
+  "toolExecutionPolicy": "read_only_auto_approved"
+}
+```
+
+Approval-required MCP tools are exposed to primary agents only. Read-only auto-approved MCP tools are also exposed to task subagents such as Explore, because subagent child calls cannot pause for user approval.
 
 Supported MCP retention policies:
 
@@ -379,7 +391,7 @@ Supported MCP retention policies:
 - `summary`: the full MCP result is sent to the model in the current turn, but future persisted history/replay stores only a short summary.
 - `redacted`: the full MCP result is sent to the model in the current turn, but future persisted history/replay stores only a placeholder.
 
-When MCP is configured, Buli shows non-persisted startup notices such as `MCP: novibe connected (4 tools)` or `MCP: docs unavailable: connection refused`.
+When MCP is configured, Buli shows non-persisted startup notices such as `MCP: novibe connected (4 tools)` or `MCP: docs unavailable: connection refused`. Run `buli mcp check` to validate every configured MCP server before opening chat, or `buli mcp check docs` to check one configured server by name.
 
 NoVibe must be configured with matching server-side MCP auth values:
 

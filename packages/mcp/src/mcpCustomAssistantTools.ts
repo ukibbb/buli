@@ -8,7 +8,11 @@ import type {
   CustomAssistantToolExecutionOutcome,
 } from "@buli/engine";
 import { normalizeMcpToolInputSchema } from "./mcpToolSchemaNormalizer.ts";
-import type { McpToolResultRetentionPolicy } from "./mcpServerConfiguration.ts";
+import {
+  DEFAULT_MCP_TOOL_EXECUTION_POLICY,
+  type McpToolExecutionPolicy,
+  type McpToolResultRetentionPolicy,
+} from "./mcpServerConfiguration.ts";
 import { projectMcpToolResultRetention } from "./mcpToolResultRetention.ts";
 
 export const NOVIBE_MCP_CUSTOM_TOOL_NAME_PREFIX = "novibe_";
@@ -42,6 +46,7 @@ export type CreateMcpCustomAssistantToolsInput = Readonly<{
   listedMcpTools: readonly ListedMcpToolDefinition[];
   callMcpTool: CallMcpTool;
   toolResultRetention?: McpToolResultRetentionPolicy | undefined;
+  toolExecutionPolicy?: McpToolExecutionPolicy | undefined;
 }>;
 
 export type NoVibeMcpToolResultContent = McpToolResultContent;
@@ -61,6 +66,7 @@ export function createMcpCustomAssistantTools(
   const claimedCustomToolNames = new Set<string>();
   const serverDisplayName = input.serverDisplayName?.trim() || input.serverName.trim() || "MCP";
   const toolResultRetention = input.toolResultRetention ?? DEFAULT_MCP_TOOL_RESULT_RETENTION_POLICY;
+  const toolExecutionPolicy = input.toolExecutionPolicy ?? DEFAULT_MCP_TOOL_EXECUTION_POLICY;
 
   return input.listedMcpTools.map((listedMcpTool) => {
     const customToolName = createUniqueMcpCustomToolName({
@@ -77,13 +83,11 @@ export function createMcpCustomAssistantTools(
         description: listedMcpTool.description?.trim() || `Call the ${serverDisplayName} MCP tool ${listedMcpTool.name}.`,
         parameters: normalizeMcpToolInputSchema(listedMcpTool.inputSchema),
       },
-      executionPolicy: {
-        workspaceEffectKind: "read_only",
-        isAutoConcurrent: true,
-        isAutoApprovedReadOnly: true,
-        clearsSameTurnReadCoverageBeforeExecution: false,
-      },
-      approvalPolicy: { approvalPolicyKind: "auto_approve" },
+      ...createMcpCustomToolSafetyPolicy({
+        toolExecutionPolicy,
+        serverDisplayName,
+        mcpToolName: listedMcpTool.name,
+      }),
       executor: async (executionInput) => {
         try {
           const mcpToolCallResult = await input.callMcpTool({
@@ -123,8 +127,40 @@ export function createNoVibeMcpCustomAssistantTools(
     serverDisplayName: "NoVibe",
     listedMcpTools: input.listedMcpTools,
     callMcpTool: input.callNoVibeMcpTool,
+    toolExecutionPolicy: "read_only_auto_approved",
     ...(input.toolResultRetention !== undefined ? { toolResultRetention: input.toolResultRetention } : {}),
   });
+}
+
+function createMcpCustomToolSafetyPolicy(input: {
+  toolExecutionPolicy: McpToolExecutionPolicy;
+  serverDisplayName: string;
+  mcpToolName: string;
+}): Pick<CustomAssistantToolDefinition, "executionPolicy" | "approvalPolicy"> {
+  if (input.toolExecutionPolicy === "read_only_auto_approved") {
+    return {
+      executionPolicy: {
+        workspaceEffectKind: "read_only",
+        isAutoConcurrent: true,
+        isAutoApprovedReadOnly: true,
+        clearsSameTurnReadCoverageBeforeExecution: false,
+      },
+      approvalPolicy: { approvalPolicyKind: "auto_approve" },
+    };
+  }
+
+  return {
+    executionPolicy: {
+      workspaceEffectKind: "workspace_change_possible",
+      isAutoConcurrent: false,
+      isAutoApprovedReadOnly: false,
+      clearsSameTurnReadCoverageBeforeExecution: true,
+    },
+    approvalPolicy: {
+      approvalPolicyKind: "requires_user_approval",
+      riskExplanation: `${input.serverDisplayName} MCP tool ${input.mcpToolName} comes from an external MCP server. Buli cannot verify that it is read-only, so it requires approval before running because it may change the workspace or external state.`,
+    },
+  };
 }
 
 export function sanitizeMcpCustomToolNameSegment(value: string): string {

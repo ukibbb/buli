@@ -20,6 +20,14 @@ test("createMcpRuntimeIntegration composes connected MCP servers and reports una
       timeoutMs: 30_000,
     },
     {
+      serverName: "trusted_docs",
+      displayName: "Trusted Docs",
+      transport: "streamable_http",
+      url: "http://localhost:9004/mcp",
+      timeoutMs: 30_000,
+      toolExecutionPolicy: "read_only_auto_approved",
+    },
+    {
       serverName: "offline",
       displayName: "Offline",
       transport: "streamable_http",
@@ -54,7 +62,7 @@ test("createMcpRuntimeIntegration composes connected MCP servers and reports una
     },
   });
 
-  expect(integration.toolNames).toEqual(["docs_search"]);
+  expect(integration.toolNames).toEqual(["docs_search", "trusted_docs_search"]);
   expect(integration.serverStatuses).toEqual([
     {
       statusKind: "connected",
@@ -63,6 +71,14 @@ test("createMcpRuntimeIntegration composes connected MCP servers and reports una
       url: "http://localhost:9001/mcp",
       toolCount: 1,
       toolNames: ["docs_search"],
+    },
+    {
+      statusKind: "connected",
+      serverName: "trusted_docs",
+      displayName: "Trusted Docs",
+      url: "http://localhost:9004/mcp",
+      toolCount: 1,
+      toolNames: ["trusted_docs_search"],
     },
     {
       statusKind: "unavailable",
@@ -89,7 +105,7 @@ test("createMcpRuntimeIntegration composes connected MCP servers and reports una
     registeredPrimaryAssistantAgent: understandAgent,
     providerName: "openai",
     selectedModelId: "test-model",
-  }).primaryAssistantAgent.availableToolNames).toEqual(expect.arrayContaining(["docs_search"]));
+  }).primaryAssistantAgent.availableToolNames).toEqual(expect.arrayContaining(["docs_search", "trusted_docs_search"]));
 
   const taskSubagentCompositionResolver = integration.assistantRuntimeConfiguration.assistantRuntimeInput.taskSubagentCompositionResolver;
   if (!taskSubagentCompositionResolver) {
@@ -97,7 +113,7 @@ test("createMcpRuntimeIntegration composes connected MCP servers and reports una
   }
   const parentPrimaryAssistantAgent = integration.assistantRuntimeConfiguration.assistantAgentRegistry.resolvePrimaryAgentDefinition("understand");
   const exploreSubagent = integration.assistantRuntimeConfiguration.assistantAgentRegistry.resolveSubagentDefinition("explore");
-  expect(taskSubagentCompositionResolver({
+  const exploreSubagentToolNames = taskSubagentCompositionResolver({
     registeredSubagent: exploreSubagent,
     parentPrimaryAssistantAgent,
     providerName: "openai",
@@ -112,8 +128,10 @@ test("createMcpRuntimeIntegration composes connected MCP servers and reports una
       providerName: "openai",
       selectedModelId: "test-subagent-model",
     }),
-  }).taskSubagent.availableToolNames).toEqual(expect.arrayContaining(["docs_search"]));
+  }).taskSubagent.availableToolNames;
+  expect(exploreSubagentToolNames).toEqual(expect.arrayContaining(["trusted_docs_search"]));
+  expect(exploreSubagentToolNames).not.toContain("docs_search");
 
   await integration.dispose();
-  expect(disposedServerNames).toEqual(["docs"]);
+  expect(disposedServerNames).toEqual(["docs", "trusted_docs"]);
 });

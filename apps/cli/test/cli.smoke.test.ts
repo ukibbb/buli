@@ -38,7 +38,7 @@ import type {
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
 import { runLogin } from "../src/commands/login.ts";
-import { runCheckNoVibeMcp } from "../src/commands/mcp.ts";
+import { runCheckMcp } from "../src/commands/mcp.ts";
 import {
   defaultConversationSessionDatabasePath,
   SqliteConversationSessionStore,
@@ -53,7 +53,7 @@ test("runCli delegates the login command", async () => {
   const output = await runCli(["login"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -64,7 +64,7 @@ test("runCli delegates the models command", async () => {
   const output = await runCli(["models"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -75,18 +75,35 @@ test("runCli delegates the mcp check command", async () => {
   const output = await runCli(["mcp", "check"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
   expect(output).toEqual({ status: "ok", output: "delegated mcp check" });
 });
 
+test("runCli passes the optional mcp check server name", async () => {
+  let receivedServerName: string | undefined;
+
+  const output = await runCli(["mcp", "check", "docs"], {
+    runInteractiveChat: async () => "delegated start",
+    runListAvailableModels: async () => "delegated models",
+    runCheckMcp: async (input) => {
+      receivedServerName = input?.serverName;
+      return "delegated docs mcp check";
+    },
+    runLogin: async () => "delegated login",
+  });
+
+  expect(receivedServerName).toBe("docs");
+  expect(output).toEqual({ status: "ok", output: "delegated docs mcp check" });
+});
+
 test("runCli returns usage for invalid mcp subcommands", async () => {
   const output = await runCli(["mcp", "unknown"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -97,7 +114,7 @@ test("runCli returns usage for unknown commands", async () => {
   const output = await runCli(["unknown"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -113,7 +130,7 @@ test("runCli delegates the default command when no args are provided", async () 
       return "delegated start";
     },
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -125,7 +142,7 @@ test("runCli returns usage for the removed chat alias", async () => {
   const output = await runCli(["chat"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -141,7 +158,7 @@ test("runCli passes startup flags to the chat command", async () => {
       return "delegated start";
     },
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -158,7 +175,7 @@ test("runCli passes the bash approval startup flag to the chat command", async (
       return "delegated start";
     },
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -170,7 +187,7 @@ test("runCli returns usage when a startup flag is invalid", async () => {
   const output = await runCli(["--reasoning", "wrong"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -181,27 +198,27 @@ test("runCli returns usage successfully for help", async () => {
   const output = await runCli(["--help"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
-    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runCheckMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
   expect(output).toEqual({ status: "ok", output: CLI_USAGE });
 });
 
-test("runCheckNoVibeMcp reports that NoVibe MCP is disabled by default", async () => {
-  await expect(runCheckNoVibeMcp({ environment: {} })).resolves.toBe([
-    "NoVibe MCP is disabled.",
-    "Set BULI_NOVIBE_MCP_BEARER_TOKEN to enable it.",
+test("runCheckMcp reports that MCP is disabled by default", async () => {
+  await expect(runCheckMcp({ environment: {} })).resolves.toBe([
+    "MCP is disabled.",
+    "Set BULI_MCP_SERVERS_JSON or BULI_NOVIBE_MCP_BEARER_TOKEN to enable it.",
   ].join("\n"));
 });
 
-test("runCheckNoVibeMcp reports invalid NoVibe MCP environment", async () => {
-  await expect(runCheckNoVibeMcp({
+test("runCheckMcp reports invalid NoVibe MCP environment", async () => {
+  await expect(runCheckMcp({
     environment: { BULI_NOVIBE_MCP_URL: "http://localhost:8001/v1/mcp/" },
   })).resolves.toBe(
     "Invalid NoVibe MCP configuration. Set BULI_NOVIBE_MCP_BEARER_TOKEN when BULI_NOVIBE_MCP_URL or BULI_NOVIBE_MCP_TIMEOUT_MS is configured.",
   );
-  await expect(runCheckNoVibeMcp({
+  await expect(runCheckMcp({
     environment: {
       BULI_NOVIBE_MCP_BEARER_TOKEN: "raw-dev-token",
       BULI_NOVIBE_MCP_URL: "not-a-url",
@@ -209,14 +226,19 @@ test("runCheckNoVibeMcp reports invalid NoVibe MCP environment", async () => {
   })).resolves.toBe("Invalid BULI_NOVIBE_MCP_URL. Use an absolute http(s) URL.");
 });
 
-test("runCheckNoVibeMcp reports connected NoVibe MCP tools and disposes the integration", async () => {
-  let capturedMcpConfiguration: { mcpUrl: string; bearerToken: string; timeoutMs: number } | undefined;
+test("runCheckMcp reports connected NoVibe MCP tools and disposes the integration", async () => {
+  let capturedMcpRuntimeIntegrationInput: CreateMcpRuntimeIntegrationInput | undefined;
   let disposeCount = 0;
 
-  const output = await runCheckNoVibeMcp({
+  const output = await runCheckMcp({
     environment: { BULI_NOVIBE_MCP_BEARER_TOKEN: " raw-dev-token " },
-    createNoVibeMcpRuntimeIntegration: async (configuration) => {
-      capturedMcpConfiguration = configuration;
+    createMcpRuntimeIntegration: async (integrationInput) => {
+      capturedMcpRuntimeIntegrationInput = integrationInput;
+      const noVibeMcpServerConfiguration = integrationInput.serverConfigurations[0];
+      if (!noVibeMcpServerConfiguration) {
+        throw new Error("expected NoVibe MCP server configuration");
+      }
+
       return createFakeMcpRuntimeIntegration({
         toolNames: [
           "novibe_teacher_library_read_current_learning_area_tree",
@@ -226,7 +248,7 @@ test("runCheckNoVibeMcp reports connected NoVibe MCP tools and disposes the inte
           statusKind: "connected",
           serverName: "novibe",
           displayName: "NoVibe",
-          url: configuration.mcpUrl,
+          url: noVibeMcpServerConfiguration.url,
           toolCount: 2,
           toolNames: [
             "novibe_teacher_library_read_current_learning_area_tree",
@@ -240,13 +262,18 @@ test("runCheckNoVibeMcp reports connected NoVibe MCP tools and disposes the inte
     },
   });
 
-  expect(capturedMcpConfiguration).toEqual({
-    mcpUrl: "http://localhost:8001/v1/mcp/",
+  expect(capturedMcpRuntimeIntegrationInput?.serverConfigurations).toEqual([{
+    serverName: "novibe",
+    displayName: "NoVibe",
+    transport: "streamable_http",
+    url: "http://localhost:8001/v1/mcp/",
     bearerToken: "raw-dev-token",
     timeoutMs: 30_000,
-  });
+    toolExecutionPolicy: "read_only_auto_approved",
+  }]);
   expect(output).toBe([
     "NoVibe MCP connected: http://localhost:8001/v1/mcp/",
+    "Tool execution policy: read_only_auto_approved",
     "Tools (2):",
     "- novibe_teacher_library_read_current_learning_area_tree",
     "- novibe_teacher_library_note_read",
@@ -255,17 +282,185 @@ test("runCheckNoVibeMcp reports connected NoVibe MCP tools and disposes the inte
   expect(disposeCount).toBe(1);
 });
 
-test("runCheckNoVibeMcp reports unavailable NoVibe MCP without leaking the bearer token", async () => {
-  const output = await runCheckNoVibeMcp({
+test("runCheckMcp reports unavailable NoVibe MCP without leaking the bearer token", async () => {
+  const output = await runCheckMcp({
     environment: { BULI_NOVIBE_MCP_BEARER_TOKEN: "raw-dev-token" },
-    createNoVibeMcpRuntimeIntegration: async () => {
-      throw new Error("NoVibe MCP raw-dev-token server is offline");
+    createMcpRuntimeIntegration: async () => {
+      return createFakeMcpRuntimeIntegration({
+        toolNames: [],
+        serverStatuses: [{
+          statusKind: "unavailable",
+          serverName: "novibe",
+          displayName: "NoVibe",
+          url: "http://localhost:8001/v1/mcp/",
+          errorMessage: "NoVibe MCP raw-dev-token server is offline",
+        }],
+      });
     },
   });
 
   expect(output).toBe([
     "NoVibe MCP unavailable: http://localhost:8001/v1/mcp/",
+    "Tool execution policy: read_only_auto_approved",
     "Error: NoVibe MCP [redacted] server is offline",
+  ].join("\n"));
+});
+
+test("runCheckMcp checks generic MCP servers and redacts configured secrets", async () => {
+  let capturedMcpRuntimeIntegrationInput: CreateMcpRuntimeIntegrationInput | undefined;
+
+  const output = await runCheckMcp({
+    environment: {
+      DOCS_MCP_TOKEN: "docs-secret-token",
+      BULI_MCP_SERVERS_JSON: JSON.stringify({
+        docs: {
+          transport: "streamable_http",
+          url: "http://localhost:9001/mcp",
+          displayName: "Docs",
+          bearerTokenEnv: "DOCS_MCP_TOKEN",
+          headers: {
+            Authorization: "Bearer header-secret-token",
+            "X-Client": "buli",
+          },
+        },
+        disabled_docs: {
+          transport: "streamable_http",
+          url: "http://localhost:9002/mcp",
+          displayName: "Disabled Docs",
+          enabled: false,
+        },
+      }),
+    },
+    createMcpRuntimeIntegration: async (integrationInput) => {
+      capturedMcpRuntimeIntegrationInput = integrationInput;
+      return createFakeMcpRuntimeIntegration({
+        toolNames: ["docs_search"],
+        serverStatuses: [
+          {
+            statusKind: "connected",
+            serverName: "docs",
+            displayName: "Docs",
+            url: "http://localhost:9001/mcp",
+            toolCount: 1,
+            toolNames: ["docs_search"],
+          },
+          {
+            statusKind: "skipped",
+            serverName: "disabled_docs",
+            displayName: "Disabled Docs",
+            url: "http://localhost:9002/mcp",
+            reason: "disabled",
+          },
+          {
+            statusKind: "unavailable",
+            serverName: "unexpected",
+            displayName: "Unexpected",
+            url: "http://localhost:9003/mcp",
+            errorMessage: "unexpected docs-secret-token header-secret-token buli",
+          },
+        ],
+      });
+    },
+  });
+
+  expect(capturedMcpRuntimeIntegrationInput?.serverConfigurations).toEqual([
+    {
+      serverName: "docs",
+      displayName: "Docs",
+      transport: "streamable_http",
+      url: "http://localhost:9001/mcp",
+      timeoutMs: 30_000,
+      bearerToken: "docs-secret-token",
+      headers: [
+        { name: "Authorization", value: "Bearer header-secret-token" },
+        { name: "X-Client", value: "buli" },
+      ],
+    },
+    {
+      serverName: "disabled_docs",
+      displayName: "Disabled Docs",
+      transport: "streamable_http",
+      url: "http://localhost:9002/mcp",
+      enabled: false,
+      timeoutMs: 30_000,
+    },
+  ]);
+  expect(output).toBe([
+    "Docs MCP connected: http://localhost:9001/mcp",
+    "Tool execution policy: requires_user_approval",
+    "Tools (1):",
+    "- docs_search",
+    "",
+    "Disabled Docs MCP skipped: http://localhost:9002/mcp",
+    "Tool execution policy: requires_user_approval",
+    "Reason: disabled",
+    "",
+    "Unexpected MCP unavailable: http://localhost:9003/mcp",
+    "Error: unexpected [redacted] [redacted] buli",
+  ].join("\n"));
+});
+
+test("runCheckMcp can check one configured MCP server", async () => {
+  let capturedMcpRuntimeIntegrationInput: CreateMcpRuntimeIntegrationInput | undefined;
+
+  const output = await runCheckMcp({
+    serverName: "docs",
+    environment: {
+      BULI_MCP_SERVERS_JSON: JSON.stringify({
+        docs: {
+          transport: "streamable_http",
+          url: "http://localhost:9001/mcp",
+          displayName: "Docs",
+        },
+        other: {
+          transport: "streamable_http",
+          url: "http://localhost:9002/mcp",
+          displayName: "Other",
+        },
+      }),
+    },
+    createMcpRuntimeIntegration: async (integrationInput) => {
+      capturedMcpRuntimeIntegrationInput = integrationInput;
+      return createFakeMcpRuntimeIntegration({
+        toolNames: ["docs_search"],
+        serverStatuses: [{
+          statusKind: "connected",
+          serverName: "docs",
+          displayName: "Docs",
+          url: "http://localhost:9001/mcp",
+          toolCount: 1,
+          toolNames: ["docs_search"],
+        }],
+      });
+    },
+  });
+
+  expect(capturedMcpRuntimeIntegrationInput?.serverConfigurations.map((serverConfiguration) => serverConfiguration.serverName)).toEqual([
+    "docs",
+  ]);
+  expect(output).toBe([
+    "Docs MCP connected: http://localhost:9001/mcp",
+    "Tool execution policy: requires_user_approval",
+    "Tools (1):",
+    "- docs_search",
+  ].join("\n"));
+});
+
+test("runCheckMcp reports a missing filtered MCP server", async () => {
+  await expect(runCheckMcp({
+    serverName: "missing",
+    environment: {
+      BULI_MCP_SERVERS_JSON: JSON.stringify({
+        docs: {
+          transport: "streamable_http",
+          url: "http://localhost:9001/mcp",
+        },
+      }),
+    },
+  })).resolves.toBe([
+    "MCP server is not configured: missing",
+    "Configured servers (1):",
+    "- docs",
   ].join("\n"));
 });
 
@@ -857,6 +1052,7 @@ test("runInteractiveChat composes generic MCP tools into the default assistant r
     url: "http://localhost:8001/v1/mcp",
     bearerToken: "raw-dev-token",
     timeoutMs: 12_345,
+    toolExecutionPolicy: "read_only_auto_approved",
   }]);
   expect(disposeCount).toBe(1);
   expect(capturedStartupIntegrationNotices).toEqual([

@@ -176,6 +176,7 @@ test("interactive chat resolves generic streamable HTTP MCP servers from JSON", 
           timeoutMs: 12_345,
           headers: { "X-Client": "buli" },
           toolResultRetention: "summary",
+          toolExecutionPolicy: "read_only_auto_approved",
         },
       }),
     },
@@ -194,6 +195,7 @@ test("interactive chat resolves generic streamable HTTP MCP servers from JSON", 
           timeoutMs: 12_345,
           headers: [{ name: "X-Client", value: "buli" }],
           toolResultRetention: "summary",
+          toolExecutionPolicy: "read_only_auto_approved",
         },
       ],
     },
@@ -234,6 +236,20 @@ test("interactive chat reports invalid generic MCP retention", () => {
   })).toEqual({ status: "invalid", invalidReason: "invalid_tool_result_retention" });
 });
 
+test("interactive chat reports invalid generic MCP tool execution policy", () => {
+  expect(resolveInteractiveChatMcpServersConfiguration({
+    environment: {
+      BULI_MCP_SERVERS_JSON: JSON.stringify({
+        docs: {
+          transport: "streamable_http",
+          url: "http://localhost:9001/mcp",
+          toolExecutionPolicy: "auto_run_everything",
+        },
+      }),
+    },
+  })).toEqual({ status: "invalid", invalidReason: "invalid_tool_execution_policy" });
+});
+
 test("interactive chat synthesizes legacy NoVibe MCP env into a generic MCP server", () => {
   expect(resolveInteractiveChatMcpServersConfiguration({
     environment: { BULI_NOVIBE_MCP_BEARER_TOKEN: " raw-dev-token " },
@@ -248,6 +264,7 @@ test("interactive chat synthesizes legacy NoVibe MCP env into a generic MCP serv
           url: DEFAULT_NOVIBE_MCP_URL,
           bearerToken: "raw-dev-token",
           timeoutMs: DEFAULT_NOVIBE_MCP_TIMEOUT_MS,
+          toolExecutionPolicy: "read_only_auto_approved",
         },
       ],
     },

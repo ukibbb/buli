@@ -35,6 +35,7 @@ export async function createNoVibeMcpRuntimeIntegration(
         url: configuration.mcpUrl,
         bearerToken: configuration.bearerToken,
         timeoutMs: configuration.timeoutMs,
+        toolExecutionPolicy: "read_only_auto_approved",
         ...(configuration.toolResultRetention !== undefined
           ? { toolResultRetention: configuration.toolResultRetention }
           : {}),
@@ -62,6 +63,7 @@ function createConnectedNoVibeMcpServer(
       transport: "streamable_http",
       url: "http://localhost:8001/v1/mcp/",
       timeoutMs: 30_000,
+      toolExecutionPolicy: "read_only_auto_approved",
       ...(input.toolResultRetention !== undefined ? { toolResultRetention: input.toolResultRetention } : {}),
     },
     listedMcpTools: input.listedMcpTools,

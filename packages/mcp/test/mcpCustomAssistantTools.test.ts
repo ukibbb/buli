@@ -7,7 +7,7 @@ import {
   type NoVibeMcpToolCallInput,
 } from "../src/mcpCustomAssistantTools.ts";
 
-test("converts listed MCP tools into read-only Buli custom assistant tools", () => {
+test("converts generic MCP tools into approval-required Buli custom assistant tools by default", () => {
   const customAssistantTools = createMcpCustomAssistantTools({
     serverName: "docs/server",
     serverDisplayName: "Docs",
@@ -38,6 +38,27 @@ test("converts listed MCP tools into read-only Buli custom assistant tools", () 
     },
   });
   expect(customAssistantTools[0]?.executionPolicy).toEqual({
+    workspaceEffectKind: "workspace_change_possible",
+    isAutoConcurrent: false,
+    isAutoApprovedReadOnly: false,
+    clearsSameTurnReadCoverageBeforeExecution: true,
+  });
+  expect(customAssistantTools[0]?.approvalPolicy).toEqual({
+    approvalPolicyKind: "requires_user_approval",
+    riskExplanation: "Docs MCP tool search.docs comes from an external MCP server. Buli cannot verify that it is read-only, so it requires approval before running because it may change the workspace or external state.",
+  });
+});
+
+test("converts trusted read-only MCP tools into auto-approved Buli custom assistant tools", () => {
+  const customAssistantTools = createMcpCustomAssistantTools({
+    serverName: "docs/server",
+    serverDisplayName: "Docs",
+    toolExecutionPolicy: "read_only_auto_approved",
+    listedMcpTools: [{ name: "search.docs", description: "Search docs." }],
+    callMcpTool: async () => ({ content: [{ type: "text", text: "ok" }] }),
+  });
+
+  expect(customAssistantTools[0]?.executionPolicy).toEqual({
     workspaceEffectKind: "read_only",
     isAutoConcurrent: true,
     isAutoApprovedReadOnly: true,
@@ -53,6 +74,7 @@ test("keeps legacy NoVibe custom tool naming compatibility", () => {
   });
 
   expect(customAssistantTools[0]?.toolName).toBe("novibe_teacher_library_note_read");
+  expect(customAssistantTools[0]?.approvalPolicy).toEqual({ approvalPolicyKind: "auto_approve" });
 });
 
 test("forwards custom tool arguments to the original MCP tool name", async () => {

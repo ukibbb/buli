@@ -38,8 +38,13 @@ export type {
   McpSkippedServerRuntimeStatus,
   McpStreamableHttpHeader,
   McpStreamableHttpServerConfiguration,
+  McpToolExecutionPolicy,
   McpToolResultRetentionPolicy,
   McpUnavailableServerRuntimeStatus,
+} from "./mcpServerConfiguration.ts";
+export {
+  DEFAULT_MCP_TOOL_EXECUTION_POLICY,
+  resolveMcpToolExecutionPolicy,
 } from "./mcpServerConfiguration.ts";
 export {
   connectStreamableHttpMcpServer,

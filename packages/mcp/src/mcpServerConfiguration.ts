@@ -1,4 +1,7 @@
 export type McpToolResultRetentionPolicy = "full" | "summary" | "redacted";
+export type McpToolExecutionPolicy = "requires_user_approval" | "read_only_auto_approved";
+
+export const DEFAULT_MCP_TOOL_EXECUTION_POLICY: McpToolExecutionPolicy = "requires_user_approval";
 
 export type McpStreamableHttpHeader = Readonly<{
   name: string;
@@ -15,7 +18,14 @@ export type McpStreamableHttpServerConfiguration = Readonly<{
   bearerToken?: string | undefined;
   headers?: readonly McpStreamableHttpHeader[] | undefined;
   toolResultRetention?: McpToolResultRetentionPolicy | undefined;
+  toolExecutionPolicy?: McpToolExecutionPolicy | undefined;
 }>;
+
+export function resolveMcpToolExecutionPolicy(
+  serverConfiguration: Pick<McpStreamableHttpServerConfiguration, "toolExecutionPolicy">,
+): McpToolExecutionPolicy {
+  return serverConfiguration.toolExecutionPolicy ?? DEFAULT_MCP_TOOL_EXECUTION_POLICY;
+}
 
 export type McpConnectedServerRuntimeStatus = Readonly<{
   statusKind: "connected";

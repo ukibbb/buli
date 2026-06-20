@@ -20,6 +20,7 @@ import type {
   McpServerRuntimeStatus,
   McpStreamableHttpServerConfiguration,
 } from "./mcpServerConfiguration.ts";
+import { resolveMcpToolExecutionPolicy } from "./mcpServerConfiguration.ts";
 
 export type ConnectedMcpServer = Readonly<{
   serverConfiguration: McpStreamableHttpServerConfiguration;
@@ -111,22 +112,34 @@ export async function createMcpRuntimeIntegration(
 export function createMcpAssistantRuntimeConfiguration(
   input: CreateMcpAssistantRuntimeConfigurationInput,
 ): McpRuntimeIntegration & Readonly<{ toolNamesByServerName: ReadonlyMap<string, readonly string[]> }> {
-  const customAssistantToolDefinitions = input.connectedServers.flatMap((connectedServer) =>
-    createMcpCustomAssistantTools({
+  const customAssistantToolDefinitionsByServer = input.connectedServers.map((connectedServer) => {
+    const toolExecutionPolicy = resolveMcpToolExecutionPolicy(connectedServer.serverConfiguration);
+    const customAssistantToolDefinitions = createMcpCustomAssistantTools({
       serverName: connectedServer.serverConfiguration.serverName,
       serverDisplayName: connectedServer.serverConfiguration.displayName,
       listedMcpTools: connectedServer.listedMcpTools,
       callMcpTool: connectedServer.callMcpTool,
       toolResultRetention: connectedServer.serverConfiguration.toolResultRetention,
-    })
+      toolExecutionPolicy,
+    });
+
+    return {
+      serverName: connectedServer.serverConfiguration.serverName,
+      toolExecutionPolicy,
+      customAssistantToolDefinitions,
+      customToolNames: customAssistantToolDefinitions.map((customToolDefinition) => customToolDefinition.toolName),
+    };
+  });
+  const customAssistantToolDefinitions = customAssistantToolDefinitionsByServer.flatMap((serverCustomTools) =>
+    serverCustomTools.customAssistantToolDefinitions
   );
-  const mcpToolNames = customAssistantToolDefinitions.map((customToolDefinition) => customToolDefinition.toolName);
+  const mcpToolNames = customAssistantToolDefinitionsByServer.flatMap((serverCustomTools) => serverCustomTools.customToolNames);
+  const autoApprovedReadOnlyMcpToolNames = customAssistantToolDefinitionsByServer.flatMap((serverCustomTools) =>
+    serverCustomTools.toolExecutionPolicy === "read_only_auto_approved" ? serverCustomTools.customToolNames : []
+  );
   const toolNamesByServerName = new Map<string, readonly string[]>();
-  let nextToolIndex = 0;
-  for (const connectedServer of input.connectedServers) {
-    const serverToolNames = mcpToolNames.slice(nextToolIndex, nextToolIndex + connectedServer.listedMcpTools.length);
-    toolNamesByServerName.set(connectedServer.serverConfiguration.serverName, serverToolNames);
-    nextToolIndex += connectedServer.listedMcpTools.length;
+  for (const serverCustomTools of customAssistantToolDefinitionsByServer) {
+    toolNamesByServerName.set(serverCustomTools.serverName, serverCustomTools.customToolNames);
   }
   const assistantRuntimeConfiguration = createAssistantRuntimeConfiguration({
     additionalCustomTools: customAssistantToolDefinitions,
@@ -147,7 +160,7 @@ export function createMcpAssistantRuntimeConfiguration(
                 subagentName: taskSubagent.subagentName,
                 availableToolNames: appendUniqueProviderToolNames({
                   baselineToolNames: taskSubagent.availableToolNames,
-                  additionalToolNames: mcpToolNames,
+                  additionalToolNames: autoApprovedReadOnlyMcpToolNames,
                 }),
               })),
             },

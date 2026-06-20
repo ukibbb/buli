@@ -1,7 +1,12 @@
 import { dirname, resolve, sep } from "node:path";
 import { ReasoningEffortSchema, type ReasoningEffort } from "@buli/contracts";
 import { parseBashToolApprovalMode, type BashToolApprovalMode, type TaskSubagentProviderModelSelectionPolicy } from "@buli/engine";
-import type { McpStreamableHttpHeader, McpStreamableHttpServerConfiguration, McpToolResultRetentionPolicy } from "@buli/mcp";
+import type {
+  McpStreamableHttpHeader,
+  McpStreamableHttpServerConfiguration,
+  McpToolExecutionPolicy,
+  McpToolResultRetentionPolicy,
+} from "@buli/mcp";
 
 export const INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE = "Invalid BULI_BASH_APPROVAL_MODE. Use `risk_based` or `trusted`.";
 export const INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE = "Invalid BULI_AUTO_COMPACT_THRESHOLD. Use a number from 0 through 1.";
@@ -14,6 +19,7 @@ export const INVALID_MCP_SERVERS_JSON_MESSAGE = "Invalid BULI_MCP_SERVERS_JSON. 
 export const INVALID_MCP_SERVER_CONFIGURATION_MESSAGE = "Invalid BULI_MCP_SERVERS_JSON server configuration. Each server needs transport \"streamable_http\" and an absolute http(s) url.";
 export const INVALID_MCP_BEARER_TOKEN_ENV_MESSAGE = "Invalid BULI_MCP_SERVERS_JSON bearerTokenEnv. It must name an environment variable that is set.";
 export const INVALID_MCP_TOOL_RESULT_RETENTION_MESSAGE = "Invalid BULI_MCP_SERVERS_JSON toolResultRetention. Use full, summary, or redacted.";
+export const INVALID_MCP_TOOL_EXECUTION_POLICY_MESSAGE = "Invalid BULI_MCP_SERVERS_JSON toolExecutionPolicy. Use requires_user_approval or read_only_auto_approved.";
 export const INVALID_NOVIBE_MCP_MISSING_BEARER_TOKEN_MESSAGE = "Invalid NoVibe MCP configuration. Set BULI_NOVIBE_MCP_BEARER_TOKEN when BULI_NOVIBE_MCP_URL or BULI_NOVIBE_MCP_TIMEOUT_MS is configured.";
 export const INVALID_NOVIBE_MCP_URL_MESSAGE = "Invalid BULI_NOVIBE_MCP_URL. Use an absolute http(s) URL.";
 export const INVALID_NOVIBE_MCP_TIMEOUT_MESSAGE = "Invalid BULI_NOVIBE_MCP_TIMEOUT_MS. Use a positive integer number of milliseconds.";
@@ -75,6 +81,7 @@ export type InteractiveChatMcpServersEnvironmentInvalidReason =
   | "invalid_server_configuration"
   | "missing_bearer_token_env"
   | "invalid_tool_result_retention"
+  | "invalid_tool_execution_policy"
   | "missing_bearer_token"
   | "invalid_url"
   | "invalid_timeout";
@@ -237,6 +244,7 @@ export function resolveInteractiveChatMcpServersConfiguration(input: {
         url: noVibeMcpConfigurationResolution.configuration.mcpUrl,
         bearerToken: noVibeMcpConfigurationResolution.configuration.bearerToken,
         timeoutMs: noVibeMcpConfigurationResolution.configuration.timeoutMs,
+        toolExecutionPolicy: "read_only_auto_approved",
       });
     }
   }
@@ -309,6 +317,7 @@ type GenericMcpServerConfigurationInvalidReason =
   | "invalid_server_configuration"
   | "missing_bearer_token_env"
   | "invalid_tool_result_retention"
+  | "invalid_tool_execution_policy"
   | "invalid_url"
   | "invalid_timeout";
 
@@ -381,6 +390,11 @@ function parseGenericMcpServerConfiguration(input: {
     return { status: "invalid", invalidReason: "invalid_tool_result_retention" };
   }
 
+  const toolExecutionPolicyResolution = parseMcpToolExecutionPolicy(input.rawServerConfiguration["toolExecutionPolicy"]);
+  if (toolExecutionPolicyResolution.status === "invalid") {
+    return { status: "invalid", invalidReason: "invalid_tool_execution_policy" };
+  }
+
   const bearerTokenResolution = resolveMcpBearerTokenFromEnvironment({
     rawBearerTokenEnvironmentVariableName: input.rawServerConfiguration["bearerTokenEnv"],
     environment: input.environment,
@@ -410,6 +424,9 @@ function parseGenericMcpServerConfiguration(input: {
       ...(toolResultRetentionResolution.toolResultRetention !== undefined
         ? { toolResultRetention: toolResultRetentionResolution.toolResultRetention }
         : {}),
+      ...(toolExecutionPolicyResolution.toolExecutionPolicy !== undefined
+        ? { toolExecutionPolicy: toolExecutionPolicyResolution.toolExecutionPolicy }
+        : {}),
     },
   };
 }
@@ -426,6 +443,22 @@ function parseMcpToolResultRetentionPolicy(rawToolResultRetention: unknown):
     rawToolResultRetention === "redacted"
   ) {
     return { status: "resolved", toolResultRetention: rawToolResultRetention };
+  }
+
+  return { status: "invalid" };
+}
+
+function parseMcpToolExecutionPolicy(rawToolExecutionPolicy: unknown):
+  | { status: "resolved"; toolExecutionPolicy?: McpToolExecutionPolicy | undefined }
+  | { status: "invalid" } {
+  if (rawToolExecutionPolicy === undefined) {
+    return { status: "resolved" };
+  }
+  if (
+    rawToolExecutionPolicy === "requires_user_approval" ||
+    rawToolExecutionPolicy === "read_only_auto_approved"
+  ) {
+    return { status: "resolved", toolExecutionPolicy: rawToolExecutionPolicy };
   }
 
   return { status: "invalid" };

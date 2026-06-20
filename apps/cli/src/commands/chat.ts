@@ -44,6 +44,7 @@ import {
   INVALID_MCP_BEARER_TOKEN_ENV_MESSAGE,
   INVALID_MCP_SERVER_CONFIGURATION_MESSAGE,
   INVALID_MCP_SERVERS_JSON_MESSAGE,
+  INVALID_MCP_TOOL_EXECUTION_POLICY_MESSAGE,
   INVALID_MCP_TOOL_RESULT_RETENTION_MESSAGE,
   INVALID_NOVIBE_MCP_MISSING_BEARER_TOKEN_MESSAGE,
   INVALID_NOVIBE_MCP_TIMEOUT_MESSAGE,
@@ -652,6 +653,8 @@ function resolveInteractiveChatStartupConfiguration(input: {
         return { status: "failed", message: INVALID_MCP_BEARER_TOKEN_ENV_MESSAGE };
       case "invalid_tool_result_retention":
         return { status: "failed", message: INVALID_MCP_TOOL_RESULT_RETENTION_MESSAGE };
+      case "invalid_tool_execution_policy":
+        return { status: "failed", message: INVALID_MCP_TOOL_EXECUTION_POLICY_MESSAGE };
       case "missing_bearer_token":
         return { status: "failed", message: INVALID_NOVIBE_MCP_MISSING_BEARER_TOKEN_MESSAGE };
       case "invalid_url":
