@@ -8,6 +8,7 @@ import {
   type TerminalRendererCreateOptionsForChatScreen,
   type TerminalRendererForChatScreenRuntime,
 } from "../src/index.ts";
+import type { StartupIntegrationNotice } from "../src/components/LiveInteractionStatusStack.tsx";
 
 class FakeTerminalRenderer implements TerminalRendererForChatScreenRuntime {
   isDestroyed = false;
@@ -148,6 +149,34 @@ test("renderChatScreenInTerminalWithRuntime keeps catalog loaders lazy during st
   expect(availableAssistantModelLoadCount).toBe(0);
   expect(promptContextCandidateLoadCount).toBe(0);
   expect(conversationSessionLoadCount).toBe(0);
+
+  chatScreen.destroy();
+  await chatScreen.waitUntilExit();
+});
+
+test("renderChatScreenInTerminalWithRuntime passes startup integration notices to ChatScreen", async () => {
+  const capturedChatScreenProps: { startupIntegrationNotices?: readonly StartupIntegrationNotice[] | undefined } = {};
+  const runtimeHarness = createRuntimeHarness({
+    onChatScreenPropsCreated: (chatScreenProps) => {
+      capturedChatScreenProps.startupIntegrationNotices = chatScreenProps.startupIntegrationNotices;
+    },
+  });
+  const chatScreen = await renderChatScreenInTerminalWithRuntime(
+    {
+      ...createRuntimeTestInput(),
+      startupIntegrationNotices: [
+        { noticeSeverity: "success", noticeText: "MCP: novibe connected (4 tools)" },
+      ],
+    },
+    runtimeHarness.runtime,
+  );
+
+  if (capturedChatScreenProps.startupIntegrationNotices === undefined) {
+    throw new Error("expected startup integration notices to be passed to ChatScreen");
+  }
+  expect(capturedChatScreenProps.startupIntegrationNotices).toEqual([
+    { noticeSeverity: "success", noticeText: "MCP: novibe connected (4 tools)" },
+  ]);
 
   chatScreen.destroy();
   await chatScreen.waitUntilExit();

@@ -21,7 +21,6 @@ import {
   FILE_MUTATION_TOOL_REQUEST_NAMES,
   MAX_BASH_TOOL_COMMAND_LENGTH,
   MAX_BASH_TOOL_TIMEOUT_MILLISECONDS,
-  MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH,
   MAX_EDIT_MANY_TOOL_EDIT_COUNT,
   MAX_EDIT_TOOL_SEARCH_TEXT_LENGTH,
   MAX_GREP_TOOL_PATTERN_LENGTH,
@@ -55,7 +54,6 @@ import {
   isCustomToolCallRequest,
   isCustomToolName,
   isFileMutationToolCallRequest,
-  isLocateCodebaseSymbolsToolCallRequest,
   isReadOnlyAssistantModeToolRequestName,
   isRecordWorkflowHandoffToolCallRequest,
   isSkillToolCallRequest,
@@ -507,12 +505,6 @@ test("ToolCallRequestSchema rejects oversized tool request payloads", () => {
       subagentName: "explore",
       subagentDescription: "map files",
       subagentPrompt: "x".repeat(MAX_TASK_TOOL_PROMPT_LENGTH + 1),
-    })
-  ).toThrow();
-  expect(() =>
-    ToolCallRequestSchema.parse({
-      toolName: "locate_codebase_symbols",
-      symbolNames: ["x".repeat(MAX_CODEBASE_KNOWLEDGE_SYMBOL_NAME_LENGTH + 1)],
     })
   ).toThrow();
 });
@@ -1150,36 +1142,6 @@ test("ToolCallRequestSchema parses typed coding tool requests", () => {
   });
   expect(
     ToolCallRequestSchema.parse({
-      toolName: "locate_codebase_symbols",
-      symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-      filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-    }),
-  ).toEqual({
-    toolName: "locate_codebase_symbols",
-    symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-    filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-  });
-  expect(() =>
-    ToolCallRequestSchema.parse({
-      toolName: "locate_codebase_symbols",
-      filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-    })
-  ).toThrow();
-  expect(() =>
-    ToolCallRequestSchema.parse({
-      toolName: "locate_codebase_symbols",
-      symbolNames: [],
-    })
-  ).toThrow();
-  expect(() =>
-    ToolCallRequestSchema.parse({
-      toolName: "locate_codebase_symbols",
-      symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-      maximumResultCount: 4,
-    })
-  ).toThrow();
-  expect(
-    ToolCallRequestSchema.parse({
       toolName: "edit",
       editTargetPath: "packages/contracts/src/index.ts",
       oldString: "old",
@@ -1320,7 +1282,6 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
     "read",
     "glob",
     "grep",
-    "locate_codebase_symbols",
     "edit",
     "edit_many",
     "patch",
@@ -1330,9 +1291,9 @@ test("tool catalog lists assistant request tools by execution boundary", () => {
     "skill",
     "record_workflow_handoff",
   ]);
-  expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
+  expect(WORKSPACE_INSPECTION_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep"]);
   expect(FILE_MUTATION_TOOL_REQUEST_NAMES).toEqual(["edit", "edit_many", "patch", "patch_many", "write"]);
-  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"]);
+  expect(READ_ONLY_ASSISTANT_MODE_TOOL_REQUEST_NAMES).toEqual(["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"]);
   expect(RENDER_ONLY_TOOL_DETAIL_NAMES).toEqual(["todowrite", "web_search"]);
 });
 
@@ -1340,15 +1301,15 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isAssistantToolRequestName("bash")).toBe(true);
   expect(isAssistantToolRequestName("task")).toBe(true);
   expect(isAssistantToolRequestName("skill")).toBe(true);
-  expect(isAssistantToolRequestName("locate_codebase_symbols")).toBe(true);
+  expect(isAssistantToolRequestName("custom_inspection_summary")).toBe(false);
   expect(isAssistantToolRequestName("web_search")).toBe(false);
   expect(isAssistantToolRequestName("explore")).toBe(false);
   expect(isAssistantToolRequestName("general")).toBe(false);
   expect(isCustomToolName("workspace_summary")).toBe(true);
+  expect(isCustomToolName("custom_inspection_summary")).toBe(true);
   expect(isCustomToolName("bash")).toBe(false);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "grep", regexPattern: "ToolCallRequest" })).toBe(true);
-  expect(isWorkspaceInspectionToolCallRequest({ toolName: "locate_codebase_symbols", symbolNames: ["runDispatch"] })).toBe(true);
   expect(isWorkspaceInspectionToolCallRequest({ toolName: "write", writeTargetPath: "generated.ts", fileContent: "" })).toBe(false);
   expect(isFileMutationToolCallRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toBe(true);
   expect(isFileMutationToolCallRequest({ toolName: "edit_many", edits: [{ editTargetPath: "README.md", oldString: "old", newString: "new" }] })).toBe(true);
@@ -1356,8 +1317,6 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isFileMutationToolCallRequest({ toolName: "patch_many", patchText: "*** Begin Patch\n*** Add File: generated.txt\n+new\n*** End Patch" })).toBe(true);
   expect(isFileMutationToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
   expect(isReadOnlyAssistantModeToolRequestName("read")).toBe(true);
-
-  expect(isReadOnlyAssistantModeToolRequestName("locate_codebase_symbols")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("task")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("skill")).toBe(true);
   expect(isReadOnlyAssistantModeToolRequestName("record_workflow_handoff")).toBe(true);
@@ -1365,8 +1324,6 @@ test("tool catalog classifies typed tool requests", () => {
   expect(isReadOnlyAssistantModeToolRequestName("write")).toBe(false);
   expect(isSkillToolCallRequest({ toolName: "skill", skillName: "code-review" })).toBe(true);
   expect(isSkillToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
-  expect(isLocateCodebaseSymbolsToolCallRequest({ toolName: "locate_codebase_symbols", symbolNames: ["runDispatch"] })).toBe(true);
-  expect(isLocateCodebaseSymbolsToolCallRequest({ toolName: "read", readTargetPath: "README.md" })).toBe(false);
   expect(isRecordWorkflowHandoffToolCallRequest({
     toolName: "record_workflow_handoff",
     workflowHandoff: {
@@ -1480,15 +1437,6 @@ test("createStartedToolCallDetailFromRequest maps requests to render details", (
     toolName: "grep",
     searchPattern: "ToolCallRequest",
     contextLineCount: 2,
-  });
-  expect(createStartedToolCallDetailFromRequest({
-    toolName: "locate_codebase_symbols",
-    symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-    filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-  })).toEqual({
-    toolName: "locate_codebase_symbols",
-    symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-    filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
   });
   expect(createStartedToolCallDetailFromRequest({ toolName: "edit", editTargetPath: "README.md", oldString: "old", newString: "new" })).toEqual({
     toolName: "edit",

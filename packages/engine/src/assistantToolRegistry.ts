@@ -58,6 +58,8 @@ export type CustomAssistantToolExecutionOutcome =
     toolResultJson?: JsonValue | undefined;
     toolResultSummary?: string | undefined;
     toolCallDetail?: CustomToolCallDetail | undefined;
+    sessionToolResultText?: string | undefined;
+    sessionToolCallDetail?: CustomToolCallDetail | undefined;
   }
   | {
     outcomeKind: "failed";
@@ -66,6 +68,9 @@ export type CustomAssistantToolExecutionOutcome =
     toolResultJson?: JsonValue | undefined;
     toolResultSummary?: string | undefined;
     toolCallDetail?: CustomToolCallDetail | undefined;
+    sessionToolResultText?: string | undefined;
+    sessionFailureExplanation?: string | undefined;
+    sessionToolCallDetail?: CustomToolCallDetail | undefined;
   };
 
 export type CustomAssistantToolExecutor = (

@@ -2,10 +2,6 @@ import type { PerformanceScenario } from "../model/performanceScenario.ts";
 import { assistantMarkdownUnifiedRenderableScenario } from "./assistantMarkdownUnifiedRenderableScenario.ts";
 import { conversationTranscriptRetentionScenario } from "./conversationTranscriptRetentionScenario.ts";
 import { assistantReducerReplayScenario } from "./assistantReducerReplayScenario.ts";
-import {
-  codebaseKnowledgeStartupIndexLargeScenario,
-  codebaseKnowledgeStartupIndexScenario,
-} from "./codebaseKnowledgeStartupIndexScenario.ts";
 import { openAiStreamReplayScenario } from "./openAiStreamReplayScenario.ts";
 import { promptContextLargeTreeScenario } from "./promptContextLargeTreeScenario.ts";
 import { sqliteSessionLargeHistoryScenario } from "./sqliteSessionLargeHistoryScenario.ts";
@@ -21,8 +17,6 @@ export const buliPerformanceScenarios = [
   taskSubagentRuntimeScenario,
   sqliteSessionLargeHistoryScenario,
   toolOutputContextGrowthScenario,
-  codebaseKnowledgeStartupIndexScenario,
-  codebaseKnowledgeStartupIndexLargeScenario,
   assistantMarkdownUnifiedRenderableScenario,
   conversationTranscriptRetentionScenario,
 ] as const satisfies readonly PerformanceScenario[];

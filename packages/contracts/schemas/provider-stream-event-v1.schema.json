@@ -145,7 +145,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema14"
+            "$ref": "#/$defs/__schema13"
           }
         }
       },
@@ -167,7 +167,7 @@
           "minLength": 1
         },
         "hostedWebSearchStatus": {
-          "$ref": "#/$defs/__schema15"
+          "$ref": "#/$defs/__schema14"
         },
         "hostedWebSearchCallDetail": {
           "type": "object",
@@ -177,7 +177,7 @@
               "const": "web_search"
             },
             "webSearchStatus": {
-              "$ref": "#/$defs/__schema15"
+              "$ref": "#/$defs/__schema14"
             },
             "webSearchActionKind": {
               "type": "string",
@@ -326,7 +326,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema16"
+            "$ref": "#/$defs/__schema15"
           }
         }
       },
@@ -392,7 +392,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema17"
+            "$ref": "#/$defs/__schema16"
           }
         }
       },
@@ -912,35 +912,6 @@
                 "workflowHandoff"
               ],
               "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "toolName": {
-                  "type": "string",
-                  "const": "locate_codebase_symbols"
-                },
-                "symbolNames": {
-                  "minItems": 1,
-                  "maxItems": 50,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/__schema12"
-                  }
-                },
-                "filePaths": {
-                  "maxItems": 50,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/__schema2"
-                  }
-                }
-              },
-              "required": [
-                "toolName",
-                "symbolNames"
-              ],
-              "additionalProperties": false
             }
           ]
         },
@@ -957,7 +928,7 @@
                 "type": "string"
               },
               "additionalProperties": {
-                "$ref": "#/$defs/__schema13"
+                "$ref": "#/$defs/__schema12"
               }
             }
           },
@@ -1130,11 +1101,6 @@
       "additionalProperties": false
     },
     "__schema12": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 512
-    },
-    "__schema13": {
       "anyOf": [
         {
           "type": "string"
@@ -1151,7 +1117,7 @@
         {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema13"
+            "$ref": "#/$defs/__schema12"
           }
         },
         {
@@ -1160,12 +1126,12 @@
             "type": "string"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/__schema13"
+            "$ref": "#/$defs/__schema12"
           }
         }
       ]
     },
-    "__schema14": {
+    "__schema13": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -1182,7 +1148,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema15": {
+    "__schema14": {
       "type": "string",
       "enum": [
         "in_progress",
@@ -1190,7 +1156,7 @@
         "completed"
       ]
     },
-    "__schema16": {
+    "__schema15": {
       "type": "object",
       "properties": {
         "citedUrl": {
@@ -1217,7 +1183,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema17": {
+    "__schema16": {
       "type": "object",
       "properties": {
         "stepIndex": {

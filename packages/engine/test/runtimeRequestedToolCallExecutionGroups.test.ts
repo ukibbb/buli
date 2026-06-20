@@ -13,14 +13,6 @@ const grepRequestedToolCall = {
   toolCallRequest: { toolName: "grep", regexPattern: "ToolCallRequest" },
 } as const satisfies ProviderRequestedToolCall;
 
-const locateCodebaseSymbolsRequestedToolCall = {
-  toolCallId: "call_locate_codebase_symbols_1",
-  toolCallRequest: {
-    toolName: "locate_codebase_symbols",
-    symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-  },
-} as const satisfies ProviderRequestedToolCall;
-
 const bashRequestedToolCall = {
   toolCallId: "call_bash_1",
   toolCallRequest: {
@@ -153,19 +145,6 @@ test("groupRequestedToolCallsForExecution keeps single auto-concurrent calls ser
   ]);
   expect(groupRequestedToolCallsForExecution([taskRequestedToolCall])).toEqual([
     { groupKind: "serial", requestedToolCall: taskRequestedToolCall },
-  ]);
-});
-
-test("groupRequestedToolCallsForExecution groups exact symbol lookups with read-only calls", () => {
-  expect(groupRequestedToolCallsForExecution([
-    readRequestedToolCall,
-    locateCodebaseSymbolsRequestedToolCall,
-    grepRequestedToolCall,
-  ])).toEqual([
-    {
-      groupKind: "auto_concurrent",
-      requestedToolCalls: [readRequestedToolCall, locateCodebaseSymbolsRequestedToolCall, grepRequestedToolCall],
-    },
   ]);
 });
 

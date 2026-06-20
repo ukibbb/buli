@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import type { AssistantResponseEvent } from "@buli/contracts";
 import {
   ActiveConversationTurnShutdownCoordinator,
+  type LoadConversationTranscriptEntryRecords,
 } from "@buli/chat-app-controller";
+import type { ConversationTranscriptEntryRecord } from "@buli/chat-session-state";
 import type {
   ActiveConversationTurn,
   AssistantConversationRunner,
@@ -28,11 +30,19 @@ type OpenTuiChatScreenHarness = {
 
 async function renderChatScreen(input: {
   assistantConversationRunner: AssistantConversationRunner;
+  initialConversationSessionId?: string;
+  loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords;
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
 }): Promise<OpenTuiChatScreenHarness> {
   const renderedChatScreen = await testRender(
     <ChatScreen
       selectedModelId="gpt-5.4"
+      {...(input.initialConversationSessionId !== undefined
+        ? { initialConversationSessionId: input.initialConversationSessionId }
+        : {})}
+      {...(input.loadConversationTranscriptEntryRecords !== undefined
+        ? { loadConversationTranscriptEntryRecords: input.loadConversationTranscriptEntryRecords }
+        : {})}
       loadAvailableAssistantModels={noopAvailableModelsLoader}
       loadPromptContextCandidates={noopPromptContextCandidatesLoader}
       assistantConversationRunner={input.assistantConversationRunner}
@@ -103,6 +113,82 @@ async function renderChatScreen(input: {
       return captureFrame();
     },
   };
+}
+
+function createUserPromptTranscriptEntryRecords(
+  conversationMessageCount: number,
+): readonly ConversationTranscriptEntryRecord[] {
+  return Array.from({ length: conversationMessageCount }, (_, entryIndex) => {
+    const entrySequence = entryIndex + 1;
+    const promptText = `Prompt ${entrySequence}`;
+
+    return {
+      entrySequence,
+      conversationSessionEntry: {
+        entryKind: "user_prompt",
+        promptText,
+        modelFacingPromptText: promptText,
+      },
+    };
+  });
+}
+
+function createPagedConversationTranscriptEntryRecordLoader(
+  conversationTranscriptEntryRecords: readonly ConversationTranscriptEntryRecord[],
+): LoadConversationTranscriptEntryRecords {
+  return (request) => {
+    if (request.loadKind === "latest") {
+      const entryRecords = conversationTranscriptEntryRecords.slice(-request.limit);
+
+      return {
+        conversationSessionId: request.conversationSessionId,
+        entryRecords,
+        hasOlderEntries: conversationTranscriptEntryRecords.length > request.limit,
+        hasNewerEntries: false,
+        latestCompactionSummaryEntrySequence: undefined,
+      };
+    }
+
+    if (request.loadKind === "before") {
+      const olderConversationTranscriptEntryRecords = conversationTranscriptEntryRecords.filter(
+        (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence < request.beforeEntrySequence,
+      );
+
+      return {
+        conversationSessionId: request.conversationSessionId,
+        entryRecords: olderConversationTranscriptEntryRecords.slice(-request.limit),
+        hasOlderEntries: olderConversationTranscriptEntryRecords.length > request.limit,
+        hasNewerEntries: true,
+        latestCompactionSummaryEntrySequence: undefined,
+      };
+    }
+
+    const newerConversationTranscriptEntryRecords = conversationTranscriptEntryRecords.filter(
+      (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence > request.afterEntrySequence,
+    );
+
+    return {
+      conversationSessionId: request.conversationSessionId,
+      entryRecords: newerConversationTranscriptEntryRecords.slice(0, request.limit),
+      hasOlderEntries: true,
+      hasNewerEntries: newerConversationTranscriptEntryRecords.length > request.limit,
+      latestCompactionSummaryEntrySequence: undefined,
+    };
+  };
+}
+
+async function waitForFrameContaining(input: {
+  renderedChatScreen: OpenTuiChatScreenHarness;
+  expectedText: string;
+}): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const frame = await input.renderedChatScreen.waitForFrame(25);
+    if (frame.includes(input.expectedText)) {
+      return frame;
+    }
+  }
+
+  throw new Error(`Expected ChatScreen frame to contain ${input.expectedText}.`);
 }
 
 function createEmptyStreamAssistantConversationRunner(): AssistantConversationRunner {
@@ -390,6 +476,24 @@ function createPendingApprovalAssistantResponseEvents(): readonly AssistantRespo
     },
   ];
 }
+
+test("ChatScreen opens the latest transcript page at the newest messages", async () => {
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(130);
+  const renderedChatScreen = await renderChatScreen({
+    assistantConversationRunner: createEmptyStreamAssistantConversationRunner(),
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: createPagedConversationTranscriptEntryRecordLoader(
+      conversationTranscriptEntryRecords,
+    ),
+  });
+
+  const hydratedFrame = await waitForFrameContaining({
+    renderedChatScreen,
+    expectedText: "Prompt 130",
+  });
+
+  expect(hydratedFrame).not.toContain("Prompt 31");
+});
 
 test("ChatScreen settles an empty assistant stream instead of staying working", async () => {
   const renderedChatScreen = await renderChatScreen({

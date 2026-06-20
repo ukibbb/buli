@@ -167,29 +167,6 @@ const conversationSessionEntries = [
   },
   {
     entryKind: "tool_call",
-    toolCallId: "call-3",
-    toolCallRequest: {
-      toolName: "locate_codebase_symbols",
-      symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-      filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-    },
-  },
-  {
-    entryKind: "completed_tool_result",
-    toolCallId: "call-3",
-    toolCallDetail: {
-      toolName: "locate_codebase_symbols",
-      symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-      filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      locatedSymbolCount: 2,
-      notFoundSymbolCount: 0,
-      ambiguousSymbolNameCount: 0,
-      verificationReadCount: 3,
-    },
-    toolResultText: "<codebase_symbol_locations>2 definitions</codebase_symbol_locations>",
-  },
-  {
-    entryKind: "tool_call",
     toolCallId: "call-4",
     toolCallRequest: {
       toolName: "edit",
@@ -427,10 +404,6 @@ test("renderConversationSessionHtmlDocument renders escaped, styled current-sess
   expect(html).not.toContain("should stay hidden");
   expect(html).toContain("Citations");
   expect(html).toContain("Example docs · https://example.com/docs");
-  expect(html).toContain("LocateCodebaseSymbols");
-  expect(html).toContain("files");
-  expect(html).toContain("streamAssistantResponseEventsForRequestedToolCalls");
-  expect(html).toContain("2 definitions · 3 reads");
   expect(html).toContain("src/app.ts");
   expect(html).toContain("const title = &quot;old&quot;;");
   expect(html).toContain("EditMany");

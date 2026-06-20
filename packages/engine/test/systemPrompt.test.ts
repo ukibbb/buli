@@ -112,22 +112,10 @@ test("uses file-by-file apply plans for non-trivial work", () => {
     "When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
   );
   expect(systemPromptText).toContain(
-    "After grep surfaces a known exact symbol name, call locate_codebase_symbols with that name to get its exact definition file and start-end line span, then read that exact range.",
-  );
-  expect(systemPromptText).toContain(
-    "Use locate_codebase_symbols only for known exact symbolNames; filePaths are optional filters/disambiguators, not file overview inputs.",
-  );
-  expect(systemPromptText).toContain(
     "When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
   );
   expect(systemPromptText).toContain(
-    "For many locate_codebase_symbols symbolNames or filePaths, prefer small batches and multiple concurrent locate_codebase_symbols calls over one large lookup.",
-  );
-  expect(systemPromptText).toContain(
     "When several independent glob and grep searches are needed, request separate glob and grep calls in the same response step so the runtime can execute them concurrently.",
-  );
-  expect(systemPromptText).toContain(
-    "Always verify locate_codebase_symbols results with read before relying on implementation details.",
   );
   expect(systemPromptText).toContain(
     "For grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
@@ -696,22 +684,10 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
     "When several independent exact reads are needed, request multiple read calls in the same response step; the runtime can execute read-only tool calls concurrently.",
   );
   expect(systemPromptText).toContain(
-    "After grep surfaces a known exact symbol name, call locate_codebase_symbols with that name to get its exact definition file and start-end line span, then read that exact range.",
-  );
-  expect(systemPromptText).toContain(
-    "Use locate_codebase_symbols only for known exact symbolNames; filePaths are optional filters/disambiguators, not file overview inputs.",
-  );
-  expect(systemPromptText).toContain(
     "When many independent symbols, file paths, reads, globs, or greps are needed, split them into several smaller tool calls in the same response step instead of one broad call.",
   );
   expect(systemPromptText).toContain(
-    "For many locate_codebase_symbols symbolNames or filePaths, prefer small batches and multiple concurrent locate_codebase_symbols calls over one large lookup.",
-  );
-  expect(systemPromptText).toContain(
     "When several independent glob and grep searches are needed, request separate glob and grep calls in the same response step so the runtime can execute them concurrently.",
-  );
-  expect(systemPromptText).toContain(
-    "Always verify locate_codebase_symbols results with read before relying on implementation details.",
   );
   expect(systemPromptText).toContain(
     "For grep searches, request a small contextLineCount only when nearby lines are likely needed; leave it unset for broad discovery.",
@@ -746,9 +722,6 @@ test("buildBuliExplorerSystemPrompt limits Explorer to read-only codebase inspec
   );
   expect(systemPromptText).toContain(
     "Request independent glob, grep, and read calls together instead of waiting for one result when the inspections do not depend on each other.",
-  );
-  expect(systemPromptText).toContain(
-    "Run locate_codebase_symbols concurrently with independent read, glob, or grep calls when those inspections do not depend on its result.",
   );
   expect(systemPromptText).toContain("Do not modify files, run commands");
   expect(systemPromptText).toContain("treat it as a terminal checkpoint instruction. Do not request more tools");

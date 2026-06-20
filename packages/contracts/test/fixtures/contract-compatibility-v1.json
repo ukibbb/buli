@@ -107,9 +107,10 @@
       "commandDescription": "Print working directory"
     },
     {
-      "toolName": "locate_codebase_symbols",
-      "symbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
-      "filePaths": ["packages/engine/src/runtimeToolCallExecution.ts"]
+      "toolName": "grep",
+      "regexPattern": "streamAssistantResponseEventsForRequestedToolCalls",
+      "searchPath": "packages/engine/src/runtimeToolCallExecution.ts",
+      "contextLineCount": 2
     }
   ],
   "toolCallDetails": [
@@ -132,13 +133,19 @@
       ]
     },
     {
-      "toolName": "locate_codebase_symbols",
-      "symbolNames": ["streamAssistantResponseEventsForRequestedToolCalls"],
-      "filePaths": ["packages/engine/src/runtimeToolCallExecution.ts"],
-      "locatedSymbolCount": 2,
-      "notFoundSymbolCount": 0,
-      "ambiguousSymbolNameCount": 1,
-      "verificationReadCount": 2
+      "toolName": "grep",
+      "searchPattern": "streamAssistantResponseEventsForRequestedToolCalls",
+      "matchedFileCount": 1,
+      "totalMatchCount": 2,
+      "returnedMatchHitCount": 2,
+      "contextLineCount": 2,
+      "matchHits": [
+        {
+          "matchFilePath": "packages/engine/src/runtimeToolCallExecution.ts",
+          "matchLineNumber": 107,
+          "matchSnippet": "streamAssistantResponseEventsForRequestedToolCalls"
+        }
+      ]
     }
   ],
   "workspacePatch": {

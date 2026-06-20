@@ -52,6 +52,7 @@ import type {
 } from "./runtimeToolApproval.ts";
 import { logAssistantResponseEventEmitted, submitProviderToolResultWithDiagnostics } from "./runtimeToolCallExecutionDiagnostics.ts";
 import { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
+import type { RuntimeProviderTurnToolResultRetentionRegistry } from "./runtimeProviderTurnToolResultRetention.ts";
 import type { BashToolApprovalMode } from "./tools/bashToolApprovalPolicy.ts";
 import type { WorkspaceShellCommandExecutor } from "./tools/workspaceShellCommandExecutor.ts";
 import type { WorkspaceSkillCatalog } from "./skills/skillCatalog.ts";
@@ -98,6 +99,7 @@ export type RuntimeToolCallExecutionContext = {
   promptContextStartingDirectoryPath: string;
   workspaceShellCommandExecutor: WorkspaceShellCommandExecutor;
   conversationHistory: InMemoryConversationHistory;
+  toolResultRetentionRegistry?: RuntimeProviderTurnToolResultRetentionRegistry | undefined;
   abortSignal: AbortSignal;
   canSpawnSubagent: boolean;
   subagentConversationConcurrencyLimiter: RuntimeSubagentConversationConcurrencyLimiter;
@@ -674,6 +676,7 @@ async function* streamAssistantResponseEventsForCustomRequestedToolCall(
     assistantToolRegistry: input.assistantToolRegistry,
     workspaceRootPath: input.workspaceRootPath,
     toolResultSessionRecorder: input.toolResultSessionRecorder,
+    toolResultRetentionRegistry: input.toolResultRetentionRegistry,
     readOnlyToolCallConcurrencyLimiter: input.readOnlyToolCallConcurrencyLimiter,
     abortSignal: input.abortSignal,
     createPendingToolApproval: input.createPendingToolApproval,

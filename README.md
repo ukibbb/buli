@@ -114,6 +114,12 @@ List available models:
 buli models
 ```
 
+Check the optional local NoVibe MCP setup without starting chat:
+
+```bash
+buli mcp check
+```
+
 Start the fullscreen chat UI from any project directory:
 
 ```bash
@@ -144,7 +150,7 @@ buli help
 The current CLI shape is:
 
 ```text
-Usage: buli [login|models|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]
+Usage: buli [login|models|mcp check|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]
 ```
 
 Defaults:
@@ -326,20 +332,6 @@ new AssistantConversationRuntime({
 
 This is code registration, not config-file loading. Matching overlays apply in list order. Prompt sections, prompt-profile fragments, custom-tool description paragraphs, and built-in tool description paragraphs append; `availableToolNames` replaces the effective tool list for that model. The configuration helper wraps custom tools for overlay-aware provider descriptions without mutating the base tool definition. Unmatched strong/default models keep the registered base agent, subagent, custom tool definition, and built-in tool descriptions unchanged. Built-in overlays are description-only: they do not change tool names, argument schemas, parsers, or execution behavior.
 
-## Codebase Knowledge Indexing
-
-Buli builds a workspace-local codebase knowledge index so `locate_codebase_symbols` can resolve known exact symbol names to definition files and start/end line ranges without repeatedly scanning files from scratch.
-
-- Indexing starts in the background when the fullscreen chat app starts. Startup does not wait for the index to finish.
-- The first `locate_codebase_symbols` call waits for the in-flight startup index if it is still running.
-- The index is persisted at `./.buli/index/codebase-knowledge.json` inside the current workspace.
-- The index stores Tree-sitter-derived file structure, symbol definitions, imports, exports, evidence ranges, freshness, and content hashes. It does not store raw source text.
-- `locate_codebase_symbols` is an exact symbol-definition locator, not a ranked search/RAG query. Use grep/glob to discover candidate names, then locate exact definitions, then read the returned source ranges to verify current code.
-- Supported languages are TypeScript (`.ts`, `.mts`, `.cts`), TSX (`.tsx`), and Python (`.py`, `.pyi`, `.pyw`).
-- Buli uses `web-tree-sitter` with WASM grammars from `tree-sitter-typescript` and `tree-sitter-python`.
-- Workspace indexing includes `./.buli/**`, but skips generated index files under `./.buli/index/`.
-- File changes made through Buli mutation tools refresh the changed files in the index. File changes made outside Buli are picked up by the next startup scan.
-
 ## Local Data
 
 Buli stores local state under `~/.buli`.
@@ -347,10 +339,6 @@ Buli stores local state under `~/.buli`.
 - Auth: `~/.buli/auth.json`.
 - Conversation sessions: `~/.buli/conversation-sessions`.
 - HTML exports: `~/.buli/session-exports`.
-
-Buli also stores workspace-local codebase knowledge under the current project:
-
-- Codebase knowledge index: `./.buli/index/codebase-knowledge.json`.
 
 Auth files, session directories, exports, and diagnostic logs are written with private file permissions where Buli creates them.
 
@@ -361,8 +349,52 @@ Configuration environment variables:
 - `BULI_PROMPT_CONTEXT_ROOT`: changes the root used for prompt-context browsing.
 - `BULI_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MS`: opts Explore into a soft elapsed-time checkpoint. Unset means no elapsed-time checkpoint; when set, use a positive integer number of milliseconds.
 - `BULI_PROVIDER_HOST_COMMAND`: JSON argv array for an external provider protocol host, for example `["/path/to/provider-host"]`.
+- `BULI_MCP_SERVERS_JSON`: optional generic Streamable HTTP MCP server configuration as a JSON object keyed by server name.
+- `BULI_NOVIBE_MCP_BEARER_TOKEN`: opts into the local NoVibe MCP integration by sending this value as a Bearer token. Buli never logs this raw token.
+- `BULI_NOVIBE_MCP_URL`: optional NoVibe MCP Streamable HTTP URL. Defaults to `http://localhost:8001/v1/mcp/` when `BULI_NOVIBE_MCP_BEARER_TOKEN` is set.
+- `BULI_NOVIBE_MCP_TIMEOUT_MS`: optional NoVibe MCP connection/tool timeout. Defaults to `30000`.
 - `BULI_CONSOLE_LOG_FILE`: writes console output to a private log file.
 - `BULI_CONSOLE_LOG_RESET`: clears `BULI_CONSOLE_LOG_FILE` before a run when set to `1`, `true`, `yes`, or `on`.
+
+Generic MCP example:
+
+```bash
+export DOCS_MCP_TOKEN="raw-token-if-needed"
+export BULI_MCP_SERVERS_JSON='{
+  "docs": {
+    "transport": "streamable_http",
+    "url": "http://localhost:9001/mcp",
+    "displayName": "Docs",
+    "bearerTokenEnv": "DOCS_MCP_TOKEN",
+    "timeoutMs": 30000,
+    "headers": { "X-Client": "buli" },
+    "toolResultRetention": "summary"
+  }
+}'
+```
+
+Supported MCP retention policies:
+
+- `full` (default): the full MCP result is sent to the model in the current turn and saved in session history/provider replay.
+- `summary`: the full MCP result is sent to the model in the current turn, but future persisted history/replay stores only a short summary.
+- `redacted`: the full MCP result is sent to the model in the current turn, but future persisted history/replay stores only a placeholder.
+
+When MCP is configured, Buli shows non-persisted startup notices such as `MCP: novibe connected (4 tools)` or `MCP: docs unavailable: connection refused`.
+
+NoVibe must be configured with matching server-side MCP auth values:
+
+- `MCP_LOCAL_BEARER_TOKEN_HASH`: SHA-256 hash of the raw token given to Buli.
+- `MCP_LOCAL_BEARER_USER_ID`: NoVibe user id whose library the MCP tools read.
+
+Then configure Buli with the raw token and verify the setup before opening chat:
+
+```bash
+export BULI_NOVIBE_MCP_BEARER_TOKEN="your-local-token"
+export BULI_NOVIBE_MCP_URL="http://localhost:8001/v1/mcp/"
+buli mcp check
+```
+
+Privacy note: NoVibe MCP tools can return private learning notes. The model always receives the full MCP result in the same request-response cycle so it knows what happened after the tool call. Use `toolResultRetention: "summary"` or `"redacted"` when you want less exact MCP content retained for future turns.
 
 ## Fullscreen Terminal Behavior
 
@@ -388,9 +420,9 @@ Buli is a Bun workspace monorepo with typed package boundaries.
 Current packages:
 
 - `apps/cli`: CLI entrypoints, command composition, auth/session wiring, and HTML session export.
-- `packages/codebase-knowledge`: Tree-sitter-backed codebase structure indexing, local knowledge persistence, exact symbol-definition lookup, and locator result formatting.
 - `packages/contracts`: shared schemas and types for assistant events, messages, sessions, tools, providers, models, token usage, and plans.
 - `packages/engine`: UI-agnostic assistant runtime, conversation history, tool execution, approvals, prompt context expansion, compaction, and system prompts.
+- `packages/mcp`: MCP client adapters, including the optional NoVibe Streamable HTTP integration.
 - `packages/openai`: browser OAuth, auth storage, token refresh, Responses API transport, model discovery, streaming parsing, and tool-call continuation.
 - `packages/chat-app-controller`: renderer-neutral chat actions for assistant turns, primary-agent-sensitive UI effects, session operations, model loading, prompt context, compaction, export, and interruption.
 - `packages/chat-session-state`: reducer and selector state for conversation messages, prompt drafts, model selection, slash commands, prompt context, sessions, reasoning visibility, and approvals.

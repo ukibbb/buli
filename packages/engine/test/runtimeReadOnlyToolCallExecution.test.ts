@@ -2,9 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CodebaseSymbolDefinitionLocatorQuery, CodebaseSymbolDefinitionLocatorResult } from "@buli/codebase-knowledge";
 import type { AssistantResponseEvent, BuliDiagnosticLogEvent, ProviderStreamEvent, ProviderTurnReplay } from "@buli/contracts";
-import type { WorkspaceCodebaseKnowledgeIndex } from "../src/codebaseKnowledge/treeSitterWorkspaceCodebaseKnowledgeIndex.ts";
 import { InMemoryConversationHistory } from "../src/conversationHistory.ts";
 import { ProjectInstructionTracker, type ProjectInstructionFile } from "../src/projectInstructions.ts";
 import type { ProviderConversationTurn, ProviderToolResultSubmission } from "../src/provider.ts";
@@ -106,23 +104,6 @@ class CountingProjectInstructionTracker extends ProjectInstructionTracker {
   }
 }
 
-class RecordingWorkspaceCodebaseKnowledgeIndex implements WorkspaceCodebaseKnowledgeIndex {
-  locateCount = 0;
-
-  ensureWorkspaceIndexed(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  locateSymbolDefinitions(query: CodebaseSymbolDefinitionLocatorQuery): Promise<CodebaseSymbolDefinitionLocatorResult> {
-    this.locateCount += 1;
-    return Promise.resolve({ query, symbolLookups: [] });
-  }
-
-  refreshChangedFilePaths(): Promise<void> {
-    return Promise.resolve();
-  }
-}
-
 async function collectReadOnlyToolCallEvents(input: Parameters<
   typeof streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall
 >[0]): Promise<AssistantResponseEvent[]> {
@@ -147,10 +128,6 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "read", readTargetPath: "notes.txt" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "glob", globPattern: "**/*.ts" })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({ toolName: "grep", regexPattern: "TODO" })).toBe(true);
-  expect(isAutoApprovedReadOnlyToolCallRequest({
-    toolName: "locate_codebase_symbols",
-    symbolNames: ["Runtime"],
-  })).toBe(true);
   expect(isAutoApprovedReadOnlyToolCallRequest({
     toolName: "bash",
     shellCommand: "pwd",
@@ -179,73 +156,6 @@ test("isAutoApprovedReadOnlyToolCallRequest accepts only read-only tool calls", 
     writeTargetPath: "notes.txt",
     fileContent: "new\n",
   })).toBe(false);
-});
-
-test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-executes duplicate exact symbol lookups across turns", async () => {
-  const workspaceRootPath = await mkdtemp(join(tmpdir(), "buli-read-only-tool-duplicate-query-"));
-  const providerConversationTurn = new RecordingProviderConversationTurn();
-  const workspaceCodebaseKnowledgeIndex = new RecordingWorkspaceCodebaseKnowledgeIndex();
-  const conversationHistory = new InMemoryConversationHistory({
-    initialConversationSessionEntries: [
-      {
-        entryKind: "tool_call",
-        toolCallId: "call_query_1",
-        toolCallRequest: {
-          toolName: "locate_codebase_symbols",
-          symbolNames: ["Runtime", "ToolCall"],
-        },
-      },
-      {
-        entryKind: "completed_tool_result",
-        toolCallId: "call_query_1",
-        toolCallDetail: {
-          toolName: "locate_codebase_symbols",
-          symbolNames: ["Runtime", "ToolCall"],
-          locatedSymbolCount: 1,
-          notFoundSymbolCount: 0,
-          ambiguousSymbolNameCount: 0,
-          verificationReadCount: 1,
-        },
-        toolResultText: "<codebase_symbol_locations>raw previous locator result</codebase_symbol_locations>",
-      },
-      {
-        entryKind: "tool_call",
-        toolCallId: "call_query_2",
-        toolCallRequest: {
-          toolName: "locate_codebase_symbols",
-          symbolNames: ["ToolCall", "Runtime"],
-        },
-      },
-    ],
-  });
-  const toolResultSessionRecorder = new RuntimeToolResultSessionRecorder({ conversationHistory });
-
-  await collectReadOnlyToolCallEvents({
-    assistantResponseMessageId: "assistant-message-1",
-    conversationTurnId: "conversation-turn-1",
-    providerConversationTurn,
-    toolCallId: "call_query_2",
-    toolCallRequest: {
-      toolName: "locate_codebase_symbols",
-      symbolNames: ["ToolCall", "Runtime"],
-    },
-    workspaceRootPath,
-    conversationHistory,
-    workspaceCodebaseKnowledgeIndex,
-    toolResultSessionRecorder,
-    abortSignal: new AbortController().signal,
-    throwIfConversationTurnInterrupted: () => {},
-  });
-
-  expect(workspaceCodebaseKnowledgeIndex.locateCount).toBe(1);
-  expect(providerConversationTurn.submittedToolResults).toEqual([
-    {
-      toolCallId: "call_query_2",
-      toolResultText: expect.stringContaining("<codebase_symbol_locations>"),
-    },
-  ]);
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("<duplicate_read_only_tool_result>");
-  expect(providerConversationTurn.submittedToolResults[0]?.toolResultText).not.toContain("raw previous locator result");
 });
 
 test("streamAssistantResponseEventsForAutoApprovedReadOnlyToolCall re-reads duplicate reads across turns", async () => {

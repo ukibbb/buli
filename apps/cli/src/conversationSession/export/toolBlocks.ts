@@ -149,7 +149,6 @@ const toolCallRequestExportRendererByName: {
   read: { renderPurpose: renderReadToolCallRequestPurpose, renderBody: renderReadToolCallRequestBody },
   glob: { renderPurpose: renderGlobToolCallRequestPurpose, renderBody: renderGlobToolCallRequestBody },
   grep: { renderPurpose: renderGrepToolCallRequestPurpose, renderBody: renderGrepToolCallRequestBody },
-  locate_codebase_symbols: { renderPurpose: renderLocateCodebaseSymbolsToolCallRequestPurpose, renderBody: renderLocateCodebaseSymbolsToolCallRequestBody },
   edit: { renderPurpose: renderEditToolCallRequestPurpose, renderBody: renderEditToolCallRequestBody },
   edit_many: { renderPurpose: renderEditManyToolCallRequestPurpose, renderBody: renderEditManyToolCallRequestBody },
   patch: { renderPurpose: renderPatchToolCallRequestPurpose, renderBody: renderPatchToolCallRequestBody },
@@ -238,20 +237,6 @@ function renderGrepToolCallRequestBody(toolCallRequest: ToolCallRequestByName<"g
   return `${pathArg}${includeArg}${contextArg}<div class="arg"><b>pattern</b> ${escapeHtml(toolCallRequest.regexPattern)}</div>`;
 }
 
-function renderLocateCodebaseSymbolsToolCallRequestPurpose(_toolCallRequest: ToolCallRequestByName<"locate_codebase_symbols">): string {
-  return `<span class="panel-purpose">codebase symbols</span>`;
-}
-
-function renderLocateCodebaseSymbolsToolCallRequestBody(toolCallRequest: ToolCallRequestByName<"locate_codebase_symbols">): string {
-  const symbolNamesHtml = toolCallRequest.symbolNames && toolCallRequest.symbolNames.length > 0
-    ? `<div class="arg"><b>symbols</b> ${escapeHtml(toolCallRequest.symbolNames.join(", "))}</div>`
-    : "";
-  const filePathsHtml = toolCallRequest.filePaths && toolCallRequest.filePaths.length > 0
-    ? `<div class="arg"><b>files</b> ${escapeHtml(toolCallRequest.filePaths.join(", "))}</div>`
-    : "";
-  return `${symbolNamesHtml}${filePathsHtml}`;
-}
-
 function renderEditToolCallRequestPurpose(toolCallRequest: ToolCallRequestByName<"edit">): string {
   return `<span class="panel-purpose">${escapeHtml(toolCallRequest.editTargetPath)}</span>`;
 }
@@ -329,7 +314,6 @@ const toolCallDetailExportRendererByName: {
   read: { renderPurpose: renderReadToolResultPurpose },
   glob: { renderPurpose: renderGlobToolResultPurpose },
   grep: { renderPurpose: renderGrepToolResultPurpose },
-  locate_codebase_symbols: { renderPurpose: renderLocateCodebaseSymbolsToolResultPurpose },
   edit: { renderPurpose: renderEditToolResultPurpose },
   edit_many: { renderPurpose: renderEditManyToolResultPurpose },
   patch: { renderPurpose: renderPatchToolResultPurpose },
@@ -394,27 +378,6 @@ function renderGrepToolResultPurpose(toolCallDetail: ToolCallDetailByName<"grep"
   return toolCallDetail.totalMatchCount === undefined
     ? ""
     : `<span class="panel-purpose">${toolCallDetail.totalMatchCount} matches</span>`;
-}
-
-function renderLocateCodebaseSymbolsToolResultPurpose(toolCallDetail: ToolCallDetailByName<"locate_codebase_symbols">): string {
-  const locatedSymbolCount = toolCallDetail.locatedSymbolCount;
-  if (locatedSymbolCount === undefined) {
-    return `<span class="panel-purpose">codebase symbols</span>`;
-  }
-
-  const purposeParts = [
-    `${locatedSymbolCount} ${locatedSymbolCount === 1 ? "definition" : "definitions"}`,
-    toolCallDetail.notFoundSymbolCount !== undefined && toolCallDetail.notFoundSymbolCount > 0
-      ? `${toolCallDetail.notFoundSymbolCount} ${toolCallDetail.notFoundSymbolCount === 1 ? "missing name" : "missing names"}`
-      : undefined,
-    toolCallDetail.ambiguousSymbolNameCount !== undefined && toolCallDetail.ambiguousSymbolNameCount > 0
-      ? `${toolCallDetail.ambiguousSymbolNameCount} ${toolCallDetail.ambiguousSymbolNameCount === 1 ? "ambiguous name" : "ambiguous names"}`
-      : undefined,
-    toolCallDetail.verificationReadCount === undefined
-      ? undefined
-      : `${toolCallDetail.verificationReadCount} ${toolCallDetail.verificationReadCount === 1 ? "read" : "reads"}`,
-  ].filter((purposePart): purposePart is string => purposePart !== undefined);
-  return `<span class="panel-purpose">${escapeHtml(purposeParts.join(" · "))}</span>`;
 }
 
 function renderEditToolResultPurpose(toolCallDetail: ToolCallDetailByName<"edit">): string {
@@ -533,9 +496,6 @@ function formatToolDisplayName(toolName: string): string {
   if (toolName === "patch_many") {
     return "PatchMany";
   }
-  if (toolName === "locate_codebase_symbols") {
-    return "LocateCodebaseSymbols";
-  }
   if (toolName === "skill") {
     return "Skill";
   }
@@ -604,7 +564,6 @@ type BuiltInSubagentChildToolCallDetailName =
   | "read"
   | "glob"
   | "grep"
-  | "locate_codebase_symbols"
   | "bash"
   | "edit"
   | "edit_many"
@@ -627,7 +586,6 @@ const subagentChildToolCallDetailSummaryRendererByName: {
   read: renderReadSubagentChildToolCallDetailSummary,
   glob: renderGlobSubagentChildToolCallDetailSummary,
   grep: renderGrepSubagentChildToolCallDetailSummary,
-  locate_codebase_symbols: renderLocateCodebaseSymbolsSubagentChildToolCallDetailSummary,
   bash: renderBashSubagentChildToolCallDetailSummary,
   edit: renderEditSubagentChildToolCallDetailSummary,
   edit_many: renderEditManySubagentChildToolCallDetailSummary,
@@ -684,16 +642,6 @@ function renderGrepSubagentChildToolCallDetailSummary(
   const countHtml = subagentChildToolCallDetail.totalMatchCount === undefined ? "" : ` · ${subagentChildToolCallDetail.totalMatchCount} matches`;
   const contextHtml = subagentChildToolCallDetail.contextLineCount === undefined ? "" : ` · context ${subagentChildToolCallDetail.contextLineCount}`;
   return `<div class="arg"><b>grep</b> ${escapeHtml(subagentChildToolCallDetail.searchPattern)}${escapeHtml(`${countHtml}${contextHtml}`)}</div>`;
-}
-
-function renderLocateCodebaseSymbolsSubagentChildToolCallDetailSummary(
-  subagentChildToolCallDetail: SubagentChildToolCallDetailByName<"locate_codebase_symbols">,
-): string {
-  const countHtml = subagentChildToolCallDetail.locatedSymbolCount === undefined
-    ? ""
-    : ` · ${subagentChildToolCallDetail.locatedSymbolCount} ${subagentChildToolCallDetail.locatedSymbolCount === 1 ? "definition" : "definitions"}`;
-  const targetText = [...(subagentChildToolCallDetail.symbolNames ?? []), ...(subagentChildToolCallDetail.filePaths ?? [])].join(", ");
-  return `<div class="arg"><b>locate_codebase_symbols</b> ${escapeHtml(targetText)}${escapeHtml(countHtml)}</div>`;
 }
 
 function renderBashSubagentChildToolCallDetailSummary(

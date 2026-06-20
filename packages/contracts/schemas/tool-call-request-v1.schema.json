@@ -453,35 +453,6 @@
             "workflowHandoff"
           ],
           "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "toolName": {
-              "type": "string",
-              "const": "locate_codebase_symbols"
-            },
-            "symbolNames": {
-              "minItems": 1,
-              "maxItems": 50,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema10"
-              }
-            },
-            "filePaths": {
-              "maxItems": 50,
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/__schema0"
-              }
-            }
-          },
-          "required": [
-            "toolName",
-            "symbolNames"
-          ],
-          "additionalProperties": false
         }
       ]
     },
@@ -498,7 +469,7 @@
             "type": "string"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/__schema11"
+            "$ref": "#/$defs/__schema10"
           }
         }
       },
@@ -671,11 +642,6 @@
       "additionalProperties": false
     },
     "__schema10": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 512
-    },
-    "__schema11": {
       "anyOf": [
         {
           "type": "string"
@@ -692,7 +658,7 @@
         {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema11"
+            "$ref": "#/$defs/__schema10"
           }
         },
         {
@@ -701,7 +667,7 @@
             "type": "string"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/__schema11"
+            "$ref": "#/$defs/__schema10"
           }
         }
       ]

@@ -19,6 +19,11 @@ import {
   type TaskSubagentCompositionResolver,
   type TaskSubagentProviderModelSelectionPolicy,
 } from "@buli/engine";
+import type {
+  CreateMcpRuntimeIntegrationInput,
+  McpRuntimeIntegration,
+  McpServerRuntimeStatus,
+} from "@buli/mcp";
 import { OpenAiAuthStore, OpenAiProvider, type OpenAiModelBehaviorProfileResolver } from "@buli/openai";
 import type { RenderChatScreenInTerminalInput, TuiChatScreenInstance } from "@buli/tui";
 import { type BrowserUrlLauncher } from "../browserLauncher.ts";
@@ -36,12 +41,21 @@ import {
   INVALID_BASH_TOOL_APPROVAL_MODE_MESSAGE,
   INVALID_OPENAI_MAX_CONCURRENT_STREAMS_MESSAGE,
   INVALID_READ_ONLY_TOOL_CONCURRENCY_MESSAGE,
+  INVALID_MCP_BEARER_TOKEN_ENV_MESSAGE,
+  INVALID_MCP_SERVER_CONFIGURATION_MESSAGE,
+  INVALID_MCP_SERVERS_JSON_MESSAGE,
+  INVALID_MCP_TOOL_RESULT_RETENTION_MESSAGE,
+  INVALID_NOVIBE_MCP_MISSING_BEARER_TOKEN_MESSAGE,
+  INVALID_NOVIBE_MCP_TIMEOUT_MESSAGE,
+  INVALID_NOVIBE_MCP_URL_MESSAGE,
   INVALID_SUBAGENT_CONCURRENCY_MESSAGE,
   INVALID_TASK_SUBAGENT_MAX_REASONING_EFFORT_MESSAGE,
   INVALID_TASK_SUBAGENT_SOFT_ELAPSED_TIME_CHECKPOINT_MESSAGE,
   type InteractiveChatEnvironment,
+  type InteractiveChatMcpServersEnvironmentConfiguration,
   resolveConversationAutoCompactionThresholdRatio,
   resolveInteractiveChatBashToolApprovalMode,
+  resolveInteractiveChatMcpServersConfiguration,
   resolveInteractiveChatOpenAiMaxConcurrentStreams,
   resolveInteractiveChatPromptContextScope,
   resolveInteractiveChatReadOnlyToolConcurrency,
@@ -79,6 +93,7 @@ type InteractiveChatStartupConfiguration = {
   maximumConcurrentResponseStepStreams: number | undefined;
   taskSubagentSoftElapsedTimeCheckpointMilliseconds: number | undefined;
   taskSubagentProviderModelSelectionPolicy: TaskSubagentProviderModelSelectionPolicy | undefined;
+  mcpServersConfiguration: InteractiveChatMcpServersEnvironmentConfiguration | undefined;
   workspaceRootPath: string;
   promptContextScope: ReturnType<typeof resolveInteractiveChatPromptContextScope>;
 };
@@ -116,6 +131,9 @@ export type RunInteractiveChatInput = {
   createProviderProtocolTransport?: (
     input: CreateInteractiveChatProviderProtocolTransportInput,
   ) => DisposableProviderProtocolClientTransport;
+  createMcpRuntimeIntegration?: (
+    input: CreateMcpRuntimeIntegrationInput,
+  ) => Promise<McpRuntimeIntegration>;
 };
 
 const assistantRuntimeConfigurationDirectInputFieldNames = [
@@ -133,7 +151,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
   const startupStartedAtMs = Date.now();
   const environment = input.environment ?? process.env;
   const workspaceRootPath = process.cwd();
-  const assistantRuntimeInput = resolveRunInteractiveChatAssistantRuntimeInput(input);
+  const baseAssistantRuntimeInput = resolveRunInteractiveChatAssistantRuntimeInput(input);
   const startupConfigurationResolution = resolveInteractiveChatStartupConfiguration({
     environment,
     requestedBashToolApprovalMode: input.bashToolApprovalMode,
@@ -151,6 +169,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
     maximumConcurrentResponseStepStreams,
     taskSubagentSoftElapsedTimeCheckpointMilliseconds,
     taskSubagentProviderModelSelectionPolicy,
+    mcpServersConfiguration,
     promptContextScope,
   } = startupConfigurationResolution.configuration;
 
@@ -179,6 +198,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
   ]);
   let defaultConversationSessionStore: SqliteConversationSessionStore | undefined;
   let conversationTurnProviderResolution: InteractiveChatConversationTurnProviderResolution | undefined;
+  let mcpRuntimeIntegration: McpRuntimeIntegration | undefined;
   try {
     logInteractiveChatStartupTiming(diagnosticLogger, {
       phase: "auth",
@@ -235,6 +255,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       taskSubagentSoftElapsedTimeCheckpointMilliseconds: taskSubagentSoftElapsedTimeCheckpointMilliseconds ?? null,
       taskSubagentSelectedModelIdOverride: taskSubagentProviderModelSelectionPolicy?.selectedModelIdOverride ?? null,
       taskSubagentMaximumReasoningEffortOverride: taskSubagentProviderModelSelectionPolicy?.maximumReasoningEffort ?? null,
+      mcpServerCount: mcpServersConfiguration?.serverConfigurations.length ?? 0,
       startupElapsedMs: Date.now() - startupStartedAtMs,
     });
     logCliDiagnosticEvent(diagnosticLogger, "conversation_session.loaded", {
@@ -302,10 +323,20 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       request,
     ) => conversationSessionStore.loadConversationSessionEntryRecords(request);
     const conversationTranscriptHydrationMode = "paged_transcript";
+    const assistantRuntimeInputResolution = await resolveInteractiveChatAssistantRuntimeInputWithMcp({
+      runInteractiveChatInput: input,
+      baseAssistantRuntimeInput,
+      mcpServersConfiguration,
+      ...(input.createMcpRuntimeIntegration !== undefined
+        ? { createMcpRuntimeIntegration: input.createMcpRuntimeIntegration }
+        : {}),
+      diagnosticLogger,
+    });
+    mcpRuntimeIntegration = assistantRuntimeInputResolution.mcpRuntimeIntegration;
     const assistantConversationRunner = new AssistantConversationRuntime({
       conversationTurnProvider: conversationTurnProviderResolution.conversationTurnProvider,
       assistantProviderName: conversationTurnProviderResolution.assistantProviderName,
-      ...assistantRuntimeInput,
+      ...assistantRuntimeInputResolution.assistantRuntimeInput,
       workspaceRootPath,
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
@@ -324,7 +355,6 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
         ? { taskSubagentProviderModelSelectionPolicy }
         : {}),
     });
-    assistantConversationRunner.startWorkspaceCodebaseKnowledgeIndexing();
     const conversationSessionBindings = createInteractiveChatConversationSessionBindings({
       conversationSessionStore,
       conversationHistory,
@@ -353,6 +383,9 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       selectedModelId,
       ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
       ...(selectedReasoningEffort ? { selectedReasoningEffort } : {}),
+      ...(assistantRuntimeInputResolution.startupIntegrationNotices.length > 0
+        ? { startupIntegrationNotices: assistantRuntimeInputResolution.startupIntegrationNotices }
+        : {}),
       ...(diagnosticLogger ? { diagnosticLogger } : {}),
     };
 
@@ -380,6 +413,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
     });
     return "";
   } finally {
+    await mcpRuntimeIntegration?.dispose();
     await conversationTurnProviderResolution?.dispose();
     await profileLoggerInstallation.dispose();
     consoleFileLoggerInstallation.restore();
@@ -444,6 +478,112 @@ function resolveRunInteractiveChatAssistantRuntimeInput(
   return input.assistantRuntimeConfiguration.assistantRuntimeInput;
 }
 
+type StartupIntegrationNotice = NonNullable<RenderChatScreenInTerminalInput["startupIntegrationNotices"]>[number];
+
+async function resolveInteractiveChatAssistantRuntimeInputWithMcp(input: {
+  runInteractiveChatInput: RunInteractiveChatInput;
+  baseAssistantRuntimeInput: RunInteractiveChatAssistantRuntimeInput;
+  mcpServersConfiguration: InteractiveChatMcpServersEnvironmentConfiguration | undefined;
+  createMcpRuntimeIntegration?: (
+    input: CreateMcpRuntimeIntegrationInput,
+  ) => Promise<McpRuntimeIntegration>;
+  diagnosticLogger: BuliDiagnosticLogger | undefined;
+}): Promise<{
+  assistantRuntimeInput: RunInteractiveChatAssistantRuntimeInput;
+  mcpRuntimeIntegration?: McpRuntimeIntegration | undefined;
+  startupIntegrationNotices: readonly StartupIntegrationNotice[];
+}> {
+  if (!input.mcpServersConfiguration) {
+    return { assistantRuntimeInput: input.baseAssistantRuntimeInput, startupIntegrationNotices: [] };
+  }
+
+  if (hasCodeProvidedAssistantRuntimeConfiguration(input.runInteractiveChatInput)) {
+    logCliDiagnosticEvent(input.diagnosticLogger, "interactive_chat.mcp.skipped", {
+      reason: "assistant_runtime_configuration_injected",
+      serverNames: input.mcpServersConfiguration.serverConfigurations.map((serverConfiguration) => serverConfiguration.serverName),
+    });
+    return {
+      assistantRuntimeInput: input.baseAssistantRuntimeInput,
+      startupIntegrationNotices: input.mcpServersConfiguration.serverConfigurations.map((serverConfiguration) => ({
+        noticeSeverity: "info",
+        noticeText: `MCP: ${serverConfiguration.serverName} skipped because assistant runtime was injected`,
+      })),
+    };
+  }
+
+  try {
+    const createMcpRuntimeIntegration = input.createMcpRuntimeIntegration ?? createDefaultMcpRuntimeIntegration;
+    const mcpRuntimeIntegration = await createMcpRuntimeIntegration({
+      serverConfigurations: input.mcpServersConfiguration.serverConfigurations,
+    });
+    logMcpServerRuntimeStatuses(input.diagnosticLogger, mcpRuntimeIntegration.serverStatuses);
+    return {
+      assistantRuntimeInput: mcpRuntimeIntegration.assistantRuntimeConfiguration.assistantRuntimeInput,
+      mcpRuntimeIntegration,
+      startupIntegrationNotices: mcpRuntimeIntegration.serverStatuses.map(formatMcpServerStatusNotice),
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logCliDiagnosticEvent(input.diagnosticLogger, "interactive_chat.mcp.startup_failed", {
+      error: errorMessage,
+    });
+    return {
+      assistantRuntimeInput: input.baseAssistantRuntimeInput,
+      startupIntegrationNotices: [{ noticeSeverity: "warning", noticeText: `MCP: startup failed: ${errorMessage}` }],
+    };
+  }
+}
+
+function hasCodeProvidedAssistantRuntimeConfiguration(input: RunInteractiveChatInput): boolean {
+  return input.assistantRuntimeConfiguration !== undefined ||
+    assistantRuntimeConfigurationDirectInputFieldNames.some((fieldName) => input[fieldName] !== undefined);
+}
+
+async function createDefaultMcpRuntimeIntegration(
+  input: CreateMcpRuntimeIntegrationInput,
+): Promise<McpRuntimeIntegration> {
+  const mcpModule = await import("@buli/mcp");
+  return mcpModule.createMcpRuntimeIntegration(input);
+}
+
+function logMcpServerRuntimeStatuses(
+  diagnosticLogger: BuliDiagnosticLogger | undefined,
+  serverStatuses: readonly McpServerRuntimeStatus[],
+): void {
+  for (const serverStatus of serverStatuses) {
+    logCliDiagnosticEvent(diagnosticLogger, `interactive_chat.mcp.${serverStatus.statusKind}`, {
+      serverName: serverStatus.serverName,
+      displayName: serverStatus.displayName,
+      url: serverStatus.url,
+      ...(serverStatus.statusKind === "connected"
+        ? { toolCount: serverStatus.toolCount, toolNames: serverStatus.toolNames }
+        : serverStatus.statusKind === "unavailable"
+          ? { error: serverStatus.errorMessage }
+          : { reason: serverStatus.reason }),
+    });
+  }
+}
+
+function formatMcpServerStatusNotice(serverStatus: McpServerRuntimeStatus): StartupIntegrationNotice {
+  if (serverStatus.statusKind === "connected") {
+    return {
+      noticeSeverity: "success",
+      noticeText: `MCP: ${serverStatus.serverName} connected (${serverStatus.toolCount} tools)`,
+    };
+  }
+  if (serverStatus.statusKind === "unavailable") {
+    return {
+      noticeSeverity: "warning",
+      noticeText: `MCP: ${serverStatus.serverName} unavailable: ${serverStatus.errorMessage}`,
+    };
+  }
+
+  return {
+    noticeSeverity: "info",
+    noticeText: `MCP: ${serverStatus.serverName} skipped (${serverStatus.reason})`,
+  };
+}
+
 function resolveInteractiveChatStartupConfiguration(input: {
   environment: InteractiveChatEnvironment;
   requestedBashToolApprovalMode: BashToolApprovalMode | undefined;
@@ -501,6 +641,26 @@ function resolveInteractiveChatStartupConfiguration(input: {
     return { status: "failed", message: INVALID_TASK_SUBAGENT_MAX_REASONING_EFFORT_MESSAGE };
   }
 
+  const mcpServersConfigurationResolution = resolveInteractiveChatMcpServersConfiguration({ environment: input.environment });
+  if (mcpServersConfigurationResolution.status === "invalid") {
+    switch (mcpServersConfigurationResolution.invalidReason) {
+      case "invalid_json":
+        return { status: "failed", message: INVALID_MCP_SERVERS_JSON_MESSAGE };
+      case "invalid_server_configuration":
+        return { status: "failed", message: INVALID_MCP_SERVER_CONFIGURATION_MESSAGE };
+      case "missing_bearer_token_env":
+        return { status: "failed", message: INVALID_MCP_BEARER_TOKEN_ENV_MESSAGE };
+      case "invalid_tool_result_retention":
+        return { status: "failed", message: INVALID_MCP_TOOL_RESULT_RETENTION_MESSAGE };
+      case "missing_bearer_token":
+        return { status: "failed", message: INVALID_NOVIBE_MCP_MISSING_BEARER_TOKEN_MESSAGE };
+      case "invalid_url":
+        return { status: "failed", message: INVALID_NOVIBE_MCP_URL_MESSAGE };
+      case "invalid_timeout":
+        return { status: "failed", message: INVALID_NOVIBE_MCP_TIMEOUT_MESSAGE };
+    }
+  }
+
   return {
     status: "ready",
     configuration: {
@@ -513,6 +673,9 @@ function resolveInteractiveChatStartupConfiguration(input: {
       maximumConcurrentResponseStepStreams: openAiMaxConcurrentStreamsResolution.value,
       taskSubagentSoftElapsedTimeCheckpointMilliseconds: taskSubagentSoftElapsedTimeCheckpointResolution.value,
       taskSubagentProviderModelSelectionPolicy: taskSubagentProviderModelSelectionPolicyResolution.policy,
+      mcpServersConfiguration: mcpServersConfigurationResolution.status === "resolved"
+        ? mcpServersConfigurationResolution.configuration
+        : undefined,
       workspaceRootPath: input.workspaceRootPath,
       promptContextScope: resolveInteractiveChatPromptContextScope({
         workspaceRootPath: input.workspaceRootPath,

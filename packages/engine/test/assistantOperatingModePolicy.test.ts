@@ -11,16 +11,16 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes read-only tools
       assistantOperatingMode: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"] });
+  ).toEqual({ availableToolNames: ["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode filters requested tools in plan mode", () => {
   expect(
     resolveAvailableToolNamesForAssistantOperatingMode({
       assistantOperatingMode: "plan",
-      requestedAvailableToolNames: ["bash", "read", "write", "grep", "locate_codebase_symbols", "task"],
+      requestedAvailableToolNames: ["bash", "read", "write", "grep", "task"],
     }),
-  ).toEqual({ availableToolNames: ["bash", "read", "grep", "locate_codebase_symbols", "task"] });
+  ).toEqual({ availableToolNames: ["bash", "read", "grep", "task"] });
 });
 
 test("resolveAvailableToolNamesForAssistantOperatingMode preserves requested tools in implementation mode", () => {
@@ -44,7 +44,6 @@ test("resolveAvailableToolNamesForAssistantOperatingMode exposes implementation 
       "read",
       "glob",
       "grep",
-      "locate_codebase_symbols",
       "edit",
       "patch",
       "write",
@@ -64,7 +63,7 @@ test("resolveAssistantOperatingModeToolAccess allows bash in plan mode", () => {
     }),
   ).toEqual({
     accessKind: "allowed",
-    effectiveAvailableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"],
+    effectiveAvailableToolNames: ["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"],
   });
 });
 

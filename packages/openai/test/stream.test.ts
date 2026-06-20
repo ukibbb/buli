@@ -947,18 +947,6 @@ test("parseOpenAiStream parses typed coding tool calls", async () => {
       },
     },
     {
-      toolName: "locate_codebase_symbols",
-      argumentsText: JSON.stringify({
-        symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-        filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      }),
-      expectedToolCallRequest: {
-        toolName: "locate_codebase_symbols",
-        symbolNames: ["streamAssistantResponseEventsForRequestedToolCalls"],
-        filePaths: ["packages/engine/src/runtimeToolCallExecution.ts"],
-      },
-    },
-    {
       toolName: "edit",
       argumentsText: '{"filePath":"src/app.ts","oldString":"old","newString":"","replaceAll":true}',
       expectedToolCallRequest: {
@@ -1116,7 +1104,6 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   const readToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "read");
   const globToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "glob");
   const grepToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "grep");
-  const locateCodebaseSymbolsToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "locate_codebase_symbols");
   const editToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit");
   const editManyToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "edit_many");
   const patchToolDefinition = openAiToolDefinitions.find((toolDefinition) => toolDefinition.name === "patch");
@@ -1148,14 +1135,6 @@ test("createOpenAiToolDefinitions instructs inspection through typed tools", () 
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Single file or directory");
   expect(grepToolDefinition?.parameters.properties["path"]?.description).toContain("Do not pass multiple paths");
   expect(grepToolDefinition?.parameters.properties["contextLineCount"]?.maximum).toBe(5);
-  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("start-end line span");
-  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("grep/glob for discovery");
-  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("read to verify current source");
-  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("filePaths are optional filters only");
-  expect(locateCodebaseSymbolsToolDefinition?.description).toContain("multiple concurrent locate_codebase_symbols calls instead of one large lookup");
-  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["symbolNames"]?.minItems).toBe(1);
-  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["filePaths"]?.maxItems).toBe(50);
-  expect(locateCodebaseSymbolsToolDefinition?.parameters.properties["maximumResultCount"]).toBeUndefined();
   expect(editToolDefinition?.description).toContain("replaceAll");
   expect(editToolDefinition?.parameters.properties["replaceAll"]?.description).toContain("replace every occurrence");
   expect(editManyToolDefinition?.description).toContain("Prefer this over several edit calls");
@@ -1246,22 +1225,21 @@ test("parseOpenAiStream reports invalid workflow handoff payloads as invalid fun
 
 test("createOpenAiToolDefinitions can restrict tools for Explorer turns", () => {
   const explorerToolDefinitions = createOpenAiToolDefinitions({
-    availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols"],
+    availableToolNames: ["read", "glob", "grep"],
   });
 
-  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep", "locate_codebase_symbols"]);
+  expect(explorerToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual(["read", "glob", "grep"]);
 });
 
 test("createOpenAiToolDefinitions preserves explicit available tool order", () => {
   const readOnlyModeToolDefinitions = createOpenAiToolDefinitions({
-    availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"],
+    availableToolNames: ["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"],
   });
 
   expect(readOnlyModeToolDefinitions.map((toolDefinition) => toolDefinition.name)).toEqual([
     "read",
     "glob",
     "grep",
-    "locate_codebase_symbols",
     "task",
     "skill",
     "record_workflow_handoff",

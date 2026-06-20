@@ -1139,30 +1139,6 @@ function readRequiredObjectToolArgument(
   throw new Error(`OpenAI function call for ${toolName} is missing required object argument: ${argumentName}`);
 }
 
-function readOptionalStringArrayToolArgument(
-  parsedArguments: JsonObjectRecord,
-  argumentName: string,
-  toolName: string,
-): string[] | undefined {
-  const argumentValue = parsedArguments[argumentName];
-  if (argumentValue === undefined || argumentValue === null) {
-    return undefined;
-  }
-  if (!Array.isArray(argumentValue)) {
-    throw new Error(`OpenAI function call for ${toolName} has invalid string array argument: ${argumentName}`);
-  }
-
-  return argumentValue.map((arrayItemValue, arrayItemIndex) => {
-    if (typeof arrayItemValue === "string" && arrayItemValue.length > 0) {
-      return arrayItemValue;
-    }
-
-    throw new Error(
-      `OpenAI function call for ${toolName} has invalid string array item: ${argumentName}[${arrayItemIndex}]`,
-    );
-  });
-}
-
 function readOptionalPositiveIntegerToolArgument(
   parsedArguments: JsonObjectRecord,
   argumentName: string,

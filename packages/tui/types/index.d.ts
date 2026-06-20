@@ -3,6 +3,7 @@ import type {
   AssistantPrimaryAgentDisplayMetadata,
   AvailableAssistantModel,
   BuliDiagnosticLogger,
+  CalloutSeverity,
   ConversationSessionEntry,
   ConversationSessionModelSelection,
   ConversationSessionSummary,
@@ -21,6 +22,11 @@ import type {
 import type { ChatSlashCommandSkill } from "@buli/chat-session-state";
 import type { ConversationTranscriptPageEntryRecordsLoad, LoadConversationTranscriptEntryRecords } from "@buli/chat-app-controller";
 import type { ReactNode } from "react";
+
+export type StartupIntegrationNotice = Readonly<{
+  noticeSeverity: CalloutSeverity;
+  noticeText: string;
+}>;
 
 export type ChatScreenProps = {
   primaryAgentDisplayMetadata?: readonly AssistantPrimaryAgentDisplayMetadata[] | undefined;
@@ -60,6 +66,7 @@ export type ChatScreenProps = {
     | undefined;
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  startupIntegrationNotices?: readonly StartupIntegrationNotice[] | undefined;
 };
 
 export type ConversationSessionSwitchResult = {
@@ -128,6 +135,7 @@ export type RenderChatScreenInTerminalInput = {
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
   onConversationSessionModelSelectionChanged?: ChatScreenProps["onConversationSessionModelSelectionChanged"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  startupIntegrationNotices?: ChatScreenProps["startupIntegrationNotices"];
 };
 
 export type TerminalRendererCreateOptionsForChatScreen = {

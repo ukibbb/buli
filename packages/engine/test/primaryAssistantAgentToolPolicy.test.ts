@@ -11,16 +11,16 @@ test("resolveAvailableToolNamesForPrimaryAgentName exposes read-only tools by de
       selectedPrimaryAgentName: "understand",
       requestedAvailableToolNames: undefined,
     }),
-  ).toEqual({ availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"] });
+  ).toEqual({ availableToolNames: ["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"] });
 });
 
 test("resolveAvailableToolNamesForPrimaryAgentName filters requested tools in plan agent", () => {
   expect(
     resolveAvailableToolNamesForPrimaryAgentName({
       selectedPrimaryAgentName: "plan",
-      requestedAvailableToolNames: ["bash", "read", "write", "grep", "locate_codebase_symbols", "task"],
+      requestedAvailableToolNames: ["bash", "read", "write", "grep", "task"],
     }),
-  ).toEqual({ availableToolNames: ["bash", "read", "grep", "locate_codebase_symbols", "task"] });
+  ).toEqual({ availableToolNames: ["bash", "read", "grep", "task"] });
 });
 
 test("resolveAvailableToolNamesForPrimaryAgentName preserves requested tools in implementation agent", () => {
@@ -44,7 +44,6 @@ test("resolveAvailableToolNamesForPrimaryAgentName exposes implementation agent 
       "read",
       "glob",
       "grep",
-      "locate_codebase_symbols",
       "edit",
       "patch",
       "write",
@@ -64,7 +63,7 @@ test("resolvePrimaryAgentNameToolAccess allows bash in plan agent", () => {
     }),
   ).toEqual({
     accessKind: "allowed",
-    effectiveAvailableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"],
+    effectiveAvailableToolNames: ["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"],
   });
 });
 

@@ -74,6 +74,7 @@ export type RenderChatScreenInTerminalInput = {
   onConversationCleared?: ChatScreenProps["onConversationCleared"];
   onConversationSessionModelSelectionChanged?: ChatScreenProps["onConversationSessionModelSelectionChanged"];
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
+  startupIntegrationNotices?: ChatScreenProps["startupIntegrationNotices"];
 };
 
 export type TerminalRendererCreateOptionsForChatScreen = {
@@ -267,6 +268,9 @@ export async function renderChatScreenInTerminalWithRuntime<
           : {}),
         ...(primaryAgentDisplayMetadata !== undefined
           ? { primaryAgentDisplayMetadata }
+          : {}),
+        ...(input.startupIntegrationNotices !== undefined
+          ? { startupIntegrationNotices: input.startupIntegrationNotices }
           : {}),
         ...(input.diagnosticLogger ? { diagnosticLogger: input.diagnosticLogger } : {}),
       }),

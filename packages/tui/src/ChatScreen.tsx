@@ -30,6 +30,7 @@ import type { PromptContextCandidate } from "@buli/prompt-context-core";
 import { useTerminalDimensions } from "@opentui/react";
 import { classifyTerminalSizeTierForChatScreen } from "@buli/assistant-design-tokens";
 import { ChatScreenLayout } from "./components/ChatScreenLayout.tsx";
+import type { StartupIntegrationNotice } from "./components/LiveInteractionStatusStack.tsx";
 import { formatChatScreenWorkingDirectoryPath } from "./behavior/chatScreenWorkingDirectoryLabel.ts";
 import { useChatScreenController } from "./behavior/useChatScreenController.ts";
 import { ChatScreenSlot, ChatScreenSlotsProvider, type ChatScreenSlotPlugin } from "./slots/chatScreenSlots.tsx";
@@ -73,6 +74,7 @@ export type ChatScreenProps = {
   activeConversationTurnShutdownCoordinator?: ActiveConversationTurnShutdownCoordinator;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
   chatScreenSlotPlugins?: readonly ChatScreenSlotPlugin[] | undefined;
+  startupIntegrationNotices?: readonly StartupIntegrationNotice[] | undefined;
 };
 
 export type {

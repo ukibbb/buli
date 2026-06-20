@@ -140,10 +140,10 @@
           "minLength": 1
         },
         "usage": {
-          "$ref": "#/$defs/__schema24"
+          "$ref": "#/$defs/__schema23"
         },
         "contextWindowUsage": {
-          "$ref": "#/$defs/__schema24"
+          "$ref": "#/$defs/__schema23"
         }
       },
       "required": [
@@ -169,10 +169,10 @@
           "minLength": 1
         },
         "usage": {
-          "$ref": "#/$defs/__schema24"
+          "$ref": "#/$defs/__schema23"
         },
         "contextWindowUsage": {
-          "$ref": "#/$defs/__schema24"
+          "$ref": "#/$defs/__schema23"
         }
       },
       "required": [
@@ -712,7 +712,7 @@
               "minItems": 1,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema23"
+                "$ref": "#/$defs/__schema22"
               }
             }
           },
@@ -861,7 +861,7 @@
               "$ref": "#/$defs/__schema18"
             },
             "usage": {
-              "$ref": "#/$defs/__schema24"
+              "$ref": "#/$defs/__schema23"
             }
           },
           "required": [
@@ -1184,9 +1184,6 @@
                                 "$ref": "#/$defs/__schema7"
                               },
                               {
-                                "$ref": "#/$defs/__schema19"
-                              },
-                              {
                                 "$ref": "#/$defs/__schema17"
                               },
                               {
@@ -1205,7 +1202,7 @@
                                 "$ref": "#/$defs/__schema16"
                               },
                               {
-                                "$ref": "#/$defs/__schema20"
+                                "$ref": "#/$defs/__schema19"
                               },
                               {
                                 "type": "object",
@@ -1235,7 +1232,7 @@
                             ]
                           },
                           {
-                            "$ref": "#/$defs/__schema21"
+                            "$ref": "#/$defs/__schema20"
                           }
                         ]
                       },
@@ -1319,7 +1316,7 @@
               "additionalProperties": false
             },
             {
-              "$ref": "#/$defs/__schema20"
+              "$ref": "#/$defs/__schema19"
             },
             {
               "type": "object",
@@ -1347,14 +1344,11 @@
                 "handoffSummary"
               ],
               "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema19"
             }
           ]
         },
         {
-          "$ref": "#/$defs/__schema21"
+          "$ref": "#/$defs/__schema20"
         }
       ]
     },
@@ -1870,53 +1864,6 @@
       "properties": {
         "toolName": {
           "type": "string",
-          "const": "locate_codebase_symbols"
-        },
-        "symbolNames": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "filePaths": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "locatedSymbolCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "notFoundSymbolCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "ambiguousSymbolNameCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "verificationReadCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        }
-      },
-      "required": [
-        "toolName"
-      ],
-      "additionalProperties": false
-    },
-    "__schema20": {
-      "type": "object",
-      "properties": {
-        "toolName": {
-          "type": "string",
           "const": "skill"
         },
         "skillName": {
@@ -1947,7 +1894,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema21": {
+    "__schema20": {
       "type": "object",
       "properties": {
         "toolName": {
@@ -1964,11 +1911,11 @@
             "type": "string"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/__schema22"
+            "$ref": "#/$defs/__schema21"
           }
         },
         "toolResultJson": {
-          "$ref": "#/$defs/__schema22"
+          "$ref": "#/$defs/__schema21"
         },
         "toolResultSummary": {
           "type": "string",
@@ -1980,7 +1927,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema22": {
+    "__schema21": {
       "anyOf": [
         {
           "type": "string"
@@ -1997,7 +1944,7 @@
         {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema22"
+            "$ref": "#/$defs/__schema21"
           }
         },
         {
@@ -2006,12 +1953,12 @@
             "type": "string"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/__schema22"
+            "$ref": "#/$defs/__schema21"
           }
         }
       ]
     },
-    "__schema23": {
+    "__schema22": {
       "type": "object",
       "properties": {
         "stepIndex": {
@@ -2042,7 +1989,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema24": {
+    "__schema23": {
       "type": "object",
       "properties": {
         "total": {

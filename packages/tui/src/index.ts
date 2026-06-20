@@ -52,6 +52,7 @@ export { ConversationMessageList } from "./components/ConversationMessageList.ts
 export { CommandHelpModal } from "./components/CommandHelpModal.tsx";
 export { ConversationSessionSelectionPane } from "./components/ConversationSessionSelectionPane.tsx";
 export { InputPanel } from "./components/InputPanel.tsx";
+export type { StartupIntegrationNotice } from "./components/LiveInteractionStatusStack.tsx";
 export { ModelAndReasoningSelectionPane } from "./components/ModelAndReasoningSelectionPane.tsx";
 export { PromptContextSelectionPane } from "./components/PromptContextSelectionPane.tsx";
 export { PromptDraftText } from "./components/PromptDraftText.tsx";

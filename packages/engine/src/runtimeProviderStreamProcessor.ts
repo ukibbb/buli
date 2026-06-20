@@ -23,6 +23,10 @@ import {
   logEngineDiagnosticEvent,
   summarizeProviderStreamEventForDiagnostics,
 } from "./runtimeDiagnostics.ts";
+import {
+  projectAssistantMessageProviderTurnReplayForRetainedToolResults,
+  RuntimeProviderTurnToolResultRetentionRegistry,
+} from "./runtimeProviderTurnToolResultRetention.ts";
 
 export type RuntimeProviderStreamProcessingOutcome =
   | { outcomeKind: "terminal_assistant_response" }
@@ -69,6 +73,7 @@ export async function* streamAssistantResponseEventsFromProviderStream(
   const providerStreamEventReadState: ProviderStreamEventReadState = {
     providerStreamEventIterator: input.providerConversationTurn.streamProviderEvents()[Symbol.asyncIterator](),
   };
+  const toolResultRetentionRegistry = new RuntimeProviderTurnToolResultRetentionRegistry();
   let didReachProviderStreamEnd = false;
   let didCreateAssistantResponseEventsBeforeFirstProviderEvent = false;
 
@@ -103,12 +108,12 @@ export async function* streamAssistantResponseEventsFromProviderStream(
               break;
             }
             if (!adjacentTranslatedProviderStreamEvent) {
-              yield* streamAssistantResponseEventsForPendingToolCallBatch({ input, pendingToolCallBatch });
+              yield* streamAssistantResponseEventsForPendingToolCallBatch({ input, pendingToolCallBatch, toolResultRetentionRegistry });
               didReachProviderStreamEnd = true;
               return { outcomeKind: "provider_stream_ended" };
             }
             if (!isRuntimeProviderStreamToolCallTranslation(adjacentTranslatedProviderStreamEvent.providerStreamEventTranslation)) {
-              yield* streamAssistantResponseEventsForPendingToolCallBatch({ input, pendingToolCallBatch });
+              yield* streamAssistantResponseEventsForPendingToolCallBatch({ input, pendingToolCallBatch, toolResultRetentionRegistry });
               providerStreamEventTranslation = adjacentTranslatedProviderStreamEvent.providerStreamEventTranslation;
               break;
             }
@@ -120,7 +125,7 @@ export async function* streamAssistantResponseEventsFromProviderStream(
           }
 
           if (isRuntimeProviderStreamToolCallTranslation(providerStreamEventTranslation)) {
-            yield* streamAssistantResponseEventsForPendingToolCallBatch({ input, pendingToolCallBatch });
+            yield* streamAssistantResponseEventsForPendingToolCallBatch({ input, pendingToolCallBatch, toolResultRetentionRegistry });
             break;
           }
           continue;
@@ -145,9 +150,13 @@ export async function* streamAssistantResponseEventsFromProviderStream(
         for (const assistantSegmentSessionEntry of providerStreamEventTranslation.assistantSegmentSessionEntriesBeforeTerminalSessionEntry ?? []) {
           input.conversationTurnSessionRecorder.appendAssistantSegmentSessionEntry(assistantSegmentSessionEntry);
         }
+        const terminalAssistantMessageSessionEntry = projectAssistantMessageProviderTurnReplayForRetainedToolResults({
+          assistantMessageConversationSessionEntry: providerStreamEventTranslation.terminalAssistantMessageSessionEntry,
+          toolResultRetentionRegistry,
+        });
         input.conversationTurnSessionRecorder.appendTerminalAssistantMessageSessionEntry(
           attachRecordedWorkflowHandoffToTerminalAssistantMessageSessionEntry({
-            terminalAssistantMessageSessionEntry: providerStreamEventTranslation.terminalAssistantMessageSessionEntry,
+            terminalAssistantMessageSessionEntry,
             workflowHandoff: input.readRecordedWorkflowHandoff?.(),
           }),
         );
@@ -316,6 +325,7 @@ function listRequestedToolCallsFromProviderStreamToolCallTranslation(
 async function* streamAssistantResponseEventsForPendingToolCallBatch(input: {
   input: RuntimeProviderStreamProcessorInput;
   pendingToolCallBatch: PendingProviderRequestedToolCallBatch;
+  toolResultRetentionRegistry: RuntimeProviderTurnToolResultRetentionRegistry;
 }): AsyncGenerator<AssistantResponseEvent> {
   for (const assistantResponseEvent of input.pendingToolCallBatch.assistantResponseEventsBeforeToolCall) {
     yield input.input.logAssistantResponseEventEmitted(assistantResponseEvent);
@@ -325,6 +335,7 @@ async function* streamAssistantResponseEventsForPendingToolCallBatch(input: {
   }
   yield* streamAssistantResponseEventsForRequestedToolCalls({
     ...input.input.createRequestedToolCallsExecutionContext(),
+    toolResultRetentionRegistry: input.toolResultRetentionRegistry,
     requestedToolCalls: input.pendingToolCallBatch.requestedToolCalls,
   });
 }

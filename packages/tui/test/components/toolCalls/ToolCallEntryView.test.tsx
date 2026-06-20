@@ -58,27 +58,6 @@ describe("ToolCallEntryView", () => {
     expect(frame).toContain("2 paths");
   });
 
-  test("dispatches_locate_codebase_symbols", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      <ToolCallEntryView
-        renderState="completed"
-        toolCallDetail={{
-          toolName: "locate_codebase_symbols",
-          symbolNames: ["runDispatch"],
-          filePaths: ["packages/engine/src/runtime.ts"],
-          locatedSymbolCount: 1,
-          verificationReadCount: 2,
-        }}
-      />,
-      { width: 90, height: 15 },
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("LocateSymbols");
-    expect(frame).toContain("1 symbol");
-    expect(frame).toContain("1 definition");
-  });
-
   test("dispatches_edit", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
       <ToolCallEntryView

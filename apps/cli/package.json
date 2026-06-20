@@ -19,6 +19,7 @@
   "dependencies": {
     "@buli/contracts": "workspace:*",
     "@buli/engine": "workspace:*",
+    "@buli/mcp": "workspace:*",
     "@buli/openai": "workspace:*",
     "@buli/tui": "workspace:*",
     "@shikijs/core": "^4.1.0",

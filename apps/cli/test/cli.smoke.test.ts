@@ -24,6 +24,11 @@ import {
   type CustomAssistantToolDefinition,
   type PrimaryAssistantAgentDefinition,
 } from "@buli/engine";
+import {
+  createMcpAssistantRuntimeConfiguration,
+  type CreateMcpRuntimeIntegrationInput,
+  type McpRuntimeIntegration,
+} from "@buli/mcp";
 import { OpenAiAuthStore, OpenAiProvider, type OpenAiModelBehaviorProfileResolver } from "@buli/openai";
 import type {
   ConversationSessionDeleteResult,
@@ -33,6 +38,7 @@ import type {
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
 import { runLogin } from "../src/commands/login.ts";
+import { runCheckNoVibeMcp } from "../src/commands/mcp.ts";
 import {
   defaultConversationSessionDatabasePath,
   SqliteConversationSessionStore,
@@ -47,6 +53,7 @@ test("runCli delegates the login command", async () => {
   const output = await runCli(["login"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -57,16 +64,40 @@ test("runCli delegates the models command", async () => {
   const output = await runCli(["models"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
   expect(output).toEqual({ status: "ok", output: "delegated models" });
 });
 
+test("runCli delegates the mcp check command", async () => {
+  const output = await runCli(["mcp", "check"], {
+    runInteractiveChat: async () => "delegated start",
+    runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runLogin: async () => "delegated login",
+  });
+
+  expect(output).toEqual({ status: "ok", output: "delegated mcp check" });
+});
+
+test("runCli returns usage for invalid mcp subcommands", async () => {
+  const output = await runCli(["mcp", "unknown"], {
+    runInteractiveChat: async () => "delegated start",
+    runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
+    runLogin: async () => "delegated login",
+  });
+
+  expect(output).toEqual({ status: "usage_error", output: CLI_USAGE });
+});
+
 test("runCli returns usage for unknown commands", async () => {
   const output = await runCli(["unknown"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -82,6 +113,7 @@ test("runCli delegates the default command when no args are provided", async () 
       return "delegated start";
     },
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -93,6 +125,7 @@ test("runCli returns usage for the removed chat alias", async () => {
   const output = await runCli(["chat"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -108,6 +141,7 @@ test("runCli passes startup flags to the chat command", async () => {
       return "delegated start";
     },
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -124,6 +158,7 @@ test("runCli passes the bash approval startup flag to the chat command", async (
       return "delegated start";
     },
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -135,6 +170,7 @@ test("runCli returns usage when a startup flag is invalid", async () => {
   const output = await runCli(["--reasoning", "wrong"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
@@ -145,10 +181,92 @@ test("runCli returns usage successfully for help", async () => {
   const output = await runCli(["--help"], {
     runInteractiveChat: async () => "delegated start",
     runListAvailableModels: async () => "delegated models",
+    runCheckNoVibeMcp: async () => "delegated mcp check",
     runLogin: async () => "delegated login",
   });
 
   expect(output).toEqual({ status: "ok", output: CLI_USAGE });
+});
+
+test("runCheckNoVibeMcp reports that NoVibe MCP is disabled by default", async () => {
+  await expect(runCheckNoVibeMcp({ environment: {} })).resolves.toBe([
+    "NoVibe MCP is disabled.",
+    "Set BULI_NOVIBE_MCP_BEARER_TOKEN to enable it.",
+  ].join("\n"));
+});
+
+test("runCheckNoVibeMcp reports invalid NoVibe MCP environment", async () => {
+  await expect(runCheckNoVibeMcp({
+    environment: { BULI_NOVIBE_MCP_URL: "http://localhost:8001/v1/mcp/" },
+  })).resolves.toBe(
+    "Invalid NoVibe MCP configuration. Set BULI_NOVIBE_MCP_BEARER_TOKEN when BULI_NOVIBE_MCP_URL or BULI_NOVIBE_MCP_TIMEOUT_MS is configured.",
+  );
+  await expect(runCheckNoVibeMcp({
+    environment: {
+      BULI_NOVIBE_MCP_BEARER_TOKEN: "raw-dev-token",
+      BULI_NOVIBE_MCP_URL: "not-a-url",
+    },
+  })).resolves.toBe("Invalid BULI_NOVIBE_MCP_URL. Use an absolute http(s) URL.");
+});
+
+test("runCheckNoVibeMcp reports connected NoVibe MCP tools and disposes the integration", async () => {
+  let capturedMcpConfiguration: { mcpUrl: string; bearerToken: string; timeoutMs: number } | undefined;
+  let disposeCount = 0;
+
+  const output = await runCheckNoVibeMcp({
+    environment: { BULI_NOVIBE_MCP_BEARER_TOKEN: " raw-dev-token " },
+    createNoVibeMcpRuntimeIntegration: async (configuration) => {
+      capturedMcpConfiguration = configuration;
+      return createFakeMcpRuntimeIntegration({
+        toolNames: [
+          "novibe_teacher_library_read_current_learning_area_tree",
+          "novibe_teacher_library_note_read",
+        ],
+        serverStatuses: [{
+          statusKind: "connected",
+          serverName: "novibe",
+          displayName: "NoVibe",
+          url: configuration.mcpUrl,
+          toolCount: 2,
+          toolNames: [
+            "novibe_teacher_library_read_current_learning_area_tree",
+            "novibe_teacher_library_note_read",
+          ],
+        }],
+        dispose: () => {
+          disposeCount += 1;
+        },
+      });
+    },
+  });
+
+  expect(capturedMcpConfiguration).toEqual({
+    mcpUrl: "http://localhost:8001/v1/mcp/",
+    bearerToken: "raw-dev-token",
+    timeoutMs: 30_000,
+  });
+  expect(output).toBe([
+    "NoVibe MCP connected: http://localhost:8001/v1/mcp/",
+    "Tools (2):",
+    "- novibe_teacher_library_read_current_learning_area_tree",
+    "- novibe_teacher_library_note_read",
+  ].join("\n"));
+  expect(output).not.toContain("raw-dev-token");
+  expect(disposeCount).toBe(1);
+});
+
+test("runCheckNoVibeMcp reports unavailable NoVibe MCP without leaking the bearer token", async () => {
+  const output = await runCheckNoVibeMcp({
+    environment: { BULI_NOVIBE_MCP_BEARER_TOKEN: "raw-dev-token" },
+    createNoVibeMcpRuntimeIntegration: async () => {
+      throw new Error("NoVibe MCP raw-dev-token server is offline");
+    },
+  });
+
+  expect(output).toBe([
+    "NoVibe MCP unavailable: http://localhost:8001/v1/mcp/",
+    "Error: NoVibe MCP [redacted] server is offline",
+  ].join("\n"));
 });
 
 test("runLogin can use an injected browser login dependency", async () => {
@@ -652,6 +770,170 @@ test("runInteractiveChat applies a single assistant runtime configuration object
     description: "Uses a single assistant runtime configuration object.",
     accentColorName: "cyan",
   });
+});
+
+test("runInteractiveChat composes generic MCP tools into the default assistant runtime when env is configured", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-novibe-mcp-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
+  let capturedMcpRuntimeIntegrationInput: CreateMcpRuntimeIntegrationInput | undefined;
+  let capturedConversationRuntime: AssistantConversationRuntime | undefined;
+  let capturedStartupIntegrationNotices: RenderChatScreenInTerminalInput["startupIntegrationNotices"];
+  let disposeCount = 0;
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {
+      BULI_NOVIBE_MCP_BEARER_TOKEN: " raw-dev-token ",
+      BULI_NOVIBE_MCP_URL: "http://localhost:8001/v1/mcp",
+      BULI_NOVIBE_MCP_TIMEOUT_MS: "12345",
+    },
+    createMcpRuntimeIntegration: async (integrationInput) => {
+      capturedMcpRuntimeIntegrationInput = integrationInput;
+      const integration = createMcpAssistantRuntimeConfiguration({
+        connectedServers: [{
+          serverConfiguration: integrationInput.serverConfigurations[0] ?? {
+            serverName: "novibe",
+            displayName: "NoVibe",
+            transport: "streamable_http",
+            url: "http://localhost:8001/v1/mcp",
+            timeoutMs: 12_345,
+          },
+          listedMcpTools: [
+            {
+              name: "teacher_library_note_read",
+              description: "Read a NoVibe library note.",
+              inputSchema: {
+                properties: {
+                  note_id: { type: "string", format: "uuid" },
+                },
+                required: ["note_id"],
+              },
+            },
+          ],
+          callMcpTool: async () => ({ content: [{ type: "text", text: "note" }] }),
+          dispose: () => {},
+        }],
+      });
+      return {
+        ...integration,
+        serverStatuses: [{
+          statusKind: "connected",
+          serverName: "novibe",
+          displayName: "NoVibe",
+          url: "http://localhost:8001/v1/mcp",
+          toolCount: 1,
+          toolNames: ["novibe_teacher_library_note_read"],
+        }],
+        dispose: async () => {
+          disposeCount += 1;
+          await integration.dispose();
+        },
+      };
+    },
+    renderChatScreen: async (renderInput) => {
+      capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      capturedStartupIntegrationNotices = renderInput.startupIntegrationNotices;
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(capturedMcpRuntimeIntegrationInput?.serverConfigurations).toEqual([{
+    serverName: "novibe",
+    displayName: "NoVibe",
+    transport: "streamable_http",
+    url: "http://localhost:8001/v1/mcp",
+    bearerToken: "raw-dev-token",
+    timeoutMs: 12_345,
+  }]);
+  expect(disposeCount).toBe(1);
+  expect(capturedStartupIntegrationNotices).toEqual([
+    { noticeSeverity: "success", noticeText: "MCP: novibe connected (1 tools)" },
+  ]);
+  expect(
+    capturedConversationRuntime?.assistantToolRegistry.resolveCustomToolDefinition("novibe_teacher_library_note_read")
+      .toolName,
+  ).toBe("novibe_teacher_library_note_read");
+  const primaryAssistantAgentCompositionResolver = capturedConversationRuntime?.primaryAssistantAgentCompositionResolver;
+  if (!capturedConversationRuntime || !primaryAssistantAgentCompositionResolver) {
+    throw new Error("expected captured runtime with NoVibe MCP overlay resolver");
+  }
+  expect(primaryAssistantAgentCompositionResolver({
+    registeredPrimaryAssistantAgent: capturedConversationRuntime.assistantAgentRegistry.resolvePrimaryAgentDefinition("understand"),
+    providerName: "openai",
+    selectedModelId: "test-model",
+  }).primaryAssistantAgent.availableToolNames).toEqual(expect.arrayContaining([
+    "read",
+    "task",
+    "novibe_teacher_library_note_read",
+  ]));
+});
+
+test("runInteractiveChat keeps starting when a configured MCP server is unavailable", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-novibe-mcp-unavailable-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
+  let createMcpRuntimeIntegrationCallCount = 0;
+  let capturedConversationRuntime: AssistantConversationRuntime | undefined;
+  let capturedStartupIntegrationNotices: RenderChatScreenInTerminalInput["startupIntegrationNotices"];
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: { BULI_NOVIBE_MCP_BEARER_TOKEN: "raw-dev-token" },
+    createMcpRuntimeIntegration: async () => {
+      createMcpRuntimeIntegrationCallCount += 1;
+      return {
+        assistantRuntimeConfiguration: createAssistantRuntimeConfiguration(),
+        toolNames: [],
+        serverStatuses: [{
+          statusKind: "unavailable",
+          serverName: "novibe",
+          displayName: "NoVibe",
+          url: "http://localhost:8001/v1/mcp",
+          errorMessage: "NoVibe MCP server is offline",
+        }],
+        dispose: async () => {},
+      };
+    },
+    renderChatScreen: async (renderInput) => {
+      capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      capturedStartupIntegrationNotices = renderInput.startupIntegrationNotices;
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(createMcpRuntimeIntegrationCallCount).toBe(1);
+  expect(capturedStartupIntegrationNotices).toEqual([
+    { noticeSeverity: "warning", noticeText: "MCP: novibe unavailable: NoVibe MCP server is offline" },
+  ]);
+  expect(capturedConversationRuntime).toBeDefined();
+  expect(() => {
+    capturedConversationRuntime?.assistantToolRegistry.resolveCustomToolDefinition("novibe_teacher_library_note_read");
+  }).toThrow("Custom assistant tool is not registered: novibe_teacher_library_note_read");
 });
 
 test("runInteractiveChat rejects mixed assistant runtime configuration inputs", async () => {
@@ -1363,6 +1645,21 @@ test("main prints usage for an unknown command", async () => {
   expect(outputs).toEqual([CLI_USAGE]);
   expect(Number(observedExitCode)).toBe(1);
 });
+
+function createFakeMcpRuntimeIntegration(input: {
+  toolNames: readonly string[];
+  serverStatuses: McpRuntimeIntegration["serverStatuses"];
+  dispose?: (() => Promise<void> | void) | undefined;
+}): McpRuntimeIntegration {
+  return {
+    assistantRuntimeConfiguration: createAssistantRuntimeConfiguration(),
+    toolNames: input.toolNames,
+    serverStatuses: input.serverStatuses,
+    dispose: async () => {
+      await input.dispose?.();
+    },
+  };
+}
 
 function createConversationSessionStoreStub(input: {
   directoryPath: string;

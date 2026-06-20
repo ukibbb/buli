@@ -32,7 +32,6 @@ Important deterministic summaries after a fresh run:
 - `profile-runs/current/task-subagent/summary.md`
 - `profile-runs/current/sqlite/summary.md`
 - `profile-runs/current/tool-output/summary.md`
-- `profile-runs/current/codebase-knowledge/summary.md`
 - `profile-runs/current/assistant-markdown-render-sections/summary.md`
 
 `profile-runs/` is ignored by git. Treat these paths as local measurement state, not durable project history. If the files are missing, rerun the commands in `PROFILING.md` before making optimization claims.

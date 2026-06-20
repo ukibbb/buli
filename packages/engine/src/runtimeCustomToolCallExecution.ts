@@ -19,6 +19,7 @@ import type { RuntimePendingToolApproval, RuntimePendingToolApprovalInput } from
 import type { RuntimeToolResultSessionRecorder } from "./runtimeToolResultSessionRecorder.ts";
 import type { AssistantToolRegistry, CustomAssistantToolDefinition, CustomAssistantToolExecutionOutcome } from "./assistantToolRegistry.ts";
 import type { RuntimeReadOnlyToolCallConcurrencyLimiter } from "./runtimeReadOnlyToolCallConcurrencyLimiter.ts";
+import type { RuntimeProviderTurnToolResultRetentionRegistry } from "./runtimeProviderTurnToolResultRetention.ts";
 
 export type StreamAssistantResponseEventsForCustomToolCallInput = {
   assistantResponseMessageId: string;
@@ -29,6 +30,7 @@ export type StreamAssistantResponseEventsForCustomToolCallInput = {
   assistantToolRegistry: AssistantToolRegistry;
   workspaceRootPath: string;
   toolResultSessionRecorder: RuntimeToolResultSessionRecorder;
+  toolResultRetentionRegistry?: RuntimeProviderTurnToolResultRetentionRegistry | undefined;
   readOnlyToolCallConcurrencyLimiter?: RuntimeReadOnlyToolCallConcurrencyLimiter | undefined;
   abortSignal: AbortSignal;
   createPendingToolApproval: (input: RuntimePendingToolApprovalInput) => RuntimePendingToolApproval;
@@ -170,13 +172,21 @@ export async function* streamAssistantResponseEventsForCustomToolCall(
   const completedOrFailedToolCallDetail = createCustomToolCallDetailForOutcome({
     startedToolCallDetail,
     customToolExecutionOutcome,
+    toolCallDetailRetentionKind: customToolExecutionOutcome.sessionToolCallDetail !== undefined ? "session" : "full",
+  });
+  const sessionToolResultText = customToolExecutionOutcome.sessionToolResultText ?? customToolExecutionOutcome.toolResultText;
+  registerRetainedToolResultForProviderReplay({
+    toolCallId: input.toolCallId,
+    fullToolResultText: customToolExecutionOutcome.toolResultText,
+    sessionToolResultText,
+    toolResultRetentionRegistry: input.toolResultRetentionRegistry,
   });
 
   if (customToolExecutionOutcome.outcomeKind === "completed") {
     input.toolResultSessionRecorder.appendCompletedToolResultSessionEntry({
       toolCallId: input.toolCallId,
       toolCallDetail: completedOrFailedToolCallDetail,
-      toolResultText: customToolExecutionOutcome.toolResultText,
+      toolResultText: sessionToolResultText,
     });
     yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
       type: "assistant_message_part_updated",
@@ -205,8 +215,8 @@ export async function* streamAssistantResponseEventsForCustomToolCall(
   input.toolResultSessionRecorder.appendFailedToolResultSessionEntry({
     toolCallId: input.toolCallId,
     toolCallDetail: completedOrFailedToolCallDetail,
-    toolResultText: customToolExecutionOutcome.toolResultText,
-    failureExplanation: customToolExecutionOutcome.failureExplanation,
+    toolResultText: sessionToolResultText,
+    failureExplanation: customToolExecutionOutcome.sessionFailureExplanation ?? customToolExecutionOutcome.failureExplanation,
   });
   yield logAssistantResponseEventEmitted(input.diagnosticLogger, AssistantMessagePartUpdatedEventSchema.parse({
     type: "assistant_message_part_updated",
@@ -273,15 +283,16 @@ async function runCustomToolExecutor(input: {
 function createCustomToolCallDetailForOutcome(input: {
   startedToolCallDetail: CustomToolCallDetail;
   customToolExecutionOutcome: CustomAssistantToolExecutionOutcome;
+  toolCallDetailRetentionKind: "full" | "session";
 }): CustomToolCallDetail {
-  const outcomeToolCallDetail = input.customToolExecutionOutcome.toolCallDetail;
+  const outcomeToolCallDetail = input.customToolExecutionOutcome.sessionToolCallDetail ?? input.customToolExecutionOutcome.toolCallDetail;
   const mergedToolCallDetail = {
     ...input.startedToolCallDetail,
     ...(outcomeToolCallDetail ?? {}),
-    ...(input.customToolExecutionOutcome.toolResultJson !== undefined
+    ...(input.toolCallDetailRetentionKind === "full" && input.customToolExecutionOutcome.toolResultJson !== undefined
       ? { toolResultJson: input.customToolExecutionOutcome.toolResultJson }
       : {}),
-    ...(input.customToolExecutionOutcome.toolResultSummary !== undefined
+    ...(input.toolCallDetailRetentionKind === "full" && input.customToolExecutionOutcome.toolResultSummary !== undefined
       ? { toolResultSummary: input.customToolExecutionOutcome.toolResultSummary }
       : {}),
   };
@@ -295,4 +306,20 @@ function formatUnknownCustomToolError(error: unknown): string {
   }
 
   return String(error) || "Custom tool execution failed.";
+}
+
+function registerRetainedToolResultForProviderReplay(input: {
+  toolCallId: string;
+  fullToolResultText: string;
+  sessionToolResultText: string;
+  toolResultRetentionRegistry?: RuntimeProviderTurnToolResultRetentionRegistry | undefined;
+}): void {
+  if (!input.toolResultRetentionRegistry || input.fullToolResultText === input.sessionToolResultText) {
+    return;
+  }
+
+  input.toolResultRetentionRegistry.registerRetainedToolResult({
+    toolCallId: input.toolCallId,
+    retainedToolResultText: input.sessionToolResultText,
+  });
 }

@@ -8,7 +8,7 @@ import type {
   WorkspacePatch,
 } from "@buli/contracts";
 import { chatScreenTheme } from "@buli/assistant-design-tokens";
-import type { ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
+import { isConversationMessagePartVisibleInTranscript, type ReasoningSummaryDisplayMode } from "@buli/chat-session-state";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { IncompleteResponseNoticeBlock } from "./behavior/IncompleteResponseNoticeBlock.tsx";
 import { PlanProposalBlock } from "./behavior/PlanProposalBlock.tsx";
@@ -22,7 +22,6 @@ import { CompactionSeparatorPartView } from "./messageParts/CompactionSeparatorP
 import { ReasoningPartView } from "./messageParts/ReasoningPartView.tsx";
 import { ToolCallPartView } from "./messageParts/ToolCallPartView.tsx";
 import { WorkspacePatchPartView } from "./messageParts/WorkspacePatchPartView.tsx";
-import { hasVisibleReasoningSummaryText } from "./messageParts/reasoningSummaryText.ts";
 
 type ConversationMessagePartViewProps = {
   conversationMessagePart: ConversationMessagePart;
@@ -252,24 +251,7 @@ function shouldRenderConversationMessagePart(input: {
   conversationMessagePart: ConversationMessagePart;
   reasoningSummaryDisplayMode: ReasoningSummaryDisplayMode;
 }): boolean {
-  if (input.conversationMessagePart.partKind === "assistant_text") {
-    return input.conversationMessagePart.rawMarkdownText.trim().length > 0;
-  }
-
-  if (input.conversationMessagePart.partKind === "assistant_reasoning") {
-    return hasVisibleReasoningSummaryText(input.conversationMessagePart.reasoningSummaryText);
-  }
-
-  if (input.conversationMessagePart.partKind === "assistant_buli_sticky_notes") {
-    // Sticky notes stay in session/model context, but the interactive TUI transcript hides them.
-    return false;
-  }
-
-  if (input.conversationMessagePart.partKind === "assistant_turn_summary") {
-    return false;
-  }
-
-  return true;
+  return isConversationMessagePartVisibleInTranscript(input.conversationMessagePart);
 }
 
 type WorkspacePatchMergeResult = {

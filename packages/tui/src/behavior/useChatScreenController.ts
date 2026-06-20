@@ -305,6 +305,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const currentStatusStackProps: LiveInteractionStatusStackProps = {
     chatAppRenderStore: chatAppController.chatAppRenderStore,
     shouldHideQueuedPromptPreviews: shouldRenderMinimumHeightPromptStrip,
+    startupIntegrationNotices: chatScreenProps.startupIntegrationNotices,
     inputPanelAccentColor,
     onConversationSessionDeletionRequested: chatAppController.requestConversationSessionDeletion,
   };

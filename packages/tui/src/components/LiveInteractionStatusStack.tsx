@@ -20,6 +20,12 @@ import { SelectionPaneFrame } from "./SelectionPaneFrame.tsx";
 import { SlashCommandSelectionPane } from "./SlashCommandSelectionPane.tsx";
 import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import { QueuedPromptStack } from "./QueuedPromptStack.tsx";
+import { Callout, type CalloutSeverity } from "./primitives/Callout.tsx";
+
+export type StartupIntegrationNotice = Readonly<{
+  noticeSeverity: CalloutSeverity;
+  noticeText: string;
+}>;
 
 export type LiveInteractionStatusStackProps = LiveInteractionStatusStackCommonProps & (
   | StoreBackedLiveInteractionStatusStackProps
@@ -29,6 +35,7 @@ export type LiveInteractionStatusStackProps = LiveInteractionStatusStackCommonPr
 type LiveInteractionStatusStackCommonProps = {
   inputPanelAccentColor: string;
   shouldHideQueuedPromptPreviews?: boolean | undefined;
+  startupIntegrationNotices?: readonly StartupIntegrationNotice[] | undefined;
   onConversationSessionDeletionRequested: (conversationSessionId: string) => void | Promise<void>;
 };
 
@@ -112,6 +119,7 @@ function LiveInteractionStatusStackLayout(
 
   return (
     <>
+      {renderStartupIntegrationNotices(props.startupIntegrationNotices)}
       {renderConversationSessionExportStatusPane(statusStackRenderState.conversationSessionExportStatus)}
       {renderConversationSessionCompactionStatusPane(statusStackRenderState.conversationSessionCompactionStatus)}
       <QueuedPromptStack queuedPromptPreviews={queuedPromptPreviews} accentColor={props.inputPanelAccentColor} />
@@ -128,6 +136,18 @@ function LiveInteractionStatusStackLayout(
 }
 
 export const LiveInteractionStatusStack = memo(LiveInteractionStatusStackComponent);
+
+function renderStartupIntegrationNotices(startupIntegrationNotices: readonly StartupIntegrationNotice[] | undefined): ReactNode {
+  return startupIntegrationNotices?.map((startupIntegrationNotice) => (
+    <box key={startupIntegrationNotice.noticeText} paddingX={2} marginBottom={1}>
+      <Callout
+        severity={startupIntegrationNotice.noticeSeverity}
+        titleText="Startup"
+        bodyContent={<text fg={chatScreenTheme.textSecondary}>{startupIntegrationNotice.noticeText}</text>}
+      />
+    </box>
+  )) ?? null;
+}
 
 function toStatusStackRenderState(
   interactionStatusSnapshot: ChatAppInteractionStatusRenderSnapshot,

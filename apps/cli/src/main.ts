@@ -10,6 +10,7 @@ export type InteractiveChatStartOptions = {
 type CommandHandlers = {
   runLogin: () => Promise<string>;
   runListAvailableModels: () => Promise<string>;
+  runCheckNoVibeMcp: () => Promise<string>;
   runInteractiveChat: (input?: InteractiveChatStartOptions) => Promise<string>;
 };
 
@@ -26,13 +27,17 @@ const defaultCommandHandlers: CommandHandlers = {
     const { runListAvailableModels } = await import("./commands/models.ts");
     return runListAvailableModels();
   },
+  async runCheckNoVibeMcp() {
+    const { runCheckNoVibeMcp } = await import("./commands/mcp.ts");
+    return runCheckNoVibeMcp();
+  },
   async runLogin() {
     const { runLogin } = await import("./commands/login.ts");
     return runLogin();
   },
 };
 
-export const USAGE = "Usage: buli [login|models|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]";
+export const USAGE = "Usage: buli [login|models|mcp check|help] [--model <id>] [--reasoning <none|minimal|low|medium|high|xhigh>] [--bash-approval <risk_based|trusted>]";
 
 const supportedReasoningEfforts = new Set<ReasoningEffort>(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
@@ -142,6 +147,12 @@ export async function runCli(
       return ok(await commandHandlers.runLogin());
     case "models":
       return ok(await commandHandlers.runListAvailableModels());
+    case "mcp":
+      if (args.length === 2 && args[1] === "check") {
+        return ok(await commandHandlers.runCheckNoVibeMcp());
+      }
+
+      return usageError();
     default:
       return usageError();
   }

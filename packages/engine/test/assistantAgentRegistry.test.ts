@@ -42,7 +42,7 @@ test("default assistant agent registry preserves built-in primary agents and sub
     displayName: "Understand Agent",
     shortLabel: "Understand",
     isReadOnly: true,
-    availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols", "task", "skill", "record_workflow_handoff", "bash"],
+    availableToolNames: ["read", "glob", "grep", "task", "skill", "record_workflow_handoff", "bash"],
     workflowHandoffKind: "understanding",
   });
   expect(registry.resolvePrimaryAgentDefinition("plan").workflowHandoffKind).toBe("plan");
@@ -53,7 +53,7 @@ test("default assistant agent registry preserves built-in primary agents and sub
   expect(registry.resolveSubagentDefinition("explore")).toMatchObject({
     subagentName: "explore",
     displayName: "Explorer",
-    availableToolNames: ["read", "glob", "grep", "locate_codebase_symbols"],
+    availableToolNames: ["read", "glob", "grep"],
     conversationSessionAssistantOperatingMode: "understand",
   });
 });
