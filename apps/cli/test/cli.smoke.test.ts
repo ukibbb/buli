@@ -11,6 +11,7 @@ import type {
 import {
   AssistantConversationRuntime,
   EMPTY_ASSISTANT_PROVIDER_MODEL_PROMPT_FRAGMENTS,
+  createAssistantRuntimeConfiguration,
   type ConversationAutoCompactionRequest,
   type ConversationAutoCompactionResult,
   type ConversationCompactionRequest,
@@ -557,6 +558,104 @@ test("runInteractiveChat applies code-provided registries and model profile reso
     allowParallelToolCalls: false,
     defaultReasoningEncryptedContentInclusionPolicy: "when_input_contains_reasoning",
   });
+});
+
+test("runInteractiveChat applies a single assistant runtime configuration object", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-runtime-config-"));
+  const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
+  const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
+  const customToolName = "runtime_config_status";
+  const customAssistantToolDefinition = {
+    toolName: customToolName,
+    providerToolDefinition: {
+      toolName: customToolName,
+      description: "Summarize runtime configuration status.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    executionPolicy: {
+      workspaceEffectKind: "read_only",
+      isAutoConcurrent: false,
+      isAutoApprovedReadOnly: false,
+      clearsSameTurnReadCoverageBeforeExecution: false,
+    },
+    executor: async () => ({
+      outcomeKind: "completed",
+      toolResultText: "Runtime configuration status is available.",
+    }),
+  } satisfies CustomAssistantToolDefinition;
+  const customPrimaryAgentDefinition = {
+    agentName: "runtime_config_status",
+    displayName: "Runtime Config Status Agent",
+    shortLabel: "Runtime Config",
+    description: "Uses a single assistant runtime configuration object.",
+    accentColorName: "cyan",
+    isReadOnly: true,
+    availableToolNames: [customToolName],
+    systemPromptConfiguration: {
+      promptConfigurationKind: "custom",
+      systemReminderText: "Use the runtime configuration status tool when status is requested.",
+    },
+  } satisfies PrimaryAssistantAgentDefinition;
+  const assistantRuntimeConfiguration = createAssistantRuntimeConfiguration({
+    additionalPrimaryAgents: [customPrimaryAgentDefinition],
+    additionalCustomTools: [customAssistantToolDefinition],
+  });
+  let capturedConversationRuntime: AssistantConversationRuntime | undefined;
+  let capturedPrimaryAgentDisplayMetadata:
+    | ReturnType<AssistantConversationRuntime["listPrimaryAgentDisplayMetadata"]>
+    | undefined;
+
+  await store.saveOpenAi({
+    provider: "openai",
+    method: "oauth",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 60_000,
+    accountId: "acct_123",
+  });
+
+  const output = await runInteractiveChat({
+    store,
+    conversationSessionStore: conversationSessionStoreStub.conversationSessionStore,
+    stdin: { isTTY: true },
+    environment: {},
+    assistantRuntimeConfiguration,
+    renderChatScreen: async (renderInput) => {
+      capturedConversationRuntime = renderInput.assistantConversationRunner as AssistantConversationRuntime;
+      capturedPrimaryAgentDisplayMetadata = renderInput.primaryAgentDisplayMetadata;
+      return { destroy: () => {}, waitUntilExit: async () => {} };
+    },
+  });
+
+  expect(output).toBe("");
+  expect(capturedConversationRuntime?.assistantAgentRegistry).toBe(
+    assistantRuntimeConfiguration.assistantAgentRegistry,
+  );
+  expect(capturedConversationRuntime?.assistantToolRegistry).toBe(assistantRuntimeConfiguration.assistantToolRegistry);
+  expect(capturedConversationRuntime?.assistantToolRegistry.resolveCustomToolDefinition(customToolName)).toBe(
+    customAssistantToolDefinition,
+  );
+  expect(capturedPrimaryAgentDisplayMetadata).toContainEqual({
+    agentName: "runtime_config_status",
+    displayName: "Runtime Config Status Agent",
+    shortLabel: "Runtime Config",
+    description: "Uses a single assistant runtime configuration object.",
+    accentColorName: "cyan",
+  });
+});
+
+test("runInteractiveChat rejects mixed assistant runtime configuration inputs", async () => {
+  const assistantRuntimeConfiguration = createAssistantRuntimeConfiguration();
+
+  await expect(runInteractiveChat({
+    assistantRuntimeConfiguration,
+    assistantAgentRegistry: assistantRuntimeConfiguration.assistantAgentRegistry,
+  })).rejects.toThrow("Use one composition path; remove: assistantAgentRegistry.");
 });
 
 test("runInteractiveChat uses the prompt-context root environment override", async () => {

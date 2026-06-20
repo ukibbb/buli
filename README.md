@@ -216,7 +216,7 @@ Type these in the prompt:
 
 ## Primary Agents
 
-Buli has three default primary agents. They are workflow posture, not separate products, and the code registration layer can add or override primary agents.
+Buli has three default primary agents. They are workflow posture, not separate products, and the code registration layer can add primary agents while model overlays tune their effective behavior.
 
 - Understand Agent is read-only and discussion-first. It researches and explains how the system works before planning or applying code.
 - Plan Agent is read-only and produces an executable implementation plan grounded in inspected files.
@@ -224,75 +224,19 @@ Buli has three default primary agents. They are workflow posture, not separate p
 
 Use `Tab` in the prompt to cycle primary agents.
 
-### Code-only model-aware agent overlays
+### Code-only runtime configuration and model-aware overlays
 
-Primary agents, task subagents, and custom tools can keep stable base definitions while a shared model overlay adjusts the effective prompt, tools, prompt-profile fragments, and custom-tool provider descriptions for the current turn.
+Primary agents, task subagents, and custom tools can keep stable base definitions while a shared model overlay adjusts the effective prompt, tools, prompt-profile fragments, custom-tool provider descriptions, and built-in tool descriptions for the current turn. The ergonomic entrypoint is `createAssistantRuntimeConfiguration`, which returns registries plus ready-to-spread runtime wiring.
 
 ```ts
 import {
-  applyAssistantModelOverlayResolverToCustomToolDefinition,
-  createAssistantModelOverlayResolvers,
-  createDefaultAssistantToolRegistry,
+  AssistantConversationRuntime,
+  createAssistantRuntimeConfiguration,
   type CustomAssistantToolDefinition,
+  type PrimaryAssistantAgentDefinition,
 } from "@buli/engine";
 
-const modelOverlayResolvers = createAssistantModelOverlayResolvers({
-  modelOverlays: [
-    {
-      overlayName: "small-local-model",
-      matchesTurn: ({ selectedModelId }) => selectedModelId === "small-local-model",
-      primaryAgentOverlays: [
-        {
-          agentName: "understand",
-          additionalPromptSections: [
-            "Small-model guidance: use tools one step at a time and verify file paths before editing.",
-          ],
-          availableToolNames: ["read", "glob", "grep", "task", "workspace_summary"],
-          promptFragments: {
-            primaryAssistantSystemPrompt: ["Prefer explicit, simple tool-use instructions for this model."],
-          },
-        },
-      ],
-      taskSubagentOverlays: [
-        {
-          subagentName: "explore",
-          additionalPromptSections: [
-            "Small-model Explorer guidance: prefer one narrow read/search at a time and report uncertainty early.",
-          ],
-          availableToolNames: ["read", "glob", "grep", "workspace_summary"],
-          promptFragments: {
-            explorerSystemPrompt: ["Keep the exploration strategy simple and evidence-led for this model."],
-            taskSubagentPrompt: ["Return a concise evidence map before broad conclusions."],
-          },
-        },
-      ],
-      customToolProviderDefinitionOverlays: [
-        {
-          toolName: "workspace_summary",
-          additionalDescriptionParagraphs: [
-            "Small-model guidance: use one exact topic at a time and do not infer missing files.",
-          ],
-        },
-      ],
-      builtInToolDescriptionOverlays: [
-        {
-          toolName: "read",
-          additionalDescriptionParagraphs: [
-            "Small-model guidance: read one narrow file window at a time and do not infer paths.",
-          ],
-        },
-        {
-          toolName: "grep",
-          additionalDescriptionParagraphs: [
-            "Small-model guidance: prefer exact simple patterns before broad regexes.",
-          ],
-        },
-      ],
-    },
-  ],
-});
-
-const baseWorkspaceSummaryTool = {
+const workspaceSummaryTool = {
   toolName: "workspace_summary",
   providerToolDefinition: {
     toolName: "workspace_summary",
@@ -316,23 +260,71 @@ const baseWorkspaceSummaryTool = {
   }),
 } satisfies CustomAssistantToolDefinition;
 
-const workspaceSummaryTool = applyAssistantModelOverlayResolverToCustomToolDefinition({
-  customToolDefinition: baseWorkspaceSummaryTool,
-  customAssistantToolProviderDefinitionResolver: modelOverlayResolvers.customAssistantToolProviderDefinitionResolver,
-});
+const workspaceSummaryAgent = {
+  agentName: "workspace_summary_agent",
+  displayName: "Workspace Summary Agent",
+  shortLabel: "Summary",
+  accentColorName: "cyan",
+  isReadOnly: true,
+  availableToolNames: ["workspace_summary"],
+  systemPromptConfiguration: {
+    promptConfigurationKind: "custom",
+    systemReminderText: "Use workspace_summary when the user asks for project status.",
+  },
+} satisfies PrimaryAssistantAgentDefinition;
 
-const assistantToolRegistry = createDefaultAssistantToolRegistry({
+const assistantRuntimeConfiguration = createAssistantRuntimeConfiguration({
+  additionalPrimaryAgents: [workspaceSummaryAgent],
   additionalCustomTools: [workspaceSummaryTool],
+  modelOverlays: [
+    {
+      overlayName: "small-local-model",
+      matchesTurn: ({ selectedModelId }) => selectedModelId === "small-local-model",
+      primaryAgentOverlays: [
+        {
+          agentName: "workspace_summary_agent",
+          additionalPromptSections: ["Small-model guidance: ask for one exact topic at a time."],
+          availableToolNames: ["read", "glob", "grep", "workspace_summary"],
+          promptFragments: {
+            primaryAssistantSystemPrompt: ["Prefer explicit, simple tool-use instructions for this model."],
+          },
+        },
+      ],
+      taskSubagentOverlays: [
+        {
+          subagentName: "explore",
+          additionalPromptSections: ["Small-model Explorer guidance: report uncertainty early."],
+        },
+      ],
+      customToolProviderDefinitionOverlays: [
+        {
+          toolName: "workspace_summary",
+          additionalDescriptionParagraphs: ["Small-model guidance: use one exact topic at a time."],
+        },
+      ],
+      builtInToolDescriptionOverlays: [
+        {
+          toolName: "read",
+          additionalDescriptionParagraphs: ["Small-model guidance: read one narrow file window at a time."],
+        },
+      ],
+    },
+  ],
 });
 
-// Pass this object to your code-owned chat launcher.
-const runInteractiveChatInput = {
-  assistantToolRegistry,
-  ...modelOverlayResolvers.assistantRuntimeResolverInput,
-};
+// CLI composition boundary:
+await runInteractiveChat({ assistantRuntimeConfiguration });
+
+// Lower-level engine boundary:
+new AssistantConversationRuntime({
+  conversationTurnProvider,
+  workspaceRootPath,
+  promptContextBrowseRootPath,
+  ...assistantRuntimeConfiguration.assistantRuntimeInput,
+});
 ```
 
-This is code registration, not config-file loading. Matching overlays apply in list order. Prompt sections, prompt-profile fragments, custom-tool description paragraphs, and built-in tool description paragraphs append; `availableToolNames` replaces the effective tool list for that model. `assistantRuntimeResolverInput` is the ready-to-spread runtime wiring, and `applyAssistantModelOverlayResolverToCustomToolDefinition` preserves any tool-specific provider-definition resolver before applying overlay descriptions. Unmatched strong/default models keep the registered base agent, subagent, custom tool definition, and built-in tool descriptions unchanged. Built-in overlays are description-only: they do not change tool names, argument schemas, parsers, or execution behavior.
+This is code registration, not config-file loading. Matching overlays apply in list order. Prompt sections, prompt-profile fragments, custom-tool description paragraphs, and built-in tool description paragraphs append; `availableToolNames` replaces the effective tool list for that model. The configuration helper wraps custom tools for overlay-aware provider descriptions without mutating the base tool definition. Unmatched strong/default models keep the registered base agent, subagent, custom tool definition, and built-in tool descriptions unchanged. Built-in overlays are description-only: they do not change tool names, argument schemas, parsers, or execution behavior.
 
 ## Codebase Knowledge Indexing
 

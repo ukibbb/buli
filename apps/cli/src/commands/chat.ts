@@ -11,6 +11,7 @@ import {
   PromptContextCandidateCatalog,
   type AssistantAgentRegistry,
   type AssistantProviderModelPromptProfileResolver,
+  type AssistantRuntimeConfiguration,
   type AssistantToolRegistry,
   type BashToolApprovalMode,
   type BuiltInToolDescriptionOverlayResolver,
@@ -96,6 +97,7 @@ export type RunInteractiveChatInput = {
   selectedModelId?: string;
   selectedReasoningEffort?: ReasoningEffort;
   bashToolApprovalMode?: BashToolApprovalMode;
+  assistantRuntimeConfiguration?: AssistantRuntimeConfiguration;
   assistantAgentRegistry?: AssistantAgentRegistry;
   assistantToolRegistry?: AssistantToolRegistry;
   assistantProviderModelPromptProfileResolver?: AssistantProviderModelPromptProfileResolver;
@@ -116,10 +118,22 @@ export type RunInteractiveChatInput = {
   ) => DisposableProviderProtocolClientTransport;
 };
 
+const assistantRuntimeConfigurationDirectInputFieldNames = [
+  "assistantAgentRegistry",
+  "assistantToolRegistry",
+  "assistantProviderModelPromptProfileResolver",
+  "primaryAssistantAgentCompositionResolver",
+  "taskSubagentCompositionResolver",
+  "builtInToolDescriptionOverlayResolver",
+] as const satisfies readonly (keyof RunInteractiveChatInput)[];
+
+type RunInteractiveChatAssistantRuntimeInput = Partial<AssistantRuntimeConfiguration["assistantRuntimeInput"]>;
+
 export async function runInteractiveChat(input: RunInteractiveChatInput = {}): Promise<string> {
   const startupStartedAtMs = Date.now();
   const environment = input.environment ?? process.env;
   const workspaceRootPath = process.cwd();
+  const assistantRuntimeInput = resolveRunInteractiveChatAssistantRuntimeInput(input);
   const startupConfigurationResolution = resolveInteractiveChatStartupConfiguration({
     environment,
     requestedBashToolApprovalMode: input.bashToolApprovalMode,
@@ -305,20 +319,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
     const assistantConversationRunner = new AssistantConversationRuntime({
       conversationTurnProvider: conversationTurnProviderResolution.conversationTurnProvider,
       assistantProviderName: conversationTurnProviderResolution.assistantProviderName,
-      ...(input.assistantProviderModelPromptProfileResolver !== undefined
-        ? { assistantProviderModelPromptProfileResolver: input.assistantProviderModelPromptProfileResolver }
-        : {}),
-      ...(input.primaryAssistantAgentCompositionResolver !== undefined
-        ? { primaryAssistantAgentCompositionResolver: input.primaryAssistantAgentCompositionResolver }
-        : {}),
-      ...(input.taskSubagentCompositionResolver !== undefined
-        ? { taskSubagentCompositionResolver: input.taskSubagentCompositionResolver }
-        : {}),
-      ...(input.builtInToolDescriptionOverlayResolver !== undefined
-        ? { builtInToolDescriptionOverlayResolver: input.builtInToolDescriptionOverlayResolver }
-        : {}),
-      ...(input.assistantAgentRegistry !== undefined ? { assistantAgentRegistry: input.assistantAgentRegistry } : {}),
-      ...(input.assistantToolRegistry !== undefined ? { assistantToolRegistry: input.assistantToolRegistry } : {}),
+      ...assistantRuntimeInput,
       workspaceRootPath,
       promptContextBrowseRootPath: promptContextScope.promptContextBrowseRootPath,
       promptContextStartingDirectoryPath: promptContextScope.promptContextStartingDirectoryPath,
@@ -426,6 +427,43 @@ async function loadInteractiveChatRenderer(
     rendererLoadDurationMs: Date.now() - rendererLoadStartedAtMs,
     rendererSource: "default",
   };
+}
+
+function resolveRunInteractiveChatAssistantRuntimeInput(
+  input: RunInteractiveChatInput,
+): RunInteractiveChatAssistantRuntimeInput {
+  if (!input.assistantRuntimeConfiguration) {
+    return {
+      ...(input.assistantProviderModelPromptProfileResolver !== undefined
+        ? { assistantProviderModelPromptProfileResolver: input.assistantProviderModelPromptProfileResolver }
+        : {}),
+      ...(input.primaryAssistantAgentCompositionResolver !== undefined
+        ? { primaryAssistantAgentCompositionResolver: input.primaryAssistantAgentCompositionResolver }
+        : {}),
+      ...(input.taskSubagentCompositionResolver !== undefined
+        ? { taskSubagentCompositionResolver: input.taskSubagentCompositionResolver }
+        : {}),
+      ...(input.builtInToolDescriptionOverlayResolver !== undefined
+        ? { builtInToolDescriptionOverlayResolver: input.builtInToolDescriptionOverlayResolver }
+        : {}),
+      ...(input.assistantAgentRegistry !== undefined ? { assistantAgentRegistry: input.assistantAgentRegistry } : {}),
+      ...(input.assistantToolRegistry !== undefined ? { assistantToolRegistry: input.assistantToolRegistry } : {}),
+    };
+  }
+
+  const overlappingDirectInputFieldNames = assistantRuntimeConfigurationDirectInputFieldNames.filter((fieldName) =>
+    input[fieldName] !== undefined
+  );
+  if (overlappingDirectInputFieldNames.length > 0) {
+    throw new Error(
+      [
+        "runInteractiveChat received assistantRuntimeConfiguration together with direct assistant runtime configuration fields.",
+        `Use one composition path; remove: ${overlappingDirectInputFieldNames.join(", ")}.`,
+      ].join(" "),
+    );
+  }
+
+  return input.assistantRuntimeConfiguration.assistantRuntimeInput;
 }
 
 function resolveInteractiveChatStartupConfiguration(input: {

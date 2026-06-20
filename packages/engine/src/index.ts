@@ -35,6 +35,14 @@ export type {
   TaskSubagentReasoningEffortSelectionReason,
 } from "./taskSubagentProviderModelSelection.ts";
 export {
+  createAssistantRuntimeConfiguration,
+} from "./assistantRuntimeConfiguration.ts";
+export type {
+  AssistantRuntimeConfiguration,
+  AssistantRuntimeConfigurationInput,
+  AssistantRuntimeConfigurationRuntimeInput,
+} from "./assistantRuntimeConfiguration.ts";
+export {
   applyAssistantModelOverlayResolverToCustomToolDefinition,
   createAssistantModelOverlayResolvers,
   createDefaultBuiltInToolDescriptionOverlayResolver,
