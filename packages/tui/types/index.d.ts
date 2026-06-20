@@ -19,7 +19,7 @@ import type {
   PromptContextCandidate,
 } from "@buli/engine";
 import type { ChatSlashCommandSkill } from "@buli/chat-session-state";
-import type { LoadConversationTranscriptEntryRecords } from "@buli/chat-app-controller";
+import type { ConversationTranscriptPageEntryRecordsLoad, LoadConversationTranscriptEntryRecords } from "@buli/chat-app-controller";
 import type { ReactNode } from "react";
 
 export type ChatScreenProps = {
@@ -37,6 +37,9 @@ export type ChatScreenProps = {
     | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void | Promise<void>)
     | undefined;
   loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords | undefined;
+  onConversationTranscriptPageEntryRecordsLoaded?:
+    | ((loadedConversationTranscriptPageEntryRecords: ConversationTranscriptPageEntryRecordsLoad) => void | Promise<void>)
+    | undefined;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];
@@ -62,14 +65,14 @@ export type ChatScreenProps = {
 export type ConversationSessionSwitchResult = {
   conversationSessionId: string;
   modelSelection?: ConversationSessionModelSelection | undefined;
-  conversationSessionEntries: readonly ConversationSessionEntry[];
+  conversationSessionEntries?: readonly ConversationSessionEntry[] | undefined;
 };
 
 export type ConversationSessionDeleteResult = {
   deletedConversationSessionId: string;
   activeConversationSessionId: string;
   activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
-  activeConversationSessionEntries: readonly ConversationSessionEntry[];
+  activeConversationSessionEntries?: readonly ConversationSessionEntry[] | undefined;
   conversationSessions: readonly ConversationSessionSummary[];
 };
 
@@ -111,6 +114,7 @@ export type RenderChatScreenInTerminalInput = {
   loadInitialConversationSessionEntries?: ChatScreenProps["loadInitialConversationSessionEntries"];
   onInitialConversationSessionEntriesHydrated?: ChatScreenProps["onInitialConversationSessionEntriesHydrated"];
   loadConversationTranscriptEntryRecords?: ChatScreenProps["loadConversationTranscriptEntryRecords"];
+  onConversationTranscriptPageEntryRecordsLoaded?: ChatScreenProps["onConversationTranscriptPageEntryRecordsLoaded"];
   loadAvailableAssistantModels: ChatScreenProps["loadAvailableAssistantModels"];
   loadPromptContextCandidates: ChatScreenProps["loadPromptContextCandidates"];
   loadConversationSessions?: ChatScreenProps["loadConversationSessions"];

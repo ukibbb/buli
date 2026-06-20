@@ -73,6 +73,71 @@ test("SqliteConversationSessionStore saves and loads conversation session entrie
   }
 });
 
+test("SqliteConversationSessionStore loads ordered conversation entry record slices", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-entry-record-slices-"));
+  const conversationSessionStore = new SqliteConversationSessionStore({
+    databasePath: join(directoryPath, "session-store.sqlite"),
+    createSessionId: () => "session-1",
+    createSessionEntryId: createIncrementingEntryIdFactory(),
+    nowMs: createQueuedNumberFactory([1000, 1001, 1002, 1003, 1004, 1005, 1006]),
+  });
+  const conversationSessionEntries: ConversationSessionEntry[] = [
+    createUserPromptConversationSessionEntry("Prompt 0"),
+    createUserPromptConversationSessionEntry("Prompt 1"),
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Compacted earlier work.",
+      compactedEntryCount: 2,
+      retainedRecentConversationSessionEntryCount: 0,
+    },
+    createUserPromptConversationSessionEntry("Prompt 3"),
+    createUserPromptConversationSessionEntry("Prompt 4"),
+    createUserPromptConversationSessionEntry("Prompt 5"),
+  ];
+
+  try {
+    conversationSessionStore.saveConversationSessionEntries(conversationSessionEntries);
+
+    const latestEntryRecordSlice = conversationSessionStore.loadConversationSessionEntryRecords({
+      loadKind: "latest",
+      limit: 2,
+    });
+    expect(latestEntryRecordSlice.entryRecords.map((entryRecord) => entryRecord.entrySequence)).toEqual([4, 5]);
+    expect(latestEntryRecordSlice.hasOlderEntries).toBe(true);
+    expect(latestEntryRecordSlice.hasNewerEntries).toBe(false);
+    expect(latestEntryRecordSlice.latestCompactionSummaryEntrySequence).toBe(2);
+
+    const beforeEntryRecordSlice = conversationSessionStore.loadConversationSessionEntryRecords({
+      loadKind: "before",
+      beforeEntrySequence: 4,
+      limit: 2,
+    });
+    expect(beforeEntryRecordSlice.entryRecords.map((entryRecord) => entryRecord.entrySequence)).toEqual([2, 3]);
+    expect(beforeEntryRecordSlice.hasOlderEntries).toBe(true);
+    expect(beforeEntryRecordSlice.hasNewerEntries).toBe(true);
+    expect(beforeEntryRecordSlice.latestCompactionSummaryEntrySequence).toBe(2);
+
+    const afterEntryRecordSlice = conversationSessionStore.loadConversationSessionEntryRecords({
+      loadKind: "after",
+      afterEntrySequence: 1,
+      limit: 2,
+    });
+    expect(afterEntryRecordSlice.entryRecords.map((entryRecord) => entryRecord.entrySequence)).toEqual([2, 3]);
+    expect(afterEntryRecordSlice.hasOlderEntries).toBe(true);
+    expect(afterEntryRecordSlice.hasNewerEntries).toBe(true);
+    expect(afterEntryRecordSlice.latestCompactionSummaryEntrySequence).toBe(2);
+
+    const normalizedLimitEntryRecordSlice = conversationSessionStore.loadConversationSessionEntryRecords({
+      loadKind: "latest",
+      limit: 0,
+    });
+    expect(normalizedLimitEntryRecordSlice.entryRecords.map((entryRecord) => entryRecord.entrySequence)).toEqual([5]);
+    expect(normalizedLimitEntryRecordSlice.hasOlderEntries).toBe(true);
+  } finally {
+    conversationSessionStore.close();
+  }
+});
+
 test("SqliteConversationSessionStore records SQLite operation summaries", async () => {
   const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-diagnostics-"));
   const diagnosticEvents: BuliDiagnosticLogEvent[] = [];
@@ -636,5 +701,13 @@ function createIncrementingClockMilliseconds(): () => number {
   return () => {
     nextTimestamp += 1;
     return nextTimestamp;
+  };
+}
+
+function createUserPromptConversationSessionEntry(promptText: string): ConversationSessionEntry {
+  return {
+    entryKind: "user_prompt",
+    promptText,
+    modelFacingPromptText: promptText,
   };
 }

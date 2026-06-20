@@ -41,6 +41,7 @@ export {
   type ChatAppConversationTranscriptScrollDirection,
   type ChatAppConversationTranscriptPageState,
   type ChatAppPromptComposerState,
+  type ConversationTranscriptPageEntryRecordsLoad,
   type QueuedChatAppPromptPreview,
   type ChatAppSelectionState,
   type ChatAppTranscriptState,

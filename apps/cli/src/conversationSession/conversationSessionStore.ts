@@ -61,5 +61,10 @@ export type ConversationSessionStore = {
   startNewConversationSession(input?: StartNewConversationSessionInput): ActiveConversationSession;
   listConversationSessions(): readonly ConversationSessionSummary[];
   switchActiveConversationSession(sessionId: string): ActiveConversationSession;
+  switchActiveConversationSessionMetadata(sessionId: string): ActiveConversationSessionMetadata;
   deleteConversationSession(sessionId: string, input?: DeleteConversationSessionInput): ActiveConversationSession;
+  deleteConversationSessionAndLoadActiveMetadata(
+    sessionId: string,
+    input?: DeleteConversationSessionInput,
+  ): ActiveConversationSessionMetadata;
 };

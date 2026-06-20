@@ -314,6 +314,24 @@ export class SqliteConversationSessionStore implements ConversationSessionStore 
     }));
   }
 
+  switchActiveConversationSessionMetadata(sessionId: string): ActiveConversationSessionMetadata {
+    return this.runMeasuredStorageOperation({
+      operationName: "switch_active_session",
+      transactionKind: "write",
+      fields: {
+        requestedConversationSessionId: sessionId,
+      },
+      createCompletedFields: (activeConversationSessionMetadata) => ({
+        conversationSessionId: activeConversationSessionMetadata.sessionId,
+        conversationSessionEntryCount: activeConversationSessionMetadata.conversationSessionEntryCount,
+      }),
+    }, () => this.runImmediateTransaction(() => {
+      const conversationSession = this.loadConversationSessionMetadataOrThrow(sessionId);
+      this.gateway.writeActiveConversationSessionId(sessionId);
+      return mapPersistedConversationSessionMetadataToActiveConversationSessionMetadata(conversationSession);
+    }));
+  }
+
   deleteConversationSession(sessionId: string, input: DeleteConversationSessionInput = {}): ActiveConversationSession {
     return this.runMeasuredStorageOperation({
       operationName: "delete_session",
@@ -341,6 +359,41 @@ export class SqliteConversationSessionStore implements ConversationSessionStore 
       }
 
       return this.startNewConversationSessionInTransaction({ modelSelection: input.replacementModelSelection });
+    }));
+  }
+
+  deleteConversationSessionAndLoadActiveMetadata(
+    sessionId: string,
+    input: DeleteConversationSessionInput = {},
+  ): ActiveConversationSessionMetadata {
+    return this.runMeasuredStorageOperation({
+      operationName: "delete_session",
+      transactionKind: "write",
+      fields: {
+        deletedConversationSessionId: sessionId,
+      },
+      createCompletedFields: (activeConversationSessionMetadata) => ({
+        activeConversationSessionId: activeConversationSessionMetadata.sessionId,
+        activeConversationSessionEntryCount: activeConversationSessionMetadata.conversationSessionEntryCount,
+      }),
+    }, () => this.runImmediateTransaction(() => {
+      this.loadConversationSessionMetadataOrThrow(sessionId);
+      this.gateway.deleteConversationSession(sessionId);
+
+      const activeConversationSession = this.gateway.loadActiveConversationSessionMetadataIfPresent();
+      if (activeConversationSession) {
+        return mapPersistedConversationSessionMetadataToActiveConversationSessionMetadata(activeConversationSession);
+      }
+
+      const mostRecentlyUpdatedSession = this.gateway.loadMostRecentlyUpdatedConversationSessionMetadata();
+      if (mostRecentlyUpdatedSession) {
+        this.gateway.writeActiveConversationSessionId(mostRecentlyUpdatedSession.sessionId);
+        return mapPersistedConversationSessionMetadataToActiveConversationSessionMetadata(mostRecentlyUpdatedSession);
+      }
+
+      const newConversationSession = this.createNewConversationSessionMetadata({ modelSelection: input.replacementModelSelection });
+      this.gateway.writeActiveConversationSessionId(newConversationSession.sessionId);
+      return mapPersistedConversationSessionMetadataToActiveConversationSessionMetadata(newConversationSession);
     }));
   }
 

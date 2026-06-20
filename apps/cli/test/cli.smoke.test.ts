@@ -25,6 +25,11 @@ import {
   type PrimaryAssistantAgentDefinition,
 } from "@buli/engine";
 import { OpenAiAuthStore, OpenAiProvider, type OpenAiModelBehaviorProfileResolver } from "@buli/openai";
+import type {
+  ConversationSessionDeleteResult,
+  ConversationSessionSwitchResult,
+  RenderChatScreenInTerminalInput,
+} from "@buli/tui";
 import { main } from "../src/cli.ts";
 import { runInteractiveChat } from "../src/commands/chat.ts";
 import { runLogin } from "../src/commands/login.ts";
@@ -984,7 +989,7 @@ test("runInteractiveChat restores console logging when the renderer throws", asy
   expect(console.log).toBe(originalConsoleLog);
 });
 
-test("runInteractiveChat loads persisted session entries and saves when history changes", async () => {
+test("runInteractiveChat keeps full runtime history while giving the renderer only paged transcript loading", async () => {
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   const initialConversationSessionEntries: ConversationSessionEntry[] = [
@@ -1001,6 +1006,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   ];
   const savedConversationSessionEntries: ConversationSessionEntry[][] = [];
   const savedModelSelections: ConversationSessionModelSelection[] = [];
+  let fullConversationSessionEntryLoadCount = 0;
   let activeModelSelection: ConversationSessionModelSelection | undefined;
   let listedConversationSessions: ConversationSessionSummary[] = [
     {
@@ -1032,6 +1038,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       conversationSessionEntries: initialConversationSessionEntries,
     }),
     loadConversationSessionEntries: (conversationSessionId) => {
+      fullConversationSessionEntryLoadCount += 1;
       expect(conversationSessionId).toBe("session-a");
       return initialConversationSessionEntries;
     },
@@ -1075,6 +1082,11 @@ test("runInteractiveChat loads persisted session entries and saves when history 
         },
       ],
     }),
+    switchActiveConversationSessionMetadata: (sessionId) => ({
+      sessionId,
+      modelSelection: undefined,
+      conversationSessionEntryCount: 1,
+    }),
     deleteConversationSession: (sessionId) => {
       listedConversationSessions = listedConversationSessions.filter(
         (conversationSession) => conversationSession.sessionId !== sessionId,
@@ -1085,38 +1097,24 @@ test("runInteractiveChat loads persisted session entries and saves when history 
         conversationSessionEntries: initialConversationSessionEntries,
       };
     },
+    deleteConversationSessionAndLoadActiveMetadata: (sessionId) => {
+      listedConversationSessions = listedConversationSessions.filter(
+        (conversationSession) => conversationSession.sessionId !== sessionId,
+      );
+      return {
+        sessionId: "session-a",
+        modelSelection: undefined,
+        conversationSessionEntryCount: initialConversationSessionEntries.length,
+      };
+    },
   } satisfies ConversationSessionStore;
   let capturedConversationRuntime: AssistantConversationRuntime | undefined;
   let capturedClearConversation: (() => void) | undefined;
   let capturedSwitchConversationSession:
-    | ((conversationSessionId: string) =>
-      | Promise<{
-        conversationSessionId: string;
-        modelSelection?: ConversationSessionModelSelection | undefined;
-        conversationSessionEntries: readonly ConversationSessionEntry[];
-      }>
-      | {
-        conversationSessionId: string;
-        modelSelection?: ConversationSessionModelSelection | undefined;
-        conversationSessionEntries: readonly ConversationSessionEntry[];
-      })
+    | ((conversationSessionId: string) => Promise<ConversationSessionSwitchResult> | ConversationSessionSwitchResult)
     | undefined;
   let capturedDeleteConversationSession:
-    | ((conversationSessionId: string) =>
-      | Promise<{
-        deletedConversationSessionId: string;
-        activeConversationSessionId: string;
-        activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
-        activeConversationSessionEntries: readonly ConversationSessionEntry[];
-        conversationSessions: readonly ConversationSessionSummary[];
-      }>
-      | {
-        deletedConversationSessionId: string;
-        activeConversationSessionId: string;
-        activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
-        activeConversationSessionEntries: readonly ConversationSessionEntry[];
-        conversationSessions: readonly ConversationSessionSummary[];
-      })
+    | ((conversationSessionId: string) => Promise<ConversationSessionDeleteResult> | ConversationSessionDeleteResult)
     | undefined;
   let capturedExportCurrentConversationSession:
     | (() => Promise<{ exportFilePath: string; exportFileUrl: string }> | { exportFilePath: string; exportFileUrl: string })
@@ -1129,20 +1127,8 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   let capturedAutoCompactCurrentConversationSession:
     | ((input: ConversationAutoCompactionRequest) => Promise<ConversationAutoCompactionResult> | ConversationAutoCompactionResult)
     | undefined;
-  let capturedLoadInitialConversationSessionEntries:
-    | ((conversationSessionId: string) => Promise<{
-      conversationSessionId: string;
-      conversationSessionEntries: readonly ConversationSessionEntry[];
-    }> | {
-      conversationSessionId: string;
-      conversationSessionEntries: readonly ConversationSessionEntry[];
-    })
-    | undefined;
-  let capturedOnInitialConversationSessionEntriesHydrated:
-    | ((initialConversationSessionEntriesLoadResult: {
-      conversationSessionId: string;
-      conversationSessionEntries: readonly ConversationSessionEntry[];
-    }) => void | Promise<void>)
+  let capturedLoadConversationTranscriptEntryRecords:
+    | NonNullable<RenderChatScreenInTerminalInput["loadConversationTranscriptEntryRecords"]>
     | undefined;
   const openedBrowserUrls: string[] = [];
   await store.saveOpenAi({
@@ -1171,25 +1157,22 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       capturedExportCurrentConversationSession = renderInput.exportCurrentConversationSession;
       capturedCompactCurrentConversationSession = renderInput.compactCurrentConversationSession;
       capturedAutoCompactCurrentConversationSession = renderInput.autoCompactCurrentConversationSession;
-      capturedLoadInitialConversationSessionEntries = renderInput.loadInitialConversationSessionEntries;
-      capturedOnInitialConversationSessionEntriesHydrated = renderInput.onInitialConversationSessionEntriesHydrated;
+      capturedLoadConversationTranscriptEntryRecords = renderInput.loadConversationTranscriptEntryRecords;
       expect(renderInput.initialConversationSessionEntries).toBeUndefined();
-      expect(renderInput.loadInitialConversationSessionEntries).toBeDefined();
+      expect(renderInput.loadInitialConversationSessionEntries).toBeUndefined();
+      expect(renderInput.loadConversationTranscriptEntryRecords).toBeDefined();
+      expect(renderInput.onConversationTranscriptPageEntryRecordsLoaded).toBeUndefined();
       expect(renderInput.initialConversationSessionId).toBe("session-a");
       return { destroy: () => {}, waitUntilExit: async () => {} };
     },
   });
 
   expect(output).toBe("");
-  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual([]);
-  if (!capturedLoadInitialConversationSessionEntries || !capturedOnInitialConversationSessionEntriesHydrated) {
-    throw new Error("expected lazy session hydration callbacks");
-  }
-  const initialConversationSessionEntriesLoadResult = await Promise.resolve(
-    capturedLoadInitialConversationSessionEntries("session-a"),
-  );
-  await Promise.resolve(capturedOnInitialConversationSessionEntriesHydrated(initialConversationSessionEntriesLoadResult));
+  expect(fullConversationSessionEntryLoadCount).toBe(1);
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
+  if (!capturedLoadConversationTranscriptEntryRecords) {
+    throw new Error("expected paged transcript loader");
+  }
   expect(capturedConversationRuntime?.promptContextBrowseRootPath).toBe(dirname(process.cwd()));
   expect(capturedConversationRuntime?.promptContextStartingDirectoryPath).toBe(process.cwd());
   expect(capturedCompactCurrentConversationSession).toBeDefined();
@@ -1297,14 +1280,8 @@ test("runInteractiveChat loads persisted session entries and saves when history 
 
   await expect(Promise.resolve(capturedSwitchConversationSession?.("session-b"))).resolves.toEqual({
     conversationSessionId: "session-b",
-    conversationSessionEntries: [
-      {
-        entryKind: "user_prompt",
-        promptText: "Switched prompt",
-        modelFacingPromptText: "Switched prompt",
-      },
-    ],
   });
+  expect(fullConversationSessionEntryLoadCount).toBe(1);
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual([
     {
       entryKind: "user_prompt",
@@ -1316,7 +1293,6 @@ test("runInteractiveChat loads persisted session entries and saves when history 
   await expect(Promise.resolve(capturedDeleteConversationSession?.("session-b"))).resolves.toEqual({
     deletedConversationSessionId: "session-b",
     activeConversationSessionId: "session-a",
-    activeConversationSessionEntries: initialConversationSessionEntries,
     conversationSessions: [
       {
         sessionId: "session-a",
@@ -1327,6 +1303,7 @@ test("runInteractiveChat loads persisted session entries and saves when history 
       },
     ],
   });
+  expect(fullConversationSessionEntryLoadCount).toBe(1);
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
 });
 
@@ -1442,10 +1419,20 @@ function createConversationSessionStoreStub(input: {
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),
+    switchActiveConversationSessionMetadata: (sessionId) => ({
+      sessionId,
+      modelSelection: activeModelSelection,
+      conversationSessionEntryCount: initialConversationSessionEntries.length,
+    }),
     deleteConversationSession: () => ({
       sessionId: "session-a",
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
+    }),
+    deleteConversationSessionAndLoadActiveMetadata: () => ({
+      sessionId: "session-a",
+      modelSelection: activeModelSelection,
+      conversationSessionEntryCount: initialConversationSessionEntries.length,
     }),
   } satisfies ConversationSessionStore;
 

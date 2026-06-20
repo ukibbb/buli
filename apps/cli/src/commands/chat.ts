@@ -242,6 +242,9 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       conversationSessionId: activeConversationSessionMetadata.sessionId,
       conversationSessionEntryCount: activeConversationSessionMetadata.conversationSessionEntryCount,
     });
+    const initialRuntimeConversationSessionEntries = activeConversationSessionMetadata.conversationSessionEntryCount > 0
+      ? conversationSessionStore.loadConversationSessionEntries(activeConversationSessionMetadata.sessionId)
+      : [];
 
     const provider = externalProviderHostCommand
       ? undefined
@@ -277,6 +280,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       diagnosticLogger,
     });
     const conversationHistory = new InMemoryConversationHistory({
+      initialConversationSessionEntries: initialRuntimeConversationSessionEntries,
       onConversationSessionEntryAppended: (conversationSessionEntry, appendMetadata) => {
         const conversationSessionAppendStartedAtMs = Date.now();
         conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
@@ -294,31 +298,10 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
         });
       },
     });
-    const loadInitialConversationSessionEntries = (conversationSessionId: string) => {
-      const conversationSessionEntriesLoadStartedAtMs = Date.now();
-      const conversationSessionEntries = conversationSessionStore.loadConversationSessionEntries(conversationSessionId);
-      logInteractiveChatStartupTiming(diagnosticLogger, {
-        phase: "session_entries_load",
-        startupStartedAtMs,
-        phaseStartedAtMs: conversationSessionEntriesLoadStartedAtMs,
-        fields: {
-          conversationSessionEntryCount: conversationSessionEntries.length,
-        },
-      });
-      logCliDiagnosticEvent(diagnosticLogger, "conversation_session.entries_loaded", {
-        conversationSessionStoragePath: conversationSessionStore.storagePath ?? null,
-        conversationSessionId,
-        conversationSessionEntryCount: conversationSessionEntries.length,
-      });
-
-      return {
-        conversationSessionId,
-        conversationSessionEntries,
-      };
-    };
     const loadConversationTranscriptEntryRecords: RenderChatScreenInTerminalInput["loadConversationTranscriptEntryRecords"] = (
       request,
     ) => conversationSessionStore.loadConversationSessionEntryRecords(request);
+    const conversationTranscriptHydrationMode = "paged_transcript";
     const assistantConversationRunner = new AssistantConversationRuntime({
       conversationTurnProvider: conversationTurnProviderResolution.conversationTurnProvider,
       assistantProviderName: conversationTurnProviderResolution.assistantProviderName,
@@ -348,6 +331,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       assistantConversationRunner,
       initialConversationSessionId: activeConversationSessionMetadata.sessionId,
       initialConversationSessionModelSelection: activeConversationSessionModelSelection,
+      conversationTranscriptHydrationMode,
       workspaceRootPath,
       conversationSessionExportDirectoryPath: input.conversationSessionExportDirectoryPath,
       openBrowserUrl: input.openBrowserUrl,
@@ -366,16 +350,6 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       ...conversationSessionBindings.renderInput,
       initialConversationSessionId: activeConversationSessionMetadata.sessionId,
       loadConversationTranscriptEntryRecords,
-      ...(activeConversationSessionMetadata.conversationSessionEntryCount > 0
-        ? {
-          loadInitialConversationSessionEntries,
-          onInitialConversationSessionEntriesHydrated: (initialConversationSessionEntriesLoadResult) => {
-            conversationHistory.replaceConversationSessionEntries(
-              initialConversationSessionEntriesLoadResult.conversationSessionEntries,
-            );
-          },
-        }
-        : { initialConversationSessionEntries: [] }),
       selectedModelId,
       ...(selectedModelDefaultReasoningEffort ? { selectedModelDefaultReasoningEffort } : {}),
       ...(selectedReasoningEffort ? { selectedReasoningEffort } : {}),

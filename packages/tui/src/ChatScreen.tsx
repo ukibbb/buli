@@ -14,6 +14,7 @@ import {
   type ConversationSessionCompactionResult,
   type ConversationSessionDeleteResult,
   type ConversationSessionExportResult,
+  type ConversationTranscriptPageEntryRecordsLoad,
   type InitialConversationSessionEntriesLoadResult,
   type LoadConversationTranscriptEntryRecords,
   type ConversationSessionSwitchResult,
@@ -48,6 +49,9 @@ export type ChatScreenProps = {
     | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void | Promise<void>)
     | undefined;
   loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords | undefined;
+  onConversationTranscriptPageEntryRecordsLoaded?:
+    | ((loadedConversationTranscriptPageEntryRecords: ConversationTranscriptPageEntryRecordsLoad) => void | Promise<void>)
+    | undefined;
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   loadPromptContextCandidates: (promptContextQueryText: string) => Promise<readonly PromptContextCandidate[]>;
   loadConversationSessions?: () => Promise<readonly ConversationSessionSummary[]> | readonly ConversationSessionSummary[];

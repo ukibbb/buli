@@ -69,6 +69,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     loadInitialConversationSessionEntries: chatScreenProps.loadInitialConversationSessionEntries,
     onInitialConversationSessionEntriesHydrated: chatScreenProps.onInitialConversationSessionEntriesHydrated,
     loadConversationTranscriptEntryRecords: chatScreenProps.loadConversationTranscriptEntryRecords,
+    onConversationTranscriptPageEntryRecordsLoaded: chatScreenProps.onConversationTranscriptPageEntryRecordsLoaded,
     loadAvailableAssistantModels: chatScreenProps.loadAvailableAssistantModels,
     loadPromptContextCandidates: chatScreenProps.loadPromptContextCandidates,
     loadConversationSessions: chatScreenProps.loadConversationSessions,
@@ -287,7 +288,9 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     availableCommandHelpModalRowCount,
     terminalSizeTierForChatScreen,
     availableChatSlashCommands,
-    hasOlderConversationTranscriptPage: chatAppController.conversationTranscriptPageState.hasOlderPage,
+    hasOlderConversationTranscriptPage: chatAppController.conversationTranscriptPageState.hasOlderPage ||
+      (chatAppController.conversationTranscriptPageState.visibleConversationMessageRows === undefined &&
+        conversationTranscriptWindow.hiddenOlderConversationMessageCount > 0),
     hasNewerConversationTranscriptPage: chatAppController.conversationTranscriptPageState.hasNewerPage,
     isLatestConversationTranscriptPage: chatAppController.conversationTranscriptPageState.isLatestPage,
     isConversationTranscriptPageNavigationDisabled,

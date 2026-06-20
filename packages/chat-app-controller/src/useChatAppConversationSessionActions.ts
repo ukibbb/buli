@@ -21,17 +21,21 @@ import type { ConversationSessionCompactionStatus, ConversationSessionExportStat
 
 type MutableValueRef<T> = { current: T };
 
+type ClearHistoricalConversationTranscriptPage = (options?: {
+  shouldPreserveKnownOlderPageAvailability?: boolean | undefined;
+}) => void;
+
 export type ConversationSessionSwitchResult = {
   conversationSessionId: string;
   modelSelection?: ConversationSessionModelSelection | undefined;
-  conversationSessionEntries: readonly ConversationSessionEntry[];
+  conversationSessionEntries?: readonly ConversationSessionEntry[] | undefined;
 };
 
 export type ConversationSessionDeleteResult = {
   deletedConversationSessionId: string;
   activeConversationSessionId: string;
   activeConversationSessionModelSelection?: ConversationSessionModelSelection | undefined;
-  activeConversationSessionEntries: readonly ConversationSessionEntry[];
+  activeConversationSessionEntries?: readonly ConversationSessionEntry[] | undefined;
   conversationSessions: readonly ConversationSessionSummary[];
 };
 
@@ -75,7 +79,8 @@ export type UseChatAppConversationSessionActionsInput = {
     | undefined;
   onConversationCleared?: (() => ConversationSessionSwitchResult | void) | undefined;
   loadLatestConversationTranscriptPageIntoChatApp?: LoadLatestConversationTranscriptPageIntoChatApp | undefined;
-  clearHistoricalConversationTranscriptPage: () => void;
+  onConversationSessionEntriesHydrated?: (() => void) | undefined;
+  clearHistoricalConversationTranscriptPage: ClearHistoricalConversationTranscriptPage;
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   latestActiveConversationSessionIdRef: MutableValueRef<string | undefined>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
@@ -107,6 +112,7 @@ export function useChatAppConversationSessionActions(
 
   const hydrateConversationSessionIntoChatApp = useEffectEvent(
     (conversationSessionHydrationInput: ConversationSessionHydrationInput): void => {
+      input.onConversationSessionEntriesHydrated?.();
       const hydratedChatSessionState = hydrateConversationTranscriptFromSessionEntries(
         input.latestChatSessionStateRef.current,
         conversationSessionHydrationInput.conversationSessionEntries,
@@ -218,6 +224,12 @@ export function useChatAppConversationSessionActions(
         return;
       }
 
+      if (!switchedConversationSession.conversationSessionEntries) {
+        input.setChatSessionState((currentChatSessionState) =>
+          showConversationSessionSelectionLoadingError(currentChatSessionState, "Session entries are unavailable.")
+        );
+        return;
+      }
       hydrateConversationSessionIntoChatApp({
         conversationSessionEntries: switchedConversationSession.conversationSessionEntries,
         ...(switchedConversationSession.modelSelection
@@ -303,11 +315,20 @@ export function useChatAppConversationSessionActions(
         return;
       }
 
+      const activeConversationSessionEntries = deletedConversationSession.activeConversationSessionEntries;
+      if (!activeConversationSessionEntries) {
+        startTransition(() => {
+          input.setChatSessionState((currentChatSessionState) =>
+            showConversationSessionSelectionLoadingError(currentChatSessionState, "Session entries are unavailable.")
+          );
+        });
+        return;
+      }
       startTransition(() => {
         input.setChatSessionState((currentChatSessionState) => {
           const hydratedChatSessionState = hydrateConversationTranscriptFromSessionEntries(
             currentChatSessionState,
-            deletedConversationSession.activeConversationSessionEntries,
+            activeConversationSessionEntries,
           );
           const hydratedChatSessionStateWithModelSelection = deletedConversationSession.activeConversationSessionModelSelection
             ? applyConversationSessionModelSelectionToChatSessionState(
@@ -500,8 +521,29 @@ export function useChatAppConversationSessionActions(
     if (clearedConversationSession) {
       input.latestActiveConversationSessionIdRef.current = clearedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(clearedConversationSession.conversationSessionId);
+      if (input.loadLatestConversationTranscriptPageIntoChatApp) {
+        input.setChatSessionState((currentChatSessionState) => {
+          const clearedChatSessionState = clearConversationTranscript(currentChatSessionState);
+          const nextChatSessionState = clearedConversationSession.modelSelection
+            ? applyConversationSessionModelSelectionToChatSessionState(
+              clearedChatSessionState,
+              clearedConversationSession.modelSelection,
+            )
+            : clearedChatSessionState;
+          input.latestChatSessionStateRef.current = nextChatSessionState;
+          return nextChatSessionState;
+        });
+        void input.loadLatestConversationTranscriptPageIntoChatApp({
+          conversationSessionId: clearedConversationSession.conversationSessionId,
+          ...(clearedConversationSession.modelSelection
+            ? { modelSelection: clearedConversationSession.modelSelection }
+            : {}),
+        });
+        return;
+      }
+
       hydrateConversationSessionIntoChatApp({
-        conversationSessionEntries: clearedConversationSession.conversationSessionEntries,
+        conversationSessionEntries: clearedConversationSession.conversationSessionEntries ?? [],
         ...(clearedConversationSession.modelSelection
           ? { modelSelection: clearedConversationSession.modelSelection }
           : {}),

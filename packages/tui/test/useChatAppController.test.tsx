@@ -3,10 +3,13 @@ import type { AssistantResponseEvent, ConversationSessionEntry, TokenUsage, User
 import type { AssistantConversationRunner, ConversationAutoCompactionResult, ConversationTurnRequest } from "@buli/engine";
 import {
   useChatAppController,
+  type InitialConversationSessionEntriesLoadResult,
+  type LoadConversationTranscriptEntryRecords,
   type UseChatAppControllerInput,
   type UseChatAppControllerResult,
 } from "@buli/chat-app-controller";
-import { act } from "react";
+import type { ConversationTranscriptEntryRecord } from "@buli/chat-session-state";
+import { act, useEffect, useState } from "react";
 import { testRender } from "./testRenderWithCleanup.ts";
 
 type RenderedChatAppControllerHook = {
@@ -71,6 +74,86 @@ async function renderChatAppControllerHook(
   let renderCount = 0;
   const renderedHook = await testRender(
     <ChatAppControllerHookProbe
+      controllerInput={input}
+      observeController={(controller) => {
+        renderCount += 1;
+        latestController = controller;
+      }}
+    />,
+  );
+
+  const readCurrentController = (): UseChatAppControllerResult => {
+    if (!latestController) {
+      throw new Error("Chat app controller hook did not render.");
+    }
+
+    return latestController;
+  };
+
+  return {
+    readCurrentController,
+    readRenderCount: () => renderCount,
+    async typeText(text: string): Promise<void> {
+      for (const character of text) {
+        await act(async () => {
+          readCurrentController().applyChatAppKeyboardInput({
+            chatSessionKeyboardInput: {
+              keyName: undefined,
+              textInput: character,
+              isCtrlPressed: false,
+              isMetaPressed: false,
+            },
+          });
+        });
+        await renderedHook.renderOnce();
+      }
+    },
+    async pressReturn(): Promise<void> {
+      await act(async () => {
+        readCurrentController().applyChatAppKeyboardInput({
+          chatSessionKeyboardInput: {
+            keyName: "return",
+            textInput: undefined,
+            isCtrlPressed: false,
+            isMetaPressed: false,
+          },
+        });
+      });
+      await renderedHook.renderOnce();
+    },
+    async pressEscape(): Promise<void> {
+      await act(async () => {
+        readCurrentController().applyChatAppKeyboardInput({
+          chatSessionKeyboardInput: {
+            keyName: "escape",
+            textInput: undefined,
+            isCtrlPressed: false,
+            isMetaPressed: false,
+          },
+        });
+      });
+      await renderedHook.renderOnce();
+    },
+    async flushHookEffects(): Promise<void> {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await renderedHook.renderOnce();
+    },
+    cleanup: renderedHook.cleanup,
+  };
+}
+
+async function renderChatAppControllerHookWithUnstableInitialLoader(input: {
+  loadInitialConversationSessionEntries: NonNullable<UseChatAppControllerInput["loadInitialConversationSessionEntries"]>;
+  onInitialConversationSessionEntriesHydrated?: NonNullable<
+    UseChatAppControllerInput["onInitialConversationSessionEntriesHydrated"]
+  > | undefined;
+}): Promise<RenderedChatAppControllerHook> {
+  let latestController: UseChatAppControllerResult | undefined;
+  let renderCount = 0;
+  const renderedHook = await testRender(
+    <ChatAppControllerHookProbeWithUnstableInitialLoader
       controllerInput={input}
       observeController={(controller) => {
         renderCount += 1;
@@ -272,6 +355,69 @@ function isTerminalAssistantResponseEventForTest(assistantResponseEvent: Assista
     assistantResponseEvent.type === "assistant_message_interrupted";
 }
 
+function createUserPromptTranscriptEntryRecords(count: number): ConversationTranscriptEntryRecord[] {
+  return Array.from({ length: count }, (_, entrySequence): ConversationTranscriptEntryRecord => ({
+    entrySequence,
+    conversationSessionEntry: {
+      entryKind: "user_prompt",
+      promptText: `Prompt ${entrySequence}`,
+      modelFacingPromptText: `Prompt ${entrySequence}`,
+    },
+  }));
+}
+
+function createPagedConversationTranscriptEntryRecordLoader(
+  conversationTranscriptEntryRecords: readonly ConversationTranscriptEntryRecord[],
+): LoadConversationTranscriptEntryRecords {
+  return (request) => {
+    if (request.loadKind === "latest") {
+      const entryRecords = conversationTranscriptEntryRecords.slice(-request.limit);
+      return {
+        conversationSessionId: request.conversationSessionId,
+        entryRecords,
+        hasOlderEntries: conversationTranscriptEntryRecords.length > request.limit,
+        hasNewerEntries: false,
+        latestCompactionSummaryEntrySequence: undefined,
+      };
+    }
+
+    if (request.loadKind === "before") {
+      const olderConversationTranscriptEntryRecords = conversationTranscriptEntryRecords.filter(
+        (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence < request.beforeEntrySequence,
+      );
+      return {
+        conversationSessionId: request.conversationSessionId,
+        entryRecords: olderConversationTranscriptEntryRecords.slice(-request.limit),
+        hasOlderEntries: olderConversationTranscriptEntryRecords.length > request.limit,
+        hasNewerEntries: true,
+        latestCompactionSummaryEntrySequence: undefined,
+      };
+    }
+
+    const newerConversationTranscriptEntryRecords = conversationTranscriptEntryRecords.filter(
+      (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence > request.afterEntrySequence,
+    );
+    return {
+      conversationSessionId: request.conversationSessionId,
+      entryRecords: newerConversationTranscriptEntryRecords.slice(0, request.limit),
+      hasOlderEntries: true,
+      hasNewerEntries: newerConversationTranscriptEntryRecords.length > request.limit,
+      latestCompactionSummaryEntrySequence: undefined,
+    };
+  };
+}
+
+async function waitForInitialConversationTranscriptPageLoad(renderedHook: RenderedChatAppControllerHook): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await renderedHook.flushHookEffects();
+    if (!renderedHook.readCurrentController().promptComposerState.isInitialConversationSessionHydrationPending) {
+      return;
+    }
+  }
+
+  throw new Error("Expected initial conversation transcript page to finish loading.");
+}
+
 async function waitForStartedTurnCount(input: {
   renderedHook: RenderedChatAppControllerHook;
   controlledRunner: ControlledAssistantConversationRunner;
@@ -316,6 +462,20 @@ async function waitForConversationTurnStatus(input: {
   throw new Error(`Expected conversation turn status ${input.conversationTurnStatus}.`);
 }
 
+async function waitForConversationMessageCount(input: {
+  renderedHook: RenderedChatAppControllerHook;
+  conversationMessageCount: number;
+}): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await input.renderedHook.flushHookEffects();
+    if (input.renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds.length === input.conversationMessageCount) {
+      return;
+    }
+  }
+
+  throw new Error(`Expected ${input.conversationMessageCount} conversation messages.`);
+}
+
 async function waitForConversationSessionCompactionStatus(input: {
   renderedHook: RenderedChatAppControllerHook;
   conversationSessionCompactionStatus: UseChatAppControllerResult["conversationSessionCompactionStatus"];
@@ -345,6 +505,42 @@ function ChatAppControllerHookProbe(props: {
     scrollConversationMessagesToBottom() {},
     scrollConversationMessagesByPage() {},
     ...props.controllerInput,
+  });
+
+  props.observeController(controller);
+  return <box />;
+}
+
+function ChatAppControllerHookProbeWithUnstableInitialLoader(props: {
+  controllerInput: {
+    loadInitialConversationSessionEntries: NonNullable<UseChatAppControllerInput["loadInitialConversationSessionEntries"]>;
+    onInitialConversationSessionEntriesHydrated?: NonNullable<
+      UseChatAppControllerInput["onInitialConversationSessionEntriesHydrated"]
+    > | undefined;
+  };
+  observeController: (controller: UseChatAppControllerResult) => void;
+}) {
+  const [parentRenderSequence, setParentRenderSequence] = useState(0);
+  useEffect(() => {
+    if (parentRenderSequence >= 2) {
+      return;
+    }
+
+    setParentRenderSequence(parentRenderSequence + 1);
+  }, [parentRenderSequence]);
+
+  const controller = useChatAppController({
+    selectedModelId: "gpt-5.4",
+    initialConversationSessionId: "session-a",
+    loadInitialConversationSessionEntries: (conversationSessionId) =>
+      props.controllerInput.loadInitialConversationSessionEntries(conversationSessionId),
+    onInitialConversationSessionEntriesHydrated: (initialConversationSessionEntriesLoadResult) =>
+      props.controllerInput.onInitialConversationSessionEntriesHydrated?.(initialConversationSessionEntriesLoadResult),
+    loadAvailableAssistantModels: async () => [],
+    loadPromptContextCandidates: async () => [],
+    assistantConversationRunner: neverEmittingAssistantConversationRunner,
+    scrollConversationMessagesToBottom() {},
+    scrollConversationMessagesByPage() {},
   });
 
   props.observeController(controller);
@@ -453,6 +649,427 @@ test("useChatAppController hydrates lazy initial session entries before prompt s
   controlledRunner.startedTurns[0]?.complete();
   await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
   expect(initialConversationSessionEntryLoadCount).toBe(1);
+});
+
+test("useChatAppController starts lazy initial hydration once across unstable parent renders", async () => {
+  const initialConversationSessionEntries: readonly ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Initial prompt",
+      modelFacingPromptText: "Initial prompt",
+    },
+    {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "Initial answer",
+    },
+  ];
+  let resolveInitialConversationSessionEntriesLoad:
+    | ((initialConversationSessionEntriesLoadResult: InitialConversationSessionEntriesLoadResult) => void)
+    | undefined;
+  const initialConversationSessionEntriesLoadPromise = new Promise<InitialConversationSessionEntriesLoadResult>((resolve) => {
+    resolveInitialConversationSessionEntriesLoad = resolve;
+  });
+  let initialConversationSessionEntryLoadCount = 0;
+  const hydratedConversationSessionEntryCounts: number[] = [];
+  const renderedHook = await renderChatAppControllerHookWithUnstableInitialLoader({
+    loadInitialConversationSessionEntries: () => {
+      initialConversationSessionEntryLoadCount += 1;
+      return initialConversationSessionEntriesLoadPromise;
+    },
+    onInitialConversationSessionEntriesHydrated: (initialConversationSessionEntriesLoadResult) => {
+      hydratedConversationSessionEntryCounts.push(
+        initialConversationSessionEntriesLoadResult.conversationSessionEntries.length,
+      );
+    },
+  });
+
+  await renderedHook.flushHookEffects();
+  await renderedHook.flushHookEffects();
+  expect(initialConversationSessionEntryLoadCount).toBe(1);
+  expect(renderedHook.readCurrentController().promptComposerState.isInitialConversationSessionHydrationPending).toBe(true);
+
+  await act(async () => {
+    resolveInitialConversationSessionEntriesLoad?.({
+      conversationSessionId: "session-a",
+      conversationSessionEntries: initialConversationSessionEntries,
+    });
+    await initialConversationSessionEntriesLoadPromise;
+  });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await renderedHook.flushHookEffects();
+    if (!renderedHook.readCurrentController().promptComposerState.isInitialConversationSessionHydrationPending) {
+      break;
+    }
+  }
+
+  expect(renderedHook.readCurrentController().promptComposerState.isInitialConversationSessionHydrationPending).toBe(false);
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(2);
+  expect(initialConversationSessionEntryLoadCount).toBe(1);
+  expect(hydratedConversationSessionEntryCounts).toEqual([2]);
+});
+
+test("useChatAppController loads only the initial transcript page when page records are available", async () => {
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(250);
+  const loadedPageEntrySequences: number[][] = [];
+  let fullInitialConversationSessionEntryLoadCount = 0;
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadInitialConversationSessionEntries: () => {
+      fullInitialConversationSessionEntryLoadCount += 1;
+      return {
+        conversationSessionId: "session-a",
+        conversationSessionEntries: conversationTranscriptEntryRecords.map(
+          (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.conversationSessionEntry,
+        ),
+      };
+    },
+    loadConversationTranscriptEntryRecords: createPagedConversationTranscriptEntryRecordLoader(conversationTranscriptEntryRecords),
+    onConversationTranscriptPageEntryRecordsLoaded: (loadedConversationTranscriptPageEntryRecords) => {
+      loadedPageEntrySequences.push(
+        loadedConversationTranscriptPageEntryRecords.conversationTranscriptEntryRecords.map(
+          (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence,
+        ),
+      );
+    },
+  });
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await renderedHook.flushHookEffects();
+    if (!renderedHook.readCurrentController().promptComposerState.isInitialConversationSessionHydrationPending) {
+      break;
+    }
+  }
+
+  expect(fullInitialConversationSessionEntryLoadCount).toBe(0);
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(100);
+  expect(loadedPageEntrySequences).toHaveLength(1);
+  expect(loadedPageEntrySequences[0]?.at(0)).toBe(150);
+  expect(loadedPageEntrySequences[0]?.at(-1)).toBe(249);
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.hasOlderPage).toBe(true);
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(true);
+});
+
+test("useChatAppController replaces chat transcript state with older pages in page mode", async () => {
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(250);
+  const loadedPageEntrySequences: number[][] = [];
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: createPagedConversationTranscriptEntryRecordLoader(conversationTranscriptEntryRecords),
+    onConversationTranscriptPageEntryRecordsLoaded: (loadedConversationTranscriptPageEntryRecords) => {
+      loadedPageEntrySequences.push(
+        loadedConversationTranscriptPageEntryRecords.conversationTranscriptEntryRecords.map(
+          (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence,
+        ),
+      );
+    },
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+
+  await act(async () => {
+    await renderedHook.readCurrentController().loadOlderConversationTranscriptPage();
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(100);
+  const firstVisibleConversationMessageId = renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds[0];
+  expect(
+    firstVisibleConversationMessageId
+      ? renderedHook.readCurrentController().chatSessionState.conversationMessagesById[firstVisibleConversationMessageId]?.createdAtMs
+      : undefined,
+  ).toBe(50);
+  expect(loadedPageEntrySequences).toHaveLength(2);
+  expect(loadedPageEntrySequences[1]?.at(0)).toBe(50);
+  expect(loadedPageEntrySequences[1]?.at(-1)).toBe(149);
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.visibleConversationMessageRows).toBeUndefined();
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.hasOlderPage).toBe(true);
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.hasNewerPage).toBe(true);
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(false);
+});
+
+test("useChatAppController keeps prompts editable on non-latest transcript pages", async () => {
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(250);
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: createPagedConversationTranscriptEntryRecordLoader(conversationTranscriptEntryRecords),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+
+  await act(async () => {
+    renderedHook.readCurrentController().applyPromptDraftEditToChatApp({
+      promptDraft: "Latest page draft",
+      promptDraftCursorOffset: "Latest page draft".length,
+    });
+  });
+  await renderedHook.flushHookEffects();
+  expect(renderedHook.readCurrentController().readLatestChatSessionState().promptDraft).toBe("Latest page draft");
+
+  await act(async () => {
+    await renderedHook.readCurrentController().loadOlderConversationTranscriptPage();
+  });
+  await renderedHook.flushHookEffects();
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(false);
+
+  await act(async () => {
+    renderedHook.readCurrentController().applyPromptDraftEditToChatApp({
+      promptDraft: "Historical page draft",
+      promptDraftCursorOffset: "Historical page draft".length,
+    });
+  });
+  await renderedHook.typeText("x");
+  await renderedHook.flushHookEffects();
+
+  expect(renderedHook.readCurrentController().readLatestChatSessionState().promptDraft).toBe("Historical page draftx");
+});
+
+test("useChatAppController jumps to latest instead of submitting from a historical transcript page", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(250);
+  const loadedPageEntrySequences: number[][] = [];
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: createPagedConversationTranscriptEntryRecordLoader(conversationTranscriptEntryRecords),
+    onConversationTranscriptPageEntryRecordsLoaded: (loadedConversationTranscriptPageEntryRecords) => {
+      loadedPageEntrySequences.push(
+        loadedConversationTranscriptPageEntryRecords.conversationTranscriptEntryRecords.map(
+          (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence,
+        ),
+      );
+    },
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+
+  await act(async () => {
+    await renderedHook.readCurrentController().loadOlderConversationTranscriptPage();
+  });
+  await renderedHook.flushHookEffects();
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(false);
+
+  await renderedHook.typeText("Prompt from historical page");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+
+  expect(controlledRunner.startedTurns).toHaveLength(0);
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(true);
+  expect(renderedHook.readCurrentController().readLatestChatSessionState().promptDraft).toBe("Prompt from historical page");
+  expect(loadedPageEntrySequences.at(-1)?.at(0)).toBe(150);
+  expect(loadedPageEntrySequences.at(-1)?.at(-1)).toBe(249);
+
+  await renderedHook.pressReturn();
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 1 });
+  expect(controlledRunner.startedTurns[0]?.conversationTurnRequest.userPromptText).toBe("Prompt from historical page");
+});
+
+test("useChatAppController reloads the latest transcript page after a non-compacting assistant turn", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(100);
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: (request) =>
+      createPagedConversationTranscriptEntryRecordLoader(conversationTranscriptEntryRecords)(request),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(100);
+
+  await renderedHook.typeText("New prompt after the current page");
+  await renderedHook.pressReturn();
+  await waitForStartedTurnCount({ renderedHook, controlledRunner, expectedStartedTurnCount: 1 });
+
+  conversationTranscriptEntryRecords.push({
+    entrySequence: 100,
+    conversationSessionEntry: {
+      entryKind: "user_prompt",
+      promptText: "New prompt after the current page",
+      modelFacingPromptText: "New prompt after the current page",
+    },
+  });
+  conversationTranscriptEntryRecords.push({
+    entrySequence: 101,
+    conversationSessionEntry: {
+      entryKind: "assistant_message",
+      assistantMessageStatus: "completed",
+      assistantMessageText: "New answer after the current page.",
+    },
+  });
+
+  await act(async () => {
+    controlledRunner.startedTurns[0]?.complete();
+  });
+  await waitForConversationTurnStatus({ renderedHook, conversationTurnStatus: "waiting_for_user_input" });
+
+  const visibleConversationMessageIds = renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds;
+  const firstVisibleConversationMessageId = visibleConversationMessageIds[0];
+  const lastVisibleConversationMessageId = visibleConversationMessageIds.at(-1);
+  expect(visibleConversationMessageIds).toHaveLength(100);
+  expect(
+    firstVisibleConversationMessageId
+      ? renderedHook.readCurrentController().chatSessionState.conversationMessagesById[firstVisibleConversationMessageId]?.createdAtMs
+      : undefined,
+  ).toBe(2);
+  expect(
+    lastVisibleConversationMessageId
+      ? renderedHook.readCurrentController().chatSessionState.conversationMessagesById[lastVisibleConversationMessageId]?.role
+      : undefined,
+  ).toBe("assistant");
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(true);
+});
+
+test("useChatAppController clears stale transcript page cursors when starting a new session", async () => {
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(250);
+  const transcriptEntryRecordLoadRequests: Parameters<LoadConversationTranscriptEntryRecords>[0][] = [];
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: (request) => {
+      transcriptEntryRecordLoadRequests.push(request);
+      if (request.conversationSessionId === "session-new") {
+        return {
+          conversationSessionId: "session-new",
+          entryRecords: [],
+          hasOlderEntries: false,
+          hasNewerEntries: false,
+          latestCompactionSummaryEntrySequence: undefined,
+        };
+      }
+      return createPagedConversationTranscriptEntryRecordLoader(conversationTranscriptEntryRecords)(request);
+    },
+    onConversationCleared: () => ({
+      conversationSessionId: "session-new",
+      conversationSessionEntries: [],
+    }),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+
+  await act(async () => {
+    await renderedHook.readCurrentController().loadOlderConversationTranscriptPage();
+  });
+  await renderedHook.flushHookEffects();
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(false);
+
+  await renderedHook.typeText("/clear");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+
+  expect(renderedHook.readCurrentController().activeConversationSessionId).toBe("session-new");
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.hasOlderPage).toBe(false);
+  await act(async () => {
+    await renderedHook.readCurrentController().loadOlderConversationTranscriptPage();
+  });
+  await renderedHook.flushHookEffects();
+  expect(transcriptEntryRecordLoadRequests.at(-1)).toMatchObject({
+    conversationSessionId: "session-new",
+    loadKind: "latest",
+  });
+});
+
+test("useChatAppController switches sessions in page mode by loading the selected session latest page", async () => {
+  const conversationTranscriptEntryRecordsBySessionId = new Map<string, readonly ConversationTranscriptEntryRecord[]>([
+    ["session-a", createUserPromptTranscriptEntryRecords(150)],
+    ["session-b", createUserPromptTranscriptEntryRecords(3)],
+  ]);
+  const transcriptEntryRecordLoadRequests: Parameters<LoadConversationTranscriptEntryRecords>[0][] = [];
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: (request) => {
+      transcriptEntryRecordLoadRequests.push(request);
+      return createPagedConversationTranscriptEntryRecordLoader(
+        conversationTranscriptEntryRecordsBySessionId.get(request.conversationSessionId) ?? [],
+      )(request);
+    },
+    loadConversationSessions: async () => [
+      {
+        sessionId: "session-b",
+        title: "Session B",
+        createdAtMs: Date.UTC(2026, 4, 23),
+        updatedAtMs: Date.UTC(2026, 4, 23),
+        conversationSessionEntryCount: 3,
+      },
+    ],
+    switchConversationSession: async (conversationSessionId) => ({ conversationSessionId }),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(100);
+
+  await renderedHook.typeText("/sessions");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+  await renderedHook.pressReturn();
+  await waitForConversationMessageCount({ renderedHook, conversationMessageCount: 3 });
+
+  expect(renderedHook.readCurrentController().activeConversationSessionId).toBe("session-b");
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(true);
+  expect(transcriptEntryRecordLoadRequests.at(-1)).toMatchObject({
+    conversationSessionId: "session-b",
+    loadKind: "latest",
+  });
+});
+
+test("useChatAppController deletes sessions in page mode by reloading the active latest page", async () => {
+  const conversationTranscriptEntryRecords = createUserPromptTranscriptEntryRecords(150);
+  const transcriptEntryRecordLoadRequests: Parameters<LoadConversationTranscriptEntryRecords>[0][] = [];
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: (request) => {
+      transcriptEntryRecordLoadRequests.push(request);
+      return createPagedConversationTranscriptEntryRecordLoader(conversationTranscriptEntryRecords)(request);
+    },
+    loadConversationSessions: async () => [
+      {
+        sessionId: "session-a",
+        title: "Session A",
+        createdAtMs: Date.UTC(2026, 4, 22),
+        updatedAtMs: Date.UTC(2026, 4, 22),
+        conversationSessionEntryCount: 150,
+      },
+      {
+        sessionId: "session-b",
+        title: "Session B",
+        createdAtMs: Date.UTC(2026, 4, 23),
+        updatedAtMs: Date.UTC(2026, 4, 23),
+        conversationSessionEntryCount: 1,
+      },
+    ],
+    deleteConversationSession: async (conversationSessionId) => ({
+      deletedConversationSessionId: conversationSessionId,
+      activeConversationSessionId: "session-a",
+      conversationSessions: [
+        {
+          sessionId: "session-a",
+          title: "Session A",
+          createdAtMs: Date.UTC(2026, 4, 22),
+          updatedAtMs: Date.UTC(2026, 4, 22),
+          conversationSessionEntryCount: 150,
+        },
+      ],
+    }),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+
+  await act(async () => {
+    await renderedHook.readCurrentController().loadOlderConversationTranscriptPage();
+  });
+  await renderedHook.flushHookEffects();
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(false);
+
+  await renderedHook.typeText("/sessions");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+  await act(async () => {
+    await renderedHook.readCurrentController().requestConversationSessionDeletion("session-b");
+  });
+  await renderedHook.flushHookEffects();
+  await act(async () => {
+    await renderedHook.readCurrentController().requestConversationSessionDeletion("session-b");
+  });
+  await waitForConversationMessageCount({ renderedHook, conversationMessageCount: 100 });
+
+  expect(renderedHook.readCurrentController().activeConversationSessionId).toBe("session-a");
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.isLatestPage).toBe(true);
+  expect(transcriptEntryRecordLoadRequests.at(-1)).toMatchObject({
+    conversationSessionId: "session-a",
+    loadKind: "latest",
+  });
 });
 
 test("useChatAppController keeps non-prompt slices stable across prompt-only edits", async () => {
@@ -709,7 +1326,7 @@ test("useChatAppController switches to a selected conversation session from keyb
   );
 
   await renderedHook.pressReturn();
-  await renderedHook.flushHookEffects();
+  await waitForConversationMessageCount({ renderedHook, conversationMessageCount: 1 });
 
   expect(renderedHook.readCurrentController().activeConversationSessionId).toBe("session-b");
   expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(1);

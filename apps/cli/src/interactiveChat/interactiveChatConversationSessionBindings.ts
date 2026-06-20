@@ -31,12 +31,15 @@ export type InteractiveChatConversationSessionBindings = {
   readActiveConversationSessionModelSelection(): ConversationSessionModelSelection;
 };
 
+export type InteractiveChatConversationTranscriptHydrationMode = "full_session_entries" | "paged_transcript";
+
 export function createInteractiveChatConversationSessionBindings(input: {
   conversationSessionStore: ConversationSessionStore;
   conversationHistory: InMemoryConversationHistory;
   assistantConversationRunner: AssistantConversationRuntime;
   initialConversationSessionId: string;
   initialConversationSessionModelSelection: ConversationSessionModelSelection;
+  conversationTranscriptHydrationMode?: InteractiveChatConversationTranscriptHydrationMode | undefined;
   workspaceRootPath: string;
   conversationSessionExportDirectoryPath?: string | undefined;
   openBrowserUrl?: BrowserUrlLauncher | undefined;
@@ -44,6 +47,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
 }): InteractiveChatConversationSessionBindings {
   let activeConversationSessionId = input.initialConversationSessionId;
   let activeConversationSessionModelSelection = input.initialConversationSessionModelSelection;
+  const shouldReturnFullConversationSessionEntriesToRenderer = input.conversationTranscriptHydrationMode !== "paged_transcript";
 
   return {
     renderInput: {
@@ -66,7 +70,9 @@ export function createInteractiveChatConversationSessionBindings(input: {
         return {
           conversationSessionId: switchedConversationSession.sessionId,
           ...(switchedConversationSession.modelSelection ? { modelSelection: switchedConversationSession.modelSelection } : {}),
-          conversationSessionEntries: switchedConversationSession.conversationSessionEntries,
+          ...(shouldReturnFullConversationSessionEntriesToRenderer
+            ? { conversationSessionEntries: switchedConversationSession.conversationSessionEntries }
+            : {}),
         };
       },
       deleteConversationSession: async (conversationSessionId: string) => {
@@ -78,9 +84,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
         if (activeConversationSessionAfterDelete.modelSelection) {
           activeConversationSessionModelSelection = activeConversationSessionAfterDelete.modelSelection;
         }
-        input.conversationHistory.replaceConversationSessionEntries(
-          activeConversationSessionAfterDelete.conversationSessionEntries,
-        );
+        input.conversationHistory.replaceConversationSessionEntries(activeConversationSessionAfterDelete.conversationSessionEntries);
         const conversationSessionsAfterDelete = input.conversationSessionStore.listConversationSessions();
         logCliDiagnosticEvent(input.diagnosticLogger, "conversation_session.deleted", {
           deletedConversationSessionId: conversationSessionId,
@@ -94,7 +98,9 @@ export function createInteractiveChatConversationSessionBindings(input: {
           ...(activeConversationSessionAfterDelete.modelSelection
             ? { activeConversationSessionModelSelection: activeConversationSessionAfterDelete.modelSelection }
             : {}),
-          activeConversationSessionEntries: activeConversationSessionAfterDelete.conversationSessionEntries,
+          ...(shouldReturnFullConversationSessionEntriesToRenderer
+            ? { activeConversationSessionEntries: activeConversationSessionAfterDelete.conversationSessionEntries }
+            : {}),
           conversationSessions: conversationSessionsAfterDelete,
         };
       },
@@ -113,7 +119,9 @@ export function createInteractiveChatConversationSessionBindings(input: {
         return {
           conversationSessionId: newConversationSession.sessionId,
           ...(newConversationSession.modelSelection ? { modelSelection: newConversationSession.modelSelection } : {}),
-          conversationSessionEntries: newConversationSession.conversationSessionEntries,
+          ...(shouldReturnFullConversationSessionEntriesToRenderer
+            ? { conversationSessionEntries: newConversationSession.conversationSessionEntries }
+            : {}),
         };
       },
       exportCurrentConversationSession: async () => {

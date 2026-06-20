@@ -74,6 +74,8 @@ export type UseChatAppKeyboardActionsInput = {
   submitPendingToolApprovalDecision: (submission: PendingToolApprovalDecisionSubmission) => void;
   scrollConversationMessagesToBottom: () => void;
   scrollConversationMessagesByPage: (direction: "up" | "down") => void;
+  shouldDeferPromptSubmissionUntilLatestConversationTranscriptPage?: (() => boolean) | undefined;
+  loadLatestConversationTranscriptPageBeforePromptSubmission?: (() => Promise<void> | void) | undefined;
 };
 
 export type UseChatAppKeyboardActionsResult = {
@@ -216,6 +218,15 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       input.availableSkills,
     );
 
+    if (
+      keyboardInteraction.chatSessionKeyboardEffect &&
+      isPromptSubmissionKeyboardEffect(keyboardInteraction.chatSessionKeyboardEffect) &&
+      input.shouldDeferPromptSubmissionUntilLatestConversationTranscriptPage?.() === true
+    ) {
+      void input.loadLatestConversationTranscriptPageBeforePromptSubmission?.();
+      return { shouldConsumeKeyboardInput: keyboardInteraction.shouldConsumeKeyboardInput };
+    }
+
     if (nextChatSessionState !== previousChatSessionState) {
       const shouldReportModelSelection = shouldReportConversationSessionModelSelection({
         previousChatSessionState,
@@ -307,6 +318,11 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     applyPromptDraftEditToChatApp,
     insertSummarizedPastedTextIntoChatAppPrompt,
   };
+}
+
+function isPromptSubmissionKeyboardEffect(chatSessionKeyboardEffect: ChatSessionKeyboardEffect): boolean {
+  return chatSessionKeyboardEffect.effectType === "stream_assistant_response_for_submitted_prompt" ||
+    chatSessionKeyboardEffect.effectType === "enqueue_submitted_prompt";
 }
 
 function shouldReportConversationSessionModelSelection(input: {

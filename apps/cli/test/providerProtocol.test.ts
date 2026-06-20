@@ -506,10 +506,20 @@ function createConversationSessionStoreStub(input: {
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
     }),
+    switchActiveConversationSessionMetadata: (sessionId) => ({
+      sessionId,
+      modelSelection: activeModelSelection,
+      conversationSessionEntryCount: initialConversationSessionEntries.length,
+    }),
     deleteConversationSession: () => ({
       sessionId: "session-a",
       modelSelection: activeModelSelection,
       conversationSessionEntries: initialConversationSessionEntries,
+    }),
+    deleteConversationSessionAndLoadActiveMetadata: () => ({
+      sessionId: "session-a",
+      modelSelection: activeModelSelection,
+      conversationSessionEntryCount: initialConversationSessionEntries.length,
     }),
   } satisfies ConversationSessionStore;
 }

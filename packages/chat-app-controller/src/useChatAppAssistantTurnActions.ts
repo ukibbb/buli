@@ -25,6 +25,10 @@ import { logChatAppControllerDiagnosticEvent } from "./logChatAppControllerDiagn
 
 type MutableValueRef<T> = { current: T };
 
+type ClearHistoricalConversationTranscriptPage = (options?: {
+  shouldPreserveKnownOlderPageAvailability?: boolean | undefined;
+}) => void;
+
 type AutoCompactionAfterAssistantTurnRequest = {
   requestTriggerKind?: ConversationAutoCompactionRequest["requestTriggerKind"] | undefined;
 };
@@ -67,7 +71,7 @@ export type UseChatAppAssistantTurnActionsInput = {
   isChatAppControllerMountedRef: MutableValueRef<boolean>;
   submittedToolApprovalDecisionApprovalIdRef: MutableValueRef<string | undefined>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
-  clearHistoricalConversationTranscriptPage: () => void;
+  clearHistoricalConversationTranscriptPage: ClearHistoricalConversationTranscriptPage;
   chatAppRenderStore: ChatAppRenderStore;
   getActiveConversationTurn: () => ActiveConversationTurn | undefined;
   registerActiveConversationTurnStarted: (activeConversationTurn: ActiveConversationTurn) => void;
@@ -81,6 +85,7 @@ export type UseChatAppAssistantTurnActionsInput = {
     | Promise<ConversationAutoCompactionResult | undefined>
     | ConversationAutoCompactionResult
     | undefined;
+  reloadLatestConversationTranscriptPageAfterAssistantTurn?: (() => Promise<void> | void) | undefined;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 };
 
@@ -314,6 +319,13 @@ export function useChatAppAssistantTurnActions(
             terminalAssistantResponseEvent: assistantResponseRelayResult.terminalAssistantResponseEvent,
           }),
         );
+        if (!input.isChatAppControllerMountedRef.current) {
+          return;
+        }
+
+        if (autoCompactionResult?.didCompact !== true) {
+          await input.reloadLatestConversationTranscriptPageAfterAssistantTurn?.();
+        }
         if (!input.isChatAppControllerMountedRef.current) {
           return;
         }

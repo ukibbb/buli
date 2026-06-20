@@ -56,6 +56,39 @@ export type HydratedConversationTranscriptRows = {
   lastSourceEntrySequence: number | undefined;
 };
 
+export function isConversationMessagePartVisibleInTranscript(conversationMessagePart: ConversationMessagePart): boolean {
+  if (conversationMessagePart.partKind === "assistant_text") {
+    return conversationMessagePart.rawMarkdownText.trim().length > 0;
+  }
+
+  if (conversationMessagePart.partKind === "assistant_reasoning") {
+    return conversationMessagePart.reasoningSummaryText.replaceAll("[REDACTED]", "").trim().length > 0;
+  }
+
+  if (
+    conversationMessagePart.partKind === "assistant_buli_sticky_notes" ||
+    conversationMessagePart.partKind === "assistant_turn_summary"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export function isConversationTranscriptPageRowVisibleInTranscript(
+  conversationTranscriptPageRow: ConversationTranscriptPageRow,
+): boolean {
+  if (conversationTranscriptPageRow.conversationMessage.role !== "assistant") {
+    return true;
+  }
+
+  if (conversationTranscriptPageRow.conversationMessage.messageStatus === "streaming") {
+    return true;
+  }
+
+  return conversationTranscriptPageRow.conversationMessageParts.some(isConversationMessagePartVisibleInTranscript);
+}
+
 type HydratedToolResultPartBase = {
   id: string;
   toolCallId: string;
@@ -117,6 +150,50 @@ export function hydrateConversationTranscriptFromPageRows(
   chatSessionState: ChatSessionState,
   visibleConversationMessageRows: readonly ConversationTranscriptPageRow[],
 ): ChatSessionState {
+  const conversationTranscriptStateReplacement = buildConversationTranscriptStateReplacementFromPageRows(
+    visibleConversationMessageRows,
+  );
+
+  return {
+    ...clearConversationTranscript(chatSessionState),
+    ...conversationTranscriptStateReplacement,
+  };
+}
+
+export function replaceConversationTranscriptWithPageRowsPreservingPromptComposerState(
+  chatSessionState: ChatSessionState,
+  visibleConversationMessageRows: readonly ConversationTranscriptPageRow[],
+): ChatSessionState {
+  const clearedChatSessionState = clearConversationTranscript(chatSessionState);
+  const conversationTranscriptStateReplacement = buildConversationTranscriptStateReplacementFromPageRows(
+    visibleConversationMessageRows,
+  );
+
+  return {
+    ...clearedChatSessionState,
+    conversationTurnStatus: chatSessionState.conversationTurnStatus,
+    promptDraft: chatSessionState.promptDraft,
+    promptDraftCursorOffset: chatSessionState.promptDraftCursorOffset,
+    pendingPromptImageAttachments: chatSessionState.pendingPromptImageAttachments,
+    pendingPromptTextPastes: chatSessionState.pendingPromptTextPastes,
+    latestTokenUsage: chatSessionState.latestTokenUsage,
+    latestContextWindowUsage: chatSessionState.latestContextWindowUsage,
+    selectedPromptContextReferenceTexts: chatSessionState.selectedPromptContextReferenceTexts,
+    ...conversationTranscriptStateReplacement,
+  };
+}
+
+type ConversationTranscriptStateReplacement = Pick<
+  ChatSessionState,
+  | "conversationMessagesById"
+  | "conversationMessagePartsById"
+  | "orderedConversationMessageIds"
+  | "conversationMessagePartCount"
+>;
+
+function buildConversationTranscriptStateReplacementFromPageRows(
+  visibleConversationMessageRows: readonly ConversationTranscriptPageRow[],
+): ConversationTranscriptStateReplacement {
   const conversationMessagesById: Record<string, ConversationMessage> = {};
   const conversationMessagePartsById: Record<string, ConversationMessagePart> = {};
   const orderedConversationMessageIds: string[] = [];
@@ -131,7 +208,6 @@ export function hydrateConversationTranscriptFromPageRows(
   }
 
   return {
-    ...clearConversationTranscript(chatSessionState),
     conversationMessagesById,
     conversationMessagePartsById,
     orderedConversationMessageIds,

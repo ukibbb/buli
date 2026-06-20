@@ -1,5 +1,6 @@
 import {
   hydrateConversationTranscriptRowsFromEntryRecords,
+  isConversationTranscriptPageRowVisibleInTranscript,
   type ConversationTranscriptEntryRecord,
   type ConversationTranscriptPageRow,
 } from "@buli/chat-session-state";
@@ -35,6 +36,7 @@ export type ConversationTranscriptPageNavigationRequest =
 
 export type ConversationTranscriptPage = {
   conversationSessionId: string;
+  conversationTranscriptEntryRecords: readonly ConversationTranscriptEntryRecord[];
   visibleConversationMessageRows: readonly ConversationTranscriptPageRow[];
   pageMessageCount: number;
   hasOlderPage: boolean;
@@ -71,10 +73,14 @@ export async function loadConversationTranscriptPage(input: {
   const hydratedConversationTranscriptRows = hydrateConversationTranscriptRowsFromEntryRecords({
     conversationTranscriptEntryRecords: accumulatedEntryRecordLoad.entryRecords,
     latestCompactionSummaryEntrySequence: accumulatedEntryRecordLoad.latestCompactionSummaryEntrySequence,
-  }).visibleConversationMessageRows;
+  }).visibleConversationMessageRows.filter(isConversationTranscriptPageRowVisibleInTranscript);
   const visibleConversationMessageRows = input.pageNavigationRequest.pageNavigationKind === "newer"
     ? hydratedConversationTranscriptRows.slice(0, pageMessageCount)
     : hydratedConversationTranscriptRows.slice(-pageMessageCount);
+  const conversationTranscriptEntryRecords = selectConversationTranscriptPageEntryRecords({
+    accumulatedEntryRecords: accumulatedEntryRecordLoad.entryRecords,
+    visibleConversationMessageRows,
+  });
   const didDiscardHydratedOlderRows = input.pageNavigationRequest.pageNavigationKind !== "newer" &&
     hydratedConversationTranscriptRows.length > visibleConversationMessageRows.length;
   const didDiscardHydratedNewerRows = input.pageNavigationRequest.pageNavigationKind === "newer" &&
@@ -88,6 +94,7 @@ export async function loadConversationTranscriptPage(input: {
 
   return {
     conversationSessionId: input.conversationSessionId,
+    conversationTranscriptEntryRecords,
     visibleConversationMessageRows,
     pageMessageCount,
     hasOlderPage,
@@ -138,7 +145,8 @@ async function loadEnoughOlderEntryRecordsForTranscriptPage(input: {
     const loadedEntryRecordSlice = await input.loadEntryRecords(nextLoadRequest);
     accumulatedEntryRecords = [...loadedEntryRecordSlice.entryRecords, ...accumulatedEntryRecords];
     hasOlderEntries = loadedEntryRecordSlice.hasOlderEntries;
-    hasNewerEntries = hasNewerEntries || loadedEntryRecordSlice.hasNewerEntries;
+    hasNewerEntries = input.pageNavigationRequest.pageNavigationKind === "older" &&
+      (hasNewerEntries || loadedEntryRecordSlice.hasNewerEntries);
     latestCompactionSummaryEntrySequence = loadedEntryRecordSlice.latestCompactionSummaryEntrySequence;
 
     if (hasHydratedMoreThanOneTranscriptPage({
@@ -254,9 +262,26 @@ function hasHydratedMoreThanOneTranscriptPage(input: {
   return hydrateConversationTranscriptRowsFromEntryRecords({
     conversationTranscriptEntryRecords: input.entryRecords,
     latestCompactionSummaryEntrySequence: input.latestCompactionSummaryEntrySequence,
-  }).conversationMessageCount > input.pageMessageCount;
+  }).visibleConversationMessageRows.filter(isConversationTranscriptPageRowVisibleInTranscript).length > input.pageMessageCount;
 }
 
 function normalizePositiveInteger(value: number | undefined, fallbackValue: number): number {
   return value !== undefined && Number.isInteger(value) && value > 0 ? value : fallbackValue;
+}
+
+function selectConversationTranscriptPageEntryRecords(input: {
+  accumulatedEntryRecords: readonly ConversationTranscriptEntryRecord[];
+  visibleConversationMessageRows: readonly ConversationTranscriptPageRow[];
+}): readonly ConversationTranscriptEntryRecord[] {
+  const firstVisibleSourceEntrySequence = input.visibleConversationMessageRows[0]?.firstSourceEntrySequence;
+  const lastVisibleSourceEntrySequence = input.visibleConversationMessageRows.at(-1)?.lastSourceEntrySequence;
+  if (firstVisibleSourceEntrySequence === undefined || lastVisibleSourceEntrySequence === undefined) {
+    return [];
+  }
+
+  return input.accumulatedEntryRecords.filter(
+    (conversationTranscriptEntryRecord) =>
+      conversationTranscriptEntryRecord.entrySequence >= firstVisibleSourceEntrySequence &&
+      conversationTranscriptEntryRecord.entrySequence <= lastVisibleSourceEntrySequence,
+  );
 }
