@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { AssistantResponseEvent, ConversationSessionEntry, TokenUsage } from "@buli/contracts";
+import type { LoadConversationTranscriptEntryRecords } from "@buli/chat-app-controller";
+import type { ConversationTranscriptEntryRecord } from "@buli/chat-session-state";
 import type { AssistantConversationRunner, ConversationTurnRequest } from "@buli/engine";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { act } from "react";
 import {
   useChatScreenController,
@@ -71,6 +74,13 @@ type RenderedChatScreenControllerHook = {
   renderOnce: () => Promise<void>;
 };
 
+type ScrollBoxScrollToTarget = Parameters<ScrollBoxRenderable["scrollTo"]>[0];
+
+type RecordingConversationMessageScrollBox = {
+  scrollBox: ScrollBoxRenderable;
+  readScrollToTargets: () => readonly ScrollBoxScrollToTarget[];
+};
+
 type ExternallyDrivenAssistantResponseEventStream = {
   queuedAssistantResponseEvents: AssistantResponseEvent[];
   isClosed: boolean;
@@ -85,11 +95,17 @@ type ExternallyDrivenAssistantConversationRunner = {
 
 async function renderChatScreenControllerHook(input: {
   assistantConversationRunner?: AssistantConversationRunner | undefined;
+  initialConversationSessionId?: string | undefined;
+  loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords | undefined;
+  mountedConversationMessageScrollBox?: ScrollBoxRenderable | undefined;
 } = {}): Promise<RenderedChatScreenControllerHook> {
   let latestController: UseChatScreenControllerResult | undefined;
   const renderedHook = await testRender(
     <ChatScreenControllerHookProbe
       assistantConversationRunner={input.assistantConversationRunner}
+      initialConversationSessionId={input.initialConversationSessionId}
+      loadConversationTranscriptEntryRecords={input.loadConversationTranscriptEntryRecords}
+      mountedConversationMessageScrollBox={input.mountedConversationMessageScrollBox}
       observeController={(controller) => {
         latestController = controller;
       }}
@@ -110,11 +126,19 @@ async function renderChatScreenControllerHook(input: {
 
 function ChatScreenControllerHookProbe(props: {
   assistantConversationRunner?: AssistantConversationRunner | undefined;
+  initialConversationSessionId?: string | undefined;
+  loadConversationTranscriptEntryRecords?: LoadConversationTranscriptEntryRecords | undefined;
+  mountedConversationMessageScrollBox?: ScrollBoxRenderable | undefined;
   observeController: (controller: UseChatScreenControllerResult) => void;
 }) {
   const chatScreenProps = {
     selectedModelId: "gpt-5.5",
-    initialConversationSessionEntries,
+    ...(props.initialConversationSessionId !== undefined
+      ? { initialConversationSessionId: props.initialConversationSessionId }
+      : {}),
+    ...(props.loadConversationTranscriptEntryRecords !== undefined
+      ? { loadConversationTranscriptEntryRecords: props.loadConversationTranscriptEntryRecords }
+      : { initialConversationSessionEntries }),
     loadAvailableAssistantModels: async () => [],
     loadPromptContextCandidates: async () => [],
     assistantConversationRunner: props.assistantConversationRunner ?? neverEmittingAssistantConversationRunner,
@@ -126,8 +150,107 @@ function ChatScreenControllerHookProbe(props: {
     terminalSizeTierForChatScreen: "comfortable",
   });
 
+  if (props.mountedConversationMessageScrollBox !== undefined) {
+    controller.mainAreaProps.conversationMessageScrollBoxRef.current = props.mountedConversationMessageScrollBox;
+  }
+
   props.observeController(controller);
   return <box />;
+}
+
+function createUserPromptTranscriptEntryRecords(
+  conversationMessageCount: number,
+): readonly ConversationTranscriptEntryRecord[] {
+  return Array.from({ length: conversationMessageCount }, (_, entryIndex) => {
+    const entrySequence = entryIndex + 1;
+    const promptText = `Prompt ${entrySequence}`;
+
+    return {
+      entrySequence,
+      conversationSessionEntry: {
+        entryKind: "user_prompt",
+        promptText,
+        modelFacingPromptText: promptText,
+      },
+    };
+  });
+}
+
+function createPagedConversationTranscriptEntryRecordLoader(
+  conversationTranscriptEntryRecords: readonly ConversationTranscriptEntryRecord[],
+): LoadConversationTranscriptEntryRecords {
+  return (request) => {
+    if (request.loadKind === "latest") {
+      const entryRecords = conversationTranscriptEntryRecords.slice(-request.limit);
+
+      return {
+        conversationSessionId: request.conversationSessionId,
+        entryRecords,
+        hasOlderEntries: conversationTranscriptEntryRecords.length > request.limit,
+        hasNewerEntries: false,
+        latestCompactionSummaryEntrySequence: undefined,
+      };
+    }
+
+    if (request.loadKind === "before") {
+      const olderConversationTranscriptEntryRecords = conversationTranscriptEntryRecords.filter(
+        (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence < request.beforeEntrySequence,
+      );
+
+      return {
+        conversationSessionId: request.conversationSessionId,
+        entryRecords: olderConversationTranscriptEntryRecords.slice(-request.limit),
+        hasOlderEntries: olderConversationTranscriptEntryRecords.length > request.limit,
+        hasNewerEntries: true,
+        latestCompactionSummaryEntrySequence: undefined,
+      };
+    }
+
+    const newerConversationTranscriptEntryRecords = conversationTranscriptEntryRecords.filter(
+      (conversationTranscriptEntryRecord) => conversationTranscriptEntryRecord.entrySequence > request.afterEntrySequence,
+    );
+
+    return {
+      conversationSessionId: request.conversationSessionId,
+      entryRecords: newerConversationTranscriptEntryRecords.slice(0, request.limit),
+      hasOlderEntries: true,
+      hasNewerEntries: newerConversationTranscriptEntryRecords.length > request.limit,
+      latestCompactionSummaryEntrySequence: undefined,
+    };
+  };
+}
+
+function createRecordingConversationMessageScrollBox(): RecordingConversationMessageScrollBox {
+  const scrollToTargets: ScrollBoxScrollToTarget[] = [];
+  const partialScrollBox = {
+    get scrollHeight() {
+      return 1234;
+    },
+    scrollTo(target: ScrollBoxScrollToTarget) {
+      scrollToTargets.push(target);
+    },
+    scrollBy() {},
+  } satisfies Pick<ScrollBoxRenderable, "scrollHeight" | "scrollTo" | "scrollBy">;
+
+  return {
+    scrollBox: partialScrollBox as unknown as ScrollBoxRenderable,
+    readScrollToTargets: () => scrollToTargets,
+  };
+}
+
+async function waitForScrollToTargetCount(input: {
+  renderedHook: RenderedChatScreenControllerHook;
+  recordingConversationMessageScrollBox: RecordingConversationMessageScrollBox;
+  expectedScrollToTargetCount: number;
+}): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await input.renderedHook.renderOnce();
+    if (input.recordingConversationMessageScrollBox.readScrollToTargets().length >= input.expectedScrollToTargetCount) {
+      return;
+    }
+  }
+
+  throw new Error(`Expected ${input.expectedScrollToTargetCount} conversation transcript bottom scroll request(s).`);
 }
 
 function createExternallyDrivenAssistantConversationRunner(): ExternallyDrivenAssistantConversationRunner {
@@ -245,6 +368,25 @@ function readInteractionStatusStoreSnapshot(
 
   return chatAppRenderStore.readInteractionStatusSnapshot();
 }
+
+test("useChatScreenController scrolls to the bottom after latest page hydration", async () => {
+  const recordingConversationMessageScrollBox = createRecordingConversationMessageScrollBox();
+  const renderedHook = await renderChatScreenControllerHook({
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: createPagedConversationTranscriptEntryRecordLoader(
+      createUserPromptTranscriptEntryRecords(130),
+    ),
+    mountedConversationMessageScrollBox: recordingConversationMessageScrollBox.scrollBox,
+  });
+
+  await waitForScrollToTargetCount({
+    renderedHook,
+    recordingConversationMessageScrollBox,
+    expectedScrollToTargetCount: 1,
+  });
+
+  expect(recordingConversationMessageScrollBox.readScrollToTargets()).toEqual([1234]);
+});
 
 test("useChatScreenController keeps main area props stable across prompt-only edits", async () => {
   const renderedHook = await renderChatScreenControllerHook();

@@ -51,6 +51,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
   const stableLiveStatusExtraPropsRef = useRef<LiveInteractionChromeStatusExtraProps | undefined>(undefined);
   const stablePromptComposerPropsRef = useRef<PromptComposerChromeProps | undefined>(undefined);
   const stableLiveInteractionChromePropsRef = useRef<LiveInteractionChromeProps | undefined>(undefined);
+  const lastAutoScrolledLatestConversationTranscriptPageKeyRef = useRef<string | undefined>(undefined);
 
   const {
     conversationMessageScrollBoxRef,
@@ -169,12 +170,40 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     visibleConversationMessageIds,
     visibleConversationMessagePartCount,
   } = stableTranscriptViewModel.transcriptViewModel;
+  const latestConversationTranscriptPageBottomScrollKey = buildLatestConversationTranscriptPageBottomScrollKey({
+    isConversationTranscriptPageModeActive: chatScreenProps.loadConversationTranscriptEntryRecords !== undefined,
+    activeConversationSessionId: chatAppController.activeConversationSessionId,
+    isLatestConversationTranscriptPage: chatAppController.conversationTranscriptPageState.isLatestPage,
+    isConversationTranscriptPageNavigationLoading: chatAppController.conversationTranscriptPageState.isNavigationLoading,
+    lastVisibleConversationMessageId: visibleConversationMessageIds.at(-1),
+  });
   const approvePendingToolApprovalRequest = useEffectEvent((): void => {
     chatAppController.submitPendingToolApprovalDecision({ decision: "approved", source: "button" });
   });
   const denyPendingToolApprovalRequest = useEffectEvent((): void => {
     chatAppController.submitPendingToolApprovalDecision({ decision: "denied", source: "button" });
   });
+
+  useEffect(() => {
+    if (!latestConversationTranscriptPageBottomScrollKey) {
+      lastAutoScrolledLatestConversationTranscriptPageKeyRef.current = undefined;
+      return;
+    }
+
+    if (
+      lastAutoScrolledLatestConversationTranscriptPageKeyRef.current ===
+        latestConversationTranscriptPageBottomScrollKey
+    ) {
+      return;
+    }
+
+    if (!conversationMessageScrollBoxRef.current) {
+      return;
+    }
+
+    lastAutoScrolledLatestConversationTranscriptPageKeyRef.current = latestConversationTranscriptPageBottomScrollKey;
+    scrollConversationMessagesToBottom();
+  }, [conversationMessageScrollBoxRef, latestConversationTranscriptPageBottomScrollKey, scrollConversationMessagesToBottom]);
 
   useEffect(() => {
     logChatScreenDiagnosticEvent(
@@ -418,4 +447,23 @@ function selectShallowStableObject<T extends object>(input: {
   }
 
   return input.previousValue;
+}
+
+function buildLatestConversationTranscriptPageBottomScrollKey(input: {
+  isConversationTranscriptPageModeActive: boolean;
+  activeConversationSessionId: string | undefined;
+  isLatestConversationTranscriptPage: boolean;
+  isConversationTranscriptPageNavigationLoading: boolean;
+  lastVisibleConversationMessageId: string | undefined;
+}): string | undefined {
+  if (
+    !input.isConversationTranscriptPageModeActive ||
+    !input.isLatestConversationTranscriptPage ||
+    input.isConversationTranscriptPageNavigationLoading ||
+    input.lastVisibleConversationMessageId === undefined
+  ) {
+    return undefined;
+  }
+
+  return `${input.activeConversationSessionId ?? "unsaved-conversation"}:${input.lastVisibleConversationMessageId}`;
 }
