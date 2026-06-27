@@ -33,6 +33,16 @@ import {
 
 type MutableValueRef<T> = { current: T };
 
+const promptDraftMutationKeyNames = new Set<ChatSessionKeyboardInput["keyName"]>([
+  "return",
+  "backspace",
+  "delete",
+  "left",
+  "right",
+  "home",
+  "end",
+]);
+
 export type ChatAppPromptDraftEdit = {
   promptDraft: string;
   promptDraftCursorOffset: number;
@@ -55,6 +65,7 @@ export type UseChatAppKeyboardActionsInput = {
   loadAvailableAssistantModels: () => Promise<AvailableAssistantModel[]>;
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
+  isConversationSessionSwitchPendingRef: MutableValueRef<boolean>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   setPromptLocalChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   requestActiveConversationTurnInterrupt: () => void;
@@ -205,10 +216,19 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
     const isPromptInputBlockedByCompaction = isConversationSessionCompactionBlockingPromptInput(
       input.conversationSessionCompactionStatus,
     );
+    const isConversationSessionSwitchPending = input.isConversationSessionSwitchPendingRef.current;
+    if (
+      isConversationSessionSwitchPending &&
+      isPromptDraftMutationKeyboardInput(keyboardInput.chatSessionKeyboardInput)
+    ) {
+      return { shouldConsumeKeyboardInput: true };
+    }
+
     const keyboardInteraction = applyChatSessionKeyboardInputToChatSessionState({
       chatSessionState: previousChatSessionState,
       chatSessionKeyboardInput: keyboardInput.chatSessionKeyboardInput,
-      isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current || isPromptInputBlockedByCompaction,
+      isPromptSubmissionInFlight:
+        input.isPromptSubmissionInFlightRef.current || isPromptInputBlockedByCompaction || isConversationSessionSwitchPending,
       shouldQueueSubmittedPrompt: isAutoConversationSessionCompactionRunning(input.conversationSessionCompactionStatus),
       primaryAgentCycleMetadata: input.primaryAgentDisplayMetadata,
     });
@@ -261,6 +281,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
         input.conversationSessionCompactionStatus,
       ),
+      isConversationSessionSwitchPending: input.isConversationSessionSwitchPendingRef.current,
     })) {
       return;
     }
@@ -288,6 +309,7 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
       isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
         input.conversationSessionCompactionStatus,
       ),
+      isConversationSessionSwitchPending: input.isConversationSessionSwitchPendingRef.current,
     })) {
       return;
     }
@@ -323,6 +345,19 @@ export function useChatAppKeyboardActions(input: UseChatAppKeyboardActionsInput)
 function isPromptSubmissionKeyboardEffect(chatSessionKeyboardEffect: ChatSessionKeyboardEffect): boolean {
   return chatSessionKeyboardEffect.effectType === "stream_assistant_response_for_submitted_prompt" ||
     chatSessionKeyboardEffect.effectType === "enqueue_submitted_prompt";
+}
+
+function isPromptDraftMutationKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {
+  return promptDraftMutationKeyNames.has(chatSessionKeyboardInput.keyName) ||
+    isPlainTextPromptDraftInsertionKeyboardInput(chatSessionKeyboardInput);
+}
+
+function isPlainTextPromptDraftInsertionKeyboardInput(chatSessionKeyboardInput: ChatSessionKeyboardInput): boolean {
+  return chatSessionKeyboardInput.textInput !== undefined &&
+    chatSessionKeyboardInput.textInput.length > 0 &&
+    chatSessionKeyboardInput.textInput !== "\t" &&
+    !chatSessionKeyboardInput.isCtrlPressed &&
+    !chatSessionKeyboardInput.isMetaPressed;
 }
 
 function shouldReportConversationSessionModelSelection(input: {

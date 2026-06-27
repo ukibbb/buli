@@ -324,3 +324,25 @@ test("ChatAppRenderStore notifies prompt composer subscribers when interaction c
   expect(interactionStatusNotificationCount).toBe(1);
   expect(chatAppRenderStore.readPromptComposerSnapshot().isPromptInputDisabled).toBe(true);
 });
+
+test("ChatAppRenderStore disables prompt input while conversation session switch is pending", () => {
+  const initialChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+  const chatAppRenderStore = createChatAppRenderStore({ initialChatSessionState });
+  let promptNotificationCount = 0;
+
+  chatAppRenderStore.subscribePromptComposer(() => {
+    promptNotificationCount += 1;
+  });
+  expect(chatAppRenderStore.readPromptComposerSnapshot().isPromptInputDisabled).toBe(false);
+
+  chatAppRenderStore.replaceControllerChromeRenderState({
+    nextControllerChromeRenderState: {
+      ...chatAppRenderStore.readControllerChromeRenderState(),
+      isConversationSessionSwitchPending: true,
+    },
+  });
+
+  expect(promptNotificationCount).toBe(1);
+  expect(chatAppRenderStore.readPromptComposerSnapshot().isConversationSessionSwitchPending).toBe(true);
+  expect(chatAppRenderStore.readPromptComposerSnapshot().isPromptInputDisabled).toBe(true);
+});

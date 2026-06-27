@@ -3,6 +3,8 @@ import type { AssistantResponseEvent, ConversationSessionEntry, TokenUsage, User
 import type { AssistantConversationRunner, ConversationAutoCompactionResult, ConversationTurnRequest } from "@buli/engine";
 import {
   useChatAppController,
+  type ConversationSessionSwitchResult,
+  type ConversationTranscriptEntryRecordLoadResult,
   type InitialConversationSessionEntriesLoadResult,
   type LoadConversationTranscriptEntryRecords,
   type UseChatAppControllerInput,
@@ -46,6 +48,12 @@ type ExternallyDrivenAssistantConversationRunner = {
   emitAssistantResponseEvent: (assistantResponseEvent: AssistantResponseEvent) => void;
 };
 
+type DeferredPromise<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
 const zeroTokenUsage = {
   input: 0,
   output: 0,
@@ -66,6 +74,21 @@ const neverEmittingAssistantConversationRunner: AssistantConversationRunner = {
     };
   },
 };
+
+function createDeferredPromise<T>(): DeferredPromise<T> {
+  let resolveDeferredPromise: DeferredPromise<T>["resolve"] = () => {};
+  let rejectDeferredPromise: DeferredPromise<T>["reject"] = () => {};
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveDeferredPromise = resolve;
+    rejectDeferredPromise = reject;
+  });
+
+  return {
+    promise,
+    resolve: resolveDeferredPromise,
+    reject: rejectDeferredPromise,
+  };
+}
 
 async function renderChatAppControllerHook(
   input: Partial<UseChatAppControllerInput> = {},
@@ -474,6 +497,21 @@ async function waitForConversationMessageCount(input: {
   }
 
   throw new Error(`Expected ${input.conversationMessageCount} conversation messages.`);
+}
+
+async function waitForChatAppControllerState(input: {
+  renderedHook: RenderedChatAppControllerHook;
+  description: string;
+  isExpected: (controller: UseChatAppControllerResult) => boolean;
+}): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await input.renderedHook.flushHookEffects();
+    if (input.isExpected(input.renderedHook.readCurrentController())) {
+      return;
+    }
+  }
+
+  throw new Error(`Expected chat app controller state: ${input.description}.`);
 }
 
 async function waitForConversationSessionCompactionStatus(input: {
@@ -1003,6 +1041,252 @@ test("useChatAppController switches sessions in page mode by loading the selecte
     conversationSessionId: "session-b",
     loadKind: "latest",
   });
+});
+
+test("useChatAppController blocks prompt input while a conversation session switch is pending", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const sessionSwitch = createDeferredPromise<ConversationSessionSwitchResult>();
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+    initialConversationSessionId: "session-a",
+    initialConversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Session A prompt",
+        modelFacingPromptText: "Session A prompt",
+      },
+    ],
+    loadConversationSessions: async () => [
+      {
+        sessionId: "session-b",
+        title: "Session B",
+        createdAtMs: Date.UTC(2026, 4, 23),
+        updatedAtMs: Date.UTC(2026, 4, 23),
+        conversationSessionEntryCount: 1,
+      },
+    ],
+    switchConversationSession: () => sessionSwitch.promise,
+  });
+
+  await renderedHook.typeText("/sessions");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+  await renderedHook.pressReturn();
+  await waitForChatAppControllerState({
+    renderedHook,
+    description: "conversation session switch pending",
+    isExpected: (controller) => controller.promptComposerState.isConversationSessionSwitchPending,
+  });
+
+  await renderedHook.typeText("Should not leak");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+
+  expect(controlledRunner.startedTurns).toHaveLength(0);
+  expect(renderedHook.readCurrentController().chatAppRenderStore.readPromptComposerSnapshot().isPromptInputDisabled).toBe(true);
+  expect(renderedHook.readCurrentController().chatSessionState.promptDraft).toBe("");
+
+  sessionSwitch.resolve({
+    conversationSessionId: "session-b",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "Session B prompt",
+        modelFacingPromptText: "Session B prompt",
+      },
+    ],
+  });
+  await waitForConversationMessageCount({ renderedHook, conversationMessageCount: 1 });
+
+  expect(renderedHook.readCurrentController().activeConversationSessionId).toBe("session-b");
+  expect(renderedHook.readCurrentController().promptComposerState.isConversationSessionSwitchPending).toBe(false);
+  expect(controlledRunner.startedTurns).toHaveLength(0);
+});
+
+test("useChatAppController clears stale transcript and model state before a switched session page load completes", async () => {
+  const controlledRunner = createControlledAssistantConversationRunner();
+  const sessionBLatestPageLoad = createDeferredPromise<ConversationTranscriptEntryRecordLoadResult>();
+  const conversationTranscriptEntryRecordsBySessionId = new Map<string, readonly ConversationTranscriptEntryRecord[]>([
+    ["session-a", createUserPromptTranscriptEntryRecords(150)],
+    ["session-b", createUserPromptTranscriptEntryRecords(3)],
+  ]);
+  const renderedHook = await renderChatAppControllerHook({
+    assistantConversationRunner: controlledRunner.assistantConversationRunner,
+    selectedModelId: "model-a",
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: (request) => {
+      if (request.conversationSessionId === "session-b") {
+        return sessionBLatestPageLoad.promise;
+      }
+
+      return createPagedConversationTranscriptEntryRecordLoader(
+        conversationTranscriptEntryRecordsBySessionId.get(request.conversationSessionId) ?? [],
+      )(request);
+    },
+    loadConversationSessions: async () => [
+      {
+        sessionId: "session-b",
+        title: "Session B",
+        createdAtMs: Date.UTC(2026, 4, 23),
+        updatedAtMs: Date.UTC(2026, 4, 23),
+        conversationSessionEntryCount: 3,
+      },
+    ],
+    switchConversationSession: async (conversationSessionId) => ({
+      conversationSessionId,
+      modelSelection: { selectedModelId: "model-b" },
+    }),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(100);
+
+  await renderedHook.typeText("/sessions");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+  await renderedHook.pressReturn();
+  await waitForChatAppControllerState({
+    renderedHook,
+    description: "selected session active with latest page load pending",
+    isExpected: (controller) =>
+      controller.activeConversationSessionId === "session-b" &&
+      controller.conversationTranscriptPageState.isNavigationLoading,
+  });
+
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(0);
+  expect(renderedHook.readCurrentController().chatSessionState.selectedModelId).toBe("model-b");
+  expect(renderedHook.readCurrentController().promptComposerState.isConversationSessionSwitchPending).toBe(true);
+  expect(renderedHook.readCurrentController().chatAppRenderStore.readPromptComposerSnapshot().isPromptInputDisabled).toBe(true);
+
+  await renderedHook.typeText("Prompt while switching");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+  expect(controlledRunner.startedTurns).toHaveLength(0);
+  expect(renderedHook.readCurrentController().chatSessionState.promptDraft).toBe("");
+
+  sessionBLatestPageLoad.resolve({
+    conversationSessionId: "session-b",
+    entryRecords: conversationTranscriptEntryRecordsBySessionId.get("session-b") ?? [],
+    hasOlderEntries: false,
+    hasNewerEntries: false,
+    latestCompactionSummaryEntrySequence: undefined,
+  });
+  await waitForConversationMessageCount({ renderedHook, conversationMessageCount: 3 });
+
+  expect(renderedHook.readCurrentController().promptComposerState.isConversationSessionSwitchPending).toBe(false);
+  expect(controlledRunner.startedTurns).toHaveLength(0);
+});
+
+test("useChatAppController keeps switched session transcript empty and model selected when latest page load fails", async () => {
+  const conversationTranscriptEntryRecordsBySessionId = new Map<string, readonly ConversationTranscriptEntryRecord[]>([
+    ["session-a", createUserPromptTranscriptEntryRecords(150)],
+  ]);
+  const renderedHook = await renderChatAppControllerHook({
+    selectedModelId: "model-a",
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: (request) => {
+      if (request.conversationSessionId === "session-b") {
+        throw new Error("session-b latest page failed");
+      }
+
+      return createPagedConversationTranscriptEntryRecordLoader(
+        conversationTranscriptEntryRecordsBySessionId.get(request.conversationSessionId) ?? [],
+      )(request);
+    },
+    loadConversationSessions: async () => [
+      {
+        sessionId: "session-b",
+        title: "Session B",
+        createdAtMs: Date.UTC(2026, 4, 23),
+        updatedAtMs: Date.UTC(2026, 4, 23),
+        conversationSessionEntryCount: 3,
+      },
+    ],
+    switchConversationSession: async (conversationSessionId) => ({
+      conversationSessionId,
+      modelSelection: { selectedModelId: "model-b" },
+    }),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(100);
+
+  await renderedHook.typeText("/sessions");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+  await renderedHook.pressReturn();
+  await waitForChatAppControllerState({
+    renderedHook,
+    description: "selected session page load failure stored",
+    isExpected: (controller) =>
+      controller.activeConversationSessionId === "session-b" &&
+      controller.conversationTranscriptPageState.navigationErrorMessage === "session-b latest page failed" &&
+      !controller.promptComposerState.isConversationSessionSwitchPending,
+  });
+
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(0);
+  expect(renderedHook.readCurrentController().chatSessionState.selectedModelId).toBe("model-b");
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.navigationErrorMessage).toBe(
+    "session-b latest page failed",
+  );
+});
+
+test("useChatAppController ignores stale transcript page load failures after the active session changes", async () => {
+  const staleSessionAOlderPageLoad = createDeferredPromise<ConversationTranscriptEntryRecordLoadResult>();
+  const conversationTranscriptEntryRecordsBySessionId = new Map<string, readonly ConversationTranscriptEntryRecord[]>([
+    ["session-a", createUserPromptTranscriptEntryRecords(150)],
+    ["session-b", createUserPromptTranscriptEntryRecords(3)],
+  ]);
+  const renderedHook = await renderChatAppControllerHook({
+    initialConversationSessionId: "session-a",
+    loadConversationTranscriptEntryRecords: (request) => {
+      if (request.conversationSessionId === "session-a" && request.loadKind === "before") {
+        return staleSessionAOlderPageLoad.promise;
+      }
+
+      return createPagedConversationTranscriptEntryRecordLoader(
+        conversationTranscriptEntryRecordsBySessionId.get(request.conversationSessionId) ?? [],
+      )(request);
+    },
+    loadConversationSessions: async () => [
+      {
+        sessionId: "session-b",
+        title: "Session B",
+        createdAtMs: Date.UTC(2026, 4, 23),
+        updatedAtMs: Date.UTC(2026, 4, 23),
+        conversationSessionEntryCount: 3,
+      },
+    ],
+    switchConversationSession: async (conversationSessionId) => ({ conversationSessionId }),
+  });
+  await waitForInitialConversationTranscriptPageLoad(renderedHook);
+
+  await act(async () => {
+    void renderedHook.readCurrentController().loadOlderConversationTranscriptPage();
+  });
+  await waitForChatAppControllerState({
+    renderedHook,
+    description: "session-a older page load pending",
+    isExpected: (controller) => controller.conversationTranscriptPageState.isNavigationLoading,
+  });
+
+  await renderedHook.typeText("/sessions");
+  await renderedHook.pressReturn();
+  await renderedHook.flushHookEffects();
+  await renderedHook.pressReturn();
+  await waitForChatAppControllerState({
+    renderedHook,
+    description: "session-b latest page loaded",
+    isExpected: (controller) =>
+      controller.activeConversationSessionId === "session-b" &&
+      controller.chatSessionState.orderedConversationMessageIds.length === 3 &&
+      !controller.conversationTranscriptPageState.isNavigationLoading,
+  });
+
+  staleSessionAOlderPageLoad.reject(new Error("session-a older page failed"));
+  await renderedHook.flushHookEffects();
+
+  expect(renderedHook.readCurrentController().activeConversationSessionId).toBe("session-b");
+  expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(3);
+  expect(renderedHook.readCurrentController().conversationTranscriptPageState.navigationErrorMessage).toBeUndefined();
 });
 
 test("useChatAppController deletes sessions in page mode by reloading the active latest page", async () => {

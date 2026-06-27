@@ -7,6 +7,7 @@ import {
   type ChatSessionState,
 } from "@buli/chat-session-state";
 import {
+  buildChatScreenInteractionViewModel,
   buildChatScreenViewModel,
   buildStableChatScreenTranscriptViewModel,
 } from "../src/behavior/chatScreenViewModel.ts";
@@ -88,6 +89,28 @@ test("buildChatScreenViewModel disables prompt input while manual conversation c
   const viewModel = buildChatScreenViewModel({
     chatSessionState,
     conversationSessionCompactionStatus: { step: "compacting", source: "manual" },
+    terminalRowCount: 32,
+    terminalColumnCount: 120,
+    terminalSizeTierForChatScreen: "comfortable",
+  });
+
+  expect(viewModel.isPromptInputDisabled).toBe(true);
+});
+
+test("buildChatScreenInteractionViewModel disables prompt input while conversation session switch is pending", () => {
+  const chatSessionState = insertTextIntoPromptDraftAtCursor(
+    createInitialChatSessionState({ selectedModelId: "gpt-5.4" }),
+    "next prompt",
+  );
+
+  const viewModel = buildChatScreenInteractionViewModel({
+    promptState: {
+      ...chatSessionState,
+      isConversationSessionSwitchPending: true,
+    },
+    selectionState: chatSessionState,
+    conversationSessionCompactionStatus: { step: "idle" },
+    reasoningSummaryDisplayMode: chatSessionState.reasoningSummaryDisplayMode,
     terminalRowCount: 32,
     terminalColumnCount: 120,
     terminalSizeTierForChatScreen: "comfortable",

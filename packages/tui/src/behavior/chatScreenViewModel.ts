@@ -111,6 +111,7 @@ type ChatScreenInteractionPromptState = Pick<
   | "latestContextWindowUsage"
 > & {
   isInitialConversationSessionHydrationPending?: boolean | undefined;
+  isConversationSessionSwitchPending?: boolean | undefined;
 };
 
 type ChatScreenInteractionSelectionState = Pick<
@@ -165,6 +166,7 @@ export function buildChatScreenInteractionViewModel(input: {
   const isPromptInputDisabled =
     isConversationSessionCompactionBlockingPromptInput(input.conversationSessionCompactionStatus) ||
     input.promptState.isInitialConversationSessionHydrationPending === true ||
+    input.promptState.isConversationSessionSwitchPending === true ||
     !canChatSessionPromptDraftBeEdited({
       ...input.promptState,
       ...input.selectionState,

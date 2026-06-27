@@ -6,6 +6,7 @@ import type { ChatAppRenderStore, ConversationSessionCompactionStatus } from "@b
 import { lookupDefaultConversationAutoCompactionTriggerTokenCountForModel } from "@buli/engine";
 import type { VisibleConversationMessageRow } from "../behavior/chatScreenViewModel.ts";
 import { AutoCompactingStatusLine } from "./AutoCompactingStatusLine.tsx";
+import { ErrorBannerBlock } from "./behavior/ErrorBannerBlock.tsx";
 import {
   ConversationMessageRow,
   listRenderableConversationMessageParts,
@@ -35,6 +36,7 @@ type ConversationMessageListCommonProps = {
   isLatestConversationTranscriptPage: boolean;
   isConversationTranscriptPageNavigationDisabled: boolean;
   isConversationTranscriptPageNavigationLoading: boolean;
+  transcriptPageNavigationErrorMessage?: string | undefined;
   onLoadOlderConversationTranscriptPage: () => void;
   onLoadNewerConversationTranscriptPage: () => void;
   onJumpToLatestConversationTranscriptPage: () => void;
@@ -189,6 +191,14 @@ export function ConversationMessageList(props: ConversationMessageListProps): Re
             isDisabled={props.isConversationTranscriptPageNavigationDisabled}
             onNavigate={props.onLoadOlderConversationTranscriptPage}
           />
+        ) : null}
+        {props.transcriptPageNavigationErrorMessage ? (
+          <box flexDirection="column" flexShrink={0} width="100%">
+            <ErrorBannerBlock
+              titleText="Could not load transcript page"
+              errorText={props.transcriptPageNavigationErrorMessage}
+            />
+          </box>
         ) : null}
         {props.chatAppRenderStore
           ? props.visibleConversationMessageIds.map((conversationMessageId) => (

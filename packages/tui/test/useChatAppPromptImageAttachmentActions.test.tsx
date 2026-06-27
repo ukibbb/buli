@@ -73,6 +73,7 @@ function PromptImageAttachmentActionsProbe(props: {
   observeHarness: (harness: PromptImageAttachmentActionsHarness) => void;
 }) {
   const latestChatSessionStateRef = useRef(props.initialChatSessionState);
+  const isConversationSessionSwitchPendingRef = useRef(false);
   const setChatSessionState = (chatSessionStateAction: SetStateAction<ChatSessionState>): void => {
     latestChatSessionStateRef.current = typeof chatSessionStateAction === "function"
       ? chatSessionStateAction(latestChatSessionStateRef.current)
@@ -80,6 +81,7 @@ function PromptImageAttachmentActionsProbe(props: {
   };
   const actions = useChatAppPromptImageAttachmentActions({
     latestChatSessionStateRef,
+    isConversationSessionSwitchPendingRef,
     conversationSessionCompactionStatus: { step: "idle" },
     setChatSessionState,
   });

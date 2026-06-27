@@ -26,6 +26,7 @@ export type PasteClipboardImageAttachmentIntoChatAppPromptInput = {
 
 export type UseChatAppPromptImageAttachmentActionsInput = {
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
+  isConversationSessionSwitchPendingRef: MutableValueRef<boolean>;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
 };
@@ -67,6 +68,7 @@ export function useChatAppPromptImageAttachmentActions(
         isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
           input.conversationSessionCompactionStatus,
         ),
+        isConversationSessionSwitchPending: input.isConversationSessionSwitchPendingRef.current,
       })) {
         return;
       }
@@ -89,6 +91,7 @@ export function useChatAppPromptImageAttachmentActions(
         isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
           input.conversationSessionCompactionStatus,
         ),
+        isConversationSessionSwitchPending: input.isConversationSessionSwitchPendingRef.current,
       })) {
         return;
       }
@@ -127,6 +130,7 @@ function removePromptImageAttachmentPlaceholderFromChatApp(input: {
     isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
       input.actionInput.conversationSessionCompactionStatus,
     ),
+    isConversationSessionSwitchPending: input.actionInput.isConversationSessionSwitchPendingRef.current,
   })) {
     return { didRemovePromptImageAttachmentPlaceholder: false };
   }

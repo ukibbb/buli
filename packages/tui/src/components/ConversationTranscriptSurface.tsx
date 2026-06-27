@@ -25,6 +25,7 @@ type ConversationTranscriptSurfaceCommonProps = {
   isLatestConversationTranscriptPage: boolean;
   isConversationTranscriptPageNavigationDisabled: boolean;
   isConversationTranscriptPageNavigationLoading: boolean;
+  transcriptPageNavigationErrorMessage?: string | undefined;
   onLoadOlderConversationTranscriptPage: () => void;
   onLoadNewerConversationTranscriptPage: () => void;
   onJumpToLatestConversationTranscriptPage: () => void;
@@ -56,6 +57,7 @@ export function ConversationTranscriptSurface(props: ConversationTranscriptSurfa
       isLatestConversationTranscriptPage={props.isLatestConversationTranscriptPage}
       isConversationTranscriptPageNavigationDisabled={props.isConversationTranscriptPageNavigationDisabled}
       isConversationTranscriptPageNavigationLoading={props.isConversationTranscriptPageNavigationLoading}
+      transcriptPageNavigationErrorMessage={props.transcriptPageNavigationErrorMessage}
       reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
       onLoadOlderConversationTranscriptPage={props.onLoadOlderConversationTranscriptPage}
       onLoadNewerConversationTranscriptPage={props.onLoadNewerConversationTranscriptPage}

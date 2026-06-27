@@ -10,6 +10,9 @@ export function canChatSessionPromptDraftBeEdited(chatSessionState: ChatSessionS
 export function canChatAppPromptDraftBeEdited(input: {
   chatSessionState: ChatSessionState;
   isConversationCompactionBlockingPromptInput: boolean;
+  isConversationSessionSwitchPending: boolean;
 }): boolean {
-  return !input.isConversationCompactionBlockingPromptInput && canChatSessionPromptDraftBeEdited(input.chatSessionState);
+  return !input.isConversationCompactionBlockingPromptInput &&
+    !input.isConversationSessionSwitchPending &&
+    canChatSessionPromptDraftBeEdited(input.chatSessionState);
 }

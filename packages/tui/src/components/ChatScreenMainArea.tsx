@@ -31,6 +31,7 @@ type ChatScreenMainAreaCommonProps = {
   isLatestConversationTranscriptPage: boolean;
   isConversationTranscriptPageNavigationDisabled: boolean;
   isConversationTranscriptPageNavigationLoading: boolean;
+  transcriptPageNavigationErrorMessage?: string | undefined;
   pendingToolApprovalDecision?: PendingToolApprovalDecision;
   pendingToolApprovalDecisionCallbacks?: Pick<
     PendingToolApprovalDecision,
@@ -76,6 +77,7 @@ function ChatScreenMainAreaComponent(props: ChatScreenMainAreaProps): ReactNode 
       isLatestConversationTranscriptPage={props.isLatestConversationTranscriptPage}
       isConversationTranscriptPageNavigationDisabled={props.isConversationTranscriptPageNavigationDisabled}
       isConversationTranscriptPageNavigationLoading={props.isConversationTranscriptPageNavigationLoading}
+      transcriptPageNavigationErrorMessage={props.transcriptPageNavigationErrorMessage}
       reasoningSummaryDisplayMode={props.reasoningSummaryDisplayMode}
       onLoadOlderConversationTranscriptPage={props.onLoadOlderConversationTranscriptPage}
       onLoadNewerConversationTranscriptPage={props.onLoadNewerConversationTranscriptPage}

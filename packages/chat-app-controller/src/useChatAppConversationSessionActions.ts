@@ -84,9 +84,11 @@ export type UseChatAppConversationSessionActionsInput = {
   latestChatSessionStateRef: MutableValueRef<ChatSessionState>;
   latestActiveConversationSessionIdRef: MutableValueRef<string | undefined>;
   isPromptSubmissionInFlightRef: MutableValueRef<boolean>;
+  isConversationSessionSwitchPendingRef: MutableValueRef<boolean>;
   isConversationCompactionInFlightRef: MutableValueRef<boolean>;
   setChatSessionState: Dispatch<SetStateAction<ChatSessionState>>;
   setActiveConversationSessionId: Dispatch<SetStateAction<string | undefined>>;
+  setIsConversationSessionSwitchPending: Dispatch<SetStateAction<boolean>>;
   setConversationSessionExportStatus: Dispatch<SetStateAction<ConversationSessionExportStatus>>;
   setConversationSessionCompactionStatus: Dispatch<SetStateAction<ConversationSessionCompactionStatus>>;
 };
@@ -206,6 +208,8 @@ export function useChatAppConversationSessionActions(
 
     const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
     latestConversationSessionMutationRequestSequenceRef.current = requestSequence;
+    input.isConversationSessionSwitchPendingRef.current = true;
+    input.setIsConversationSessionSwitchPending(true);
     try {
       const switchedConversationSession = await input.switchConversationSession(conversationSessionId);
       if (requestSequence !== latestConversationSessionMutationRequestSequenceRef.current) {
@@ -214,6 +218,17 @@ export function useChatAppConversationSessionActions(
       input.latestActiveConversationSessionIdRef.current = switchedConversationSession.conversationSessionId;
       input.setActiveConversationSessionId(switchedConversationSession.conversationSessionId);
       input.clearHistoricalConversationTranscriptPage();
+      input.setChatSessionState((currentChatSessionState) => {
+        const clearedChatSessionState = clearConversationTranscript(currentChatSessionState);
+        const nextChatSessionState = switchedConversationSession.modelSelection
+          ? applyConversationSessionModelSelectionToChatSessionState(
+            clearedChatSessionState,
+            switchedConversationSession.modelSelection,
+          )
+          : clearedChatSessionState;
+        input.latestChatSessionStateRef.current = nextChatSessionState;
+        return nextChatSessionState;
+      });
       if (input.loadLatestConversationTranscriptPageIntoChatApp) {
         await input.loadLatestConversationTranscriptPageIntoChatApp({
           conversationSessionId: switchedConversationSession.conversationSessionId,
@@ -246,6 +261,11 @@ export function useChatAppConversationSessionActions(
           showConversationSessionSelectionLoadingError(currentChatSessionState, errorMessage),
         );
       });
+    } finally {
+      if (requestSequence === latestConversationSessionMutationRequestSequenceRef.current) {
+        input.isConversationSessionSwitchPendingRef.current = false;
+        input.setIsConversationSessionSwitchPending(false);
+      }
     }
   });
 

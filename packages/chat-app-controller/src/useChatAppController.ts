@@ -182,6 +182,7 @@ export type ChatAppPromptComposerState = Pick<
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
   isInitialConversationSessionHydrationPending: boolean;
+  isConversationSessionSwitchPending: boolean;
 };
 
 export type QueuedChatAppPromptPreview = {
@@ -237,6 +238,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   const [isInitialConversationSessionHydrationPending, setIsInitialConversationSessionHydrationPending] = useState(
     shouldBlockPromptInputForInitialConversationSessionLoad,
   );
+  const [isConversationSessionSwitchPending, setIsConversationSessionSwitchPending] = useState(false);
   const [conversationSessionExportStatus, setConversationSessionExportStatus] = useState<ConversationSessionExportStatus>({
     step: "idle",
   });
@@ -275,6 +277,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
       queuedPromptPreviews,
       isActiveTurnInterruptConfirmationArmed: false,
       isInitialConversationSessionHydrationPending,
+      isConversationSessionSwitchPending,
     },
   });
   const chatAppRenderStore = chatAppRenderStoreRef.current;
@@ -283,6 +286,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
   const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
   const latestConversationTranscriptPageRef = useRef<ConversationTranscriptPage | undefined>(undefined);
   const isPromptSubmissionInFlightRef = useRef(shouldBlockPromptInputForInitialConversationSessionLoad);
+  const isConversationSessionSwitchPendingRef = useRef(false);
   const isConversationCompactionInFlightRef = useRef(false);
   const isChatAppControllerMountedRef = useRef(true);
   const hasStartedInitialConversationSessionHydrationRef = useRef(false);
@@ -383,6 +387,21 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
         isInitialConversationSessionHydrationPending: nextIsInitialConversationSessionHydrationPending,
       }));
       setIsInitialConversationSessionHydrationPending(nextIsInitialConversationSessionHydrationPending);
+    },
+    [chatAppRenderStore, replaceControllerChromeRenderState],
+  );
+  const setIsConversationSessionSwitchPendingAndUpdateRenderStore = useCallback<Dispatch<SetStateAction<boolean>>>(
+    (isConversationSessionSwitchPendingUpdate) => {
+      const nextIsConversationSessionSwitchPending = resolveNextControllerStateValue({
+        previousValue: chatAppRenderStore.readControllerChromeRenderState().isConversationSessionSwitchPending,
+        valueUpdate: isConversationSessionSwitchPendingUpdate,
+      });
+      isConversationSessionSwitchPendingRef.current = nextIsConversationSessionSwitchPending;
+      replaceControllerChromeRenderState((currentControllerChromeRenderState) => ({
+        ...currentControllerChromeRenderState,
+        isConversationSessionSwitchPending: nextIsConversationSessionSwitchPending,
+      }));
+      setIsConversationSessionSwitchPending(nextIsConversationSessionSwitchPending);
     },
     [chatAppRenderStore, replaceControllerChromeRenderState],
   );
@@ -555,11 +574,19 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
         pageNavigationRequest: pageLoadInput.pageNavigationRequest,
         conversationTranscriptEntryRecords: conversationTranscriptPage.conversationTranscriptEntryRecords,
       });
+      if (latestActiveConversationSessionIdRef.current !== pageLoadInput.conversationSessionId) {
+        return;
+      }
+
       applyLoadedConversationTranscriptPageToChatApp({
         conversationTranscriptPage,
         ...(pageLoadInput.modelSelection ? { modelSelection: pageLoadInput.modelSelection } : {}),
       });
     } catch (error) {
+      if (latestActiveConversationSessionIdRef.current !== pageLoadInput.conversationSessionId) {
+        return;
+      }
+
       setConversationTranscriptPageState((currentConversationTranscriptPageState) => ({
         ...currentConversationTranscriptPageState,
         isNavigationLoading: false,
@@ -707,9 +734,11 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     latestChatSessionStateRef,
     latestActiveConversationSessionIdRef,
     isPromptSubmissionInFlightRef,
+    isConversationSessionSwitchPendingRef,
     isConversationCompactionInFlightRef,
     setChatSessionState: setChatSessionStateAndUpdateRenderStore,
     setActiveConversationSessionId,
+    setIsConversationSessionSwitchPending: setIsConversationSessionSwitchPendingAndUpdateRenderStore,
     setConversationSessionExportStatus: setConversationSessionExportStatusAndUpdateRenderStore,
     setConversationSessionCompactionStatus: setConversationSessionCompactionStatusAndUpdateRenderStore,
   });
@@ -874,6 +903,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     loadAvailableAssistantModels: input.loadAvailableAssistantModels,
     latestChatSessionStateRef,
     isPromptSubmissionInFlightRef,
+    isConversationSessionSwitchPendingRef,
     setChatSessionState: setChatSessionStateAndUpdateRenderStore,
     setPromptLocalChatSessionState: setPromptLocalChatSessionStateAndUpdateRenderStore,
     requestActiveConversationTurnInterrupt,
@@ -903,6 +933,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
     pasteClipboardImageAttachmentIntoChatAppPrompt,
   } = useChatAppPromptImageAttachmentActions({
     latestChatSessionStateRef,
+    isConversationSessionSwitchPendingRef,
     conversationSessionCompactionStatus,
     setChatSessionState: setPromptLocalChatSessionStateAndUpdateRenderStore,
   });
@@ -931,6 +962,7 @@ export function useChatAppController(input: UseChatAppControllerInput): UseChatA
       queuedPromptPreviews,
       isActiveTurnInterruptConfirmationArmed,
       isInitialConversationSessionHydrationPending,
+      isConversationSessionSwitchPending,
     }),
   });
   const interactionStatusState = selectStableChatAppInteractionStatusState({
@@ -1030,6 +1062,7 @@ function buildChatAppPromptComposerState(input: {
   queuedPromptPreviews: readonly QueuedChatAppPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
   isInitialConversationSessionHydrationPending: boolean;
+  isConversationSessionSwitchPending: boolean;
 }): ChatAppPromptComposerState {
   return {
     conversationTurnStatus: input.chatSessionState.conversationTurnStatus,
@@ -1047,6 +1080,7 @@ function buildChatAppPromptComposerState(input: {
     queuedPromptPreviews: input.queuedPromptPreviews,
     isActiveTurnInterruptConfirmationArmed: input.isActiveTurnInterruptConfirmationArmed,
     isInitialConversationSessionHydrationPending: input.isInitialConversationSessionHydrationPending,
+    isConversationSessionSwitchPending: input.isConversationSessionSwitchPending,
   };
 }
 
@@ -1123,7 +1157,8 @@ function selectStableChatAppPromptComposerState(input: {
     input.previousState.queuedPromptPreviews === input.nextState.queuedPromptPreviews &&
     input.previousState.isActiveTurnInterruptConfirmationArmed === input.nextState.isActiveTurnInterruptConfirmationArmed &&
     input.previousState.isInitialConversationSessionHydrationPending ===
-      input.nextState.isInitialConversationSessionHydrationPending
+      input.nextState.isInitialConversationSessionHydrationPending &&
+    input.previousState.isConversationSessionSwitchPending === input.nextState.isConversationSessionSwitchPending
   ) {
     return input.previousState;
   }

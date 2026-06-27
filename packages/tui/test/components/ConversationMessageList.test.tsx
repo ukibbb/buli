@@ -437,6 +437,27 @@ describe("ConversationMessageList", () => {
     expect(frame).toContain("↓ Newer 100");
   });
 
+  test("renders transcript page navigation errors", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      <ConversationMessageList
+        visibleConversationMessageRows={[]}
+        reasoningSummaryDisplayMode="expanded"
+        conversationMessageScrollBoxRef={{ current: null }}
+        transcriptAccentColor="#10B981"
+        {...noConversationTranscriptPageNavigationProps}
+        transcriptPageNavigationErrorMessage="session-b latest page failed"
+        userMessageBorderColor="#10B981"
+      />,
+      { width: 80, height: 6 },
+    );
+
+    await renderOnce();
+
+    const frame = captureCharFrame();
+    expect(frame).toContain("Could not load transcript page");
+    expect(frame).toContain("session-b latest page failed");
+  });
+
   test("renders Thinking for an empty streaming assistant message", async () => {
     const conversationMessages: ConversationMessage[] = [
       {

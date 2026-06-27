@@ -17,12 +17,14 @@ export function canPromptTextareaEditChatSessionState(chatSessionState: ChatSess
 export function canPromptTextareaEditChatScreenInput(input: {
   chatSessionState: ChatSessionState;
   conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+  isConversationSessionSwitchPending?: boolean | undefined;
 }): boolean {
   return canChatAppPromptDraftBeEdited({
     chatSessionState: input.chatSessionState,
     isConversationCompactionBlockingPromptInput: isConversationSessionCompactionBlockingPromptInput(
       input.conversationSessionCompactionStatus,
     ),
+    isConversationSessionSwitchPending: input.isConversationSessionSwitchPending === true,
   });
 }
 

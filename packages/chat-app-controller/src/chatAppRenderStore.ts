@@ -34,6 +34,7 @@ export type ChatAppControllerChromeRenderState = {
   queuedPromptPreviews: readonly ChatAppQueuedPromptPreview[];
   isActiveTurnInterruptConfirmationArmed: boolean;
   isInitialConversationSessionHydrationPending: boolean;
+  isConversationSessionSwitchPending: boolean;
 };
 
 export type ChatAppControllerChromeRenderStateReplacement = {
@@ -75,6 +76,7 @@ export type ChatAppPromptComposerRenderSnapshot = Pick<
   | "queuedPromptPreviews"
   | "isActiveTurnInterruptConfirmationArmed"
   | "isInitialConversationSessionHydrationPending"
+  | "isConversationSessionSwitchPending"
 > & {
   isPromptInputDisabled: boolean;
 };
@@ -302,6 +304,7 @@ export function createInitialChatAppControllerChromeRenderState(): ChatAppContro
     queuedPromptPreviews: [],
     isActiveTurnInterruptConfirmationArmed: false,
     isInitialConversationSessionHydrationPending: false,
+    isConversationSessionSwitchPending: false,
   };
 }
 
@@ -431,7 +434,9 @@ function didPromptComposerControllerChromeStateChange(input: {
     input.previousControllerChromeRenderState.isActiveTurnInterruptConfirmationArmed !==
       input.nextControllerChromeRenderState.isActiveTurnInterruptConfirmationArmed ||
     input.previousControllerChromeRenderState.isInitialConversationSessionHydrationPending !==
-      input.nextControllerChromeRenderState.isInitialConversationSessionHydrationPending;
+      input.nextControllerChromeRenderState.isInitialConversationSessionHydrationPending ||
+    input.previousControllerChromeRenderState.isConversationSessionSwitchPending !==
+      input.nextControllerChromeRenderState.isConversationSessionSwitchPending;
 }
 
 function didInteractionStatusControllerChromeStateChange(input: {
@@ -549,8 +554,10 @@ function buildPromptComposerSnapshot(
     queuedPromptPreviews: controllerChromeRenderState.queuedPromptPreviews,
     isActiveTurnInterruptConfirmationArmed: controllerChromeRenderState.isActiveTurnInterruptConfirmationArmed,
     isInitialConversationSessionHydrationPending: controllerChromeRenderState.isInitialConversationSessionHydrationPending,
+    isConversationSessionSwitchPending: controllerChromeRenderState.isConversationSessionSwitchPending,
     isPromptInputDisabled:
       controllerChromeRenderState.isInitialConversationSessionHydrationPending ||
+      controllerChromeRenderState.isConversationSessionSwitchPending ||
       isConversationSessionCompactionBlockingPromptInput(controllerChromeRenderState.conversationSessionCompactionStatus) ||
       !canChatSessionPromptDraftBeEdited(chatSessionState),
   };
@@ -630,6 +637,7 @@ function selectStablePromptComposerSnapshot(input: {
       input.nextSnapshot.isActiveTurnInterruptConfirmationArmed &&
     input.previousSnapshot.isInitialConversationSessionHydrationPending ===
       input.nextSnapshot.isInitialConversationSessionHydrationPending &&
+    input.previousSnapshot.isConversationSessionSwitchPending === input.nextSnapshot.isConversationSessionSwitchPending &&
     input.previousSnapshot.isPromptInputDisabled === input.nextSnapshot.isPromptInputDisabled
   ) {
     return input.previousSnapshot;

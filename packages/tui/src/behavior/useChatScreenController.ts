@@ -324,6 +324,7 @@ export function useChatScreenController(input: UseChatScreenControllerInput): Us
     isLatestConversationTranscriptPage: chatAppController.conversationTranscriptPageState.isLatestPage,
     isConversationTranscriptPageNavigationDisabled,
     isConversationTranscriptPageNavigationLoading: chatAppController.conversationTranscriptPageState.isNavigationLoading,
+    transcriptPageNavigationErrorMessage: chatAppController.conversationTranscriptPageState.navigationErrorMessage,
     pendingToolApprovalDecisionCallbacks,
     conversationMessageScrollBoxRef,
     onLoadOlderConversationTranscriptPage: chatAppController.loadOlderConversationTranscriptPage,
