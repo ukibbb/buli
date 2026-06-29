@@ -3,15 +3,24 @@ import type { AssistantResponseEvent, ConversationSessionEntry, TokenUsage, User
 import type { AssistantConversationRunner, ConversationAutoCompactionResult, ConversationTurnRequest } from "@buli/engine";
 import {
   useChatAppController,
+  useChatAppConversationSessionActions,
+  type ConversationSessionCompactionStatus,
+  type ConversationSessionExportStatus,
   type ConversationSessionSwitchResult,
   type ConversationTranscriptEntryRecordLoadResult,
   type InitialConversationSessionEntriesLoadResult,
   type LoadConversationTranscriptEntryRecords,
   type UseChatAppControllerInput,
   type UseChatAppControllerResult,
+  type UseChatAppConversationSessionActionsInput,
+  type UseChatAppConversationSessionActionsResult,
 } from "@buli/chat-app-controller";
-import type { ConversationTranscriptEntryRecord } from "@buli/chat-session-state";
-import { act, useEffect, useState } from "react";
+import {
+  createInitialChatSessionState,
+  type ChatSessionState,
+  type ConversationTranscriptEntryRecord,
+} from "@buli/chat-session-state";
+import { act, useEffect, useRef, useState } from "react";
 import { testRender } from "./testRenderWithCleanup.ts";
 
 type RenderedChatAppControllerHook = {
@@ -22,6 +31,29 @@ type RenderedChatAppControllerHook = {
   pressEscape: () => Promise<void>;
   flushHookEffects: () => Promise<void>;
   cleanup: () => Promise<void>;
+};
+
+type RenderedConversationSessionActionsHook = {
+  readCurrentActions: () => UseChatAppConversationSessionActionsResult;
+  readLatestChatSessionState: () => ChatSessionState;
+  readLatestActiveConversationSessionId: () => string | undefined;
+  readConversationSessionCompactionStatus: () => ConversationSessionCompactionStatus;
+  flushHookEffects: () => Promise<void>;
+  cleanup: () => Promise<void>;
+};
+
+type ConversationSessionActionsHookProbeProps = Pick<
+  UseChatAppConversationSessionActionsInput,
+  "switchConversationSession" | "deleteConversationSession" | "compactCurrentConversationSession" | "onConversationCleared"
+> & {
+  isPromptSubmissionInFlight: boolean;
+  initialConversationSessionSelectionState?: ChatSessionState["conversationSessionSelectionState"] | undefined;
+  observeActions: (actions: UseChatAppConversationSessionActionsResult) => void;
+  observeLatestState: (latestState: {
+    chatSessionState: ChatSessionState;
+    activeConversationSessionId: string | undefined;
+    conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+  }) => void;
 };
 
 type ControlledAssistantTurn = {
@@ -61,6 +93,9 @@ const zeroTokenUsage = {
   total: undefined,
   cache: { read: 0, write: 0 },
 } satisfies TokenUsage;
+
+const activeConversationSessionMutationBlockedMessage =
+  "Wait for the active assistant response to finish before changing conversation sessions.";
 
 const neverEmittingAssistantConversationRunner: AssistantConversationRunner = {
   startConversationTurn() {
@@ -157,6 +192,59 @@ async function renderChatAppControllerHook(
       });
       await renderedHook.renderOnce();
     },
+    async flushHookEffects(): Promise<void> {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await renderedHook.renderOnce();
+    },
+    cleanup: renderedHook.cleanup,
+  };
+}
+
+async function renderConversationSessionActionsHook(
+  input: Omit<ConversationSessionActionsHookProbeProps, "observeActions" | "observeLatestState">,
+): Promise<RenderedConversationSessionActionsHook> {
+  let latestActions: UseChatAppConversationSessionActionsResult | undefined;
+  let latestState:
+    | {
+      chatSessionState: ChatSessionState;
+      activeConversationSessionId: string | undefined;
+      conversationSessionCompactionStatus: ConversationSessionCompactionStatus;
+    }
+    | undefined;
+  const renderedHook = await testRender(
+    <ConversationSessionActionsHookProbe
+      {...input}
+      observeActions={(actions) => {
+        latestActions = actions;
+      }}
+      observeLatestState={(observedLatestState) => {
+        latestState = observedLatestState;
+      }}
+    />,
+  );
+
+  const readCurrentActions = (): UseChatAppConversationSessionActionsResult => {
+    if (!latestActions) {
+      throw new Error("Conversation session actions hook did not render.");
+    }
+
+    return latestActions;
+  };
+  const readLatestState = (): NonNullable<typeof latestState> => {
+    if (!latestState) {
+      throw new Error("Conversation session actions hook state did not render.");
+    }
+
+    return latestState;
+  };
+
+  return {
+    readCurrentActions,
+    readLatestChatSessionState: () => readLatestState().chatSessionState,
+    readLatestActiveConversationSessionId: () => readLatestState().activeConversationSessionId,
+    readConversationSessionCompactionStatus: () => readLatestState().conversationSessionCompactionStatus,
     async flushHookEffects(): Promise<void> {
       await act(async () => {
         await Promise.resolve();
@@ -546,6 +634,59 @@ function ChatAppControllerHookProbe(props: {
   });
 
   props.observeController(controller);
+  return <box />;
+}
+
+function ConversationSessionActionsHookProbe(props: ConversationSessionActionsHookProbeProps) {
+  const [chatSessionState, setChatSessionState] = useState<ChatSessionState>(() => {
+    const initialChatSessionState = createInitialChatSessionState({ selectedModelId: "gpt-5.4" });
+    if (!props.initialConversationSessionSelectionState) {
+      return initialChatSessionState;
+    }
+
+    return {
+      ...initialChatSessionState,
+      conversationSessionSelectionState: props.initialConversationSessionSelectionState,
+    };
+  });
+  const [activeConversationSessionId, setActiveConversationSessionId] = useState<string | undefined>("session-a");
+  const [, setIsConversationSessionSwitchPending] = useState(false);
+  const [, setConversationSessionExportStatus] = useState<ConversationSessionExportStatus>({ step: "idle" });
+  const [conversationSessionCompactionStatus, setConversationSessionCompactionStatus] =
+    useState<ConversationSessionCompactionStatus>({ step: "idle" });
+  const latestChatSessionStateRef = useRef(chatSessionState);
+  latestChatSessionStateRef.current = chatSessionState;
+  const latestActiveConversationSessionIdRef = useRef<string | undefined>(activeConversationSessionId);
+  latestActiveConversationSessionIdRef.current = activeConversationSessionId;
+  const isPromptSubmissionInFlightRef = useRef(props.isPromptSubmissionInFlight);
+  isPromptSubmissionInFlightRef.current = props.isPromptSubmissionInFlight;
+  const isConversationSessionSwitchPendingRef = useRef(false);
+  const isConversationCompactionInFlightRef = useRef(false);
+
+  const actions = useChatAppConversationSessionActions({
+    switchConversationSession: props.switchConversationSession,
+    deleteConversationSession: props.deleteConversationSession,
+    compactCurrentConversationSession: props.compactCurrentConversationSession,
+    onConversationCleared: props.onConversationCleared,
+    clearHistoricalConversationTranscriptPage() {},
+    latestChatSessionStateRef,
+    latestActiveConversationSessionIdRef,
+    isPromptSubmissionInFlightRef,
+    isConversationSessionSwitchPendingRef,
+    isConversationCompactionInFlightRef,
+    setChatSessionState,
+    setActiveConversationSessionId,
+    setIsConversationSessionSwitchPending,
+    setConversationSessionExportStatus,
+    setConversationSessionCompactionStatus,
+  });
+
+  props.observeActions(actions);
+  props.observeLatestState({
+    chatSessionState,
+    activeConversationSessionId,
+    conversationSessionCompactionStatus,
+  });
   return <box />;
 }
 
@@ -1614,6 +1755,137 @@ test("useChatAppController switches to a selected conversation session from keyb
 
   expect(renderedHook.readCurrentController().activeConversationSessionId).toBe("session-b");
   expect(renderedHook.readCurrentController().chatSessionState.orderedConversationMessageIds).toHaveLength(1);
+});
+
+test("useChatAppConversationSessionActions blocks clearing the active session while prompt submission is in flight", async () => {
+  let conversationClearedCallCount = 0;
+  const renderedHook = await renderConversationSessionActionsHook({
+    isPromptSubmissionInFlight: true,
+    onConversationCleared: () => {
+      conversationClearedCallCount += 1;
+      return {
+        conversationSessionId: "session-new",
+        conversationSessionEntries: [],
+      };
+    },
+  });
+
+  await act(async () => {
+    renderedHook.readCurrentActions().clearCurrentConversationSession();
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(conversationClearedCallCount).toBe(0);
+  expect(renderedHook.readLatestActiveConversationSessionId()).toBe("session-a");
+  expect(renderedHook.readLatestChatSessionState().conversationSessionSelectionState).toEqual({
+    step: "showing_session_loading_error",
+    errorMessage: activeConversationSessionMutationBlockedMessage,
+  });
+});
+
+test("useChatAppConversationSessionActions blocks switching sessions while prompt submission is in flight", async () => {
+  const switchConversationSessionRequests: string[] = [];
+  const renderedHook = await renderConversationSessionActionsHook({
+    isPromptSubmissionInFlight: true,
+    switchConversationSession: async (conversationSessionId) => {
+      switchConversationSessionRequests.push(conversationSessionId);
+      return {
+        conversationSessionId,
+        conversationSessionEntries: [],
+      };
+    },
+  });
+
+  await act(async () => {
+    await renderedHook.readCurrentActions().switchToConversationSession("session-b");
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(switchConversationSessionRequests).toEqual([]);
+  expect(renderedHook.readLatestActiveConversationSessionId()).toBe("session-a");
+  expect(renderedHook.readLatestChatSessionState().conversationSessionSelectionState).toEqual({
+    step: "showing_session_loading_error",
+    errorMessage: activeConversationSessionMutationBlockedMessage,
+  });
+});
+
+test("useChatAppConversationSessionActions blocks deleting sessions while prompt submission is in flight", async () => {
+  const deleteConversationSessionRequests: string[] = [];
+  const renderedHook = await renderConversationSessionActionsHook({
+    isPromptSubmissionInFlight: true,
+    initialConversationSessionSelectionState: {
+      step: "showing_conversation_sessions",
+      conversationSessions: [
+        {
+          sessionId: "session-a",
+          title: "Session A",
+          createdAtMs: Date.UTC(2026, 4, 22),
+          updatedAtMs: Date.UTC(2026, 4, 22),
+          conversationSessionEntryCount: 1,
+        },
+        {
+          sessionId: "session-b",
+          title: "Session B",
+          createdAtMs: Date.UTC(2026, 4, 23),
+          updatedAtMs: Date.UTC(2026, 4, 23),
+          conversationSessionEntryCount: 1,
+        },
+      ],
+      highlightedConversationSessionIndex: 1,
+      activeConversationSessionId: "session-a",
+      pendingDeletionConversationSessionId: "session-b",
+    },
+    deleteConversationSession: async (conversationSessionId) => {
+      deleteConversationSessionRequests.push(conversationSessionId);
+      return {
+        deletedConversationSessionId: conversationSessionId,
+        activeConversationSessionId: "session-a",
+        conversationSessions: [
+          {
+            sessionId: "session-a",
+            title: "Session A",
+            createdAtMs: Date.UTC(2026, 4, 22),
+            updatedAtMs: Date.UTC(2026, 4, 22),
+            conversationSessionEntryCount: 1,
+          },
+        ],
+      };
+    },
+  });
+
+  await act(async () => {
+    await renderedHook.readCurrentActions().requestConversationSessionDeletion("session-b");
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(deleteConversationSessionRequests).toEqual([]);
+  expect(renderedHook.readLatestActiveConversationSessionId()).toBe("session-a");
+  expect(renderedHook.readLatestChatSessionState().conversationSessionSelectionState).toEqual({
+    step: "showing_session_loading_error",
+    errorMessage: activeConversationSessionMutationBlockedMessage,
+  });
+});
+
+test("useChatAppConversationSessionActions blocks manual compaction while prompt submission is in flight", async () => {
+  let compactConversationSessionCallCount = 0;
+  const renderedHook = await renderConversationSessionActionsHook({
+    isPromptSubmissionInFlight: true,
+    compactCurrentConversationSession: async () => {
+      compactConversationSessionCallCount += 1;
+      return { conversationSessionEntries: [] };
+    },
+  });
+
+  await act(async () => {
+    await renderedHook.readCurrentActions().compactCurrentConversationSession();
+  });
+  await renderedHook.flushHookEffects();
+
+  expect(compactConversationSessionCallCount).toBe(0);
+  expect(renderedHook.readConversationSessionCompactionStatus()).toEqual({
+    step: "failed",
+    errorMessage: activeConversationSessionMutationBlockedMessage,
+  });
 });
 
 test("useChatAppController exposes compaction status while compacting from keyboard actions", async () => {

@@ -21,6 +21,15 @@ import type { ConversationSessionCompactionStatus, ConversationSessionExportStat
 
 type MutableValueRef<T> = { current: T };
 
+const ACTIVE_CONVERSATION_SESSION_MUTATION_BLOCKED_MESSAGE =
+  "Wait for the active assistant response to finish before changing conversation sessions.";
+
+type ActiveConversationSessionMutationInFlightState = {
+  isPromptSubmissionInFlight: boolean;
+  isConversationSessionSwitchPending: boolean;
+  isConversationCompactionInFlight: boolean;
+};
+
 type ClearHistoricalConversationTranscriptPage = (options?: {
   shouldPreserveKnownOlderPageAvailability?: boolean | undefined;
 }) => void;
@@ -159,6 +168,23 @@ export function useChatAppConversationSessionActions(
       input.setChatSessionState(nextChatSessionState);
     });
   });
+  const isActiveConversationSessionMutationBlockedByCurrentInFlightWork = useEffectEvent((): boolean =>
+    isActiveConversationSessionMutationBlockedByInFlightWork({
+      isPromptSubmissionInFlight: input.isPromptSubmissionInFlightRef.current,
+      isConversationSessionSwitchPending: input.isConversationSessionSwitchPendingRef.current,
+      isConversationCompactionInFlight: input.isConversationCompactionInFlightRef.current,
+    })
+  );
+  const showActiveConversationSessionMutationBlockedByInFlightWork = useEffectEvent((): void => {
+    input.setChatSessionState((currentChatSessionState) => {
+      const nextChatSessionState = showConversationSessionSelectionLoadingError(
+        currentChatSessionState,
+        ACTIVE_CONVERSATION_SESSION_MUTATION_BLOCKED_MESSAGE,
+      );
+      input.latestChatSessionStateRef.current = nextChatSessionState;
+      return nextChatSessionState;
+    });
+  });
 
   const loadConversationSessionsForSelection = useEffectEvent(async (): Promise<void> => {
     if (!input.loadConversationSessions) {
@@ -199,6 +225,11 @@ export function useChatAppConversationSessionActions(
   });
 
   const switchToConversationSession = useEffectEvent(async (conversationSessionId: string): Promise<void> => {
+    if (isActiveConversationSessionMutationBlockedByCurrentInFlightWork()) {
+      showActiveConversationSessionMutationBlockedByInFlightWork();
+      return;
+    }
+
     if (!input.switchConversationSession) {
       input.setChatSessionState((currentChatSessionState) =>
         showConversationSessionSelectionLoadingError(currentChatSessionState, "Session switching is unavailable."),
@@ -270,6 +301,11 @@ export function useChatAppConversationSessionActions(
   });
 
   const requestConversationSessionDeletion = useEffectEvent(async (conversationSessionId: string): Promise<void> => {
+    if (isActiveConversationSessionMutationBlockedByCurrentInFlightWork()) {
+      showActiveConversationSessionMutationBlockedByInFlightWork();
+      return;
+    }
+
     const currentConversationSessionSelectionState = input.latestChatSessionStateRef.current.conversationSessionSelectionState;
     const isDeletionConfirmed = currentConversationSessionSelectionState.step === "showing_conversation_sessions" &&
       currentConversationSessionSelectionState.pendingDeletionConversationSessionId === conversationSessionId;
@@ -407,6 +443,14 @@ export function useChatAppConversationSessionActions(
       return;
     }
 
+    if (isActiveConversationSessionMutationBlockedByCurrentInFlightWork()) {
+      input.setConversationSessionCompactionStatus({
+        step: "failed",
+        errorMessage: ACTIVE_CONVERSATION_SESSION_MUTATION_BLOCKED_MESSAGE,
+      });
+      return;
+    }
+
     const requestSequence = latestConversationSessionMutationRequestSequenceRef.current + 1;
     latestConversationSessionMutationRequestSequenceRef.current = requestSequence;
     input.isConversationCompactionInFlightRef.current = true;
@@ -534,6 +578,11 @@ export function useChatAppConversationSessionActions(
   });
 
   const clearCurrentConversationSession = useEffectEvent((): void => {
+    if (isActiveConversationSessionMutationBlockedByCurrentInFlightWork()) {
+      showActiveConversationSessionMutationBlockedByInFlightWork();
+      return;
+    }
+
     latestConversationSessionMutationRequestSequenceRef.current += 1;
     input.setConversationSessionCompactionStatus({ step: "idle" });
     const clearedConversationSession = input.onConversationCleared?.();
@@ -595,4 +644,12 @@ function clampConversationSessionSelectionIndex(conversationSessionIndex: number
   }
 
   return Math.max(0, Math.min(conversationSessionIndex, conversationSessionCount - 1));
+}
+
+function isActiveConversationSessionMutationBlockedByInFlightWork(
+  inFlightState: ActiveConversationSessionMutationInFlightState,
+): boolean {
+  return inFlightState.isPromptSubmissionInFlight ||
+    inFlightState.isConversationSessionSwitchPending ||
+    inFlightState.isConversationCompactionInFlight;
 }
